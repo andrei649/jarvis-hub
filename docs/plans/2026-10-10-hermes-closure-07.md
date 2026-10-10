@@ -2,8 +2,9 @@
 
 Generated 2026-10-10 UTC. Base/initial head:
 `fbb0db40a25669ff03cee5bf8024e983d954f8f8` (148/697 complete).
-Branch: `codex/hermes-closure-07-20261010`. Current action: implement the
-settled contracts below. No additional count credit until complete review.
+Branch: `codex/hermes-closure-07-20261010`. Final source head:
+`c18b25506e0103c5a453066b32e8b1fe5ecf39c3`. Both contracts are accepted after
+the implementation, complete review and integration evidence below.
 Goal: complete frozen H453 and H454 together through the scheduled-output path.
 No publication/deployment/provider calls/personal state. No H620 broader scheduler,
 new standing grants, dependency triggering, or workflow engine.
@@ -186,4 +187,38 @@ escaping and fences. The regression measures the actual prompt bytes; red/green
 proof and the post-correction selection are in `core/render-budget-red.xml`,
 `core/render-budget-green.xml` and `core/render-final.xml`. Independent final delta
 review is clean. The actual lifespan smoke was rerun against these final hashes.
-Full frozen-backend evidence and whole-contract count updates remain pending.
+## Frozen milestone and acceptance
+
+The serial full backend run at `def87104b01dda8ffd10c1d5cda162c19f7786b8`
+completed 25,909 cases: 25,849 passed, one failed, zero errors and 59 skipped/xfail.
+All 5,710 tracked and nonignored repository inputs were verified unchanged before
+any repair. The sole failure was the roadmap's old count of 38 routes without
+graphical callers; the existing executable punch list has 41, including the
+three H015 CLI/API-only paths. The one-number documentation repair is committed
+at the final source head above; all 22 document-reference/parity cases pass after
+it. No production code changed after the final review and smoke. This is a
+completed full run plus focused repair evidence, not a green full-run claim.
+
+`backend-inputs.json`, `backend-inputs-verification.json`, `backend-full.xml`,
+`backend-failures.json`, `backend-repair.xml` and `backend-validation.json` bind
+the frozen input, completed run and exact repaired node. Independent surface and
+final core review reports are clean within their stated scope. Whole H453/H454
+reviews cover every frozen clause; 58 previously current changed evidence pins
+were reviewed and refreshed, while 72 already-stale pins were preserved. H620
+records context chaining progress without credit for its wider open contract.
+No unrelated row is promoted by a hash refresh.
+
+The guarded assessment advances from 148 to **150/697 complete (21.5%)**:
+150 equivalent, 228 partial, 56 missing, zero excluded and 263 needing review;
+547 remain unfinished. Backend collection is 25,909; frontend 2,177 and mobile
+359 counts are reused because no application UI changed. Routes remain 629 and
+agents 18. All 86 final metadata cases pass; Hermes/status synchronization,
+changed-Python Ruff and whitespace checks pass. Metadata proof is
+`final-metadata.xml`; the test selections above overlap and are not summed.
+No provider, owner host, native-mobile execution or deployment is claimed.
+Everything remains local; no push, remote merge or deployment occurred.
+
+Next action: close H456's scheduled tool-policy precedence/operator exclusions
+and per-job reasoning through real dispatch and CLI/HUD/doctor surfaces. Read-only
+research and donor comparison are in the batch07 scratch `next-h456-*.json` files;
+the new batch must use its own source and evidence checkpoint.
