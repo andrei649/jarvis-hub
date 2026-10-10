@@ -5,9 +5,13 @@ while preserving its stdout, exit, session and approval contracts. Base/initial
 head: `5187a0fbc888cdf563365631c3f76d2c1a3fb704` (143/697 local);
 branch `codex/hermes-closure-05-20261010`. Local only: no push, merge, deployment,
 paid provider calls, personal-state reads or global configuration changes.
-Current state: implementation and focused verification complete; whole-contract
-status is not yet promoted. Next action: freeze repository inputs for the one
-serial full backend milestone, then reconcile its actual result and metadata.
+Current source head: `a9c239d637f74e26d89ecf72a9b665271fd118cb`.
+H002 is implemented and reviewed. The frozen backend milestone completed with
+32 failed cases, all passing after fixture/report repairs. Whole-contract review
+yields **144/697 equivalent (20.7%)**, 229 partial, 56 missing and 268 needing
+review; 553 remain unfinished. Main remains at its previously published 116/697.
+Metadata checks are complete. Next action: implement H049 named log reading and
+H015's remaining scheduled-job operations in the next local unit.
 
 Whole-contract review addendum: H002 also retains a real completion gap: a
 source-assigned specialist stop can be rephrased by synthesis and escape the
@@ -166,5 +170,50 @@ Frontend TypeScript, changed-Python Ruff and `git diff --check` pass.
 
 Artifacts are under `/workspace/scratch/hermes-697/batch05/`: `core/final.xml`,
 `integration/final-focused.xml`, `root-final.xml`, `live-smoke.json`,
-`frontend-typecheck.log`, and the red/focused source reports. No full backend,
-full frontend, native-device, Windows, Fish or live-provider pass is claimed here.
+`frontend-typecheck.log`, and the red/focused source reports. No full frontend,
+native-device, Windows, Fish or live-provider pass is claimed for this batch.
+
+## Frozen milestone and final repairs
+
+The serial full backend at `e4a8be427b5923495142f8052e053520a2504eae`
+completed 25,820 cases: 25,729 passed, 30 setup errors, two failures and 59
+skipped/expected-failure cases. All 5,696 frozen repository inputs were verified
+unchanged before any repair was integrated. This was not a green full run.
+
+Thirty setup errors shared one fixture that omitted the newly required scoped
+monkeypatch argument. Its test-only fix passes all 56 cases in the three affected
+integration modules. H579's source-layout assertion became stale after the JSON
+route gained a usage wrapper; its replacement calls both actual routes and proves
+reference expansion occurs off the event-loop thread. All 70 H579 cases pass,
+including the original failed node ID. The generated Hermes report was stale
+against changed evidence and passes after regeneration. These three clean repair
+XMLs cover every original failed node; `backend-validation.json` verifies that
+coverage and the hashes of the frozen input manifest and completed JUnit file.
+
+Final review also found that Ctrl-C outside the POST call could skip the receipt.
+The isolated fix encloses operational input/response/output handling, retains
+already decoded session/usage/stops/pending IDs, and deduplicates the vision
+receipt. It passes 241 focused cases in isolation, then integrated CLI/vision/
+H002/H579 coverage passes 316 cases after cherry-pick. These selections overlap
+and are not summed. An interruption cannot undo text already printed.
+
+The guarded assessment update promotes only H002 after its complete frozen
+contract review. It refreshes 44 previously current collateral pins following
+bounded source review, preserves 183 already-stale changed pins, and leaves the
+frozen inventory bytes unchanged. Other rows retain their prior verdicts and
+remaining limits. Auth/owner preflight may return unavailable usage with its
+original HTTP failure; a deterministic successful synthesis fallback may still
+complete, while its unmeasured failed generation attempt remains unknown.
+
+Repair evidence: `repairs/runtime-fixtures.xml`, `repairs/context-thread-final.xml`,
+`repairs/status-preassessment.xml`, `repairs/context-cli.xml`, `interrupt/final-focused.xml`.
+Review/update evidence: `full-reviews.json`, `core-final-review.json`,
+`integration-final-review.json`, the bounded collateral reviews, and
+`assessment-update-dry-run.json`. Core/integration implementers used
+`gpt-6-sol/high`; scoped read-only review used `gpt-6-luna/medium`.
+
+Final metadata verification passes all 86 status/assessment tests
+(`metadata-final.xml`). Both generated-status check commands and diff whitespace
+checks pass. Backend collection at the final source is 25,826 cases; this is a
+collection count, not another full pass. Frontend 2,177 and mobile 359 counts are
+reused from the earlier checkpoint; the route inventory remains 624 with 18 agents.
