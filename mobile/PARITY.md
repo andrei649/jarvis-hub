@@ -20,6 +20,65 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+H456 local candidate (2026-10-10): CLI/web Jobs author per-job reasoning effort
+and expanded installed tool groups; scheduled dispatch applies operator and
+platform restrictions. Native mobile authoring for these choices remains open.
+No native-device validation is claimed. See [job policy](../docs/automations-operations.md#tool-limits-and-reasoning).
+
+H453/H454 local candidate (2026-10-10): scheduled scripts distinguish complete
+safe stdout from bounded summaries; CLI/admin API author cross-job `context_from`
+alongside own-output continuity. Native mobile source selection, output inspection
+and dedicated continuity controls remain open. No mobile adapter or native-device
+acceptance is added. See [job context](../docs/automations-operations.md).
+
+H015 local candidate (2026-10-10): shared admin APIs add incident acknowledgement,
+named job notes, explicit continuity and history after job removal. Native mobile
+administration for these operations remains open; this batch supplies no new
+mobile adapter or native-device acceptance. The existing web Jobs diagnostic and
+legacy notes controls remain. H049 named log reading is host CLI administration.
+See [scheduled-job operations](../docs/automations-operations.md).
+
+H002 local candidate (2026-10-10): JSON chat replies and SSE end events carry an
+additive request-owned generation-usage snapshot. Native clients retain their
+existing chat rendering; no native spend panel is implemented in this batch.
+Atomic `--usage-file` export is intentionally a host CLI capability. It counts
+accepted generation attempts and preserves unknown values instead of guessing
+costs. See [CLI receipt semantics](../docs/cli-chat-receipts.md). This is not a
+native-device acceptance claim.
+
+H441 local candidate (2026-10-10): native clients inherit owner-only access to
+imported/derived sessions and suppression from guest session/checklist lists.
+The existing exact-ID resume and recap contract is retained. This batch adds
+CLI/API selectors and foreign imports, with no browser/native import picker.
+Reading Claude Code/Codex source files is intentionally CLI-host administration;
+there is no native-device acceptance claim. See
+[resume/import guide](../docs/foreign-session-resume.md). H398 completeness/risk
+handling and H667 temporary-directory resolution are shared runtime behavior,
+with no new native chat field or control.
+
+H329 local update (2026-10-10): the browser Skill Switches panel and terminal
+picker show re-enable requests as pending until the approved worker applies
+them. Disabled skills stay installed. Shared server enforcement applies to all
+channels; corrupt/missing switch state refuses nonessential skills. Native
+mobile currently has the read-only skills browser, with no switch editor or
+interactive picker; these controls remain desktop/host administration. Existing
+approval surfaces consume the same bounded task. H299/H397 stall guidance and
+opt-in stops are shared runtime behavior, with no new native screen.
+
+H413/H689 local update (2026-10-10): existing session lists receive the same
+instant and background-upgraded titles; automatic naming now uses the dedicated
+small local model, and keeps the instant title when it is unavailable. Profiles
+share installation identity while retaining separate credentials and stores.
+Existing owner node-registration and sender-link endpoints refuse missing
+identity with HTTP 503; identity reconciliation/re-pairing remains host
+administration, with no new native management screen or device acceptance claim.
+See [migration guide](../docs/install-identity.md) and
+[batch verification](../docs/plans/2026-10-10-hermes-closure-02.md).
+
+H256 local update (2026-10-10): existing owner consent endpoints now refuse a
+damaged settings store before audit or grant/revoke. Their existing error path
+is retained; this adds no mobile consent or configuration-repair screen.
+
 Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
 intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
 
@@ -100,12 +159,16 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Status / telemetry | `GET /status` | ✅ | ✅; local refresh-order fix protects model/Trust/brief data and loading/error state from older responses | H18.1; [refresh evidence](docs/native-status-refresh-order.md) |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
 | Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
+| Speech-only verifier advisory filtering (H526 checkpoint) | Shared hub TTS normalizer; footer-only replies return 204 | Whole replies and live deltas filter the exact structured advisory; visible text stays intact | Existing native `/tts` path inherits hub normalization; no separate client parser or device-audio claim | H526 final whole-contract acceptance pending |
 | Approved speech command configuration | `GET/POST /api/admin/voice/commands` | ✅ Settings → Voice → Command providers; independent named TTS/STT, signed registration, human approval, revisioned clear and STT selection | ⬜ native provider configuration; hub TTS playback remains available | H517 / H613; vendor/plugin breadth remains open |
 | Stream timeout / reconnect | — (client-side) | ✅ | ✅ | H18.6 |
 | Dashboard (weather/news) | `GET /dashboard` | ✅ | ✅ | H18.14 |
 | Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
 | Ticker | `GET /ticker` | ✅ | ✅ | H18.14 |
 | Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
+| Conditional model-facing skill offers (H328) | Shared prompt catalog and `skills_list` gates now recognize native Kanban and supported toolset members | ✅ shared runtime | ✅ same server-side turn policy; no new native control | H328 |
+| Resource-pressure warnings (H161) | `GET /api/system/pressure`, `POST /api/system/pressure/dismiss`; unreadable volumes retain their warning until confirmed recovery | ✅ existing ranked banner | ⬜ native banner/dismissal reader remains open | H161 |
+| App-timezone schedules (H450) | Existing schedule preview and jobs APIs use the same active application zone; saved zone changes apply to running jobs after restart | ✅ existing Jobs preview/create/edit | ⬜ native job administration remains open; shared backend behavior applies to all callers | H450 |
 | Memory / notes | read legs only: `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
 | Knowledge graph | read legs only: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/{as-of,history}` | ✅ | ✅ existing native entity list/detail and relation rows | H18.17 |
 | Memory neighborhood navigation | user/admin-superset `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, plus KG fact reads | ✅ live search, selectable connections, bounded reads; samples only in explicit Demo | 🟡 local Graph code: connected navigation outside first 50, cancellable ten-second reads, post-body one-MiB verification, 100-row caps, stale-read guards and explicit unavailable states; device/live-Hub acceptance open | DW-1 / H18.28 |
@@ -157,7 +220,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Nightly reflection (status + manual run) | `GET /api/reflection/status`, `POST /api/reflection/run` | ✅ | ⬜ | |
 | Security skills browser (ATT&CK tactics → curated techniques, read-only) | `GET /api/security-skills/tactics`, `GET /api/security-skills/techniques` | ✅ | ⬜ | |
 | Prompt-injection scan | `POST /api/security/scan-injection` | ✅ | ⬜ | |
-| Authentication audit events (H512) | Admin `GET /api/admin/audit`; typed guard/token lifecycle rows | ✅ existing admin audit reader | ⬜ intentionally owner-HUD/CLI only in this local slice; native requests are logged server-side | H512 |
+| Authentication audit events (H512) | Admin `GET /api/admin/audit`; typed guard/token lifecycle rows, including MCP RPC auth and successful MCP token signing (`surface=mcp`) | ✅ existing admin audit reader | ⬜ intentionally owner-HUD/CLI only in this local slice; native requests are logged server-side | H512 |
 | Audit-chain verification (tamper-evidence read) | `GET /api/security/audit/intent`, `GET /api/security/audit/verify` | ✅ | ⬜ | |
 | Channel pairing ceremony | admin `GET /api/channels/pairing`, `POST /api/channels/pairing/code`, `POST /api/channels/pairing/decide` | ✅ | ➖ admin ceremony run from the owner HUD (triage 2026-09-01) | — |
 | Governed social drafts (draft-before-send) | `GET/POST /api/integrations/social` | ✅ | ⬜ | |

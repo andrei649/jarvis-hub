@@ -3,8 +3,10 @@
 Covers the SSE event format, agent override, error handling, and the 503
 response when the orchestrator has not been initialised.
 """
+import asyncio
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -17,6 +19,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 import agents.web as web
+from agents.core.checkpoint import CheckpointManager
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,9 +42,18 @@ def _parse_sse(text: str) -> list[dict]:
     return events
 
 
+def _mock_orch() -> MagicMock:
+    """A chat fake still has the real durable session-status authority."""
+    mock = MagicMock()
+    mock.session_id = "test_session"
+    mock.checkpoints = CheckpointManager(":memory:")
+    mock.checkpoints.initialize()
+    return mock
+
+
 def _mock_orch_with_stream(tokens: list[str], full: str | None = None) -> MagicMock:
     """Build a minimal mock Orchestrator whose handle_input_stream emits *tokens*."""
-    m = MagicMock()
+    m = _mock_orch()
     m.agents = {}
     m.observer = None
 
@@ -71,7 +83,7 @@ def test_chat_no_orch_returns_not_initialized():
 # ---------------------------------------------------------------------------
 
 def test_chat_with_mock_orch_returns_reply(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.handle_input = AsyncMock(return_value="Salut!")
     monkeypatch.setattr(web, "orch", mock)
 
@@ -81,8 +93,35 @@ def test_chat_with_mock_orch_returns_reply(monkeypatch):
     assert resp.json()["reply"] == "Salut!"
 
 
+def test_chat_direct_reply_reports_observed_zero_generation(monkeypatch):
+    mock = _mock_orch()
+    mock.handle_input = AsyncMock(return_value="Done.")
+    monkeypatch.setattr(web, "orch", mock)
+    usage = TestClient(web.app).post("/chat", json={"message": "/status"}).json()["usage"]
+    assert usage["schema"] == "nerva.turn.usage.v1"
+    assert (usage["api_calls"], usage["input_tokens"], usage["output_tokens"]) == (0, 0, 0)
+    assert usage["estimated_cost_usd"] == 0
+    assert (usage["usage_basis"], usage["cost_basis"]) == ("measured_zero", "measured_zero")
+
+
+def test_chat_reports_source_assigned_runtime_stop_after_rephrased_reply(monkeypatch):
+    from agents.core.turn_stops import record_runtime_stop
+
+    mock = _mock_orch()
+
+    async def stopped(*args, **kwargs):
+        record_runtime_stop("guardian_denied")
+        return "That sounds fine now."
+
+    mock.handle_input = stopped
+    monkeypatch.setattr(web, "orch", mock)
+    body = TestClient(web.app).post("/chat", json={"message": "hello"}).json()
+    assert body["reply"] == "That sounds fine now."
+    assert body["runtime_stops"] == ["guardian_denied"]
+
+
 def test_chat_returns_selected_session_id_after_new_command(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.session_id = "old_topic"
 
     async def change_session(*args, **kwargs):
@@ -106,7 +145,9 @@ def test_resume_old_topic_returns_its_exact_saved_history(monkeypatch):
             return [{"role": "user", "content": "old question"},
                     {"role": "assistant", "content": "old answer"}]
 
-    selected = SimpleNamespace(memory=Memory(), session_id="session_new_topic", checkpoints=None)
+    checkpoints = CheckpointManager(":memory:")
+    checkpoints.initialize()
+    selected = SimpleNamespace(memory=Memory(), session_id="session_new_topic", checkpoints=checkpoints)
     monkeypatch.setattr(web, "orch", selected)
     response = TestClient(web.app).post("/sessions/resume", json={"session_id": "old_topic"})
     assert response.status_code == 200
@@ -116,7 +157,7 @@ def test_resume_old_topic_returns_its_exact_saved_history(monkeypatch):
 
 
 def test_chat_agent_override_not_jarvis(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.handle_input = AsyncMock(return_value="Friday here.")
     monkeypatch.setattr(web, "orch", mock)
 
@@ -127,7 +168,7 @@ def test_chat_agent_override_not_jarvis(monkeypatch):
 
 
 def test_chat_agent_jarvis_passes_no_override(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.handle_input = AsyncMock(return_value="Jarvis here.")
     monkeypatch.setattr(web, "orch", mock)
 
@@ -186,6 +227,22 @@ def test_chat_stream_last_event_is_end(monkeypatch):
     assert last["text"] == "Hi"
 
 
+def test_stream_end_reports_its_own_observed_zero_generation(monkeypatch):
+    monkeypatch.setattr(web, "orch", _mock_orch_with_stream(["Done."]))
+    response = TestClient(web.app).post("/chat/stream", json={"message": "/status"})
+    end = _parse_sse(response.text)[-1]
+    assert {key: end["usage"][key] for key in (
+        "schema", "api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+        "model", "provider", "usage_basis", "cost_basis", "breakdown",
+    )} == {
+        "schema": "nerva.turn.usage.v1", "api_calls": 0,
+        "input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0,
+        "model": None, "provider": None, "usage_basis": "measured_zero",
+        "cost_basis": "measured_zero", "breakdown": [],
+    }
+    assert end["runtime_stops"] == []
+
+
 def test_chat_stream_end_returns_selected_session_id(monkeypatch):
     mock = _mock_orch_with_stream([], full="Started a new conversation.")
     mock.session_id = "session_new_topic"
@@ -204,7 +261,7 @@ def test_chat_stream_end_event_carries_agent(monkeypatch):
 
 
 def test_chat_stream_error_produces_end_event(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.agents = {}
     mock.observer = None
 
@@ -218,6 +275,41 @@ def test_chat_stream_error_produces_end_event(monkeypatch):
     resp = client.post("/chat/stream", json={"message": "hello"})
     events = _parse_sse(resp.text)
     assert any(e.get("type") == "end" for e in events)
+    assert events[-1]["usage"]["api_calls"] == 0
+    assert events[-1]["usage"]["usage_basis"] == "measured_zero"
+
+
+@pytest.mark.asyncio
+async def test_stream_disconnect_cancels_runner_and_closes_its_usage_scope(monkeypatch):
+    from agents.core import turn_usage
+
+    mock = _mock_orch()
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+    collectors = []
+    actual_scope = turn_usage.turn_usage_scope
+
+    @contextmanager
+    def observed_scope():
+        with actual_scope() as collector:
+            collectors.append(collector)
+            yield collector
+
+    async def blocked_stream(message, channel, on_token, agent_override=None):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    mock.handle_input_stream = blocked_stream
+    monkeypatch.setattr(turn_usage, "turn_usage_scope", observed_scope)
+    stream = web._chat_event_stream(mock, "hello", "jarvis", None)
+    assert '"start"' in await anext(stream)
+    await asyncio.wait_for(started.wait(), 2)
+    await stream.aclose()
+    assert cancelled.is_set()
+    assert len(collectors) == 1 and collectors[0]._closed is True
 
 
 def test_chat_stream_no_tokens_still_ends(monkeypatch):

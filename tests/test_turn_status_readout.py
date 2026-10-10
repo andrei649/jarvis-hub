@@ -13,13 +13,14 @@ from fastapi.testclient import TestClient
 from agents import web
 from agents.core import settings_db
 from agents.core.client_protocol import describe_client_protocol
+from tests.h441_native_fixture import bind_native
 
 
 def _events(body: str) -> list[dict]:
     return [json.loads(chunk[6:]) for chunk in body.split("\n\n") if chunk.startswith("data: ")]
 
 
-def _orch(*, fields=("latency",), measured=True, stream=False):
+def _orch(monkeypatch, *, fields=("latency",), measured=True, stream=False):
     class FakeOrch:
         session_id = "this_turn"
         notes = None
@@ -40,12 +41,14 @@ def _orch(*, fields=("latency",), measured=True, stream=False):
                 record_turn_latency(137)
             return "answer"
 
-    return FakeOrch()
+    orch = FakeOrch()
+    bind_native(orch, monkeypatch, session_ids=(orch.session_id,))
+    return orch
 
 
 @pytest.mark.parametrize("stream", [False, True])
 def test_http_returns_only_this_turns_selected_latency(monkeypatch, stream):
-    monkeypatch.setattr(web, "orch", _orch())
+    monkeypatch.setattr(web, "orch", _orch(monkeypatch))
     path = "/chat/stream" if stream else "/chat"
     first = TestClient(web.app).post(path, json={"message": "hi"})
     assert first.status_code == 200
@@ -54,7 +57,7 @@ def test_http_returns_only_this_turns_selected_latency(monkeypatch, stream):
     assert payload["text" if stream else "reply"] == "answer"
 
     # A new uninstrumented turn must not inherit the previous one.
-    monkeypatch.setattr(web, "orch", _orch(measured=False))
+    monkeypatch.setattr(web, "orch", _orch(monkeypatch, measured=False))
     second = TestClient(web.app).post(path, json={"message": "later"})
     payload = _events(second.text)[-1] if stream else second.json()
     assert payload["outcome"] is None
@@ -62,14 +65,14 @@ def test_http_returns_only_this_turns_selected_latency(monkeypatch, stream):
 
 @pytest.mark.parametrize("fields", [(), ("model",), ("latency", "tps")])
 def test_server_selection_filters_unimplemented_or_hidden_fields(monkeypatch, fields):
-    monkeypatch.setattr(web, "orch", _orch(fields=fields))
+    monkeypatch.setattr(web, "orch", _orch(monkeypatch, fields=fields))
     payload = TestClient(web.app).post("/chat", json={"message": "hi"}).json()
     assert payload["outcome"] == ({"latency_ms": 137} if "latency" in fields else None)
     assert "tps" not in (payload["outcome"] or {})
 
 
 def test_invalid_or_unavailable_selection_does_not_break_answer(monkeypatch):
-    fake = _orch()
+    fake = _orch(monkeypatch)
     fake.get_setting = lambda *_args: ["latency", "not-a-field"]
     monkeypatch.setattr(web, "orch", fake)
     payload = TestClient(web.app).post("/chat", json={"message": "hi"}).json()
@@ -92,7 +95,9 @@ def test_error_and_unavailable_paths_have_no_measured_outcome(monkeypatch):
         async def handle_input_stream(self, *_args, **_kwargs):
             raise RuntimeError("private exception")
 
-    monkeypatch.setattr(web, "orch", Broken())
+    broken = Broken()
+    bind_native(broken, monkeypatch, session_ids=(broken.session_id,))
+    monkeypatch.setattr(web, "orch", broken)
     client = TestClient(web.app)
     reply = client.post("/chat", json={"message": "hi"}).json()
     event = _events(client.post("/chat/stream", json={"message": "hi"}).text)[-1]
@@ -104,7 +109,7 @@ def test_error_and_unavailable_paths_have_no_measured_outcome(monkeypatch):
 
 @pytest.mark.parametrize("stream", [False, True])
 def test_busy_lease_has_no_duration_from_a_previous_turn(monkeypatch, stream):
-    fake = _orch()
+    fake = _orch(monkeypatch)
 
     @asynccontextmanager
     async def busy(_session=None):

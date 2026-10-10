@@ -7,11 +7,11 @@ orchestrator (`orch.jobs`); a hub without one answers 503 honestly.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
@@ -46,6 +46,8 @@ class JobEditBody(BaseModel):
     schedule_text: str | None = Field(default=None, max_length=200)
     action: dict[str, Any] | None = None
     options: dict[str, Any] | None = None
+    continuity: StrictBool | None = None
+    context_from: StrictStr | list[StrictStr] | None = None
     confirm_expensive: StrictBool = False
     acknowledge_training: StrictBool = False
 
@@ -154,13 +156,34 @@ async def jobs_doctor():
 
 
 @router.get("/api/jobs/incidents", dependencies=[Depends(admin_guard)])
-async def jobs_incidents():
+async def jobs_incidents(job_id: str | None = None,
+                         state: Literal["detected", "alerted", "closed"] | None = None,
+                         limit: int = Query(default=100, ge=1, le=100)):
     runner = _runner()
     if runner is None:
         return _unavailable()
-    return nocache_json({"incidents": [{"job_id":j.id, "reason":j.paused_reason,
-        "failures":j.consecutive_failures} for j in runner.store.list()
-        if j.consecutive_failures >= 3 and j.paused_reason]})
+    return nocache_json({"incidents": runner.store.incidents.list(job_id=job_id, state=state,
+                                                                   limit=limit)})
+
+
+@router.post("/api/jobs/incidents/{incident_id}/ack", dependencies=[Depends(admin_guard)])
+async def jobs_incident_ack(incident_id: int):
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    incident = runner.store.incidents.ack(incident_id)
+    if incident is None:
+        return JSONResponse({"error": "no such incident"}, status_code=404)
+    return nocache_json({"ok": True, "incident": incident})
+
+
+@router.get("/api/jobs/runs", dependencies=[Depends(admin_guard)])
+async def jobs_runs_recent(job_id: str | None = None, limit: int = Query(default=100, ge=1, le=100)):
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    return nocache_json({"runs": [run.as_dict() for run in runner.store.runs_recent(limit=limit,
+                                                                                       job_id=job_id)]})
 
 
 @router.post("/api/jobs/tick", dependencies=[Depends(admin_guard)])
@@ -177,6 +200,61 @@ async def jobs_tick():
 class JobNotepadBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(max_length=4096)
+
+
+class JobNotepadKeyBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    value: str
+
+
+@router.get("/api/jobs/{job_id}/notepad/keys", dependencies=[Depends(admin_guard)])
+async def jobs_notepad_keys(job_id: str, key: str | None = None):
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    try:
+        if key is None:
+            return nocache_json({"entries": runner.store.notepad_kv.list(job_id)})
+        value = runner.store.notepad_kv.get(job_id, key)
+    except KeyError:
+        return JSONResponse({"error": "no such job"}, status_code=404)
+    except ValueError as exc:
+        return _refused(str(exc))
+    if value is None:
+        return JSONResponse({"error": "no such key"}, status_code=404)
+    return nocache_json({"entry": {"key": key, "value": value}})
+
+
+@router.put("/api/jobs/{job_id}/notepad/keys", dependencies=[Depends(admin_guard)])
+async def jobs_notepad_key_set(job_id: str, body: JobNotepadKeyBody):
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    try:
+        runner.store.notepad_kv.set(job_id, body.key, body.value)
+    except KeyError:
+        return JSONResponse({"error": "no such job"}, status_code=404)
+    except ValueError as exc:
+        return _refused(str(exc))
+    return nocache_json({"ok": True, "entry": {"key": body.key, "value": body.value}})
+
+
+@router.delete("/api/jobs/{job_id}/notepad/keys", dependencies=[Depends(admin_guard)])
+async def jobs_notepad_key_delete(job_id: str, key: str = Query(...)):
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    try:
+        removed = runner.store.notepad_kv.delete(job_id, key)
+    except KeyError:
+        return JSONResponse({"error": "no such job"}, status_code=404)
+    except ValueError as exc:
+        return _refused(str(exc))
+    if not removed:
+        return JSONResponse({"error": "no such key"}, status_code=404)
+    return nocache_json({"ok": True, "key": key})
 
 
 @router.put("/api/jobs/{job_id}/notepad", dependencies=[Depends(admin_guard)])
@@ -212,6 +290,8 @@ async def jobs_edit(job_id: str, body: JobEditBody):
     runner = _runner()
     if runner is None:
         return _unavailable()
+    if body.options is not None and (body.continuity is not None or body.context_from is not None):
+        return _refused("additive continuity/context_from and replacement options cannot be edited together")
     if body.options is not None:
         current = runner.store.get(job_id)
         guarded = await _guard_pin(body.options, body, getattr(current, "options", None))
@@ -219,7 +299,8 @@ async def jobs_edit(job_id: str, body: JobEditBody):
             return guarded
     try:
         job = runner.edit(
-            job_id, name=body.name, schedule_text=body.schedule_text, action=body.action, options=body.options
+            job_id, name=body.name, schedule_text=body.schedule_text, action=body.action,
+            options=body.options, continuity=body.continuity, context_from=body.context_from,
         )
     except KeyError:
         return JSONResponse({"error": "no such job"}, status_code=404)
@@ -233,8 +314,8 @@ async def jobs_runs(job_id: str, limit: int = 20):
     runner = _runner()
     if runner is None:
         return _unavailable()
-    if runner.store.get(job_id) is None:
-        return JSONResponse({"error": "no such job"}, status_code=404)
+    if not 1 <= limit <= 100:
+        return _refused("run limit must be 1-100")
     return nocache_json({"runs": [run.as_dict() for run in runner.store.runs(job_id, limit=limit)]})
 
 

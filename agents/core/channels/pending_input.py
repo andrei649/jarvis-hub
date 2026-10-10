@@ -127,7 +127,7 @@ def parse_clarify(
     if len(response) > 16384:
         return ParseResult("invalid_selection")
     options = tuple(choices or ())
-    if not options or awaiting_text:
+    if not options:
         return ParseResult("resolved", response)
     if not multi_select:
         label = _match(response, options)
@@ -135,6 +135,8 @@ def parse_clarify(
             if len(label) > 16384:
                 return ParseResult("invalid_selection")
             return ParseResult("resolved", label)
+        if awaiting_text:
+            return ParseResult("resolved", response)
         return ParseResult("invalid_selection" if _INTEGER.fullmatch(response) else "prose")
 
     if "," in response:
@@ -153,6 +155,8 @@ def parse_clarify(
     for token in tokens:
         label = _match(token, options)
         if label is None:
+            if awaiting_text:
+                return ParseResult("resolved", response)
             return ParseResult("invalid_selection" if selection_shaped else "prose")
         if label not in selected:
             selected.append(label)
@@ -160,7 +164,7 @@ def parse_clarify(
         if sum(len(label) for label in selected) > 16384:
             return ParseResult("invalid_selection")
         return ParseResult("resolved", selected)
-    return ParseResult("prose")
+    return ParseResult("resolved", response) if awaiting_text else ParseResult("prose")
 
 
 class PendingInputs:

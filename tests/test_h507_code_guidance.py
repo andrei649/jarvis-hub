@@ -502,8 +502,12 @@ def test_a_stale_generation_warning_does_not_survive_an_early_return(tmp_path, m
     monkeypatch.setattr(skill_loader, "SKILLS_DIR", tmp_path / "skills")
     monkeypatch.setattr(skill_loader, "_user_skills_dir", lambda: tmp_path / "user-skills")
     loader = SkillLoader()
-    assert loader.generate_skill("jarvis", "summarise the weather report", ["read it", "sum it"])
+    name = loader.generate_skill("jarvis", "summarise the weather report", ["read it", "sum it"])
+    assert name and (tmp_path / "user-skills" / name).is_dir()
     loader.last_generation_warnings = [{"path": "main.py", "rule": "py-eval", "line": 1, "message": "m"}]
+    # The generated name includes wall-clock seconds. Force the exact existing
+    # directory on the second call so this exercises the early-return branch.
+    monkeypatch.setattr(loader, "_name_from_task", lambda _task: name)
     assert loader.generate_skill("jarvis", "summarise the weather report", ["read it", "sum it"]) is None
     assert loader.last_generation_warnings == []
 

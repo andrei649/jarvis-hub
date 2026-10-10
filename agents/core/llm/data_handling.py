@@ -439,6 +439,7 @@ def acknowledge(router, provider, acknowledged, scope, audit, *, target=None, ro
         raise StaleAcknowledgment("provider configuration changed; reload security posture")
     from agents.core.security.types import SecurityEvent, SecurityEventType
     try:
+        settings_db.ensure_initialized()
         conn = settings_db.get_conn()
     except Exception as exc:
         raise ConsentUnavailable("consent settings unavailable") from exc
@@ -446,6 +447,7 @@ def acknowledge(router, provider, acknowledged, scope, audit, *, target=None, ro
         # Serializes concurrent grant/revoke across processes; audit has its own store.
         # A successful audit with a failed settings commit grants nothing; retry is safe.
         conn.execute("BEGIN IMMEDIATE")
+        settings_db._require_readable_store()
         row = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", SETTING).fetchone()
         values = _ack_map(json.loads(row["value"]) if row else {})
         if audit is None:
@@ -486,11 +488,13 @@ def _acknowledge_role(router, provider, acknowledged, scope, audit, target, *, r
         raise StaleAcknowledgment("role configuration changed; reload security posture")
     from agents.core.security.types import SecurityEvent, SecurityEventType
     try:
+        settings_db.ensure_initialized()
         conn = settings_db.get_conn()
     except Exception as exc:
         raise ConsentUnavailable("role consent settings unavailable") from exc
     try:
         conn.execute("BEGIN IMMEDIATE")
+        settings_db._require_readable_store()
         row = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", ROLE_SETTING).fetchone()
         values = _role_ack_map(json.loads(row["value"]) if row else {})
         if audit is None:

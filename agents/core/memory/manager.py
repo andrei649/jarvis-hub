@@ -133,6 +133,13 @@ class MemoryManager:
                 or document.get("revision", 0) != head[1]
                 or digest != head[2]):
             raise RewindRefused("conversation rewind head unverified")
+        from ..foreign_history import status, validate_turn_lineage
+        origin = status(cp, sid)
+        if origin.tainted:
+            if document.get("foreign_history") != {
+                    "kind": origin.kind, "source": origin.source, "instance_id": origin.instance_id}:
+                raise RewindRefused("foreign lineage changed")
+            validate_turn_lineage(cp, sid, document["turns"])
         return document
 
     def _load_pending_rewind(self, sid, *, activate: bool = True):
@@ -203,8 +210,18 @@ class MemoryManager:
             if manager is not None and manager._conn is not None:
                 from types import SimpleNamespace
 
-                from ..session_continuation import ContinuationStore, _load_locked
-                if ContinuationStore(manager).seed(session_id) is not None:
+                from ..foreign_history import ForeignHistoryRefused
+                from ..foreign_history import status as foreign_status
+                from ..session_continuation import (
+                    ContinuationRefused,
+                    ContinuationStore,
+                    _load_locked,
+                )
+                try:
+                    imported = foreign_status(manager, session_id).tainted
+                except ForeignHistoryRefused as exc:
+                    raise ContinuationRefused(exc.reason, exc.status) from exc
+                if imported or ContinuationStore(manager).seed(session_id) is not None:
                     async with self.conversation._lock:
                         _load_locked(SimpleNamespace(memory=self, checkpoints=manager), session_id)
                         self.conversation.current_session_id = session_id
@@ -268,13 +285,23 @@ class MemoryManager:
                        media: dict | None = None):
         async with self._lock:
             self._ensure_rewind_ready(session_id)
+            imported = False
             manager = getattr(self, "_checkpoint_mgr", None)
             if manager is not None and manager._conn is not None:
+                from ..foreign_history import ForeignHistoryRefused, status_locked
+                from ..session_continuation import ContinuationRefused
                 with manager._lock:
                     continued = manager._conn.execute(
                         "SELECT 1 FROM session_continuations WHERE session_id=?", (session_id,)
                     ).fetchone()
-                if continued is not None:
+                    try:
+                        imported = status_locked(manager._conn, session_id).tainted
+                    except ForeignHistoryRefused as exc:
+                        raise ContinuationRefused(exc.reason, exc.status) from exc
+                if continued is not None or imported:
+                    if imported and not self.conversation.persist:
+                        from ..foreign_history import ForeignHistoryRefused
+                        raise ForeignHistoryRefused("foreign_history_requires_persistence")
                     from types import SimpleNamespace
 
                     from ..session_continuation import _load_locked
@@ -292,6 +319,8 @@ class MemoryManager:
             except persistence.RewindPersistenceError as exc:
                 if exc.inconsistent:
                     self._quarantine_rewind(session_id)
+                if imported:
+                    raise
                 raise RewindRefused("conversation rewind append not persisted") from exc
 
             if hasattr(self, '_checkpoint_mgr') and self._checkpoint_mgr:
@@ -301,7 +330,7 @@ class MemoryManager:
         # Long-term recall: embed the turn into the vector store so it can be
         # retrieved later via fused recall. Opt-in (MEMORY_EMBED_TURNS) and never
         # allowed to break the turn — remember() degrades to a no-op on failure.
-        if self.embed_turns and content and content.strip():
+        if self.embed_turns and not imported and content and content.strip():
             metadata = {
                 "role": role, "agent": agent_id, "session": session_id,
             }
@@ -353,11 +382,16 @@ class MemoryManager:
             except FileNotFoundError:
                 # A new continuation may still live only in its immutable seed.
                 # This is a read-only preparation; commit creates the first JSON head.
-                seed = ContinuationStore(cp).seed(session_id)
+                from ..foreign_history import seed as foreign_seed
+                seed = foreign_seed(cp, session_id, recovery=True) or ContinuationStore(cp).seed(session_id)
                 if seed is None or seed != rows:
                     raise RewindRefused("conversation snapshot unavailable") from None
                 snapshot = {"session_id": session_id, "turns": seed,
                             "instance_id": instance, "revision": 0}
+                origin = self.conversation.foreign_origins.get(session_id)
+                if origin is not None:
+                    snapshot["foreign_history"] = {"kind": origin.kind, "source": origin.source,
+                                                   "instance_id": origin.instance_id}
                 digest = ""
                 expected_missing = True
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -432,6 +466,7 @@ class MemoryManager:
                         sid, instance_id=ticket.instance_id, revision=ticket.revision,
                         digest=ticket.snapshot_digest, turns=prefix, already_locked=True,
                         expected_missing=ticket.expected_missing,
+                        foreign_origin=self.conversation.foreign_origins.get(sid),
                     )
                     replaced = True
                     conn.execute(

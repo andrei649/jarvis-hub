@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import io
 import json
+import urllib.error
 
 import pytest
 
-from agents.cli.client import HubError, HubUnavailable
+from agents.cli.client import HubClient, HubError, HubUnavailable
 from agents.cli.nerva import (
     EXIT_AUTH,
     EXIT_FAILED,
@@ -33,6 +34,13 @@ from agents.cli.nerva import (
 from tests.test_nerva_cli import _FakeHub, _run
 
 ANSWER = {"POST /chat": {"reply": "the roof is fine"}}
+
+
+def test_stdlib_cli_stop_vocabulary_matches_runtime():
+    from agents.cli.nerva import TURN_STOP_REASONS
+    from agents.core.turn_stops import STOP_REASONS
+
+    assert TURN_STOP_REASONS == STOP_REASONS
 
 
 def _posted(hub):
@@ -239,6 +247,114 @@ def test_the_usage_file_never_invents_a_number(tmp_path):
     for key in ("estimated_cost_usd", "input_tokens", "output_tokens", "api_calls", "model", "provider"):
         assert report[key] is None, f"{key} must be null until it can be measured, not 0"
     assert report["cost_basis"] == "unavailable"
+
+
+def test_usage_file_copies_a_valid_attributable_server_snapshot(tmp_path):
+    path = tmp_path / "spend.json"
+    measured = {
+        "schema": "nerva.turn.usage.v1", "api_calls": 1,
+        "input_tokens": 120, "output_tokens": 30,
+        "estimated_cost_usd": 0.00042, "model": "priced-model", "provider": "openai",
+        "usage_basis": "provider_complete", "cost_basis": "price_table",
+        "breakdown": [{"provider": "openai", "model": "priced-model", "api_calls": 1,
+                       "input_tokens": 120, "output_tokens": 30,
+                       "estimated_cost_usd": 0.00042, "usage_basis": "provider_complete",
+                       "cost_basis": "price_table"}],
+        "price_verified_at": "2026-08-18",
+    }
+    code, out, err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub({"POST /chat": {"reply": "done", "session_id": "actual", "usage": measured}}))
+    report = json.loads(path.read_text())
+    assert code == EXIT_OK and out == "done\n" and err == ""
+    for key, value in measured.items():
+        if key != "schema":
+            assert report[key] == value
+    assert report["schema"] == "nerva.chat.usage.v1" and report["session_id"] == "actual"
+
+
+@pytest.mark.parametrize("change", [
+    {"api_calls": True}, {"input_tokens": -1}, {"output_tokens": float("inf")},
+    {"model": "https://example.invalid/private"}, {"breakdown": "bad"},
+    {"usage_basis": "provider_guessed"}, {"estimated_cost_usd": -0.1},
+    {"cost_basis": "local_zero", "estimated_cost_usd": 0.01},
+    {"usage_basis": ["provider_complete"]}, {"cost_basis": {"price_table": True}},
+    {"estimated_cost_usd": 10**1000},
+    {"price_verified_at": "2026-99-99"},
+])
+def test_usage_file_refuses_malformed_server_usage_without_losing_answer(tmp_path, change):
+    path = tmp_path / "spend.json"
+    measured = {"schema": "nerva.turn.usage.v1", "api_calls": 1,
+                "input_tokens": 2, "output_tokens": 3, "estimated_cost_usd": 0.0,
+                "model": "m", "provider": "openai", "usage_basis": "provider_complete",
+                "cost_basis": "price_table", "breakdown": []}
+    measured.update(change)
+    code, out, err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub({"POST /chat": {"reply": "done", "usage": measured}}))
+    report = json.loads(path.read_text())
+    assert code == EXIT_OK and out == "done\n" and err == ""
+    assert report["api_calls"] is None and report["estimated_cost_usd"] is None
+    assert report["cost_basis"] == "unavailable"
+
+
+def test_usage_file_refuses_incomplete_server_shape_without_crashing(tmp_path):
+    path = tmp_path / "spend.json"
+    measured = {"schema": "nerva.turn.usage.v1", "api_calls": 1,
+                "input_tokens": 2, "output_tokens": 3, "estimated_cost_usd": None,
+                "provider": "openai", "usage_basis": "provider_complete",
+                "cost_basis": "unknown", "breakdown": []}
+    code, out, err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub({"POST /chat": {"reply": "done", "usage": measured}}))
+    report = json.loads(path.read_text())
+    assert code == EXIT_OK and out == "done\n" and err == ""
+    assert report["api_calls"] is None and report["model"] is None
+
+
+def test_non_2xx_chat_error_preserves_only_bounded_usage_metadata(tmp_path):
+    from io import BytesIO
+
+    usage = {"schema": "nerva.turn.usage.v1", "api_calls": 1,
+             "input_tokens": None, "output_tokens": None, "estimated_cost_usd": None,
+             "provider": "lm-studio", "model": "local-model", "usage_basis": "unknown",
+             "cost_basis": "unknown", "breakdown": []}
+
+    def opener(request, timeout):
+        body = {"error": "generation failed", "usage": {**usage, "prompt": "private text"}}
+        raise urllib.error.HTTPError(request.full_url, 503, "failed", {},
+                                     BytesIO(json.dumps(body).encode()))
+
+    client = HubClient(opener=opener)
+    with pytest.raises(HubError) as raised:
+        client.post("/chat", {"message": "private text"})
+    assert raised.value.reason == "generation failed"
+    assert raised.value.usage == usage
+    assert "private text" not in repr(raised.value)
+
+    path = tmp_path / "spend.json"
+    code, out, _err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub(raise_with=raised.value))
+    report = json.loads(path.read_text())
+    assert code == EXIT_FAILED and out == ""
+    assert report["api_calls"] == 1 and report["input_tokens"] is None
+    assert report["completed"] is False and report["reason"]
+
+
+@pytest.mark.parametrize("stops,expected", [
+    (["guardian_denied"], "refused"),
+    (["generation_failed"], "refused"),
+    (["approval_required"], "queued_for_approval"),
+    (None, "refused"),
+    (["model_response"], "refused"),
+])
+def test_oneshot_refuses_rephrased_or_malformed_runtime_stops(tmp_path, stops, expected):
+    path = tmp_path / "usage.json"
+    reply = {"reply": "That sounds fine now.", "runtime_stops": stops}
+    code, out, err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub({"POST /chat": reply}))
+    receipt = json.loads(path.read_text())
+    assert code == EXIT_FAILED and out == "" and err
+    assert receipt["completed"] is False and receipt["status"] == expected
+    if stops and stops[0] != "model_response":
+        assert receipt["runtime_stops"] == stops
 
 
 @pytest.mark.parametrize("reply,expected_code,expected_status,interactive", [
@@ -585,6 +701,131 @@ def test_an_interrupted_run_still_leaves_a_receipt(tmp_path):
     assert body["status"] == "interrupted" and body["completed"] is False
     assert body["exit_code"] == EXIT_INTERRUPTED
     assert body["session_id"] is None and body["requested_session_id"] == "requested-2"
+
+
+@pytest.mark.parametrize("output_seam", ["oneshot", "interactive"])
+def test_interrupt_after_decoded_reply_retains_observed_receipt(tmp_path, monkeypatch, output_seam):
+    from agents.cli import nerva
+
+    report = tmp_path / "usage.json"
+    usage = {"schema": "nerva.turn.usage.v1", "api_calls": 0,
+             "input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0,
+             "provider": None, "model": None, "usage_basis": "measured_zero",
+             "cost_basis": "measured_zero", "breakdown": []}
+    hub = _FakeHub({"POST /chat": {"reply": "done", "session_id": "actual-7",
+                                   "usage": usage, "runtime_stops": []}})
+
+    def interrupted(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    if output_seam == "oneshot":
+        monkeypatch.setattr(nerva, "_write_answer", interrupted)
+    else:
+        monkeypatch.setattr(Context, "say", interrupted)
+    argv = ["chat", "--usage-file", str(report), "hi"]
+    if output_seam == "oneshot":
+        argv.insert(1, "-z")
+    code, out, err, _ = _run(argv, hub=hub)
+    assert code == EXIT_INTERRUPTED and out == "" and err == "interrupted\n"
+    receipt = json.loads(report.read_text())
+    assert receipt["status"] == "interrupted" and receipt["exit_code"] == EXIT_INTERRUPTED
+    assert receipt["completed"] is False and receipt["reason"] == "interrupted"
+    assert receipt["session_id"] == "actual-7" and receipt["api_calls"] == 0
+    assert receipt["runtime_stops"] == []
+
+
+def test_interrupt_during_queued_notice_retains_pending_and_stop_metadata(tmp_path):
+    report = tmp_path / "usage.json"
+    usage = {"schema": "nerva.turn.usage.v1", "api_calls": 0,
+             "input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0,
+             "provider": None, "model": None, "usage_basis": "measured_zero",
+             "cost_basis": "measured_zero", "breakdown": []}
+    hub = _FakeHub({"POST /chat": {"reply": "All done", "session_id": "actual-9",
+                                   "usage": usage, "pending_approvals": [71],
+                                   "runtime_stops": ["approval_required"]}})
+
+    class InterruptedNotice(io.StringIO):
+        interrupted = False
+
+        def write(self, value):
+            if not self.interrupted and "approval 71" in value:
+                self.interrupted = True
+                raise KeyboardInterrupt
+            return super().write(value)
+
+    out, err = io.StringIO(), InterruptedNotice()
+    ctx = Context(environ={}, out=out, err=err, inp=io.StringIO(""),
+                  client_factory=lambda _env: hub)
+    code = main(["chat", "-z", "--usage-file", str(report), "hi"], context=ctx)
+    assert code == EXIT_INTERRUPTED and out.getvalue() == "" and err.getvalue() == "interrupted\n"
+    receipt = json.loads(report.read_text())
+    assert receipt["status"] == "interrupted" and receipt["completed"] is False
+    assert receipt["session_id"] == "actual-9" and receipt["api_calls"] == 0
+    assert receipt["runtime_stops"] == ["approval_required"]
+    assert receipt["pending_approvals"] == [71]
+    assert hub.calls == [("POST", "/chat", {"message": "hi"})]
+
+
+@pytest.mark.parametrize("seam", ["prompt", "session"])
+def test_interrupt_before_chat_post_writes_one_unknown_usage_receipt(tmp_path, monkeypatch, seam):
+    from agents.cli import nerva
+
+    report = tmp_path / "usage.json"
+    writes = []
+    original = nerva._write_usage
+
+    def counted(path, receipt, ctx):
+        writes.append(receipt.copy())
+        return original(path, receipt, ctx)
+
+    monkeypatch.setattr(nerva, "_write_usage", counted)
+    hub = _FakeHub()
+    argv = ["chat", "-z", "--usage-file", str(report), "hi"]
+    if seam == "prompt":
+        def interrupted(*_args, **_kwargs):
+            raise KeyboardInterrupt
+        monkeypatch.setattr(nerva, "_send_body", interrupted)
+    else:
+        argv[1:1] = ["--resume", "latest"]
+
+        def interrupted(_path, _body=None):
+            raise KeyboardInterrupt
+        monkeypatch.setattr(hub, "post", interrupted)
+    code, out, err, _ = _run(argv, hub=hub)
+    assert code == EXIT_INTERRUPTED and out == "" and err == "interrupted\n"
+    assert len(writes) == 1
+    receipt = json.loads(report.read_text())
+    assert receipt["status"] == "interrupted" and receipt["completed"] is False
+    assert receipt["api_calls"] is None and receipt["session_id"] is None
+
+
+def test_existing_vision_interrupt_handler_does_not_write_a_second_receipt(tmp_path, monkeypatch):
+    from agents.cli import nerva
+
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"example")
+    report = tmp_path / "usage.json"
+    writes = []
+    original = nerva._write_usage
+
+    def counted(path, receipt, ctx):
+        writes.append(receipt.copy())
+        return original(path, receipt, ctx)
+
+    class InterruptedVision:
+        def get(self, _path):
+            return {"configured": True, "destination": "http://127.0.0.1:1234/v1",
+                    "binding": "b" * 64, "model": "local-vision", "local": True}
+
+        def post(self, _path, _body=None, *, timeout=None):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(nerva, "_write_usage", counted)
+    code, out, err, _ = _run(["chat", "-z", "--image", str(image),
+                              "--usage-file", str(report), "what?"], hub=InterruptedVision())
+    assert code == EXIT_INTERRUPTED and out == "" and err.endswith("interrupted\n")
+    assert len(writes) == 1
+    assert json.loads(report.read_text())["status"] == "interrupted"
 
 
 def test_a_failed_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):

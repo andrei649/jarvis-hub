@@ -31,7 +31,7 @@ def chat(tmp_path, monkeypatch):
     backend = _ScriptedBackend([])
     agent = Agent("jarvis", {"name": "Jarvis"})
     agent.tool_runtime = AgentToolRuntime(server, enabled=lambda: True)
-    orch, _, _, turns = _streamed_orchestrator_for(agent, backend)
+    orch, _, _, turns = _streamed_orchestrator_for(agent, backend, monkeypatch=monkeypatch)
     orch.autonomy_queue, orch.checkpoints = queue, cp
     agent.llm_router = orch.llm_router
     original_add = orch.memory.add_turn

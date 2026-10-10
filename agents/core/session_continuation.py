@@ -30,10 +30,16 @@ def initialize(conn):
         "UPDATE session_clock SET instance_id=COALESCE((SELECT instance_id FROM sessions WHERE id=session_id), '') WHERE instance_id=''"
     )
     conn.execute("""CREATE TABLE IF NOT EXISTS session_history_instances (
-        session_id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, allow_legacy INTEGER NOT NULL DEFAULT 0
+        session_id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, allow_legacy INTEGER NOT NULL DEFAULT 0,
+        foreign_lineage INTEGER NOT NULL DEFAULT 0
     )""")
+    if "foreign_lineage" not in {row[1] for row in conn.execute("PRAGMA table_info(session_history_instances)")}:
+        conn.execute("ALTER TABLE session_history_instances ADD COLUMN foreign_lineage INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE session_history_instances SET foreign_lineage=1 "
+                     "WHERE session_id IN (SELECT session_id FROM session_imports)")
     conn.execute(
-        "INSERT OR IGNORE INTO session_history_instances SELECT id, instance_id, 1 FROM sessions"
+        "INSERT OR IGNORE INTO session_history_instances(session_id,instance_id,allow_legacy) "
+        "SELECT id, instance_id, 1 FROM sessions"
     )
     conn.execute("DROP TRIGGER IF EXISTS session_instance_on_insert")
     conn.execute("""CREATE TRIGGER session_instance_on_insert AFTER INSERT ON sessions
@@ -129,6 +135,11 @@ def seed_json(turns):
             "timestamp": timestamp,
             "token_count": count,
         }
+        foreign_origin = turn.get("foreign_origin")
+        if foreign_origin is not None:
+            if foreign_origin not in {"claude", "codex"}:
+                raise ContinuationRefused("invalid_history")
+            carried["foreign_origin"] = foreign_origin
         tools = _tool_names(turn.get("tools"))   # H441: names only, absent when none
         if tools:
             carried["tools"] = tools
@@ -228,6 +239,8 @@ class ContinuationStore:
                 if replay:
                     return replay
                 history_identity(conn, source)
+                from .foreign_history import MARKER, status_locked
+                source_origin = status_locked(conn, source)
                 parent = identity(conn, source)
                 if parent != (clock.started_at, clock.instance_id):
                     raise ContinuationRefused("source_identity_changed")
@@ -272,9 +285,11 @@ class ContinuationStore:
                         raise ContinuationRefused("invalid_ancestry")
                 sid, instance = "session_" + uuid.uuid4().hex, uuid.uuid4().hex
                 now = datetime.now(UTC).isoformat()
+                metadata = ({MARKER: {"kind": "derived", "source": source_origin.source,
+                                     "instance_id": instance}} if source_origin.tainted else {})
                 conn.execute(
-                    "INSERT INTO sessions(id, started_at, turn_count, instance_id) VALUES(?,?,?,?)",
-                    (sid, now, len(turns), instance),
+                    "INSERT INTO sessions(id, started_at, turn_count, instance_id, metadata) VALUES(?,?,?,?,?)",
+                    (sid, now, len(turns), instance, json.dumps(metadata, separators=(",", ":"))),
                 )
                 conn.execute(
                     "INSERT INTO session_continuations VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -296,6 +311,22 @@ class ContinuationStore:
                     "INSERT INTO session_clock(session_id,birth_at,revision,rebuilt_at,instance_id) VALUES(?,?,0,?,?)",
                     (sid, clock.started_at.isoformat(), clock.rebuilt_at.isoformat(), instance),
                 )
+                if source_origin.tainted:
+                    external, source_digest = conn.execute(
+                        "SELECT external_id,source_sha256 FROM session_imports WHERE session_id=?",
+                        (source,),
+                    ).fetchone()
+                    digest = hashlib.sha256(value.encode()).hexdigest()
+                    conn.execute("INSERT INTO session_imports(session_id,instance_id,kind,source,external_id,"
+                                 "content_sha256,source_sha256,request_id,seed_json,seed_sha256,parent_id,created_at) "
+                                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                                 (sid, instance, "derived", source_origin.source, external, digest,
+                                  source_digest, request, value, digest, source, now))
+                    changed = conn.execute(
+                        "UPDATE session_history_instances SET foreign_lineage=1 "
+                        "WHERE session_id=? AND instance_id=?", (sid, instance))
+                    if changed.rowcount != 1:
+                        raise ContinuationRefused("history_identity_changed")
                 result = self._replay(source, request)
             return result
         except sqlite3.Error:
@@ -309,6 +340,8 @@ class ContinuationStore:
 
 def _load_locked(orch, sid):
     """Caller holds manager then conversation lock; never switches current ID."""
+    from .foreign_history import seed as foreign_seed
+    from .foreign_history import status_locked, validate_turn_lineage
     from .memory import persistence
     from .memory.conversation import Turn, restored_media
 
@@ -316,13 +349,18 @@ def _load_locked(orch, sid):
     with orch.checkpoints._lock:
         instance, legacy = history_identity(orch.checkpoints._conn, sid)
         head = rewind_head(orch.checkpoints._conn, sid)
+        origin = status_locked(orch.checkpoints._conn, sid)
     if head is not None and head[0] != instance:
         raise ContinuationRefused("history_identity_changed")
     if sid in conversation.sessions:
+        if origin.tainted and conversation.foreign_origins.get(sid) != origin:
+            raise ContinuationRefused("invalid_history")
         known = conversation.instances.get(sid)
         if known != instance and not (known is None and legacy):
             raise ContinuationRefused("history_identity_changed")
         turns = [turn.to_dict() for turn in conversation.sessions[sid]]
+        if origin.tainted:
+            validate_turn_lineage(orch.checkpoints, sid, turns)
         if head is not None:
             try:
                 document, digest = persistence.read_snapshot_for_rewind(sid)
@@ -354,6 +392,11 @@ def _load_locked(orch, sid):
             if not isinstance(document, dict) or document.get("session_id") != sid:
                 raise ValueError
             known = document.get("instance_id")
+            if origin.tainted and document.get("foreign_history") != {
+                    "kind": origin.kind, "source": origin.source, "instance_id": origin.instance_id}:
+                raise ContinuationRefused("invalid_history")
+            if not origin.tainted and document.get("foreign_history") is not None:
+                raise ContinuationRefused("invalid_history")
             if known != instance and not (known is None and legacy):
                 raise ContinuationRefused("history_identity_changed")
             turns = document.get("turns")
@@ -373,20 +416,25 @@ def _load_locked(orch, sid):
                     raise ContinuationRefused("invalid_history")
             else:
                 seed_json(turns)
+                if origin.tainted:
+                    validate_turn_lineage(orch.checkpoints, sid, turns)
         except (OSError, ValueError, TypeError):
             raise ContinuationRefused("invalid_history") from None
     else:
         if head is not None:
             # A missing rewound snapshot must never resurrect the immutable seed.
             raise ContinuationRefused("invalid_history")
-        turns = ContinuationStore(orch.checkpoints).seed(sid)
+        turns = foreign_seed(orch.checkpoints, sid, recovery=True) if origin.tainted else ContinuationStore(orch.checkpoints).seed(sid)
         if turns is None:
             raise ContinuationRefused("session_not_found", 404)
+    if origin.tainted:
+        validate_turn_lineage(orch.checkpoints, sid, turns)
     restored = []
     for value in turns:
         turn = Turn(
             value["role"], value["content"], value.get("agent_id"), value.get("token_count", 0),
             tools=value.get("tools"), media=restored_media(value.get("media")),
+            foreign_origin=value.get("foreign_origin"),
         )
         turn.timestamp = value["timestamp"]
         restored.append(turn)
@@ -394,6 +442,8 @@ def _load_locked(orch, sid):
     conversation.sessions[sid] = restored
     conversation.instances[sid] = instance
     conversation.revisions[sid] = loaded_revision
+    if origin.tainted:
+        conversation.foreign_origins[sid] = origin
     if head is not None:
         conversation.rewound_sessions.add(sid)
     return turns
@@ -401,6 +451,7 @@ def _load_locked(orch, sid):
 
 async def prepare_session(orch, sid):
     """Load an explicitly addressed existing session without resuming the default."""
+    from .foreign_history import ForeignHistoryRefused
     if not is_valid_session_id(sid):
         raise ContinuationRefused("invalid_identifier", 422)
     if orch.checkpoints._conn is None:
@@ -409,10 +460,15 @@ async def prepare_session(orch, sid):
         if identity(orch.checkpoints._conn, sid) is None:
             raise ContinuationRefused("session_not_found", 404)
     async with orch.memory._lock, orch.memory.conversation._lock:
-        _load_locked(orch, sid)
+        try:
+            _load_locked(orch, sid)
+        except ForeignHistoryRefused as exc:
+            raise ContinuationRefused(exc.reason, exc.status) from exc
 
 
 async def create_continuation(orch, source, request):
+    from .foreign_history import ForeignHistoryRefused
+
     try:
         if not is_valid_session_id(source) or str(uuid.UUID(request)) != request:
             raise ValueError
@@ -429,10 +485,13 @@ async def create_continuation(orch, source, request):
             clock = orch.checkpoints.clock_snapshot(source)
             if clock is None:
                 raise ContinuationRefused("source_clock_unavailable")
-            turns = _load_locked(orch, source)
-            # No await from captured history through the one SQLite activation
-            # commit. Cancellation/response loss after commit resolves by request ID.
-            return store.create(source, request, turns, clock)
+            try:
+                turns = _load_locked(orch, source)
+                # No await from captured history through the one SQLite activation
+                # commit. Cancellation/response loss after commit resolves by request ID.
+                return store.create(source, request, turns, clock)
+            except ForeignHistoryRefused as exc:
+                raise ContinuationRefused(exc.reason, exc.status) from exc
 
 
 CONTINUATION_REFUSED_REPLY = (
@@ -449,5 +508,7 @@ async def prepare_continuation_turn(orch, sid):
         continued = manager._conn.execute(
             "SELECT 1 FROM session_continuations WHERE session_id=?", (sid,)
         ).fetchone()
-    if continued is not None:
+        from .foreign_history import status_locked
+        foreign = status_locked(manager._conn, sid).tainted
+    if continued is not None or foreign:
         await prepare_session(orch, sid)

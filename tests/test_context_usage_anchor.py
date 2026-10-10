@@ -15,6 +15,7 @@ from agents.core.context_compressor import (
     CompactionPolicy,
     ContextCompressor,
     UsageAnchor,
+    _strip_image,
 )
 
 
@@ -93,21 +94,48 @@ def test_the_anchor_never_reads_lower_than_the_plain_estimate(compressor):
 
 # ── images rewrite the prefix the anchor described ───────────────────────────
 
-def test_an_image_dropped_from_the_anchored_prefix_comes_off_the_anchor(compressor):
-    """The provider counted that image at its real cost and never said what it
-    was, so the flat figure comes back for exactly the turns that were rewritten."""
+def test_measured_image_drop_keeps_the_provider_upper_bound(compressor):
+    """The provider never reported the image's separate cost. Dropping it must
+    not subtract an invented 1,500 tokens from measured prefix occupancy."""
     rows = _turns(4)
+    rows[0]["image"] = "first"
+    rows[1]["image"] = "second"
     anchor = UsageAnchor(prompt_tokens=50_000, covers=4)
     assert compressor._used(rows, anchor) == 50_000
-    assert compressor._used(rows, anchor, dropped_in_prefix=2) == 50_000 - 2 * IMAGE_TOKEN_COST
+    stripped = [_strip_image(rows[0]), _strip_image(rows[1]), *rows[2:]]
+    assert compressor._used(stripped, anchor, dropped_in_prefix=2) == 50_000
 
 
 def test_dropping_an_image_can_never_take_the_count_below_the_estimate(compressor):
     rows = _turns(4, size=8_000)
+    rows[0]["image"] = "b64"
     estimate = sum(compressor._cost(t) for t in rows)
-    used = compressor._used(rows, UsageAnchor(prompt_tokens=estimate + 10, covers=4),
-                            dropped_in_prefix=50)
+    used = compressor._used(rows, UsageAnchor(prompt_tokens=1, covers=4),
+                            dropped_in_prefix=1)
     assert used == estimate
+
+
+async def test_measured_image_drop_cannot_evade_the_hard_compaction_tier(compressor):
+    rows = _turns(4)
+    rows[0]["image"] = "b64"
+    anchor = UsageAnchor(prompt_tokens=27_250, covers=4)
+    policy = CompactionPolicy(soft=0.84, hard=0.85, protect_head=0, protect_last_n=0)
+    compressor.max_tokens = 0
+
+    result = await compressor.compact(rows, model="llama-3-8b", policy=policy, anchor=anchor)
+
+    assert result["images_dropped"] == 1
+    assert result["tier"] == "summarize"  # 27,250 measured > 85% of 32k
+
+
+def test_unmeasured_images_keep_estimated_cost_after_a_measured_prefix(compressor):
+    rows = _turns(3) + [{"role": "user", "content": "look", "image": "b64"}]
+    rows[0]["image"] = "b64"
+    anchor = UsageAnchor(prompt_tokens=9_000, covers=3)
+    expected = 9_000 + IMAGE_TOKEN_COST + compressor.estimate_tokens("look")
+    assert compressor._used(rows, anchor) == expected
+    assert compressor._used(rows, anchor, dropped_in_prefix=1) == expected
+    assert compressor._used(rows, None) == sum(compressor._cost(turn) for turn in rows)
 
 
 def test_an_image_outside_the_anchored_prefix_leaves_the_anchor_alone(compressor, policy):

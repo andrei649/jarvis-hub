@@ -8,7 +8,8 @@ Where the work directories go, first match wins:
 
 1. ``JARVIS_EXEC_TEMP_DIR`` in the process environment (an absolute path);
 2. the owner's ``security.sandbox_temp_dir`` setting (an absolute path);
-3. the managed cache, ``<data root>/cache/exec``.
+3. ``TMPDIR``, ``TMP``, then ``TEMP`` in the process environment;
+4. the managed cache, ``<data root>/cache/exec``.
 
 A value that is not an absolute path, or cannot be read as one (``~nosuchuser``, a NUL
 byte), is not a choice: it is skipped with a warning (review-H667 m1). Only the managed
@@ -70,6 +71,7 @@ from pathlib import Path
 logger = logging.getLogger("jarvis.exec_cache")
 
 ENV_KEY = "JARVIS_EXEC_TEMP_DIR"
+TEMP_ENV_KEYS = ("TMPDIR", "TMP", "TEMP")
 SETTING = ("security", "sandbox_temp_dir")
 AGE_SETTING = ("security", "sandbox_temp_max_age_hours")
 DEFAULT_MAX_AGE_HOURS = 72
@@ -127,11 +129,11 @@ def _as_root(raw: str) -> Path | None:
 
 
 def choice_problem(raw: object) -> str | None:
-    """Why *raw* cannot be a sandbox root, or None ("" is no choice: the managed cache)."""
+    """Why *raw* cannot be a sandbox root, or None ("" uses the fallback choices)."""
     if not isinstance(raw, str):
         return "expected a string"
     if raw.strip() and _as_root(raw.strip()) is None:
-        return "expected an absolute path (or empty for the managed cache)"
+        return "expected an absolute path (or empty for the fallback choices)"
     return None
 
 
@@ -152,8 +154,11 @@ def resolve_root(environ: Mapping[str, str] | None = None,
     the managed cache (the only one ever pruned)."""
     env = os.environ if environ is None else environ
     managed = managed_root()
-    for source, raw in (("the environment's " + ENV_KEY, (env.get(ENV_KEY) or "").strip()),
-                        ("security.sandbox_temp_dir", _owner_setting(get_value))):
+    choices = [("the environment's " + ENV_KEY, (env.get(ENV_KEY) or "").strip()),
+               ("security.sandbox_temp_dir", _owner_setting(get_value))]
+    choices.extend(("the environment's " + key, (env.get(key) or "").strip())
+                   for key in TEMP_ENV_KEYS)
+    for source, raw in choices:
         if not raw:
             continue
         chosen = _as_root(raw)

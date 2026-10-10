@@ -6,6 +6,31 @@
 > Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`, `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05;
 > **re‑audited 2026‑06‑10** (see §10).
 
+H456 local candidate (2026-10-10): the shared web Jobs form adds requested
+reasoning effort and the installed tool catalog. Existing Settings controls
+author the cron default and operator restrictions. These do not close the
+separate operations/context controls below or native-mobile authoring.
+
+H453/H454 local candidate (2026-10-10): CLI/admin API can configure cross-job
+`context_from`; complete safe script stdout is separate from bounded history and
+context excerpts. Dedicated web source selection, latest-output inspection and
+continuity controls remain open. Existing diagnostics and legacy note editing do
+not constitute those controls. See `docs/automations-operations.md`.
+
+H015 local candidate (2026-10-10): admin API/CLI add durable incident acknowledgement,
+named job notes, explicit continuity and historical runs after job removal. The
+current Jobs panel shows incident JSON and retains its legacy note editor. Dedicated
+acknowledgement, KV, continuity and deleted-job history controls remain open; no new
+web control is claimed. See `docs/automations-operations.md`. H049 named log reading
+is a host CLI capability; the existing web Logs selector remains supported.
+
+H002 local candidate (2026-10-10): JSON chat replies and SSE end events add a
+request-owned generation-usage snapshot. Existing HUD chat rendering is retained;
+this batch does not add a spend panel. Atomic usage-file export belongs to the
+host CLI. Generated API types include the additive field and the earlier H441
+resume/import routes. See `docs/cli-chat-receipts.md` for measured, estimated and
+unknown values.
+
 H660 (2026-09-15): session kernels now use detached Docker internally. Existing
 sandbox status/reset controls remain the operator surface; backend status labels
 identify `docker-detached`. Complete Python cell streams use existing tool-result
@@ -15,6 +40,36 @@ pass, including reset/cancellation and context/proxy isolation; SSH/Modal/TLS
 provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containment.json.
 
 ## 0. Do this first
+
+H441 local candidate (2026-10-10): owner CLI/API selectors and Claude Code/Codex
+transcript imports extend the existing free Sessions recap. Imported/derived
+sessions are owner-only at the shared server boundaries; guest session and
+checklist lists omit them. Browser import/selector controls are not added in
+this batch. Foreign source discovery remains CLI-host administration; see
+`docs/foreign-session-resume.md`. H398's fixed completeness notice and internal
+risk advisory affect model tool results, with no new public chat field. H667's
+existing temporary-directory setting now describes standard environment fallback.
+
+H329 local update (2026-10-10): Skill Switches renders HTTP 202 as pending
+owner approval and retains the disabled state until the worker applies the
+exact request. Global and channel settings remain distinct. Canonical approver
+audit is transactional; the IntentLog projection is optional. Missing or corrupt
+state returns an unavailable response. The existing approval inbox is the
+review surface; the interactive `nerva skills config` picker uses the same API.
+H299/H397 default to guidance with an explicit runtime setting for stall stops.
+
+H413/H689 local update (2026-10-10): existing Sessions displays retain instant
+and background-upgraded titles; automatic naming now uses a dedicated small
+local model. An unavailable model keeps the instant title. Profiles share the
+installation identity while their stores and credentials remain isolated.
+Existing node-registration and sender-link APIs return 503 when identity is
+unavailable; reconciliation and re-pairing remain host administration, with no
+new identity-repair panel. See `docs/install-identity.md` and
+`docs/plans/2026-10-10-hermes-closure-02.md` for migration and verification limits.
+
+H256 local update (2026-10-10): existing owner consent actions refuse corrupt
+settings before audit or grant/revoke, including the preflight-to-lock race.
+The existing error response remains the UI boundary; no repair panel is added.
 
 Session ID validation (local backend candidate, 2026-10-09): existing chat and
 session routes reject a terminal newline through the corrected shared validator,
@@ -514,7 +569,7 @@ blueprint gallery, custom four-action builder, full action/options editing and v
 Per-job repeat counts attempts, including failures; manual runs cannot exceed the bound.
 Explicit configured channel names retain owner destinations and existing delivery gates.
 Remaining: isolated per-job provider/model/workdir/toolsets/skills, cross-profile listing and
-real scheduler/channel proof. Tick uses the scheduler timezone (including DST) and refuses to compete with a live scheduler.
+real scheduler/channel proof. Tick uses the active application timezone (including DST) and refuses to compete with a live scheduler.
 
 H146 followup: the topbar Automations entry now opens a roomy dedicated Jobs workspace;
 Console integration remains. Custom creation uses a native modal with initial focus,
@@ -607,6 +662,24 @@ shows typed HTTP guard and managed token lifecycle events through `GET /api/admi
 No new route or dashboard control is added. The native audit reader remains open
 in `mobile/PARITY.md`; native bearer requests are covered by the shared server guards.
 The broader login/session/WebSocket/native-auth event contract remains incomplete.
+
+H161/H328 closure (2026-10-10): the existing pressure banner receives the same
+response shape, with recovery now confirmed per volume even when another probe
+fails. Existing skill offers recognize the native Kanban and other supported
+toolset members. No new HUD control or route is needed; native pressure-banner
+and dismissal presentation remains a mobile gap.
+
+H450 closure (2026-10-10): schedule preview, job creation/editing, cron triggers,
+status and fallback tick share the runner's active application timezone. Saving
+a new timezone applies to running jobs after restart; absolute one-shot instants
+stay unchanged. The existing Jobs workspace uses the corrected preview route.
+Native job administration remains open in `mobile/PARITY.md`.
+
+H512 MCP token continuation (2026-10-10): successful `/api/mcp/token` signing adds
+a `token_issued` row with literal `surface=mcp` to that same admin audit reader.
+The admin authorization row remains separate; minted credential tier is `user`.
+No endpoint or UI control changes. The native audit reader and broader H512 event
+coverage remain open, and the bounded audit queue still permits dropped events.
 
 DRA-59 local observability (2026-10-09): Autonomy Control now reads admin-only
 `GET /autonomy/mediation` and displays the effective queue mode separately from

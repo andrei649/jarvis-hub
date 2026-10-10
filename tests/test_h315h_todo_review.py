@@ -321,7 +321,10 @@ async def test_a_k2_cell_that_inflates_its_count_opens_no_revision(tmp_path):
         backend, _events, _origin, _reply = await _turn(runtime, script)
     finally:
         await kernels.shutdown()
-    assert "repeated_call" in _tool_messages(backend)[-1]
+    # The cell changed no plan state; the last read remains complete and usable.
+    # As an intervening tool it starts a new contiguous stall streak.
+    assert '"step one"' in _tool_messages(backend)[-1]
+    assert "repeated_call" not in _tool_messages(backend)[-1]
 
 
 @pytest.mark.asyncio

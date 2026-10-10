@@ -17,6 +17,7 @@ from agents.core.llm.tool_protocol import ToolCall, ToolTurn
 from agents.core.orchestrator import Orchestrator
 from agents.core.security.secret_broker import SecretBroker
 from agents.core.tool_rpc import ToolRPCServer
+from tests.h441_native_fixture import bind_native
 
 
 class _ScriptedBackend:
@@ -1102,7 +1103,7 @@ async def test_reality_harness_disabled_lmstudio_uses_one_legacy_request_without
 
 
 @pytest.mark.asyncio
-async def test_reality_harness_enabled_lmstudio_executes_echo_and_persists_final_once():
+async def test_reality_harness_enabled_lmstudio_executes_echo_and_persists_final_once(monkeypatch):
     def tool_turn(payload):
         assert [tool["function"]["name"] for tool in payload["tools"]] == [
             "echo",
@@ -1174,7 +1175,7 @@ async def test_reality_harness_enabled_lmstudio_executes_echo_and_persists_final
     agent.soul = {"content": "agent system"}
     agent.tool_runtime = AgentToolRuntime(server, enabled=lambda: True)
     orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(
-        agent, backend
+        agent, backend, monkeypatch=monkeypatch
     )
     emitted = []
 
@@ -1532,7 +1533,7 @@ async def test_agent_generate_response_streamless_fallback_emits_once_and_awaits
     assert len(backend.calls) == 1
 
 
-def _streamed_orchestrator_for(agent, backend=None):
+def _streamed_orchestrator_for(agent, backend=None, *, monkeypatch):
     orchestrator = Orchestrator(JarvisConfig())
     completion_calls = []
     turns = []
@@ -1602,7 +1603,10 @@ def _streamed_orchestrator_for(agent, backend=None):
         "selected-model",
         "local-fast",
     )
-    orchestrator.checkpoints.load = lambda agent_id, session_id: None
+    bind_native(orchestrator, monkeypatch, session_ids=(
+        "runtime-reality", "deep-session", "seam-session", "quiet-session",
+        "blank-seam-session", "legacy-blank-session", "window-test", "s",
+    ))
     orchestrator.security = None
     orchestrator._agent_gen_params = lambda agent, route_name: (777, 0.15)
     orchestrator._complete_llm_turn = complete
@@ -1610,7 +1614,7 @@ def _streamed_orchestrator_for(agent, backend=None):
 
 
 @pytest.mark.asyncio
-async def test_streamed_orchestrator_passes_the_reasoning_floor_to_the_agent():
+async def test_streamed_orchestrator_passes_the_reasoning_floor_to_the_agent(monkeypatch):
     """Hermes absorption 5c: a stream turn on the local deep slot hands the agent the
     reasoning budget, and records which floor applied — the same contract as the
     parallel path. Fails before 5c: no wall_seconds kwarg, no floor record."""
@@ -1630,7 +1634,7 @@ async def test_streamed_orchestrator_passes_the_reasoning_floor_to_the_agent():
             kwargs["on_token"]("deep answer")
             return "deep answer"
 
-    orchestrator, backend, _completion_calls, _turns = _streamed_orchestrator_for(_SeamAgent())
+    orchestrator, backend, _completion_calls, _turns = _streamed_orchestrator_for(_SeamAgent(), monkeypatch=monkeypatch)
     orchestrator.llm_router.select_backend = lambda agent_id, prompt: (
         backend,
         "deepseek-r1:32b",
@@ -1668,7 +1672,7 @@ def test_orchestrator_defers_context_cache_until_router_detection(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_once():
+async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_once(monkeypatch):
     seam_calls = []
 
     class _SeamAgent:
@@ -1681,7 +1685,7 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
             kwargs["on_token"]("seam answer")
             return "seam answer"
 
-    orchestrator, backend, completion_calls, turns = _streamed_orchestrator_for(_SeamAgent())
+    orchestrator, backend, completion_calls, turns = _streamed_orchestrator_for(_SeamAgent(), monkeypatch=monkeypatch)
     emitted = []
     on_token = emitted.append
 
@@ -1737,7 +1741,7 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     assert turns[-1]["content"] == "seam answer"
 
 @pytest.mark.asyncio
-async def test_a_backend_that_reports_nothing_leaves_the_meter_map_empty():
+async def test_a_backend_that_reports_nothing_leaves_the_meter_map_empty(monkeypatch):
     """Silence has to stay silence all the way down, not become a zero entry.
 
     Every local backend reports nothing, and most of the cloud ones did until
@@ -1757,7 +1761,7 @@ async def test_a_backend_that_reports_nothing_leaves_the_meter_map_empty():
             kwargs["on_token"]("seam answer")
             return "seam answer"
 
-    orchestrator, _backend, _completions, _turns = _streamed_orchestrator_for(_SeamAgent())
+    orchestrator, _backend, _completions, _turns = _streamed_orchestrator_for(_SeamAgent(), monkeypatch=monkeypatch)
     await orchestrator.handle_input_stream(
         "question", channel="web", on_token=lambda _t: None, session_id="quiet-session",
     )
@@ -1776,6 +1780,7 @@ async def test_a_backend_that_reports_nothing_leaves_the_meter_map_empty():
 @pytest.mark.asyncio
 async def test_streamed_orchestrator_replaces_blank_tool_answer_once_and_awaits_sink(
     runtime_response,
+    monkeypatch,
 ):
     class _BlankRuntime:
         def can_run(self, backend, agent_id=None):
@@ -1787,7 +1792,7 @@ async def test_streamed_orchestrator_replaces_blank_tool_answer_once_and_awaits_
     agent = Agent("jarvis", {"name": "Jarvis", "model": "configured-model"})
     agent.soul = {"content": "agent system"}
     agent.tool_runtime = _BlankRuntime()
-    orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(agent)
+    orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(agent, monkeypatch=monkeypatch)
     on_token = _AsyncSink()
 
     answer = await orchestrator.handle_input_stream(
@@ -1807,11 +1812,11 @@ async def test_streamed_orchestrator_replaces_blank_tool_answer_once_and_awaits_
 
 
 @pytest.mark.asyncio
-async def test_streamed_orchestrator_preserves_falsey_callback_for_blank_legacy_answer():
+async def test_streamed_orchestrator_preserves_falsey_callback_for_blank_legacy_answer(monkeypatch):
     agent = Agent("jarvis", {"name": "Jarvis", "model": "configured-model"})
     agent.soul = {"content": "agent system"}
     backend = _LegacyDualBackend("")
-    orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(agent, backend)
+    orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(agent, backend, monkeypatch=monkeypatch)
     on_token = _FalseyAsyncSink()
 
     answer = await orchestrator.handle_input_stream(

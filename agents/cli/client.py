@@ -24,10 +24,15 @@ DEFAULT_HUB_URL = "http://127.0.0.1:8080"
 class HubError(Exception):
     """The hub answered with an error status."""
 
-    def __init__(self, status: int, reason: str) -> None:
+    def __init__(self, status: int, reason: str, *, usage: Any = None,
+                 runtime_stops: Any = None) -> None:
         super().__init__(f"HTTP {status}: {reason}")
         self.status = status
         self.reason = reason
+        # Only bounded, known telemetry crosses the error object. The response
+        # body can contain private prompts and must never enter repr/str.
+        self.usage = usage
+        self.runtime_stops = runtime_stops
 
 
 class HubUnavailable(HubError):
@@ -177,7 +182,8 @@ class HubClient:
             with self._opener(request, timeout=self._timeout if timeout is None else timeout) as response:
                 raw = response.read()
         except urllib.error.HTTPError as exc:
-            raise HubError(exc.code, _error_reason(exc)) from None
+            reason, usage, stops = _error_details(exc)
+            raise HubError(exc.code, reason, usage=usage, runtime_stops=stops) from None
         except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException, ValueError) as exc:
             # HTTPException: a reply cut off mid-body (IncompleteRead) or a garbled
             # status line is the hub being unreachable, not a crash in the verb; a
@@ -200,15 +206,25 @@ class HubClient:
 
 
 def _error_reason(exc: urllib.error.HTTPError) -> str:
+    return _error_details(exc)[0]
+
+
+def _error_details(exc: urllib.error.HTTPError) -> tuple[str, dict[str, Any] | None, list[str] | None]:
+    fallback = exc.reason if isinstance(exc.reason, str) else str(exc.code)
     try:
-        payload = json.loads(exc.read().decode("utf-8", errors="replace"))
+        raw = exc.read(65_537)
+        if len(raw) > 65_536:
+            return fallback, None, None
+        payload = json.loads(raw.decode("utf-8", errors="replace"))
     except Exception:
-        return exc.reason if isinstance(exc.reason, str) else str(exc.code)
+        return fallback, None, None
     if isinstance(payload, dict):
+        usage = _bounded_usage(payload.get("usage"))
+        stops = _bounded_stops(payload.get("runtime_stops"))
         for key in ("detail", "error", "reason", "message"):
             value = payload.get(key)
             if isinstance(value, str) and value:
-                return value
+                return value, usage, stops
         # FastAPI's validation answer: the first reason, never the rejected input.
         detail = payload.get("detail")
         if isinstance(detail, list) and detail and isinstance(detail[0], dict):
@@ -217,5 +233,39 @@ def _error_reason(exc: urllib.error.HTTPError) -> str:
             field = str(loc[-1]) if isinstance(loc, (list, tuple)) and loc else ""
             if isinstance(msg, str) and msg:
                 msg = msg.removeprefix("Value error, ")
-                return (f"{field}: {msg}" if field and field != "body" else msg)[:200]
-    return exc.reason if isinstance(exc.reason, str) else str(exc.code)
+                return (f"{field}: {msg}" if field and field != "body" else msg)[:200], usage, stops
+        return fallback, usage, stops
+    return fallback, None, None
+
+
+_USAGE_FIELDS = frozenset({
+    "schema", "api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+    "model", "provider", "usage_basis", "cost_basis", "breakdown_truncated",
+    "price_verified_at",
+})
+_BREAKDOWN_FIELDS = _USAGE_FIELDS - {"schema", "breakdown_truncated", "price_verified_at"}
+
+
+def _bounded_usage(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or len(value) > 32:
+        return None
+    rows = value.get("breakdown")
+    if not isinstance(rows, list) or len(rows) > 16 or any(not isinstance(row, dict) or len(row) > 20 for row in rows):
+        return None
+    result = {key: item for key, item in value.items() if key in _USAGE_FIELDS
+              and (item is None or isinstance(item, (str, int, float, bool)))
+              and (not isinstance(item, str) or len(item) <= 120)}
+    result["breakdown"] = [
+        {key: item for key, item in row.items() if key in _BREAKDOWN_FIELDS
+         and (item is None or isinstance(item, (str, int, float, bool)))
+         and (not isinstance(item, str) or len(item) <= 120)} for row in rows
+    ]
+    return result
+
+
+def _bounded_stops(value: Any) -> list[str] | None:
+    if not isinstance(value, list) or len(value) > 32:
+        return None
+    if any(not isinstance(item, str) or len(item) > 40 for item in value):
+        return None
+    return list(value)

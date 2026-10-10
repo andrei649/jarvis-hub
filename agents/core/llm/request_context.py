@@ -39,6 +39,7 @@ class _ReasoningFrame:
 
 
 _reasoning: ContextVar[_ReasoningFrame | None] = ContextVar('invocation_reasoning', default=None)
+_job_reasoning: ContextVar[_ReasoningFrame | None] = ContextVar('required_job_reasoning', default=None)
 
 
 def ensure_reasoning_active():
@@ -70,6 +71,32 @@ def reasoning_scope(effort: str | None):
         if frame is not None:
             frame.lifetime.active = False
         _reasoning.reset(token)
+
+
+def required_job_reasoning() -> str | None:
+    """An explicit scheduled pin, separate from ordinary chat reasoning choices."""
+    from .reasoning_effort import ReasoningEffortRefused
+
+    frame = _job_reasoning.get()
+    if frame is not None and not frame.lifetime.is_active():
+        raise ReasoningEffortRefused()
+    return frame.effort if frame is not None else None
+
+
+@contextmanager
+def job_reasoning_scope(effort: str | None):
+    """Apply a job pin without letting a nested absent job shed its parent pin."""
+    inherited = _job_reasoning.get()
+    if effort is None and inherited is not None:
+        required_job_reasoning()
+        yield
+        return
+    with reasoning_scope(effort):
+        token = _job_reasoning.set(_reasoning.get() if effort is not None else None)
+        try:
+            yield
+        finally:
+            _job_reasoning.reset(token)
 
 
 # H681 — per-request generation overrides for a delegated sub-agent. A child can ask

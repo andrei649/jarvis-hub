@@ -35,7 +35,11 @@ A pending execution consumes one repeat allowance, and another firing does not c
 
 ## Summaries and delivery
 
-Set `no_agent` to `false` and supply an `ask` prompt to ask the configured agent to interpret successful stdout. Script output is untrusted tool data; it does not grant tools or permissions. With `no_agent:true`, stdout is the result and the model is not called. Empty or whitespace-only stdout skips both the model and notification. The stored/delivered result is bounded to 2,000 characters.
+Set `no_agent` to `false` and supply an `ask` prompt to ask the configured agent to interpret successful stdout. Script output is untrusted tool data; it does not grant tools or permissions. With `no_agent:true`, the complete permitted stdout is the result and the model is not called. Secret redaction and terminal-safe Unicode cleanup still apply. Empty or whitespace-only stdout skips both the model and notification; this decision uses the complete observation, including content beyond 2,000 characters.
+
+Successful stdout needs trusted complete UTF-8 capture metadata. Incomplete or malformed capture fails explicitly instead of delivering a shortened result as complete. The current local terminal transport captures a full snapshot up to 16,000 bytes; the shared validator has an absolute 50,000-byte ceiling. The latter does not enlarge the local transport's effective limit. Transports without equivalent capture metadata cannot supply complete script observations. A separately truncated stderr does not make a complete stdout incomplete.
+
+Run-history summaries remain bounded to 2,000 characters. They no longer limit no-agent delivery. Model context may use a bounded excerpt with an explicit truncation notice. Successful substantive output may also supply another job's context through [`context_from`](automations-operations.md#use-another-jobs-output-as-context); that saved excerpt has its own stated bound.
 
 For notifications, omit `action.deliver:false` and set `options.deliver` to existing configured channel names, for example `["ntfy"]`. An empty delivery list retains only history. The existing quiet hours and urgent interruption budget apply. The emergency stop suppresses completion delivery; deletion suppresses delivery even if a separately approved task has already run.
 
@@ -43,13 +47,13 @@ Restart recovery preserves pending attempts and their history. If submission or 
 
 ## Current limits
 
-This runtime supports local POSIX targets and self-contained Python only: at most 2,000 UTF-8 source bytes within the existing terminal command limit. Execution uses the configured Python interpreter with `-I -c`; `__file__`, script-relative imports, shell scripts, arbitrary working directories, and per-job provider/model/toolset/skill overrides are unsupported. Source is visible in the durable approval payload, so use the existing secret mechanisms instead of embedding credentials in scripts.
+This runtime supports local POSIX targets and self-contained Python only: at most 2,000 UTF-8 source bytes within the existing terminal command limit. Execution uses the configured Python interpreter with `-I -c`; `__file__`, script-relative imports, shell scripts and per-job interpreter/skill overrides are unsupported. An approved workdir is available only for a no-agent script and must be inside configured terminal roots. A script's later model phase can use the job's model/provider, toolset and reasoning options; these do not change the script subprocess or its approval. See [tool limits and reasoning](automations-operations.md#tool-limits-and-reasoning). Source is visible in the durable approval payload, so use the existing secret mechanisms instead of embedding credentials in scripts.
 
 The API and CLI accept these options; a dedicated script-authoring form is not implemented. Existing terminal target configuration, hardline refusals, approval, execution limits and emergency stop remain authoritative. See [the implementation and verification record](superpowers/plans/2026-09-15-governed-job-scripts.md).
 
 ## Wake and silence gates
 
-A successful approved script can end with a JSON line such as `{"wakeAgent": false}`. The last non-empty line controls this gate: only the JSON boolean `false` suppresses both the model call and delivery. This also applies to `no_agent` jobs and is the exception to otherwise literal script-output delivery. Invalid JSON, a missing key, `true`, `0`, strings, and null continue normally. The gate inspects returned stdout before the display cap; truncated terminal output is not accepted as a complete gate and continues normally. Script failures remain failures.
+A successful approved script can end with a JSON line such as `{"wakeAgent": false}`. The last non-empty line controls this gate: only the JSON boolean `false` suppresses both the model call and delivery. This also applies to `no_agent` jobs and is the exception to otherwise literal script-output delivery. Invalid JSON, a missing key, `true`, `0`, strings, and null continue normally after capture completeness is established. The gate inspects the complete safe stdout before any context or history excerpt. Incomplete capture fails explicitly; script failures remain failures.
 
 Scheduled model replies can suppress delivery with `[SILENT]` as the whole reply or a standalone first or last line. Matching ignores surrounding whitespace and case. Whole-response `SILENT`, `NO_REPLY`, and `NO REPLY` also suppress delivery; mentions embedded in prose do not. This check happens before response truncation. A `no_agent` script printing `[SILENT]` still delivers that literal text: this convention belongs to model responses.
 
@@ -61,7 +65,7 @@ Use `options.monitor_script` instead of `options.script` on an `ask` job to comp
 
 The first successful observation supplies baseline context, even when stdout is empty. Identical subsequent observations finish as `Suppressed: no_change`, without a model call or delivery. Changes supply a unified diff and current output inside the existing untrusted-data fence. The comparison digest and snapshot are committed before the model runs, so a failed model response cannot repeatedly alert on the same change.
 
-The trusted host hashes every stdout byte before display truncation. Monitor evaluation requires successful, complete, valid UTF-8 output whose complete snapshot fits the existing terminal cap (at most 50,000 bytes). Invalid, incomplete, or oversized observations fail explicitly and leave the baseline unchanged. Output rendering for other terminal uses remains unchanged. No raw output file is written.
+The trusted host hashes every stdout byte before display truncation. Monitor evaluation requires successful, complete, valid UTF-8 output whose complete snapshot fits the existing terminal cap (currently 16,000 bytes locally; the shared validator permits at most 50,000). Invalid, incomplete, or oversized observations fail explicitly and leave the baseline unchanged. Output rendering for other terminal uses remains unchanged. No raw output file is written.
 
 The normal secret scrubber still applies before task results reach the jobs runtime. Comparison uses the trusted raw digest, while stored/displayed snapshots contain only scrubbed text. A `scrubbed` label identifies comparisons whose raw and displayed contents differ; changes in hidden secret values can therefore trigger a change with no visible text difference. Diffs are displayed up to 4,000 characters and current output up to 8,000, with explicit truncation indicators.
 

@@ -178,6 +178,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # H364 — one ladder rung for cloud reasoning, clamped per model at send time.
     # "" (the default) asks for nothing, which is what every install did before.
     dict(category="llm",     key="reasoning_effort", value="",                    label="Cloud reasoning effort (empty = ask for nothing; clamped to what each model accepts)", kind="select", opts=["", *REASONING_EFFORT_LADDER]),
+    dict(category="llm", key="platform_toolsets", value={}, label="Scheduled model toolset defaults by platform", kind="json"),
     dict(category="llm", key="ollama_num_ctx", value=0, label="Ollama context tokens (0 = probe model parameters)", kind="number"),
     dict(category="llm", key="gemini_effort_declarations", value="", label='Gemini effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
     dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "deepinfra", "openai-responses", "xai"]),
@@ -225,6 +226,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
     dict(category="llm",     key="tool_loop_context_tokens", value=0,               label="Agent tool-loop context budget (tokens; 0 = 75% of the model window)", kind="number"),
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
+    dict(category="llm",     key="tool_loop_stall_halt_enabled", value=False,        label="Stop stalled tool loops at failure/no-progress thresholds (off = guidance only)", kind="toggle"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     # H594: read the project's AGENTS.md / CLAUDE.md / .cursorrules into the turn (scanned, bounded, tainting).
     # H218: the project folder whose convention files H594 reads (inside the file roots; empty = the first root).
@@ -241,6 +243,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # Both stay finite: the orchestrator clamps them to 1..3600 s (containment).
     dict(category="agents",  key="agent_timeout_seconds",     value=120, label="Per-agent model-call ceiling (s)", kind="number"),
     dict(category="agents",  key="reasoning_timeout_seconds", value=600, label="Ceiling for the local deep / thinking route (s); 0 = default 600", kind="number"),
+    dict(category="agents", key="disabled_toolsets", value=[], label="Toolset groups unavailable to scheduled models", kind="tags"),
     # voice
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),
@@ -273,7 +276,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="security",key="code_guidance",    value=True,                  label="Warn when code the agent writes has a known-dangerous pattern", kind="toggle"),
     dict(category="security",key="sandbox_timeout",  value=30,                    label="Sandbox timeout (s)",kind="number"),
     dict(category="security",key="sandbox_memory",   value=256,                   label="Sandbox max memory (MB)",kind="number"),
-    dict(category="security",key="sandbox_temp_dir", value="",                    label="Sandbox work directory root (absolute path; empty = the managed cache under the data root, pruned after the age below; a directory you choose here or in JARVIS_EXEC_TEMP_DIR is yours and never pruned; to keep a pruned cache on a bigger disk, move the data root (JARVIS_HOME) or bind-mount cache/exec, since a linked cache is not pruned; restart to apply)", kind="text"),
+    dict(category="security",key="sandbox_temp_dir", value="",                    label="Sandbox work directory root (absolute path; JARVIS_EXEC_TEMP_DIR overrides this field; empty = TMPDIR, TMP, TEMP, then the managed cache under the data root; only the managed cache is pruned after the age below; a directory chosen here or through the environment is yours and never pruned; to keep a pruned cache on a bigger disk, move the data root (JARVIS_HOME) or bind-mount cache/exec, since a linked cache is not pruned; restart to apply)", kind="text"),
     dict(category="security",key="sandbox_temp_max_age_hours", value=72,          label="Prune the managed sandbox cache's idle run directories after (hours, 1-8760)", kind="number"),
     # memory
     dict(category="memory",  key="max_turns",        value=100,                   label="Max turns per session",kind="number"),
@@ -449,6 +452,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="loadset", key="mcp_only",         value="", label="Load only these saved MCP servers (comma list; empty = all; applies at the next start)", kind="text"),
     # autonomy — Proactive Cortex (ORIZONT 6)
     dict(category="autonomy", key="mode",            value="auto", label="Autonomy mode (AUTO/ASK/OFF)", kind="select", opts=["auto","ask","off"]),
+    dict(category="autonomy", key="allow_agent_scheduling", value=False, label="Permit scheduled models to see the cronjob tool (loop prevention only)", kind="toggle"),
     dict(category="autonomy", key="earned_autonomy_enabled", value=False, label="Earn autonomy from proven outcomes", kind="toggle"),
     dict(category="autonomy", key="owner_chat_id",   value="",     label="Owner Telegram chat ID", kind="text"),
     dict(category="autonomy", key="owner_user_ids", value=None, label="Telegram owners (JSON user ID list; null uses the allowed sender list)", kind="json"),
@@ -628,10 +632,20 @@ def init_db(force: bool = False):
     conn.executescript(SCHEMA)
     if force:
         conn.execute("DELETE FROM settings")
+    # Once H329 has observed a store, missing switch rows are damage. An
+    # unrelated settings read during boot must not silently re-enable skills
+    # before the strict switch reader can report that damage. Explicit resets
+    # and legacy stores still receive the declared defaults.
+    preserve_skill_switches = not force and conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='skill_switch_revision'"
+    ).fetchone() is not None
     
     # Run INSERT OR IGNORE for all default settings to guarantee new updates are seeded dynamically
     inserted = 0
     for row in DEFAULTS:
+        if (preserve_skill_switches and row["category"] == "skills"
+                and row["key"] in {"disabled", "channel_disabled"}):
+            continue
         cursor = conn.execute(
             "INSERT OR IGNORE INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
             (row["category"], row["key"], json.dumps(row["value"]), row["label"], row["kind"], json.dumps(row.get("opts", []))),
@@ -808,6 +822,41 @@ def read_setting(category: str, key: str) -> tuple[bool, Any]:
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
 
 
+def read_job_tool_policy() -> dict[str, Any]:
+    """Read three scheduled-tool settings in one read-only SQLite snapshot.
+
+    Missing rows in a readable legacy store use their shipped defaults. A missing
+    store or malformed saved value is never a reason to restore a wider policy.
+    """
+    defaults = {"platform_toolsets": {}, "disabled_toolsets": [],
+                "allow_agent_scheduling": False}
+    try:
+        path = DB_PATH.resolve()
+        conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0)
+        try:
+            conn.execute("BEGIN")
+            rows = conn.execute("""SELECT category,key,value FROM settings WHERE
+                (category='llm' AND key='platform_toolsets') OR
+                (category='agents' AND key='disabled_toolsets') OR
+                (category='autonomy' AND key='allow_agent_scheduling')""").fetchall()
+            values = dict(defaults)
+            for _category, key, raw in rows:
+                values[key] = json.loads(raw)
+            from .job_toolsets import validate_policy_setting
+
+            validate_policy_setting('platform_toolsets', values['platform_toolsets'])
+            validate_policy_setting('disabled_toolsets', values['disabled_toolsets'])
+            if type(values['allow_agent_scheduling']) is not bool:
+                raise ValueError('allow_agent_scheduling must be true or false')
+            conn.commit()
+            return values
+        finally:
+            conn.close()
+    except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
+        report_unreadable(DB_PATH, exc)
+        raise SettingsUnreadable("scheduled tool policy store is unreadable") from exc
+
+
 def read_telegram_owner_binding() -> dict[str, Any]:
     """One read-only authority snapshot; a busy/missing store raises immediately.
 
@@ -928,6 +977,13 @@ def bounded_learning_int(key: str, raw: Any, default: int) -> int:
 
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
+    if key in {"platform_toolsets", "disabled_toolsets"}:
+        from .job_toolsets import validate_policy_setting
+
+        try:
+            validate_policy_setting(key, value)
+        except ValueError as exc:
+            return str(exc)
     if key == "execute_code_project_root" and (
             not isinstance(value, str) or len(value) > 2048 or "\x00" in value
             or (value != "" and (value != value.strip() or not os.path.isabs(value)))):

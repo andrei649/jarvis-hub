@@ -130,8 +130,13 @@ async def nodes_register(body: NodeRegisterBody):
     _, h, err = require_component("node_mesh", "node mesh unavailable")
     if err is not None:
         return err
-    return nocache_json({"ok": True, "node": h.register_node(
-        body.node_id, body.capabilities, body.meta)})
+    from agents.core.install_identity import InstallIdentityUnavailable, UNAVAILABLE_REASON
+
+    try:
+        node = h.register_node(body.node_id, body.capabilities, body.meta)
+    except InstallIdentityUnavailable:
+        return nocache_json({"ok": False, "reason": UNAVAILABLE_REASON}, status_code=503)
+    return nocache_json({"ok": True, "node": node})
 
 
 @router.delete("/api/nodes/{node_id}", dependencies=[Depends(admin_guard)])

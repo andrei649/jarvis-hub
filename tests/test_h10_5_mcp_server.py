@@ -174,6 +174,7 @@ async def test_production_mcp_runner_inventory_matches_durable_conversation_stat
     from agents.core.config import JarvisConfig
     from agents.core.memory import conversation, persistence
     from agents.core.orchestrator import Orchestrator
+    from tests.h441_native_fixture import bind_native
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(conversation, "MEMORY_DIR", tmp_path)
@@ -182,6 +183,7 @@ async def test_production_mcp_runner_inventory_matches_durable_conversation_stat
     monkeypatch.delenv("JARVIS_MCP_MUTATING_TOOLS", raising=False)
 
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents = {"jarvis": SimpleNamespace(config={"name": "Jarvis", "tier": "prime"})}
     orch.session_id = await orch.memory.new_session("session_mcp_inventory")
 

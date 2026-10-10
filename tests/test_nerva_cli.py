@@ -102,7 +102,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["kernel"] == ["explain"]
     assert tree["estop"] == ["engage", "resume", "status"]
     # H350: the linter reads files and reports; it never writes a skill.
-    assert tree["skills"] == ["lint", "list", "off", "on"]
+    assert tree["skills"] == ["config", "lint", "list", "off", "on"]
     # H464: read the runs, and let a parked one go. Nothing here starts a run.
     assert tree["company"] == ["clear-wait", "list"]
     assert tree["project"] == [

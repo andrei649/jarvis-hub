@@ -1,8 +1,10 @@
 """Request-owned specialist dispatch contracts for shared history compaction."""
 
-from contextlib import contextmanager
+from collections import OrderedDict
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
+from threading import RLock
 
 from .conversation_clock import CompactionClockRefused
 from .llm.effective_window import EffectiveWindow, resolve_effective_window
@@ -299,6 +301,22 @@ class _RouteAnchor:
     tokens: int
 
 
+class ManagedAnchorStore(OrderedDict):
+    """One bounded anchor map whose compound operations serialize across threads.
+
+    Plain OrderedDict callers remain supported by the pure helper functions; a
+    real Orchestrator owns this synchronized variant for its whole lifetime.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.lock = RLock()
+
+
+def _store_guard(store):
+    return store.lock if isinstance(store, ManagedAnchorStore) else nullcontext()
+
+
 def _prefix(rows):
     import hashlib
     import json
@@ -314,12 +332,14 @@ def remember_usage(store, session, agent_id, route, rows, instance, usage):
     if any(type(value) is not int or value < 0 for value in counts) or not sum(counts):
         return
     key = (session, agent_id)
-    store[key] = _RouteAnchor(
+    anchor = _RouteAnchor(
         route.identity, route.model, instance, _prefix(rows), len(rows), sum(counts)
     )
-    store.move_to_end(key)
-    while len(store) > 256:
-        store.popitem(last=False)
+    with _store_guard(store):
+        store[key] = anchor
+        store.move_to_end(key)
+        while len(store) > 256:
+            store.popitem(last=False)
 
 
 def trusted_anchor(store, session, routes, rows, instance):
@@ -328,17 +348,18 @@ def trusted_anchor(store, session, routes, rows, instance):
     if not isinstance(instance, str) or not instance:
         return None
     best = None
-    for aid, route in routes.items():
-        anchor = store.get((session, aid))
-        if (
-            anchor is None
-            or anchor.owner is not route.identity
-            or anchor.model != route.model
-            or anchor.instance != instance
-            or anchor.count > len(rows)
-            or anchor.prefix != _prefix(rows[: anchor.count])
-        ):
-            continue
-        if best is None or anchor.tokens > best.prompt_tokens:
-            best = UsageAnchor(anchor.tokens, anchor.count)
+    with _store_guard(store):
+        for aid, route in routes.items():
+            anchor = store.get((session, aid))
+            if (
+                anchor is None
+                or anchor.owner is not route.identity
+                or anchor.model != route.model
+                or anchor.instance != instance
+                or anchor.count > len(rows)
+                or anchor.prefix != _prefix(rows[: anchor.count])
+            ):
+                continue
+            if best is None or anchor.tokens > best.prompt_tokens:
+                best = UsageAnchor(anchor.tokens, anchor.count)
     return best

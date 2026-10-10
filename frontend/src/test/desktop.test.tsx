@@ -17,10 +17,12 @@ it('floating app renders existing chat without normal shell or world control', a
   const { default: App } = await import('../app');
   (globalThis as any).fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ turns: [{ role: 'user', content: 'Shared server conversation' }] }) });
   render(<App floating />);
-  expect(await screen.findByText('Shared server conversation')).toBeTruthy();
+  // ChatMode is lazy-loaded; wait for the actual transcript, not a one-second
+  // cold module-transform budget. The content and shell assertions stay intact.
+  expect(await screen.findByText('Shared server conversation', {}, { timeout: 5000 })).toBeTruthy();
   expect(screen.queryByTitle('console (`)')).toBeNull();
   expect(screen.getByRole('button', { name: 'Open in app' })).toBeTruthy();
-});
+}, 10000);
 
 it('refreshes the same authenticated server conversation on focus', async () => {
   const { useDesktopConversation } = await import('../desktop');

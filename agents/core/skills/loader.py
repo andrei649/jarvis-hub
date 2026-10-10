@@ -472,6 +472,8 @@ class Skill:
         # not a vouch (review-H318 M-1, SEC-B2). A bundled skill is the product's own.
         self.external: bool = True
         self.owner_vouched: bool = False
+        # Exact bytes admitted at load time; approval must match both these and disk.
+        self.source_fingerprint: str | None = None
 
     def to_dict(self) -> dict:
         from .visibility import readiness
@@ -737,6 +739,7 @@ class SkillLoader:
             load_set.note_skipped("skills", name)
             return
         skill = Skill(name, path, manifest)
+        skill.source_fingerprint = snapshot.fingerprint if snapshot is not None else None
         skill.external = bool(external)
         if self._usage is not None:
             store = self._usage
@@ -1461,8 +1464,8 @@ def register(skill):
         try:
             switched = skill_switches.state()   # H329: read once for the whole catalog
         except Exception:
-            logger.warning("skill switches unreadable; every skill stays on", exc_info=True)
-            switched = {}
+            logger.warning("skill switches unreadable; nonessential skills hidden", exc_info=True)
+            switched = {"__unavailable__": True}
         seen = skill_visibility.context()       # H328: the host, channel and offer, once
         full = False                            # every skill is still gated, and a hide logged
         for name in sorted(self.skills):

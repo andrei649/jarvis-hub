@@ -54,6 +54,60 @@ function spokenFrom(deltas: string[]): string[] {
 }
 
 describe('SpeechStreamFilter — code and reasoning split across deltas', () => {
+  const footer = '⚠️ File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • `/tmp/a.md` — [patch] Could not find old_string';
+
+  it('withholds a split verifier footer before it reaches sentence synthesis', () => {
+    const source = `Ready.\r\n\r\n${footer.replace(/\n/g, '\r\n')}\r\nNext.`;
+    const cuts = [8, 10, 14, 15, 19, 38, 90, 158, 184, 185, 190, source.length - 5];
+    let at = 0;
+    const deltas = cuts.map((end) => { const chunk = source.slice(at, end); at = end; return chunk; });
+    deltas.push(source.slice(at));
+    expect(spokenFrom(deltas)).toEqual(['Ready.', 'Next.']);
+    expect(source).toContain('Could not find old_string');
+  });
+
+  it('keeps an incomplete footer header and ordinary warning text audible', () => {
+    const header = footer.split('\n')[0];
+    expect(spokenFrom(['Start.\n\n⚠', '️ File-mutation verifier:', header.slice('⚠️ File-mutation verifier:'.length)]).join(' '))
+      .toBe(`Start. ${speechText(header)}`);
+    expect(spokenFrom(['Warning: this file-', 'mutation verifier is useful.']))
+      .toEqual(['Warning: this file-mutation verifier is useful.']);
+  });
+
+  it('treats the plain warning sign, with no variation selector, as the footer too', () => {
+    const plain = footer.replace('⚠️', '⚠');
+    expect(plain).not.toContain('\uFE0F');
+    const source = `Ready.\n\n${plain}\nNext.`;
+    expect(spokenFrom([source.slice(0, 12), source.slice(12, 40), source.slice(40)])).toEqual(['Ready.', 'Next.']);
+    expect(speechText(source, 'en')).toBe('Ready. Next.');
+  });
+
+  it('does not take a zero or over-long count for the producer, and speaks what the whole reply would', () => {
+    for (const count of ['0', '1' + '0'.repeat(20)]) {
+      const odd = footer.replace(': 1 file', `: ${count} file`);
+      const source = `Ready.\n\n${odd}\nNext.`;
+      const streamed = spokenFrom([source.slice(0, 12), source.slice(12, 45), source.slice(45)]).join(' ');
+      expect(streamed).toBe(speechText(source, 'en'));
+      expect(streamed).toContain('File-mutation verifier');
+    }
+  });
+
+  it('bounds an invalid footer candidate instead of holding the reply', () => {
+    const filter = new SpeechStreamFilter();
+    const out = filter.push('⚠️ File-mutation verifier: ' + '9'.repeat(100_000));
+    expect(out.length).toBeGreaterThan(99_000);
+    expect((filter as any).pending.length).toBeLessThan(256);
+    expect(filter.flush()).toBe('');
+  });
+
+  it('resets footer suppression after flush so the next stream is audible', () => {
+    const filter = new SpeechStreamFilter();
+    expect(filter.push(footer)).toBe('');
+    expect(filter.flush()).toBe('');
+    expect(filter.push('Hello again.')).toBe('Hello again.');
+    expect(filter.flush()).toBe('');
+  });
+
   it('drops a fence whose markers arrive in pieces', () => {
     expect(spokenFrom(['Intro. ', '``', '`py\nprint(1)\nx = 2. y = 3.\n`', '``\nAfter it.']))
       .toEqual(['Intro.', 'After it.']);

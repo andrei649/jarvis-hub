@@ -15,7 +15,7 @@ from tests.test_session_command_kernel import governed  # noqa: F401
 from tests.test_session_command_runtime import command_host
 
 
-def workspace_commands(tmp_path, context, prompt_broker, channel):
+def workspace_commands(tmp_path, context, prompt_broker, channel, ledger):
     orch, cap, _, _, pairing, _ = command_host(tmp_path, context)
     broker, queue, worker, sent, state, _, _, manager = prompt_broker
     sender = "T1:U2" if channel == "slack" else "42"
@@ -36,7 +36,7 @@ def workspace_commands(tmp_path, context, prompt_broker, channel):
     manager.register(adapter)
     orch.channel_manager, orch.channel_replies = manager, broker
     orch.autonomy, orch.autonomy_queue = worker, queue
-    orch.permission_ledger = prompt_broker[2].executor.__self__.resolve("permission.grant").__self__
+    orch.permission_ledger = ledger
     orch._runtime_settings["channels.owner_senders"] = {channel: [sender]}
     gateway = Gateway(orch.channel_handler, pairing=pairing, inbox_store=broker._inbox,
                       pending_handler=orch.channel_pending_handler)
@@ -68,10 +68,10 @@ async def approve_prompt(orch, queue, worker, turn):
 @pytest.mark.parametrize("channel", ["slack", "discord"])
 @pytest.mark.parametrize("choice", ["!cancel", "Approve Once", "!always"])
 async def test_workspace_reset_confirmations_preserve_history_and_govern_permanence(
-    tmp_path, context, prompt_broker, channel, choice,
+    tmp_path, context, prompt_broker, governed, channel, choice,
 ):
     orch, cap, gateway, _, _, base, sender, delivery = workspace_commands(
-        tmp_path, context, prompt_broker, channel)
+        tmp_path, context, prompt_broker, channel, governed[1])
     _, queue, worker, sent, *_ = prompt_broker
     await gateway.route("keep", channel=channel, sender=sender, **delivery)
     sid = orch._channel_sessions[base]
@@ -236,10 +236,10 @@ async def test_registered_clarify_tool_uses_new_runtime_after_same_instance_clos
 @pytest.mark.parametrize("channel", ["slack", "discord"])
 @pytest.mark.parametrize("changed", ["pairing", "owner", "transport"])
 async def test_workspace_confirmation_revocation_preserves_conversation(
-    tmp_path, context, prompt_broker, channel, changed,
+    tmp_path, context, prompt_broker, governed, channel, changed,
 ):
     orch, _, gateway, pairing, adapter, base, sender, delivery = workspace_commands(
-        tmp_path, context, prompt_broker, channel)
+        tmp_path, context, prompt_broker, channel, governed[1])
     _, queue, worker, *_ = prompt_broker
     await gateway.route("keep", channel=channel, sender=sender, **delivery)
     sid = orch._channel_sessions[base]

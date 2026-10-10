@@ -49,7 +49,8 @@ def test_the_cases_cover_what_the_row_names():
     names = {c["name"] for c in CASES}
     for required in ("emoji", "emoji_sequences", "lists", "table", "think_closed", "think_unclosed",
                      "symbols_en", "symbols_ro", "bare_url_in_parentheses", "emotion_tags_kept",
-                     "unclosed_fence"):
+                     "unclosed_fence", "verifier_footer_after_reply", "verifier_footer_only",
+                     "verifier_footer_with_following_text", "verifier_header_without_bullet"):
         assert required in names, required
 
 
@@ -252,6 +253,21 @@ def test_tts_route_says_nothing_to_say_without_synthesising(mock_speak, client):
     assert resp.status_code == 204
     assert resp.headers["x-nerva-speech"] == "nothing_to_say"
     assert resp.content == b""
+    mock_speak.assert_not_called()
+
+
+@patch("core.voice.tts.HAS_EDGE", True)
+@patch("core.voice.tts.TTSEngine.speak")
+def test_tts_route_silences_an_exact_verifier_footer(mock_speak, client):
+    footer = (
+        "⚠️ File-mutation verifier: 1 file edit(s) FAILED this turn despite any "
+        "wording above that may suggest otherwise. Run `git status` or `read_file` "
+        "to confirm what actually landed.\n"
+        "  • `/tmp/failed.md` — [patch] Could not find old_string"
+    )
+    resp = client.post("/tts", json={"text": footer, "lang": "en"})
+    assert resp.status_code == 204
+    assert resp.headers["x-nerva-speech"] == "nothing_to_say"
     mock_speak.assert_not_called()
 
 

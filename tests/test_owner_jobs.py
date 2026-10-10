@@ -15,7 +15,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from tzlocal import get_localzone
 
 from agents.core import estop
 from agents.core.autonomy import jobs as jobs_module
@@ -231,7 +230,7 @@ async def test_a_reminder_is_delivered_and_recorded(store, no_estop):
     assert [r.status for r in store.runs(job.id)] == ["ok"]
     assert runner.snapshot() == {
         "alive": True, "registered": [job.id], "jobs": 1, "runnable": 1, "paused": 0,
-        "held": 0, "quiet_hours": False, "timezone": str(get_localzone()),
+        "held": 0, "quiet_hours": False, "timezone": "Europe/Bucharest",
     }
 
 
@@ -250,7 +249,12 @@ async def test_an_ask_job_keeps_a_notepad_between_runs(store, no_estop):
     await runner.fire(job.id)
     second_prompt = orch.process.calls[1][0]
     assert second_prompt.startswith("check inbox") and "Two mails need you: A and B." in second_prompt
-    assert "compare, then report what changed" in second_prompt
+    from agents.core.security.quarantine import split_fenced_tool_result
+
+    source, payload = split_fenced_tool_result(second_prompt.split("(untrusted data):\n", 1)[1])
+    assert source == "scheduled-job-notepad"
+    assert __import__("json").loads(payload)["previous_output"] == "Two mails need you: A and B."
+    assert orch.process.calls[1][2] == "job"
     assert telegram.sent and telegram.sent[-1][0] == "Two mails need you: A and B."
 
 
@@ -286,10 +290,14 @@ async def test_a_task_job_goes_through_the_governed_queue_never_around_it(store,
         schedule_text="every day at 23",
         action={"type": "task", "kind": "writeback.notion.page", "title": "nightly note", "payload": {"target": "log"}, "risk_tier": 2},
     )
+    governed = []
+    runner.bind_task_intake(submit=lambda **kwargs: governed.append(kwargs) or 42)
     run = await runner.fire(job.id)
     assert run.status == "ok" and run.summary == "queued task #42 for the autonomy policy to decide"
-    (call,) = orch.autonomy_queue.enqueued
-    assert call["kind"] == "writeback.notion.page" and call["risk_tier"] == 2 and call["origin"] == f"job:{job.id}"
+    (call,) = governed
+    assert call["kind"] == "writeback.notion.page" and call["risk_tier"] == 2
+    assert call["origin"] == f"inbound:job:{job.id}" and call["autonomy_level"] == "ask"
+    assert orch.autonomy_queue.enqueued == []
 
 
 @pytest.mark.asyncio

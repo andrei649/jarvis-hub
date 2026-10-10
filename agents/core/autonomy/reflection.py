@@ -152,6 +152,12 @@ class DailyReflector:
         session_id = self._memory.conversation.current_session_id
         if not session_id:
             return ""
+        # Shared promoted facts have no owner-only recall scope. Foreign-derived
+        # sessions stay out until that separate storage contract exists.
+        from agents.core.foreign_history import status
+        manager = getattr(self._memory, "_checkpoint_mgr", None)
+        if manager is not None and status(manager, session_id).tainted:
+            return ""
         turns = await self._memory.get_history(session_id, last_n=60)
         if not turns:
             return ""

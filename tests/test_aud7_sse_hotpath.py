@@ -59,6 +59,10 @@ async def test_sse_normal_completion_emits_start_tokens_end():
     # nothing), so a client never has to branch on whether the key is there; so
     # do H677's `warming` (false once the boot warm-up is over) and H674's
     # `notices` (empty when the turn had nothing to say beside its reply).
+    usage = events[-1].pop("usage")
+    assert usage["usage_basis"] == usage["cost_basis"] == "measured_zero"
+    assert usage["api_calls"] == 0
+    assert events[-1].pop("runtime_stops") == []
     assert events[-1] == {"type": "end", "agent": "friday", "text": "hello",
                           "session_id": "aud7_session",
                           "pending_approvals": [], "warming": False, "notices": [], "outcome": None}

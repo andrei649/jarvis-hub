@@ -74,6 +74,15 @@ SPLIT_NOTES = {
                          "the hub opened while it was imported stay under the default root: set it in the "
                          "process environment"),
 }
+# Optional SDKs can construct shared TLS contexts while they are imported. Their
+# presence/version varies by installation, unlike the mandatory reads above.
+# Later HTTP clients can still read a file-provided value, so neither a universal
+# before-load nor a universal read-again classification would be accurate.
+OPTIONAL_SPLIT_NOTES = {
+    "SSL_CERT_FILE": ("optional aiohttp-based transports may cache TLS trust before the .env files "
+                      "are loaded; a later .env value affects clients created afterward but not "
+                      "those cached contexts: set it in the process environment for consistent trust"),
+}
 # Read while the hub is imported and read again once the .env files are loaded, so a .env
 # value is in effect: DEV_MODE (app_state.dev_mode, ENV-039), the admin and user tokens
 # (every guard reads them per request, the MCP transport too, and the bind guard runs after
@@ -520,7 +529,8 @@ def note_for(key: str, layer: str) -> str:
         return ""
     if key in FROM_PROCESS_ONLY:
         return PROCESS_ONLY_NOTE
-    return BEFORE_LOAD_NOTE if key in READ_BEFORE_LOAD else SPLIT_NOTES.get(key, "")
+    return BEFORE_LOAD_NOTE if key in READ_BEFORE_LOAD else SPLIT_NOTES.get(
+        key, OPTIONAL_SPLIT_NOTES.get(key, ""))
 
 
 def files() -> dict[str, dict]:
@@ -545,7 +555,7 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
 
 __all__ = [
     "FROM_PROCESS_ONLY", "LABELS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
-    "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "dotenv_disabled",
+    "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "OPTIONAL_SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "dotenv_disabled",
     "env_file_keys", "files", "hub_values", "is_fifo", "is_file_or_fifo", "load_hub_env", "load_layered_env",
     "note_for", "profile_env_file", "provenance", "raw_values", "text_keys",
 ]

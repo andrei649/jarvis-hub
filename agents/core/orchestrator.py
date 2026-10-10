@@ -35,6 +35,8 @@ from .llm.tokenizer import estimate_tokens
 from .memory import turn_tools
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
+from .foreign_history import ForeignHistoryRefused
+from .turn_stops import record_runtime_stop
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
@@ -540,6 +542,9 @@ class Orchestrator:
         self.context_cache: ContextCache | None = None
         self._cache_tasks: set[asyncio.Task] = set()
         self.memory = MemoryManager()
+        from .route_compaction import ManagedAnchorStore
+
+        self._managed_route_anchors = ManagedAnchorStore()
 
         # G38 / ADV-130: lifecycle owners outside this module populate these
         # extension slots. Declare every slot before those writers run so a
@@ -1218,6 +1223,14 @@ class Orchestrator:
             logger.info(f"Session: {self.session_id}")
 
         self.load_runtime_settings()
+        # The executor builds ToolRPC before the initial settings load. Reconcile
+        # this opt-in once against the effective runtime settings on that same
+        # server; the setting remains restart-to-apply for new registrations.
+        server = getattr(self, "tool_rpc", None)
+        if server is not None and not server.allows("clarify"):
+            from .channels.pending_input_runtime import register_clarify_tool
+
+            register_clarify_tool(server, self)
         # HEARTBEAT.md (and its .local.md overlay) wins: cadence + checklist. The
         # agents.yaml interval only fills agents that ship no heartbeat file, and an
         # agent whose file the injection scan refused is scheduled from neither source
@@ -2321,6 +2334,22 @@ class Orchestrator:
         # had.
         self._meter_store()["_last_reported_usage"] = dict(value or {})
 
+    async def _guard_foreign_turn(self, sid: str) -> None:
+        """Check server-owned lineage before even a direct command reads history."""
+        from .foreign_history import ForeignHistoryRefused, status
+        from .security.recall_taint import mark_turn_recall_tainted
+
+        manager = getattr(self, "checkpoints", None)
+        if manager is None:
+            if sid in getattr(getattr(self.memory, "conversation", None), "foreign_origins", {}):
+                raise ForeignHistoryRefused()
+            return
+        origin = await asyncio.to_thread(status, manager, sid)
+        if origin.tainted:
+            if not current_principal().admin:
+                raise ForeignHistoryRefused("owner_required", 403)
+            mark_turn_recall_tainted()
+
     @measure_turn_latency
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
@@ -2349,10 +2378,16 @@ class Orchestrator:
                 self._ack_chat_outcomes(reply)
             return reply
         except DataHandlingRefused as exc:
+            record_runtime_stop("generation_refused")
             return exc.reply()
         except CompactionClockRefused:
+            record_runtime_stop("context_refused")
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
+            record_runtime_stop("continuation_refused")
+            return CONTINUATION_REFUSED_REPLY
+        except ForeignHistoryRefused:
+            record_runtime_stop("continuation_refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
@@ -2381,6 +2416,7 @@ class Orchestrator:
         # single-shared-session behavior (or to honor a session a caller like
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
+        await self._guard_foreign_turn(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             return session_reply
@@ -2511,9 +2547,11 @@ class Orchestrator:
                 responder_id = next(iter(responses))
                 synthesized = responses[responder_id]
         except RuntimeError:
+            record_runtime_stop("generation_failed")
             synthesized = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
             log_error(logger, E_LLM_BACKEND_MISSING, backend="synthesize")
         except Exception as e:
+            record_runtime_stop("generation_failed")
             synthesized = f"I hit an issue processing that: {e}"
             log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
@@ -2561,10 +2599,16 @@ class Orchestrator:
                 self._ack_chat_outcomes(reply)
             return reply
         except DataHandlingRefused as exc:
+            record_runtime_stop("generation_refused")
             return exc.reply()
         except CompactionClockRefused:
+            record_runtime_stop("context_refused")
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
+            record_runtime_stop("continuation_refused")
+            return CONTINUATION_REFUSED_REPLY
+        except ForeignHistoryRefused:
+            record_runtime_stop("continuation_refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
@@ -2592,6 +2636,7 @@ class Orchestrator:
         # BUG-5: see handle_input — pin this turn to its own session so it can
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
+        await self._guard_foreign_turn(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             if on_token:
@@ -2902,6 +2947,7 @@ class Orchestrator:
                                 )
                         request_scope = backend.request_scope(request_binding)
                 except LocalBackendUnavailableError:
+                    record_runtime_stop("generation_failed")
                     msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
                     if on_token:
@@ -2910,6 +2956,7 @@ class Orchestrator:
                             await emitted
                     return msg
                 except DataHandlingRefused as exc:
+                    record_runtime_stop("generation_refused")
                     msg = exc.reply()
                     if on_token:
                         emitted = on_token(msg)
@@ -2919,6 +2966,7 @@ class Orchestrator:
                 except CompactionClockRefused:
                     raise
                 except RuntimeError:
+                    record_runtime_stop("generation_failed")
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
                     if on_token:
@@ -2943,8 +2991,6 @@ class Orchestrator:
                         from .route_compaction import remember_usage
                         remember_usage(self._managed_route_anchors, self.session_id, _agent_id,
                             plan.routes[_agent_id], list(plan.anchor_rows), plan.instance, usage)
-                    else:
-                        self._record_context_anchor(_agent_id, usage)
 
                 with request_scope:
                     from .llm.effective_window import resolve_effective_window
@@ -2952,22 +2998,24 @@ class Orchestrator:
                         prepared.check(self.llm_router, agent_id, prepared.prompt, self.session_id)
                     effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
                     guarded_backend = bind_guardrails(self.security, backend)
-                    response = await agent.generate_response(
-                        backend=guarded_backend,
-                        effective_window=effective_window,
-                        model=model,
-                        prompt=prompt,
-                        system=system_prompt,
-                        max_tokens=eff_max_tokens,
-                        temperature=temperature,
-                        on_token=on_token,
-                        wall_seconds=wall_seconds,
-                        usage_sink=_meter,
-                        session_id=self.session_id,
-                        clock_snapshot=prompt_clock.get(),
-                        **({"prepared_route": prepared, "cached_input_tokens": cached_tok}
-                           if prepared is not None else {}),
-                    )
+                    from .turn_usage import model_usage_scope
+                    with model_usage_scope(model=model, route=route_name):
+                        response = await agent.generate_response(
+                            backend=guarded_backend,
+                            effective_window=effective_window,
+                            model=model,
+                            prompt=prompt,
+                            system=system_prompt,
+                            max_tokens=eff_max_tokens,
+                            temperature=temperature,
+                            on_token=on_token,
+                            wall_seconds=wall_seconds,
+                            usage_sink=_meter,
+                            session_id=self.session_id,
+                            clock_snapshot=prompt_clock.get(),
+                            **({"prepared_route": prepared, "cached_input_tokens": cached_tok}
+                               if prepared is not None else {}),
+                        )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
                 # `model` is the id handed to generate_response a few lines up, so this
@@ -3350,7 +3398,9 @@ class Orchestrator:
             tasks = self._title_tasks = set()
         for manager, session, text, generate in pending:
             try:
-                task = asyncio.create_task(self._upgrade_session_title(manager, session, text, generate))
+                from .turn_usage import detached_turn_usage
+                with detached_turn_usage():
+                    task = asyncio.create_task(self._upgrade_session_title(manager, session, text, generate))
             except RuntimeError:            # no running loop: no upgrade, the instant title stays
                 return
             tasks.add(task)
@@ -3888,6 +3938,8 @@ class Orchestrator:
     def _spawn_background_review(self, text: str, synthesized: str, channel: str) -> None:
         """H20: spawn the per-turn learning distiller (fire-and-forget, gated)."""
         try:
+            if self.session_id in self.memory.conversation.foreign_origins:
+                return
             if is_degraded_reply(synthesized):
                 return
             cog = getattr(self, "cognition", None)
@@ -3902,7 +3954,9 @@ class Orchestrator:
             if not ok:
                 logger.debug("background review skipped (%s)", reason)
                 return
-            task = asyncio.create_task(self._background_review_task(text, synthesized))
+            from .turn_usage import detached_turn_usage
+            with detached_turn_usage():
+                task = asyncio.create_task(self._background_review_task(text, synthesized))
             task.add_done_callback(_log_task_result)
         except Exception:
             logger.debug("background review spawn skipped", exc_info=True)
@@ -3921,11 +3975,14 @@ class Orchestrator:
         (``cognition.review_enabled``) is on: the owner asked. Returns the reviewer's
         result; the command reports it."""
         from .learning.background_review import conversation_snapshot
+        from .foreign_history import status
 
         reviewer = getattr(self, "reviewer", None)
         if reviewer is None or not hasattr(reviewer, "run_on_demand"):
             return {"ran": False, "reason": "unavailable", "actions": []}
         key = self._lease_key(session_id)
+        if (await asyncio.to_thread(status, self.checkpoints, key)).tainted:
+            return {"ran": False, "reason": "foreign_history_not_promotable", "actions": []}
         lock = self.__dict__.get("_turn_leases", {}).get(key)
         if lock is not None and lock.locked() and key not in _held_turn_leases.get():
             return {"ran": False, "reason": "turn_in_flight", "actions": []}
@@ -3962,6 +4019,9 @@ class Orchestrator:
 
     async def _background_review_task(self, text: str, synthesized: str) -> None:
         """Run one review pass in the background and surface its actions."""
+        from .foreign_history import status
+        if (await asyncio.to_thread(status, self.checkpoints, self.session_id or "default")).tainted:
+            return
         history = ""
         try:
             turns = await self.memory.get_history(self.session_id or "default", last_n=6)
@@ -3987,6 +4047,8 @@ class Orchestrator:
         channel: str,
     ) -> None:
         """Feed completed LLM turns into LivingMemory + decay when cognition is on."""
+        if self.session_id in self.memory.conversation.foreign_origins:
+            return
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
             return
@@ -4275,7 +4337,7 @@ class Orchestrator:
 
         return _summarize
 
-    def _summary_gate(self, sid: str, cache: dict, prior):
+    def _summary_gate(self, sid: str, cache: dict, prior, *, tainted: bool = False):
         """H674 — the bounded hold for this turn's LLM summary (see ``compaction_hold``).
 
         A summary that lands after the turn went on seeds this session's merge prior —
@@ -4291,7 +4353,8 @@ class Orchestrator:
         async def gate(make, covered):
             def seed(summary: str) -> None:
                 if cache.get(sid) is prior:
-                    cache[sid] = {"summary": summary, "covered": covered}
+                    cache[sid] = {"summary": summary, "covered": covered,
+                                  "summary_tainted": tainted}
                     logger.info("deferred compaction summary landed; it seeds the next turn")
 
             return await holds.wait(sid, make, hold, seed)
@@ -4417,6 +4480,8 @@ class Orchestrator:
         from .session_continuation import prepare_continuation_turn
 
         await prepare_continuation_turn(self, sid)
+        from .foreign_history import render_summary, render_turn
+        tainted_history = sid in getattr(getattr(self.memory, "conversation", None), "foreign_origins", {})
         manager = getattr(self, "checkpoints", None)
         snapshot = capture_clock(manager, sid)
         prompt_clock.set(snapshot)
@@ -4438,13 +4503,16 @@ class Orchestrator:
         if cache is None:
             cache = self._ctx_summary_cache = {}
         prior = cache.get(sid) if summarizer is not None else None
+        if tainted_history and prior is not None and prior.get("summary_tainted") is not True:
+            prior = None
         compressor = ContextCompressor(
             summarizer=summarizer,
             max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
             keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
             structured=summarizer is not None,
             checkpoint=_precompress_checkpoint(self, sid),   # H427
-            gate=self._summary_gate(sid, cache, prior) if summarizer is not None else None,   # H674
+            gate=self._summary_gate(sid, cache, prior, tainted=tainted_history) if summarizer is not None else None,   # H674
+            untrusted_history=tainted_history,
         )
         # The compaction path knows the model's own window, so a long run on a
         # local 32k model is bounded by the thing that actually limits it rather
@@ -4487,6 +4555,8 @@ class Orchestrator:
             prior=prior,
             anchor=shared_anchor if shared_budget is not None else (None if pinned_window is not None else self._usage_anchor(len(turns))),
         )
+        if tainted_history:
+            result["summary_tainted"] = True
         if result.get("checkpoint_aborted") and int(result.get("tokens") or 0) >= int(result.get("window") or 0):
             # H427 — a required checkpoint did not land, so no turn was evicted (old images
             # may be); a prompt that cannot fit unsummarised is refused rather than sent over
@@ -4513,18 +4583,19 @@ class Orchestrator:
             elif summarizer is not None and result["compressed"]:
                 # Iterative merge state (bounded: one entry per live session key).
                 cache[sid] = {"summary": result["summary"],
-                                          "covered": result["covered"]}
+                                          "covered": result["covered"],
+                                          "summary_tainted": tainted_history}
             if result["compressed"]:
                 # H672 — the commit is the boundary: the persona the next prompt is
                 # built from is re-read here, after the CAS above, never before it.
                 _refresh_souls_at_boundary(self)
         def _fmt(ts):
-            return [f"[{t.get('agent_id') or t.get('role', '')}]: {t.get('content', '')}"
-                    for t in ts]
+            return [render_turn(t, tainted=tainted_history) for t in ts]
 
         if result["compressed"] and result["summary"]:
             rendered = "\n".join(_fmt(result.get("kept_first", []))
-                             + [result["summary"]] + _fmt(result["kept"]))
+                             + [render_summary(result["summary"], tainted=tainted_history)]
+                             + _fmt(result["kept"]))
         else:
             rendered = "\n".join(_fmt(result["kept"]))
         if staged:
@@ -4536,7 +4607,6 @@ class Orchestrator:
     async def _shared_route_plan(self, agent_ids, text, context, plugin_block, recall_block, runtime_block, *, stream=False):
         from .conversation_clock import render_snapshot
         from .route_compaction import HistoryStage, plan_shared, trusted_anchor
-        from collections import OrderedDict
         from dataclasses import replace
         import json
 
@@ -4551,10 +4621,12 @@ class Orchestrator:
 
         history = prior(await self._history_for_prompt(last_n, raw=True))
         rows = await self.memory.get_history(self.session_id, last_n)
+        if self.session_id in getattr(getattr(self.memory, "conversation", None), "foreign_origins", {}) and rows and rows[-1].get("role") == "user" and rows[-1].get("content") == text:
+            from .foreign_history import render_turn
+            last = render_turn(rows[-1], tainted=True)
+            history = history[:-len(last)-1] if history.endswith("\n" + last) else ("" if history == last else history)
         snapshot = prompt_clock.get()
         instance = snapshot.instance_id if snapshot is not None else ""
-        if not hasattr(self, "_managed_route_anchors"):
-            self._managed_route_anchors = OrderedDict()
         async def build(value):
             prompts = {}
             for aid in agent_ids:
@@ -4630,7 +4702,13 @@ class Orchestrator:
         """
         history_text = await self._history_for_prompt(last_n)
         if current_user_text is not None:
-            current_entry = f"[user]: {current_user_text}"
+            sid = self.session_id if "_session_id_default" in self.__dict__ else None
+            if sid in getattr(
+                    getattr(getattr(self, "memory", None), "conversation", None), "foreign_origins", {}):
+                from .foreign_history import render_turn
+                current_entry = render_turn({"role": "user", "content": current_user_text}, tainted=True)
+            else:
+                current_entry = f"[user]: {current_user_text}"
             if history_text == current_entry:
                 history_text = ""
             else:
@@ -4719,8 +4797,6 @@ class Orchestrator:
                     from .route_compaction import remember_usage
                     remember_usage(self._managed_route_anchors, self.session_id, agent_id,
                         plan.routes[agent_id], list(plan.anchor_rows), plan.instance, usage)
-                else:
-                    self._record_context_anchor(agent_id, usage)
 
             try:
                 with observer_scope(meter):
@@ -4734,6 +4810,7 @@ class Orchestrator:
                 # task, not the turn's (Hermes absorption 5a).
                 return agent_id, resp, self.agents[agent_id].last_latency, current_action_origin()
             except asyncio.TimeoutError:
+                record_runtime_stop("deadline")
                 self.agents[agent_id]._record_failure("timeout")
                 log_error(logger, E_LLM_TIMEOUT, timeout=int(seconds), floor=floor)
                 if floor == TIMEOUT_FLOOR_REASONING:
@@ -4742,8 +4819,10 @@ class Orchestrator:
                     reply = f"[{agent_id} timeout]"
                 return agent_id, reply, 0.0, current_action_origin()
             except CompactionClockRefused:
+                record_runtime_stop("context_refused")
                 return agent_id, CONTEXT_REFUSED_REPLY, 0.0, current_action_origin()
             except Exception as e:
+                record_runtime_stop("generation_failed")
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
                 # First-run UX: "no model loaded" is the single most common failure,
@@ -5066,7 +5145,9 @@ class Orchestrator:
                     )
 
     def _spawn_cache_task(self, coroutine, *, session_id: str) -> None:
-        task = asyncio.create_task(coroutine, name=f"gemini-cache:{session_id}")
+        from .turn_usage import detached_turn_usage
+        with detached_turn_usage():
+            task = asyncio.create_task(coroutine, name=f"gemini-cache:{session_id}")
         cache_tasks = getattr(self, "_cache_tasks", None)
         if cache_tasks is None:
             cache_tasks = self._cache_tasks = set()

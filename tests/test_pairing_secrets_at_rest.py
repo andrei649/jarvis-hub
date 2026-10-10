@@ -13,9 +13,9 @@ Both halves of the fix are pinned here, and both halves matter:
 
   · the raw bytes of the file contain neither credential, and the file is
     owner-only — without this the refactor is invisible;
-  · a code still pairs and a link still redeems, across a restart *and* across an
-    upgrade from a pre-H497 plaintext file — without this the change silently
-    locks every already-paired owner out and kills links that are in flight.
+  · a code still pairs across a restart and a pre-H497 upgrade. Links minted before
+    install identity binding stay hashed but cannot approve a sender: their missing
+    hub ID cannot prove that this is the install which minted them (H689).
 
 Hermetic: a ``tmp_path`` store and an injected clock. No env, no network.
 """
@@ -227,18 +227,18 @@ def test_a_pre_h497_file_is_rewritten_hashed_on_open(store_path):
     assert LEGACY_TOKEN not in raw
 
 
-def test_the_upgrade_keeps_the_code_and_the_outstanding_link_working(store_path):
-    """The migration is where this breaks: an owner who upgrades must still be able
-    to pair with the code they already handed out, and a link already sent must
-    still redeem — otherwise the fix locks people out of their own assistant."""
+def test_the_upgrade_keeps_the_code_but_refuses_an_unbound_old_link(store_path):
+    """Keep paired senders and the code, but do not redeem a link with no hub ID."""
     _legacy_file(store_path)
     migrated = SenderPairing(store_path)
 
     assert migrated.status("telegram", "7") == ALLOWED            # paired senders kept
     assert migrated.has_code() is True
     assert migrated.request("telegram", "phone", code=CODE)["paired_by"] == "code"
-    assert migrated.redeem_deeplink(LEGACY_TOKEN, "telegram", "42", now=1.0)["ok"] is True
-    assert migrated.status("telegram", "42") == ALLOWED
+    assert migrated.redeem_deeplink(LEGACY_TOKEN, "telegram", "42", now=1.0) == {
+        "ok": False, "reason": "other_install",
+    }
+    assert migrated.status("telegram", "42") != ALLOWED
 
 
 def test_a_migrated_link_keeps_its_original_expiry(store_path):
@@ -337,14 +337,17 @@ def test_a_store_file_with_an_unencodable_code_does_not_crash_startup(store_path
     assert opened.request("telegram", "b", code="other")["status"] == PENDING
 
 
-def test_a_store_file_with_an_unencodable_deeplink_key_does_not_crash_startup(store_path):
+def test_a_store_file_with_an_unencodable_unbound_link_does_not_crash_startup(store_path):
     store_path.write_text(json.dumps({"deeplinks": {SURROGATE: {
         "channel": "telegram", "created_at": 0.0, "expires_at": 1e12,
     }}}), encoding="utf-8")
     opened = SenderPairing(store_path)                    # must not raise
     assert opened.outstanding_deeplinks(now=1.0) == 1     # in-flight link survives
     assert SURROGATE not in _raw(store_path)
-    assert opened.redeem_deeplink(SURROGATE, "telegram", "42", now=1.0)["ok"] is True
+    assert opened.redeem_deeplink(SURROGATE, "telegram", "42", now=1.0) == {
+        "ok": False, "reason": "other_install",
+    }
+    assert opened.status("telegram", "42") != ALLOWED
 
 
 def test_an_unencodable_credential_is_refused_not_raised(store):

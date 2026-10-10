@@ -37,6 +37,15 @@ _THINK_TAGS = r"think|thinking|reasoning"
 _THINK_CLOSED = re.compile(rf"<({_THINK_TAGS})\b[^>]*>.*?</\1\s*>", re.S | re.I)
 _THINK_OPEN = re.compile(rf"<(?:{_THINK_TAGS})\b[^>]*>.*\Z", re.S | re.I)
 _THINK_STRAY_CLOSE = re.compile(rf"\A.*</(?:{_THINK_TAGS})\s*>", re.S | re.I)
+# Only the pinned turn-finalizer's structured advisory is UI-only. A bare
+# warning/header or ordinary prose about verification remains speakable.
+_VERIFIER_FOOTER = re.compile(
+    r"^⚠\ufe0f? File-mutation verifier: [1-9][0-9]{0,19} file edit\(s\) FAILED this turn "
+    r"despite any wording above that may suggest otherwise\. Run `git status` or "
+    r"`read_file` to confirm what actually landed\."
+    r"(?:\n  • [^\n]+)+",
+    re.M,
+)
 _FENCE = re.compile(r"(```|~~~).*?(?:\1|\Z)", re.S)
 _AUTOLINK = re.compile(r"<https?://[^<>\s]+>")
 _HTML_TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
@@ -152,6 +161,7 @@ def _line(raw: str, words: dict[str, str]) -> str:
 def for_speech(text: object, *, lang: object = None) -> str:
     """*text* as it should be heard, or ``""`` when nothing in it is worth saying."""
     raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    raw = _VERIFIER_FOOTER.sub(" ", raw)
     raw = _THINK_CLOSED.sub(" ", raw)
     raw = _THINK_OPEN.sub("", raw)
     raw = _THINK_STRAY_CLOSE.sub("", raw)

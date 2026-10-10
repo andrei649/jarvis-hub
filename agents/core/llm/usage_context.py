@@ -57,6 +57,8 @@ def text_usage_scope(sink):
 
 
 def report_text_usage(usage: TokenUsage) -> None:
+    from agents.core.turn_usage import record_usage
+    record_usage(usage)
     observer = _publisher.get()
     if observer is not None:
         observer(usage)
