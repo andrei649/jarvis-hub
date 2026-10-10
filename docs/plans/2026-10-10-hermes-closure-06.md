@@ -4,8 +4,11 @@ Generated 2026-10-10 UTC. Goal: continue the 697 accepted contracts with H049
 named log reading and H015 scheduled-job operations. Base/initial head:
 `d5e36b02` (144/697 local); branch `codex/hermes-closure-06-20261010`.
 Local only: no publication, deployment, paid providers or personal-state reads.
-Current state: H049 and H015 implementation authorized on the interfaces below.
-No new count credit yet.
+Final source head: `37a87d93361cd5c6a5228df502d1430ca4060251`.
+H015/H049 implemented; H145/H684 whole contracts re-reviewed. Final assessment:
+148 equivalent, 229 partial, 56 missing, 264 needing review; 549 unfinished.
+Next action: complete H453 output fidelity and H454 cross-job continuity in a
+fresh local batch. Changed paths and evidence are recorded below and in Git.
 
 ## H049 named logs
 
@@ -193,3 +196,77 @@ H049 can be rolled back with its CLI/test/docs change independently. H015 will
 form a separate source commit with schema additions designed to leave existing
 rows readable; preserve owner data on rollback. Frontend/mobile gaps must be
 recorded when API capabilities are added. No native/live-provider claims.
+
+## Delivered behavior and focused verification
+
+H049 exact log selection, safe discovery and redacted reads are in `27af7a01`.
+H015 durable attempts, incidents, independent KV, continuity and governed intake,
+plus CLI/API and generated route/type documentation, are in `a43e901c`.
+H145's complete existing Logs panel and H684's read-only doctor were reviewed
+against their frozen clauses, including the native adaptations stated above.
+The five new operations all use admin guards; dedicated web/mobile controls for
+the new job operations remain on their parity punch lists.
+
+Core focused coverage passed 476 cases; surface coverage passed 137 with three
+unavailable-Fish skips; root route/doctor checks passed 43. Named-log final CLI
+coverage passed 134 with three Fish skips, following the 238-case log selection.
+These selections overlap and are not summed. All 14 Logs panel tests and frontend
+TypeScript passed. Actual disposable offline CLI subprocesses and the real
+FastAPI lifespan exercised job creation, full KV, atomic continuity, one attempt,
+admin gates, model-less failure, incident acknowledgement and history after
+deletion/reopening. Network was blocked; no provider or personal state was used.
+
+## Frozen milestone and final repairs
+
+The serial full backend at `a43e901cef25ba22a72965353a00096a0353fea7`
+completed 25,875 cases: 25,810 passed, six failed, zero errored and 59
+skipped/expected-failure cases. All 5,704 frozen repository inputs were verified
+unchanged before repairs. This was not a green full run.
+
+The one-shot regression used an obsolete fake reservation. Its replacement uses
+the actual script producer, proves one reservation/proposal and verifies that
+terminal completion prevents a second firing. A narrow source fix preserves the
+established `ONE_SHOT_SPENT` result. All 221 selected cases pass. The binding
+inventory needed only 14 source-line coordinates; writer paths, attributes and
+columns are unchanged. Three new UI paths were explicitly added to the unresolved
+HUD punch list. Those guards and the generated Hermes report pass 67 cases.
+Generated status repairs pass the exact failing release/status cases.
+
+The remaining failure exposed a real inline-consent race: concurrent pruning
+could label an expired prompt as withdrawn. `37a87d93` preserves the first
+no-result retirement and checks it before a later deadline, retaining durable
+human decision precedence. Red-first native Telegram/model cases prove both
+expired pruning and early withdrawal with a delayed wake, under both mediation
+modes. The final 176-case focused selection passes, including the original
+failed node. Short-lived fixtures now await the actual settled result rather
+than requiring transient registry occupancy. No approval/execution authority
+was added. Root and independent read-only review found no remaining blocker.
+
+`backend-validation.json` covers all six original failed nodes with clean repair
+XML and pins the frozen manifest and completed full XML. The guarded assessment
+update promotes only H015/H049/H145/H684, refreshes 56 previously current
+collateral pins after bounded review, and preserves 135 already-stale changed
+pins. Frozen inventory bytes remain unchanged. H452/H454/H620 retain partial
+verdicts with explicitly reviewed progress and remaining gaps; other verdicts
+and limitations are preserved.
+
+Evidence is under `/workspace/scratch/hermes-697/batch06/`: `backend-full.xml`,
+`backend-inputs-verification.json`, `backend-validation.json`,
+`repairs/h450.xml`, `repairs/root-guards.xml`,
+`repairs/status-preassessment.xml`, `repairs/inline-consent.xml`,
+`jobs-core/final2.xml`, `jobs-surface/surface-final.xml`,
+`live-jobs-smoke.json`, `logs/live-cli-smoke.json`, `h145-frontend.json`,
+`frontend-typecheck.log`, whole/partial/collateral reviews and
+`assessment-update-dry-run.json`. Implementers used `gpt-6-sol/high`; scoped
+read-only review used `gpt-6-luna/medium`; the coordinator owned integration,
+critical review and assessment.
+
+Final collection is 25,879 backend cases, not another full pass. Frontend 2,177
+and mobile 359 counts are reused; there are 629 application routes and 18 agents.
+No full frontend/mobile, Windows, Fish, Bandit, live-provider or deployed-host
+pass is claimed for this batch. All work remains local.
+
+Final metadata verification passes all 86 status/assessment tests
+(`metadata-final.xml`). Generated Hermes/status checks and diff whitespace
+checks pass. The next unit is H453/H454, without claiming current cross-job
+context or complete long no-agent stdout before that implementation.
