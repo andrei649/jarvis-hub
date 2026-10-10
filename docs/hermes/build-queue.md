@@ -1,5 +1,12 @@
 # Hermes build queue — the 93 small-effort rows, re-evaluated 2026-09-22
 
+**Current review, 2026-10-10:** the dated closure notes below are history, not
+current completion evidence. The first full-contract batch repairs H004, H161, H328 and H450
+and re-reviews twenty-two rows. H182/H222/H283/H299/H301/H329/H397/H398/H413/H583/H689
+remain partial for concrete accepted-contract gaps. Use `scripts/hermes_status.py
+show <ID>` and [the batch review](../plans/2026-10-10-hermes-closure-01.md) for
+current claims and remaining work; a historical "closed" line does not override them.
+
 Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) row that still carried only the 2026-09-07 audit verdict: 16 read-only assessors read the requirement and the code on `main` at 6578cd3c, a skeptic stood ready for every claimed promotion (none was claimed — the old audit held up), and a cross-row critic checked the plans against each other and against the code. The verdicts are in [assessment.json](assessment.json); this page keeps what the ledger does not: how each gap would close.
 
 **Pruned** (2026-09-27): the 45 rows closed so far (H613, H262, H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.

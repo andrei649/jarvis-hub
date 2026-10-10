@@ -106,6 +106,9 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
 | Ticker | `GET /ticker` | ✅ | ✅ | H18.14 |
 | Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
+| Conditional model-facing skill offers (H328) | Shared prompt catalog and `skills_list` gates now recognize native Kanban and supported toolset members | ✅ shared runtime | ✅ same server-side turn policy; no new native control | H328 |
+| Resource-pressure warnings (H161) | `GET /api/system/pressure`, `POST /api/system/pressure/dismiss`; unreadable volumes retain their warning until confirmed recovery | ✅ existing ranked banner | ⬜ native banner/dismissal reader remains open | H161 |
+| App-timezone schedules (H450) | Existing schedule preview and jobs APIs use the same active application zone; saved zone changes apply to running jobs after restart | ✅ existing Jobs preview/create/edit | ⬜ native job administration remains open; shared backend behavior applies to all callers | H450 |
 | Memory / notes | read legs only: `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
 | Knowledge graph | read legs only: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/{as-of,history}` | ✅ | ✅ existing native entity list/detail and relation rows | H18.17 |
 | Memory neighborhood navigation | user/admin-superset `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, plus KG fact reads | ✅ live search, selectable connections, bounded reads; samples only in explicit Demo | 🟡 local Graph code: connected navigation outside first 50, cancellable ten-second reads, post-body one-MiB verification, 100-row caps, stale-read guards and explicit unavailable states; device/live-Hub acceptance open | DW-1 / H18.28 |

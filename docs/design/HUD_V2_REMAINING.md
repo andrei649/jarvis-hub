@@ -514,7 +514,7 @@ blueprint gallery, custom four-action builder, full action/options editing and v
 Per-job repeat counts attempts, including failures; manual runs cannot exceed the bound.
 Explicit configured channel names retain owner destinations and existing delivery gates.
 Remaining: isolated per-job provider/model/workdir/toolsets/skills, cross-profile listing and
-real scheduler/channel proof. Tick uses the scheduler timezone (including DST) and refuses to compete with a live scheduler.
+real scheduler/channel proof. Tick uses the active application timezone (including DST) and refuses to compete with a live scheduler.
 
 H146 followup: the topbar Automations entry now opens a roomy dedicated Jobs workspace;
 Console integration remains. Custom creation uses a native modal with initial focus,
@@ -607,6 +607,18 @@ shows typed HTTP guard and managed token lifecycle events through `GET /api/admi
 No new route or dashboard control is added. The native audit reader remains open
 in `mobile/PARITY.md`; native bearer requests are covered by the shared server guards.
 The broader login/session/WebSocket/native-auth event contract remains incomplete.
+
+H161/H328 closure (2026-10-10): the existing pressure banner receives the same
+response shape, with recovery now confirmed per volume even when another probe
+fails. Existing skill offers recognize the native Kanban and other supported
+toolset members. No new HUD control or route is needed; native pressure-banner
+and dismissal presentation remains a mobile gap.
+
+H450 closure (2026-10-10): schedule preview, job creation/editing, cron triggers,
+status and fallback tick share the runner's active application timezone. Saving
+a new timezone applies to running jobs after restart; absolute one-shot instants
+stay unchanged. The existing Jobs workspace uses the corrected preview route.
+Native job administration remains open in `mobile/PARITY.md`.
 
 H512 MCP token continuation (2026-10-10): successful `/api/mcp/token` signing adds
 a `token_issued` row with literal `surface=mcp` to that same admin audit reader.

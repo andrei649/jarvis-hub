@@ -47,3 +47,15 @@ and new shell regression module. Next action: save this independently reversible
 unit, integrate locally, refresh H004 and the two reviewed CLI collateral pins,
 and run delivery/metadata guards. No second full backend suite is needed for
 this isolated CLI delta after its focused and collateral checks.
+
+Final integration correction: the Zsh completion function now explicitly returns
+zero when a leaf/unknown path has no candidates. The committed test harness
+calls it directly and checks process status; three cases reproduced the error
+on integration commit `08bb5a5e`. Corrective commit `9f139e0d` passes the combined
+five-file integrated selection: 222 passed and three real-Fish skips. The source
+is frozen; remaining work is documentation/evidence synchronization only.
+
+Independent review of the exact corrective commit also passes all six H004
+cases, with no concrete defect; quoted candidate handling remains unchanged.
+The final integration metadata guards pass 86 cases. No shell startup files or
+external service were changed.
