@@ -1,13 +1,12 @@
 # Hermes full-contract closure — batch 09
 
-Generated 2026-10-10 UTC. Goal: repair clarification registration at fresh startup
+Updated 2026-10-10 06:35:10 UTC. Goal: repair clarification registration at fresh startup
 and restore typed choice coercion after Other, then re-review the whole frozen
 H067 pending-input contract. Integration base: `08ba81a6be061c9b593873cb63e4da11268ab0bc` (final batch08).
-Current source head: `7e7aecafe1609dd6108aeec7368b207240b4dd42`.
-Branch `codex/hermes-closure-09-20261010`. Next action: frozen full backend
-verification, whole-clause review and guarded assessment update. The clean rebase
+Current verified source/repair head: `55e11b458b82380fccdde17bbc77ffd4b61c9314`.
+Branch `codex/hermes-closure-09-20261010`. Next action: final metadata verification and local checkpoint; continue H673/H526 afterward. The clean rebase
 preserved both H067 production and regression digests.
-H067 currently needs_review, not accepted-complete credit.
+H067 is now equivalent after complete-contract review and verified integration repairs.
 Local only; no push, remote merge, deployment, live accounts or paid providers.
 
 ## Design and scope
@@ -138,4 +137,8 @@ in this batch is repaired separately in batch10, not retroactively claimed here.
 A read-only H526 review found missing speech-verifier-footer stripping; that row
 remains unclosed and its repair will be a separate local batch.
 
-Next action: guarded whole H067 acceptance and final metadata checks.
+The guarded assessment update accepts H067 in full. It refreshed 15 previously
+current collateral pins after bounded review and preserved 44 already-stale pins.
+The 697-row frozen inventory is unchanged. Current assessment: 152 equivalent,
+228 partial, 56 missing and 261 needing review; 545 unfinished (21.8% equivalent).
+Final metadata regressions pass 86/86; generated Hermes/status checks and whitespace validation pass. This local checkpoint is complete. No remote publication.
