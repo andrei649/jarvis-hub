@@ -2472,10 +2472,15 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     observed_session_id: str | None = None
     observed_usage: dict[str, Any] | None = None
     observed_stops: list[str] = []
+    observed_pending: list[Any] = []
     stops_unreadable = False
+    interrupted_receipt_written = False
 
     def finish(code: int, *, status: str, reason: str | None = None,
                pending: list[Any] | None = None, completed: bool | None = None) -> int:
+        nonlocal interrupted_receipt_written
+        if code == EXIT_INTERRUPTED and interrupted_receipt_written:
+            return code
         if usage_file:
             finished = _utc_now()
             _write_usage(usage_file, _usage_report(
@@ -2495,160 +2500,164 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
                 pending_approvals=list(pending or []), reason=reason,
                 **(observed_usage or {}),
             ), ctx)
+        if code == EXIT_INTERRUPTED:
+            interrupted_receipt_written = True
         return code
 
-    if oneshot and ns.json:
-        ctx.err.write("-z and --json both own stdout; pick one\n")
-        return finish(EXIT_USAGE, status="usage", reason="-z and --json are mutually exclusive")
-    message, why = _send_body(ns, ctx, verb="nerva chat", bound=CHAT_MAX_CHARS)
-    if message is None:
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
-    if len(message) > CHAT_MAX_CHARS:
-        # _send_body bounds what it *reads* from a file or stdin; an argument arrives
-        # whole. `ChatRequest.message` is max_length=4096, so the hub would answer 422 —
-        # which a script reads as "the turn failed". It is a usage error, and it is one
-        # before the request rather than after it.
-        why = (f"the prompt is {len(message):,} characters, and one chat turn carries up to "
-               f"{CHAT_MAX_CHARS:,} — trim it, or split the turn")
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
+    def perform() -> int:
+        nonlocal observed_session_id, observed_usage, observed_stops, observed_pending, stops_unreadable
+        if oneshot and ns.json:
+            ctx.err.write("-z and --json both own stdout; pick one\n")
+            return finish(EXIT_USAGE, status="usage", reason="-z and --json are mutually exclusive")
+        message, why = _send_body(ns, ctx, verb="nerva chat", bound=CHAT_MAX_CHARS)
+        if message is None:
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+        if len(message) > CHAT_MAX_CHARS:
+            # _send_body bounds what it *reads* from a file or stdin; an argument arrives
+            # whole. `ChatRequest.message` is max_length=4096, so the hub would answer 422 —
+            # which a script reads as "the turn failed". It is a usage error, and it is one
+            # before the request rather than after it.
+            why = (f"the prompt is {len(message):,} characters, and one chat turn carries up to "
+                   f"{CHAT_MAX_CHARS:,} — trim it, or split the turn")
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
 
-    selected_session = getattr(ns, "session", None)
-    selector = getattr(ns, "resume", None)
-    latest_mode = bool(getattr(ns, "continue_latest", False))
-    if selector or latest_mode:
-        from .foreign_sessions import ForeignSourceError
+        selected_session = getattr(ns, "session", None)
+        selector = getattr(ns, "resume", None)
+        latest_mode = bool(getattr(ns, "continue_latest", False))
+        if selector or latest_mode:
+            from .foreign_sessions import ForeignSourceError
+            try:
+                if selector and selector.startswith(("@claude", "@codex")):
+                    from .client import is_loopback_url
+                    from .foreign_sessions import discover, read_file
+
+                    if not is_loopback_url(hub_url(ctx.environ)):
+                        raise ForeignSourceError("foreign transcripts can only be imported to a local hub")
+                    source, _, external_id = selector[1:].partition(":")
+                    if source not in {"claude", "codex"}:
+                        raise ForeignSourceError("invalid foreign selector")
+                    parsed = read_file(source, discover(source, external_id or None))
+                    import uuid
+                    imported = ctx.client().post("/sessions/import", {**parsed, "request_id": str(uuid.uuid4())})
+                    selector = imported["session_id"]
+                resolved = ctx.client().post("/sessions/resolve", {
+                    "selector": selector or "latest", "latest_mode": latest_mode})
+                selected_session = resolved["session_id"]
+                recap = resolved.get("recap")
+                if recap:
+                    ctx.err.write(str(recap.get("text", "") if isinstance(recap, dict) else recap).rstrip() + "\n")
+            except ForeignSourceError as exc:
+                ctx.err.write(f"{exc}\n")
+                return finish(EXIT_FAILED, status="failed", reason=str(exc))
+            except HubError as exc:
+                ctx.err.write(f"{exc}\n")
+                return finish(EXIT_AUTH if exc.status in {401, 403} else EXIT_FAILED,
+                              status="unauthorised" if exc.status in {401, 403} else "failed", reason=str(exc))
+        if selected_session:
+            ns.session = selected_session
+
+        if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
+            return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
+        if getattr(ns, "remote_vision", None) is not None:
+            why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+        if getattr(ns, "acknowledge_training", False) or getattr(ns, "confirm_expensive", False):
+            why = "selection confirmation flags on chat apply only to an image turn (--image or --clipboard-image)"
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+
+        body: dict[str, Any] = {"message": message}
+        if ns.agent:
+            body["agent"] = ns.agent
+        if getattr(ns, "reasoning", None) is not None:
+            body["reasoning"] = ns.reasoning
+        if selected_session:
+            body["session_id"] = selected_session
         try:
-            if selector and selector.startswith(("@claude", "@codex")):
-                from .client import is_loopback_url
-                from .foreign_sessions import discover, read_file
-
-                if not is_loopback_url(hub_url(ctx.environ)):
-                    raise ForeignSourceError("foreign transcripts can only be imported to a local hub")
-                source, _, external_id = selector[1:].partition(":")
-                if source not in {"claude", "codex"}:
-                    raise ForeignSourceError("invalid foreign selector")
-                parsed = read_file(source, discover(source, external_id or None))
-                import uuid
-                imported = ctx.client().post("/sessions/import", {**parsed, "request_id": str(uuid.uuid4())})
-                selector = imported["session_id"]
-            resolved = ctx.client().post("/sessions/resolve", {
-                "selector": selector or "latest", "latest_mode": latest_mode})
-            selected_session = resolved["session_id"]
-            recap = resolved.get("recap")
-            if recap:
-                ctx.err.write(str(recap.get("text", "") if isinstance(recap, dict) else recap).rstrip() + "\n")
-        except ForeignSourceError as exc:
-            ctx.err.write(f"{exc}\n")
-            return finish(EXIT_FAILED, status="failed", reason=str(exc))
+            reply = ctx.client().post("/chat", body)
+        except HubUnavailable:
+            finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
+            raise
         except HubError as exc:
-            ctx.err.write(f"{exc}\n")
-            return finish(EXIT_AUTH if exc.status in {401, 403} else EXIT_FAILED,
-                          status="unauthorised" if exc.status in {401, 403} else "failed", reason=str(exc))
-    if selected_session:
-        ns.session = selected_session
+            observed_usage = _validated_turn_usage(getattr(exc, "usage", None))
+            if getattr(exc, "runtime_stops", None) is not None:
+                parsed_stops = _validated_runtime_stops(exc.runtime_stops)
+                stops_unreadable = parsed_stops is None
+                observed_stops = parsed_stops or []
+            status = "unauthorised" if exc.status in (401, 403) else "failed"
+            finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
+                   status=status, reason=("the hub returned invalid runtime-stop metadata"
+                                          if stops_unreadable else str(exc)))
+            raise
 
-    if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
-        return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
-    if getattr(ns, "remote_vision", None) is not None:
-        why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
-    if getattr(ns, "acknowledge_training", False) or getattr(ns, "confirm_expensive", False):
-        why = "selection confirmation flags on chat apply only to an image turn (--image or --clipboard-image)"
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
+        if isinstance(reply, dict):
+            observed_usage = _validated_turn_usage(reply.get("usage"))
+            if "runtime_stops" in reply:
+                parsed_stops = _validated_runtime_stops(reply["runtime_stops"])
+                stops_unreadable = parsed_stops is None
+                observed_stops = parsed_stops or []
+            returned_session = reply.get("session_id")
+            if isinstance(returned_session, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", returned_session):
+                observed_session_id = returned_session
 
-    body: dict[str, Any] = {"message": message}
-    if ns.agent:
-        body["agent"] = ns.agent
-    if getattr(ns, "reasoning", None) is not None:
-        body["reasoning"] = ns.reasoning
-    if selected_session:
-        body["session_id"] = selected_session
+        raw = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
+        # Sanitise BEFORE judging, not after. The verdict used to read the raw reply while
+        # the printer read the cleaned one, so a reply made only of control characters was
+        # "not empty" to the guard and an empty line to stdout — exit 0 over nothing — and
+        # a sentinel padded with control bytes slipped the table entirely.
+        answer = _answer_text(raw)
+        # A hub that reports what the turn queued (ChatResponse.pending_approvals) lets this
+        # name the ids; an older one does not, and then the refusal is reported without them.
+        pending, pending_unreadable = _pending_ids(
+            (reply or {}).get("pending_approvals") if isinstance(reply, dict) else None)
+        observed_pending = list(pending)
+        refusal = _not_an_answer(answer)
+        queued = bool(pending or pending_unreadable or "approval_required" in observed_stops
+                      or (refusal and "approval" in refusal))
+        incomplete = bool(refusal or queued or not answer.strip() or observed_stops or stops_unreadable)
+        stop_reason = ("the hub returned invalid runtime-stop metadata" if stops_unreadable else
+                       f"model turn stopped: {', '.join(observed_stops)}" if observed_stops else None)
+
+        if not oneshot:
+            # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
+            # that need the verdict use -z; changing this would break every existing caller.
+            # The receipt is new surface, so it is allowed to say what the exit code cannot.
+            if ns.json:
+                ctx.dump(reply)
+            else:
+                ctx.say(str(raw))
+            status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
+            return finish(EXIT_OK, status=status, reason=stop_reason or refusal, pending=pending,
+                          completed=not incomplete)
+
+        if incomplete:
+            reason = stop_reason or refusal or ("the turn queued an action for approval and was not executed"
+                                 if queued else "the hub returned an empty answer")
+            if pending:
+                ids = ", ".join(_plain(i, 40) for i in pending)
+                reason = f"{reason} (approval {ids})"
+                ctx.err.write(f"{reason}; decide it with `nerva approvals`\n")
+            elif pending_unreadable:
+                ctx.err.write(f"{reason}; this hub reported the approval in a shape this "
+                              "version cannot read — run `nerva approvals` to find it\n")
+            elif queued:
+                ctx.err.write(f"{reason}; this hub did not report the id — run `nerva approvals` to find it\n")
+            else:
+                ctx.err.write(f"{reason}\n")
+            status = "queued_for_approval" if queued else "refused"
+            return finish(EXIT_FAILED, status=status, reason=reason, pending=pending)
+
+        _write_answer(ctx, answer)
+        return finish(EXIT_OK, status="completed", pending=pending)
+
     try:
-        reply = ctx.client().post("/chat", body)
+        return perform()
     except KeyboardInterrupt:
-        # The receipt is promised on every path, and an interrupt is the path a cron
-        # wrapper most needs one for — it is what a timeout kill looks like from in
-        # here. main() still prints the one line and returns 130; this only makes sure
-        # the run leaves a record behind saying so.
-        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted", pending=observed_pending)
         raise
-    except HubUnavailable:
-        finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
-        raise
-    except HubError as exc:
-        observed_usage = _validated_turn_usage(getattr(exc, "usage", None))
-        if getattr(exc, "runtime_stops", None) is not None:
-            parsed_stops = _validated_runtime_stops(exc.runtime_stops)
-            stops_unreadable = parsed_stops is None
-            observed_stops = parsed_stops or []
-        status = "unauthorised" if exc.status in (401, 403) else "failed"
-        finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
-               status=status, reason=("the hub returned invalid runtime-stop metadata"
-                                      if stops_unreadable else str(exc)))
-        raise
-
-    if isinstance(reply, dict):
-        observed_usage = _validated_turn_usage(reply.get("usage"))
-        if "runtime_stops" in reply:
-            parsed_stops = _validated_runtime_stops(reply["runtime_stops"])
-            stops_unreadable = parsed_stops is None
-            observed_stops = parsed_stops or []
-        returned_session = reply.get("session_id")
-        if isinstance(returned_session, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", returned_session):
-            observed_session_id = returned_session
-
-    raw = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
-    # Sanitise BEFORE judging, not after. The verdict used to read the raw reply while
-    # the printer read the cleaned one, so a reply made only of control characters was
-    # "not empty" to the guard and an empty line to stdout — exit 0 over nothing — and
-    # a sentinel padded with control bytes slipped the table entirely.
-    answer = _answer_text(raw)
-    # A hub that reports what the turn queued (ChatResponse.pending_approvals) lets this
-    # name the ids; an older one does not, and then the refusal is reported without them.
-    pending, pending_unreadable = _pending_ids(
-        (reply or {}).get("pending_approvals") if isinstance(reply, dict) else None)
-    refusal = _not_an_answer(answer)
-    queued = bool(pending or pending_unreadable or "approval_required" in observed_stops
-                  or (refusal and "approval" in refusal))
-    incomplete = bool(refusal or queued or not answer.strip() or observed_stops or stops_unreadable)
-    stop_reason = ("the hub returned invalid runtime-stop metadata" if stops_unreadable else
-                   f"model turn stopped: {', '.join(observed_stops)}" if observed_stops else None)
-
-    if not oneshot:
-        # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
-        # that need the verdict use -z; changing this would break every existing caller.
-        # The receipt is new surface, so it is allowed to say what the exit code cannot.
-        if ns.json:
-            ctx.dump(reply)
-        else:
-            ctx.say(str(raw))
-        status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
-        return finish(EXIT_OK, status=status, reason=stop_reason or refusal, pending=pending,
-                      completed=not incomplete)
-
-    if incomplete:
-        reason = stop_reason or refusal or ("the turn queued an action for approval and was not executed"
-                             if queued else "the hub returned an empty answer")
-        if pending:
-            ids = ", ".join(_plain(i, 40) for i in pending)
-            reason = f"{reason} (approval {ids})"
-            ctx.err.write(f"{reason}; decide it with `nerva approvals`\n")
-        elif pending_unreadable:
-            ctx.err.write(f"{reason}; this hub reported the approval in a shape this "
-                          "version cannot read — run `nerva approvals` to find it\n")
-        elif queued:
-            ctx.err.write(f"{reason}; this hub did not report the id — run `nerva approvals` to find it\n")
-        else:
-            ctx.err.write(f"{reason}\n")
-        status = "queued_for_approval" if queued else "refused"
-        return finish(EXIT_FAILED, status=status, reason=reason, pending=pending)
-
-    _write_answer(ctx, answer)
-    return finish(EXIT_OK, status="completed", pending=pending)
 
 
 #: What one vision turn carries (agents/core/routers/composer_vision.py, the HUD's

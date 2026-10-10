@@ -703,6 +703,131 @@ def test_an_interrupted_run_still_leaves_a_receipt(tmp_path):
     assert body["session_id"] is None and body["requested_session_id"] == "requested-2"
 
 
+@pytest.mark.parametrize("output_seam", ["oneshot", "interactive"])
+def test_interrupt_after_decoded_reply_retains_observed_receipt(tmp_path, monkeypatch, output_seam):
+    from agents.cli import nerva
+
+    report = tmp_path / "usage.json"
+    usage = {"schema": "nerva.turn.usage.v1", "api_calls": 0,
+             "input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0,
+             "provider": None, "model": None, "usage_basis": "measured_zero",
+             "cost_basis": "measured_zero", "breakdown": []}
+    hub = _FakeHub({"POST /chat": {"reply": "done", "session_id": "actual-7",
+                                   "usage": usage, "runtime_stops": []}})
+
+    def interrupted(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    if output_seam == "oneshot":
+        monkeypatch.setattr(nerva, "_write_answer", interrupted)
+    else:
+        monkeypatch.setattr(Context, "say", interrupted)
+    argv = ["chat", "--usage-file", str(report), "hi"]
+    if output_seam == "oneshot":
+        argv.insert(1, "-z")
+    code, out, err, _ = _run(argv, hub=hub)
+    assert code == EXIT_INTERRUPTED and out == "" and err == "interrupted\n"
+    receipt = json.loads(report.read_text())
+    assert receipt["status"] == "interrupted" and receipt["exit_code"] == EXIT_INTERRUPTED
+    assert receipt["completed"] is False and receipt["reason"] == "interrupted"
+    assert receipt["session_id"] == "actual-7" and receipt["api_calls"] == 0
+    assert receipt["runtime_stops"] == []
+
+
+def test_interrupt_during_queued_notice_retains_pending_and_stop_metadata(tmp_path):
+    report = tmp_path / "usage.json"
+    usage = {"schema": "nerva.turn.usage.v1", "api_calls": 0,
+             "input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0,
+             "provider": None, "model": None, "usage_basis": "measured_zero",
+             "cost_basis": "measured_zero", "breakdown": []}
+    hub = _FakeHub({"POST /chat": {"reply": "All done", "session_id": "actual-9",
+                                   "usage": usage, "pending_approvals": [71],
+                                   "runtime_stops": ["approval_required"]}})
+
+    class InterruptedNotice(io.StringIO):
+        interrupted = False
+
+        def write(self, value):
+            if not self.interrupted and "approval 71" in value:
+                self.interrupted = True
+                raise KeyboardInterrupt
+            return super().write(value)
+
+    out, err = io.StringIO(), InterruptedNotice()
+    ctx = Context(environ={}, out=out, err=err, inp=io.StringIO(""),
+                  client_factory=lambda _env: hub)
+    code = main(["chat", "-z", "--usage-file", str(report), "hi"], context=ctx)
+    assert code == EXIT_INTERRUPTED and out.getvalue() == "" and err.getvalue() == "interrupted\n"
+    receipt = json.loads(report.read_text())
+    assert receipt["status"] == "interrupted" and receipt["completed"] is False
+    assert receipt["session_id"] == "actual-9" and receipt["api_calls"] == 0
+    assert receipt["runtime_stops"] == ["approval_required"]
+    assert receipt["pending_approvals"] == [71]
+    assert hub.calls == [("POST", "/chat", {"message": "hi"})]
+
+
+@pytest.mark.parametrize("seam", ["prompt", "session"])
+def test_interrupt_before_chat_post_writes_one_unknown_usage_receipt(tmp_path, monkeypatch, seam):
+    from agents.cli import nerva
+
+    report = tmp_path / "usage.json"
+    writes = []
+    original = nerva._write_usage
+
+    def counted(path, receipt, ctx):
+        writes.append(receipt.copy())
+        return original(path, receipt, ctx)
+
+    monkeypatch.setattr(nerva, "_write_usage", counted)
+    hub = _FakeHub()
+    argv = ["chat", "-z", "--usage-file", str(report), "hi"]
+    if seam == "prompt":
+        def interrupted(*_args, **_kwargs):
+            raise KeyboardInterrupt
+        monkeypatch.setattr(nerva, "_send_body", interrupted)
+    else:
+        argv[1:1] = ["--resume", "latest"]
+
+        def interrupted(_path, _body=None):
+            raise KeyboardInterrupt
+        monkeypatch.setattr(hub, "post", interrupted)
+    code, out, err, _ = _run(argv, hub=hub)
+    assert code == EXIT_INTERRUPTED and out == "" and err == "interrupted\n"
+    assert len(writes) == 1
+    receipt = json.loads(report.read_text())
+    assert receipt["status"] == "interrupted" and receipt["completed"] is False
+    assert receipt["api_calls"] is None and receipt["session_id"] is None
+
+
+def test_existing_vision_interrupt_handler_does_not_write_a_second_receipt(tmp_path, monkeypatch):
+    from agents.cli import nerva
+
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"example")
+    report = tmp_path / "usage.json"
+    writes = []
+    original = nerva._write_usage
+
+    def counted(path, receipt, ctx):
+        writes.append(receipt.copy())
+        return original(path, receipt, ctx)
+
+    class InterruptedVision:
+        def get(self, _path):
+            return {"configured": True, "destination": "http://127.0.0.1:1234/v1",
+                    "binding": "b" * 64, "model": "local-vision", "local": True}
+
+        def post(self, _path, _body=None, *, timeout=None):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(nerva, "_write_usage", counted)
+    code, out, err, _ = _run(["chat", "-z", "--image", str(image),
+                              "--usage-file", str(report), "what?"], hub=InterruptedVision())
+    assert code == EXIT_INTERRUPTED and out == "" and err.endswith("interrupted\n")
+    assert len(writes) == 1
+    assert json.loads(report.read_text())["status"] == "interrupted"
+
+
 def test_a_failed_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):
     """NamedTemporaryFile(delete=False) outlives a failed replace; without a cleanup a
     cron entry with a mistyped path drops one hidden report per run, forever."""
