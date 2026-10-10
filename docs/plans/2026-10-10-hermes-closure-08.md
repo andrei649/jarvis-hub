@@ -3,7 +3,8 @@
 Generated 2026-10-10 UTC. Goal: close frozen H456, scheduled tool bounds and
 per-job reasoning, through the existing runtime and authoring surfaces. Base and
 initial head: `9febf8ad52a47f691ac46719c6d25f1647680949` (150/697 accepted).
-Branch: `codex/hermes-closure-08-20261010`. Next action: freeze and run the full integration milestone.
+Branch: `codex/hermes-closure-08-20261010`. Final source head: `8064ed8284a8434e13a4b7adb112ceee19981ce8`.
+Next action: continue H067 in isolated batch09.
 No whole-contract credit before review and integrated verification. Local only.
 
 ## Donor and native adaptation
@@ -144,3 +145,34 @@ guards pass; routes remain 629.
 Artifacts: `/workspace/scratch/hermes-697/batch08/`. The full frontend suite passes all 2,181 tests;
 backend collection is 25,935, mobile count 359 is reused because its tests are unchanged.
 The frozen backend milestone is pending; no new whole-contract credit is recorded yet.
+
+## Integration milestone and acceptance
+
+Frozen source `16bfdc1282554ada805968383ced004046173b2c` completed all 25,935
+backend cases: 25,875 passed, one failed and 59 skipped/xfail. All 5,715 tracked
+and nonignored input files were verified unchanged before any repair. The sole
+failure was an existing approval test whose 40ms deadline could expire before
+durable delivery acknowledgment. Its fixture now waits for the actual receipt,
+then advances only that request module's clock beyond the recorded deadline.
+Production code and original assertions are unchanged. The original failed node
+and all 46 adjacent owner-once cases pass at final source 8064ed82. This is a
+completed full run with focused repair evidence, not a green full-run claim.
+
+backend-validation.json binds the original XML, frozen-input verification and
+repair/focused.xml. Root reviewed the timing correction and both core/surface
+reviews. Whole H456 is accepted; 60 previously-current changed evidence pins
+were reviewed and refreshed, while 122 already-stale pins remain untouched.
+H146/H449 record the implemented code group/transitive bound, and H620 records
+reasoning progress, with all their wider remaining clauses left open. The frozen
+697-row inventory and raw digest remain unchanged.
+
+The guarded assessment advances from 150 to **151/697 complete (21.7%)**:
+151 equivalent, 228 partial, 56 missing, zero excluded, 262 needing review;
+546 unfinished. Current test counts: backend 25,935, frontend 2,181 (fresh full
+pass), mobile 359 (unchanged tests, reused count); 629 routes and 18 agents.
+The code, built UI, browser and actual offline product checks are recorded above.
+All 86 final metadata cases pass after adding explicit source citations to the
+renewed H456 review; Hermes/status synchronization and whitespace checks pass.
+The initial missing-citation metadata failure is preserved in scratch artifacts.
+Everything is local;
+no push, remote merge, live-account/provider action or deployment occurred.
