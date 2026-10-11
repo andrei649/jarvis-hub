@@ -84,6 +84,12 @@ Unquoted, systemd drops the backslash and the hub receives a plain `n`. It is gi
 every agent as a description of the machine, not as instructions, at most 2,000
 characters; `nerva prompt-size`, run with the same variable, counts it.
 
+Nerva also detects that this unit supervises it (`NOTIFY_SOCKET`, and journal logging when
+`JOURNAL_STREAM` names its own stderr, as systemd documents) and tells the model so in one
+line of its own, before the hint and never under it; the HUD's host readiness card shows
+the same facts (`GET /api/host/probe`, `identity`). On a bare host run by hand there is
+nothing to say and no line is added.
+
 ## Safe mode
 
 To start without the owner's customizations (H275: skills that did not ship, saved MCP

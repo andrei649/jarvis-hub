@@ -31,6 +31,16 @@ needs_unix = pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="sd_notif
 REPO = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _nothing_detected_about_the_host(monkeypatch):
+    """H283: the prompt now carries what Nerva detects about its host (a container on most
+    CI boxes, under its own heading). These tests pin exact prompt bytes, so the host is
+    pinned to "nothing detected"; tests/test_h283_host_identity.py covers the block."""
+    from agents.core import host_identity
+
+    monkeypatch.setattr(host_identity, "identity", lambda: host_identity.HostIdentity())
+
+
 @pytest.fixture
 def listener(monkeypatch):
     """A service manager's end: a datagram socket at NOTIFY_SOCKET."""

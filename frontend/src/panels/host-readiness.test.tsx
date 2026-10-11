@@ -9,7 +9,10 @@
    · a probe that could not run renders its reason and claims no facts about the host;
    · the S1 benchmark's headline is rendered verbatim — the panel never composes a rate;
    · a result measured against different questions renders as STALE, not as a score;
-   · never-run renders as never-run, not as a zero. */
+   · never-run renders as never-run, not as a zero;
+   · the detected host identity (H283) renders in its closed words, the machine id only as
+     the backend's hash prefix, and the line the model is told verbatim — or that it is
+     told nothing; an identity failure is its own state, never a bare host. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -186,6 +189,55 @@ describe('HostReadinessPanel — observe-only host truth, rendered without guess
     await waitFor(() => expect(screen.getByText('observe a window')).toBeTruthy());
     expect(screen.getByText('negative control')).toBeTruthy();
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/benchmark/pack'))).toBe(true);
+  });
+
+  const IDENTITY = {
+    container: 'docker', container_evidence: '/.dockerenv', wsl: null, wsl_distro: null, termux: false,
+    supervisor: 'systemd', s6: false, notify_socket: true, watchdog_s: 60, journal: true,
+    terminal: 'none', multiplexer: 'none', term: 'none', color: 'none', background: 'unknown',
+    interactive: false, machine_id: '0123456789abcdef', machine_id_source: 'etc',
+    prompt_line: 'This hub runs in a Docker container, supervised by systemd (logs go to the journal; a watchdog restarts it if it hangs).',
+  };
+
+  it('renders the detected host identity and the exact line the model is told', async () => {
+    mockFetch({ '/api/host/probe': ok({ ...PROBE, identity: IDENTITY }) });
+    render(<HostReadinessPanel />);
+    await waitFor(() => expect(screen.getByText('HOST IDENTITY')).toBeTruthy());
+    const verdict = (key) => screen.getByText(key).parentElement.textContent.replace(key, '');
+    expect(verdict('container')).toBe('docker');
+    expect(verdict('WSL')).toBe('no');
+    expect(verdict('Termux')).toBe('no');
+    expect(verdict('supervisor')).toBe('systemdjournalwatchdog 60s');
+    expect(verdict('terminal (hub process)')).toBe('none');
+    expect(verdict('machine id')).toBe('0123456789abcdef · etc');
+    expect(screen.getByText(IDENTITY.prompt_line)).toBeTruthy();
+    expect(screen.getByText(/The model is told/)).toBeTruthy();
+  });
+
+  it('says the model is told nothing when there is nothing to say', async () => {
+    mockFetch({
+      '/api/host/probe': ok({
+        ...PROBE,
+        identity: { ...IDENTITY, container: null, supervisor: 'none', journal: false, watchdog_s: null,
+                    notify_socket: false, terminal: 'kitty', multiplexer: 'tmux', prompt_line: '' },
+      }),
+    });
+    render(<HostReadinessPanel />);
+    await waitFor(() => expect(screen.getByText('HOST IDENTITY')).toBeTruthy());
+    const verdict = (key) => screen.getByText(key).parentElement.textContent.replace(key, '');
+    expect(verdict('container')).toBe('none detected');
+    expect(verdict('terminal (hub process)')).toBe('kitty · tmux');
+    expect(screen.getByText(/told nothing about this host/)).toBeTruthy();
+  });
+
+  it('renders an identity failure as its own state, not as a bare host', async () => {
+    mockFetch({
+      '/api/host/probe': ok({ ...PROBE, identity: { detected: false, reason: 'identity_failed' } }),
+    });
+    render(<HostReadinessPanel />);
+    await waitFor(() => expect(screen.getByText('identity_failed')).toBeTruthy());
+    expect(screen.queryByText('container')).toBeNull();
+    expect(screen.queryByText(/none detected/)).toBeNull();
   });
 
   it('renders a failed probe as its own state and claims no host facts', async () => {

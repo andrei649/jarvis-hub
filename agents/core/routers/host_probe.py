@@ -3,7 +3,9 @@
 One user-guarded, read-only route that runs :func:`agents.core.host_probe.probe_host`
 off the event loop and returns its facts verbatim: platform, optional-dependency
 presence, tri-state permissions, the closed refusal vocabulary this host trips,
-and the owner flags it only *reports*.  It never actuates, never prompts for an
+and the owner flags it only *reports* — plus ``identity`` (H283,
+:mod:`agents.core.host_identity`): what kind of machine this is, in closed words,
+with the machine id only as a keyed hash prefix.  It never actuates, never prompts for an
 OS permission, and never mounts a driver — the honesty surface for the desktop
 operator, nothing more.
 
@@ -19,6 +21,7 @@ import time
 
 from fastapi import APIRouter, Depends
 
+from agents.core import host_identity
 from agents.core.host_probe import REFUSAL_HINTS, REFUSAL_REASONS, probe_host
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
@@ -27,6 +30,12 @@ router = APIRouter(tags=["host"])
 
 # Monkeypatch seam for tests (the route never imports OS libraries itself).
 _probe = probe_host
+
+
+def _identity():
+    """What kind of machine this is (H283): container, WSL, Termux, supervisor, terminal,
+    a hashed machine id — the same facts the model is told, detected once per process."""
+    return host_identity.identity()
 
 
 @router.get("/api/host/probe", dependencies=[Depends(user_guard)])
@@ -45,7 +54,13 @@ async def host_probe():
             "probed_at": time.time(),
         })
     payload = probe.to_dict()
+    try:
+        identity = await asyncio.to_thread(lambda: _identity().to_dict())
+    except Exception:
+        # Separate from the probe: a detector bug never turns a good probe into a failure.
+        identity = {"detected": False, "reason": "identity_failed"}
     payload.update({
+        "identity": identity,
         "probed": True,
         "vocabulary": vocabulary,
         "vocabulary_hints": dict(REFUSAL_HINTS),
