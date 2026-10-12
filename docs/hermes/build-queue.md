@@ -25,6 +25,8 @@ guest session window, stale switch grants), re-read the 22 closed rows those fix
 and seven more stale ones (H078, H153, H313, H378, H465, H513, H674) — to 193/697.
 H523 then restamped equivalent and H586 demoted to partial (image turns committed
 untainted) — 194/697; no stale closed row remains.
+Batch 4 re-read all 112 stale recorded-partial rows (no status moved; 52 claims or
+remaining lists corrected) — needs_review 218 → 106.
 
 Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) row that still carried only the 2026-09-07 audit verdict: 16 read-only assessors read the requirement and the code on `main` at 6578cd3c, a skeptic stood ready for every claimed promotion (none was claimed — the old audit held up), and a cross-row critic checked the plans against each other and against the code. The verdicts are in [assessment.json](assessment.json); this page keeps what the ledger does not: how each gap would close.
 
