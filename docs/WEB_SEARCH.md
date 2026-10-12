@@ -104,23 +104,39 @@ feature) is deliberately not offered.
   says so. Reading the file back is still tainted data.
 - PDFs are read with the optional `pypdf` package in a worker thread, at most 200 pages; a PDF
   larger than the 2 MB read cap is refused as `too_large`, an encrypted or broken one as
-  `url_refused`. At most two parses run at once and the rest of a call's PDFs **wait their turn**
-  (five PDF URLs in one call all read; each read waits up to 90 s for a slot). The 30 s parse
-  limit is checked between pages, so the worker stops at the next page boundary after it; the
-  caller gets `fetch_failed` (retryable), not `url_refused`. A single page that hangs inside
-  `pypdf` cannot be interrupted from Python and keeps its thread slot until it really ends: if
-  both slots are held that way, further PDF reads answer `parser_busy` (read another source or
-  try much later — a retry meets the same hang until it clears) instead of looping on
-  `fetch_failed`. The 2 MB / 200-page caps bound the work; a killable subprocess would be the
-  hard bound and is not built.
+  `url_refused`. At most two parses run at once and the rest of a call's PDFs **wait their
+  turn** — but only inside the call's time budget. The tool loop cuts every tool call off at
+  30 s (`tool_timeout`, which would throw away every page already read), so one `web_extract` call
+  keeps its own deadlines under that: past **22 s** no PDF waits for a slot or keeps parsing, and
+  past **26 s** any read still running is cancelled. Pages finished by then are returned; a PDF
+  that did not fit answers `parser_busy` with a `retry` hint (ask for it alone in a later call,
+  or use another source) and a page that was still downloading answers `fetch_failed` with the
+  same kind of hint. So five ordinary PDFs in one call all read, and five very large ones read
+  the first few and answer the rest `parser_busy` — they are never silently lost. A caller with no
+  deadline (the gatherer, a script) keeps the standalone bounds: up to 90 s for a slot, 30 s per
+  parse. The parse limit is checked between pages, so the worker stops at the next page boundary
+  after it. A single page that hangs inside `pypdf` cannot be interrupted from Python and keeps
+  its thread slot until it really ends: if both slots are held that way, further PDF reads
+  answer `parser_busy`. The 2 MB / 200-page caps bound the work.
+- **Known limits of the PDF reader (not built):** the memory `pypdf` uses to decompress a stream
+  or extract one page is not bounded by Nerva (the 2 MB cap bounds the download, not what a
+  crafted compressed stream expands to, and the size check runs between pages); install a
+  current `pypdf` release, which carries its own decompression limits, and note that `pypdf` is
+  in no requirements file here. A hard bound would be a killable subprocess with a memory
+  rlimit; it is a separate execution path and is not built.
 - The page cache (15 minutes, per server) keeps each page's head and tail, so a smaller cut is
   re-cut from the page itself, and a hit names a full-text file only while it still exists.
   Refusals are never cached. Repeat searches are cached the same 15 minutes in the plugin.
 
-Refusal reasons, per page: `url_refused` (a gate or a non-text answer — do not retry),
-`fetch_failed` (network / server error, an HTTP 4xx/5xx whatever its content type, or a name
-that did not resolve), `parser_missing` + `missing` (install it), `parser_busy` (the PDF reader is
-held by hung documents), `too_large`, `site_blocked` (`JARVIS_WEB_BLOCKED_DOMAINS`), `secret_in_url`, `tainted_turn`.
+Refusal reasons, per page: `url_refused` (a gate, a non-text answer, or a name that does not
+resolve — do not retry; the two are deliberately answered alike, because a different answer for
+a private address would let a prompt-injected caller probe which internal host names exist), `fetch_failed` (a network error, a timeout, or a transient HTTP status:
+408, 425, 429, 5xx — may be retried), `http_error` + `status` (any other HTTP error status: 404,
+410, 401, 403, 451 — the server's settled answer, do not retry the same URL), `parser_missing` +
+`missing` (install it), `parser_busy` (the PDF reader could not take that document in this call's
+time, or hung documents hold it), `too_large`, `site_blocked` (`JARVIS_WEB_BLOCKED_DOMAINS`),
+`secret_in_url`, `tainted_turn`. The status is checked before the media type, so a 503 that
+answers in JSON is `fetch_failed`, not an unreadable page.
 
 ## Verification command
 
@@ -150,9 +166,10 @@ shows what the loop fenced).
 | `rescued_from: tavily` | Tavily failed once and the next provider answered | look at the hub log for the failure type |
 | page `parser_missing`, `missing: pypdf` | a PDF and `pypdf` is not installed | `pip install pypdf` |
 | page `too_large` | a PDF over the 2 MB read cap | download it and use the local-docs reader |
-| page `url_refused` on a public site | non-text media, or an egress refusal | do not retry; the log names the class |
-| page `fetch_failed` | network error, a name that did not resolve, or an HTTP 4xx/5xx | retry later |
-| page `parser_busy` | two earlier PDFs are hung inside `pypdf` (or the queue wait expired) | read another source; clears when the hung parse ends, or restart the hub |
+| page `url_refused` on a public site | non-text media, an egress refusal, or a name that does not resolve | do not retry; the log names the class (including `the name did not resolve`) |
+| page `fetch_failed` | network error, a timeout, or HTTP 408/425/429/5xx | retry later |
+| page `http_error`, `status: 404` (or 410/401/403/451) | the server's settled answer for that URL | do not retry the same URL; find another source |
+| page `parser_busy` | the call's 22 s budget ran out before this PDF could be parsed (several large PDFs), or two earlier PDFs are hung inside `pypdf` | ask for it alone in a later call or read another source; a hung parse clears when it ends, or restart the hub |
 | `provider_failed` on SearXNG, log `http_403` or `bad_body` | the instance does not serve the JSON format | enable `json` under `search.formats` (see Self-hosted SearXNG) |
 | SearXNG `policy_blocked` on a docker/LAN name | a DNS name that resolves privately is validated as public | use the private IP literal or `localhost` in `SEARXNG_URL` |
 | page `site_blocked` | the host is in `JARVIS_WEB_BLOCKED_DOMAINS` | remove it if that was not intended |

@@ -65,10 +65,11 @@ SEARCH_CACHE_ENTRIES = 64
 
 #: Why a read produced no text — machine reasons the tools pass through.
 REFUSED = "url_refused"          # a gate refused it, or the answer is not readable text
-FETCH_FAILED = "fetch_failed"    # network / HTTP error status: may be retried later
+FETCH_FAILED = "fetch_failed"    # network error, HTTP 408/425/429/5xx or a read that ran out of time: may be retried later
+HTTP_ERROR = "http_error"        # any other HTTP error status (404, 410, 401, 403, 451 ...): do not retry the same URL
 PARSER_MISSING = "parser_missing"
 TOO_LARGE = "too_large"
-PARSER_BUSY = "parser_busy"      # the PDF parse slots are held by earlier, still-running parses
+PARSER_BUSY = "parser_busy"      # the PDF reader could not take this document in time (queue, budget or hung parses)
 SITE_BLOCKED = "site_blocked"    # operator-disallowed site (JARVIS_WEB_BLOCKED_DOMAINS)
 
 # DuckDuckGo's HTML endpoint does not hand back a result's own address. It hands back
@@ -139,6 +140,18 @@ class PageRead:
     body_cut: bool = False
     text_cut: bool = False
     pages: Optional[tuple[int, int]] = None
+    #: the HTTP status of an ``http_error`` / ``fetch_failed`` answer (0 when there was none)
+    status: int = 0
+
+
+#: Statuses a retry can fix: the request timed out, the server is not ready or is throttling,
+#: or it failed on its side. Every other error status (404, 410, 401, 403, 451 ...) is the
+#: server's settled answer about that URL.
+_TRANSIENT_STATUSES = frozenset({408, 425, 429})
+
+
+def _is_transient_status(status: int) -> bool:
+    return status in _TRANSIENT_STATUSES or status >= 500
 
 
 @dataclass(frozen=True)
@@ -154,6 +167,8 @@ class SearchOutcome:
     rescue_reason: str = ""
     cached: bool = False
     backend: str = ""
+    #: the rescue provider that was asked and also failed (its party saw the query)
+    rescue_tried: str = ""
 
 
 class _PdfBusy(Exception):
@@ -364,7 +379,10 @@ class WebSearchPlugin:
                                          rescued_from=primary.name, rescue_reason="provider_failed",
                                          backend=selection.backend)
                 except web_providers.ProviderFailure:
-                    break
+                    logger.warning("web search rescue provider also failed (provider=%s)",
+                                   rescuer.name)
+                    return SearchOutcome([], provider=primary.name, reason="provider_failed",
+                                         rescue_tried=rescuer.name, backend=selection.backend)
                 return SearchOutcome(rows, provider=rescuer.name, rescued_from=primary.name,
                                      rescue_reason="provider_failed", backend=selection.backend)
             return SearchOutcome([], provider=primary.name, reason="provider_failed",
@@ -374,8 +392,15 @@ class WebSearchPlugin:
         return SearchOutcome(rows, provider=primary.name, backend=selection.backend)
 
     async def search(self, query: str, max_results: int = 5) -> list[dict]:
-        """The rows only (tainted); an empty list when nothing could answer."""
-        return (await self.search_detailed(query, max_results)).rows
+        """The rows only (tainted); an empty list when nothing could answer.
+
+        Rows from a site the owner disallowed (``JARVIS_WEB_BLOCKED_DOMAINS``) are dropped,
+        so the gatherer, the research handler and the scout see the same policy as the
+        ``web_search`` tool. ``search_detailed`` stays unfiltered: the tool counts what it
+        drops and reports it as ``blocked``.
+        """
+        rows = (await self.search_detailed(query, max_results)).rows
+        return [r for r in rows if not web_providers.blocked_host(r.get("url", ""))]
 
     async def _legacy(self, name: str, query: str, max_results: int) -> list[dict]:
         provider = web_providers.get_search_provider(name)
@@ -405,9 +430,16 @@ class WebSearchPlugin:
         url: str,
         *,
         full_chars: int = FULL_TEXT_MAX_CHARS,
+        deadline: Optional[float] = None,
         _transport: Optional[httpx.AsyncBaseTransport] = None,
     ) -> PageRead:
         """Read one page and return its clean text, SSRF-safe, or why there is none.
+
+        ``deadline`` (an absolute ``time.monotonic()`` value) is the end of the time the
+        *caller* has: a PDF parse never waits for a slot, or parses, past it and answers
+        ``parser_busy`` instead (``web_extract`` shares one deadline across a call so the
+        whole call answers inside the tool loop's per-tool wall). None means the
+        standalone bounds below.
 
         DNS-rebinding proof (HF-4): each hop is resolved+validated and then dialed
         by its *pinned* validated IP (the Host header and TLS SNI are preserved),
@@ -420,9 +452,11 @@ class WebSearchPlugin:
         (Hermes absorption 5a). The body is streamed and reading stops at
         ``PAGE_MAX_BYTES``; a media type outside the text types and PDF is refused
         before any byte is read, and so is a PDF when ``pypdf`` is not installed.
-        Refusals are classified: a gate (SSRF, egress allowlist, kernel) or an
-        unreadable answer is ``url_refused``; a network failure or an HTTP error
-        status is ``fetch_failed``.
+        Refusals are classified: a gate (SSRF, egress allowlist, kernel), a name that does
+        not resolve (told apart from a private address it must not be: that would let a
+        caller probe which internal names exist) or an unreadable answer is
+        ``url_refused``; a network failure or a transient HTTP status (408, 425, 429, 5xx)
+        is ``fetch_failed``; any other error status is ``http_error`` with the status.
         """
         from urllib.parse import urljoin
 
@@ -484,18 +518,25 @@ class WebSearchPlugin:
                         charset = resp.charset_encoding
                         body, body_cut = await self._read_bounded_cut(resp)
                 except PluginEgressError as exc:
+                    # A name that did not resolve is told to the caller exactly as a private
+                    # address is (url_refused): a different answer would be an oracle for
+                    # which internal names exist. The owner's log keeps the difference.
                     if web_providers.is_dns_failure(exc):
-                        # A resolver outage or an unresolvable name: nothing was refused.
-                        logger.warning("Page fetch failed: DNS did not resolve")
-                        return PageRead(None, refusal=FETCH_FAILED)
-                    logger.warning("Page fetch refused by the egress guard")
+                        logger.warning("Page fetch refused: the name did not resolve")
+                    else:
+                        logger.warning("Page fetch refused by the egress guard")
                     return PageRead(None, refusal=REFUSED)
+                except httpx.HTTPStatusError as exc:
+                    status = int(exc.response.status_code)
+                    logger.warning("Page fetch got HTTP status %d", status)
+                    return PageRead(None, refusal=FETCH_FAILED if _is_transient_status(status)
+                                    else HTTP_ERROR, status=status)
                 except Exception as e:
                     logger.warning("Page fetch failed (type=%s)", type(e).__name__)
                     return PageRead(None, refusal=FETCH_FAILED)
 
                 if pdf is not None:
-                    return await self._read_pdf(pdf, body, body_cut, cap)
+                    return await self._read_pdf(pdf, body, body_cut, cap, deadline)
                 try:
                     # Every text type goes through the same tag-stripping parse it always
                     # did (a text/plain answer can still carry markup), off the loop.
@@ -513,30 +554,49 @@ class WebSearchPlugin:
             if temporary_client is not None:
                 await temporary_client.close()
 
-    async def _read_pdf(self, module: Any, body: bytes, body_cut: bool, cap: int) -> PageRead:
+    async def _read_pdf(self, module: Any, body: bytes, body_cut: bool, cap: int,
+                        deadline: Optional[float] = None) -> PageRead:
         if body_cut:
             logger.warning("PDF refused: cut at the byte cap (max_bytes=%d)", PAGE_MAX_BYTES)
             return PageRead(None, media="pdf", refusal=TOO_LARGE)
+        wait = PDF_QUEUE_WAIT_SECONDS
+        if deadline is not None:
+            wait = min(wait, deadline - time.monotonic())
+        if wait <= 0:
+            logger.warning("PDF parse not started: the caller's time budget is spent")
+            return PageRead(None, media="pdf", refusal=PARSER_BUSY)
         queue = _pdf_queue()
         try:
-            await asyncio.wait_for(queue.acquire(), PDF_QUEUE_WAIT_SECONDS)
+            await asyncio.wait_for(queue.acquire(), wait)
         except TimeoutError:
-            logger.warning("PDF parse queue wait expired (%.0fs)", PDF_QUEUE_WAIT_SECONDS)
+            logger.warning("PDF parse queue wait expired (%.1fs)", wait)
             return PageRead(None, media="pdf", refusal=PARSER_BUSY)
         try:
-            # The clock starts when the parse does, not while the read waited its turn.
-            deadline = time.monotonic() + PDF_PARSE_TIMEOUT_SECONDS
+            # The clock starts when the parse does, not while the read waited its turn; a
+            # caller's deadline shortens it, and a parse the budget cut off is "busy" (it
+            # did not fit this call), not a retryable network error.
+            limit = PDF_PARSE_TIMEOUT_SECONDS
+            budget_cut = False
+            if deadline is not None:
+                left = deadline - time.monotonic()
+                if left < limit:
+                    limit, budget_cut = left, True
+            if limit <= 0:
+                logger.warning("PDF parse not started: the caller's time budget is spent")
+                return PageRead(None, media="pdf", refusal=PARSER_BUSY)
+            parse_deadline = time.monotonic() + limit
             # The deadline is checked between pages inside the worker, so the thread stops
             # there; wait_for frees the caller even if one page is slow on its own.
             text, pages, cut = await asyncio.wait_for(
-                asyncio.to_thread(_pdf_worker, module, body, cap, deadline),
-                PDF_PARSE_TIMEOUT_SECONDS,
-            )
+                asyncio.to_thread(_pdf_worker, module, body, cap, parse_deadline), limit)
         except _PdfBusy:
             logger.warning("PDF parse refused: %d earlier parses are still running",
                            PDF_MAX_CONCURRENT)
             return PageRead(None, media="pdf", refusal=PARSER_BUSY)
         except TimeoutError:
+            if budget_cut:
+                logger.warning("PDF parse cut off by the caller's time budget")
+                return PageRead(None, media="pdf", refusal=PARSER_BUSY)
             logger.warning("PDF parse timed out (%.0fs)", PDF_PARSE_TIMEOUT_SECONDS)
             # Slow, not forbidden: the model may retry later (unlike url_refused).
             return PageRead(None, media="pdf", refusal=FETCH_FAILED)

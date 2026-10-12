@@ -1076,38 +1076,6 @@ async def test_a_dns_failure_is_a_failure_not_a_policy_block(monkeypatch, swap_b
     assert fakes["searxng"].calls
 
 
-async def test_a_dns_failure_on_a_page_read_is_retryable(monkeypatch):
-    monkeypatch.setattr(ws, "resolve_and_validate",
-                        lambda host, *a, **k: ([], f"DNS resolution failed for {host}"))
-    plugin = ws.WebSearchPlugin()
-    got = await plugin.read_page("https://nowhere.example/", _transport=httpx.MockTransport(
-        lambda r: httpx.Response(200, text="x", headers={"content-type": "text/html"})))
-    assert got.refusal == "fetch_failed"
-    monkeypatch.setattr(ws, "resolve_and_validate",
-                        lambda host, *a, **k: ([], "URL resolves to unsafe address for public mode: 10.0.0.1"))
-    got = await plugin.read_page("https://nowhere.example/", _transport=httpx.MockTransport(
-        lambda r: httpx.Response(200, text="x", headers={"content-type": "text/html"})))
-    assert got.refusal == "url_refused"                      # a real gate refusal stays one
-
-
-async def test_an_http_error_status_is_a_fetch_failure_whatever_the_media_type(monkeypatch):
-    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
-    plugin = ws.WebSearchPlugin()
-    cases = [
-        (503, {"content-type": "application/json"}, b'{"error":"busy"}'),
-        (429, {}, b""),
-        (404, {"content-type": "image/png"}, b"\x89PNG"),
-    ]
-    for status, headers, body in cases:
-        got = await plugin.read_page("https://a.example/x", _transport=httpx.MockTransport(
-            lambda r, s=status, h=headers, b=body: httpx.Response(s, content=b, headers=h)))
-        assert got.refusal == "fetch_failed", status
-    # A 200 with an unreadable media type is still a refusal.
-    got = await plugin.read_page("https://a.example/x", _transport=httpx.MockTransport(
-        lambda r: httpx.Response(200, content=b"\x89PNG", headers={"content-type": "image/png"})))
-    assert got.refusal == "url_refused"
-
-
 async def test_web_search_answer_is_fitted_to_its_declared_byte_ceiling():
     rows = [{"title": "漢" * 300, "url": "https://x.example/" + "a" * 1980 + str(i),
              "snippet": "字" * 1000} for i in range(10)]
@@ -1154,3 +1122,242 @@ def test_block_list_compares_numeric_host_spellings_and_warns_on_typos(monkeypat
         wp.blocked_host("http://b.example/")
     warned = [r for r in caplog.records if "JARVIS_WEB_BLOCKED_DOMAINS" in r.getMessage()]
     assert len(warned) == 1
+
+
+# ── fix round 3: the tool loop's wall, no name oracle, permanent vs transient HTTP errors ──
+
+import inspect  # noqa: E402
+
+from agents.core.agent_runtime import AgentToolRuntime  # noqa: E402
+from agents.core.llm.tool_protocol import ToolCall  # noqa: E402
+
+
+def _loop_default_tool_timeout() -> float:
+    return float(inspect.signature(AgentToolRuntime.__init__)
+                 .parameters["tool_timeout_seconds"].default)
+
+
+def test_a_web_extract_call_answers_inside_the_tool_loops_own_wall():
+    wall = _loop_default_tool_timeout()
+    # The fixed 30 s of a loop turn is the real budget; the call's own deadlines sit under it
+    # with room for the answer to be built, and the PDF reads share the soft one.
+    assert 0 < wt.EXTRACT_CALL_BUDGET_SECONDS < wt.EXTRACT_CALL_HARD_SECONDS < wall
+    assert wall - wt.EXTRACT_CALL_HARD_SECONDS >= 2.0
+    # ...and the plugin the loop is wired to really takes the deadline (a wrapper that
+    # dropped the argument would leave only the hard cancel).
+    assert wt._takes_deadline(ws.WebSearchPlugin().read_page)
+    assert not wt._takes_deadline(Reader().read_page)
+
+
+class _WiredPdf:
+    tavily_api_key = ""
+    searxng_url = ""
+
+    def __init__(self, real, transport_for=None):
+        self.real = real
+        self.transport_for = transport_for or (lambda url: _pdf_transport())
+        self.calls: list = []
+
+    async def read_page(self, url, *, full_chars=ws.FULL_TEXT_MAX_CHARS, deadline=None):
+        self.calls.append(deadline)
+        return await self.real.read_page(url, full_chars=full_chars, deadline=deadline,
+                                         _transport=self.transport_for(url))
+
+
+async def _through_the_loop(server, args, timeout):
+    """One web_extract call through the REAL AgentToolRuntime tool path."""
+    runtime = AgentToolRuntime(server, enabled=lambda: True, tool_timeout_seconds=timeout)
+    call = ToolCall(id="c1", name=wt.TOOL_EXTRACT, arguments=args)
+    started = time.monotonic()
+    result, _content = await runtime._execute_rpc(call, agent_id="a", event_sink=None)
+    return result, time.monotonic() - started
+
+
+async def _slots_free(deadline=3.0):
+    end = time.monotonic() + deadline
+    while time.monotonic() < end:
+        if ws._PDF_SLOTS.acquire(blocking=False):
+            ws._PDF_SLOTS.release()
+            return True
+        await asyncio.sleep(0.02)
+    return False
+
+
+async def test_five_slow_pdfs_answer_every_url_before_the_loop_cuts_the_call_off(
+        monkeypatch, tmp_path):
+    """Three queue waves of 0.4 s would take 1.2 s; the call's budget is 1.0 s and the loop
+    wall 2.4 s (the real 30 s scaled down). Every URL is answered, the ones that were read
+    are returned, the one that did not fit says parser_busy, nothing is tool_timeout."""
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    monkeypatch.setattr(wt, "EXTRACT_CALL_BUDGET_SECONDS", 1.0)
+    monkeypatch.setattr(wt, "EXTRACT_CALL_HARD_SECONDS", 1.6)
+    monkeypatch.setitem(sys.modules, "pypdf", _slow_pypdf(pages=1, delay=0.4))
+    server = _server(_WiredPdf(ws.WebSearchPlugin()), result_store=_store(tmp_path))
+    urls = [f"https://docs.example/{i}.pdf" for i in range(5)]
+    result, took = await _through_the_loop(server, {"urls": urls}, timeout=2.4)
+    assert result.get("reason") != "tool_timeout", result
+    assert took < 2.0
+    pages = result["pages"] if "pages" in result else result["result"]["pages"]
+    assert len(pages) == 5
+    read = [p for p in pages if p.get("ok", True)]
+    busy = [p for p in pages if p.get("reason") == "parser_busy"]
+    assert len(read) == 4 and len(busy) == 1, pages
+    assert all(p["text"] == "page" for p in read)
+    assert busy[0]["url"] == urls[4]                           # the last in the queue is the one left out
+    assert "retry" in busy[0] and busy[0]["retry"]             # and it says what to do
+    assert await _slots_free()
+
+
+async def test_a_hung_page_does_not_take_the_other_pages_down_with_it(monkeypatch, tmp_path):
+    class Hangs:
+        tavily_api_key = ""
+        searxng_url = ""
+
+        async def read_page(self, url, *, full_chars=ws.FULL_TEXT_MAX_CHARS, deadline=None):
+            if "hang" in url:
+                await asyncio.sleep(30)
+            return ws.PageRead(text="fine " * 80, media="html")
+
+    monkeypatch.setattr(wt, "EXTRACT_CALL_BUDGET_SECONDS", 0.5)
+    monkeypatch.setattr(wt, "EXTRACT_CALL_HARD_SECONDS", 0.8)
+    server = _server(Hangs(), result_store=_store(tmp_path))
+    urls = ["https://a.example/ok", "https://a.example/hang", "https://a.example/ok2"]
+    result, took = await _through_the_loop(server, {"urls": urls}, timeout=1.6)
+    assert result.get("reason") != "tool_timeout", result
+    assert took < 1.4
+    pages = result["pages"] if "pages" in result else result["result"]["pages"]
+    assert [p.get("ok", True) for p in pages] == [True, False, True]
+    assert pages[1]["reason"] == "fetch_failed" and pages[1]["url"] == urls[1]
+    assert "retry" in pages[1]
+
+
+async def test_a_pdf_that_cannot_finish_in_the_budget_is_cut_at_a_page_and_says_so(
+        monkeypatch, tmp_path):
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    monkeypatch.setattr(wt, "EXTRACT_CALL_BUDGET_SECONDS", 0.5)
+    monkeypatch.setattr(wt, "EXTRACT_CALL_HARD_SECONDS", 0.9)
+    monkeypatch.setitem(sys.modules, "pypdf", _slow_pypdf(pages=30, delay=0.1))
+    server = _server(_WiredPdf(ws.WebSearchPlugin()), result_store=_store(tmp_path))
+    result, took = await _through_the_loop(
+        server, {"url": "https://docs.example/huge.pdf"}, timeout=1.8)
+    body = result.get("result", result)
+    assert body.get("reason") == "parser_busy", body
+    assert took < 1.3
+    assert await _slots_free()                    # the worker stopped at a page boundary
+
+
+async def test_direct_callers_keep_the_longer_standalone_bounds(monkeypatch):
+    """No call deadline (the gatherer, a script): the 90 s queue wait / 30 s parse apply."""
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    monkeypatch.setitem(sys.modules, "pypdf", _slow_pypdf(pages=1, delay=0.2))
+    plugin = ws.WebSearchPlugin()
+    got = await asyncio.gather(*[
+        plugin.read_page(f"https://docs.example/{i}.pdf", _transport=_pdf_transport())
+        for i in range(5)])
+    assert [g.refusal for g in got] == [""] * 5
+
+
+async def test_a_name_that_does_not_resolve_reads_like_a_private_address(monkeypatch):
+    """A prompt-injected caller must not learn which internal names exist: an unresolvable
+    name and a name that resolves to a private address answer with the same reason."""
+    transport = httpx.MockTransport(
+        lambda r: httpx.Response(200, text="x", headers={"content-type": "text/html"}))
+    monkeypatch.setattr(ws, "resolve_and_validate",
+                        lambda host, *a, **k: ([], f"DNS resolution failed for {host}"))
+    plugin = ws.WebSearchPlugin()
+    missing = await plugin.read_page("https://no-such-host.example/", _transport=transport)
+    monkeypatch.setattr(ws, "resolve_and_validate",
+                        lambda host, *a, **k: ([], "URL resolves to unsafe address for public mode: 10.0.0.1"))
+    private = await plugin.read_page("https://db.internal.example/", _transport=transport)
+    assert missing == private == ws.PageRead(None, refusal="url_refused")
+    # ...also when the empty-answer wording is used.
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: ([], "empty DNS answer"))
+    assert (await plugin.read_page("https://x.example/", _transport=transport)).refusal == "url_refused"
+
+
+async def test_permanent_http_errors_are_not_retryable_and_transient_ones_are(monkeypatch, tmp_path):
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    plugin = ws.WebSearchPlugin()
+
+    async def read(status, headers=None, body=b""):
+        return await plugin.read_page("https://a.example/x", _transport=httpx.MockTransport(
+            lambda r: httpx.Response(status, content=body, headers=headers or {})))
+
+    for status in (404, 410, 401, 403, 451):
+        got = await read(status, {"content-type": "text/html"}, b"<p>gone</p>")
+        assert (got.text, got.refusal, got.status) == (None, "http_error", status), status
+    for status in (408, 425, 429, 500, 502, 503, 504):
+        got = await read(status, {"content-type": "application/json"}, b"{}")
+        assert (got.text, got.refusal) == (None, "fetch_failed"), status
+    # The status wins over the media type, either way.
+    assert (await read(404, {"content-type": "image/png"}, b"\x89PNG")).refusal == "http_error"
+    assert (await read(503)).refusal == "fetch_failed"
+    # A 200 with an unreadable media type is still a refusal of the answer.
+    assert (await read(200, {"content-type": "image/png"}, b"\x89PNG")).refusal == "url_refused"
+
+    class Real:
+        tavily_api_key = ""
+        searxng_url = ""
+
+        async def read_page(self, url, *, full_chars=ws.FULL_TEXT_MAX_CHARS):
+            return await plugin.read_page(url, full_chars=full_chars,
+                                          _transport=httpx.MockTransport(
+                                              lambda r: httpx.Response(404, text="no")))
+
+    out = await _call(_server(Real(), result_store=_store(tmp_path)), wt.TOOL_EXTRACT,
+                      {"url": "https://a.example/gone"})
+    assert out["result"]["reason"] == "http_error" and out["result"]["status"] == 404
+    assert "retry" not in out["result"]
+    assert "http_error" in wt.EXTRACT_DESCRIPTION and "parser_busy" in wt.EXTRACT_DESCRIPTION
+
+
+async def test_search_rows_from_blocked_sites_are_dropped_for_direct_callers_too(
+        monkeypatch, swap_builtins):
+    monkeypatch.setenv(wp.BLOCKED_DOMAINS_ENV, "evil.example")
+    rows = [{"title": "a", "url": "https://evil.example/x", "snippet": "s"},
+            {"title": "b", "url": "https://sub.evil.example/y", "snippet": "s"},
+            {"title": "c", "url": "https://good.example/z", "snippet": "s"}]
+    swap_builtins(tavily=Recorder("tavily", tier="paid", rows=rows))
+    plugin = ws.WebSearchPlugin(tavily_api_key="k", backend="tavily")
+    got = await plugin.search("q")
+    assert [r["url"] for r in got] == ["https://good.example/z"]
+    # The detailed outcome (the tool's source) is unfiltered, so the tool can count them.
+    detailed = await plugin.search_detailed("q2")
+    assert len(detailed.rows) == 3
+
+
+def test_a_bracketed_ipv6_with_a_port_is_a_usable_block_entry_or_reported(monkeypatch):
+    monkeypatch.setenv(wp.BLOCKED_DOMAINS_ENV, "[::1]:8080,[2001:db8::1]")
+    assert wp.blocked_host("http://[::1]:8080/") is True
+    assert wp.blocked_host("http://[::1]/") is True
+    assert wp.blocked_host("http://[2001:db8::1]:99/") is True
+    monkeypatch.setenv(wp.BLOCKED_DOMAINS_ENV, "[not:an:ip]:80,[1:2]:9,evil.example:8080")
+    assert wp.unusable_blocked_entries() == ("[not:an:ip]:80", "[1:2]:9")
+    assert wp.blocked_domains() == ("evil.example",)
+    assert wp.blocked_host("http://[::1]/") is False
+
+
+async def test_a_failed_rescue_names_the_second_party_that_saw_the_query(swap_builtins, monkeypatch):
+    monkeypatch.setenv(wp.RESCUE_ENV, "1")
+    swap_builtins(
+        tavily=Recorder("tavily", tier="paid", raises=wp.ProviderFailure("down")),
+        searxng=Recorder("searxng", raises=wp.ProviderFailure("also down")),
+    )
+    plugin = ws.WebSearchPlugin(tavily_api_key="k", searxng_url="https://searx.example")
+    outcome = await plugin.search_detailed("q")
+    assert outcome.reason == "provider_failed" and outcome.rows == []
+    assert outcome.provider == "tavily" and outcome.rescued_from == ""
+    assert outcome.rescue_tried == "searxng"
+    out = await _call(_server(plugin), wt.TOOL_SEARCH, {"query": "q2"})
+    assert out["result"]["error"] == "provider_failed"
+    assert out["result"]["rescue_tried"] == "searxng"
+
+
+def test_the_docs_state_the_budget_the_code_enforces():
+    doc = (repo_root / "docs" / "WEB_SEARCH.md").read_text(encoding="utf-8")
+    assert f"**{wt.EXTRACT_CALL_BUDGET_SECONDS:g} s**" in doc
+    assert f"**{wt.EXTRACT_CALL_HARD_SECONDS:g} s**" in doc
+    assert f"{_loop_default_tool_timeout():g} s" in doc
+    assert "each read waits up to 90 s" not in doc            # the claim the loop's wall made false
+    for reason in ("http_error", "parser_busy", "fetch_failed", "url_refused"):
+        assert f"`{reason}`" in doc

@@ -374,6 +374,7 @@ def rescue_setting(explicit: bool | None = None) -> bool | None:
 
 _DOT_VARIANTS = str.maketrans({"\u3002": ".", "\uff0e": ".", "\uff61": "."})
 _HOST_OK = re.compile(r"^[a-z0-9._\-\[\]:]+$")
+_BRACKET_HOST = re.compile(r"\[([0-9a-f:.]+)\](?::\d{1,5})?")
 
 
 def _normalize_host(text: str) -> str:
@@ -397,6 +398,9 @@ def _normalize_host(text: str) -> str:
     except ValueError:
         return ""
     raw = unicodedata.normalize("NFKC", raw).translate(_DOT_VARIANTS).lower().strip(".")
+    bracketed = _BRACKET_HOST.fullmatch(raw)
+    if bracketed:  # "[::1]:8080" -> "::1": an IPv6 literal with its port
+        raw = bracketed.group(1)
     if not raw:
         return ""
     try:
@@ -406,7 +410,14 @@ def _normalize_host(text: str) -> str:
     ascii_host = ascii_host.lower().strip(".")
     if not _HOST_OK.fullmatch(ascii_host):
         return ""
-    return _canonical_ip(ascii_host) or ascii_host
+    canonical = _canonical_ip(ascii_host)
+    if canonical:
+        return canonical
+    # A colon or a bracket belongs to an IP literal only; anything else is a typo that
+    # would match nothing and fail open silently.
+    if ":" in ascii_host or "[" in ascii_host or "]" in ascii_host:
+        return ""
+    return ascii_host
 
 
 _NUMERIC_HOST = re.compile(r"(0x[0-9a-f]+|[0-9]+)(\.(0x[0-9a-f]+|[0-9]+)){0,3}")
