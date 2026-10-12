@@ -76,3 +76,59 @@ describe('map code (H206): bounded, versioned, content-only', () => {
     expect(decodeMapCode(forge({ v: 1, n: [[0, 'a', 'x', 0, 1]], e: [] })).nodes[0].label).toBe('a');
   });
 });
+
+describe('mutation hardening: the importer and encoder gates', () => {
+  const forge = (payload: unknown) => {
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    let sum = 0x811c9dc5;
+    for (const b of bytes) { sum ^= b; sum = Math.imul(sum, 0x01000193) >>> 0; }
+    const b64 = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `NML1.${sum.toString(16).padStart(8, '0')}.${b64}`;
+  };
+  const node = [0, 'a', 'x', 0, 1];
+
+  it('refuses more nodes or edges than the limits, even with a valid checksum', () => {
+    expect(() => decodeMapCode(forge({ v: 1, n: Array.from({ length: MAP_CODE_LIMITS.nodes + 1 }, () => node), e: [] }))).toThrowError(/too many nodes/);
+    expect(decodeMapCode(forge({ v: 1, n: Array.from({ length: MAP_CODE_LIMITS.nodes }, () => node), e: [] })).nodes).toHaveLength(MAP_CODE_LIMITS.nodes);
+    expect(() => decodeMapCode(forge({ v: 1, n: [node], e: Array.from({ length: MAP_CODE_LIMITS.edges + 1 }, () => [0, 0, 'r']) }))).toThrowError(/too many edges/);
+  });
+
+  it('refuses an edge whose index is exactly the node count', () => {
+    expect(() => decodeMapCode(forge({ v: 1, n: [node, node], e: [[0, 2, 'r']] }))).toThrowError(/missing node/);
+    expect(() => decodeMapCode(forge({ v: 1, n: [node, node], e: [[2, 0, 'r']] }))).toThrowError(/missing node/);
+    expect(decodeMapCode(forge({ v: 1, n: [node, node], e: [[1, 1, 'r']] })).edges).toHaveLength(1);
+  });
+
+  it('refuses a node row of the wrong length', () => {
+    expect(() => decodeMapCode(forge({ v: 1, n: [[0, 'a', 'x', 0, 1, 'extra']], e: [] }))).toThrowError(/malformed/);
+    expect(() => decodeMapCode(forge({ v: 1, n: [[0, 'a', 'x', 0]], e: [] }))).toThrowError(/malformed/);
+  });
+
+  it('refuses a node time above the span and a negative one', () => {
+    expect(() => decodeMapCode(forge({ v: 1, n: [[0, 'a', 'x', 0, MAP_CODE_LIMITS.timeSteps + 1]], e: [] }))).toThrowError(/out of range/);
+    expect(() => decodeMapCode(forge({ v: 1, n: [[0, 'a', 'x', 0, -1]], e: [] }))).toThrowError(/out of range/);
+    expect(decodeMapCode(forge({ v: 1, n: [[0, 'a', 'x', 0, MAP_CODE_LIMITS.timeSteps]], e: [] })).nodes[0].t).toBe(MAP_CODE_LIMITS.timeSteps);
+  });
+
+  it('refuses a code with more than three parts and a payload without the inner version', () => {
+    expect(() => decodeMapCode(encodeMapCode(content) + '.extra')).toThrowError(/map code/i);
+    expect(() => decodeMapCode(forge({ n: [], e: [] }))).toThrowError(/version/);
+  });
+
+  it('replaces bidi isolate marks and controls in labels when encoding', () => {
+    const dirty = { nodes: [{ ...content.nodes[0], label: 'a⁦b⁩c‮d' }], edges: [] };
+    expect(decodeMapCode(encodeMapCode(dirty)).nodes[0].label).toBe('a b c d');
+    expect(() => decodeMapCode(forge({ v: 1, n: [[0, 'a⁧b', 'x', 0, 1]], e: [] }))).toThrowError(/invalid/);
+  });
+
+  it('refuses to encode a map whose code would exceed the character limit, and accepts the largest that fits', () => {
+    const big = {
+      nodes: Array.from({ length: MAP_CODE_LIMITS.nodes }, (_, i) => ({ kind: 'memory' as const, label: ('n' + i).padEnd(64, 'x'), category: 'c'.repeat(40), state: 'active' as const, t: 1 })),
+      edges: Array.from({ length: MAP_CODE_LIMITS.edges }, (_, i) => ({ from: 0, to: 1, label: ('e' + i).padEnd(64, 'y') })),
+    };
+    expect(() => encodeMapCode(big)).toThrowError(/Too large/);
+    const edges = { ...big, edges: big.edges.slice(0, 1) };
+    expect(encodeMapCode(edges).length).toBeLessThanOrEqual(MAP_CODE_LIMITS.chars);
+    expect(() => encodeMapCode({ ...content, edges: Array.from({ length: MAP_CODE_LIMITS.edges + 1 }, () => content.edges[0]) })).toThrowError(/Too many edges/);
+  });
+});

@@ -447,3 +447,317 @@ def test_add_fact_refuses_times_the_ui_cannot_show(tmp_path, monkeypatch):
     ok = _run(memory_kg.kg_add_fact(_Req({"subject": "A", "predicate": "p", "object": "B",
                                           "ingested_at": 100, "valid_from": 100})))
     assert _status(ok) == 200
+
+
+# ── mutation hardening (H206 mutation pass) ───────────────────────────────────
+
+def _legacy(tmp_path, facts):
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps({"seq": len(facts), "facts": facts}))
+    return BiTemporalKG(path)
+
+
+def _row(i, obj, vf, vt, ing, inv, subj="a", pred="p"):
+    return {"id": i, "subject": subj, "predicate": pred, "object": obj, "valid_from": vf,
+            "valid_to": vt, "ingested_at": ing, "invalidated_at": inv}
+
+
+def test_retract_entity_is_persisted_across_a_reload(tmp_path):
+    kg = BiTemporalKG(tmp_path / "bt.json")
+    kg.add_fact("andrei", "drives", "BMW", valid_from=100, ingested_at=100)
+    assert kg.retract_entity("BMW", at=500) == 1
+    again = BiTemporalKG(tmp_path / "bt.json")
+    assert again.believed_as_of(600) == [] and len(again.believed_as_of(450)) == 1
+
+
+def test_believed_boundary_is_exclusive_at_the_moment_of_retraction(tmp_path):
+    kg = BiTemporalKG(tmp_path / "bt.json")
+    kg.add_fact("a", "p", "x", valid_from=100, ingested_at=100)
+    kg.invalidate("a", "p", "x", at=150, ingested_at=400)
+    assert len(kg.believed_as_of(399.9)) == 1
+    assert kg.believed_as_of(400) == []          # dropped AT the retraction instant
+    assert len(kg.believed_as_of(100)) == 1      # and present at its own ingestion instant
+
+
+def test_believed_rows_hide_the_internal_transaction_stamp(tmp_path):
+    kg = BiTemporalKG(tmp_path / "bt.json")
+    kg.add_fact("a", "p", "x", valid_from=100, ingested_at=100)
+    kg.add_fact("a", "p", "y", valid_from=200, ingested_at=300)
+    assert all("invalidated_tx" not in f for f in kg.believed_as_of(1000))
+    assert all("invalidated_tx" not in f for f in kg.believed_as_of(150))
+
+
+def test_believed_filters_by_predicate_and_by_subject(tmp_path):
+    kg = BiTemporalKG(tmp_path / "bt.json")
+    kg.add_fact("a", "likes", "x", valid_from=1, ingested_at=1)
+    kg.add_fact("a", "owns", "y", valid_from=1, ingested_at=1)
+    kg.add_fact("b", "likes", "z", valid_from=1, ingested_at=1)
+    assert [f["object"] for f in kg.believed_as_of(10, predicate="owns")] == ["y"]
+    assert sorted(f["object"] for f in kg.believed_as_of(10, "a")) == ["x", "y"]
+    assert [f["object"] for f in kg.believed_as_of(10, "a", "likes")] == ["x"]
+
+
+def test_first_seen_is_the_earliest_ingestion_on_either_side(tmp_path):
+    kg = BiTemporalKG(tmp_path / "bt.json")
+    kg.add_fact("a", "knows", "b", valid_from=1, ingested_at=300)
+    kg.add_fact("c", "knows", "b", valid_from=1, ingested_at=100)
+    kg.add_fact("a", "knows", "d", valid_from=1, ingested_at=500)
+    assert kg.first_seen() == {"a": 300, "b": 100, "c": 100, "d": 500}
+
+
+def test_legacy_superseder_must_have_a_different_object(tmp_path):
+    # id 3 re-ingests the SAME object at 300; only id 2 (object y, ingested 500) superseded x.
+    kg = _legacy(tmp_path, [_row(1, "x", 100, 200, 100, 200),
+                            _row(3, "x", 200, None, 300, None),
+                            _row(2, "y", 200, None, 500, None)])
+    assert [f["id"] for f in kg.believed_as_of(400) if f["object"] == "x" and f["id"] == 1] == [1]
+
+
+def test_legacy_end_is_the_earliest_superseder(tmp_path):
+    kg = _legacy(tmp_path, [_row(1, "x", 100, 200, 100, 200),
+                            _row(2, "y", 200, None, 500, None),
+                            _row(3, "z", 200, None, 700, None)])
+    assert 1 in [f["id"] for f in kg.believed_as_of(450)]
+    assert 1 not in [f["id"] for f in kg.believed_as_of(550)]     # gone at 500, not at 700
+
+
+def test_legacy_closed_without_superseder_ends_at_its_invalidation_stamp(tmp_path):
+    kg = _legacy(tmp_path, [_row(1, "x", 100, 200, 100, 250)])
+    assert len(kg.believed_as_of(220)) == 1
+    assert kg.believed_as_of(260) == []
+
+
+def test_legacy_row_with_a_valid_end_but_no_stamp_is_not_believed_forever(tmp_path):
+    kg = _legacy(tmp_path, [_row(1, "x", 100, 200, 100, None)])
+    assert kg.believed_as_of(300) == []
+
+
+def test_knowledge_graph_defaults_ensure_and_replace_delegate():
+    from agents.core.memory.graph import KnowledgeGraph
+    g = InMemoryGraph()
+    g.add_entity("A", "person", {"k": 1})
+    assert KnowledgeGraph.ensure_entity(g, "A", "unknown") is True      # existing: untouched
+    assert g.get_entity("A")["type"] == "person"
+    assert KnowledgeGraph.ensure_entity(g, "B", "thing") is True        # missing: created
+    assert g.get_entity("B")["type"] == "thing"
+    assert KnowledgeGraph.replace_entity(g, "A", "robot", {"z": 2}) is True
+    assert g.get_entity("A") == {"name": "A", "type": "robot", "properties": {"z": 2}}
+
+
+def test_in_memory_list_relations_is_bounded():
+    g = InMemoryGraph()
+    for i in range(5):
+        g.add_relation(f"s{i}", "r", f"t{i}")
+    assert len(g.list_relations(2)) == 2
+    assert len(g.list_relations(0)) == 1                 # never below one
+    assert g.list_relations(10)[0] == {"source": "s0", "relation": "r", "target": "t0"}
+
+
+def test_neo4j_error_flag_is_reset_by_every_call(monkeypatch):
+    g = Neo4jGraph()
+    g._connected = False
+    g._call_neo4j([{"statement": "RETURN 1", "parameters": {}}])
+    assert g._tls.error == "unreachable"
+
+    class _Resp:
+        def __init__(self, body):
+            self._b = body
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._b
+
+    class _Client:
+        body: dict = {}
+
+        def __init__(self, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **kw):
+            return _Resp(_Client.body)
+
+    monkeypatch.setattr("agents.core.memory.graph.httpx.Client", _Client)
+    g._connected = True
+    _Client.body = {"results": [{"columns": ["labels"], "data": []}]}
+    g._call_neo4j([{"statement": "RETURN 1", "parameters": {}}])
+    assert g._tls.error is None
+    assert g._labels_of("x") is None                    # a clean "no such node", not an error
+    _Client.body = {"results": [], "errors": [{"code": "Neo.ClientError"}]}
+    assert g._call_neo4j([{"statement": "x", "parameters": {}}]) == []
+    assert g._tls.error == "rejected"
+    try:
+        g._labels_of("x")
+        raise AssertionError("a rejected lookup must raise")
+    except RuntimeError as exc:
+        assert "rejected" in str(exc)
+
+    class _Boom(_Client):
+        def post(self, *a, **kw):
+            raise ConnectionError("down")
+
+    monkeypatch.setattr("agents.core.memory.graph.httpx.Client", _Boom)
+    assert g._call_neo4j([{"statement": "x", "parameters": {}}]) == []
+    assert "down" in g._tls.error
+
+
+def test_neo4j_labels_of_ignores_non_list_rows():
+    g = Neo4jGraph()
+    g._call_neo4j = lambda s: [{"columns": ["labels"], "data": [{"row": ["Person"]}, {"row": [["Pet"]]}]}]
+    assert g._labels_of("x") == ["Pet"]
+
+
+class _SpyGraph(InMemoryGraph):
+    def __init__(self, entities=(), relations=()):
+        super().__init__()
+        self._e, self._r, self.calls = list(entities), list(relations), []
+
+    def list_entities(self, limit=100):
+        self.calls.append(("e", limit))
+        return self._e[:limit]
+
+    def list_relations(self, limit=500):
+        self.calls.append(("r", limit))
+        return self._r[:limit]
+
+
+def _spy_map(tmp_path, monkeypatch, graph, **kw):
+    orch, _, _ = _orch(tmp_path, graph)
+    monkeypatch.setattr(web, "orch", orch)
+    return _body(_run(memory_kg.kg_map(**kw)))
+
+
+def test_map_route_clamps_limit_both_ways(tmp_path, monkeypatch):
+    g = _SpyGraph([{"name": f"N{i}", "type": "t"} for i in range(5)])
+    _spy_map(tmp_path, monkeypatch, g, limit=10**6)
+    assert ("e", 1001) in g.calls and ("r", 4001) in g.calls          # capped at 1000 / 4000
+    g.calls.clear()
+    body = _spy_map(tmp_path, monkeypatch, g, limit=0)
+    assert [e["name"] for e in body["entities"]] == ["N0"] and ("e", 2) in g.calls
+    g.calls.clear()
+    body = _spy_map(tmp_path, monkeypatch, g, limit=-7)
+    assert len(body["entities"]) == 1
+    g.calls.clear()
+    body = _spy_map(tmp_path, monkeypatch, g, limit=5)               # exactly the list: not clipped
+    assert len(body["entities"]) == 5 and body["clipped"] is False
+    assert ("r", 21) in g.calls
+
+
+def test_map_route_flags_clipped_relations_only_past_the_cap(tmp_path, monkeypatch):
+    ents = [{"name": "A", "type": "t"}]
+    loop = {"source": "A", "relation": "r", "target": "A"}
+    at_cap = _spy_map(tmp_path, monkeypatch, _SpyGraph(ents, [loop] * 4), limit=1)   # cap = 4
+    assert at_cap["relations_clipped"] is False and len(at_cap["relations"]) == 4
+    over = _spy_map(tmp_path, monkeypatch, _SpyGraph(ents, [loop] * 6), limit=1)
+    assert over["relations_clipped"] is True and len(over["relations"]) == 4
+
+
+def test_map_route_default_limit_and_nameless_entities(tmp_path, monkeypatch):
+    g = _SpyGraph([{"name": "", "type": "t"}, {"type": "t"}, {"name": "A", "type": "t"}])
+    body = _spy_map(tmp_path, monkeypatch, g, limit=10)
+    assert [e["name"] for e in body["entities"]] == ["A"]
+    g.calls.clear()
+    orch, _, _ = _orch(tmp_path, g)
+    monkeypatch.setattr(web, "orch", orch)
+    _body(_run(memory_kg.kg_map()))
+    assert ("e", 501) in g.calls                                      # default page is 500
+
+
+def test_add_fact_refuses_nan_and_the_exact_limit_is_allowed(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, _, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    for key in ("valid_from", "ingested_at"):
+        resp = _run(memory_kg.kg_add_fact(_Req({"subject": "A", "predicate": "p", "object": "B",
+                                                key: float("nan")})))
+        assert _status(resp) == 400, key
+    assert bt.believed_as_of(10**12) == []
+    ok = _run(memory_kg.kg_add_fact(_Req({"subject": "A", "predicate": "p", "object": "B",
+                                          "valid_from": 8.64e12, "ingested_at": -8.64e12})))
+    assert _status(ok) == 200
+
+
+def test_as_of_route_limit_upper_bound_and_sorting(tmp_path, monkeypatch):
+    orch, _, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    bt.add_fact("late", "p", "o", valid_from=50, ingested_at=10)
+    bt.add_fact("early", "p", "o", valid_from=20, ingested_at=30)
+    bt.add_fact("mid", "p", "o", valid_from=30, ingested_at=20)
+    assert _status(_run(memory_kg.kg_facts_as_of(at=100, limit=1001))) == 422
+    assert _status(_run(memory_kg.kg_facts_as_of(at=100, limit=1000))) == 200
+    known = _body(_run(memory_kg.kg_facts_as_of(at=100, axis="known")))
+    assert [f["subject"] for f in known["facts"]] == ["late", "mid", "early"]      # by ingestion
+    valid = _body(_run(memory_kg.kg_facts_as_of(at=100, axis="valid")))
+    assert [f["subject"] for f in valid["facts"]] == ["early", "mid", "late"]      # by valid_from
+    only_limit = _body(_run(memory_kg.kg_facts_as_of(at=100, limit=2)))
+    assert only_limit["axis"] == "valid" and "bounds" in only_limit and only_limit["clipped"] is True
+
+
+def test_as_of_route_without_axis_stays_valid_time(tmp_path, monkeypatch):
+    orch, _, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    bt.add_fact("andrei", "lives_in", "Bucharest", valid_from=100, ingested_at=100)
+    bt.add_fact("andrei", "lives_in", "Cluj", valid_from=200, ingested_at=300)
+    legacy = _body(_run(memory_kg.kg_facts_as_of(at=250)))
+    assert [f["object"] for f in legacy["facts"]] == ["Cluj"] and "bounds" not in legacy
+    explicit = _body(_run(memory_kg.kg_facts_as_of(at=250, axis="valid")))
+    assert [f["object"] for f in explicit["facts"]] == ["Cluj"]
+
+
+def test_map_route_is_registered_behind_the_user_guard():
+    routes = [r for r in memory_kg.router.routes if getattr(r, "path", "") == "/api/kg/map"]
+    assert len(routes) == 1 and "GET" in routes[0].methods
+    guards = [d.dependency for d in routes[0].dependencies]
+    assert memory_kg.user_guard in guards
+
+
+def test_ingestion_works_with_a_graph_that_has_no_ensure_entity(tmp_path):
+    class _Old:
+        def __init__(self):
+            self.added, self.rels = [], []
+
+        def add_entity(self, name, entity_type, properties=None):
+            self.added.append((name, entity_type))
+            return True
+
+        def add_relation(self, s, r, t, props=None):
+            self.rels.append((s, r, t))
+            return True
+
+    old = _Old()
+    IncrementalKGUpdater(old).ingest("Andrei works at Raiffeisen")
+    assert ("Andrei", "unknown") in old.added and old.rels
+
+
+def test_seed_creates_missing_entities_and_keeps_edited_ones_by_name():
+    from agents.core.memory.seed_graph import seed_graph
+    graph = InMemoryGraph()
+    graph.add_entity("Bucharest", "capital", {"note": "edited"})
+    calls = []
+    real = graph.add_entity
+    graph.add_entity = lambda n, t, p=None: (calls.append(n), real(n, t, p))[1]
+    seed_graph(graph)
+    assert "Bucharest" not in calls and "Andrei" in calls
+
+
+def test_ingestion_collapses_whitespace_inside_a_name(tmp_path):
+    graph = InMemoryGraph()
+    IncrementalKGUpdater(graph).ingest("Andrei lives in Berlin \n  Paris is nice.")
+    names = [e["name"] for e in graph.list_entities(50)]
+    assert all("\n" not in n and "  " not in n for n in names)
+
+
+def test_retract_entity_keeps_valid_time_and_transaction_time_apart(tmp_path):
+    kg = BiTemporalKG(tmp_path / "bt.json")
+    kg.add_fact("a", "p", "X", valid_from=100, ingested_at=100)
+    assert kg.retract_entity("X", at=500, ingested_at=900) == 1
+    assert len(kg.believed_as_of(700)) == 1        # still believed until the transaction time 900
+    assert kg.believed_as_of(950) == []
+    assert [f["object"] for f in kg.as_of(400)] == ["X"] and kg.as_of(600) == []   # valid-time end 500

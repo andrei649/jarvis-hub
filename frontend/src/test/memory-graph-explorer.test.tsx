@@ -675,3 +675,144 @@ describe('fix round 2: honest limits', () => {
     hasText(await screen.findByRole('alertdialog'), /Erasing the history itself is a separate action/);
   });
 });
+
+describe('mutation hardening: scrubber, editor and share edge cases', () => {
+  const slider = () => screen.getByRole('slider', { name: 'Timeline scrubber' }) as HTMLInputElement;
+  const writeText = vi.fn();
+  beforeEach(() => { writeText.mockReset().mockResolvedValue(undefined); Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true }); });
+  const withBounds = (b: api.TimelineBounds) =>
+    vi.mocked(api.loadFacts).mockImplementation(async (axis, at) => ({ axis, facts: at === null ? [] : [fact], bounds: b, clipped: false, skipped: 0 }));
+
+  it('stops playing on the very tick that reaches the end', async () => {
+    withBounds({ count: 2, firstIngested: 100, lastIngested: 420, firstValid: 100, lastChange: 420 });
+    await ready();                                                  // span 100..420, 8 s per tick: 40 ticks land exactly on 420
+    await waitFor(() => expect(slider().max).toBe('420'));
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    fireEvent.click(screen.getByRole('button', { name: 'Play timeline' }));
+    act(() => { vi.advanceTimersByTime(350 * 40); });
+    expect(slider().value).toBe('420');
+    expect(screen.getByRole('button', { name: 'Play timeline' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+  });
+
+  it('gives a single-instant timeline a scrubber that can move', async () => {
+    withBounds({ count: 1, firstIngested: 100, lastIngested: 100, firstValid: 100, lastChange: 100 });
+    await ready();
+    await waitFor(() => expect(slider().min).toBe('100'));
+    expect(slider().max).toBe('101');
+  });
+
+  it('starts the "what was true" axis at the first valid time, not the first ingestion', async () => {
+    withBounds({ count: 2, firstIngested: 100, lastIngested: 300, firstValid: 50, lastChange: 400 });
+    await ready();
+    await waitFor(() => expect(slider().min).toBe('100'));
+    fireEvent.click(screen.getByRole('radio', { name: 'What was true' }));
+    await waitFor(() => expect(slider().min).toBe('50'));
+  });
+
+  it('does not re-read facts for a past moment once an imported map is showing', async () => {
+    await ready();
+    await waitFor(() => expect(slider().max).toBe('400'));
+    fireEvent.change(slider(), { target: { value: '250' } });
+    await waitFor(() => expect(api.loadFacts).toHaveBeenCalledWith('known', 250, expect.any(AbortSignal)));
+    vi.mocked(api.loadFacts).mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Share / import map' }));
+    const box = screen.getByRole('textbox', { name: 'Map code' });
+    fireEvent.change(box, { target: { value: encodeMapCode({ nodes: [{ kind: 'memory', label: 'Elsewhere', category: 'x', state: 'active', t: 1 }], edges: [] }) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+    await screen.findByText('imported map');
+    await act(async () => { await new Promise(r => setTimeout(r, 400)); });
+    expect(api.loadFacts).not.toHaveBeenCalled();
+  });
+
+  it('shows an imported node at exactly its own position on the span', async () => {
+    const { container } = await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Share / import map' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Map code' }), { target: { value: encodeMapCode({
+      nodes: [{ kind: 'memory', label: 'Early', category: 'x', state: 'active', t: 10 }, { kind: 'memory', label: 'Late', category: 'x', state: 'active', t: 4000 }], edges: [] }) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+    await screen.findByText('imported map');
+    fireEvent.change(slider(), { target: { value: '10' } });
+    expect(container.querySelectorAll('.kg-node')).toHaveLength(1);
+    fireEvent.change(slider(), { target: { value: '9' } });
+    expect(container.querySelectorAll('.kg-node')).toHaveLength(0);
+  });
+
+  it('puts a single-instant map at position zero in its code', async () => {
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities: [{ name: 'Only', type: 'thing', firstSeen: 500 }], relations: [] }));
+    vi.mocked(api.loadSkills).mockResolvedValue([]);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Share / import map' }));
+    const { decodeMapCode } = await import('../api/memory-map-code');
+    expect(decodeMapCode((screen.getByRole('textbox', { name: 'Map code' }) as HTMLTextAreaElement).value).nodes[0].t).toBe(0);
+  });
+
+  it('says there is nothing to copy for an empty map, and copies no code for it', async () => {
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities: [], relations: [] }));
+    vi.mocked(api.loadSkills).mockResolvedValue([]);
+    render(<MemoryGraphExplorer />);
+    await screen.findByText('Nothing learned yet');
+    fireEvent.click(screen.getByRole('button', { name: 'Share / import map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy map code' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/nothing on the map to copy/i);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  describe('editor validation', () => {
+    const openEditor = async () => {
+      await ready();
+      fireEvent.click(within(openMenu('Andrei')).getByRole('menuitem', { name: 'Edit…' }));
+      return screen.findByRole('dialog', { name: /Edit Andrei/ });
+    };
+    const addProperty = (dialog: HTMLElement, key: string, value = 'v') => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add property' }));
+      fireEvent.change(within(dialog).getByLabelText('New property name'), { target: { value: key } });
+      fireEvent.change(within(dialog).getByLabelText('New property value'), { target: { value } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    };
+
+    it('refuses a new property that repeats an existing name', async () => {
+      const dialog = await openEditor();
+      addProperty(dialog, 'city', 'Brasov');
+      hasText(await within(dialog).findByRole('alert'), 'city already exists.');
+      expect(api.saveEntity).not.toHaveBeenCalled();
+    });
+
+    it('refuses a property name the server would not accept', async () => {
+      const dialog = await openEditor();
+      addProperty(dialog, 'bad key!');
+      hasText(await within(dialog).findByRole('alert'), /A property name is letters, digits and underscores/);
+      expect(api.saveEntity).not.toHaveBeenCalled();
+    });
+
+    it('refuses more than 50 properties', async () => {
+      const many = Object.fromEntries(Array.from({ length: 50 }, (_, i) => ['k' + i, 'v']));
+      vi.mocked(api.loadEntity).mockResolvedValue({ name: 'Andrei', type: 'person', properties: many });
+      const dialog = await openEditor();
+      addProperty(dialog, 'one_more');
+      hasText(await within(dialog).findByRole('alert'), 'At most 50 properties.');
+      expect(api.saveEntity).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('mutation hardening: a superseded read never overwrites a newer one', () => {
+  it('ignores a map reply that arrives after its reload was superseded', async () => {
+    const { container } = await ready();
+    let late!: (m: api.MemoryMapData) => void, newest!: (m: api.MemoryMapData) => void;
+    vi.mocked(api.loadMemoryMap)
+      .mockImplementationOnce(() => new Promise(r => { late = r; }))
+      .mockImplementationOnce(() => new Promise(r => { newest = r; }));
+    vi.mocked(api.switchSkill).mockResolvedValue({ changed: ['web-search'], essential: [], pending: false, taskId: '' });
+    for (let i = 0; i < 2; i++) {
+      fireEvent.click(within(openMenu('web-search')).getByRole('menuitem', { name: 'Disable skill' }));
+      await waitFor(() => expect(api.switchSkill).toHaveBeenCalledTimes(i + 1));
+      await waitFor(() => expect(api.loadMemoryMap).toHaveBeenCalledTimes(i + 2));
+    }
+    const three = map({ entities: [{ name: 'X1', type: 't', firstSeen: 1 }, { name: 'X2', type: 't', firstSeen: 2 }, { name: 'X3', type: 't', firstSeen: 3 }], relations: [] });
+    await act(async () => newest(three));
+    await act(async () => late(map({ entities: [{ name: 'Stale', type: 't', firstSeen: 1 }], relations: [] })));
+    expect(container.querySelectorAll('.kg-node:not(.kg-skill)')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: /^Stale,/ })).toBeNull();
+  });
+});

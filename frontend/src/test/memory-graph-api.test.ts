@@ -214,3 +214,67 @@ describe('fix round 2: times a calendar cannot hold', () => {
     await expect(loadEntity('a/b')).rejects.toMatchObject({ code: 'unaddressable' });
   });
 });
+
+describe('mutation hardening: bounds and gates of the client', () => {
+  const hugeBody = (bytes: number) => ({ entities: [], relations: [], pad: 'x'.repeat(bytes) });
+
+  it('maps a 401 on the admin-guarded skill switch to the admin code, not auth', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ detail: 'nope' }, 401));
+    await expect(switchSkill('web-search', false)).rejects.toMatchObject({ code: 'admin' });
+  });
+
+  it('refuses a reply that declares or streams more than the read limit', async () => {
+    const tooLongDeclared = new Response(JSON.stringify({ entities: [], relations: [] }),
+      { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Length': String(3 * 1024 * 1024) } });
+    vi.mocked(fetch).mockResolvedValueOnce(tooLongDeclared);
+    await expect(loadMemoryMap()).rejects.toMatchObject({ code: 'unavailable' });
+    const badLength = new Response(JSON.stringify({ entities: [], relations: [] }),
+      { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Length': 'abc' } });
+    vi.mocked(fetch).mockResolvedValueOnce(badLength);
+    await expect(loadMemoryMap()).rejects.toMatchObject({ code: 'unavailable' });
+    // No Content-Length: the streamed size is what is bounded (2 MiB for the map).
+    vi.mocked(fetch).mockResolvedValueOnce(json(hugeBody(2.5 * 1024 * 1024)));
+    await expect(loadMemoryMap()).rejects.toMatchObject({ code: 'unavailable' });
+    vi.mocked(fetch).mockResolvedValueOnce(json(hugeBody(1024)));
+    await expect(loadMemoryMap()).resolves.toMatchObject({ entities: [] });
+  });
+
+  it('refuses a map with more than 1000 entities or 4000 relations', async () => {
+    const entities = Array.from({ length: 1001 }, (_, i) => ({ name: 'E' + i, type: 't' }));
+    vi.mocked(fetch).mockResolvedValueOnce(json({ entities, relations: [] }));
+    await expect(loadMemoryMap()).rejects.toMatchObject({ code: 'unavailable' });
+    const relations = Array.from({ length: 4001 }, () => ({ source: 'E0', relation: 'r', target: 'E0' }));
+    vi.mocked(fetch).mockResolvedValueOnce(json({ entities: [{ name: 'E0', type: 't' }], relations }));
+    await expect(loadMemoryMap()).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  it('refuses a facts page that answers another axis, and a non-finite instant', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ at: 1, axis: 'valid', clipped: false, bounds, facts: [] }));
+    await expect(loadFacts('known', 1)).rejects.toMatchObject({ code: 'unavailable' });
+    for (const at of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      vi.mocked(fetch).mockClear();
+      await expect(loadFacts('known', at)).rejects.toMatchObject({ code: 'unavailable' });
+      expect(fetch).not.toHaveBeenCalled();
+    }
+  });
+
+  it('accepts a 64 character type and refuses a 65 character one', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ ok: true, entity: { name: 'A', type: 'T', properties: {} } }));
+    await expect(saveEntity('A', 'T' + 'a'.repeat(63), {})).resolves.toMatchObject({ name: 'A' });
+    await expect(saveEntity('A', 'T' + 'a'.repeat(64), {})).rejects.toMatchObject({ code: 'invalid' });
+  });
+
+  it('refuses an entity reply that names another entity', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ entity: { name: 'Other', type: 'person', properties: {} }, relations: [] }));
+    await expect(loadEntity('Andrei')).rejects.toMatchObject({ code: 'unavailable' });
+    vi.mocked(fetch).mockResolvedValue(json({ entity: { name: 'Andrei', type: 'person', properties: { a: 1 } }, relations: [] }));
+    await expect(loadEntity('Andrei')).resolves.toMatchObject({ properties: { a: 1 } });
+  });
+
+  it('maps 409 to invalid and a 5xx other than 503 to unknown on writes', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ error: 'conflict' }, 409));
+    await expect(removeEntity('A')).rejects.toMatchObject({ code: 'invalid', detail: 'conflict' });
+    vi.mocked(fetch).mockResolvedValue(json({ error: 'bad gateway' }, 502));
+    await expect(removeEntity('A')).rejects.toMatchObject({ code: 'unknown' });
+  });
+});
