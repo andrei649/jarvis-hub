@@ -587,3 +587,118 @@ def test_a_socket_sd_notify_can_use_is_supervision(value, monkeypatch):
     monkeypatch.setenv("NOTIFY_SOCKET", value)
     assert sd_notify.enabled() is True
     assert hi.notify_address(value) == sd_notify._address()
+
+
+# ── mutation round: every guard above, pinned at its edge ────────────────────────────────────
+
+def test_on_is_a_truthy_spelling():
+    got = _detect({"JARVIS_CONTAINER": "on"})
+    assert (got.container, got.container_evidence) == ("container", "JARVIS_CONTAINER")
+
+
+def test_a_wsl2_kernel_word_without_microsoft_is_wsl2_even_with_the_env_set():
+    got = _detect({"WSL_DISTRO_NAME": "Ubuntu"}, texts={hi.OSRELEASE: "6.1.21-custom-WSL2\n"})
+    assert (got.wsl, got.wsl_distro) == ("wsl2", "Ubuntu")
+
+
+def test_the_digit_bounds_are_exact():
+    # exactly MAX_USEC_DIGITS digits parse (and the heartbeat reading is capped at a day) ...
+    # (literals, not the constants: the test must not move with the bound it checks)
+    assert hi.watchdog_deadline({"WATCHDOG_USEC": "999999999999"}, 1) == 999999.999999
+    assert hi.watchdog_deadline({"WATCHDOG_USEC": "9999999999999"}, 1) is None
+    # ... and so do exactly ten digits of WATCHDOG_PID, but not eleven
+    pid10, pid11 = 1_000_000_000, 10_000_000_000
+    assert hi.watchdog_deadline({"WATCHDOG_USEC": "1000000", "WATCHDOG_PID": str(pid10)}, pid10) == 1.0
+    assert hi.watchdog_deadline({"WATCHDOG_USEC": "1000000", "WATCHDOG_PID": str(pid11)}, pid11) is None
+
+
+def test_the_reported_watchdog_is_capped_at_a_day():
+    got = _detect({"NOTIFY_SOCKET": "/run/systemd/notify", "WATCHDOG_USEC": "200000000000"})
+    assert got.watchdog_s == 86_400
+
+
+def test_s6_variables_win_over_a_notify_socket():
+    got = _detect({"S6_VERSION": "3.1", "NOTIFY_SOCKET": "/run/systemd/notify"})
+    assert got.supervisor == "s6" and got.supervisor_confirmed
+
+
+def test_only_systemd_reads_the_journal_and_the_watchdog():
+    env = {"S6_VERSION": "3.1", "JOURNAL_STREAM": "8:77", "WATCHDOG_USEC": "60000000"}
+    got = _detect(env, stderr=(8, 77))
+    assert got.supervisor == "s6" and got.journal is False and got.watchdog_s == 0
+    on = _detect({"NOTIFY_SOCKET": "/run/x", **{k: v for k, v in env.items() if k != "S6_VERSION"}}, stderr=(8, 77))
+    assert on.journal is True and on.watchdog_s == 60
+
+
+def test_a_launchd_job_is_confirmed():
+    got = _detect({"LAUNCHD_SOCKET": "/tmp/launchd"}, platform="darwin")
+    assert got.supervisor == "launchd" and got.supervisor_confirmed
+    assert "supervised by launchd" in got.prompt_line()
+
+
+def test_a_marker_file_is_not_a_container_when_the_operator_said_none():
+    got = _detect({"JARVIS_CONTAINER": "none"}, ("/.dockerenv",))
+    assert got.container == "" and got.docker_marker is False and got.environment_tags() == frozenset()
+
+
+def test_prompt_block_never_raises(monkeypatch):
+    monkeypatch.setattr(hi, "identity", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert hi.prompt_block() == ""
+
+
+def test_the_prompt_line_is_capped(monkeypatch):
+    monkeypatch.setattr(hi, "MAX_PROMPT_LINE", 20)
+    line = _detect({"JARVIS_CONTAINER": "docker"}).prompt_line()
+    assert len(line) == 20 and line.startswith("This hub runs in a ")
+
+
+def test_to_dict_reports_no_watchdog_as_null_and_a_watchdog_as_seconds():
+    assert _detect({"NOTIFY_SOCKET": "/run/x"}).to_dict()["watchdog_s"] is None
+    assert _detect({"NOTIFY_SOCKET": "/run/x", "WATCHDOG_USEC": "60000000"}).to_dict()["watchdog_s"] == 60
+
+
+def test_a_machine_id_override_is_capped_at_256_characters():
+    assert _detect({"JARVIS_MACHINE_ID": "a" * 300}).machine_id == hi.hash_machine_id("a" * 256)
+
+
+def test_a_machine_id_file_must_be_exactly_32_hex_digits():
+    assert _detect(texts={"/etc/machine-id": MACHINE_ID + "zz"}).machine_id_source == "none"
+    assert _detect(texts={"/etc/machine-id": MACHINE_ID + "ab"}).machine_id_source == "none"
+
+
+def test_a_machine_id_file_is_case_insensitive():
+    upper = _detect(texts={"/etc/machine-id": MACHINE_ID.upper()})
+    assert upper.machine_id == _detect(texts={"/etc/machine-id": MACHINE_ID}).machine_id != ""
+
+
+def test_tmux_as_term_program_is_no_terminal_emulator():
+    got = _detect({"TERM_PROGRAM": "tmux"})
+    assert got.terminal == "none" and got.multiplexer == "tmux"
+
+
+def test_colorterm_24bit_is_truecolor():
+    assert _detect({"COLORTERM": "24bit"}).color == "truecolor"
+
+
+@pytest.mark.parametrize("fgbg,want", [("15;0", "dark"), ("0;6", "dark"), ("0;7", "light"), ("0;8", "dark"),
+                                       ("0;9", "light"), ("0;15", "light"), ("0;16", "unknown"), ("15", "unknown")])
+def test_background_from_colorfgbg_at_every_edge(fgbg, want):
+    assert _detect({"COLORFGBG": fgbg}).background == want
+
+
+def test_a_stderr_that_cannot_be_inspected_is_no_journal(monkeypatch):
+    def boom(_fd):
+        raise OSError("closed")
+
+    monkeypatch.setattr(hi.os, "fstat", boom)
+    assert hi._stderr_id() is None
+
+
+def test_prompt_size_lists_the_detected_facts_before_the_operators_hint(monkeypatch):
+    """The breakdown reads in the order the prompt does: detected facts, then the operator's words."""
+    from agents.core.prompt_size import breakdown
+
+    monkeypatch.setattr(hi, "identity", lambda: DOCKER)
+    monkeypatch.setenv(hint_mod.ENV_NAME, "a NAS in the hall")
+    names = [c.name for c in breakdown(agents_root=repo_root / "agents").components]
+    assert names.index("host-detected") < names.index("environment-hint")
