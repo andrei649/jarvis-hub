@@ -2367,6 +2367,13 @@ class Orchestrator:
         if any(isinstance(turn, dict) and turn.get("media") for turn in turns):
             mark_turn_recall_tainted()
 
+    def _session_has_media(self, sid: str) -> bool:
+        """H586: whether this session's held history carries a committed image turn; such
+        history is never promoted to durable memory, like a foreign import."""
+        conversation = getattr(getattr(self, "memory", None), "conversation", None)
+        turns = getattr(conversation, "sessions", {}).get(sid) or []
+        return any(getattr(turn, "media", None) for turn in turns)
+
     @measure_turn_latency
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
@@ -3959,6 +3966,8 @@ class Orchestrator:
         try:
             if self.session_id in self.memory.conversation.foreign_origins:
                 return
+            if self._session_has_media(self.session_id or "default"):
+                return
             if is_degraded_reply(synthesized):
                 return
             cog = getattr(self, "cognition", None)
@@ -4002,6 +4011,8 @@ class Orchestrator:
         key = self._lease_key(session_id)
         if (await asyncio.to_thread(status, self.checkpoints, key)).tainted:
             return {"ran": False, "reason": "foreign_history_not_promotable", "actions": []}
+        if self._session_has_media(key):
+            return {"ran": False, "reason": "image_history_not_promotable", "actions": []}
         lock = self.__dict__.get("_turn_leases", {}).get(key)
         if lock is not None and lock.locked() and key not in _held_turn_leases.get():
             return {"ran": False, "reason": "turn_in_flight", "actions": []}
@@ -4041,6 +4052,8 @@ class Orchestrator:
         from .foreign_history import status
         if (await asyncio.to_thread(status, self.checkpoints, self.session_id or "default")).tainted:
             return
+        if self._session_has_media(self.session_id or "default"):
+            return
         history = ""
         try:
             turns = await self.memory.get_history(self.session_id or "default", last_n=6)
@@ -4067,6 +4080,8 @@ class Orchestrator:
     ) -> None:
         """Feed completed LLM turns into LivingMemory + decay when cognition is on."""
         if self.session_id in self.memory.conversation.foreign_origins:
+            return
+        if self._session_has_media(self.session_id or "default"):
             return
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
