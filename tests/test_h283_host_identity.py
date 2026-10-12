@@ -54,6 +54,20 @@ def _detect(env=None, present=(), texts=None, platform="linux", tty=False, stder
 
 # ── container ───────────────────────────────────────────────────────────────────
 
+def test_a_marker_file_keeps_the_docker_tag_whatever_else_said_container():
+    """The skill gate always read `/.dockerenv` as docker: a pod that also has one, or a
+    containerd cgroup with one, must not lose the tag a user skill is gated on."""
+    pod = _detect({"KUBERNETES_SERVICE_HOST": "10.0.0.1"}, ("/.dockerenv",))
+    assert pod.container == "kubernetes" and pod.environment_tags() == {"container", "kubernetes", "docker"}
+    bare_pod = _detect({"KUBERNETES_SERVICE_HOST": "10.0.0.1"})
+    assert bare_pod.environment_tags() == {"container", "kubernetes"}
+    podman = _detect({"container": "lxc"}, ("/run/.containerenv",))
+    assert "docker" in podman.environment_tags()
+    # the operator's word wins over the marker, tags included
+    assert _detect({"JARVIS_CONTAINER": "none"}, ("/.dockerenv",)).environment_tags() == frozenset()
+    assert _detect({"JARVIS_CONTAINER": "lxc"}, ("/.dockerenv",)).environment_tags() == {"container", "lxc", "docker"}
+
+
 def test_nothing_detected_is_a_quiet_identity():
     got = _detect()
     assert (got.container, got.wsl, got.termux, got.supervisor) == ("", "", False, "none")
@@ -139,8 +153,49 @@ def test_systemd_with_the_journal_and_a_watchdog_for_this_pid():
     got = _detect(env, stderr=(8, 1234))
     assert (got.supervisor, got.notify_socket, got.journal, got.watchdog_s) == ("systemd", True, True, 60)
     assert got.prompt_line() == ("This hub runs supervised by systemd (logs go to the journal; "
-                                 "a watchdog restarts it if it hangs).")
+                                 "the unit sets a systemd watchdog).")
     assert "deadbeef" not in json.dumps(got.to_dict())
+
+
+def test_a_weak_supervisor_signal_is_not_told_to_the_model_as_fact():
+    """INVOCATION_ID without a terminal also marks a transient scope (`nohup` from a desktop
+    terminal); the s6 directories also exist after `docker exec` into an s6 image. The probe
+    keeps both, the prompt claims neither as 'supervised by'."""
+    weak = _detect({"INVOCATION_ID": "abc", "TERM": "xterm-256color"}, stderr=(8, 1))
+    assert weak.supervisor == "systemd" and not weak.supervisor_confirmed
+    assert weak.prompt_line() == "" and "supervised" not in weak.prompt_block()
+    s6_dirs = _detect({}, ("/run/s6",))
+    assert s6_dirs.supervisor == "s6" and not s6_dirs.supervisor_confirmed
+    assert s6_dirs.prompt_line() == "This hub runs alongside an s6 supervision tree."
+    assert "supervised by" not in s6_dirs.prompt_line()
+    # a strong signal still says it
+    assert _detect({"NOTIFY_SOCKET": "/run/x"}).prompt_line() == "This hub runs supervised by systemd."
+    mine = _detect({"INVOCATION_ID": "abc", "JOURNAL_STREAM": "8:1"}, stderr=(8, 1))
+    assert mine.supervisor_confirmed and "supervised by systemd" in mine.prompt_line()
+    assert _detect({"S6_VERSION": "3"}).prompt_line() == "This hub runs supervised by s6."
+
+
+@pytest.mark.parametrize("usec", ["٦٠٠٠٠٠٠٠", "60_000_000", "+60000000", " -1", "6e7", "", "0"])
+def test_the_watchdog_is_read_the_way_sd_notify_reads_it(usec, monkeypatch):
+    """One parser: when the heartbeat would never ping, the prompt must not promise a watchdog."""
+    from agents.core import sd_notify
+
+    env = {"NOTIFY_SOCKET": "/run/x", "WATCHDOG_USEC": usec}
+    assert _detect(env).watchdog_s == 0 and "watchdog" not in _detect(env).prompt_line()
+    monkeypatch.setenv("WATCHDOG_USEC", usec)
+    monkeypatch.delenv("WATCHDOG_PID", raising=False)
+    assert sd_notify.watchdog_seconds() is None
+
+
+@pytest.mark.parametrize("usec,want", [("60000000", 60), ("500000", 1), ("1500000", 2)])
+def test_the_watchdog_agrees_with_the_heartbeat_and_never_rounds_down_to_nothing(usec, want, monkeypatch):
+    from agents.core import sd_notify
+
+    got = _detect({"NOTIFY_SOCKET": "/run/x", "WATCHDOG_USEC": usec})
+    assert got.watchdog_s == want
+    monkeypatch.setenv("WATCHDOG_USEC", usec)
+    monkeypatch.delenv("WATCHDOG_PID", raising=False)
+    assert sd_notify.watchdog_seconds() is not None
 
 
 def test_the_journal_is_only_this_stderr_and_the_watchdog_only_this_pid():
@@ -261,7 +316,7 @@ def test_the_prompt_line_is_bounded_closed_and_never_a_heading():
                    "WATCHDOG_USEC": "1000000"}, ("/.dockerenv",), stderr=(1, 2))
     line = got.prompt_line()
     assert line == ("This hub runs in a Docker container, under Windows (WSL), in Termux on Android, supervised "
-                    "by systemd (logs go to the journal; a watchdog restarts it if it hangs).")
+                    "by systemd (logs go to the journal; the unit sets a systemd watchdog).")
     assert len(line) <= hi.MAX_PROMPT_LINE and "\n" not in line and not line.startswith("#")
     block = got.prompt_block()
     assert block == f"{hi.PROMPT_HEADER}\n{line}"
@@ -439,5 +494,5 @@ def test_the_module_is_runnable_and_stdlib_only():
                 for alias in node.names}
     imported |= {node.module.split(".")[0] for node in ast.walk(tree)
                  if isinstance(node, ast.ImportFrom) and node.module and node.level == 0}
-    assert imported <= {"__future__", "functools", "hashlib", "hmac", "json", "os", "re", "sys",
+    assert imported <= {"__future__", "functools", "hashlib", "hmac", "json", "math", "os", "re", "sys",
                         "collections", "dataclasses", "winreg"}

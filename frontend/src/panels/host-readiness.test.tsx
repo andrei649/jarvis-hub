@@ -196,7 +196,7 @@ describe('HostReadinessPanel — observe-only host truth, rendered without guess
     supervisor: 'systemd', s6: false, notify_socket: true, watchdog_s: 60, journal: true,
     terminal: 'none', multiplexer: 'none', term: 'none', color: 'none', background: 'unknown',
     interactive: false, machine_id: '0123456789abcdef', machine_id_source: 'etc',
-    prompt_line: 'This hub runs in a Docker container, supervised by systemd (logs go to the journal; a watchdog restarts it if it hangs).',
+    prompt_line: 'This hub runs in a Docker container, supervised by systemd (logs go to the journal; the unit sets a systemd watchdog).',
   };
 
   it('renders the detected host identity and the exact line the model is told', async () => {

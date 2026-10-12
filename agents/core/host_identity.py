@@ -37,6 +37,7 @@ import functools
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import sys
@@ -105,10 +106,12 @@ PROMPT_HEADER = "## This host (detected by Nerva at startup; facts, not the oper
 class HostIdentity:
     container: str = ""              # "" or a CONTAINER_KINDS entry
     container_evidence: str = ""     # the marker that said so (a fixed path or variable name)
+    docker_marker: bool = False      # /.dockerenv or /run/.containerenv exists, whatever else said container
     wsl: str = ""                    # "" or a WSL_KINDS entry
     wsl_distro: str = ""             # sanitised, at most 32 characters
     termux: bool = False
     supervisor: str = "none"         # a SUPERVISORS entry
+    supervisor_confirmed: bool = False  # a strong signal (NOTIFY_SOCKET, this stderr's journal, S6_* ...)
     s6: bool = False                 # s6 is present (env or its directories), supervising or not
     notify_socket: bool = False      # NOTIFY_SOCKET is set (sd_notify speaks to it)
     watchdog_s: int = 0              # systemd's watchdog for this PID, in seconds; 0 when none
@@ -128,6 +131,8 @@ class HostIdentity:
         if self.container:
             tags.add("container")
             tags.add("docker" if self.container in ("docker", "podman") else self.container)
+            if self.docker_marker:  # as the skill gate always read it: a marker file means docker
+                tags.add("docker")
         if self.s6:
             tags.add("s6")
         return frozenset(tags)
@@ -142,11 +147,13 @@ class HostIdentity:
             parts.append(f"under Windows ({_WSL_WORDS[self.wsl]})")
         if self.termux:
             parts.append("in Termux on Android")
-        if self.supervisor != "none":
+        if self.supervisor != "none" and self.supervisor_confirmed:
             extra = [word for flag, word in ((self.journal, "logs go to the journal"),
-                                             (self.watchdog_s > 0, "a watchdog restarts it if it hangs"))
+                                             (self.watchdog_s > 0, "the unit sets a systemd watchdog"))
                      if flag]
             parts.append(f"supervised by {self.supervisor}" + (f" ({'; '.join(extra)})" if extra else ""))
+        elif self.supervisor == "s6":  # the directories exist; that does not make s6 this hub's parent
+            parts.append("alongside an s6 supervision tree")
         if not parts:
             return ""
         return f"This hub runs {', '.join(parts)}."[:MAX_PROMPT_LINE]
@@ -259,15 +266,27 @@ def _stderr_id() -> tuple[int, int] | None:
     return st.st_dev, st.st_ino
 
 
-def _watchdog_seconds(env: Mapping[str, str], pid: int) -> int:
+def _decimal(raw: str) -> int | None:
+    """An ASCII decimal, as systemd writes them; ``int()`` alone takes ``٦٠``, ``6_0`` and ``+60``."""
+    return int(raw) if raw.isascii() and raw.isdigit() else None
+
+
+def watchdog_deadline(env: Mapping[str, str], pid: int) -> float | None:
+    """``WATCHDOG_USEC`` in seconds when systemd armed the watchdog for ``pid``, else None.
+    ``WATCHDOG_PID`` names the main PID: a child that inherited the variables is not armed.
+    ``sd_notify`` pings from this same reading, so the prompt and the heartbeat agree."""
+    usec = _decimal((env.get("WATCHDOG_USEC") or "").strip())
+    if not usec:
+        return None
     owner = (env.get("WATCHDOG_PID") or "").strip()
-    if owner and owner != str(pid):
-        return 0
-    try:
-        usec = int((env.get("WATCHDOG_USEC") or "").strip())
-    except ValueError:
-        return 0
-    return max(1, min(usec // 1_000_000, 86_400)) if usec > 0 else 0
+    if owner and _decimal(owner) != pid:
+        return None
+    return usec / 1_000_000
+
+
+def _watchdog_seconds(env: Mapping[str, str], pid: int) -> int:
+    deadline = watchdog_deadline(env, pid)
+    return 0 if deadline is None else max(1, min(math.ceil(deadline), 86_400))
 
 
 def detect_supervisor(env: Mapping[str, str], *, exists: Callable[[str], bool] = os.path.exists,
@@ -294,12 +313,19 @@ def detect_supervisor(env: Mapping[str, str], *, exists: Callable[[str], bool] =
     else:
         supervisor = "none"
     on_systemd = supervisor == "systemd"
+    journal = on_systemd and _journal(env, stderr_id)
+    # Strong: the manager itself handed us a socket or this very stderr, or the S6_* variables the
+    # init sets. Weak: INVOCATION_ID (also set for a transient scope, e.g. `nohup` from a desktop
+    # terminal), the s6 directories (also present in `docker exec` into an s6 image), a launchd name.
+    confirmed = (on_systemd and (notify or journal)) or (supervisor == "s6" and s6_env) \
+        or supervisor == "launchd"
     return {
         "supervisor": supervisor,
+        "supervisor_confirmed": confirmed,
         "s6": s6_env or s6_files,
         "notify_socket": notify,
         "watchdog_s": _watchdog_seconds(env, os.getpid() if pid is None else pid) if on_systemd else 0,
-        "journal": on_systemd and _journal(env, stderr_id),
+        "journal": journal,
     }
 
 
@@ -406,10 +432,11 @@ def detect(env: Mapping[str, str] | None = None, *, exists: Callable[[str], bool
     env = os.environ if env is None else env
     interactive = bool(isatty())
     container, evidence = detect_container(env, exists=exists, read_text=read_text, files=files, cgroup=cgroup)
+    marker = bool(container) and any(_exists(exists, path) for path in files)
     wsl, distro = detect_wsl(env, read_text=read_text, platform=platform)
     machine_id, source = detect_machine_id(env, read_text=read_text, platform=platform, windows_guid=windows_guid)
     return HostIdentity(
-        container=container, container_evidence=evidence, wsl=wsl, wsl_distro=distro,
+        container=container, container_evidence=evidence, docker_marker=marker, wsl=wsl, wsl_distro=distro,
         termux=detect_termux(env, exists=exists),
         **detect_supervisor(env, exists=exists, platform=platform, interactive=interactive,
                             stderr_id=stderr_id, pid=pid),
@@ -452,7 +479,7 @@ __all__ = [
     "MACHINE_ID_SOURCES", "MULTIPLEXERS", "PROMPT_HEADER", "SUPERVISORS", "TERMINALS", "TERM_FAMILIES",
     "WSL_KINDS", "container_marker", "detect", "detect_container", "detect_machine_id",
     "detect_supervisor", "detect_terminal", "detect_termux", "detect_wsl", "hash_machine_id", "identity",
-    "main", "prompt_block",
+    "main", "prompt_block", "watchdog_deadline",
 ]
 
 

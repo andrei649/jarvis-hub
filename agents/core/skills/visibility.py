@@ -119,7 +119,10 @@ def readiness(skill: Any, *, host: frozenset[str] | None = None) -> tuple[str, s
 def host_environments() -> frozenset[str]:
     """The environment tags that hold for this process (the turn adds ``kanban``): the
     container and s6 tags come from the one host detector (H283, ``host_identity``), so
-    a skill gate and the model's prompt never describe two different machines."""
+    a skill gate and the model's prompt never describe two different machines. ``docker``
+    holds for a docker/podman container and wherever ``/.dockerenv`` or
+    ``/run/.containerenv`` exists (a pod that also has one); ``containerd`` and ``lxc`` hosts
+    without a marker file earn their own name plus ``container``, not ``docker``."""
     from agents.core import host_identity
     from agents.core.env_config import env_str
 
