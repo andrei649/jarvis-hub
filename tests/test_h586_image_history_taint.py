@@ -176,3 +176,32 @@ async def test_image_history_is_never_promoted_by_review_refine_or_living_memory
         assert spawned == []
     finally:
         orch_module._active_session.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_a_one_shot_completion_over_image_history_runs_tainted_and_leaks_nothing(monkeypatch):
+    """process()/process_detailed() (autonomy _llm tasks, nightly reflection, the
+    summarize route) read the shared session's history too; the mark is scoped to the call."""
+    from agents.core import power
+
+    manager, sid = await _memory_with_image_turn()
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.memory = manager
+    orch._session_id_default = sid
+    orch.agents = {"jarvis": object()}
+    monkeypatch.setattr(power, "hold_for_turn", lambda _orch: None)
+    monkeypatch.setattr(power, "release_for_turn", lambda _awake: None)
+    seen = []
+
+    async def call(agent_ids, prompt, plugin_data, extra):
+        seen.append(current_action_origin())
+        return {"jarvis": "done"}
+
+    orch._call_agents_parallel = call
+    token = bind_action_origin("generated")
+    try:
+        assert await Orchestrator.process_detailed(orch, "summarise the day") == ("done", None)
+        assert seen == [TAINTED_RECALL_ORIGIN]
+        assert current_action_origin() == "generated"
+    finally:
+        reset_action_origin(token)

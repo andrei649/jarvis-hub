@@ -2218,7 +2218,11 @@ class Orchestrator:
             logger.warning(f"process(): no agent available for completion (agent={agent})")
             return "", "no agent available"
         awake = power.hold_for_turn(self)        # H182: a one-shot completion is a turn too
+        # H586: the completion reads this session's history too, so an image reading in it
+        # taints this call's action origin; scoped here, it never leaks to the caller.
+        origin_token = bind_action_origin(current_action_origin())
         try:
+            await Orchestrator._guard_media_history(self, getattr(self, "session_id", None) or "default")
             responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
         except CompactionClockRefused:
             return CONTEXT_REFUSED_REPLY, CONTEXT_REFUSED_REPLY
@@ -2232,6 +2236,7 @@ class Orchestrator:
             log_error(logger, E_INTERNAL_UNEXPECTED, component=f"process:{channel}", detail=str(e))
             return "", f"{type(e).__name__}: {e}"
         finally:
+            reset_action_origin(origin_token)
             power.release_for_turn(awake)
         resp = responses.get(agent_id, "") if responses else ""
         # _call_agents_parallel returns structured error/timeout markers instead
@@ -2358,8 +2363,11 @@ class Orchestrator:
         marks the turn too."""
         from .security.recall_taint import mark_turn_recall_tainted
 
+        get_history = getattr(getattr(self, "memory", None), "get_history", None)
+        if get_history is None:          # no conversation store at all: no history to read
+            return
         try:
-            turns = await self.memory.get_history(sid)
+            turns = await get_history(sid)
         except Exception as exc:
             logger.warning("image-history check failed (%s); marking the turn", type(exc).__name__)
             mark_turn_recall_tainted()
