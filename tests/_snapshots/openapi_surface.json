@@ -161,6 +161,7 @@
   "GET /api/kg/entities/{name}": "kg_entity_api_kg_entities__name__get",
   "GET /api/kg/facts/as-of": "kg_facts_as_of_api_kg_facts_as_of_get",
   "GET /api/kg/facts/history": "kg_facts_history_api_kg_facts_history_get",
+  "GET /api/kg/map": "kg_map_api_kg_map_get",
   "GET /api/llm/auth-profiles": "llm_auth_profiles_api_llm_auth_profiles_get",
   "GET /api/llm/quota": "llm_quota_api_llm_quota_get",
   "GET /api/llm/roles": "llm_roles_api_llm_roles_get",
