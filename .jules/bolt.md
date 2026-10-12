@@ -35,3 +35,7 @@
 ## 2026-04-08 - Per-frame Template String Allocation in Canvas Label Rendering
 **Learning:** In Canvas 2D components (`NeuralBurst` in `frontend/src/burst.tsx`), constructing sub-line label template strings inside `draw()` on every 60 FPS frame allocates strings (~3,600 allocations/min) even when cluster data has not changed.
 **Action:** Cache component numerical/state inputs (`_nodes`, `_firing`, `_tasks`) on the cluster state ref and only re-construct template strings and re-measure text when underlying state changes.
+
+## 2026-04-09 - Per-Render Provenance Array and Closure Allocations in BriefingWall
+**Learning:** Helper functions evaluated multiple times per render (such as `cardStamp` and provenance aggregations in `frontend/src/wall.tsx`) that perform `array.filter(Boolean)` and `.some()`/`.every()` predicate closures allocate intermediate arrays and iterator closures on every tick/render of high-frequency components.
+**Action:** Use a single indexed `for` loop over input arrays to compute state flags in one pass, avoiding array filtering and closure allocations during component render cycles.
