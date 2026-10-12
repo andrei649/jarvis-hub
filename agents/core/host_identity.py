@@ -77,7 +77,12 @@ _KIND_WORDS = {
     "docker": "docker", "podman": "podman", "kubernetes": "kubernetes", "k8s": "kubernetes",
     "lxc": "lxc", "lxc-libvirt": "lxc", "containerd": "containerd", "systemd-nspawn": "nspawn",
     "nspawn": "nspawn", "oci": "container", "container": "container",
+    # container managers systemd names (``systemd.io/CONTAINER_INTERFACE``) with no kind of their own
+    "openvz": "container", "rkt": "container", "pouch": "container", "container-other": "container",
 }
+#: Words ``/run/systemd/container`` or ``$container`` can hold that are NOT a container: WSL is a
+#: virtual machine (reported as the ``wsl`` fact) and proot a user-space chroot (Termux proot-distro).
+_NOT_CONTAINER_WORDS = frozenset({"wsl", "proot"})
 #: ``host_posture.in_container``'s marker → the kind it shows.
 _MARKER_KINDS = {".dockerenv": "docker", ".containerenv": "podman"}
 _CGROUP_KINDS = {"docker": "docker", "kubepods": "kubernetes", "containerd": "containerd",
@@ -209,7 +214,9 @@ def _read_file(path: str) -> str:
 
 
 def _kind_word(word: str) -> str:
-    return _KIND_WORDS.get(word.strip().lower(), "container")
+    """The closed kind for a container manager's word; ``""`` for ``wsl``, ``proot`` and any word
+    that is not a container manager (it says nothing about being in a container)."""
+    return _KIND_WORDS.get(word.strip().lower(), "")
 
 
 def detect_container(env: Mapping[str, str], *, exists: Callable[[str], bool] = os.path.exists,
@@ -236,21 +243,25 @@ def detect_container(env: Mapping[str, str], *, exists: Callable[[str], bool] = 
             return _MARKER_KINDS[name], marker
         found = next((kind for word, kind in _CGROUP_KINDS.items() if f"({word})" in marker), "container")
         return found, marker
-    word = _read(read_text, systemd_container, 64).strip()
-    if word:
-        return _kind_word(word), systemd_container
-    if (env.get("container") or "").strip():
-        return _kind_word(env["container"]), "container"
+    kind = _kind_word(_read(read_text, systemd_container, 64))
+    if kind:
+        return kind, systemd_container
+    kind = _kind_word(env.get("container") or "")
+    if kind:
+        return kind, "container"
     return "", ""
 
 
 def detect_wsl(env: Mapping[str, str], *, read_text: Callable[[str], str] = _read_file,
-               platform: str = sys.platform, osrelease: str = OSRELEASE) -> tuple[str, str]:
-    """``(kind, distro)``: ``wsl2``/``wsl1``/``wsl`` (version unknown), or ``("", "")``."""
+               platform: str = sys.platform, osrelease: str = OSRELEASE,
+               systemd_container: str = SYSTEMD_CONTAINER) -> tuple[str, str]:
+    """``(kind, distro)``: ``wsl2``/``wsl1``/``wsl`` (version unknown), or ``("", "")``.
+    systemd on WSL writes ``wsl`` to ``/run/systemd/container``: that is a WSL signal, not a container."""
     if not platform.startswith("linux"):
         return "", ""
     release = _read(read_text, osrelease, 256).lower()
-    from_env = bool(env.get("WSL_DISTRO_NAME") or env.get("WSL_INTEROP"))
+    from_env = bool(env.get("WSL_DISTRO_NAME") or env.get("WSL_INTEROP")) or "wsl" in (
+        _read(read_text, systemd_container, 64).strip().lower(), (env.get("container") or "").strip().lower())
     if "microsoft-standard" in release or "wsl2" in release:
         kind = "wsl2"
     elif "microsoft" in release:
@@ -405,10 +416,9 @@ def detect_terminal(env: Mapping[str, str], *, interactive: bool = False) -> dic
         color = "none"
     background = "unknown"
     fgbg = (env.get("COLORFGBG") or "").split(";")
-    if len(fgbg) >= 2 and fgbg[-1].strip().isdigit():
-        bg = int(fgbg[-1])
-        if 0 <= bg <= 15:
-            background = "dark" if bg <= 6 or bg == 8 else "light"
+    bg = _decimal(fgbg[-1].strip(), 2) if len(fgbg) >= 2 else None  # ASCII, at most 2 digits: never raises
+    if bg is not None and bg <= 15:
+        background = "dark" if bg <= 6 or bg == 8 else "light"
     return {"terminal": terminal, "multiplexer": multiplexer, "term": family, "color": color,
             "background": background, "interactive": interactive}
 
@@ -454,6 +464,19 @@ def _stdin_is_tty() -> bool:
         return False
 
 
+_NO_TERMINAL = {"terminal": "none", "multiplexer": "none", "term": "none", "color": "none",
+                "background": "unknown"}
+
+
+def _isolated(name, fn, default, *args, **kwargs):
+    """``fn(*args, **kwargs)``, or ``default`` (and a log line naming the exception type) if it raises."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        logger.warning("host identity: the %s fact could not be read (%s)", name, type(exc).__name__)
+        return default
+
+
 def detect(env: Mapping[str, str] | None = None, *, exists: Callable[[str], bool] = os.path.exists,
            read_text: Callable[[str], str] = _read_file, platform: str = sys.platform,
            isatty: Callable[[], bool] = _stdin_is_tty,
@@ -466,14 +489,18 @@ def detect(env: Mapping[str, str] | None = None, *, exists: Callable[[str], bool
     interactive = bool(isatty())
     container, evidence = detect_container(env, exists=exists, read_text=read_text, files=files, cgroup=cgroup)
     marker = bool(container) and any(_exists(exists, path) for path in files)
-    wsl, distro = detect_wsl(env, read_text=read_text, platform=platform)
-    machine_id, source = detect_machine_id(env, read_text=read_text, platform=platform, windows_guid=windows_guid)
+    # the cosmetic facts fail alone: a bad terminal variable must not drop the container or the supervisor
+    wsl, distro = _isolated("wsl", detect_wsl, ("", ""), env, read_text=read_text, platform=platform)
+    machine_id, source = _isolated("machine id", detect_machine_id, ("", "none"), env, read_text=read_text,
+                                   platform=platform, windows_guid=windows_guid)
+    terminal = _isolated("terminal", detect_terminal, dict(_NO_TERMINAL, interactive=interactive), env,
+                         interactive=interactive)
     return HostIdentity(
         container=container, container_evidence=evidence, docker_marker=marker, wsl=wsl, wsl_distro=distro,
-        termux=detect_termux(env, exists=exists),
+        termux=_isolated("termux", detect_termux, False, env, exists=exists),
         **detect_supervisor(env, exists=exists, platform=platform, interactive=interactive,
                             stderr_id=stderr_id, pid=pid),
-        **detect_terminal(env, interactive=interactive),
+        **terminal,
         machine_id=machine_id, machine_id_source=source,
     )
 
@@ -483,8 +510,9 @@ def identity() -> HostIdentity:
     """This process's host, detected once: the same bytes for every prompt it builds."""
     try:
         return detect()
-    except Exception:  # a detector bug must never stop a prompt or a probe, nor pass as a bare host
-        logger.warning("host identity could not be detected: the prompt says nothing about the host")
+    except Exception as exc:  # a detector bug must never stop a prompt or a probe, nor pass as a bare host
+        logger.warning("host identity could not be detected (%s): the prompt says nothing about the host",
+                       type(exc).__name__)
         return HostIdentity(detected=False)
 
 

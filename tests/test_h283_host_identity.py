@@ -81,7 +81,7 @@ def test_nothing_detected_is_a_quiet_identity():
     ((), {"KUBERNETES_SERVICE_HOST": "10.0.0.1"}, "kubernetes", "KUBERNETES_SERVICE_HOST"),
     (("/.dockerenv",), {"KUBERNETES_SERVICE_HOST": "10.0.0.1"}, "kubernetes", "KUBERNETES_SERVICE_HOST"),
     ((), {"container": "podman"}, "podman", "container"),
-    ((), {"container": "something-new"}, "container", "container"),
+    ((), {"container": "openvz"}, "container", "container"),
     ((), {"JARVIS_CONTAINER": "Docker"}, "docker", "JARVIS_CONTAINER"),
     ((), {"JARVIS_CONTAINER": "yes"}, "container", "JARVIS_CONTAINER"),
     ((), {"JARVIS_CONTAINER": "true"}, "container", "JARVIS_CONTAINER"),
@@ -702,3 +702,84 @@ def test_prompt_size_lists_the_detected_facts_before_the_operators_hint(monkeypa
     monkeypatch.setenv(hint_mod.ENV_NAME, "a NAS in the hall")
     names = [c.name for c in breakdown(agents_root=repo_root / "agents").components]
     assert names.index("host-detected") < names.index("environment-hint")
+
+
+# ── fix round: WSL is not a container; one bad terminal variable is not a blank identity ────────
+
+WSL2_RELEASE = "5.15.133.1-microsoft-standard-WSL2\n"
+
+
+def test_wsl_with_systemd_is_wsl_not_a_container():
+    """systemd on WSL 2 writes ``wsl`` to /run/systemd/container; the hub is not in a container."""
+    got = _detect(texts={hi.SYSTEMD_CONTAINER: "wsl\n", hi.OSRELEASE: WSL2_RELEASE})
+    assert (got.container, got.container_evidence, got.wsl) == ("", "", "wsl2")
+    assert "container" not in got.environment_tags()
+    assert "container" not in got.prompt_line() and "WSL 2" in got.prompt_line()
+
+
+def test_the_wsl_word_alone_is_a_wsl_of_unknown_version():
+    for got in (_detect(texts={hi.SYSTEMD_CONTAINER: "wsl"}), _detect({"container": "wsl"})):
+        assert (got.container, got.wsl) == ("", "wsl")
+
+
+@pytest.mark.parametrize("word", ["proot", "PROOT\n", "wsl", "wsl2", "something-new", "nonsense value", "../x"])
+def test_a_word_that_is_not_a_container_manager_is_not_a_container(word):
+    assert _detect(texts={hi.SYSTEMD_CONTAINER: word}).container == ""
+    assert _detect({"container": word}).container == ""
+    assert _detect({"JARVIS_CONTAINER": word}).container == ""
+
+
+@pytest.mark.parametrize("word,kind", [
+    ("openvz", "container"), ("rkt", "container"), ("pouch", "container"), ("container-other", "container"),
+    ("oci", "container"), ("lxc-libvirt", "lxc"), ("systemd-nspawn", "nspawn"), ("Podman\n", "podman"),
+])
+def test_systemds_container_managers_are_containers(word, kind):
+    got = _detect(texts={hi.SYSTEMD_CONTAINER: word})
+    assert (got.container, got.container_evidence) == (kind, hi.SYSTEMD_CONTAINER)
+
+
+def test_an_unrecognised_systemd_word_does_not_hide_a_real_container_marker():
+    assert _detect({"container": "podman"}, texts={hi.SYSTEMD_CONTAINER: "proot"}).container == "podman"
+
+
+@pytest.mark.parametrize("fgbg", ["15;\u00b2", "15;\u0666", "15;" + "1" * 5000, "15;" + "1" * 3, "15;-1", "15;1_0",
+                                  ";", "", "15;16", "x;y;z"])
+def test_a_malformed_colorfgbg_never_blanks_the_identity(fgbg):
+    got = _detect({"COLORFGBG": fgbg, "KUBERNETES_SERVICE_HOST": "10.0.0.1", "NOTIFY_SOCKET": "/run/notify"})
+    assert got.detected and got.container == "kubernetes" and got.supervisor == "systemd"
+    assert got.background == "unknown"
+
+
+def test_the_shell_reader_survives_a_malformed_colorfgbg(monkeypatch, capsys):
+    monkeypatch.setenv("COLORFGBG", "15;\u00b2")
+    assert hi.main([]) == 0
+    assert json.loads(capsys.readouterr().out)["detected"] is True
+
+
+def test_a_failing_cosmetic_detector_costs_only_its_own_fact(monkeypatch, caplog):
+    def boom(*a, **k):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(hi, "detect_terminal", boom)
+    monkeypatch.setattr(hi, "detect_machine_id", boom)
+    monkeypatch.setattr(hi, "detect_wsl", boom)
+    with caplog.at_level("WARNING", logger="jarvis.host_identity"):
+        got = _detect({"KUBERNETES_SERVICE_HOST": "10.0.0.1", "NOTIFY_SOCKET": "/run/notify"}, tty=True)
+    assert got.detected and got.container == "kubernetes" and got.supervisor == "systemd"
+    assert (got.terminal, got.wsl, got.machine_id, got.machine_id_source) == ("none", "", "", "none")
+    assert got.interactive is True
+    assert "ValueError" in caplog.text and "terminal" in caplog.text
+
+
+def test_identity_failure_log_names_the_exception_type(monkeypatch, caplog):
+    def boom():
+        raise KeyError("x")
+
+    monkeypatch.setattr(hi, "detect", boom)
+    hi.identity.cache_clear()
+    try:
+        with caplog.at_level("WARNING", logger="jarvis.host_identity"):
+            assert hi.identity().detected is False
+    finally:
+        hi.identity.cache_clear()
+    assert "KeyError" in caplog.text

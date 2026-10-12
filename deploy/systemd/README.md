@@ -99,7 +99,7 @@ once at start.
 | Variable | Effect |
 |---|---|
 | `JARVIS_ENVIRONMENT_HINT` | Your description of the machine, given to every agent (see above). |
-| `JARVIS_CONTAINER` | Override container detection. A kind (`docker`, `podman`, `kubernetes`, `lxc`, `containerd`, `nspawn`) names it; `1`/`true`/`yes`/`on` says "some container"; `none`, `0`, `false`, `no`, `off`, `disable` or `disabled` says "not a container" (the model, the skill gates and the doctor's container-storage check all drop it). Any other word is ignored and the marker files decide. |
+| `JARVIS_CONTAINER` | Override container detection. A kind (`docker`, `podman`, `kubernetes`, `lxc`, `containerd`, `nspawn`) names it; `1`/`true`/`yes`/`on` says "some container"; `none`, `0`, `false`, `no`, `off`, `disable` or `disabled` says "not a container" (the model, the skill gates and the doctor's container-storage check all drop it). Any other word is ignored and the marker files decide. `/run/systemd/container` and `$container` count only when they name a container manager; `wsl` there is the WSL fact (not a container) and `proot` is neither. |
 | `JARVIS_MACHINE_ID` | Your own machine name, used instead of `/etc/machine-id`. Only a keyed hash prefix is ever shown (HUD, probe); never the value, never the model. |
 
 The `S6_VERSION` and `S6_CMD_ARG0` variables that s6-overlay's init exports make Nerva
