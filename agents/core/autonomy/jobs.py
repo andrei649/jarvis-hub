@@ -92,6 +92,18 @@ def setting_hour(orch, key: str, default: int) -> int:
         return default
 
 
+def quiet_hour(ts: float, zone=None) -> int:
+    """H450: the hour quiet hours are judged in — the app zone the triggers fire in
+    (*zone*, a callable or a zone; the saved app zone when absent), never the host's.
+    Only an unusable saved zone falls back to the host clock, so a bad setting can
+    hold or deliver a message but never break the delivery path."""
+    try:
+        tz = zone() if callable(zone) else (zone or app_schedule_timezone())
+    except ValueError:
+        return time.localtime(ts).tm_hour
+    return datetime.fromtimestamp(ts, tz).hour
+
+
 _CRON_RE = re.compile(r"^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$")
 _DOW_NAMES = ("sun", "mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -1995,7 +2007,7 @@ class JobRunner:
 
         return is_night(
             # H450: the same pinned app zone the trigger fires in, not the host's.
-            datetime.fromtimestamp(self._now(), self.scheduler_timezone()).hour,
+            quiet_hour(self._now(), self.scheduler_timezone),
             start=setting_hour(self._orch, QUIET_START_SETTING, DEFAULT_QUIET_START),
             end=setting_hour(self._orch, QUIET_END_SETTING, DEFAULT_QUIET_END),
         )

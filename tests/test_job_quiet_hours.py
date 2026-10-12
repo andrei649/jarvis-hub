@@ -233,3 +233,29 @@ async def test_quiet_hours_follow_the_app_zone_not_the_host(store, monkeypatch):
     assert runner.quiet_hours() is False
     assert await runner._deliver("morning", "telegram", job=job) == "delivered to telegram"
     assert telegram.sent == [("morning", 777)] and store.held_count() == 1
+
+
+def test_the_webhook_route_holds_on_the_same_zone_as_the_jobs(monkeypatch):
+    """H450/H153: webhook pushes are held "as the jobs read it", so on a UTC host the
+    owner's 23:00 is night for the route too, and 08:00 is day."""
+    from agents.core.routers import webhooks as router
+
+    monkeypatch.setattr(jobs_module, "app_schedule_timezone", lambda: BUCHAREST)
+    monkeypatch.setattr(jobs_module.time, "localtime", lambda ts=None: time.gmtime(ts))   # the host reads as UTC
+    orch = SimpleNamespace(get_setting=lambda key, default=None: default)              # 22 to 7
+    monkeypatch.setattr(router, "_now", lambda: datetime(2026, 1, 15, 23, 0, tzinfo=BUCHAREST).timestamp())
+    assert router._quiet_hours(orch) is True
+    monkeypatch.setattr(router, "_now", lambda: datetime(2026, 1, 15, 8, 0, tzinfo=BUCHAREST).timestamp())
+    assert router._quiet_hours(orch) is False
+
+
+def test_an_unusable_app_zone_falls_back_to_the_host_clock(monkeypatch):
+    """A broken saved zone must not break delivery: the hour is then the host's."""
+    def broken():
+        raise ValueError("configured app timezone is invalid")
+
+    monkeypatch.setattr(jobs_module, "app_schedule_timezone", broken)
+    monkeypatch.setattr(jobs_module.time, "localtime", lambda ts=None: SimpleNamespace(tm_hour=4))
+    assert jobs_module.quiet_hour(0.0) == 4
+    assert jobs_module.quiet_hour(0.0, broken) == 4
+    assert jobs_module.quiet_hour(datetime(2026, 1, 15, 23, tzinfo=BUCHAREST).timestamp(), BUCHAREST) == 23

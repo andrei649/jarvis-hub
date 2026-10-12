@@ -516,6 +516,7 @@ def test_a_slider_value_is_audited(hub, receiver):
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), "x", None, [3]])
 def test_an_hour_setting_that_is_not_a_number_falls_back_to_the_default(monkeypatch, bad):
     from agents.core.autonomy.jobs import JobRunner
+    from agents.core.autonomy.schedule_timezone import app_schedule_timezone
     from agents.core.routers import webhooks as router
 
     orch = SimpleNamespace(get_setting=lambda key, default=None: bad if key.endswith("start") else default)
@@ -523,6 +524,7 @@ def test_an_hour_setting_that_is_not_a_number_falls_back_to_the_default(monkeypa
     assert router._quiet_hours(orch) is True                  # 22 to 7, the defaults
     runner = JobRunner.__new__(JobRunner)
     runner._quiet, runner._orch, runner._now = None, orch, lambda: _at(23)
+    runner._pinned_timezone = app_schedule_timezone()
     assert runner.quiet_hours() is True
 
 
