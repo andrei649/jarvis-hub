@@ -1994,7 +1994,8 @@ class JobRunner:
         from .schedule_runtime import is_night
 
         return is_night(
-            time.localtime(self._now()).tm_hour,
+            # H450: the same pinned app zone the trigger fires in, not the host's.
+            datetime.fromtimestamp(self._now(), self.scheduler_timezone()).hour,
             start=setting_hour(self._orch, QUIET_START_SETTING, DEFAULT_QUIET_START),
             end=setting_hour(self._orch, QUIET_END_SETTING, DEFAULT_QUIET_END),
         )

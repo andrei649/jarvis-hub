@@ -88,6 +88,25 @@ def test_import_and_resolve_are_owner_only_and_guest_cannot_enumerate_title(cont
     assert owner.status_code == 200 and sid in owner.text and SECRET in owner.text
 
 
+def test_guest_list_is_not_emptied_by_twenty_newer_foreign_sessions(context):
+    """The lineage predicate applies before the store's limit: a window of newer
+    imported rows never hides the older native history a guest may see."""
+    from agents.core.session_import import import_turns
+
+    imported = {import_turns(context.cp, source="claude", external_id=f"bulk-{i}",
+                             turns=[{"role": "user", "content": SECRET,
+                                     "timestamp": "2026-10-01T00:00:00+00:00"}],
+                             request_id=str(uuid.uuid4()))["session_id"] for i in range(20)}
+    guest = context.client.get("/sessions", headers=USER)
+    assert guest.status_code == 200, guest.text
+    ids = {row["id"] for row in guest.json()["sessions"]}
+    assert context.native in ids
+    assert not ids & imported and SECRET not in guest.text
+    owner = context.client.get("/sessions", headers=ADMIN)
+    assert owner.status_code == 200, owner.text
+    assert imported <= {row["id"] for row in owner.json()["sessions"]}  # the owner's view is unchanged
+
+
 def test_explicit_and_effective_default_chat_stream_and_active_memory_are_private(context):
     sid = _import(context)
     resolved = context.client.post("/sessions/resolve", headers=ADMIN, json={"selector": sid})
