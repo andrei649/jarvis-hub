@@ -1225,7 +1225,9 @@ only when this is `1` and the caller is the interactive `web_search` tool, never
 tasks, the scout or the gatherer); a gate refusal is never rescued. `JARVIS_WEB_BLOCKED_DOMAINS=a.com,b.org` makes
 `web_extract` refuse those sites (and subdomains) on every redirect hop and drops them from
 `web_search` rows (not from direct `search()` callers); entries may be written as a host, URL,
-`host:port`, unicode or punycode, and an entry naming no host is ignored and flagged by the
+`host:port`, unicode or punycode, or an IP in any spelling (`167838211`, `0xa010203` and
+`::ffff:10.1.2.3` all match `10.1.2.3`); it is a list of host names and addresses, not patterns. An
+entry naming no host (a typo) blocks nothing: it is logged as a warning and flagged by the
 verification command. **Cost of ON:** a named paid backend sends your queries to that vendor; rescue sends a
 failed query to a second configured provider. **Revert:** unset the variable.
 

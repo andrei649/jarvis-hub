@@ -14,6 +14,7 @@ import copy
 import io
 import logging
 import threading
+import weakref
 import time
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -67,6 +68,7 @@ REFUSED = "url_refused"          # a gate refused it, or the answer is not reada
 FETCH_FAILED = "fetch_failed"    # network / HTTP error status: may be retried later
 PARSER_MISSING = "parser_missing"
 TOO_LARGE = "too_large"
+PARSER_BUSY = "parser_busy"      # the PDF parse slots are held by earlier, still-running parses
 SITE_BLOCKED = "site_blocked"    # operator-disallowed site (JARVIS_WEB_BLOCKED_DOMAINS)
 
 # DuckDuckGo's HTML endpoint does not hand back a result's own address. It hands back
@@ -179,10 +181,24 @@ def _pdf_module():
     return pypdf
 
 
-# At most this many PDF parses run at once. A parse that outlives its timeout keeps its
-# slot until the worker really stops, so abandoned parses cannot stack up unbounded.
+# At most this many PDF parses run at once. Reads beyond that wait their turn (a call with
+# five PDF URLs is normal), in a per-event-loop queue; a parse that outlives its timeout
+# keeps its thread slot until the worker really stops, so abandoned parses cannot stack up
+# unbounded, and a read that finds every thread slot held says ``parser_busy``.
 PDF_MAX_CONCURRENT = 2
 _PDF_SLOTS = threading.BoundedSemaphore(PDF_MAX_CONCURRENT)
+#: how long one read waits for its turn behind other parses before ``parser_busy``.
+PDF_QUEUE_WAIT_SECONDS = 90.0
+_PDF_QUEUES: "weakref.WeakKeyDictionary[Any, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+
+
+def _pdf_queue() -> asyncio.Semaphore:
+    """The parse queue of the running loop (an asyncio primitive is bound to one loop)."""
+    loop = asyncio.get_running_loop()
+    queue = _PDF_QUEUES.get(loop)
+    if queue is None:
+        queue = _PDF_QUEUES[loop] = asyncio.Semaphore(PDF_MAX_CONCURRENT)
+    return queue
 
 
 def _pdf_text(module: Any, body: bytes, cap: int,
@@ -450,11 +466,13 @@ class WebSearchPlugin:
                                 return PageRead(None, refusal=REFUSED)
                             current = urljoin(current, location)
                             continue
+                        # The status first: a 503 or 429 that answers in JSON (or says nothing
+                        # about its type) is a server error to retry, not an unreadable page.
+                        resp.raise_for_status()
                         media = self._media_type(resp)
                         if media not in PAGE_CONTENT_TYPES and media not in PDF_CONTENT_TYPES:
                             logger.warning("Page fetch refused: media type is not readable text")
                             return PageRead(None, refusal=REFUSED)
-                        resp.raise_for_status()
                         if media in PDF_CONTENT_TYPES:
                             pdf = _pdf_module()
                             if pdf is None:
@@ -465,7 +483,11 @@ class WebSearchPlugin:
                                             missing="beautifulsoup4")
                         charset = resp.charset_encoding
                         body, body_cut = await self._read_bounded_cut(resp)
-                except PluginEgressError:
+                except PluginEgressError as exc:
+                    if web_providers.is_dns_failure(exc):
+                        # A resolver outage or an unresolvable name: nothing was refused.
+                        logger.warning("Page fetch failed: DNS did not resolve")
+                        return PageRead(None, refusal=FETCH_FAILED)
                     logger.warning("Page fetch refused by the egress guard")
                     return PageRead(None, refusal=REFUSED)
                 except Exception as e:
@@ -495,8 +517,15 @@ class WebSearchPlugin:
         if body_cut:
             logger.warning("PDF refused: cut at the byte cap (max_bytes=%d)", PAGE_MAX_BYTES)
             return PageRead(None, media="pdf", refusal=TOO_LARGE)
-        deadline = time.monotonic() + PDF_PARSE_TIMEOUT_SECONDS
+        queue = _pdf_queue()
         try:
+            await asyncio.wait_for(queue.acquire(), PDF_QUEUE_WAIT_SECONDS)
+        except TimeoutError:
+            logger.warning("PDF parse queue wait expired (%.0fs)", PDF_QUEUE_WAIT_SECONDS)
+            return PageRead(None, media="pdf", refusal=PARSER_BUSY)
+        try:
+            # The clock starts when the parse does, not while the read waited its turn.
+            deadline = time.monotonic() + PDF_PARSE_TIMEOUT_SECONDS
             # The deadline is checked between pages inside the worker, so the thread stops
             # there; wait_for frees the caller even if one page is slow on its own.
             text, pages, cut = await asyncio.wait_for(
@@ -504,8 +533,9 @@ class WebSearchPlugin:
                 PDF_PARSE_TIMEOUT_SECONDS,
             )
         except _PdfBusy:
-            logger.warning("PDF parse deferred: %d parses already running", PDF_MAX_CONCURRENT)
-            return PageRead(None, media="pdf", refusal=FETCH_FAILED)
+            logger.warning("PDF parse refused: %d earlier parses are still running",
+                           PDF_MAX_CONCURRENT)
+            return PageRead(None, media="pdf", refusal=PARSER_BUSY)
         except TimeoutError:
             logger.warning("PDF parse timed out (%.0fs)", PDF_PARSE_TIMEOUT_SECONDS)
             # Slow, not forbidden: the model may retry later (unlike url_refused).
@@ -513,6 +543,8 @@ class WebSearchPlugin:
         except Exception as e:
             logger.warning("PDF parse failed (type=%s)", type(e).__name__)
             return PageRead(None, media="pdf", refusal=REFUSED)
+        finally:
+            queue.release()
         return PageRead(text, media="pdf", text_cut=cut, pages=pages)
 
     @staticmethod

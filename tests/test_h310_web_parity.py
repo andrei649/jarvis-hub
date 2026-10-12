@@ -24,6 +24,7 @@ import hashlib
 import json
 import sys
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -943,7 +944,8 @@ async def test_pdf_parses_are_bounded_in_number(monkeypatch):
         assert all(held)
         plugin = ws.WebSearchPlugin()
         got = await plugin.read_page("https://docs.example/a.pdf", _transport=_pdf_transport())
-        assert got.text is None and got.refusal == "fetch_failed"
+        # Not "fetch_failed": a retry would meet the same hung parses, so it says so.
+        assert got.text is None and got.refusal == "parser_busy"
     finally:
         for _ in held:
             ws._PDF_SLOTS.release()
@@ -962,3 +964,193 @@ def test_research_pins_its_tier_and_reports_an_unavailable_backend_honestly(monk
     free_only = ws.WebSearchPlugin(searxng_url="https://searx.local")
     with pytest.raises(ResearchError, match="unavailable"):
         WebSearchResearchBackend(plugin=free_only)
+
+
+# ── fix round 2: queued PDF parses, DNS is not a policy block, status before media ──
+
+def _slow_pypdf(pages=2, delay=0.1, peak=None):
+    module = types.ModuleType("pypdf")
+    live = {"now": 0}
+    lock = threading.Lock()
+
+    class _Page:
+        def extract_text(self):
+            with lock:
+                live["now"] += 1
+                if peak is not None:
+                    peak.append(live["now"])
+            time.sleep(delay)
+            with lock:
+                live["now"] -= 1
+            return "page"
+
+    class PdfReader:
+        def __init__(self, stream):
+            stream.read()
+            self.is_encrypted = False
+            self.pages = [_Page() for _ in range(pages)]
+
+    module.PdfReader = PdfReader
+    return module
+
+
+async def test_five_pdf_urls_in_one_call_are_queued_not_refused(monkeypatch, tmp_path):
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    peak: list = []
+    monkeypatch.setitem(sys.modules, "pypdf", _slow_pypdf(pages=2, delay=0.1, peak=peak))
+    real = ws.WebSearchPlugin()
+
+    class Wired:
+        tavily_api_key = ""
+        searxng_url = ""
+
+        async def read_page(self, url, *, full_chars=ws.FULL_TEXT_MAX_CHARS):
+            return await real.read_page(url, full_chars=full_chars, _transport=_pdf_transport())
+
+    server = _server(Wired(), result_store=_store(tmp_path))
+    urls = [f"https://docs.example/{i}.pdf" for i in range(5)]
+    out = await _call(server, wt.TOOL_EXTRACT, {"urls": urls})
+    pages = out["result"]["pages"]
+    assert [p.get("ok", True) for p in pages] == [True] * 5, pages
+    assert all(p["text"] == "page\n\npage" for p in pages)
+    # ...and the bound still holds: never more than PDF_MAX_CONCURRENT parses at once.
+    assert max(peak) <= ws.PDF_MAX_CONCURRENT
+
+
+async def test_queued_pdf_parses_work_across_event_loops(monkeypatch):
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    monkeypatch.setitem(sys.modules, "pypdf", _fake_pypdf(["x"]))
+    plugin = ws.WebSearchPlugin()
+
+    def one_loop():
+        async def run():
+            return await asyncio.gather(*[
+                plugin.read_page(f"https://docs.example/{i}.pdf", _transport=_pdf_transport())
+                for i in range(4)])
+        return asyncio.run(run())
+
+    for _ in range(2):                                        # a fresh loop each time
+        got = await asyncio.to_thread(one_loop)
+        assert [g.refusal for g in got] == [""] * 4
+
+
+async def test_parser_busy_is_a_distinct_page_reason(tmp_path):
+    busy = ws.PageRead(None, media="pdf", refusal=ws.PARSER_BUSY)
+    server = _server(Reader(pages={"https://a.example/x.pdf": busy}), result_store=_store(tmp_path))
+    out = await _call(server, wt.TOOL_EXTRACT, {"url": "https://a.example/x.pdf"})
+    assert out["result"]["ok"] is False and out["result"]["reason"] == "parser_busy"
+
+
+async def test_a_dns_failure_is_a_failure_not_a_policy_block(monkeypatch, swap_builtins):
+    from agents.core.http_client import PluginEgressError
+
+    async def dns():
+        raise PluginEgressError("egress blocked: DNS resolution failed for searx.internal")
+
+    with pytest.raises(wp.ProviderFailure):
+        await wp.classified(dns())
+
+    async def empty():
+        raise PluginEgressError("egress blocked: empty DNS answer")
+
+    with pytest.raises(wp.ProviderFailure):
+        await wp.classified(empty())
+
+    async def gate():
+        raise PluginEgressError("egress blocked: host not in the manifest allowlist")
+
+    with pytest.raises(wp.PolicyBlock):
+        await wp.classified(gate())
+    async def private():
+        raise PluginEgressError("egress blocked: URL resolves to unsafe address for public mode: 10.0.0.1")
+
+    with pytest.raises(wp.PolicyBlock):
+        await wp.classified(private())
+
+    # End to end through the real egress client: a resolver outage on the first
+    # backend is a retryable failure, so the one-shot rescue to the next backend runs.
+    fakes = swap_builtins(tavily=Recorder("tavily", tier="paid", raises=wp.ProviderFailure("x")))
+    plugin = ws.WebSearchPlugin(tavily_api_key="k", searxng_url="https://searx.example")
+    outcome = await plugin.search_detailed("q")
+    assert outcome.reason == "" and outcome.rescued_from == "tavily"
+    assert fakes["searxng"].calls
+
+
+async def test_a_dns_failure_on_a_page_read_is_retryable(monkeypatch):
+    monkeypatch.setattr(ws, "resolve_and_validate",
+                        lambda host, *a, **k: ([], f"DNS resolution failed for {host}"))
+    plugin = ws.WebSearchPlugin()
+    got = await plugin.read_page("https://nowhere.example/", _transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, text="x", headers={"content-type": "text/html"})))
+    assert got.refusal == "fetch_failed"
+    monkeypatch.setattr(ws, "resolve_and_validate",
+                        lambda host, *a, **k: ([], "URL resolves to unsafe address for public mode: 10.0.0.1"))
+    got = await plugin.read_page("https://nowhere.example/", _transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, text="x", headers={"content-type": "text/html"})))
+    assert got.refusal == "url_refused"                      # a real gate refusal stays one
+
+
+async def test_an_http_error_status_is_a_fetch_failure_whatever_the_media_type(monkeypatch):
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    plugin = ws.WebSearchPlugin()
+    cases = [
+        (503, {"content-type": "application/json"}, b'{"error":"busy"}'),
+        (429, {}, b""),
+        (404, {"content-type": "image/png"}, b"\x89PNG"),
+    ]
+    for status, headers, body in cases:
+        got = await plugin.read_page("https://a.example/x", _transport=httpx.MockTransport(
+            lambda r, s=status, h=headers, b=body: httpx.Response(s, content=b, headers=h)))
+        assert got.refusal == "fetch_failed", status
+    # A 200 with an unreadable media type is still a refusal.
+    got = await plugin.read_page("https://a.example/x", _transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, content=b"\x89PNG", headers={"content-type": "image/png"})))
+    assert got.refusal == "url_refused"
+
+
+async def test_web_search_answer_is_fitted_to_its_declared_byte_ceiling():
+    rows = [{"title": "漢" * 300, "url": "https://x.example/" + "a" * 1980 + str(i),
+             "snippet": "字" * 1000} for i in range(10)]
+
+    class Many:
+        tavily_api_key = "k"
+        searxng_url = ""
+
+        async def search(self, query, max_results=5):
+            return list(rows)
+
+    server = _server(Many())
+    out = await _call(server, wt.TOOL_SEARCH, {"query": "q", "max_results": 10})
+    result = out["result"]
+    size = len(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+    assert size <= wt.MAX_SEARCH_RESULT_BYTES
+    assert 0 < result["count"] < 10 and result["count"] == len(result["results"])
+    assert result["omitted"] == 10 - result["count"]
+    # ASCII rows (the normal case) are untouched.
+    class Few(Many):
+        async def search(self, query, max_results=5):
+            return [{"title": "t", "url": "https://x.example/1", "snippet": "s"}] * 3
+
+    out = await _call(_server(Few()), wt.TOOL_SEARCH, {"query": "q"})
+    assert out["result"]["count"] == 3 and "omitted" not in out["result"]
+
+
+def test_block_list_compares_numeric_host_spellings_and_warns_on_typos(monkeypatch, caplog):
+    monkeypatch.setenv(wp.BLOCKED_DOMAINS_ENV, "evil.com,10.1.2.3,nonsense words")
+    for url in ("http://10.1.2.3/", "http://167838211/", "http://0xa010203/",
+                "http://012.1.2.3/", "http://[::ffff:10.1.2.3]/", "http://10.1.2.3./"):
+        assert wp.blocked_host(url) is True, url
+    for url in ("http://10.1.2.4/", "http://167838212/", "http://abc.def/", "http://evil.com/"):
+        assert wp.blocked_host(url) is (url == "http://evil.com/"), url
+    monkeypatch.setenv(wp.BLOCKED_DOMAINS_ENV, "[::1], 2001:db8::1")
+    assert wp.blocked_host("http://[::1]/") is True
+    assert wp.blocked_host("http://[2001:db8:0::1]/") is True
+    # A typo is not silent at runtime: it is logged (once per distinct list).
+    wp._WARNED_UNUSABLE.clear()
+    caplog.clear()
+    monkeypatch.setenv(wp.BLOCKED_DOMAINS_ENV, "evil.com,not a host")
+    with caplog.at_level("WARNING", logger="jarvis.plugins.web_providers"):
+        wp.blocked_host("http://a.example/")
+        wp.blocked_host("http://b.example/")
+    warned = [r for r in caplog.records if "JARVIS_WEB_BLOCKED_DOMAINS" in r.getMessage()]
+    assert len(warned) == 1

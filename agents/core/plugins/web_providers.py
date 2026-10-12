@@ -52,9 +52,11 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import ipaddress
 import json
 import logging
 import re
+import socket
 import sys
 import unicodedata
 from abc import ABC, abstractmethod
@@ -105,11 +107,26 @@ class ProviderFailure(Exception):
     kind = "failed"
 
 
+_DNS_FAILURE_PREFIXES = ("egress blocked: DNS resolution failed", "egress blocked: empty DNS answer")
+
+
+def is_dns_failure(exc: BaseException) -> bool:
+    """True when an egress refusal is only "the name did not resolve".
+
+    The egress client folds a resolver outage (a stopped container name, a flaky
+    resolver) into the same ``PluginEgressError`` as a gate refusal. Nothing was
+    forbidden by that, so callers treat it as a failure that may be retried or rescued;
+    every other message (allowlist, SSRF, kernel) stays a refusal.
+    """
+    return str(exc).startswith(_DNS_FAILURE_PREFIXES)
+
+
 async def classified(awaitable: Awaitable[Any]) -> Any:
     """Await one HTTP call and translate what went wrong into the two classes.
 
     ``PluginEgressError`` is the egress layer's refusal (allowlist, SSRF, kernel deny),
-    so it becomes :class:`PolicyBlock`; anything else — a connect error, an open
+    so it becomes :class:`PolicyBlock` (except "the name did not resolve", which is a
+    failure: see :func:`is_dns_failure`); anything else — a connect error, an open
     breaker, an HTTP error status — is a :class:`ProviderFailure`. The message carries
     the exception type only, never the URL or the query.
     """
@@ -117,7 +134,9 @@ async def classified(awaitable: Awaitable[Any]) -> Any:
 
     try:
         resp = await awaitable
-    except PluginEgressError:
+    except PluginEgressError as exc:
+        if is_dns_failure(exc):
+            raise ProviderFailure("dns_failed") from None
         raise PolicyBlock("egress_blocked") from None
     except (PolicyBlock, ProviderFailure):
         raise
@@ -385,7 +404,35 @@ def _normalize_host(text: str) -> str:
     except UnicodeError:
         ascii_host = raw
     ascii_host = ascii_host.lower().strip(".")
-    return ascii_host if _HOST_OK.fullmatch(ascii_host) else ""
+    if not _HOST_OK.fullmatch(ascii_host):
+        return ""
+    return _canonical_ip(ascii_host) or ascii_host
+
+
+_NUMERIC_HOST = re.compile(r"(0x[0-9a-f]+|[0-9]+)(\.(0x[0-9a-f]+|[0-9]+)){0,3}")
+
+
+def _canonical_ip(host: str) -> str:
+    """The one dotted/colon form of an IP literal, or ``""`` for a name.
+
+    A browser or resolver reads ``167838211``, ``0xa010203``, ``012.1.2.3`` and
+    ``::ffff:10.1.2.3`` as 10.1.2.3, so a block-list entry written one way must still
+    match a URL written another.
+    """
+    bare = host.strip("[]")
+    try:
+        addr = ipaddress.ip_address(bare)
+    except ValueError:
+        addr = None
+    if addr is None and _NUMERIC_HOST.fullmatch(host):
+        try:
+            addr = ipaddress.ip_address(socket.inet_ntoa(socket.inet_aton(host)))
+        except (OSError, ValueError):
+            return ""
+    if addr is None:
+        return ""
+    mapped = getattr(addr, "ipv4_mapped", None)
+    return str(mapped or addr)
 
 
 def _blocked_entries() -> tuple[list[str], list[str]]:
@@ -401,7 +448,20 @@ def _blocked_entries() -> tuple[list[str], list[str]]:
             hosts.append(host)
         else:
             bad.append(entry[:64])
+    if bad:
+        key = tuple(bad)
+        if key not in _WARNED_UNUSABLE:
+            _WARNED_UNUSABLE.add(key)
+            logger.warning(
+                "%s has %d entr%s that name no host and block nothing: %s",
+                BLOCKED_DOMAINS_ENV, len(bad), "y" if len(bad) == 1 else "ies",
+                ", ".join(bad)[:200],
+            )
     return list(dict.fromkeys(hosts)), bad
+
+
+#: unusable block-list entries already logged (so a hot path warns once per distinct list)
+_WARNED_UNUSABLE: set[tuple[str, ...]] = set()
 
 
 def blocked_domains() -> tuple[str, ...]:

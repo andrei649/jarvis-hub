@@ -102,8 +102,9 @@ MAX_EXTRACT_URLS = 5
 # H310: what both tools declare as their result ceiling (``max_result_bytes``). The tool
 # loop may still lower it to the model's per-result budget when the window is known.
 MAX_RESULT_BYTES = 100_000
-# web_search never needs that much (ten snippets are about 35 KB), so it keeps a
-# smaller ceiling; only web_extract raises the per-result context ceiling.
+# web_search never needs that much (ten ASCII rows are about 35 KB), so it keeps a
+# smaller ceiling and its rows are fitted to it (wide characters can make ten rows ~60 KB);
+# only web_extract raises the per-result context ceiling.
 MAX_SEARCH_RESULT_BYTES = 50_000
 # The tool loop replaces any result over its own byte envelope with a preview stub,
 # so a page of wide characters cut at MAX_EXTRACT_CHARS could still reach the model
@@ -142,7 +143,7 @@ _PROVIDER_FAILED = "provider_failed"
 _DEFAULT_TAINT_SOURCE = "websearch"
 # Page refusals a reader may report; anything else reads as url_refused.
 _PAGE_REASONS = frozenset({
-    "url_refused", "fetch_failed", "parser_missing", "too_large", "site_blocked",
+    "url_refused", "fetch_failed", "parser_missing", "parser_busy", "too_large", "site_blocked",
 })
 
 SEARCH_SCHEMA: dict[str, Any] = {
@@ -202,7 +203,8 @@ EXTRACT_DESCRIPTION = (
     "page cannot be read by this system — a private or local address, an egress "
     "refusal or a non-text answer — so do not retry the same URL; reason=fetch_failed "
     "is a network or server error; reason=parser_missing names a package the owner must "
-    "install; reason=too_large means the document is bigger than the reader takes; "
+    "install; reason=parser_busy means the PDF reader is held by earlier slow documents, "
+    "so read other sources or try that one much later; reason=too_large means the document is bigger than the reader takes; "
     "reason=site_blocked means the owner disallowed that site. reason=secret_in_url "
     "means the URL carried a stored secret and was not fetched. reason=tainted_turn "
     "means this turn has already read untrusted content, so only URLs returned by "
@@ -374,6 +376,10 @@ def _unavailable(missing: str | None = None) -> dict:
     if missing:
         out["missing"] = missing
     return out
+
+
+def _json_bytes(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
 
 
 def _text(value: object, limit: int) -> str:
@@ -723,6 +729,15 @@ def register_web_tools(
         }
         if blocked:
             result["blocked"] = blocked
+        # The tool loop swaps an over-budget answer for a preview stub, so drop trailing
+        # rows until the answer fits the ceiling this tool declares.
+        omitted = 0
+        while rows and _json_bytes(result) > MAX_SEARCH_RESULT_BYTES:
+            rows.pop()
+            omitted += 1
+            result["count"] = len(rows)
+        if omitted:
+            result["omitted"] = omitted
         return result
 
     # ── web_extract ─────────────────────────────────────────────────────────
