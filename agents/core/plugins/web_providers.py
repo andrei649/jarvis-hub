@@ -26,6 +26,12 @@ Third-party extensions cannot register: their sandbox has no network by design.
 * ``JARVIS_WEB_RESCUE`` — one-shot rescue. Unset: ``auto`` rescues, a named backend
   does not (naming a backend is a choice about who sees the query). ``0`` turns it
   off, ``1`` turns it on for a named backend too. The rescue stays inside the tier pin.
+  **A keyless provider (DuckDuckGo) is never a rescue target** unless the owner set
+  ``JARVIS_WEB_RESCUE=1`` *and* the caller is the interactive ``web_search`` tool
+  (``allow_keyless_rescue=True``): unattended callers of ``search()`` — the research
+  handler, the tech scout, the plugin gatherer — keep configured-only egress, so a
+  failing configured backend never leaks their query to a third party the owner did
+  not choose.
 * ``JARVIS_WEB_BLOCKED_DOMAINS`` — operator-disallowed sites (comma list, subdomains
   included): ``web_extract`` refuses them on every redirect hop, ``web_search`` drops
   rows that point at them.
@@ -50,6 +56,7 @@ import json
 import logging
 import re
 import sys
+import unicodedata
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -246,9 +253,13 @@ class DuckDuckGoProvider(SearchProvider):
                         "url": _unwrap_result_url(title_el.get("href", "")),
                         "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
                     })
-            return rows
         except Exception as exc:
             raise ProviderFailure(f"parse:{type(exc).__name__}") from None
+        status = getattr(resp, "status_code", 200)
+        if not rows and isinstance(status, int) and status != 200:
+            # A 202 "anomaly" page parses to nothing: that is a failed answer, not "no hits".
+            raise ProviderFailure(f"empty_http_{status}")
+        return rows
 
 
 # ── the registry ─────────────────────────────────────────────────────────────
@@ -256,10 +267,17 @@ class DuckDuckGoProvider(SearchProvider):
 _REGISTRY: dict[str, SearchProvider] = {}
 
 
+#: The three first-party backends; they cannot be replaced or removed at runtime.
+BUILTIN_NAMES = frozenset({"tavily", "searxng", "duckduckgo"})
+
+
 def register_search_provider(provider: SearchProvider, *, replace: bool = False) -> None:
     """Add a backend ``JARVIS_WEB_BACKEND`` can select. Refused (``ValueError``) for a bad
     name or tier, an egress identity with no manifest, a manifest that may reach the
-    whole web (or nothing), and a name already taken unless ``replace``."""
+    whole web (or nothing), a built-in name, and a name already taken unless ``replace``.
+
+    Registration is a *trusted in-process act*: the provider sees every query routed to
+    it and the configured keys it is handed, so only first-party code may call this."""
     if not isinstance(provider, SearchProvider):
         raise TypeError("a search provider must subclass SearchProvider")
     name = str(getattr(provider, "name", "") or "")
@@ -278,13 +296,16 @@ def register_search_provider(provider: SearchProvider, *, replace: bool = False)
             f"egress identity {plugin_id!r} declares network access "
             f"{manifest.network_access.value!r}; a search backend needs RESTRICTED or LAN"
         )
-    if name in _REGISTRY and not replace:
+    if name in _REGISTRY and (not replace or name in _builtin_names()):
         raise ValueError(f"search provider {name!r} is already registered")
     _REGISTRY[name] = provider
 
 
 def unregister_search_provider(name: str) -> bool:
-    """Remove a registered backend (a plugin unloading). True when one was removed."""
+    """Remove a registered backend (a plugin unloading). True when one was removed;
+    the built-ins stay."""
+    if str(name or "") in _builtin_names():
+        return False
     return _REGISTRY.pop(str(name or ""), None) is not None
 
 
@@ -297,9 +318,17 @@ def get_search_provider(name: str) -> SearchProvider | None:
     return _REGISTRY.get(str(name or ""))
 
 
+_BUILTINS_LOCKED = False
+
+
+def _builtin_names() -> frozenset[str]:
+    return BUILTIN_NAMES if _BUILTINS_LOCKED else frozenset()
+
+
 for _builtin in (TavilyProvider(), SearxngProvider(), DuckDuckGoProvider()):
     register_search_provider(_builtin)
 del _builtin
+_BUILTINS_LOCKED = True
 
 
 # ── configuration, read per call ─────────────────────────────────────────────
@@ -324,14 +353,64 @@ def rescue_setting(explicit: bool | None = None) -> bool | None:
     return truthy(raw, False)
 
 
+_DOT_VARIANTS = str.maketrans({"\u3002": ".", "\uff0e": ".", "\uff61": "."})
+_HOST_OK = re.compile(r"^[a-z0-9._\-\[\]:]+$")
+
+
+def _normalize_host(text: str) -> str:
+    """A hostname in one comparable shape: lower-case, ASCII dots, punycode, no port.
+
+    ``http://Evil.COM:8080/x``, ``evil.com.``, ``bad\u3002org`` (an ideographic dot the
+    resolver treats as ``.``) and ``m\u00fcnchen.de`` / ``xn--mnchen-3ya.de`` each reduce to
+    one form, so the operator's list and a URL's host compare equal whichever way
+    either was written. ``""`` when the text is not a usable host.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    try:
+        if "://" in raw:
+            raw = urlsplit(raw).hostname or ""
+        elif "/" in raw or "?" in raw or "#" in raw or "@" in raw:
+            raw = urlsplit("//" + raw).hostname or ""
+        elif raw.count(":") == 1:  # host:port
+            raw = raw.split(":", 1)[0]
+    except ValueError:
+        return ""
+    raw = unicodedata.normalize("NFKC", raw).translate(_DOT_VARIANTS).lower().strip(".")
+    if not raw:
+        return ""
+    try:
+        ascii_host = raw.encode("idna").decode("ascii")
+    except UnicodeError:
+        ascii_host = raw
+    ascii_host = ascii_host.lower().strip(".")
+    return ascii_host if _HOST_OK.fullmatch(ascii_host) else ""
+
+
+def _blocked_entries() -> tuple[list[str], list[str]]:
+    """``(hosts, unusable)`` from ``JARVIS_WEB_BLOCKED_DOMAINS`` (comma list)."""
+    hosts: list[str] = []
+    bad: list[str] = []
+    for part in env_str(BLOCKED_DOMAINS_ENV, "").split(","):
+        entry = part.strip()
+        if not entry:
+            continue
+        host = _normalize_host(entry.lstrip("*").lstrip("."))
+        if host:
+            hosts.append(host)
+        else:
+            bad.append(entry[:64])
+    return list(dict.fromkeys(hosts)), bad
+
+
 def blocked_domains() -> tuple[str, ...]:
-    raw = env_str(BLOCKED_DOMAINS_ENV, "")
-    out = []
-    for part in raw.split(","):
-        domain = part.strip().lower().lstrip("*").strip(".")
-        if domain:
-            out.append(domain)
-    return tuple(dict.fromkeys(out))
+    return tuple(_blocked_entries()[0])
+
+
+def unusable_blocked_entries() -> tuple[str, ...]:
+    """Entries of the block list that name no host (a typo would otherwise fail open)."""
+    return tuple(_blocked_entries()[1])
 
 
 def blocked_host(url_or_host: object) -> bool:
@@ -339,16 +418,7 @@ def blocked_host(url_or_host: object) -> bool:
     domains = blocked_domains()
     if not domains:
         return False
-    text = str(url_or_host or "").strip()
-    host = ""
-    if "://" in text:
-        try:
-            host = urlsplit(text).hostname or ""
-        except ValueError:
-            return False
-    else:
-        host = text
-    host = host.lower().rstrip(".")
+    host = _normalize_host(str(url_or_host or ""))
     if not host:
         return False
     return any(host == d or host.endswith("." + d) for d in domains)
@@ -389,8 +459,25 @@ def auto_order() -> list[SearchProvider]:
     return [p for p in providers if not p.keyless] + [p for p in providers if p.keyless]
 
 
+def _rescuers(candidates: list[SearchProvider], exclude: SearchProvider, *,
+              rescue_on: bool | None, allow_keyless: bool) -> tuple[SearchProvider, ...]:
+    """The one provider that may take over from *exclude*, or ``()``.
+
+    A keyless provider qualifies only when the owner switched rescue on *explicitly*
+    and the caller is the interactive tool; see the module docstring.
+    """
+    keyless_ok = allow_keyless and rescue_on is True
+    for p in candidates:
+        if p is exclude:
+            continue
+        if p.keyless and not keyless_ok:
+            continue
+        return (p,)
+    return ()
+
+
 def resolve(plugin: Any, *, backend: str | None = None, tier: str | None = None,
-            rescue: bool | None = None) -> Selection:
+            rescue: bool | None = None, allow_keyless_rescue: bool = False) -> Selection:
     """The selection for one call. Pure: reads the registry and the environment only."""
     backend = configured_backend(backend)
     tier = configured_tier(tier)
@@ -406,7 +493,10 @@ def resolve(plugin: Any, *, backend: str | None = None, tier: str | None = None,
                             if _tier_ok(p, tier) and _configured(p, plugin) and p.missing()), "")
             return Selection(backend, tier, None, reason=REASON_NO_BACKEND, missing=missing)
         allow = True if rescue_on is None else rescue_on
-        return Selection(backend, tier, candidates[0], tuple(candidates[1:2]) if allow else ())
+        primary = candidates[0]
+        rescuers = (_rescuers(candidates, primary, rescue_on=rescue_on,
+                              allow_keyless=allow_keyless_rescue) if allow else ())
+        return Selection(backend, tier, primary, rescuers)
     provider = _REGISTRY.get(backend)
     if provider is None:
         return Selection(backend, tier, None, reason=REASON_UNKNOWN)
@@ -417,7 +507,8 @@ def resolve(plugin: Any, *, backend: str | None = None, tier: str | None = None,
     missing = provider.missing()
     if missing:
         return Selection(backend, tier, None, reason=REASON_PARSER_MISSING, missing=missing)
-    rescuers = tuple(p for p in candidates if p is not provider)[:1] if rescue_on is True else ()
+    rescuers = (_rescuers(candidates, provider, rescue_on=rescue_on,
+                          allow_keyless=allow_keyless_rescue) if rescue_on is True else ())
     return Selection(backend, tier, provider, rescuers)
 
 
@@ -437,9 +528,11 @@ def describe(plugin: Any = None) -> dict:
         plugin = SimpleNamespace(tavily_api_key=env_str("TAVILY_API_KEY"),
                                  searxng_url=env_str("SEARXNG_URL"),
                                  backend=None, provider_tier=None, rescue=None)
-    selection = resolve(plugin, backend=getattr(plugin, "backend", None),
-                        tier=getattr(plugin, "provider_tier", None),
-                        rescue=getattr(plugin, "rescue", None))
+    args = {"backend": getattr(plugin, "backend", None),
+            "tier": getattr(plugin, "provider_tier", None),
+            "rescue": getattr(plugin, "rescue", None)}
+    selection = resolve(plugin, **args)
+    interactive = resolve(plugin, allow_keyless_rescue=True, **args)
     rescue = rescue_setting(getattr(plugin, "rescue", None))
     providers = []
     for p in auto_order():
@@ -454,11 +547,13 @@ def describe(plugin: Any = None) -> dict:
         "rescue": ("default (auto only)" if rescue is None else ("on" if rescue else "off")),
         "primary": selection.primary.name if selection.primary else None,
         "rescue_to": [p.name for p in selection.rescue],
+        "rescue_to_interactive": [p.name for p in interactive.rescue],
         "reason": selection.reason,
         "missing": selection.missing,
         "providers": providers,
         "parsers": {"beautifulsoup4": _parser_present("bs4"), "pypdf": _parser_present("pypdf")},
         "blocked_domains": list(blocked_domains()),
+        "blocked_domains_unusable": list(unusable_blocked_entries()),
     }
 
 
@@ -471,6 +566,9 @@ def _text_report(report: dict) -> str:
     if report["primary"]:
         rescue_to = ", ".join(report["rescue_to"]) or "none"
         lines.append(f"answers   {report['primary']}  (rescue: {rescue_to})")
+        if report["rescue_to_interactive"] != report["rescue_to"]:
+            lines.append("          interactive web_search tool only, rescue: "
+                         + ", ".join(report["rescue_to_interactive"]))
     else:
         missing = f", install {report['missing']}" if report["missing"] else ""
         lines.append(f"answers   nobody — {report['reason']}{missing}")
@@ -489,6 +587,9 @@ def _text_report(report: dict) -> str:
     lines.append(f"parsers   {parsers}")
     if report["blocked_domains"]:
         lines.append(f"blocked   {', '.join(report['blocked_domains'])}")
+    if report["blocked_domains_unusable"]:
+        lines.append("WARNING   unusable entries in " + BLOCKED_DOMAINS_ENV + " (ignored): "
+                     + ", ".join(report["blocked_domains_unusable"]))
     return "\n".join(lines) + "\n"
 
 
@@ -512,7 +613,7 @@ __all__ = [
     "ProviderFailure", "RESCUE_ENV", "SearchProvider", "SearxngProvider", "Selection",
     "TIER_ENV", "TavilyProvider", "auto_order", "blocked_host", "classified", "describe",
     "get_search_provider", "main", "register_search_provider", "resolve",
-    "search_providers", "unregister_search_provider",
+    "search_providers", "unregister_search_provider", "unusable_blocked_entries",
 ]
 
 

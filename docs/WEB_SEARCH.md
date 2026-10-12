@@ -22,11 +22,15 @@ Read **per call** from the environment (no restart): the first rule that applies
    `tier_pinned` — it never silently falls back to another provider.
 3. `auto` (unset, the default) — the first eligible provider in the auto order below.
 4. Rescue (`JARVIS_WEB_RESCUE`) — when the answering provider **fails** (network error, HTTP
-   error status, unreadable answer), the next eligible provider is asked **once**. On by default
-   for `auto`, off by default for a named backend (naming a backend is a choice about who sees
-   your queries); `0` turns it off, `1` turns it on for a named backend too. A **policy block**
-   (the manifest allowlist, the SSRF guard, the Action Kernel's e-stop) is never rescued and
-   comes back as `reason: policy_blocked`.
+   error status, unreadable answer), the next eligible **configured** provider is asked **once**.
+   On by default for `auto`, off by default for a named backend (naming a backend is a choice
+   about who sees your queries); `0` turns it off, `1` turns it on for a named backend too. A
+   **policy block** (the manifest allowlist, the SSRF guard, the Action Kernel's e-stop) is never
+   rescued and comes back as `reason: policy_blocked`. **The keyless DuckDuckGo fallback is not a
+   rescue target** unless you set `JARVIS_WEB_RESCUE=1` *and* the caller is the interactive
+   `web_search` tool: the research handler, the tech scout and the plugin gatherer (all
+   `WebSearchPlugin.search()`) never rescue onto it, so a failing configured backend cannot leak
+   their query to a third party you did not choose.
 
 Keys: `TAVILY_API_KEY` (Tavily), `SEARXNG_URL` (your SearXNG; its host is added to the
 `websearch` egress allowlist at boot). Both are read by `plugin_manager` at boot, as before.
@@ -40,8 +44,9 @@ Keys: `TAVILY_API_KEY` (Tavily), `SEARXNG_URL` (your SearXNG; its host is added 
 | 3… | plugin-registered | its own | its own `configured()` | its own manifest (RESTRICTED or LAN only) |
 | last | `duckduckgo` | free | `beautifulsoup4` (keyless) | `websearch` (`html.duckduckgo.com`) |
 
-The keyless DuckDuckGo fallback answers the interactive tool but never counts as "configured":
-the HUD's honesty badge and unattended research tasks still read the plugin as not set up.
+The keyless DuckDuckGo fallback answers the interactive tool when nothing is configured, and never
+counts as "configured": the HUD's honesty badge and unattended research tasks still read the plugin
+as not set up, and (see rescue above) they never reach it by rescue either.
 Local research (`acquisition/research.py`) is pinned to SearXNG with no rescue, whatever the
 environment says.
 
@@ -49,7 +54,10 @@ environment says.
 
 Subclass `SearchProvider` and call `register_search_provider(...)`. Registration is refused for
 an egress identity with no `plugin_gate` manifest, for a FULL-network or no-network manifest, and
-for a name already taken. The provider is handed only the `PluginHTTPClient` of its identity, so
+for a name already taken; the three built-ins cannot be replaced or removed. Registration is a
+**trusted in-process act**: the provider sees every query routed to it and a read-only view of the
+two configured values (`tavily_api_key`, `searxng_url`) — not the plugin object, so not the
+`webread` client — and may dial only through the `PluginHTTPClient` of its identity, so
 its hosts are that manifest's allowlist (plus `register_dynamic_domain`), and every request
 crosses SSRF pinning and the kernel's `plugin.egress` hook. Wrap each call in `classified(...)`
 so a gate refusal becomes `PolicyBlock` and anything else `ProviderFailure`. Third-party
@@ -63,8 +71,9 @@ feature) is deliberately not offered.
   `[... N chars omitted ...]` marker; `truncated: true` when anything was cut, `total_chars` is
   the page's length.
 - One page never exceeds 40,000 bytes of text; several pages share one byte budget so the whole
-  answer stays under the 100,000 bytes both tools declare (`max_result_bytes`; Hermes counts
-  chars, ToolRPC counts bytes). On a small-context model the loop may still spill the answer.
+  answer stays under the 100,000 bytes `web_extract` declares (`max_result_bytes`; Hermes counts
+  chars, ToolRPC counts bytes); `web_search` declares 50,000 (it never needs more), so only
+  `web_extract` raises the per-result context ceiling. On a small-context model the loop may still spill the answer.
 - When a page was cut, its **full text** is written to the tool-result directory
   (`<data root>/workspace/tool_results/web_extract-<hash>.txt`, same retention as spilled tool
   results) and `footer` names the file. The footer names a `file_read(...)` call (and
@@ -72,7 +81,10 @@ feature) is deliberately not offered.
   says so. Reading the file back is still tainted data.
 - PDFs are read with the optional `pypdf` package in a worker thread, at most 200 pages; a PDF
   larger than the 2 MB read cap is refused as `too_large`, an encrypted or broken one as
-  `url_refused`.
+  `url_refused`. The 30 s parse limit is checked between pages, so the worker stops at the next
+  page boundary after it (a single pathologically slow page can run on past it, but at most two
+  parses run at once and the 2 MB / 200-page caps bound the work); the caller gets
+  `fetch_failed` (retryable), not `url_refused`.
 - The page cache (15 minutes, per server) keeps each page's head and tail, so a smaller cut is
   re-cut from the page itself, and a hit names a full-text file only while it still exists.
   Refusals are never cached. Repeat searches are cached the same 15 minutes in the plugin.

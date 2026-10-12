@@ -13,8 +13,10 @@ import asyncio
 import copy
 import io
 import logging
+import threading
 import time
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Optional
 from collections.abc import Callable
 from urllib.parse import parse_qs, urlsplit
@@ -152,6 +154,21 @@ class SearchOutcome:
     backend: str = ""
 
 
+class _PdfBusy(Exception):
+    """Every parse slot is taken (earlier parses are still running)."""
+
+
+def _pdf_worker(module: Any, body: bytes, cap: int, deadline: float):
+    """Run :func:`_pdf_text` in a slot that is taken and freed on the worker thread
+    itself, so it is released when the parse really ends and never leaks."""
+    if not _PDF_SLOTS.acquire(blocking=False):
+        raise _PdfBusy()
+    try:
+        return _pdf_text(module, body, cap, deadline)
+    finally:
+        _PDF_SLOTS.release()
+
+
 def _pdf_module():
     """The optional PDF parser, or None. Imported per call so installing it needs no
     restart and a test can swap it."""
@@ -162,8 +179,17 @@ def _pdf_module():
     return pypdf
 
 
-def _pdf_text(module: Any, body: bytes, cap: int) -> tuple[str, tuple[int, int], bool]:
-    """Extract text page by page (worker thread). Raises on an unreadable PDF."""
+# At most this many PDF parses run at once. A parse that outlives its timeout keeps its
+# slot until the worker really stops, so abandoned parses cannot stack up unbounded.
+PDF_MAX_CONCURRENT = 2
+_PDF_SLOTS = threading.BoundedSemaphore(PDF_MAX_CONCURRENT)
+
+
+def _pdf_text(module: Any, body: bytes, cap: int,
+              deadline: Optional[float] = None) -> tuple[str, tuple[int, int], bool]:
+    """Extract text page by page (worker thread). Raises on an unreadable PDF, and
+    ``TimeoutError`` at a page boundary once *deadline* (monotonic) has passed — the
+    worker really stops there instead of running on after the caller gave up."""
     reader = module.PdfReader(io.BytesIO(body))
     if getattr(reader, "is_encrypted", False):
         raise ValueError("encrypted PDF")
@@ -175,6 +201,8 @@ def _pdf_text(module: Any, body: bytes, cap: int) -> tuple[str, tuple[int, int],
     for index, page in enumerate(pages):
         if index >= limit or size >= cap:
             break
+        if deadline is not None and time.monotonic() > deadline:
+            raise TimeoutError("pdf parse deadline")
         text = page.extract_text() or ""
         parts.append(text)
         size += len(text) + 2
@@ -220,10 +248,21 @@ class WebSearchPlugin:
 
     # ── search ───────────────────────────────────────────────────────────────
 
-    def selection(self) -> web_providers.Selection:
-        """Which backend answers now (read per call), who may rescue it, or why nobody can."""
+    def _view(self) -> SimpleNamespace:
+        """What a provider may see of the plugin: the two owner-configured values and
+        nothing else — not the read-only ``webread`` client, not the other providers."""
+        return SimpleNamespace(tavily_api_key=self.tavily_api_key, searxng_url=self.searxng_url)
+
+    def selection(self, *, allow_keyless_rescue: bool = False) -> web_providers.Selection:
+        """Which backend answers now (read per call), who may rescue it, or why nobody can.
+
+        ``allow_keyless_rescue`` is for the interactive ``web_search`` tool only: with it
+        (and ``JARVIS_WEB_RESCUE=1``) a failed configured backend may fall to the keyless
+        DuckDuckGo. Every other caller keeps configured-only egress.
+        """
         return web_providers.resolve(
-            self, backend=self.backend, tier=self.provider_tier, rescue=self.rescue,
+            self._view(), backend=self.backend, tier=self.provider_tier, rescue=self.rescue,
+            allow_keyless_rescue=allow_keyless_rescue,
         )
 
     def available(self) -> bool:
@@ -248,7 +287,8 @@ class WebSearchPlugin:
     async def _ask(self, provider: web_providers.SearchProvider, query: str,
                    max_results: int) -> list[dict]:
         try:
-            raw = await provider.search(self._egress(provider.plugin_id), self, query, max_results)
+            raw = await provider.search(
+                self._egress(provider.plugin_id), self._view(), query, max_results)
         except (web_providers.PolicyBlock, web_providers.ProviderFailure):
             raise
         except Exception as exc:  # an unclassified provider bug is a failure, not a block
@@ -278,9 +318,10 @@ class WebSearchPlugin:
             self._search_cache.pop(next(iter(self._search_cache)), None)
         self._search_cache[key] = (now + SEARCH_CACHE_TTL_SECONDS, copy.deepcopy(rows), provider)
 
-    async def search_detailed(self, query: str, max_results: int = 5) -> SearchOutcome:
+    async def search_detailed(self, query: str, max_results: int = 5, *,
+                              allow_keyless_rescue: bool = False) -> SearchOutcome:
         """Search once: cache, primary, at most one rescue — and say what happened."""
-        selection = self.selection()
+        selection = self.selection(allow_keyless_rescue=allow_keyless_rescue)
         if selection.primary is None:
             return SearchOutcome([], reason=selection.reason, missing=selection.missing,
                                  backend=selection.backend)
@@ -312,7 +353,8 @@ class WebSearchPlugin:
                                      rescue_reason="provider_failed", backend=selection.backend)
             return SearchOutcome([], provider=primary.name, reason="provider_failed",
                                  backend=selection.backend)
-        self._cache_put(key, rows, primary.name, now)
+        if rows:  # an empty answer may be transient; never pin it for the TTL
+            self._cache_put(key, rows, primary.name, now)
         return SearchOutcome(rows, provider=primary.name, backend=selection.backend)
 
     async def search(self, query: str, max_results: int = 5) -> list[dict]:
@@ -324,7 +366,7 @@ class WebSearchPlugin:
         if provider is None:
             return []
         try:
-            return await provider.search(self._client, self, query, max_results)
+            return await provider.search(self._client, self._view(), query, max_results)
         except Exception as e:
             logger.error("%s search error (type=%s)", name, type(e).__name__)
             return []
@@ -453,10 +495,21 @@ class WebSearchPlugin:
         if body_cut:
             logger.warning("PDF refused: cut at the byte cap (max_bytes=%d)", PAGE_MAX_BYTES)
             return PageRead(None, media="pdf", refusal=TOO_LARGE)
+        deadline = time.monotonic() + PDF_PARSE_TIMEOUT_SECONDS
         try:
+            # The deadline is checked between pages inside the worker, so the thread stops
+            # there; wait_for frees the caller even if one page is slow on its own.
             text, pages, cut = await asyncio.wait_for(
-                asyncio.to_thread(_pdf_text, module, body, cap), PDF_PARSE_TIMEOUT_SECONDS,
+                asyncio.to_thread(_pdf_worker, module, body, cap, deadline),
+                PDF_PARSE_TIMEOUT_SECONDS,
             )
+        except _PdfBusy:
+            logger.warning("PDF parse deferred: %d parses already running", PDF_MAX_CONCURRENT)
+            return PageRead(None, media="pdf", refusal=FETCH_FAILED)
+        except TimeoutError:
+            logger.warning("PDF parse timed out (%.0fs)", PDF_PARSE_TIMEOUT_SECONDS)
+            # Slow, not forbidden: the model may retry later (unlike url_refused).
+            return PageRead(None, media="pdf", refusal=FETCH_FAILED)
         except Exception as e:
             logger.warning("PDF parse failed (type=%s)", type(e).__name__)
             return PageRead(None, media="pdf", refusal=REFUSED)

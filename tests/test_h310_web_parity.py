@@ -19,6 +19,7 @@ What this file proves, offline (no socket is opened; every dial goes to an
 * a kernel deny on ``plugin.egress`` turns both tools into refusals with no dial.
 """
 
+import asyncio
 import hashlib
 import json
 import sys
@@ -580,8 +581,9 @@ async def test_five_wide_pages_stay_under_the_declared_result_bytes(tmp_path):
 
 def test_both_tools_declare_their_result_ceiling():
     server = _server(Reader())
-    assert server.declared_result_bytes(wt.TOOL_SEARCH) == wt.MAX_RESULT_BYTES == 100_000
-    assert server.declared_result_bytes(wt.TOOL_EXTRACT) == 100_000
+    assert wt.MAX_RESULT_BYTES == 100_000
+    assert server.declared_result_bytes(wt.TOOL_SEARCH) == wt.MAX_SEARCH_RESULT_BYTES == 50_000
+    assert server.declared_result_bytes(wt.TOOL_EXTRACT) == wt.MAX_RESULT_BYTES
     rows = {row["name"]: row for row in server.tools()}
     urls = rows[wt.TOOL_EXTRACT]["input_schema"]["properties"]["urls"]
     assert (urls["minItems"], urls["maxItems"]) == (1, wt.MAX_EXTRACT_URLS) == (1, 5)
@@ -763,3 +765,200 @@ def test_verification_command_reports_the_resolution_without_printing_keys(monke
     assert wp.main([]) == 1
     text = capsys.readouterr().out
     assert "backend_not_configured" in text and "tvly-SECRET-VALUE" not in text
+
+
+# ── fix round 1: the keyless fallback, block-list shapes, empty answers, PDF stop ──
+
+async def test_a_keyless_provider_is_never_a_rescue_target_for_unattended_callers(
+    monkeypatch, swap_builtins,
+):
+    """search() feeds the research handler, the tech scout and the plugin gatherer. A
+    configured backend that fails must not send their query to DuckDuckGo."""
+    failing = Recorder("tavily", tier="paid", raises=wp.ProviderFailure("http_503"))
+    fakes = swap_builtins(tavily=failing)
+    plugin = ws.WebSearchPlugin(tavily_api_key="k")           # Tavily only
+    assert await plugin.search("unattended") == []
+    assert fakes["duckduckgo"].calls == []
+    outcome = await plugin.search_detailed("unattended-2")
+    assert outcome.reason == "provider_failed" and outcome.rescued_from == ""
+    assert plugin.selection().rescue == ()
+    # An explicit JARVIS_WEB_RESCUE=1 does not widen it for those callers either.
+    monkeypatch.setenv(wp.RESCUE_ENV, "1")
+    assert await plugin.search("unattended-3") == []
+    assert fakes["duckduckgo"].calls == []
+    # SearXNG-only owner: same.
+    monkeypatch.delenv(wp.RESCUE_ENV)
+    fakes = swap_builtins(searxng=Recorder("searxng", raises=wp.ProviderFailure("timeout")))
+    searx = ws.WebSearchPlugin(searxng_url="http://searx.local")
+    assert await searx.search("q") == [] and fakes["duckduckgo"].calls == []
+
+
+async def test_the_interactive_tool_reaches_the_keyless_fallback_only_on_an_explicit_rescue(
+    monkeypatch, swap_builtins,
+):
+    failing = Recorder("tavily", tier="paid", raises=wp.ProviderFailure("http_503"))
+    fakes = swap_builtins(tavily=failing)
+    plugin = ws.WebSearchPlugin(tavily_api_key="k")
+    server = _server(plugin)
+    out = await _call(server, wt.TOOL_SEARCH, {"query": "default"})
+    assert out["result"]["error"] == "provider_failed" and out["result"]["results"] == []
+    assert fakes["duckduckgo"].calls == []                    # default rescue skips keyless
+    monkeypatch.setenv(wp.RESCUE_ENV, "1")
+    out = await _call(server, wt.TOOL_SEARCH, {"query": "explicit"})
+    assert out["result"]["provider"] == "duckduckgo"
+    assert out["result"]["rescued_from"] == "tavily"
+    assert len(fakes["duckduckgo"].calls) == 1
+
+
+def test_verification_command_says_which_callers_may_use_the_keyless_rescue(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "k")
+    monkeypatch.setenv(wp.RESCUE_ENV, "1")
+    report = wp.describe()
+    assert report["rescue_to"] == [] and report["rescue_to_interactive"] == ["duckduckgo"]
+    assert "interactive web_search tool only" in wp._text_report(report)
+
+
+def test_block_list_compares_one_normalised_host_form(monkeypatch):
+    monkeypatch.setenv(
+        wp.BLOCKED_DOMAINS_ENV,
+        "https://evil.com, M\u00fcnchen.de, bad.org, 1.2.3.4, example.com/path, host.test:8080, nonsense words",
+    )
+    for url in ("http://evil.com/x", "http://sub.evil.com./", "http://EVIL.com:81/",
+                "http://m\u00fcnchen.de/", "http://xn--mnchen-3ya.de/", "http://a.xn--mnchen-3ya.de/",
+                "http://bad\u3002org/x", "http://bad\uff0eorg/x", "http://1.2.3.4/",
+                "http://example.com/other", "https://host.test/"):
+        assert wp.blocked_host(url) is True, url
+    for url in ("http://notevil.com/", "http://evil.com.au/", "http://1.2.3.45/", ""):
+        assert wp.blocked_host(url) is False, url
+    assert wp.unusable_blocked_entries() == ("nonsense words",)
+    report = wp.describe(types.SimpleNamespace(tavily_api_key="", searxng_url="",
+                                               backend=None, provider_tier=None, rescue=None))
+    assert report["blocked_domains_unusable"] == ["nonsense words"]
+    assert "WARNING" in wp._text_report(report)
+
+
+async def test_an_empty_answer_is_not_cached_and_a_throttled_page_is_a_failure(swap_builtins):
+    empty = Recorder("tavily", tier="paid", rows=[])
+    swap_builtins(tavily=empty)
+    plugin = ws.WebSearchPlugin(tavily_api_key="k")
+    for _ in range(2):
+        outcome = await plugin.search_detailed("nothing yet")
+        assert outcome.rows == [] and outcome.reason == "" and outcome.cached is False
+    assert len(empty.calls) == 2                              # asked again, not pinned for 15 min
+
+    # DuckDuckGo's 202 anomaly page parses to zero rows: that is a failed answer.
+    pytest.importorskip("bs4")
+    for status, expect_failure in ((202, True), (200, False)):
+        client = types.SimpleNamespace(plugin_name="websearch")
+
+        async def get(url, _status=status, **kw):
+            return types.SimpleNamespace(status_code=_status, text="<html></html>")
+
+        client.get = get
+        provider = wp.DuckDuckGoProvider()
+        if expect_failure:
+            with pytest.raises(wp.ProviderFailure):
+                await provider.search(client, None, "q", 5)
+        else:
+            assert await provider.search(client, None, "q", 5) == []
+
+
+async def test_a_provider_sees_a_narrow_view_not_the_plugin_and_builtins_cannot_be_replaced(
+    monkeypatch,
+):
+    seen = {}
+
+    class Nosy(wp.SearchProvider):
+        name = "nosy"
+        tier = "free"
+
+        def configured(self, plugin):
+            seen["configured"] = plugin
+            return True
+
+        async def search(self, client, plugin, query, max_results):
+            seen["search"] = plugin
+            return []
+
+    wp.register_search_provider(Nosy())
+    try:
+        monkeypatch.setenv(wp.BACKEND_ENV, "nosy")
+        plugin = ws.WebSearchPlugin(tavily_api_key="secret-key", searxng_url="http://searx.local")
+        await plugin.search("q")
+        for view in (seen["configured"], seen["search"]):
+            assert view is not plugin
+            assert not hasattr(view, "_reader") and not hasattr(view, "_client")
+            assert not hasattr(view, "read_page")
+            assert (view.tavily_api_key, view.searxng_url) == ("secret-key", "http://searx.local")
+    finally:
+        wp.unregister_search_provider("nosy")
+    for name in ("tavily", "searxng", "duckduckgo"):
+        with pytest.raises(ValueError, match="already"):
+            wp.register_search_provider(Recorder(name), replace=True)
+        assert wp.unregister_search_provider(name) is False
+        assert name in wp.search_providers()
+
+
+async def test_a_slow_pdf_stops_at_a_page_boundary_and_reads_as_retryable(monkeypatch):
+    import time as _time
+
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    monkeypatch.setattr(ws, "PDF_PARSE_TIMEOUT_SECONDS", 0.3)
+    extracted = []
+    module = types.ModuleType("pypdf")
+
+    class _Page:
+        def extract_text(self):
+            extracted.append(1)
+            _time.sleep(0.1)
+            return "p"
+
+    class PdfReader:
+        def __init__(self, stream):
+            self.is_encrypted = False
+            self.pages = [_Page() for _ in range(40)]
+
+    module.PdfReader = PdfReader
+    monkeypatch.setitem(sys.modules, "pypdf", module)
+    plugin = ws.WebSearchPlugin()
+    got = await plugin.read_page("https://docs.example/slow.pdf", _transport=_pdf_transport())
+    # Slow is not forbidden: the model is told it may retry, not "url_refused".
+    assert got.text is None and got.refusal == "fetch_failed"
+    freed = False
+    for _ in range(60):                       # the worker releases its slot when it really ends
+        if ws._PDF_SLOTS.acquire(blocking=False):
+            ws._PDF_SLOTS.release()
+            freed = True
+            break
+        await asyncio.sleep(0.05)
+    assert freed
+    assert len(extracted) < 40                                # the worker stopped itself
+
+
+async def test_pdf_parses_are_bounded_in_number(monkeypatch):
+    monkeypatch.setattr(ws, "resolve_and_validate", lambda host, *a, **k: PUBLIC_IP)
+    monkeypatch.setitem(sys.modules, "pypdf", _fake_pypdf(["text"]))
+    held = [ws._PDF_SLOTS.acquire(blocking=False) for _ in range(ws.PDF_MAX_CONCURRENT)]
+    try:
+        assert all(held)
+        plugin = ws.WebSearchPlugin()
+        got = await plugin.read_page("https://docs.example/a.pdf", _transport=_pdf_transport())
+        assert got.text is None and got.refusal == "fetch_failed"
+    finally:
+        for _ in held:
+            ws._PDF_SLOTS.release()
+    got = await plugin.read_page("https://docs.example/a.pdf", _transport=_pdf_transport())
+    assert got.text == "text"
+
+
+def test_research_pins_its_tier_and_reports_an_unavailable_backend_honestly(monkeypatch):
+    from agents.core.acquisition.research import ResearchError, WebSearchResearchBackend
+
+    monkeypatch.setenv(wp.TIER_ENV, "paid")                   # an owner's cloud preference
+    backend = WebSearchResearchBackend(searxng_url="https://searx.local")
+    selection = backend.plugin.selection()
+    assert selection.primary.name == "searxng" and selection.rescue == ()
+    # A plugin that merely cannot answer is "unavailable", not mislabelled as cloud.
+    free_only = ws.WebSearchPlugin(searxng_url="https://searx.local")
+    with pytest.raises(ResearchError, match="unavailable"):
+        WebSearchResearchBackend(plugin=free_only)

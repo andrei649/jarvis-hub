@@ -102,6 +102,9 @@ MAX_EXTRACT_URLS = 5
 # H310: what both tools declare as their result ceiling (``max_result_bytes``). The tool
 # loop may still lower it to the model's per-result budget when the window is known.
 MAX_RESULT_BYTES = 100_000
+# web_search never needs that much (ten snippets are about 35 KB), so it keeps a
+# smaller ceiling; only web_extract raises the per-result context ceiling.
+MAX_SEARCH_RESULT_BYTES = 50_000
 # The tool loop replaces any result over its own byte envelope with a preview stub,
 # so a page of wide characters cut at MAX_EXTRACT_CHARS could still reach the model
 # as fragments instead of text; the per-page byte cap keeps one page under that, and
@@ -630,7 +633,7 @@ def register_web_tools(
         registry = callable(selection_of) and callable(detailed)
         if registry:
             try:
-                selection = selection_of()
+                selection = selection_of(allow_keyless_rescue=True)
             except Exception as exc:
                 logger.warning("web search selection failed (type=%s)", type(exc).__name__)
                 return _unavailable()
@@ -659,7 +662,7 @@ def register_web_tools(
         extra: dict[str, Any] = {}
         if registry:
             try:
-                outcome = await detailed(query, max_results=limit)
+                outcome = await detailed(query, max_results=limit, allow_keyless_rescue=True)
             except Exception as exc:
                 logger.warning("web_search backend failed (type=%s)", type(exc).__name__)
                 outcome = None
@@ -944,7 +947,7 @@ def register_web_tools(
         capability_id=CAPABILITY_SEARCH,
         preflight=preflight_search,
         untrusted_output=True,
-        max_result_bytes=MAX_RESULT_BYTES,
+        max_result_bytes=MAX_SEARCH_RESULT_BYTES,
     )
     server.register_tool(
         TOOL_EXTRACT,
@@ -964,7 +967,7 @@ __all__ = [
     "CACHE_ENTRIES", "CACHE_KEEP_CHARS", "CACHE_TTL_SECONDS", "CAPABILITY_EXTRACT",
     "CAPABILITY_SEARCH", "DEFAULT_EXTRACT_CHARS", "DEFAULT_RESULTS", "EXTRACT_DESCRIPTION",
     "EXTRACT_SCHEMA", "MAX_EXTRACT_BYTES", "MAX_EXTRACT_CHARS", "MAX_EXTRACT_URLS",
-    "MAX_QUERY_CHARS", "MAX_RESULTS", "MAX_RESULT_BYTES", "MAX_URL_CHARS",
+    "MAX_QUERY_CHARS", "MAX_RESULTS", "MAX_RESULT_BYTES", "MAX_SEARCH_RESULT_BYTES", "MAX_URL_CHARS",
     "MIN_EXTRACT_CHARS", "SEARCH_DESCRIPTION", "SEARCH_SCHEMA", "SEARCH_URLS_REMEMBERED",
     "SNIPPET_CHARS", "TAINT_SOURCE_CHARS", "TITLE_CHARS", "TOOL_EXTRACT", "TOOL_SEARCH",
     "default_read_back", "head_tail", "omission_marker", "preflight_extract",
