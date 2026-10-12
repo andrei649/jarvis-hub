@@ -81,8 +81,10 @@ class IncrementalKGUpdater:
         for subj, pred, obj in triples:
             try:
                 if self._graph is not None:
-                    self._graph.add_entity(subj, "unknown")
-                    self._graph.add_entity(obj, "unknown")
+                    # ensure, not add: a re-typed / edited entity keeps its edits (H206)
+                    ensure = getattr(self._graph, "ensure_entity", None) or self._graph.add_entity
+                    ensure(subj, "unknown")
+                    ensure(obj, "unknown")
                     self._graph.add_relation(subj, pred, obj, {"source": source})
                 if self._bt is not None:
                     # is_a is multi-valued; other predicates are single-valued.

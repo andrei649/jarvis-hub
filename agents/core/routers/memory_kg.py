@@ -635,6 +635,39 @@ async def kg_entity(name: str):
     return nocache_json({"entity": ent, "relations": await _kg_call(g.get_relations, name)})
 
 
+_KG_MAP_MAX = 1000
+
+
+@router.get("/api/kg/map", dependencies=[Depends(user_guard)])
+async def kg_map(limit: int = 500):
+    """H206 — bounded whole-map read for the memory explorer's canvas.
+
+    Names, types, relation edges and the time each name first appeared in the
+    bi-temporal store. Never property values: the map carries structure, so a map
+    code or a screenshot cannot leak what an entity's properties hold.
+    """
+    g = _kg()
+    if g is None:
+        return JSONResponse({"error": "graph not available"}, status_code=503)
+    limit = max(1, min(int(limit), _KG_MAP_MAX))
+    listed = await _kg_call(g.list_entities, limit + 1)
+    clipped = len(listed) > limit
+    listed = [e for e in listed[:limit] if e.get("name")]
+    names = {e["name"] for e in listed}
+    rel_cap = min(limit * 4, 4000)
+    rels = await _kg_call(g.list_relations, rel_cap + 1)
+    bt = getattr(get_orch(), "bitemporal", None)
+    first_seen = await _kg_call(bt.first_seen) if bt is not None else {}
+    return nocache_json({
+        "entities": [{"name": e["name"], "type": e.get("type") or "unknown",
+                      "first_seen": first_seen.get(e["name"])} for e in listed],
+        "relations": [{"source": r["source"], "relation": r["relation"], "target": r["target"]}
+                      for r in rels[:rel_cap] if r.get("source") in names and r.get("target") in names],
+        "clipped": clipped,
+        "relations_clipped": len(rels) > rel_cap,
+    })
+
+
 @router.post("/api/kg/entities", dependencies=[Depends(user_guard)])
 async def kg_upsert_entity(req: Request):
     """Create or update an entity (upsert). Body: {name, type, properties}."""
@@ -694,9 +727,14 @@ async def kg_delete_entity(name: str, req: Request = None):
     finally:
         if deleted is not False:
             _recall_forget(get_orch())
-    if not deleted:
+    # H206: the timeline must stop asserting what the owner just deleted. The facts
+    # naming the entity are closed (history before now is kept) in this same, already
+    # authorised handler. Per-turn ingestion may still re-create the entity later.
+    bt = getattr(get_orch(), "bitemporal", None)
+    retracted = await _kg_call(bt.retract_entity, name) if bt is not None else 0
+    if not deleted and not retracted:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return nocache_json({"ok": True, "deleted": name})
+    return nocache_json({"ok": True, "deleted": name, "facts_retracted": retracted})
 
 
 @router.post("/api/kg/relations", dependencies=[Depends(user_guard)])
@@ -795,14 +833,32 @@ async def kg_add_fact(req: Request):
 
 
 @router.get("/api/kg/facts/as-of", dependencies=[Depends(user_guard)])
-async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = ""):
-    """Valid-time recall: facts true in the world at time `at` (default now)."""
+async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = "",
+                         axis: str = "valid", limit: int = 500):
+    """Bi-temporal recall at time `at` (default now).
+
+    ``axis=valid`` (default): facts true in the world at `at`. ``axis=known`` (H206):
+    what the store BELIEVED at `at` — ingested by then and not yet superseded or
+    retracted by then. Newest `limit` facts are kept (``clipped`` says so); ``bounds``
+    is the timeline's extent for the explorer's scrubber."""
+    if axis not in ("valid", "known"):
+        return JSONResponse({"error": "axis must be 'valid' or 'known'"}, status_code=422)
+    if not 1 <= limit <= _KG_MAP_MAX:
+        return JSONResponse({"error": f"limit must be 1..{_KG_MAP_MAX}"}, status_code=422)
     _, bt, err = require_component("bitemporal", "bi-temporal KG not available")
     if err is not None:
         return err
     # Store reads share the writer's threading.Lock — keep the wait off the loop.
-    facts = await _kg_call(bt.as_of, at, subject, predicate)
-    return nocache_json({"at": at, "facts": facts})
+    if axis == "known":
+        facts = await _kg_call(bt.believed_as_of, time.time() if at is None else at,
+                               subject, predicate)
+        facts.sort(key=lambda f: (f["ingested_at"], f["id"]))
+    else:
+        facts = await _kg_call(bt.as_of, at, subject, predicate)
+        facts.sort(key=lambda f: (f["valid_from"], f["id"]))
+    clipped = len(facts) > limit
+    return nocache_json({"at": at, "axis": axis, "facts": facts[-limit:], "clipped": clipped,
+                         "bounds": await _kg_call(bt.bounds)})
 
 
 @router.get("/api/kg/facts/history", dependencies=[Depends(user_guard)])

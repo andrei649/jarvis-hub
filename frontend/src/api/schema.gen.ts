@@ -6824,6 +6824,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kg/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kg Map
+         * @description H206 — bounded whole-map read for the memory explorer's canvas.
+         *
+         *     Names, types, relation edges and the time each name first appeared in the
+         *     bi-temporal store. Never property values: the map carries structure, so a map
+         *     code or a screenshot cannot leak what an entity's properties hold.
+         */
+        get: operations["kg_map_api_kg_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/kg/relations": {
         parameters: {
             query?: never;
@@ -6879,7 +6903,12 @@ export interface paths {
         };
         /**
          * Kg Facts As Of
-         * @description Valid-time recall: facts true in the world at time `at` (default now).
+         * @description Bi-temporal recall at time `at` (default now).
+         *
+         *     ``axis=valid`` (default): facts true in the world at `at`. ``axis=known`` (H206):
+         *     what the store BELIEVED at `at` — ingested by then and not yet superseded or
+         *     retracted by then. Newest `limit` facts are kept (``clipped`` says so); ``bounds``
+         *     is the timeline's extent for the explorer's scrubber.
          */
         get: operations["kg_facts_as_of_api_kg_facts_as_of_get"];
         put?: never;
@@ -24812,6 +24841,37 @@ export interface operations {
             };
         };
     };
+    kg_map_api_kg_map_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     kg_add_relation_api_kg_relations_post: {
         parameters: {
             query?: never;
@@ -24891,6 +24951,8 @@ export interface operations {
                 at?: number | null;
                 subject?: string;
                 predicate?: string;
+                axis?: string;
+                limit?: number;
             };
             header?: never;
             path?: never;

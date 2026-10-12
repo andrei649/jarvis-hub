@@ -9,6 +9,7 @@ import httpx
 from agents.core.validation import (
     coerce_kg_label,
     coerce_kg_rel_type,
+    is_safe_kg_label,
     is_safe_kg_rel_type,
     is_safe_property_key,
 )
@@ -56,6 +57,21 @@ class KnowledgeGraph(ABC):
     def delete_entity(self, name: str) -> bool:
         ...
 
+    # ── H206 explorer surface (non-abstract: older backends keep working) ──
+    def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
+        """Create the entity if it does not exist; NEVER touch an existing one.
+
+        Per-turn ingestion names entities it has only seen in a sentence. It used to
+        call ``add_entity(name, "unknown")``, which replaced the type and properties
+        of an entity the owner had typed or edited in the memory explorer."""
+        if self.get_entity(name) is not None:
+            return True
+        return self.add_entity(name, entity_type)
+
+    def list_relations(self, limit: int = 500) -> list[dict]:
+        """Up to *limit* relations as ``{source, relation, target}`` (no properties)."""
+        return []
+
     @abstractmethod
     def delete_relation(self, source: str, relation: str, target: str) -> bool:
         ...
@@ -95,6 +111,15 @@ class InMemoryGraph(KnowledgeGraph):
             "properties": props,
         }
         return True
+
+    def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
+        if name not in self.entities:
+            self.add_entity(name, entity_type)
+        return True
+
+    def list_relations(self, limit: int = 500) -> list[dict]:
+        return [{"source": r["source"], "relation": r["relation"], "target": r["target"]}
+                for r in self.relations[:max(1, limit)]]
 
     def add_relation(self, source: str, relation: str, target: str, properties: dict = None) -> bool:
         if source not in self.entities:
@@ -284,10 +309,51 @@ class Neo4jGraph(KnowledgeGraph):
                 "is structural and cannot be overridden by a property", name)
             props.pop("name")
         pairs = ["name: $name"] + [f"{k}: $p_{k}" for k in props]
-        cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{', '.join(pairs)}}} RETURN n"
         params = {"name": name, **{f"p_{k}": v for k, v in props.items()}}
+        # A type edit must RELABEL the node. `MERGE (n:<new label> {name})` matches only
+        # nodes that already carry the new label, so changing Unknown -> Person created
+        # a second node with the same name next to the first.
+        existing = self._labels_of(name)
+        if existing:
+            stale = [lb for lb in existing if lb != label and is_safe_kg_label(lb)]
+            remove = f"REMOVE n:{':'.join(f'`{lb}`' for lb in stale)} " if stale else ""
+            cypher = (f"MATCH (n {{name: $name}}) {remove}SET n:`{label}` "
+                      f"SET n += {{{', '.join(pairs)}}} RETURN n")
+        else:
+            cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{', '.join(pairs)}}} RETURN n"
         results = self._call_neo4j([{"statement": cypher, "parameters": params}])
         return len(results) > 0
+
+    def _labels_of(self, name: str) -> list[str]:
+        """Labels of the node called *name* ([] when it does not exist)."""
+        results = self._call_neo4j([{
+            "statement": "MATCH (n {name: $name}) RETURN labels(n) AS labels",
+            "parameters": {"name": name},
+        }])
+        labels: list[str] = []
+        for result in results:
+            for row_data in result.get("data", []):
+                row = row_data.get("row") or [[]]
+                if isinstance(row[0], list):
+                    labels.extend(str(lb) for lb in row[0])
+        return labels
+
+    def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
+        # Bare MERGE on the name matches the node whatever its labels are, so it can
+        # never duplicate an entity the owner re-typed; the label only applies on create.
+        label = coerce_kg_label(entity_type)
+        results = self._call_neo4j([{
+            "statement": f"MERGE (n {{name: $name}}) ON CREATE SET n:{label} RETURN n",
+            "parameters": {"name": name},
+        }])
+        return len(results) > 0
+
+    def list_relations(self, limit: int = 500) -> list[dict]:
+        return self.query(
+            "MATCH (a)-[r]->(b) RETURN a.name AS source, type(r) AS relation, "
+            "b.name AS target LIMIT $limit",
+            {"limit": max(1, limit)},
+        )
 
     def add_relation(self, source: str, relation: str, target: str, properties: dict = None) -> bool:
         # AUD-12 (F11): the relationship type is interpolated into Cypher, so

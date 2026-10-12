@@ -161,6 +161,7 @@
   "GET /api/kg/entities/{name}",
   "GET /api/kg/facts/as-of",
   "GET /api/kg/facts/history",
+  "GET /api/kg/map",
   "GET /api/llm/auth-profiles",
   "GET /api/llm/quota",
   "GET /api/llm/roles",

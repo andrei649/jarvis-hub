@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { memoryNodes, memoryNeighborhood, type MemoryNode, type MemoryNeighborhoodData } from '../api/memory-map';
 import { inpS } from '../panel-kit';
+import { MemoryGraphExplorer } from './memory-graph';
 
 const unavailable = (error: any) => error?.code === 'auth'
   ? 'Memory access requires your current user credentials.' : 'Memory graph unavailable. No sample data is shown.';
@@ -37,9 +38,11 @@ export function MemoryNeighborhood() {
 
   const select = (name: string) => { if (name !== selected) { setDetail(null); setDetailError(''); setSelected(name); } };
   const neighbors = detail ? [...new Set(detail.relations.map(row => row.source === detail.entity.name ? row.target : row.source))] : [];
-  return <section aria-label="Memory neighborhood" style={{ border: '1px solid var(--panel-line)', borderRadius: 'var(--radius)', padding: 14 }}>
+  return <>
+  <MemoryGraphExplorer />
+  <section aria-label="Memory neighborhood" style={{ border: '1px solid var(--panel-line)', borderRadius: 'var(--radius)', padding: 14 }}>
     <h3 style={{ fontSize: 13, marginTop: 0 }}>Memory neighborhood</h3>
-    <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>Explore stored entities and their connections.</p>
+    <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>Explore stored entities and their connections as a list (the text view of the graph above).</p>
     <form onSubmit={event => { event.preventDefault(); setRequestedQuery(query); setRevision(value => value + 1); }} style={{ display: 'flex', gap: 6 }}>
       <input aria-label="Find memory entities" value={query} maxLength={200} onChange={event => setQuery(event.target.value)} style={{ ...inpS, minWidth: 0, flex: 1 }} />
       <button className="tool-btn" type="submit">Find</button>
@@ -64,5 +67,6 @@ export function MemoryNeighborhood() {
       {detail.relations.length === 0 && <p style={{ fontSize: 12 }}>No stored relationships for this entity.</p>}
       {detail.clipped && <p style={{ fontSize: 12 }}>Showing the first 100 relationships. More are stored.</p>}
     </>}
-  </section>;
+  </section>
+  </>;
 }
