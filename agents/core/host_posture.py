@@ -241,8 +241,15 @@ def mount_of(path: str, mounts: list[tuple[str, str]]) -> tuple[str, str] | None
 def check_container_storage(data_root: str | os.PathLike, *, marker: str | None | bool = True,
                             mountinfo: str = MOUNTINFO) -> dict:
     """In a container, is the data root on a volume or bind mount (not the container's
-    own filesystem or a tmpfs)?  ``marker=True`` detects the container."""
-    found = in_container() if marker is True else marker
+    own filesystem or a tmpfs)?  ``marker=True`` detects the container with the one host
+    detector (H283, ``host_identity``: these markers, plus Kubernetes, systemd's container
+    file and the operator's ``JARVIS_CONTAINER``), so this check and the prompt agree."""
+    if marker is True:
+        from . import host_identity
+
+        found = host_identity.container_marker()
+    else:
+        found = marker
     if not found:
         return _finding("container_storage", OK, "not_in_container")
     try:

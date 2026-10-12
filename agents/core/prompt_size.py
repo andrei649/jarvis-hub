@@ -146,12 +146,21 @@ def identity_component(root: Path) -> Component:
     return Component.of("identity", text, detail=str(path.relative_to(root.parent)))
 
 
+def host_detected_component() -> Component:
+    """What Nerva detected about this host (H283, ``host_identity``): in every system
+    prompt, after the contract, whenever there is something to say (a container, WSL,
+    Termux or a supervisor)."""
+    from .environment_hint import detected_block
+
+    return Component.of("host-detected", detected_block(), detail="host_identity")
+
+
 def environment_hint_component() -> Component:
     """The operator's description of this machine (H283): in every system prompt, after
-    the contract, whenever ``JARVIS_ENVIRONMENT_HINT`` is set in this environment."""
-    from .environment_hint import ENV_NAME, hint_block
+    the contract and the detected facts, whenever ``JARVIS_ENVIRONMENT_HINT`` is set."""
+    from .environment_hint import ENV_NAME, operator_block
 
-    return Component.of("environment-hint", hint_block(), detail=ENV_NAME)
+    return Component.of("environment-hint", operator_block(), detail=ENV_NAME)
 
 
 def skills_index_component(skills: Iterable[Mapping[str, Any]]) -> Component:
@@ -212,6 +221,7 @@ def breakdown(
     report = Breakdown()
     report.components.extend(soul_components(agents_root))
     report.components.append(identity_component(agents_root))
+    report.components.append(host_detected_component())
     report.components.append(environment_hint_component())
     report.components.extend(tool_schema_components(tool_specs))
     report.components.append(skills_index_component(skills))

@@ -15,6 +15,11 @@ control and bidi characters and of bytes the locale could not decode, and its ow
 lines cannot open a section of their own. A literal ``\\n`` is a line break, since an
 unquoted env value often cannot hold a real one, except inside a Windows path
 (``D:\\nerva``, ``\\\\nas\\media``), where it is part of a name.
+
+Before it, under a heading of its own ("detected by Nerva"), comes one closed-vocabulary
+line of what Nerva detected itself (``host_identity``: container, WSL, Termux,
+supervisor), so the operator's untrusted words and the detected facts never share a
+heading and neither can pass for the other.
 """
 from __future__ import annotations
 
@@ -62,7 +67,22 @@ def environment_hint() -> str:
     return clean_hint(env_str(ENV_NAME))
 
 
-def hint_block() -> str:
-    """The system prompt's block for the hint, or ``""`` when there is none."""
+def operator_block() -> str:
+    """The system prompt's block for the operator's hint, or ``""`` when there is none."""
     hint = environment_hint()
     return f"{HEADER}\n{hint}" if hint else ""
+
+
+def detected_block() -> str:
+    """What Nerva itself detected about this host (container, WSL, Termux, supervisor),
+    under its own heading, never the operator's; ``""`` when there is nothing to say.
+    Computed once per process (``host_identity.identity``), so it is byte-stable."""
+    from . import host_identity
+
+    return host_identity.prompt_block()
+
+
+def hint_block() -> str:
+    """Everything the system prompt says about this machine: the detected facts, then
+    the operator's description, each under its own heading; ``""`` when neither."""
+    return "\n\n".join(block for block in (detected_block(), operator_block()) if block)

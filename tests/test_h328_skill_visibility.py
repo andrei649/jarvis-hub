@@ -100,11 +100,22 @@ def test_the_host_platform_names(platform, names):
     assert visibility.host_platforms(platform) == frozenset(names)
 
 
+def _host(monkeypatch, env=None, present=()):
+    """H283: Termux, container and s6 now come from the one host detector
+    (``host_identity``), so the gates and the prompt agree; this pins what it sees."""
+    from agents.core import host_identity
+
+    seen = host_identity.detect(dict(env or {}), exists=lambda p: p in present, read_text=lambda p: "",
+                                platform="linux", isatty=lambda: False, stderr_id=lambda: None,
+                                files=("/.dockerenv", "/run/.containerenv"), cgroup="/nonexistent/h328")
+    monkeypatch.setattr(host_identity, "identity", lambda: seen)
+
+
 def test_termux_counts_as_linux_and_android(monkeypatch):
     monkeypatch.setattr(visibility.sys, "platform", "linux")
-    monkeypatch.setattr(visibility, "Path", lambda p: SimpleNamespace(is_dir=lambda: False, exists=lambda: False))
+    _host(monkeypatch)
     assert visibility.host_platforms() == frozenset({"linux"})
-    monkeypatch.setenv("PREFIX", "/data/data/com.termux/files/usr")
+    _host(monkeypatch, {"PREFIX": "/data/data/com.termux/files/usr"})
     assert visibility.host_platforms() == frozenset({"linux", "android"})
     monkeypatch.setattr(visibility.sys, "platform", "darwin")
     assert visibility.host_platforms() == frozenset({"macos", "linux", "android"})
@@ -123,25 +134,17 @@ def test_readiness(tmp_path):
 
 
 def test_host_environments(monkeypatch):
-    present: set[str] = set()
-
-    def fake_path(p):
-        return SimpleNamespace(exists=lambda: p in present, is_dir=lambda: p in present)
-
-    monkeypatch.setattr(visibility, "Path", fake_path)
+    _host(monkeypatch)
     assert visibility.host_environments() == frozenset()
-    present.add("/.dockerenv")
+    _host(monkeypatch, present=("/.dockerenv",))
     assert visibility.host_environments() == frozenset({"docker", "container"})
-    present.clear()
-    present.add("/run/.containerenv")
+    _host(monkeypatch, present=("/run/.containerenv",))
     assert visibility.host_environments() == frozenset({"docker", "container"})
-    present.clear()
-    present.add("/run/s6")
+    _host(monkeypatch, present=("/run/s6",))
     assert visibility.host_environments() == frozenset({"s6"})
-    present.clear()
-    present.add("/command/s6-svscan")
+    _host(monkeypatch, present=("/command/s6-svscan",))
     assert visibility.host_environments() == frozenset({"s6"})
-    present.clear()
+    _host(monkeypatch)
     monkeypatch.setenv(visibility.ENV_OVERRIDE, " Lab , ,gpu")
     assert visibility.host_environments() == frozenset({"lab", "gpu"})
 
