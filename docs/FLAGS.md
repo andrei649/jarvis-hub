@@ -1207,6 +1207,24 @@ newcomer rather than killing a running cell.
 **Revert:** set it back to `false` and restart. The next call is a one-shot again, and
 says nothing about continuity — the fallback is named in the result shape, not silent.
 
+## H310/H537/H607 — web search selection
+
+Four environment variables, **read on every call** (no restart), choose and fence the backend
+behind `web_search` / `web_extract`. Full guide: `docs/WEB_SEARCH.md`; check what a search
+would use right now (offline, no key printed) with `python -m agents.core.plugins.web_providers`.
+
+### `JARVIS_WEB_BACKEND` · `JARVIS_WEB_PROVIDER_TIER` · `JARVIS_WEB_RESCUE` · `JARVIS_WEB_BLOCKED_DOMAINS`
+
+**Default: unset** — `auto`: Tavily if `TAVILY_API_KEY` is set, else your SearXNG (`SEARXNG_URL`),
+else the keyless DuckDuckGo fallback. `JARVIS_WEB_BACKEND=<name>` makes one registered provider
+answer alone; an unknown, unconfigured or tier-pinned name answers `available: false` with a
+`detail`, never a silent fallback. `JARVIS_WEB_PROVIDER_TIER=free|paid` keeps the other tier out
+entirely. `JARVIS_WEB_RESCUE=0|1` overrides the one-shot rescue (default: on for `auto`, off for a
+named backend); a gate refusal is never rescued. `JARVIS_WEB_BLOCKED_DOMAINS=a.com,b.org` makes
+`web_extract` refuse those sites (and subdomains) on every redirect hop and drops them from search
+rows. **Cost of ON:** a named paid backend sends your queries to that vendor; rescue sends a
+failed query to a second provider. **Revert:** unset the variable.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |
@@ -1217,6 +1235,7 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_TERMINAL_TARGETS` | off (checked in the `terminal_run` tool handler) | Arms the gated `terminal_run` ToolRPC tool: post-approval shell commands on named targets through the audit-chained policy plane, docker transport only (`environments/execution.py`) | Approved commands actually execute in the containment sandbox; **ssh** still refuses (`ssh_transport_not_implemented`), and the local host is available only with `JARVIS_TERMINAL_LOCAL_HOST` + `JARVIS_ACTION_KERNEL` + a durable approval (row below) | Unset + restart: the tool refuses `terminal_targets_disabled`; policy plane and audit chain stay inert |
 
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
+| `JARVIS_WEB_BACKEND` (+ `JARVIS_WEB_PROVIDER_TIER`, `JARVIS_WEB_RESCUE`, `JARVIS_WEB_BLOCKED_DOMAINS`) | unset = `auto` · `any` · rescue on for `auto` only · none (`plugins/web_providers.py`) | Picks which registered search backend answers `web_search`, pins free/paid, allows one rescue of a failed provider, refuses listed sites in `web_extract` | A named paid backend sends queries to that vendor; rescue sends a failed query to a second one | Unset: `auto` priority again (read per call, no restart) |
 | `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
 | `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
 | `JARVIS_VOICE_COMMANDS` (+ `JARVIS_VOICE_COMMAND_TIMEOUT_S`) | off · `30`s TTS / `120`s STT (cap 600) (`voice/local_providers.py`) | The owner's approved TTS/STT command providers may run (argv-only, private run dir, capped, kill-on-timeout) | An approved program runs as the hub's user; the settings stay ROUTE_ONLY, a set waits for a human, every spawn re-checks the program's identity, off in safe mode | Unset + restart: command voices fall back to the default voice, STT to Whisper or `[STT unavailable]` |

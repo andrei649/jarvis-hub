@@ -77,11 +77,20 @@ class WebSearchResearchBackend:
                 raise ResearchError("configured SearXNG backend required")
             from agents.core.plugins.websearch import WebSearchPlugin
 
-            plugin = WebSearchPlugin(tavily_api_key="", searxng_url=searxng_url)
+            # H310: pinned, not read from JARVIS_WEB_BACKEND / _RESCUE — local research
+            # must never follow an owner's interactive backend choice to a cloud one.
+            plugin = WebSearchPlugin(tavily_api_key="", searxng_url=searxng_url,
+                                     backend="searxng", rescue=False)
         if not str(getattr(plugin, "searxng_url", "")).strip():
             raise ResearchError("configured SearXNG backend required")
         if str(getattr(plugin, "tavily_api_key", "")).strip():
             raise ResearchError("cloud search backend is forbidden for local research")
+        selection = getattr(plugin, "selection", None)
+        if callable(selection):
+            chosen = selection()
+            primary = getattr(chosen, "primary", None)
+            if getattr(primary, "name", "") != "searxng" or getattr(chosen, "rescue", ()):
+                raise ResearchError("cloud search backend is forbidden for local research")
         client = getattr(plugin, "_client", None)
         if client is None:
             raise ResearchError("PluginHTTPClient unavailable")

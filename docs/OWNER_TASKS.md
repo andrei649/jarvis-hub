@@ -825,6 +825,15 @@ built on your Windows box:
       could search and never open what it found (now unwrapped at the parser); and on a
       TLS-inspecting network every search died as a silent `count: 0` (now `JARVIS_CA_BUNDLE`
       names the missing root — see `docs/FLAGS.md`).
+      **(4) H310/H537/H607 — backend selection, five URLs, PDFs, the full text on disk: code and
+      offline tests only; every live leg is yours.** Run `python -m agents.core.plugins.web_providers`
+      (offline; prints which backend answers and why, never a key). *Yours:* with a real
+      `TAVILY_API_KEY` or `SEARXNG_URL`, set `JARVIS_WEB_BACKEND=tavily` / `searxng` and confirm
+      the `provider` field follows, then unset your key and confirm the named backend answers
+      `backend_not_configured` instead of falling back; `pip install pypdf` and have the model read a
+      real PDF (and a PDF over 2 MB, which must answer `too_large`); read a long article and open the
+      path in the footer; `JARVIS_WEB_RESCUE=1` with one dead backend. None of these has been
+      dialled — the tests use a fake `pypdf` module and `httpx.MockTransport`. See `docs/WEB_SEARCH.md`.
 
 - [ ] **P25 — The front door after the update: pair yourself, then prove a stranger is held**
       *(covers `HA-5b`; contains a default that changes on upgrade)*
