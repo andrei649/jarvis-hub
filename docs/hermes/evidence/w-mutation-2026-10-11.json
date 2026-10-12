@@ -1,0 +1,787 @@
+{
+ "unit": "W",
+ "rows": [
+  "H310",
+  "H537",
+  "H607"
+ ],
+ "code_under_test_commit": "597beaa0",
+ "base": "8b61904b",
+ "date": "2026-10-12",
+ "method": "One single-site mutant at a time (flip a comparison, drop a check, change a constant, return early), applied to a byte copy, run against tests/test_h310_web_parity.py, test_websearch.py, test_web_tools.py, test_web_tools_wiring.py, test_research_manifest.py, test_h32_governed_research.py, test_webresearch.py, test_agent_runtime_v2.py, test_plugin_honesty*.py, test_plugin_runtime_honesty.py, test_research_task_mediation.py (plus tests/test_h310_web_parity_mutants.py in the second pass) with pytest -x, then the file restored byte-for-byte and `git diff --quiet -- <file>` checked after every restore.",
+ "totals": {
+  "mutants": 95,
+  "killed_by_builder_tests": 68,
+  "survived_builder_tests_then_killed_by_new_tests": 25,
+  "killed_total": 93,
+  "survived": 0,
+  "equivalent": 2
+ },
+ "survived": [],
+ "tests_added": "tests/test_h310_web_parity_mutants.py (22 tests)",
+ "not_mutated": [
+  "agents/core/plugins/web_providers.py describe()/_text_report()/main() presentation strings (covered by test_verification_command_*), ABC abstractmethods, __all__, log message text; docs; kernel, ssrf and http_client files (not edited by the unit)."
+ ],
+ "mutants": [
+  {
+   "id": "M01",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 110,
+   "mutation": "is_dns_failure: drop the 'empty DNS answer' prefix",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_dns_failure_is_a_failure_not_a_policy_block",
+   "round": "builder tests"
+  },
+  {
+   "id": "M02",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 110,
+   "mutation": "is_dns_failure: drop the 'DNS resolution failed' prefix",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_dns_failure_is_a_failure_not_a_policy_block",
+   "round": "builder tests"
+  },
+  {
+   "id": "M03",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 121,
+   "mutation": "is_dns_failure: startswith -> contains-anywhere (a policy message containing the text would be a failure)",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_dns_failure_is_recognised_only_by_the_message_prefix",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M04",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 138,
+   "mutation": "classified: DNS failure no longer mapped to ProviderFailure",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_dns_failure_is_a_failure_not_a_policy_block",
+   "round": "builder tests"
+  },
+  {
+   "id": "M05",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 147,
+   "mutation": "classified: HTTP error status threshold >=400 -> >400",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_classified_treats_status_400_and_plain_exceptions_as_failures_not_blocks",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M06",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 144,
+   "mutation": "classified: an unclassified exception becomes a PolicyBlock instead of ProviderFailure",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_classified_treats_status_400_and_plain_exceptions_as_failures_not_blocks",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M07",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 435,
+   "mutation": "_canonical_ip: IPv4-mapped IPv6 no longer unwrapped",
+   "killed_by": "tests/test_h310_web_parity.py::test_block_list_compares_numeric_host_spellings_and_warns_on_typos",
+   "round": "builder tests"
+  },
+  {
+   "id": "M08",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 427,
+   "mutation": "_canonical_ip: integer/hex/octal/short numeric hosts no longer canonicalised",
+   "killed_by": "tests/test_h310_web_parity.py::test_block_list_compares_numeric_host_spellings_and_warns_on_typos",
+   "round": "builder tests"
+  },
+  {
+   "id": "M09",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 399,
+   "mutation": "_normalize_host: ideographic dot variants no longer folded",
+   "equivalent_reason": "web_providers._normalize_host: the translate of U+3002/U+FF0E/U+FF61 to '.' is redundant. Python's idna codec (the next step) already splits labels on exactly those three characters ('bad\\u3002org'.encode('idna') == b'bad.org'). The two forms differ only for a host the codec rejects (an empty label such as 'a\\u3002\\u3002b'), and such a host cannot equal a real block-list entry or a dialable URL host. No input a caller can reach changes the match result.",
+   "round": "equivalent"
+  },
+  {
+   "id": "M10",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 395,
+   "mutation": "_normalize_host: bare host:port keeps the port",
+   "killed_by": "tests/test_h310_web_parity.py::test_block_list_compares_one_normalised_host_form",
+   "round": "builder tests"
+  },
+  {
+   "id": "M11",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 409,
+   "mutation": "_normalize_host: result of _canonical_ip ignored",
+   "killed_by": "tests/test_h310_web_parity.py::test_block_list_compares_numeric_host_spellings_and_warns_on_typos",
+   "round": "builder tests"
+  },
+  {
+   "id": "M12",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 453,
+   "mutation": "_blocked_entries: unusable entries warned on every call (once-per-list guard removed)",
+   "killed_by": "tests/test_h310_web_parity.py::test_block_list_compares_numeric_host_spellings_and_warns_on_typos",
+   "round": "builder tests"
+  },
+  {
+   "id": "M13",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 449,
+   "mutation": "_blocked_entries: unusable entries not collected (typo fails open silently)",
+   "killed_by": "tests/test_h310_web_parity.py::test_block_list_compares_one_normalised_host_form",
+   "round": "builder tests"
+  },
+  {
+   "id": "M14",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 446,
+   "mutation": "_blocked_entries: wildcard/leading-dot prefix no longer stripped",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_block_list_tolerates_a_wildcard_prefix_and_a_leading_dot",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M15",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 484,
+   "mutation": "blocked_host: subdomain match loses its dot boundary (notevil.com matches evil.com)",
+   "killed_by": "tests/test_h310_web_parity.py::test_operator_blocked_sites_are_a_policy_refusal_on_every_hop",
+   "round": "builder tests"
+  },
+  {
+   "id": "M16",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 484,
+   "mutation": "blocked_host: exact-host match dropped",
+   "killed_by": "tests/test_h310_web_parity.py::test_operator_blocked_sites_are_a_policy_refusal_on_every_hop",
+   "round": "builder tests"
+  },
+  {
+   "id": "M17",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 484,
+   "mutation": "blocked_host: subdomain match dropped",
+   "killed_by": "tests/test_h310_web_parity.py::test_operator_blocked_sites_are_a_policy_refusal_on_every_hop",
+   "round": "builder tests"
+  },
+  {
+   "id": "M18",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 533,
+   "mutation": "_rescuers: keyless provider may rescue unattended callers",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_keyless_provider_is_never_a_rescue_target_for_unattended_callers",
+   "round": "builder tests"
+  },
+  {
+   "id": "M19",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 529,
+   "mutation": "_rescuers: keyless rescue allowed when rescue merely not off (not explicitly on)",
+   "killed_by": "tests/test_h310_web_parity.py::test_the_interactive_tool_reaches_the_keyless_fallback_only_on_an_explicit_rescue",
+   "round": "builder tests"
+  },
+  {
+   "id": "M20",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 529,
+   "mutation": "_rescuers: keyless rescue allowed for any caller when rescue explicitly on",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_keyless_provider_is_never_a_rescue_target_for_unattended_callers",
+   "round": "builder tests"
+  },
+  {
+   "id": "M21",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 555,
+   "mutation": "resolve auto: rescue off by default (None treated as off)",
+   "killed_by": "tests/test_h310_web_parity.py::test_rescue_retries_a_failed_provider_once_and_never_a_policy_block",
+   "round": "builder tests"
+  },
+  {
+   "id": "M22",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 555,
+   "mutation": "resolve auto: explicit rescue=off ignored",
+   "killed_by": "tests/test_h310_web_parity.py::test_rescue_retries_a_failed_provider_once_and_never_a_policy_block",
+   "round": "builder tests"
+  },
+  {
+   "id": "M23",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 571,
+   "mutation": "resolve named backend: rescues by default (not only when explicitly on)",
+   "killed_by": "tests/test_h310_web_parity.py::test_rescue_retries_a_failed_provider_once_and_never_a_policy_block",
+   "round": "builder tests"
+  },
+  {
+   "id": "M24",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 563,
+   "mutation": "resolve named backend: tier pin check removed",
+   "killed_by": "tests/test_h310_web_parity.py::test_tier_pin_keeps_paid_providers_out_and_refuses_a_named_one",
+   "round": "builder tests"
+  },
+  {
+   "id": "M25",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 565,
+   "mutation": "resolve named backend: not-configured check removed",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_named_backend_that_cannot_answer_is_unavailable_with_its_reason",
+   "round": "builder tests"
+  },
+  {
+   "id": "M26",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 544,
+   "mutation": "resolve: invalid tier no longer refused",
+   "killed_by": "tests/test_h310_web_parity.py::test_tier_pin_keeps_paid_providers_out_and_refuses_a_named_one",
+   "round": "builder tests"
+  },
+  {
+   "id": "M27",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 519,
+   "mutation": "auto_order: keyless providers no longer sorted last",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_a_keyless_provider_stays_last_in_auto_order_whatever_registers_after_it",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M28",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 313,
+   "mutation": "register: FULL network identities accepted for search",
+   "killed_by": "tests/test_h310_web_parity.py::test_registration_refuses_unmanifested_full_network_and_duplicate_identities",
+   "round": "builder tests"
+  },
+  {
+   "id": "M29",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 318,
+   "mutation": "register: built-in names replaceable with replace=True",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_provider_sees_a_narrow_view_not_the_plugin_and_builtins_cannot_be_replaced",
+   "round": "builder tests"
+  },
+  {
+   "id": "M30",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 303,
+   "mutation": "register: 'auto' accepted as a provider name",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_a_provider_cannot_be_named_auto",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M31",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 326,
+   "mutation": "unregister: built-ins removable",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_provider_sees_a_narrow_view_not_the_plugin_and_builtins_cannot_be_replaced",
+   "round": "builder tests"
+  },
+  {
+   "id": "M32",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 240,
+   "mutation": "SearXNG: result list not capped at max_results",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_searxng_hands_back_at_most_max_results_rows",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M33",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 278,
+   "mutation": "DuckDuckGo: empty non-200 page (anomaly 202) no longer a failure",
+   "killed_by": "tests/test_h310_web_parity.py::test_an_empty_answer_is_not_cached_and_a_throttled_page_is_a_failure",
+   "round": "builder tests"
+  },
+  {
+   "id": "M34",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 595,
+   "mutation": "describe: interactive rescue view computed without allow_keyless_rescue",
+   "killed_by": "tests/test_h310_web_parity.py::test_verification_command_says_which_callers_may_use_the_keyless_rescue",
+   "round": "builder tests"
+  },
+  {
+   "id": "M35",
+   "file": "agents/core/plugins/web_providers.py",
+   "line": 211,
+   "mutation": "configured(): Tavily counts a whitespace-only key as configured",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_a_blank_key_does_not_configure_tavily",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M36",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 471,
+   "mutation": "read_page: HTTP error status no longer checked before the media type",
+   "killed_by": "tests/test_h310_web_parity.py::test_reader_tells_a_policy_refusal_from_a_fetch_failure",
+   "round": "builder tests"
+  },
+  {
+   "id": "M37",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 487,
+   "mutation": "read_page: DNS failure on a page read reported as url_refused",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_dns_failure_on_a_page_read_is_retryable",
+   "round": "builder tests"
+  },
+  {
+   "id": "M38",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 447,
+   "mutation": "read_page: operator block list only checked on the first hop (redirect target not checked)",
+   "killed_by": "tests/test_h310_web_parity.py::test_operator_blocked_sites_are_a_policy_refusal_on_every_hop",
+   "round": "builder tests"
+  },
+  {
+   "id": "M39",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 517,
+   "mutation": "_read_pdf: a PDF cut at the byte cap is parsed instead of too_large",
+   "killed_by": "tests/test_h310_web_parity.py::test_pdf_pages_are_read_off_the_loop_bounded_and_refused_by_name",
+   "round": "builder tests"
+  },
+  {
+   "id": "M40",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 188,
+   "mutation": "PDF_MAX_CONCURRENT 2 -> 3",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_exactly_two_pdf_parses_run_at_once_when_five_are_waiting",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M41",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 188,
+   "mutation": "PDF_MAX_CONCURRENT 2 -> 1",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_exactly_two_pdf_parses_run_at_once_when_five_are_waiting",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M42",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 524,
+   "mutation": "_read_pdf: queue-wait expiry answers fetch_failed instead of parser_busy",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_a_read_that_waits_too_long_for_its_turn_says_parser_busy",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M43",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 537,
+   "mutation": "_read_pdf: held thread slot (_PdfBusy) answers fetch_failed instead of parser_busy",
+   "killed_by": "tests/test_h310_web_parity.py::test_pdf_parses_are_bounded_in_number",
+   "round": "builder tests"
+  },
+  {
+   "id": "M44",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 541,
+   "mutation": "_read_pdf: parse timeout answers url_refused instead of fetch_failed",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_slow_pdf_stops_at_a_page_boundary_and_reads_as_retryable",
+   "round": "builder tests"
+  },
+  {
+   "id": "M45",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 546,
+   "mutation": "_read_pdf: queue slot not released after the parse",
+   "killed_by": "hang caught by the 30 s per-test --timeout: tests/test_h310_web_parity.py::test_pdf_pages_are_read_off_the_loop_bounded_and_refused_by_name",
+   "round": "builder tests"
+  },
+  {
+   "id": "M46",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 166,
+   "mutation": "_pdf_worker: thread slot taken blocking (never parser_busy)",
+   "killed_by": "hang caught by the 30 s per-test --timeout: tests/test_h310_web_parity.py::test_pdf_parses_are_bounded_in_number",
+   "round": "builder tests"
+  },
+  {
+   "id": "M47",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 170,
+   "mutation": "_pdf_worker: thread slot never released",
+   "killed_by": "tests/test_h310_web_parity.py::test_pdf_pages_are_read_off_the_loop_bounded_and_refused_by_name",
+   "round": "builder tests"
+  },
+  {
+   "id": "M48",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 198,
+   "mutation": "_pdf_queue: one fresh semaphore per call (no queueing)",
+   "killed_by": "tests/test_h310_web_parity.py::test_five_pdf_urls_in_one_call_are_queued_not_refused",
+   "round": "builder tests"
+  },
+  {
+   "id": "M49",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 520,
+   "mutation": "_read_pdf: parse clock starts before the queue wait",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_the_parse_clock_starts_after_the_wait_for_a_turn",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M50",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 220,
+   "mutation": "_pdf_text: worker deadline check removed",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_a_timed_out_parse_really_stops_its_worker",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M51",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 210,
+   "mutation": "_pdf_text: encrypted PDF accepted",
+   "killed_by": "tests/test_h310_web_parity.py::test_pdf_pages_are_read_off_the_loop_bounded_and_refused_by_name",
+   "round": "builder tests"
+  },
+  {
+   "id": "M52",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 218,
+   "mutation": "_pdf_text: page limit ignored",
+   "killed_by": "tests/test_h310_web_parity.py::test_pdf_pages_are_read_off_the_loop_bounded_and_refused_by_name",
+   "round": "builder tests"
+  },
+  {
+   "id": "M53",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 218,
+   "mutation": "_pdf_text: char cap not used to stop reading pages",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_pdf_text_stops_at_the_char_cap_and_at_two_hundred_pages",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M54",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 56,
+   "mutation": "PDF_MAX_PAGES 200 -> 201",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_pdf_text_stops_at_the_char_cap_and_at_two_hundred_pages",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M55",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 372,
+   "mutation": "search cache: empty answer pinned for the TTL",
+   "killed_by": "tests/test_h310_web_parity.py::test_an_empty_answer_is_not_cached_and_a_throttled_page_is_a_failure",
+   "round": "builder tests"
+  },
+  {
+   "id": "M56",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 362,
+   "mutation": "search_detailed: policy block during rescue not distinguished (swallowed as failure)",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_a_policy_block_from_the_rescuer_is_reported_as_one",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M57",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 353,
+   "mutation": "search_detailed: primary policy block is rescued like a failure",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_first_party_provider_is_selectable_tainted_and_dials_its_own_allowlisted_identity",
+   "round": "builder tests"
+  },
+  {
+   "id": "M58",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 292,
+   "mutation": "available(): keyless selection counts as available",
+   "killed_by": "tests/test_h310_web_parity.py::test_tier_pin_keeps_paid_providers_out_and_refuses_a_named_one",
+   "round": "builder tests"
+  },
+  {
+   "id": "M59",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 324,
+   "mutation": "_cache_get: entry expiring exactly now still served (<= -> <)",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_search_cache_entry_expires_exactly_at_the_ttl",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M60",
+   "file": "agents/core/plugins/websearch.py",
+   "line": 312,
+   "mutation": "_ask: provider returning a non-list accepted",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_a_provider_that_answers_with_a_non_list_has_failed",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M61",
+   "file": "agents/core/web_tools.py",
+   "line": 146,
+   "mutation": "_PAGE_REASONS: parser_busy dropped (reported as url_refused)",
+   "killed_by": "tests/test_h310_web_parity.py::test_parser_busy_is_a_distinct_page_reason",
+   "round": "builder tests"
+  },
+  {
+   "id": "M62",
+   "file": "agents/core/web_tools.py",
+   "line": 146,
+   "mutation": "_PAGE_REASONS: fetch_failed dropped (reported as url_refused)",
+   "killed_by": "tests/test_h310_web_parity.py::test_extract_refusals_are_per_url_and_every_fence_still_applies",
+   "round": "builder tests"
+  },
+  {
+   "id": "M63",
+   "file": "agents/core/web_tools.py",
+   "line": 735,
+   "mutation": "web_search: byte-ceiling fitting loop removed",
+   "killed_by": "tests/test_h310_web_parity.py::test_web_search_answer_is_fitted_to_its_declared_byte_ceiling",
+   "round": "builder tests"
+  },
+  {
+   "id": "M64",
+   "file": "agents/core/web_tools.py",
+   "line": 739,
+   "mutation": "web_search: omitted count not reported",
+   "killed_by": "tests/test_h310_web_parity.py::test_web_search_answer_is_fitted_to_its_declared_byte_ceiling",
+   "round": "builder tests"
+  },
+  {
+   "id": "M65",
+   "file": "agents/core/web_tools.py",
+   "line": 736,
+   "mutation": "web_search: count not refreshed after dropping rows",
+   "killed_by": "tests/test_h310_web_parity.py::test_web_search_answer_is_fitted_to_its_declared_byte_ceiling",
+   "round": "builder tests"
+  },
+  {
+   "id": "M66",
+   "file": "agents/core/web_tools.py",
+   "line": 108,
+   "mutation": "MAX_SEARCH_RESULT_BYTES 50_000 -> 60_000 (fits above the declared ceiling)",
+   "killed_by": "tests/test_h310_web_parity.py::test_both_tools_declare_their_result_ceiling",
+   "round": "builder tests"
+  },
+  {
+   "id": "M67",
+   "file": "agents/core/web_tools.py",
+   "line": 104,
+   "mutation": "MAX_RESULT_BYTES 100_000 -> 90_000",
+   "killed_by": "tests/test_h310_web_parity.py::test_both_tools_declare_their_result_ceiling",
+   "round": "builder tests"
+  },
+  {
+   "id": "M68",
+   "file": "agents/core/web_tools.py",
+   "line": 965,
+   "mutation": "web_search registered with the extract ceiling instead of its own",
+   "killed_by": "tests/test_h310_web_parity.py::test_both_tools_declare_their_result_ceiling",
+   "round": "builder tests"
+  },
+  {
+   "id": "M69",
+   "file": "agents/core/web_tools.py",
+   "line": 678,
+   "mutation": "web_search: policy_blocked outcome reported as an empty answer",
+   "killed_by": "tests/test_h310_web_parity.py::test_a_first_party_provider_is_selectable_tainted_and_dials_its_own_allowlisted_identity",
+   "round": "builder tests"
+  },
+  {
+   "id": "M70",
+   "file": "agents/core/web_tools.py",
+   "line": 708,
+   "mutation": "web_search: blocked-site rows not filtered",
+   "killed_by": "tests/test_h310_web_parity.py::test_operator_blocked_sites_are_a_policy_refusal_on_every_hop",
+   "round": "builder tests"
+  },
+  {
+   "id": "M71",
+   "file": "agents/core/web_tools.py",
+   "line": 730,
+   "mutation": "web_search: blocked count not reported",
+   "killed_by": "tests/test_h310_web_parity.py::test_operator_blocked_sites_are_a_policy_refusal_on_every_hop",
+   "round": "builder tests"
+  },
+  {
+   "id": "M72",
+   "file": "agents/core/web_tools.py",
+   "line": 754,
+   "mutation": "web_extract: operator-blocked site not refused",
+   "killed_by": "tests/test_h310_web_parity.py::test_operator_blocked_sites_are_a_policy_refusal_on_every_hop",
+   "round": "builder tests"
+  },
+  {
+   "id": "M73",
+   "file": "agents/core/web_tools.py",
+   "line": 751,
+   "mutation": "web_extract: tainted turn fence dropped",
+   "killed_by": "tests/test_h310_web_parity.py::test_extract_refusals_are_per_url_and_every_fence_still_applies",
+   "round": "builder tests"
+  },
+  {
+   "id": "M74",
+   "file": "agents/core/web_tools.py",
+   "line": 661,
+   "mutation": "web_search: tainted turn fence dropped",
+   "killed_by": "tests/test_web_tools.py::test_web_extract_in_a_tainted_turn_reads_only_search_result_urls",
+   "round": "builder tests"
+  },
+  {
+   "id": "M75",
+   "file": "agents/core/web_tools.py",
+   "line": 405,
+   "mutation": "_carries_secret: broker failure reads as no secret",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_a_broker_that_cannot_answer_is_read_as_a_secret",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M76",
+   "file": "agents/core/web_tools.py",
+   "line": 924,
+   "mutation": "web_extract: per-page budget not capped by MAX_EXTRACT_BYTES",
+   "killed_by": "tests/test_h310_web_parity.py::test_five_wide_pages_stay_under_the_declared_result_bytes",
+   "round": "builder tests"
+  },
+  {
+   "id": "M77",
+   "file": "agents/core/web_tools.py",
+   "line": 923,
+   "mutation": "web_extract: per-URL overhead reserve dropped (16 * n)",
+   "equivalent_reason": "web_tools._extract: the 16-bytes-per-page slack in the shared byte budget is headroom, not a bound. The guard loop that follows (up to 8 passes, trimming the longest text by the overflow plus 16) restores the only contract, 'whole answer <= MAX_RESULT_BYTES', whichever starting share is used; with the slack removed the output differs from the original only by a few trailing bytes of the longest page's text. test_five_wide_pages_stay_under_the_declared_result_bytes and the full-text footer tests still hold; no assertion on those few bytes would express a requirement.",
+   "round": "equivalent"
+  },
+  {
+   "id": "M78",
+   "file": "agents/core/web_tools.py",
+   "line": 923,
+   "mutation": "web_extract: pages do not share the byte budget (share not divided)",
+   "killed_by": "tests/test_h310_web_parity.py::test_five_wide_pages_stay_under_the_declared_result_bytes",
+   "round": "builder tests"
+  },
+  {
+   "id": "M79",
+   "file": "agents/core/web_tools.py",
+   "line": 121,
+   "mutation": "HEAD_SHARE 0.7 -> 0.5",
+   "killed_by": "tests/test_h310_web_parity.py::test_default_budget_is_15000_chars_cut_head_plus_tail",
+   "round": "builder tests"
+  },
+  {
+   "id": "M80",
+   "file": "agents/core/web_tools.py",
+   "line": 230,
+   "mutation": "_cut_plan: marker not recomputed to match omitted count",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_head_tail_never_exceeds_its_limit_even_when_the_marker_does_not_fit",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M81",
+   "file": "agents/core/web_tools.py",
+   "line": 539,
+   "mutation": "_Page.fit: byte shrink skipped (over-budget text returned as is)",
+   "killed_by": "tests/test_h310_web_parity.py::test_five_wide_pages_stay_under_the_declared_result_bytes",
+   "round": "builder tests"
+  },
+  {
+   "id": "M82",
+   "file": "agents/core/web_tools.py",
+   "line": 761,
+   "mutation": "_acquire: cache entry whose full-text file vanished still served",
+   "killed_by": "tests/test_h310_web_parity.py::test_cache_recuts_from_the_full_text_and_keeps_the_footer_valid",
+   "round": "builder tests"
+  },
+  {
+   "id": "M83",
+   "file": "agents/core/web_tools.py",
+   "line": 760,
+   "mutation": "_acquire: cache expiry check dropped",
+   "killed_by": "tests/test_web_tools.py::test_web_extract_cache_hit_costs_no_second_fetch",
+   "round": "builder tests"
+  },
+  {
+   "id": "M84",
+   "file": "agents/core/web_tools.py",
+   "line": 460,
+   "mutation": "default_read_back: turn tool-offer check removed",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_read_back_probe_honours_the_turn_tool_offer",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M85",
+   "file": "agents/core/web_tools.py",
+   "line": 455,
+   "mutation": "default_read_back: job toolset fence removed",
+   "killed_by": "tests/test_h310_web_parity.py::test_default_read_back_probe_asks_reaches_not_just_registration",
+   "round": "builder tests"
+  },
+  {
+   "id": "M86",
+   "file": "agents/core/web_tools.py",
+   "line": 620,
+   "mutation": "_remember: seen-URL eviction removed (unbounded)",
+   "killed_by": "tests/test_web_tools.py::test_search_url_memory_is_bounded",
+   "round": "builder tests"
+  },
+  {
+   "id": "M87",
+   "file": "agents/core/web_tools.py",
+   "line": 101,
+   "mutation": "MAX_EXTRACT_URLS 5 -> 6",
+   "killed_by": "tests/test_h310_web_parity.py::test_extract_reads_up_to_five_urls_and_refuses_a_sixth",
+   "round": "builder tests"
+  },
+  {
+   "id": "M88",
+   "file": "agents/core/web_tools.py",
+   "line": 786,
+   "mutation": "_acquire: parser_missing 'missing' name dropped",
+   "killed_by": "tests/test_h310_web_parity.py::test_web_extract_reads_a_pdf_and_names_a_missing_parser",
+   "round": "builder tests"
+  },
+  {
+   "id": "M89",
+   "file": "agents/core/web_tools.py",
+   "line": 356,
+   "mutation": "provider_name fallback: ignores searxng_url",
+   "killed_by": "tests/test_web_tools.py::test_web_search_provider_names_the_backend",
+   "round": "builder tests"
+  },
+  {
+   "id": "M90",
+   "file": "agents/core/acquisition/research.py",
+   "line": 83,
+   "mutation": "research: backend pin to searxng removed",
+   "killed_by": "tests/test_h310_web_parity.py::test_research_keeps_its_searxng_only_attribute_contract_under_the_selector",
+   "round": "builder tests"
+  },
+  {
+   "id": "M91",
+   "file": "agents/core/acquisition/research.py",
+   "line": 83,
+   "mutation": "research: rescue pin removed",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_research_pins_its_own_plugin_against_the_rescue_switch_and_extra_backends",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M92",
+   "file": "agents/core/acquisition/research.py",
+   "line": 96,
+   "mutation": "research: a rescuer on the selection no longer refused",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_research_refuses_a_supplied_plugin_that_could_leave_searxng",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M93",
+   "file": "agents/core/acquisition/research.py",
+   "line": 96,
+   "mutation": "research: non-searxng primary no longer refused",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_research_refuses_a_supplied_plugin_that_could_leave_searxng",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  },
+  {
+   "id": "M94",
+   "file": "agents/core/acquisition/research.py",
+   "line": 93,
+   "mutation": "research: primary None no longer refused",
+   "killed_by": "tests/test_h310_web_parity.py::test_research_pins_its_tier_and_reports_an_unavailable_backend_honestly",
+   "round": "builder tests"
+  },
+  {
+   "id": "M95",
+   "file": "agents/core/plugins/honesty.py",
+   "line": 49,
+   "mutation": "honesty: websearch no longer lists the searxng/tavily requirement",
+   "killed_by": "tests/test_h310_web_parity_mutants.py::test_honesty_names_searxng_as_a_way_to_configure_web_search",
+   "round": "survived the builder's tests; killed by a test added in this pass"
+  }
+ ]
+}
