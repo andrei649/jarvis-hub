@@ -236,12 +236,15 @@ def search_sessions(
             if flags:
                 hit["injection_flagged"] = True
                 hit["flags"] = flags
+            if turn.get("media"):
+                hit["image_derived"] = True   # H586: a committed image reading is untrusted input
             ranked.append((score, mtime, index, hit))
     ranked.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
     hits = [row[3] for row in ranked[:limit]]
-    if any(hit.get("injection_flagged") for hit in hits):
+    if any(hit.get("injection_flagged") or hit.get("image_derived") for hit in hits):
         # SEC-B5, as for search_memory: the model is about to read text the scanner
-        # flagged, so this turn's actions land in the approval inbox, not on auto.
+        # flagged, or (H586) an image reading, so this turn's actions land in the
+        # approval inbox, not on auto.
         mark_turn_recall_tainted()
     if len(ranked) > limit and stopped_by is None:
         stopped_by = "limit"
