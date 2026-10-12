@@ -18,6 +18,8 @@ restamped — H034, H099, H117, H156, H157, H165, H168, H200, H209, H242, H247,
 H259, H285, H309, H314, H318, H368, H428, H433, H490, H507, H579, H594, H670 and
 H677 — with every citation re-opened and every pinned test re-run. No status
 moved; the headline is 180/697. The other 15 stale closed rows follow.
+Batch 2 (2026-10-12, head `0221c075`) re-read six more the same way — H262, H273,
+H275, H518, H681 and H687 — to 186/697; nine stale closed rows remain.
 
 Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) row that still carried only the 2026-09-07 audit verdict: 16 read-only assessors read the requirement and the code on `main` at 6578cd3c, a skeptic stood ready for every claimed promotion (none was claimed — the old audit held up), and a cross-row critic checked the plans against each other and against the code. The verdicts are in [assessment.json](assessment.json); this page keeps what the ledger does not: how each gap would close.
 
