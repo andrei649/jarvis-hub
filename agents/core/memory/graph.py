@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -214,6 +215,10 @@ class Neo4jGraph(KnowledgeGraph):
         self._auth = httpx.BasicAuth(self.user, self.password)
         self._tx_url = f"{self.url}/db/neo4j/tx/commit"
         self._connected = None  # lazy check
+        # Why the last _call_neo4j on THIS thread degraded to [] (None = it did not).
+        # Lets a caller tell "no rows" from "could not ask" without changing the
+        # swallow-and-return-[] contract every read here relies on.
+        self._tls = threading.local()
         logger.info(f"Neo4jGraph configured at {self.url} (user={self.user})")
 
     def _check_connection(self) -> bool:
@@ -250,7 +255,9 @@ class Neo4jGraph(KnowledgeGraph):
         return self._connected
 
     def _call_neo4j(self, statements: list[dict]) -> list[dict]:
+        self._tls.error = None
         if not self._check_connection():
+            self._tls.error = "unreachable"
             return []
         try:
             with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
@@ -265,9 +272,11 @@ class Neo4jGraph(KnowledgeGraph):
                 # `errors` array, so without this the caller only sees "no results".
                 errors = body.get("errors") or []
                 if errors:
+                    self._tls.error = "rejected"
                     logger.warning("Neo4j rejected the statement(s): %s", errors)
                 return body.get("results", [])
         except Exception as e:
+            self._tls.error = str(e) or "failed"
             logger.warning(f"Neo4j query failed: {e}")
             return []
 
@@ -310,33 +319,50 @@ class Neo4jGraph(KnowledgeGraph):
             props.pop("name")
         pairs = ["name: $name"] + [f"{k}: $p_{k}" for k in props]
         params = {"name": name, **{f"p_{k}": v for k, v in props.items()}}
+        # `SET n = {...}` REPLACES the property map, like InMemoryGraph.add_entity does:
+        # an edit that drops a property must really drop it (`+=` only ever added or
+        # overwrote keys, so the explorer's remove button did nothing on Neo4j).
         # A type edit must RELABEL the node. `MERGE (n:<new label> {name})` matches only
         # nodes that already carry the new label, so changing Unknown -> Person created
         # a second node with the same name next to the first.
-        existing = self._labels_of(name)
-        if existing:
+        try:
+            existing = self._labels_of(name)
+        except RuntimeError as exc:
+            # Could not ask: writing now could MERGE a duplicate next to a node that
+            # exists under another label. Refuse instead.
+            logger.warning("add_entity(%r) not written: label lookup failed (%s)", name, exc)
+            return False
+        if existing is not None:
             stale = [lb for lb in existing if lb != label and is_safe_kg_label(lb)]
             remove = f"REMOVE n:{':'.join(f'`{lb}`' for lb in stale)} " if stale else ""
             cypher = (f"MATCH (n {{name: $name}}) {remove}SET n:`{label}` "
-                      f"SET n += {{{', '.join(pairs)}}} RETURN n")
+                      f"SET n = {{{', '.join(pairs)}}} RETURN n")
         else:
-            cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{', '.join(pairs)}}} RETURN n"
+            cypher = f"MERGE (n:{label} {{name: $name}}) SET n = {{{', '.join(pairs)}}} RETURN n"
         results = self._call_neo4j([{"statement": cypher, "parameters": params}])
         return len(results) > 0
 
-    def _labels_of(self, name: str) -> list[str]:
-        """Labels of the node called *name* ([] when it does not exist)."""
+    def _labels_of(self, name: str) -> Optional[list[str]]:
+        """Labels of the node called *name*; ``None`` when there is no such node.
+
+        Raises ``RuntimeError`` when Neo4j could not be asked (unreachable / rejected),
+        which is not the same answer as "no such node"."""
         results = self._call_neo4j([{
             "statement": "MATCH (n {name: $name}) RETURN labels(n) AS labels",
             "parameters": {"name": name},
         }])
+        error = getattr(self._tls, "error", None)
+        if error:
+            raise RuntimeError(error)
+        found = False
         labels: list[str] = []
         for result in results:
             for row_data in result.get("data", []):
                 row = row_data.get("row") or [[]]
                 if isinstance(row[0], list):
+                    found = True
                     labels.extend(str(lb) for lb in row[0])
-        return labels
+        return labels if found else None
 
     def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
         # Bare MERGE on the name matches the node whatever its labels are, so it can

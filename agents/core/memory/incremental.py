@@ -37,7 +37,9 @@ _STOP = {"I", "He", "She", "It", "We", "They", "The", "This", "That", "There",
 
 
 def _clean(tok: str) -> str:
-    return tok.strip().strip(".,;:!?'\"")
+    # Collapse any run of whitespace (the proper-noun pattern spans \s+, so a line
+    # break inside "Berlin\nParis" would otherwise become part of the stored name).
+    return " ".join(tok.split()).strip(".,;:!?'\"")
 
 
 def extract_triples(text: str) -> list[tuple[str, str, str]]:

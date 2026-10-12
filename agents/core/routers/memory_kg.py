@@ -727,13 +727,16 @@ async def kg_delete_entity(name: str, req: Request = None):
     finally:
         if deleted is not False:
             _recall_forget(get_orch())
+    if not deleted:
+        # Nothing was removed (no such entity, or the graph backend failed). Say so:
+        # the timeline is only touched after the graph delete actually happened, so a
+        # failed delete never reads as success and never half-applies.
+        return JSONResponse({"error": "not found"}, status_code=404)
     # H206: the timeline must stop asserting what the owner just deleted. The facts
     # naming the entity are closed (history before now is kept) in this same, already
     # authorised handler. Per-turn ingestion may still re-create the entity later.
     bt = getattr(get_orch(), "bitemporal", None)
     retracted = await _kg_call(bt.retract_entity, name) if bt is not None else 0
-    if not deleted and not retracted:
-        return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True, "deleted": name, "facts_retracted": retracted})
 
 
@@ -834,16 +837,19 @@ async def kg_add_fact(req: Request):
 
 @router.get("/api/kg/facts/as-of", dependencies=[Depends(user_guard)])
 async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = "",
-                         axis: str = "valid", limit: int = 500):
+                         axis: Optional[str] = None, limit: Optional[int] = None):
     """Bi-temporal recall at time `at` (default now).
 
-    ``axis=valid`` (default): facts true in the world at `at`. ``axis=known`` (H206):
-    what the store BELIEVED at `at` — ingested by then and not yet superseded or
-    retracted by then. Newest `limit` facts are kept (``clipped`` says so); ``bounds``
-    is the timeline's extent for the explorer's scrubber."""
-    if axis not in ("valid", "known"):
+    Without `axis` and `limit` this is the original route, unchanged: facts true in
+    the world at `at`, unsorted and unbounded (the mobile Memory graph reads it so).
+    H206 explorer options: ``axis=valid`` is the same valid-time answer, ``axis=known``
+    is what the store BELIEVED at `at` (ingested by then and not yet superseded or
+    retracted by then). ``limit`` keeps the newest facts (``clipped`` says so) and a
+    response to either option carries ``bounds``, the timeline's extent for the scrubber."""
+    explorer = axis is not None or limit is not None
+    if axis is not None and axis not in ("valid", "known"):
         return JSONResponse({"error": "axis must be 'valid' or 'known'"}, status_code=422)
-    if not 1 <= limit <= _KG_MAP_MAX:
+    if limit is not None and not 1 <= limit <= _KG_MAP_MAX:
         return JSONResponse({"error": f"limit must be 1..{_KG_MAP_MAX}"}, status_code=422)
     _, bt, err = require_component("bitemporal", "bi-temporal KG not available")
     if err is not None:
@@ -855,10 +861,13 @@ async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicat
         facts.sort(key=lambda f: (f["ingested_at"], f["id"]))
     else:
         facts = await _kg_call(bt.as_of, at, subject, predicate)
-        facts.sort(key=lambda f: (f["valid_from"], f["id"]))
-    clipped = len(facts) > limit
-    return nocache_json({"at": at, "axis": axis, "facts": facts[-limit:], "clipped": clipped,
-                         "bounds": await _kg_call(bt.bounds)})
+        if explorer:
+            facts.sort(key=lambda f: (f["valid_from"], f["id"]))
+    if not explorer:
+        return nocache_json({"at": at, "facts": facts})
+    clipped = limit is not None and len(facts) > limit
+    return nocache_json({"at": at, "axis": axis or "valid", "facts": facts[-limit:] if limit else facts,
+                         "clipped": clipped, "bounds": await _kg_call(bt.bounds)})
 
 
 @router.get("/api/kg/facts/history", dependencies=[Depends(user_guard)])

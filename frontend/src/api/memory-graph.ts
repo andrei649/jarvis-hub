@@ -11,7 +11,9 @@
 import { apiDelete, apiFetchOnce, apiPost } from './client';
 import { SKILLS_PATH, SWITCH_PATH } from '../panels/skill-switches';
 
-export type MemoryGraphErrorCode = 'auth' | 'admin' | 'denied' | 'invalid' | 'notfound' | 'unavailable';
+/* 'unknown' = the request may have been executed but its reply never arrived (or the server broke
+   while handling it): the caller must reload instead of claiming nothing changed. */
+export type MemoryGraphErrorCode = 'auth' | 'admin' | 'denied' | 'invalid' | 'notfound' | 'unavailable' | 'unknown';
 export class MemoryGraphError extends Error {
   constructor(public code: MemoryGraphErrorCode = 'unavailable', public detail = '') { super(code); }
 }
@@ -19,10 +21,12 @@ const fail = (code: MemoryGraphErrorCode = 'unavailable', detail = ''): never =>
 
 export type MapEntity = { name: string; type: string; firstSeen: number | null };
 export type MapRelation = { source: string; relation: string; target: string };
-export type MemoryMapData = { entities: MapEntity[]; relations: MapRelation[]; clipped: boolean; relationsClipped: boolean };
+/* `skipped` counts entries the client would not draw (control characters, over-long names): one odd
+   name must not take the whole map down, so it is left out and the panel says how many. */
+export type MemoryMapData = { entities: MapEntity[]; relations: MapRelation[]; clipped: boolean; relationsClipped: boolean; skipped: number };
 export type Fact = { id: number; subject: string; predicate: string; object: string; validFrom: number; validTo: number | null; ingestedAt: number };
 export type TimelineBounds = { count: number; firstIngested: number | null; lastIngested: number | null; firstValid: number | null; lastChange: number | null };
-export type FactsPage = { axis: TimelineAxis; facts: Fact[]; bounds: TimelineBounds; clipped: boolean };
+export type FactsPage = { axis: TimelineAxis; facts: Fact[]; bounds: TimelineBounds; clipped: boolean; skipped: number };
 export type TimelineAxis = 'known' | 'valid';
 export type SkillInfo = { name: string; category: string; essential: boolean; disabled: boolean };
 export type EntityDetail = { name: string; type: string; properties: Record<string, unknown> };
@@ -113,17 +117,23 @@ export async function loadMemoryMap(signal?: AbortSignal): Promise<MemoryMapData
   const value = await read('/api/kg/map?limit=' + MAP_LIMIT, signal);
   if (value?.error || !Array.isArray(value?.entities) || !Array.isArray(value?.relations)
     || value.entities.length > 1000 || value.relations.length > 4000) fail();
-  const entities = [...new Map<string, MapEntity>(value.entities.map((item: any) => {
-    if (!item || !text(item.name) || !text(item.type, 80)) fail();
-    return [item.name, { name: item.name, type: item.type, firstSeen: numOrNull(item.first_seen) }] as const;
-  })).values()];
-  const names = new Set(entities.map(e => e.name));
-  const relations = value.relations.map((item: any) => {
-    if (!item || !text(item.source) || !text(item.target) || !text(item.relation, 128)
-      || !names.has(item.source) || !names.has(item.target)) fail();
-    return { source: item.source, relation: item.relation, target: item.target };
-  });
-  return { entities, relations, clipped: value.clipped === true, relationsClipped: value.relations_clipped === true };
+  let skipped = 0;
+  const kept = new Map<string, MapEntity>();
+  for (const item of value.entities) {
+    if (!item || !text(item.name)) { skipped++; continue; }
+    let firstSeen: number | null = null;
+    if (item.first_seen !== null && item.first_seen !== undefined) { if (num(item.first_seen)) firstSeen = item.first_seen; else { skipped++; continue; } }
+    kept.set(item.name, { name: item.name, type: text(item.type, 80) ? item.type : 'unknown', firstSeen });
+  }
+  const entities = [...kept.values()];
+  const relations: MapRelation[] = [];
+  for (const item of value.relations) {
+    if (!item || typeof item.source !== 'string' || typeof item.target !== 'string') { skipped++; continue; }
+    if (!kept.has(item.source) || !kept.has(item.target)) continue;      // an endpoint left out above (already counted)
+    if (!text(item.relation, 128)) { skipped++; continue; }
+    relations.push({ source: item.source, relation: item.relation, target: item.target });
+  }
+  return { entities, relations, clipped: value.clipped === true, relationsClipped: value.relations_clipped === true, skipped };
 }
 
 export async function loadFacts(axis: TimelineAxis, at: number | null, signal?: AbortSignal): Promise<FactsPage> {
@@ -132,15 +142,17 @@ export async function loadFacts(axis: TimelineAxis, at: number | null, signal?: 
   const value = await read(`/api/kg/facts/as-of?axis=${axis}${at === null ? '' : '&at=' + at}&limit=${FACT_LIMIT}`, signal);
   if (value?.error || value?.axis !== axis || !Array.isArray(value?.facts) || value.facts.length > 1000
     || !value.bounds || typeof value.bounds !== 'object') fail();
-  const facts = value.facts.map((f: any): Fact => {
+  const facts: Fact[] = [];
+  let skipped = 0;
+  for (const f of value.facts) {
     if (!f || !num(f.id) || !text(f.subject, 512) || !text(f.predicate, 256) || !text(f.object, 512)
-      || !num(f.valid_from) || !num(f.ingested_at)) return fail();
-    return { id: f.id, subject: f.subject, predicate: f.predicate, object: f.object,
-      validFrom: f.valid_from, validTo: numOrNull(f.valid_to), ingestedAt: f.ingested_at };
-  });
+      || !num(f.valid_from) || !num(f.ingested_at) || !(f.valid_to === null || f.valid_to === undefined || num(f.valid_to))) { skipped++; continue; }
+    facts.push({ id: f.id, subject: f.subject, predicate: f.predicate, object: f.object,
+      validFrom: f.valid_from, validTo: f.valid_to ?? null, ingestedAt: f.ingested_at });
+  }
   const b = value.bounds;
   return {
-    axis, facts, clipped: value.clipped === true,
+    axis, facts, clipped: value.clipped === true, skipped,
     bounds: { count: num(b.count) ? b.count : 0, firstIngested: numOrNull(b.first_ingested), lastIngested: numOrNull(b.last_ingested),
       firstValid: numOrNull(b.first_valid), lastChange: numOrNull(b.last_change) },
   };
@@ -171,8 +183,14 @@ export async function loadEntity(name: string, signal?: AbortSignal): Promise<En
 async function mutate<T>(run: () => Promise<T>, admin = false): Promise<T> {
   try { return await run(); } catch (error: any) {
     if (error instanceof MemoryGraphError) throw error;
-    if (typeof error?.status === 'number') throw fromHttp(error.status, error.body, admin);
-    throw new MemoryGraphError('unavailable');
+    if (typeof error?.status === 'number') {
+      const known = fromHttp(error.status, error.body, admin);
+      /* A 5xx other than "graph not available" means the server broke while handling the write. */
+      if (known.code === 'unavailable' && error.status !== 503) throw new MemoryGraphError('unknown', known.detail);
+      throw known;
+    }
+    /* No HTTP status: the request left, the reply did not (or was unreadable) — it may have been applied. */
+    throw new MemoryGraphError('unknown');
   }
 }
 

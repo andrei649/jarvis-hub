@@ -128,7 +128,7 @@ export function MemoryGraphExplorer() {
     if (!playing) return;
     const timer = setInterval(() => {
       const { lo: a, hi: b, value } = posRef.current;
-      const next = Math.round(value + (b - a) / PLAY_STEPS);
+      const next = value + Math.max(1, Math.ceil((b - a) / PLAY_STEPS));   // whole seconds, at least one: a short span must still advance
       posRef.current = { lo: a, hi: b, value: next };       // several ticks can land before a render
       if (next >= b) { positionSetter.current(b); setPlaying(false); } else positionSetter.current(next);
     }, PLAY_MS);
@@ -174,7 +174,8 @@ export function MemoryGraphExplorer() {
   const positionsRef = useRef(positions);
   positionsRef.current = positions;
   const reset = useCallback(() => setCam(fit(positionsRef.current.values())), []);
-  const fitKey = `${phase}|${view.mode}|${focusId || ''}`;
+  /* `positions.size > 0` refits when the first nodes of a view arrive late (the timeline's facts load after the mode switch). */
+  const fitKey = `${phase}|${view.mode}|${focusId || ''}|${positions.size > 0}`;
   useLayoutEffect(() => { reset(); }, [fitKey, reset]);
 
   const svgRef = useRef<SVGSVGElement>(null);
@@ -324,7 +325,8 @@ export function MemoryGraphExplorer() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [view]);
   const skillCount = view.nodes.filter(n => n.kind === 'skill').length;
-  const isEmptyLive = phase === 'ready' && view.mode === 'live' && view.nodes.length === 0;
+  /* Skill circles are not memory: an empty graph on an install with skills is still "nothing learned yet". */
+  const isEmptyLive = phase === 'ready' && view.mode === 'live' && !view.nodes.some(n => n.kind === 'memory');
   const noun = axis === 'known' ? 'believed' : 'true';
 
   let timelineText: string;
@@ -334,7 +336,7 @@ export function MemoryGraphExplorer() {
   else if (at === null) timelineText = 'live · now';
   else if (factsFor !== `${axis}:${at}`) timelineText = `Reading what the store ${axis === 'known' ? 'believed' : 'held as true'} at ${fmt(at)}…`;
   else if (!facts || facts.facts.length === 0) timelineText = axis === 'known' ? `Nothing was known by ${fmt(at)}.` : `Nothing was true at ${fmt(at)}.`;
-  else timelineText = `${facts.facts.length} fact${facts.facts.length === 1 ? '' : 's'} ${noun} at ${fmt(at)}${facts.clipped ? ' · newest only, older ones clipped' : ''}`;
+  else timelineText = `${facts.facts.length} fact${facts.facts.length === 1 ? '' : 's'} ${noun} at ${fmt(at)}${facts.clipped ? ' · newest only, older ones clipped' : ''}${facts.skipped ? ` · ${facts.skipped} could not be shown` : ''}`;
 
   const btn: React.CSSProperties = { padding: '4px 8px' };
   return <section aria-label="Memory graph" style={{ border: '1px solid var(--panel-line)', borderRadius: 'var(--radius)', padding: 14, marginBottom: 14 }}>
@@ -431,8 +433,8 @@ export function MemoryGraphExplorer() {
           {menuItems(nodeById.get(menu.id)!).map(([action, text]) => <button key={action} role="menuitem" className="tool-btn" style={{ border: 0, justifyContent: 'flex-start', background: 'transparent' }}
             onClick={() => act(action, nodeById.get(menu.id)!)}>{text}</button>)}
         </div>}
-        {dialog?.kind === 'edit' && <EditEntityDialog name={dialog.name} onClose={() => setDialog(null)} onSaved={name => afterWrite(`Saved ${name}.`)} />}
-        {dialog?.kind === 'delete' && <DeleteEntityDialog name={dialog.name} onClose={() => setDialog(null)}
+        {dialog?.kind === 'edit' && <EditEntityDialog name={dialog.name} onClose={() => setDialog(null)} onRefresh={() => setReloadKey(k => k + 1)} onSaved={name => afterWrite(`Saved ${name}.`)} />}
+        {dialog?.kind === 'delete' && <DeleteEntityDialog name={dialog.name} onClose={() => setDialog(null)} onRefresh={() => setReloadKey(k => k + 1)}
           onDeleted={(name, n) => { setSelectedId(id => (id === 'm:' + name ? null : id)); setFocusId(id => (id === 'm:' + name ? null : id));
             afterWrite(`Deleted ${name} · ${n} timeline fact${n === 1 ? '' : 's'} closed. A later mention can create it again.`); }} />}
       </>}
@@ -453,6 +455,7 @@ export function MemoryGraphExplorer() {
     <div role="status" aria-live="polite" style={{ fontSize: 11, color: 'var(--accent-light)', minHeight: 14, marginTop: 6, overflowWrap: 'anywhere' }}>{note}</div>
     {phase === 'ready' && map?.clipped && !imported && <p style={{ fontSize: 11, margin: '4px 0' }}>Showing the first {500} entities. More are stored.</p>}
     {phase === 'ready' && map?.relationsClipped && !imported && <p style={{ fontSize: 11, margin: '4px 0' }}>Some relations are not drawn: the relation read is capped.</p>}
+    {phase === 'ready' && map && map.skipped > 0 && !imported && <p style={{ fontSize: 11, margin: '4px 0' }}>{map.skipped} stored entr{map.skipped === 1 ? 'y' : 'ies'} could not be shown (names with control characters or over 256 characters).</p>}
     {skillsFailed && !imported && <p style={{ fontSize: 11, margin: '4px 0' }}>Skills could not be read, so they are not on the map.</p>}
 
     {selected && <div role="region" aria-label="Selected node" style={{ fontSize: 12, borderTop: '1px solid var(--panel-line)', paddingTop: 8, marginTop: 6 }}>

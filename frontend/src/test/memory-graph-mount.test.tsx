@@ -14,9 +14,9 @@ vi.mock('../api/memory-graph', async importOriginal => ({
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(listApi.memoryNodes).mockResolvedValue([{ name: 'Alpha', type: 'project' }]);
-  vi.mocked(graph.loadMemoryMap).mockResolvedValue({ entities: [{ name: 'Alpha', type: 'project', firstSeen: 1 }], relations: [], clipped: false, relationsClipped: false });
+  vi.mocked(graph.loadMemoryMap).mockResolvedValue({ entities: [{ name: 'Alpha', type: 'project', firstSeen: 1 }], relations: [], clipped: false, relationsClipped: false, skipped: 0 });
   vi.mocked(graph.loadSkills).mockResolvedValue([]);
-  vi.mocked(graph.loadFacts).mockResolvedValue({ axis: 'known', facts: [], clipped: false, bounds: { count: 0, firstIngested: null, lastIngested: null, firstValid: null, lastChange: null } });
+  vi.mocked(graph.loadFacts).mockResolvedValue({ axis: 'known', facts: [], clipped: false, bounds: { count: 0, firstIngested: null, lastIngested: null, firstValid: null, lastChange: null }, skipped: 0 });
 });
 
 describe('live Memory mode mounts the explorer above the text list', () => {

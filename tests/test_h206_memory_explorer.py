@@ -131,7 +131,7 @@ def test_as_of_route_known_axis_means_believed_at_t(tmp_path, monkeypatch):
     assert known["axis"] == "known" and known["clipped"] is False
     assert known["bounds"]["first_ingested"] == 100 and known["bounds"]["last_ingested"] == 300
 
-    valid = _body(_run(memory_kg.kg_facts_as_of(at=250)))
+    valid = _body(_run(memory_kg.kg_facts_as_of(at=250, axis="valid")))
     assert valid["axis"] == "valid"
     assert [f["object"] for f in valid["facts"]] == ["Cluj"]   # true in the world at 250
 
@@ -301,3 +301,76 @@ def test_neo4j_list_relations_is_bounded_and_parameterised():
     assert g.list_relations(25) == [{"source": "A", "relation": "KNOWS", "target": "B"}]
     assert sent[-1]["parameters"] == {"limit": 25}
     assert "LIMIT $limit" in sent[-1]["statement"]
+
+
+# ── fix round 1 ───────────────────────────────────────────────────────────────
+
+def test_as_of_route_default_is_the_legacy_unbounded_shape(tmp_path, monkeypatch):
+    orch, _, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    for i in range(520):
+        bt.add_fact(f"s{i}", "p", "o", valid_from=10 + i, ingested_at=10 + i)
+    body = _body(_run(memory_kg.kg_facts_as_of(at=10_000)))
+    assert set(body) == {"at", "facts"}                      # no axis / clipped / bounds
+    assert len(body["facts"]) == 520                         # not capped when no limit is asked for
+
+
+def test_delete_does_not_report_success_when_the_graph_delete_failed(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, graph, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    graph.add_entity("Bob", "person")
+    bt.add_fact("Bob", "knows", "Eve", valid_from=100, ingested_at=100)
+    monkeypatch.setattr(graph, "delete_entity", lambda name: False)   # e.g. Neo4j transport failure
+    resp = _run(memory_kg.kg_delete_entity("Bob", _Req()))
+    assert _status(resp) != 200
+    assert graph.get_entity("Bob") is not None
+    assert len(bt.believed_as_of(10**12)) == 1              # timeline untouched while the entity stays
+
+
+def test_neo4j_edit_replaces_the_property_map(tmp_path):
+    g, sent = _neo4j_stub(["Unknown"])
+    g.add_entity("Andrei", "person", {"city": "Cluj"})
+    assert "SET n = {" in sent[-1]["statement"] and "+=" not in sent[-1]["statement"]
+    g, sent = _neo4j_stub(None)
+    g.add_entity("Andrei", "person", {"city": "Cluj"})
+    assert "SET n = {" in sent[-1]["statement"] and "+=" not in sent[-1]["statement"]
+
+
+def test_neo4j_failed_label_lookup_writes_nothing_instead_of_duplicating():
+    g = Neo4jGraph()
+    g._connected = False                                    # the lookup cannot reach Neo4j
+    sent = []
+    real = g._call_neo4j
+
+    def _spy(statements):
+        sent.extend(statements)
+        return real(statements)
+
+    g._call_neo4j = _spy
+    assert g.add_entity("Andrei", "person") is False
+    assert not any(s["statement"].startswith("MERGE") for s in sent)
+
+
+def test_neo4j_unlabelled_existing_node_is_relabelled_not_duplicated():
+    g, sent = _neo4j_stub([])                               # the node exists but carries no label
+    g.add_entity("Andrei", "person")
+    stmt = sent[-1]["statement"]
+    assert stmt.startswith("MATCH (n {name: $name})") and "SET n:`Person`" in stmt
+
+
+def test_seed_does_not_overwrite_an_entity_the_owner_edited():
+    from agents.core.memory.seed_graph import seed_graph
+    graph = InMemoryGraph()
+    graph.add_entity("Bucharest", "capital", {"note": "edited"})   # no "Andrei" -> seed runs again
+    seed_graph(graph)
+    assert graph.get_entity("Bucharest") == {"name": "Bucharest", "type": "capital",
+                                             "properties": {"note": "edited"}}
+    assert graph.get_entity("Andrei") is not None
+
+
+def test_ingestion_never_stores_a_name_with_a_line_break(tmp_path):
+    graph = InMemoryGraph()
+    IncrementalKGUpdater(graph).ingest("Andrei lives in Berlin\nParis is nice.")
+    assert graph.list_entities(50)
+    assert all("\n" not in e["name"] for e in graph.list_entities(50))

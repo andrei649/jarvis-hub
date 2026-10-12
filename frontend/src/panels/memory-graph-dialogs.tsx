@@ -13,13 +13,16 @@ export function describeError(error: any, action: string): string {
     case 'invalid': return `Not accepted: ${detail || 'invalid request'}. Nothing was changed.`;
     case 'auth': return 'Memory access requires your current user credentials. Nothing was changed.';
     case 'admin': return `${action} needs the admin token. Nothing was changed.`;
-    case 'notfound': return 'Not found. It may already be gone.';
+    case 'notfound': return 'Not found: nothing was deleted. It may already be gone. Refresh the map to see what is stored now.';
+    case 'unknown': return `The result is unknown: the reply did not arrive${detail ? ' (' + detail + ')' : ''}, so the change may have been applied. The map is reloading; check it before trying again.`;
     default: return `Memory graph unavailable${detail ? ': ' + detail : ''}. Nothing was changed.`;
   }
 }
 
 const KERNEL_NOTE = 'This goes through the kernel-mediated knowledge-graph route. The action kernel is off by default; '
   + 'when it is on, a halt or a missing capability refuses it and the reason is shown here.';
+const PERSIST_NOTE = 'On the default in-memory graph an edit or a deletion lasts until the hub restarts; with the Neo4j backend it is stored. '
+  + 'Built-in starter entities are only added when missing, so they never overwrite an edit.';
 const TYPE_RULE = 'Type must start with a letter and use only letters, digits and underscores (max 64).';
 
 function Modal({ title, role, children, onClose, busy }: { title: string; role: 'dialog' | 'alertdialog'; children: React.ReactNode; onClose: () => void; busy: boolean }) {
@@ -38,7 +41,7 @@ function Modal({ title, role, children, onClose, busy }: { title: string; role: 
 type Row = { key: string; value: string; original: unknown };
 const isText = (v: unknown) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
 
-export function EditEntityDialog({ name, onClose, onSaved }: { name: string; onClose: () => void; onSaved: (name: string) => void }) {
+export function EditEntityDialog({ name, onClose, onSaved, onRefresh }: { name: string; onClose: () => void; onSaved: (name: string) => void; onRefresh?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [type, setType] = useState('');
@@ -76,7 +79,10 @@ export function EditEntityDialog({ name, onClose, onSaved }: { name: string; onC
     if (Object.keys(properties).length > 50) { setError('At most 50 properties.'); return; }
     setSaving(true); setError('');
     try { await saveEntity(name, type.trim(), properties); onSaved(name); }
-    catch (err) { setError(describeError(err, 'Saving')); setSaving(false); }
+    catch (err: any) {
+      setError(describeError(err, 'Saving')); setSaving(false);
+      if (err?.code === 'unknown') onRefresh?.();
+    }
   };
 
   return <Modal title={`Edit ${name}`} role="dialog" onClose={onClose} busy={saving}>
@@ -99,7 +105,7 @@ export function EditEntityDialog({ name, onClose, onSaved }: { name: string; onC
             <input aria-label="New property value" placeholder="value" value={newValue} maxLength={2000} onChange={event => setNewValue(event.target.value)} style={{ ...inpS, flex: 1, minWidth: 0 }} />
           </div>
         : <button className="tool-btn" onClick={() => setAdding(true)} style={{ marginBottom: 6 }}>Add property</button>}
-      <p style={{ color: 'var(--ink-2)', margin: '6px 0' }}>{KERNEL_NOTE} Saving replaces this entity's type and properties.</p>
+      <p style={{ color: 'var(--ink-2)', margin: '6px 0' }}>{KERNEL_NOTE} Saving replaces this entity's type and properties. {PERSIST_NOTE}</p>
       {error && <div role="alert" style={{ color: 'var(--amber)', margin: '6px 0', overflowWrap: 'anywhere' }}>{error}</div>}
     </>}
     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
@@ -109,26 +115,30 @@ export function EditEntityDialog({ name, onClose, onSaved }: { name: string; onC
   </Modal>;
 }
 
-export function DeleteEntityDialog({ name, onClose, onDeleted }: { name: string; onClose: () => void; onDeleted: (name: string, factsRetracted: number) => void }) {
+export function DeleteEntityDialog({ name, onClose, onDeleted, onRefresh }: { name: string; onClose: () => void; onDeleted: (name: string, factsRetracted: number) => void; onRefresh?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [gone, setGone] = useState(false);
   const confirm = async () => {
+    if (gone) { onRefresh?.(); onClose(); return; }
     setBusy(true); setError('');
     try { const result = await removeEntity(name); onDeleted(name, result.factsRetracted); }
     catch (err: any) {
-      if (err?.code === 'notfound') { onDeleted(name, 0); return; }
+      /* A 404 means nothing was deleted: say that, never report a deletion that did not happen. */
       setError(describeError(err, 'Deleting')); setBusy(false);
+      if (err?.code === 'notfound') setGone(true);
+      else if (err?.code === 'unknown') onRefresh?.();
     }
   };
   return <Modal title={`Delete ${name}?`} role="alertdialog" onClose={onClose} busy={busy}>
     <p style={{ margin: '0 0 6px' }}>This removes the entity and its relations from the knowledge graph.</p>
     <p style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>Its timeline facts are closed from now on; earlier positions of the scrubber still show what was believed then.
       The conversation history is not edited, so a later mention can create it again.</p>
-    <p style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>{KERNEL_NOTE}</p>
+    <p style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>{KERNEL_NOTE} {PERSIST_NOTE}</p>
     {error && <div role="alert" style={{ color: 'var(--amber)', margin: '6px 0', overflowWrap: 'anywhere' }}>{error}</div>}
     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
       <button className="tool-btn" onClick={onClose} disabled={busy}>Cancel</button>
-      <button className="tool-btn danger" onClick={confirm} disabled={busy} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>{busy ? 'Deleting…' : 'Delete memory'}</button>
+      <button className="tool-btn danger" onClick={confirm} disabled={busy} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>{busy ? 'Deleting…' : gone ? 'Refresh map' : 'Delete memory'}</button>
     </div>
   </Modal>;
 }

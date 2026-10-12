@@ -12,7 +12,7 @@ vi.mock('../api/memory-graph', async importOriginal => ({
 }));
 
 const bounds = { count: 2, firstIngested: 100, lastIngested: 300, firstValid: 100, lastChange: 400 };
-const emptyFacts = (axis: api.TimelineAxis = 'known') => ({ axis, facts: [], bounds, clipped: false });
+const emptyFacts = (axis: api.TimelineAxis = 'known') => ({ axis, facts: [], bounds, clipped: false, skipped: 0 });
 const fact = { id: 1, subject: 'andrei', predicate: 'lives_in', object: 'Bucharest', validFrom: 100, validTo: null, ingestedAt: 100 };
 const map = (over: Partial<api.MemoryMapData> = {}): api.MemoryMapData => ({
   entities: [
@@ -20,7 +20,7 @@ const map = (over: Partial<api.MemoryMapData> = {}): api.MemoryMapData => ({
     { name: 'BMW', type: 'car', firstSeen: 300 }, { name: 'Mystery', type: 'unknown', firstSeen: null },
   ],
   relations: [{ source: 'Andrei', relation: 'lives_in', target: 'Cluj' }, { source: 'Andrei', relation: 'drives', target: 'BMW' }],
-  clipped: false, relationsClipped: false, ...over,
+  clipped: false, relationsClipped: false, skipped: 0, ...over,
 });
 const skills: api.SkillInfo[] = [
   { name: 'core', category: '', essential: true, disabled: false },
@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.loadMemoryMap).mockImplementation(async () => map());
   vi.mocked(api.loadSkills).mockResolvedValue(skills);
-  vi.mocked(api.loadFacts).mockImplementation(async (axis, at) => (at === null ? emptyFacts(axis) : { axis, facts: [fact], bounds, clipped: false }));
+  vi.mocked(api.loadFacts).mockImplementation(async (axis, at) => (at === null ? emptyFacts(axis) : { axis, facts: [fact], bounds, clipped: false, skipped: 0 }));
   vi.mocked(api.loadEntity).mockResolvedValue({ name: 'Andrei', type: 'person', properties: { city: 'Cluj', age: 30, nested: { a: 1 } } });
 });
 afterEach(() => { vi.useRealTimers(); });
@@ -196,7 +196,7 @@ describe('timeline scrubber', () => {
   });
 
   it('says so when nothing was known at that moment', async () => {
-    vi.mocked(api.loadFacts).mockImplementation(async (axis, at) => (at === null ? emptyFacts(axis) : { axis, facts: [], bounds, clipped: false }));
+    vi.mocked(api.loadFacts).mockImplementation(async (axis, at) => (at === null ? emptyFacts(axis) : { axis, facts: [], bounds, clipped: false, skipped: 0 }));
     await ready();
     await waitFor(() => expect(slider().max).toBe('400'));
     fireEvent.change(slider(), { target: { value: '110' } });
@@ -214,7 +214,7 @@ describe('timeline scrubber', () => {
   });
 
   it('is disabled with an explanation when the store holds no facts', async () => {
-    vi.mocked(api.loadFacts).mockResolvedValue({ axis: 'known', facts: [], clipped: false,
+    vi.mocked(api.loadFacts).mockResolvedValue({ axis: 'known', facts: [], clipped: false, skipped: 0,
       bounds: { count: 0, firstIngested: null, lastIngested: null, firstValid: null, lastChange: null } });
     await ready();
     await waitFor(() => expect(slider().disabled).toBe(true));
@@ -510,5 +510,100 @@ describe('share / import a map code', () => {
     await screen.findByText('imported map');
     expect(screen.queryByText('Nothing learned yet')).toBeNull();
     expect(screen.getByText(/imported map has no nodes/i)).toBeTruthy();
+  });
+});
+
+
+describe('fix round 1: honest states', () => {
+  const slider = () => screen.getByRole('slider', { name: 'Timeline scrubber' }) as HTMLInputElement;
+
+  it('shows "Nothing learned yet" on an empty graph even though skills are installed', async () => {
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities: [], relations: [] }));
+    const { container } = render(<MemoryGraphExplorer />);
+    await screen.findByText('Nothing learned yet');
+    expect(container.querySelectorAll('.kg-node.kg-skill')).toHaveLength(2);     // the skills are still drawn
+  });
+
+  it('says how many stored entries could not be shown', async () => {
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ skipped: 2 }));
+    await ready();
+    expect(screen.getByText(/2 stored entries could not be shown/)).toBeTruthy();
+  });
+
+  it('plays a timeline shorter than 40 seconds to its end instead of sticking on Pause', async () => {
+    const short = { count: 2, firstIngested: 1000, lastIngested: 1010, firstValid: 1000, lastChange: 1010 };
+    vi.mocked(api.loadFacts).mockImplementation(async (axis, at) => ({ axis, facts: at === null ? [] : [fact], bounds: short, clipped: false, skipped: 0 }));
+    await ready();
+    await waitFor(() => expect(slider().max).toBe('1010'));
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    fireEvent.click(screen.getByRole('button', { name: 'Play timeline' }));
+    act(() => { vi.advanceTimersByTime(350); });
+    expect(Number(slider().value)).toBeGreaterThan(1000);                         // it moved
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(slider().value).toBe('1010');
+    expect(screen.getByRole('button', { name: 'Play timeline' })).toBeTruthy();   // and it ended
+  });
+
+  it('refits the camera when the timeline facts arrive after the mode switch', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ ...fact, id: i + 1, subject: 'S' + i, object: 'O' + i }));
+    vi.mocked(api.loadFacts).mockImplementation(async (axis, at) => ({ axis, facts: at === null ? [] : many, bounds, clipped: false, skipped: 0 }));
+    const { container } = await ready();
+    await waitFor(() => expect(slider().max).toBe('400'));
+    fireEvent.change(slider(), { target: { value: '250' } });
+    await waitFor(() => expect(container.querySelectorAll('.kg-node').length).toBe(120));
+    const [, , w] = box(container);
+    expect(w).toBeGreaterThan(640);                                              // zoomed out to hold the outer rings
+  });
+});
+
+describe('fix round 1: a delete that did not happen is never reported as done', () => {
+  const askDelete = async (name = 'BMW') => {
+    fireEvent.click(within(openMenu(name)).getByRole('menuitem', { name: 'Delete…' }));
+    return screen.findByRole('alertdialog');
+  };
+
+  it('shows a 404 in the dialog, keeps the node, and offers a refresh instead of "Deleted"', async () => {
+    await ready();
+    vi.mocked(api.removeEntity).mockRejectedValue({ code: 'notfound' });
+    const dialog = await askDelete();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete memory' }));
+    hasText(await within(dialog).findByRole('alert'), /nothing was deleted/i);
+    expect(screen.queryByText(/Deleted BMW/)).toBeNull();
+    expect(document.body.querySelectorAll('.kg-node:not(.kg-skill)')).toHaveLength(4);
+    const loads = vi.mocked(api.loadMemoryMap).mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Refresh map' }));
+    await waitFor(() => expect(vi.mocked(api.loadMemoryMap).mock.calls.length).toBeGreaterThan(loads));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(api.removeEntity).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim "nothing was changed" after a lost reply: it says the result is unknown and reloads', async () => {
+    await ready();
+    vi.mocked(api.removeEntity).mockRejectedValue({ code: 'unknown' });
+    const dialog = await askDelete();
+    const loads = vi.mocked(api.loadMemoryMap).mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete memory' }));
+    const alert = await within(dialog).findByRole('alert');
+    hasText(alert, /result is unknown/);
+    expect(alert.textContent).not.toMatch(/Nothing was changed/);
+    await waitFor(() => expect(vi.mocked(api.loadMemoryMap).mock.calls.length).toBeGreaterThan(loads));
+  });
+
+  it('says the same after a save whose reply was lost', async () => {
+    await ready();
+    vi.mocked(api.saveEntity).mockRejectedValue({ code: 'unknown' });
+    fireEvent.click(within(openMenu('Andrei')).getByRole('menuitem', { name: 'Edit…' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByLabelText('Entity type');
+    const loads = vi.mocked(api.loadMemoryMap).mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    hasText(await within(dialog).findByRole('alert'), /result is unknown/);
+    await waitFor(() => expect(vi.mocked(api.loadMemoryMap).mock.calls.length).toBeGreaterThan(loads));
+  });
+
+  it('tells the owner what the default in-memory graph forgets', async () => {
+    await ready();
+    const dialog = await askDelete();
+    hasText(dialog, /lasts until the hub restarts/);
   });
 });

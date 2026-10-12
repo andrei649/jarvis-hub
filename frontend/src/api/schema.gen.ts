@@ -6905,10 +6905,12 @@ export interface paths {
          * Kg Facts As Of
          * @description Bi-temporal recall at time `at` (default now).
          *
-         *     ``axis=valid`` (default): facts true in the world at `at`. ``axis=known`` (H206):
-         *     what the store BELIEVED at `at` — ingested by then and not yet superseded or
-         *     retracted by then. Newest `limit` facts are kept (``clipped`` says so); ``bounds``
-         *     is the timeline's extent for the explorer's scrubber.
+         *     Without `axis` and `limit` this is the original route, unchanged: facts true in
+         *     the world at `at`, unsorted and unbounded (the mobile Memory graph reads it so).
+         *     H206 explorer options: ``axis=valid`` is the same valid-time answer, ``axis=known``
+         *     is what the store BELIEVED at `at` (ingested by then and not yet superseded or
+         *     retracted by then). ``limit`` keeps the newest facts (``clipped`` says so) and a
+         *     response to either option carries ``bounds``, the timeline's extent for the scrubber.
          */
         get: operations["kg_facts_as_of_api_kg_facts_as_of_get"];
         put?: never;
@@ -24951,8 +24953,8 @@ export interface operations {
                 at?: number | null;
                 subject?: string;
                 predicate?: string;
-                axis?: string;
-                limit?: number;
+                axis?: string | null;
+                limit?: number | null;
             };
             header?: never;
             path?: never;

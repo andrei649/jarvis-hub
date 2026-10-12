@@ -18,19 +18,49 @@ describe('memory graph reads', () => {
     expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/kg/map?limit=500');
     expect(map).toEqual({
       entities: [{ name: 'A', type: 'person', firstSeen: 120 }, { name: 'B', type: 'city', firstSeen: null }],
-      relations: [{ source: 'A', relation: 'lives_in', target: 'B' }], clipped: false, relationsClipped: true,
+      relations: [{ source: 'A', relation: 'lives_in', target: 'B' }], clipped: false, relationsClipped: true, skipped: 0,
     });
     expect(JSON.stringify(map)).not.toContain('PRIVATE');
   });
 
   it.each([
-    { entities: [{}], relations: [], clipped: false },
-    { entities: [{ name: 'A', type: 'x' }], relations: [{ source: 'A', relation: 'r', target: 'GHOST' }], clipped: false },
     { entities: 'no', relations: [] },
     { error: 'graph not available', entities: [], relations: [] },
   ])('rejects a malformed map %#', async value => {
     vi.mocked(fetch).mockResolvedValue(json(value));
     await expect(loadMemoryMap()).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  it('leaves one odd entry out and counts it, instead of failing the whole map', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({
+      entities: [
+        { name: 'Andrei', type: 'person', first_seen: 1 },
+        { name: 'Berlin\nParis', type: 'city', first_seen: 2 },      // a line break the ingester can produce
+        { name: 'x'.repeat(300), type: 'city' },
+        { name: 'Odd', type: 'T'.repeat(90) },                          // over-long type: drawn as unknown
+        {},
+      ],
+      relations: [
+        { source: 'Andrei', relation: 'knows', target: 'Odd' },
+        { source: 'Andrei', relation: 'knows', target: 'Berlin\nParis' },   // endpoint left out
+        { source: 'Andrei', relation: 'knows', target: 'GHOST' },
+      ],
+      clipped: false,
+    }));
+    const map = await loadMemoryMap();
+    expect(map.entities.map(e => [e.name, e.type])).toEqual([['Andrei', 'person'], ['Odd', 'unknown']]);
+    expect(map.relations).toEqual([{ source: 'Andrei', relation: 'knows', target: 'Odd' }]);
+    expect(map.skipped).toBe(3);
+  });
+
+  it('leaves a fact with a control character out of the page and counts it', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ axis: 'known', clipped: false, bounds, facts: [
+      { id: 1, subject: 'a', predicate: 'p', object: 'b', valid_from: 1, valid_to: null, ingested_at: 1 },
+      { id: 2, subject: 'a\nb', predicate: 'p', object: 'b', valid_from: 1, valid_to: null, ingested_at: 1 },
+    ] }));
+    const page = await loadFacts('known', 5);
+    expect(page.facts.map(f => f.id)).toEqual([1]);
+    expect(page.skipped).toBe(1);
   });
 
   it('requests the facts for an axis and instant and validates the page', async () => {
@@ -49,7 +79,7 @@ describe('memory graph reads', () => {
     await loadFacts('valid', null);
     expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/kg/facts/as-of?axis=valid&limit=500');
     await expect(loadFacts('sideways' as any, null)).rejects.toMatchObject({ code: 'unavailable' });
-    vi.mocked(fetch).mockResolvedValue(json({ axis: 'known', clipped: false, bounds, facts: [{ subject: 1 }] }));
+    vi.mocked(fetch).mockResolvedValue(json({ axis: 'known', clipped: false, bounds, facts: 'no' }));
     await expect(loadFacts('known', 1)).rejects.toMatchObject({ code: 'unavailable' });
   });
 
@@ -110,6 +140,16 @@ describe('memory graph writes use only the mediated routes', () => {
     const [path, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(path).toBe('/api/kg/entities/' + encodeURIComponent('A B ?'));
     expect(init.method).toBe('DELETE');
+  });
+
+  it('does not call a lost reply or a 500 "nothing changed": the result is unknown', async () => {
+    vi.mocked(fetch).mockRejectedValue(new TypeError('network'));
+    await expect(removeEntity('A')).rejects.toMatchObject({ code: 'unknown' });
+    await expect(saveEntity('A', 'person', {})).rejects.toMatchObject({ code: 'unknown' });
+    vi.mocked(fetch).mockResolvedValue(json({ error: 'boom' }, 500));
+    await expect(removeEntity('A')).rejects.toMatchObject({ code: 'unknown' });
+    vi.mocked(fetch).mockResolvedValue(json({ error: 'graph not available' }, 503));
+    await expect(removeEntity('A')).rejects.toMatchObject({ code: 'unavailable' });
   });
 
   it('never sends a name the path route cannot carry (slash, dot segments)', async () => {
