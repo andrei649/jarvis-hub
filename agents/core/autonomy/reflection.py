@@ -161,6 +161,10 @@ class DailyReflector:
         turns = await self._memory.get_history(session_id, last_n=60)
         if not turns:
             return ""
+        # H586: an image reading (a committed image turn) is untrusted input; a session
+        # holding one is never promoted to durable memory, like a foreign import.
+        if any(t.get("media") for t in turns):
+            return ""
         lines = [
             f"{t.get('role', '?')}: {t.get('content', '')[:300]}"
             for t in turns

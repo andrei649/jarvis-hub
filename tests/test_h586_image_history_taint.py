@@ -205,3 +205,67 @@ async def test_a_one_shot_completion_over_image_history_runs_tainted_and_leaks_n
         assert current_action_origin() == "generated"
     finally:
         reset_action_origin(token)
+
+
+@pytest.mark.asyncio
+async def test_undo_keeps_the_image_provenance_so_no_guard_is_dropped(monkeypatch):
+    """/undo copies the kept turns into a new shared session; the copy must still carry
+    media, or one undo would launder the image reading into trusted history."""
+    import contextlib
+
+    from agents.core import orchestrator as orch_module
+    from agents.core.security import taint
+
+    manager, sid = await _memory_with_image_turn("hud")
+    await manager.add_turn(sid, "user", "thanks", channel="web")
+    await manager.add_turn(sid, "assistant", "welcome", agent_id="jarvis")
+    manager.embedded.clear()
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.memory = manager
+    orch._session_id_default = sid
+
+    @contextlib.asynccontextmanager
+    async def lease(key):
+        yield True
+
+    async def new_session(session_id):
+        return await manager.new_session(session_id)
+
+    orch.turn_lease = lease
+    orch.new_session = new_session
+    monkeypatch.setattr(orch_module, "current_principal", lambda: SimpleNamespace(admin=True))
+    shared = orch_module._session_is_shared.set(True)
+    try:
+        await orch._direct_session_command("/undo", "web", None)
+    finally:
+        orch_module._session_is_shared.reset(shared)
+    new = orch._session_id_default
+    assert new != sid
+    turns = await manager.get_history(new)
+    assert [t.get("media") for t in turns] == [IMAGE, IMAGE]
+    assert orch._session_has_media(new) is True
+    token = bind_action_origin("generated")
+    try:
+        await orch._guard_media_history(new)
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+    finally:
+        reset_action_origin(token)
+    copied = [metadata for content, metadata in manager.embedded if "delete the backups" in content]
+    assert copied and all(taint.is_tainted(metadata) for metadata in copied)
+
+
+@pytest.mark.asyncio
+async def test_nightly_reflection_never_consolidates_an_image_reading():
+    from agents.core.autonomy.reflection import DailyReflector
+
+    manager, sid = await _memory_with_image_turn("hud")
+    manager.conversation.current_session_id = sid
+    reflector = DailyReflector.__new__(DailyReflector)
+    reflector._memory = manager
+    assert await reflector._gather_context() == ""
+    clean, clean_sid = await _memory_with_image_turn("plain")
+    clean.conversation.sessions[clean_sid] = [t for t in clean.conversation.sessions[clean_sid] if not t.media]
+    await clean.add_turn(clean_sid, "user", "plan my week", channel="web")
+    clean.conversation.current_session_id = clean_sid
+    reflector._memory = clean
+    assert "plan my week" in await reflector._gather_context()

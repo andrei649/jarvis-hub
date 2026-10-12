@@ -1959,7 +1959,8 @@ class Orchestrator:
                 sid = await self.new_session(f"session_{uuid4().hex}")
                 for turn in turns:
                     await self.memory.add_turn(sid, turn["role"], turn["content"],
-                                               agent_id=turn.get("agent_id"), tools=turn.get("tools"))
+                                               agent_id=turn.get("agent_id"), tools=turn.get("tools"),
+                                               media=turn.get("media"))   # H586: keep image provenance
                 if base == self._session_id_default:
                     self._session_id_default = sid
                 if command == "/undo":
