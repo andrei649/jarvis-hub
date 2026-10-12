@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  loadFacts, loadMemoryMap, loadSkills, removeEntity, saveEntity, switchSkill,
+  loadEntity, loadFacts, loadMemoryMap, loadSkills, removeEntity, saveEntity, switchSkill,
 } from '../api/memory-graph';
 
 const json = (value: unknown, status = 200) =>
@@ -136,7 +136,7 @@ describe('memory graph writes use only the mediated routes', () => {
 
   it('deletes one encoded path segment and returns the retracted-fact count', async () => {
     vi.mocked(fetch).mockResolvedValue(json({ ok: true, deleted: 'A B ?', facts_retracted: 3 }));
-    expect(await removeEntity('A B ?')).toEqual({ factsRetracted: 3 });
+    expect(await removeEntity('A B ?')).toEqual({ factsRetracted: 3, graphDeleted: true });
     const [path, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(path).toBe('/api/kg/entities/' + encodeURIComponent('A B ?'));
     expect(init.method).toBe('DELETE');
@@ -154,7 +154,7 @@ describe('memory graph writes use only the mediated routes', () => {
 
   it('never sends a name the path route cannot carry (slash, dot segments)', async () => {
     for (const name of ['a/b', '..', 'x\\y']) {
-      await expect(removeEntity(name)).rejects.toMatchObject({ code: 'invalid' });
+      await expect(removeEntity(name)).rejects.toMatchObject({ code: 'unaddressable' });
     }
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -179,5 +179,38 @@ describe('memory graph writes use only the mediated routes', () => {
     await expect(switchSkill('web-search', false)).rejects.toMatchObject({ code: 'admin' });
     vi.mocked(fetch).mockResolvedValue(json({ error: 'core is essential and cannot be switched off', reason: 'essential' }, 409));
     await expect(switchSkill('core', false)).rejects.toMatchObject({ code: 'invalid', detail: expect.stringContaining('essential') });
+  });
+});
+
+
+describe('fix round 2: times a calendar cannot hold', () => {
+  it('leaves out an entity or fact whose time Date cannot show, and counts it', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(json({
+      entities: [{ name: 'Ok', type: 'x', first_seen: 100 }, { name: 'Huge', type: 'x', first_seen: 1e13 }], relations: [], clipped: false,
+    }));
+    const map = await loadMemoryMap();
+    expect(map.entities.map(e => e.name)).toEqual(['Ok']);
+    expect(map.skipped).toBe(1);
+    const f = (id: number, over = {}) => ({ id, subject: 'A', predicate: 'p', object: 'B', valid_from: 100, valid_to: null, ingested_at: 100, ...over });
+    vi.mocked(fetch).mockResolvedValueOnce(json({
+      axis: 'known', clipped: false, facts: [f(1), f(2, { ingested_at: 1e13 }), f(3, { valid_from: -1e13 }), f(4, { valid_to: 1e13 })],
+      bounds: { count: 4, first_ingested: 100, last_ingested: 1e13, first_valid: 100, last_change: 1e13 },
+    }));
+    const page = await loadFacts('known', null);
+    expect(page.facts.map(x => x.id)).toEqual([1]);
+    expect(page.skipped).toBe(3);
+    expect(page.bounds).toMatchObject({ firstIngested: 100, lastIngested: null, lastChange: null });
+  });
+
+  it('reports whether the delete reached the live graph', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(json({ ok: true, deleted: 'A', graph_deleted: false, facts_retracted: 2 }));
+    expect(await removeEntity('A')).toEqual({ factsRetracted: 2, graphDeleted: false });
+    vi.mocked(fetch).mockResolvedValueOnce(json({ ok: true, deleted: 'A', facts_retracted: 0 }));
+    expect(await removeEntity('A')).toEqual({ factsRetracted: 0, graphDeleted: true });
+  });
+
+  it('says a name with a slash cannot be addressed, with its own code', async () => {
+    await expect(removeEntity('a/b')).rejects.toMatchObject({ code: 'unaddressable' });
+    await expect(loadEntity('a/b')).rejects.toMatchObject({ code: 'unaddressable' });
   });
 });

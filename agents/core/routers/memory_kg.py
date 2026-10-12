@@ -25,6 +25,7 @@ domain and are moved here verbatim (they now resolve the orchestrator through
 import asyncio
 import contextlib
 import logging
+import math
 import time
 from typing import Optional
 
@@ -636,6 +637,7 @@ async def kg_entity(name: str):
 
 
 _KG_MAP_MAX = 1000
+_KG_TIME_MAX = 8.64e12     # the largest |epoch seconds| a JavaScript Date can show
 
 
 @router.get("/api/kg/map", dependencies=[Depends(user_guard)])
@@ -695,7 +697,10 @@ async def kg_upsert_entity(req: Request):
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     existed = await _kg_call(g.get_entity, name) is not None
     try:
-        ok = await _kg_call(g.add_entity, name, entity_type, body.get("properties") or {})
+        # An edit REPLACES the property map (a removed property must go); backends that
+        # predate replace_entity fall back to their own add_entity.
+        write = getattr(g, "replace_entity", None) or g.add_entity
+        ok = await _kg_call(write, name, entity_type, body.get("properties") or {})
     finally:
         if existed:
             # An edit replaces the entity's properties: a fact edited out must not
@@ -727,17 +732,24 @@ async def kg_delete_entity(name: str, req: Request = None):
     finally:
         if deleted is not False:
             _recall_forget(get_orch())
+    bt = getattr(get_orch(), "bitemporal", None)
     if not deleted:
-        # Nothing was removed (no such entity, or the graph backend failed). Say so:
-        # the timeline is only touched after the graph delete actually happened, so a
-        # failed delete never reads as success and never half-applies.
-        return JSONResponse({"error": "not found"}, status_code=404)
+        # Nothing left the graph. Either the graph backend failed on an entity that is
+        # still there (404, and the timeline is NOT touched: never half-apply), or the
+        # entity is not in the graph at all. The second case is the default install after
+        # a restart: the in-memory graph is empty while the persisted timeline still
+        # names the entity. Closing those facts is then the whole delete.
+        if bt is None or await _kg_call(g.get_entity, name) is not None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        retracted = await _kg_call(bt.retract_entity, name)
+        if not retracted:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return nocache_json({"ok": True, "deleted": name, "graph_deleted": False, "facts_retracted": retracted})
     # H206: the timeline must stop asserting what the owner just deleted. The facts
     # naming the entity are closed (history before now is kept) in this same, already
     # authorised handler. Per-turn ingestion may still re-create the entity later.
-    bt = getattr(get_orch(), "bitemporal", None)
     retracted = await _kg_call(bt.retract_entity, name) if bt is not None else 0
-    return nocache_json({"ok": True, "deleted": name, "facts_retracted": retracted})
+    return nocache_json({"ok": True, "deleted": name, "graph_deleted": True, "facts_retracted": retracted})
 
 
 @router.post("/api/kg/relations", dependencies=[Depends(user_guard)])
@@ -818,6 +830,14 @@ async def kg_add_fact(req: Request):
     for k in ("subject", "predicate", "object"):
         if not (body or {}).get(k):
             return JSONResponse({"error": "subject, predicate, object required"}, status_code=400)
+    # H206: a timestamp the explorer cannot print (and no calendar can hold) would be stored
+    # for good and break every view that reads the timeline. Seconds since the epoch, finite,
+    # within what JavaScript's Date can show (+-8.64e12 s).
+    for k in ("valid_from", "ingested_at"):
+        v = body.get(k)
+        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))
+                              or not math.isfinite(v) or abs(v) > _KG_TIME_MAX):
+            return JSONResponse({"error": f"{k} must be a number of seconds within +-8.64e12"}, status_code=400)
     payload = {"op": "add_fact", "subject": body["subject"], "predicate": body["predicate"]}
     denied = _kg_contract_denial(payload)
     if denied is not None:

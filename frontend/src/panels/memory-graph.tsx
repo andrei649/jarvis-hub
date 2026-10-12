@@ -9,7 +9,7 @@
    "Could not load memory graph". Demo mode keeps its own sample star-map elsewhere. */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  loadFacts, loadMemoryMap, loadSkills, switchSkill,
+  MAX_TIME, isAddressable, loadFacts, loadMemoryMap, loadSkills, switchSkill,
   type FactsPage, type MemoryMapData, type SkillInfo, type TimelineAxis, type TimelineBounds,
 } from '../api/memory-graph';
 import { MAP_CODE_LIMITS, decodeMapCode, encodeMapCode, type MapContent } from '../api/memory-map-code';
@@ -25,7 +25,11 @@ const PLAY_STEPS = 40;
 const PLAY_MS = 350;
 const DEBOUNCE_MS = 120;
 
-const fmt = (seconds: number) => new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+/* Total: a time the calendar cannot hold must never throw during render. */
+const fmt = (seconds: number) => {
+  if (!Number.isFinite(seconds) || Math.abs(seconds) > MAX_TIME) return 'unknown time';
+  return new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+};
 const shorten = (text: string, max = 18) => (Array.from(text).length > max ? Array.from(text).slice(0, max - 1).join('') + '…' : text);
 
 type MenuState = { id: string; x: number; y: number };
@@ -250,14 +254,17 @@ export function MemoryGraphExplorer() {
   const [shareMsg, setShareMsg] = useState('');
   const [shareError, setShareError] = useState('');
   const dirty = useRef(false);
-  const ownCode = useMemo(() => {
-    if (view.nodes.length === 0) return '';
-    try { return encodeMapCode(toContent(view.nodes, view.edges)); } catch { return ''; }
+  /* `error` says why there is no code (a map over the code's limits); never swallowed into an empty string. */
+  const own = useMemo((): { code: string; error: string } => {
+    if (view.nodes.length === 0) return { code: '', error: '' };
+    try { return { code: encodeMapCode(toContent(view.nodes, view.edges)), error: '' }; }
+    catch (error: any) { return { code: '', error: String(error?.message || 'This map cannot be turned into a map code.') + ' Nothing was copied.' }; }
   }, [view]);
-  useEffect(() => { if (shareOpen && !dirty.current) setCodeText(ownCode); }, [shareOpen, ownCode]);
+  const ownCode = own.code;
+  useEffect(() => { if (shareOpen && !dirty.current) { setCodeText(own.code); if (own.error) { setShareMsg(''); setShareError(own.error); } } }, [shareOpen, own]);
   const copyCode = async () => {
     const code = codeText || ownCode;
-    if (!code) { setShareError('There is nothing on the map to copy.'); return; }
+    if (!code) { setShareMsg(''); setShareError(own.error || 'There is nothing on the map to copy.'); return; }
     try { await navigator.clipboard.writeText(code); setShareMsg('Map code copied.'); setShareError(''); }
     catch { setShareMsg(''); setShareError('Copying is not available here. Select the code and copy it by hand.'); }
   };
@@ -295,7 +302,9 @@ export function MemoryGraphExplorer() {
     else if (action === 'delete') setDialog({ kind: 'delete', name: node.label });
     else if (action === 'disable') void runSkill(node, false);
     else if (action === 'enable') void runSkill(node, true);
-    else if (action === 'copy') { setShareOpen(true); setCodeText(ownCode); dirty.current = false; void (async () => {
+    else if (action === 'copy') { setShareOpen(true); setCodeText(ownCode); dirty.current = false;
+      if (!ownCode) { setShareMsg(''); setShareError(own.error || 'There is nothing on the map to copy.'); return; }
+      void (async () => {
       try { await navigator.clipboard.writeText(ownCode); setShareMsg('Map code copied.'); setShareError(''); }
       catch { setShareError('Copying is not available here. Select the code and copy it by hand.'); } })(); }
   };
@@ -303,7 +312,11 @@ export function MemoryGraphExplorer() {
     const items: [string, string][] = [];
     if (node.kind === 'memory') {
       items.push(['explore', 'Explore neighbours']);
-      if (canWrite) items.push(['edit', 'Edit…'], ['delete', 'Delete…']);
+      /* Delete also works on a timeline node: after a restart the persisted timeline can name entities the in-memory graph no longer holds. */
+      if (isAddressable(node.label)) {
+        if (canWrite) items.push(['edit', 'Edit…']);
+        if (canWrite || view.mode === 'timeline') items.push(['delete', 'Delete…']);
+      }
     } else if (canWrite) {
       if (node.state === 'disabled') items.push(['enable', 'Enable skill']);
       else if (!node.essential) items.push(['disable', 'Disable skill']);
@@ -311,6 +324,9 @@ export function MemoryGraphExplorer() {
     items.push(['copy', 'Copy map code']);
     return items;
   };
+  const deletedNote = (name: string, n: number, graphDeleted: boolean) => graphDeleted
+    ? `Deleted ${name} · ${n} timeline fact${n === 1 ? '' : 's'} closed. A later mention can create it again.`
+    : `Closed ${n} timeline fact${n === 1 ? '' : 's'} of ${name}. It was not in the live graph (the default graph forgets at restart); facts before now stay readable on the scrubber.`;
   const afterWrite = (message: string) => { setDialog(null); setNote(message); setReloadKey(k => k + 1); };
 
   /* ── render ───────────────────────────────────────────────────────────── */
@@ -435,8 +451,8 @@ export function MemoryGraphExplorer() {
         </div>}
         {dialog?.kind === 'edit' && <EditEntityDialog name={dialog.name} onClose={() => setDialog(null)} onRefresh={() => setReloadKey(k => k + 1)} onSaved={name => afterWrite(`Saved ${name}.`)} />}
         {dialog?.kind === 'delete' && <DeleteEntityDialog name={dialog.name} onClose={() => setDialog(null)} onRefresh={() => setReloadKey(k => k + 1)}
-          onDeleted={(name, n) => { setSelectedId(id => (id === 'm:' + name ? null : id)); setFocusId(id => (id === 'm:' + name ? null : id));
-            afterWrite(`Deleted ${name} · ${n} timeline fact${n === 1 ? '' : 's'} closed. A later mention can create it again.`); }} />}
+          onDeleted={(name, n, graphDeleted) => { setSelectedId(id => (id === 'm:' + name ? null : id)); setFocusId(id => (id === 'm:' + name ? null : id));
+            afterWrite(deletedNote(name, n, graphDeleted)); }} />}
       </>}
     </div>
 
@@ -450,6 +466,8 @@ export function MemoryGraphExplorer() {
         onChange={event => { setPlaying(false); setPosition(Number(event.target.value)); }} />
       <span className="asof" style={{ fontSize: 11, whiteSpace: 'normal' }}>{timelineText}</span>
       {at !== null && !imported && <button className="tool-btn" style={btn} onClick={() => { setPlaying(false); setAt(null); }}>Back to now</button>}
+      {at !== null && !imported && <span style={{ flexBasis: '100%', fontSize: 11, color: 'var(--ink-2)' }}>
+        The past view draws ingested facts only. Entities and relations written directly (starter entities, edits in this editor) have no fact, so they are not on the scrubber.</span>}
     </div>}
 
     <div role="status" aria-live="polite" style={{ fontSize: 11, color: 'var(--accent-light)', minHeight: 14, marginTop: 6, overflowWrap: 'anywhere' }}>{note}</div>
@@ -466,6 +484,8 @@ export function MemoryGraphExplorer() {
         <button className="tool-btn" style={{ ...btn, marginLeft: 'auto' }} aria-label={`Actions for ${selected.label}`} aria-haspopup="menu"
           onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); const q = relativeTo(rect.left, rect.top); openMenu(selected.id, q.x, q.y); }}>⋯</button>
       </div>
+      {selected.kind === 'memory' && view.mode !== 'imported' && !isAddressable(selected.label) && <p style={{ margin: '6px 0 0', color: 'var(--ink-2)' }}>
+        This name contains / or \\, so it cannot be edited or deleted here: the memory path route cannot carry it (MEM-098).</p>}
       {(() => {
         const rows = view.edges.filter(e => e.from === selected.id || e.to === selected.id).slice(0, 12);
         return rows.length > 0 && <ul aria-label="Relations of the selected node" style={{ margin: '6px 0 0', paddingLeft: 18, overflowWrap: 'anywhere' }}>

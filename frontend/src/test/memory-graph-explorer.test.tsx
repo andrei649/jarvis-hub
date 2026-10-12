@@ -371,7 +371,7 @@ describe('delete memory', () => {
   });
 
   it('removes the node and its edges only after the server says 200, then refreshes the timeline', async () => {
-    vi.mocked(api.removeEntity).mockResolvedValue({ factsRetracted: 2 });
+    vi.mocked(api.removeEntity).mockResolvedValue({ factsRetracted: 2, graphDeleted: true });
     await waitFor(() => expect(api.loadFacts).toHaveBeenCalled());
     const before = vi.mocked(api.loadFacts).mock.calls.length;
     const dialog = await askDelete();
@@ -395,13 +395,12 @@ describe('delete memory', () => {
     expect(api.loadMemoryMap).toHaveBeenCalledTimes(1);
   });
 
-  it('does not offer edit or delete while looking at a past moment', async () => {
+  it('does not offer Edit while looking at a past moment (Delete is covered in fix round 2)', async () => {
     const slider = await screen.findByRole('slider', { name: 'Timeline scrubber' });
     await waitFor(() => expect((slider as HTMLInputElement).max).toBe('400'));
     fireEvent.change(slider, { target: { value: '250' } });
     await waitFor(() => expect(screen.getAllByRole('button', { name: /^andrei,/ })).toHaveLength(1));
     const items = within(openMenu('andrei')).getAllByRole('menuitem').map(i => i.textContent);
-    expect(items).not.toContain('Delete…');
     expect(items).not.toContain('Edit…');
   });
 });
@@ -605,5 +604,74 @@ describe('fix round 1: a delete that did not happen is never reported as done', 
     await ready();
     const dialog = await askDelete();
     hasText(dialog, /lasts until the hub restarts/);
+  });
+});
+
+
+describe('fix round 2: honest limits', () => {
+  const slider = () => screen.getByRole('slider', { name: 'Timeline scrubber' }) as HTMLInputElement;
+  const writeText = vi.fn();
+  beforeEach(() => { writeText.mockReset().mockResolvedValue(undefined); Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true }); });
+
+  it('does not crash on a time Date cannot show', async () => {
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities: [{ name: 'Far', type: 'x', firstSeen: 1e13 }], relations: [] }));
+    await ready();
+    fireEvent.click(node('Far'));
+    hasText(screen.getByRole('region', { name: 'Selected node' }), /first seen unknown time/);
+  });
+
+  it('refuses to report "copied" for a map too large for a map code, and says why', async () => {
+    const entities = Array.from({ length: 600 }, (_, i) => ({ name: 'E' + i, type: 'thing', firstSeen: i }));
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities, relations: [] }));
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Share / import map' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Too many nodes for a map code/);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy map code' }));
+    expect(writeText).not.toHaveBeenCalled();
+    expect(screen.queryByText('Map code copied.')).toBeNull();
+    // the context-menu action takes the same path
+    fireEvent.contextMenu(node('E1'));
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Copy map code' }));
+    expect(writeText).not.toHaveBeenCalled();
+    expect(screen.queryByText('Map code copied.')).toBeNull();
+    hasText(screen.getByRole('alert'), /Too many nodes/);
+  });
+
+  it('hides Edit and Delete for a name the path route cannot carry, and says why', async () => {
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities: [{ name: 'AC/DC', type: 'band', firstSeen: 1 }], relations: [] }));
+    await ready();
+    const menu = openMenu('AC/DC');
+    expect(within(menu).queryByRole('menuitem', { name: 'Edit…' })).toBeNull();
+    expect(within(menu).queryByRole('menuitem', { name: 'Delete…' })).toBeNull();
+    hasText(screen.getByRole('region', { name: 'Selected node' }), /cannot be edited or deleted here/);
+  });
+
+  it('says on the timeline that only ingested facts are on it', async () => {
+    await ready();
+    await waitFor(() => expect(slider().max).toBe('400'));
+    expect(screen.queryByText(/ingested facts only/)).toBeNull();
+    fireEvent.change(slider(), { target: { value: '250' } });
+    await screen.findByText(/ingested facts only/);
+  });
+
+  it('offers Delete (not Edit) on a timeline node, and says when the live graph never held it', async () => {
+    vi.mocked(api.removeEntity).mockResolvedValue({ factsRetracted: 1, graphDeleted: false });
+    await ready();
+    await waitFor(() => expect(slider().max).toBe('400'));
+    fireEvent.change(slider(), { target: { value: '250' } });
+    await waitFor(() => expect(node('andrei')).toBeTruthy());
+    const menu = openMenu('andrei');
+    expect(within(menu).queryByRole('menuitem', { name: 'Edit…' })).toBeNull();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Delete…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete memory' }));
+    await waitFor(() => expect(api.removeEntity).toHaveBeenCalledWith('andrei'));
+    await screen.findByText(/was not in the live graph/);
+  });
+
+  it('keeps the unknown history disclosure in the delete dialog', async () => {
+    await ready();
+    fireEvent.click(within(openMenu('BMW')).getByRole('menuitem', { name: 'Delete…' }));
+    hasText(await screen.findByRole('alertdialog'), /Erasing the history itself is a separate action/);
   });
 });

@@ -330,10 +330,10 @@ def test_delete_does_not_report_success_when_the_graph_delete_failed(tmp_path, m
 
 def test_neo4j_edit_replaces_the_property_map(tmp_path):
     g, sent = _neo4j_stub(["Unknown"])
-    g.add_entity("Andrei", "person", {"city": "Cluj"})
+    g.replace_entity("Andrei", "person", {"city": "Cluj"})
     assert "SET n = {" in sent[-1]["statement"] and "+=" not in sent[-1]["statement"]
     g, sent = _neo4j_stub(None)
-    g.add_entity("Andrei", "person", {"city": "Cluj"})
+    g.replace_entity("Andrei", "person", {"city": "Cluj"})
     assert "SET n = {" in sent[-1]["statement"] and "+=" not in sent[-1]["statement"]
 
 
@@ -374,3 +374,76 @@ def test_ingestion_never_stores_a_name_with_a_line_break(tmp_path):
     IncrementalKGUpdater(graph).ingest("Andrei lives in Berlin\nParis is nice.")
     assert graph.list_entities(50)
     assert all("\n" not in e["name"] for e in graph.list_entities(50))
+
+
+# ── fix round 2 ───────────────────────────────────────────────────────────────
+
+def test_other_neo4j_writers_keep_merging_properties():
+    """Only the explorer's edit replaces the map: manager.add_fact / house / seed call add_entity
+    and must not wipe properties an owner edit or the house projection wrote."""
+    for labels in (["Unknown"], None):
+        g, sent = _neo4j_stub(labels)
+        assert g.add_entity("Andrei", "person") is True
+        stmt = sent[-1]["statement"]
+        assert "SET n += {" in stmt and "SET n = {" not in stmt
+
+
+def test_upsert_route_replaces_through_replace_entity(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, _, _ = _orch(tmp_path)
+    seen = []
+
+    class _G(InMemoryGraph):
+        def add_entity(self, name, entity_type, properties=None):
+            seen.append("add")
+            return super().add_entity(name, entity_type, properties)
+
+        def replace_entity(self, name, entity_type, properties=None):
+            seen.append("replace")
+            return InMemoryGraph.add_entity(self, name, entity_type, properties)
+
+    g = _G()
+    orch.memory.graph = g
+    monkeypatch.setattr(web, "orch", orch)
+    resp = _run(memory_kg.kg_upsert_entity(_Req({"name": "A", "type": "person", "properties": {"k": "v"}})))
+    assert _status(resp) == 200 and seen == ["replace"]
+
+
+def test_delete_reaches_timeline_only_entities(tmp_path, monkeypatch):
+    """After a restart the in-memory graph is empty while the bi-temporal JSON persists: the
+    timeline still shows those names, and deleting one must close its facts, not 404."""
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, graph, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    bt.add_fact("C", "knows", "D", valid_from=100, ingested_at=100)
+    assert graph.get_entity("C") is None
+    resp = _run(memory_kg.kg_delete_entity("C", _Req()))
+    assert _status(resp) == 200
+    body = _body(resp)
+    assert body["facts_retracted"] == 1 and body["graph_deleted"] is False
+    assert bt.believed_as_of(10**12) == []
+    assert [f["object"] for f in bt.believed_as_of(150)] == ["D"]     # history kept
+    # Neither store knows it any more: now it is a 404.
+    assert _status(_run(memory_kg.kg_delete_entity("C", _Req()))) == 404
+
+
+def test_delete_of_a_graph_entity_reports_graph_deleted(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, graph, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    graph.add_entity("Bob", "person")
+    assert _body(_run(memory_kg.kg_delete_entity("Bob", _Req())))["graph_deleted"] is True
+
+
+def test_add_fact_refuses_times_the_ui_cannot_show(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, _, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    for bad in (1e13, -1e13, float("inf"), "soon", True):
+        resp = _run(memory_kg.kg_add_fact(_Req({"subject": "A", "predicate": "p", "object": "B",
+                                                "ingested_at": bad, "valid_from": 100})))
+        assert _status(resp) == 400, bad
+    assert bt.believed_as_of(10**12) == []
+    ok = _run(memory_kg.kg_add_fact(_Req({"subject": "A", "predicate": "p", "object": "B",
+                                          "ingested_at": 100, "valid_from": 100})))
+    assert _status(ok) == 200

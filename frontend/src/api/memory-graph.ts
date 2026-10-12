@@ -13,7 +13,8 @@ import { SKILLS_PATH, SWITCH_PATH } from '../panels/skill-switches';
 
 /* 'unknown' = the request may have been executed but its reply never arrived (or the server broke
    while handling it): the caller must reload instead of claiming nothing changed. */
-export type MemoryGraphErrorCode = 'auth' | 'admin' | 'denied' | 'invalid' | 'notfound' | 'unavailable' | 'unknown';
+/* 'unaddressable' = a name containing / or \ (or '.', '..'): the path route cannot carry it, so it can be neither read nor deleted by name. */
+export type MemoryGraphErrorCode = 'auth' | 'admin' | 'denied' | 'invalid' | 'notfound' | 'unavailable' | 'unknown' | 'unaddressable';
 export class MemoryGraphError extends Error {
   constructor(public code: MemoryGraphErrorCode = 'unavailable', public detail = '') { super(code); }
 }
@@ -42,7 +43,13 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 const text = (value: unknown, max = 256): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= max && !CONTROL.test(value);
 const num = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-const numOrNull = (value: unknown): number | null => (value === null || value === undefined ? null : num(value) ? value : fail());
+/* The largest |epoch seconds| a JavaScript Date can show. A stored time beyond it would throw in the panel's formatter. */
+export const MAX_TIME = 8.64e12;
+const sane = (value: unknown): value is number => num(value) && Math.abs(value) <= MAX_TIME;
+/* A bound that is a number but out of range is dropped (null), anything else that is not a number fails the read. */
+const numOrNull = (value: unknown): number | null => (value === null || value === undefined ? null : num(value) ? (sane(value) ? value : null) : fail());
+/* Names the path route /api/kg/entities/{name} cannot carry (MEM-098). */
+export const isAddressable = (name: string): boolean => name !== '.' && name !== '..' && !/[/\\]/.test(name);
 
 /* ── errors ─────────────────────────────────────────────────────────────── */
 const bodyError = (body: any): string => (body && typeof body === 'object' && typeof body.error === 'string' ? body.error.slice(0, 300) : '');
@@ -122,7 +129,7 @@ export async function loadMemoryMap(signal?: AbortSignal): Promise<MemoryMapData
   for (const item of value.entities) {
     if (!item || !text(item.name)) { skipped++; continue; }
     let firstSeen: number | null = null;
-    if (item.first_seen !== null && item.first_seen !== undefined) { if (num(item.first_seen)) firstSeen = item.first_seen; else { skipped++; continue; } }
+    if (item.first_seen !== null && item.first_seen !== undefined) { if (sane(item.first_seen)) firstSeen = item.first_seen; else { skipped++; continue; } }
     kept.set(item.name, { name: item.name, type: text(item.type, 80) ? item.type : 'unknown', firstSeen });
   }
   const entities = [...kept.values()];
@@ -146,7 +153,7 @@ export async function loadFacts(axis: TimelineAxis, at: number | null, signal?: 
   let skipped = 0;
   for (const f of value.facts) {
     if (!f || !num(f.id) || !text(f.subject, 512) || !text(f.predicate, 256) || !text(f.object, 512)
-      || !num(f.valid_from) || !num(f.ingested_at) || !(f.valid_to === null || f.valid_to === undefined || num(f.valid_to))) { skipped++; continue; }
+      || !sane(f.valid_from) || !sane(f.ingested_at) || !(f.valid_to === null || f.valid_to === undefined || sane(f.valid_to))) { skipped++; continue; }
     facts.push({ id: f.id, subject: f.subject, predicate: f.predicate, object: f.object,
       validFrom: f.valid_from, validTo: f.valid_to ?? null, ingestedAt: f.ingested_at });
   }
@@ -171,7 +178,8 @@ export async function loadSkills(signal?: AbortSignal): Promise<SkillInfo[]> {
 }
 
 export async function loadEntity(name: string, signal?: AbortSignal): Promise<EntityDetail> {
-  if (!text(name) || name === '.' || name === '..' || /[/\\]/.test(name)) return fail();
+  if (!text(name)) return fail();
+  if (!isAddressable(name)) return fail('unaddressable');
   const value = await read('/api/kg/entities/' + encodeURIComponent(name), signal);
   const e = value?.entity;
   if (value?.error || !e || e.name !== name || !text(e.type, 80)) fail();
@@ -202,10 +210,12 @@ export async function saveEntity(name: string, type: string, properties: Record<
   return { name, type: text(e?.type, 80) ? e.type : type.trim(), properties: e?.properties && typeof e.properties === 'object' ? e.properties : properties };
 }
 
-export async function removeEntity(name: string): Promise<{ factsRetracted: number }> {
-  if (!text(name) || name === '.' || name === '..' || /[/\\]/.test(name)) return fail('invalid', 'name required');
+/* `graphDeleted` false: the live graph never held it (the default graph forgets at restart) and only timeline facts were closed. */
+export async function removeEntity(name: string): Promise<{ factsRetracted: number; graphDeleted: boolean }> {
+  if (!text(name)) return fail('invalid', 'name required');
+  if (!isAddressable(name)) return fail('unaddressable');
   const body = await mutate(() => apiDelete<any>('/api/kg/entities/' + encodeURIComponent(name)));
-  return { factsRetracted: num(body?.facts_retracted) ? body.facts_retracted : 0 };
+  return { factsRetracted: num(body?.facts_retracted) ? body.facts_retracted : 0, graphDeleted: body?.graph_deleted !== false };
 }
 
 const names = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string').slice(0, 50) : []);

@@ -13,6 +13,7 @@ export function describeError(error: any, action: string): string {
     case 'invalid': return `Not accepted: ${detail || 'invalid request'}. Nothing was changed.`;
     case 'auth': return 'Memory access requires your current user credentials. Nothing was changed.';
     case 'admin': return `${action} needs the admin token. Nothing was changed.`;
+    case 'unaddressable': return `This name contains / or \\, which the memory path route cannot carry, so it cannot be edited or deleted here. Nothing was changed.`;
     case 'notfound': return 'Not found: nothing was deleted. It may already be gone. Refresh the map to see what is stored now.';
     case 'unknown': return `The result is unknown: the reply did not arrive${detail ? ' (' + detail + ')' : ''}, so the change may have been applied. The map is reloading; check it before trying again.`;
     default: return `Memory graph unavailable${detail ? ': ' + detail : ''}. Nothing was changed.`;
@@ -115,14 +116,14 @@ export function EditEntityDialog({ name, onClose, onSaved, onRefresh }: { name: 
   </Modal>;
 }
 
-export function DeleteEntityDialog({ name, onClose, onDeleted, onRefresh }: { name: string; onClose: () => void; onDeleted: (name: string, factsRetracted: number) => void; onRefresh?: () => void }) {
+export function DeleteEntityDialog({ name, onClose, onDeleted, onRefresh }: { name: string; onClose: () => void; onDeleted: (name: string, factsRetracted: number, graphDeleted: boolean) => void; onRefresh?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [gone, setGone] = useState(false);
   const confirm = async () => {
     if (gone) { onRefresh?.(); onClose(); return; }
     setBusy(true); setError('');
-    try { const result = await removeEntity(name); onDeleted(name, result.factsRetracted); }
+    try { const result = await removeEntity(name); onDeleted(name, result.factsRetracted, result.graphDeleted); }
     catch (err: any) {
       /* A 404 means nothing was deleted: say that, never report a deletion that did not happen. */
       setError(describeError(err, 'Deleting')); setBusy(false);
@@ -133,6 +134,7 @@ export function DeleteEntityDialog({ name, onClose, onDeleted, onRefresh }: { na
   return <Modal title={`Delete ${name}?`} role="alertdialog" onClose={onClose} busy={busy}>
     <p style={{ margin: '0 0 6px' }}>This removes the entity and its relations from the knowledge graph.</p>
     <p style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>Its timeline facts are closed from now on; earlier positions of the scrubber still show what was believed then.
+      Erasing the history itself is a separate action (the admin forget tool), not this button.
       The conversation history is not edited, so a later mention can create it again.</p>
     <p style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>{KERNEL_NOTE} {PERSIST_NOTE}</p>
     {error && <div role="alert" style={{ color: 'var(--amber)', margin: '6px 0', overflowWrap: 'anywhere' }}>{error}</div>}

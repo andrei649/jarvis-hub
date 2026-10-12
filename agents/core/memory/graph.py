@@ -59,6 +59,12 @@ class KnowledgeGraph(ABC):
         ...
 
     # ── H206 explorer surface (non-abstract: older backends keep working) ──
+    def replace_entity(self, name: str, entity_type: str, properties: dict = None) -> bool:
+        """Write the entity with EXACTLY these properties (an owner edit: a removed
+        property must go). ``add_entity`` is the merge-style writer other callers use;
+        backends whose ``add_entity`` already replaces need not override this."""
+        return self.add_entity(name, entity_type, properties)
+
     def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
         """Create the entity if it does not exist; NEVER touch an existing one.
 
@@ -293,6 +299,13 @@ class Neo4jGraph(KnowledgeGraph):
         return rows
 
     def add_entity(self, name: str, entity_type: str, properties: dict = None) -> bool:
+        return self._write_entity(name, entity_type, properties, replace=False)
+
+    def replace_entity(self, name: str, entity_type: str, properties: dict = None) -> bool:
+        """The explorer's edit: ``SET n = {...}`` so a removed property really goes."""
+        return self._write_entity(name, entity_type, properties, replace=True)
+
+    def _write_entity(self, name: str, entity_type: str, properties: dict, replace: bool) -> bool:
         # AUD-12 (F11): the label is interpolated into Cypher (Neo4j can't
         # parameterise it), so coerce it to a safe identifier — a legitimate
         # type passes through unchanged (mirrors the old ``capitalize()``); only
@@ -319,9 +332,10 @@ class Neo4jGraph(KnowledgeGraph):
             props.pop("name")
         pairs = ["name: $name"] + [f"{k}: $p_{k}" for k in props]
         params = {"name": name, **{f"p_{k}": v for k, v in props.items()}}
-        # `SET n = {...}` REPLACES the property map, like InMemoryGraph.add_entity does:
-        # an edit that drops a property must really drop it (`+=` only ever added or
-        # overwrote keys, so the explorer's remove button did nothing on Neo4j).
+        # `replace` (the explorer's edit only) uses `SET n = {...}`: an edit that drops a
+        # property must really drop it (`+=` only adds or overwrites keys). Every other
+        # writer (manager.add_fact, house projection, seed) keeps merging with `+=`.
+        assign = "n = " if replace else "n += "
         # A type edit must RELABEL the node. `MERGE (n:<new label> {name})` matches only
         # nodes that already carry the new label, so changing Unknown -> Person created
         # a second node with the same name next to the first.
@@ -336,9 +350,9 @@ class Neo4jGraph(KnowledgeGraph):
             stale = [lb for lb in existing if lb != label and is_safe_kg_label(lb)]
             remove = f"REMOVE n:{':'.join(f'`{lb}`' for lb in stale)} " if stale else ""
             cypher = (f"MATCH (n {{name: $name}}) {remove}SET n:`{label}` "
-                      f"SET n = {{{', '.join(pairs)}}} RETURN n")
+                      f"SET {assign}{{{', '.join(pairs)}}} RETURN n")
         else:
-            cypher = f"MERGE (n:{label} {{name: $name}}) SET n = {{{', '.join(pairs)}}} RETURN n"
+            cypher = f"MERGE (n:{label} {{name: $name}}) SET {assign}{{{', '.join(pairs)}}} RETURN n"
         results = self._call_neo4j([{"statement": cypher, "parameters": params}])
         return len(results) > 0
 
