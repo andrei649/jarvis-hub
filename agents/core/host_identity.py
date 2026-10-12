@@ -48,7 +48,7 @@ import sys
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 
-from . import host_posture
+from . import env_config, host_posture
 
 logger = logging.getLogger("jarvis.host_identity")
 
@@ -102,10 +102,6 @@ _MACHINE_ID_RE = re.compile(r"[0-9a-fA-F]{32}")
 _DISTRO_UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 MACHINE_ID_KEY = b"nerva-host-identity-v1"
 MAX_PROMPT_LINE = 300
-#: ``env_config``'s spellings, repeated so this module stays stdlib-only: ``0``/``false``/``no``/``off``/
-#: ``disable``/``disabled`` (and ``none``) say "not a container"; the truthy ones say "some container".
-_OFF_WORDS = frozenset({"none", "0", "false", "no", "off", "disable", "disabled"})
-_ON_WORDS = frozenset({"1", "true", "yes", "on"})
 #: Digits systemd could write: WATCHDOG_USEC up to ~11 days (12 digits), a PID at most 10.
 MAX_USEC_DIGITS = 12
 MAX_PID_DIGITS = 10
@@ -227,9 +223,11 @@ def detect_container(env: Mapping[str, str], *, exists: Callable[[str], bool] = 
     """``(kind, evidence)``, or ``("", "")`` when nothing says this is a container.
     The marker files and the PID 1 cgroup are ``host_posture.in_container``'s own read."""
     override = (env.get(ENV_CONTAINER) or "").strip().lower()
-    if override in _OFF_WORDS:
+    # ``env_config`` owns the boolean spellings (0/false/no/off/disable/disabled and 1/true/yes/on);
+    # ``none`` is this variable's own extra way to say "not a container".
+    if override == "none" or (env_config.is_recognized_bool(override) and not env_config.truthy(override)):
         return "", ENV_CONTAINER
-    if override in _ON_WORDS:
+    if env_config.is_recognized_bool(override) and env_config.truthy(override):
         return "container", ENV_CONTAINER
     if override in _KIND_WORDS:
         return _KIND_WORDS[override], ENV_CONTAINER
