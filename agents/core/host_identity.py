@@ -3,15 +3,17 @@
 One read-only detector for what kind of host this process runs on, so the prompt, the
 skill gates and the doctor's container check describe the same machine:
 
-- **container** — ``JARVIS_CONTAINER`` (the operator's word; ``none`` says "not a
-  container"), ``KUBERNETES_SERVICE_HOST`` (a pod), the marker files and PID 1 cgroup
+- **container** — ``JARVIS_CONTAINER`` (the operator's word: a kind such as ``docker``, or
+  ``1``/``true``/``yes``/``on`` for "some container"; ``none`` or any ``env_config`` falsy
+  spelling, ``0``/``false``/``no``/``off``/``disable``/``disabled``, says "not a container"; a word
+  that is neither is ignored and the markers decide), ``KUBERNETES_SERVICE_HOST`` (a pod), the marker files and PID 1 cgroup
   that ``host_posture.in_container`` reads, ``/run/systemd/container`` and the
   ``container`` variable podman and systemd-nspawn set. A cgroup v2 ``0::/`` with no
   marker says nothing: it is never read as "bare host".
 - **WSL** (``WSL_DISTRO_NAME``/``WSL_INTEROP`` or a Microsoft kernel release) and
   **Termux** (``TERMUX_VERSION``, a ``com.termux`` ``PREFIX`` or its data directory).
-- **supervisor** — ``s6`` (``S6_VERSION``/``S6_CMD_ARG0``/``JARVIS_S6_SUPERVISED_CHILD``,
-  or ``/run/s6``), ``systemd`` (``NOTIFY_SOCKET``, or ``INVOCATION_ID`` without a
+- **supervisor** — ``s6`` (``S6_VERSION``/``S6_CMD_ARG0`` — the variables s6-overlay's
+  init exports — or ``/run/s6``), ``systemd`` (a usable ``NOTIFY_SOCKET`` — the address ``sd_notify`` would send to — or ``INVOCATION_ID`` without a
   terminal; journal logging only when ``JOURNAL_STREAM`` names this stderr, as
   systemd documents; the watchdog from ``WATCHDOG_USEC`` for this PID), ``launchd``
   (macOS: ``LAUNCHD_SOCKET`` or a job's ``XPC_SERVICE_NAME``), else ``none``.
@@ -37,18 +39,21 @@ import functools
 import hashlib
 import hmac
 import json
+import logging
 import math
 import os
 import re
+import socket
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 
 from . import host_posture
 
+logger = logging.getLogger("jarvis.host_identity")
+
 ENV_CONTAINER = "JARVIS_CONTAINER"
 ENV_MACHINE_ID = "JARVIS_MACHINE_ID"
-ENV_S6_CHILD = "JARVIS_S6_SUPERVISED_CHILD"
 
 SYSTEMD_CONTAINER = "/run/systemd/container"
 OSRELEASE = "/proc/sys/kernel/osrelease"
@@ -92,6 +97,13 @@ _MACHINE_ID_RE = re.compile(r"[0-9a-fA-F]{32}")
 _DISTRO_UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 MACHINE_ID_KEY = b"nerva-host-identity-v1"
 MAX_PROMPT_LINE = 300
+#: ``env_config``'s spellings, repeated so this module stays stdlib-only: ``0``/``false``/``no``/``off``/
+#: ``disable``/``disabled`` (and ``none``) say "not a container"; the truthy ones say "some container".
+_OFF_WORDS = frozenset({"none", "0", "false", "no", "off", "disable", "disabled"})
+_ON_WORDS = frozenset({"1", "true", "yes", "on"})
+#: Digits systemd could write: WATCHDOG_USEC up to ~11 days (12 digits), a PID at most 10.
+MAX_USEC_DIGITS = 12
+MAX_PID_DIGITS = 10
 
 _CONTAINER_WORDS = {
     "docker": "a Docker container", "podman": "a Podman container", "kubernetes": "a Kubernetes pod",
@@ -104,6 +116,7 @@ PROMPT_HEADER = "## This host (detected by Nerva at startup; facts, not the oper
 
 @dataclass(frozen=True)
 class HostIdentity:
+    detected: bool = True            # False only when the detector itself failed (see identity())
     container: str = ""              # "" or a CONTAINER_KINDS entry
     container_evidence: str = ""     # the marker that said so (a fixed path or variable name)
     docker_marker: bool = False      # /.dockerenv or /run/.containerenv exists, whatever else said container
@@ -163,6 +176,8 @@ class HostIdentity:
         return f"{PROMPT_HEADER}\n{line}" if line else ""
 
     def to_dict(self) -> dict:
+        if not self.detected:  # the shape the probe route and the HUD already report
+            return {"detected": False, "reason": "identity_failed"}
         row = asdict(self)
         for key in ("container", "container_evidence", "wsl", "wsl_distro", "machine_id"):
             row[key] = row[key] or None
@@ -205,8 +220,13 @@ def detect_container(env: Mapping[str, str], *, exists: Callable[[str], bool] = 
     """``(kind, evidence)``, or ``("", "")`` when nothing says this is a container.
     The marker files and the PID 1 cgroup are ``host_posture.in_container``'s own read."""
     override = (env.get(ENV_CONTAINER) or "").strip().lower()
-    if override:
-        return ("", ENV_CONTAINER) if override == "none" else (_kind_word(override), ENV_CONTAINER)
+    if override in _OFF_WORDS:
+        return "", ENV_CONTAINER
+    if override in _ON_WORDS:
+        return "container", ENV_CONTAINER
+    if override in _KIND_WORDS:
+        return _KIND_WORDS[override], ENV_CONTAINER
+    # any other word (a typo, "yes please") is not an answer: the markers below decide
     if env.get("KUBERNETES_SERVICE_HOST"):
         return "kubernetes", "KUBERNETES_SERVICE_HOST"
     marker = host_posture.in_container(files=files, cgroup=cgroup, exists=exists)
@@ -266,20 +286,33 @@ def _stderr_id() -> tuple[int, int] | None:
     return st.st_dev, st.st_ino
 
 
-def _decimal(raw: str) -> int | None:
-    """An ASCII decimal, as systemd writes them; ``int()`` alone takes ``٦٠``, ``6_0`` and ``+60``."""
-    return int(raw) if raw.isascii() and raw.isdigit() else None
+def _decimal(raw: str, max_digits: int) -> int | None:
+    """An ASCII decimal of at most ``max_digits``, as systemd writes them; ``int()`` alone takes
+    ``٦٠``, ``6_0`` and ``+60``, and raises past 4,300 digits."""
+    return int(raw) if raw.isascii() and raw.isdigit() and len(raw) <= max_digits else None
+
+
+def notify_address(raw: str | None) -> str | bytes | None:
+    """``NOTIFY_SOCKET`` as the socket address ``sd_notify`` sends to: a path, or ``@name`` for the
+    abstract namespace (Linux). Unset, blank, relative or another scheme (``vsock:``) is no socket.
+    The one parser: the prompt only says "supervised" where ``sd_notify`` would speak."""
+    text = (raw or "").strip()
+    if text.startswith("@"):
+        return b"\0" + text[1:].encode("utf-8", "surrogateescape")
+    if text.startswith("/"):
+        return text
+    return None
 
 
 def watchdog_deadline(env: Mapping[str, str], pid: int) -> float | None:
     """``WATCHDOG_USEC`` in seconds when systemd armed the watchdog for ``pid``, else None.
     ``WATCHDOG_PID`` names the main PID: a child that inherited the variables is not armed.
     ``sd_notify`` pings from this same reading, so the prompt and the heartbeat agree."""
-    usec = _decimal((env.get("WATCHDOG_USEC") or "").strip())
+    usec = _decimal((env.get("WATCHDOG_USEC") or "").strip(), MAX_USEC_DIGITS)
     if not usec:
         return None
     owner = (env.get("WATCHDOG_PID") or "").strip()
-    if owner and _decimal(owner) != pid:
+    if owner and _decimal(owner, MAX_PID_DIGITS) != pid:
         return None
     return usec / 1_000_000
 
@@ -294,9 +327,9 @@ def detect_supervisor(env: Mapping[str, str], *, exists: Callable[[str], bool] =
                       stderr_id: Callable[[], tuple[int, int] | None] = _stderr_id,
                       pid: int | None = None) -> dict:
     """``supervisor``, ``s6``, ``notify_socket``, ``watchdog_s`` and ``journal``."""
-    s6_env = any(env.get(name) for name in ("S6_VERSION", "S6_CMD_ARG0", ENV_S6_CHILD))
+    s6_env = any(env.get(name) for name in ("S6_VERSION", "S6_CMD_ARG0"))
     s6_files = any(_exists(exists, path) for path in S6_PATHS)
-    notify = bool(env.get("NOTIFY_SOCKET"))
+    notify = notify_address(env.get("NOTIFY_SOCKET")) is not None and hasattr(socket, "AF_UNIX")
     # INVOCATION_ID alone also reaches shells in a terminal that runs as a user service.
     systemd = notify or (bool(env.get("INVOCATION_ID")) and not interactive)
     xpc = (env.get("XPC_SERVICE_NAME") or "").strip()
@@ -450,8 +483,9 @@ def identity() -> HostIdentity:
     """This process's host, detected once: the same bytes for every prompt it builds."""
     try:
         return detect()
-    except Exception:  # a detector bug must never stop a prompt or a probe
-        return HostIdentity()
+    except Exception:  # a detector bug must never stop a prompt or a probe, nor pass as a bare host
+        logger.warning("host identity could not be detected: the prompt says nothing about the host")
+        return HostIdentity(detected=False)
 
 
 def prompt_block() -> str:
@@ -479,7 +513,7 @@ __all__ = [
     "MACHINE_ID_SOURCES", "MULTIPLEXERS", "PROMPT_HEADER", "SUPERVISORS", "TERMINALS", "TERM_FAMILIES",
     "WSL_KINDS", "container_marker", "detect", "detect_container", "detect_machine_id",
     "detect_supervisor", "detect_terminal", "detect_termux", "detect_wsl", "hash_machine_id", "identity",
-    "main", "prompt_block", "watchdog_deadline",
+    "main", "notify_address", "prompt_block", "watchdog_deadline",
 ]
 
 

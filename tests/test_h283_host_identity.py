@@ -83,7 +83,8 @@ def test_nothing_detected_is_a_quiet_identity():
     ((), {"container": "podman"}, "podman", "container"),
     ((), {"container": "something-new"}, "container", "container"),
     ((), {"JARVIS_CONTAINER": "Docker"}, "docker", "JARVIS_CONTAINER"),
-    ((), {"JARVIS_CONTAINER": "yes please"}, "container", "JARVIS_CONTAINER"),
+    ((), {"JARVIS_CONTAINER": "yes"}, "container", "JARVIS_CONTAINER"),
+    ((), {"JARVIS_CONTAINER": "true"}, "container", "JARVIS_CONTAINER"),
 ])
 def test_container_kinds(present, env, kind, evidence):
     got = _detect(env, present)
@@ -214,7 +215,6 @@ def test_invocation_id_in_an_interactive_shell_is_not_supervision():
 @pytest.mark.parametrize("env,present,want", [
     ({"S6_VERSION": "3.1"}, (), "s6"),
     ({"S6_CMD_ARG0": "/init"}, (), "s6"),
-    ({"JARVIS_S6_SUPERVISED_CHILD": "1"}, (), "s6"),
     ({}, ("/run/s6",), "s6"),
     ({}, ("/command/s6-svscan",), "s6"),
     ({"NOTIFY_SOCKET": "/run/x"}, ("/run/s6",), "systemd"),
@@ -340,7 +340,7 @@ def test_a_detector_bug_never_breaks_the_prompt(monkeypatch):
     monkeypatch.setattr(hi, "detect", boom)
     hi.identity.cache_clear()
     try:
-        assert hi.identity() == hi.HostIdentity() and hi.prompt_block() == ""
+        assert hi.identity() == hi.HostIdentity(detected=False) and hi.prompt_block() == ""
     finally:
         hi.identity.cache_clear()
 
@@ -495,4 +495,95 @@ def test_the_module_is_runnable_and_stdlib_only():
     imported |= {node.module.split(".")[0] for node in ast.walk(tree)
                  if isinstance(node, ast.ImportFrom) and node.module and node.level == 0}
     assert imported <= {"__future__", "functools", "hashlib", "hmac", "json", "math", "os", "re", "sys",
-                        "collections", "dataclasses", "winreg"}
+                        "collections", "dataclasses", "logging", "socket", "winreg"}
+
+
+# ── fix round 3: the operator's spellings, a hostile watchdog, one socket parser ────────────
+
+@pytest.mark.parametrize("word", ["none", "0", "false", "no", "off", "disable", "disabled", "False", " OFF "])
+def test_every_way_of_saying_off_says_it_is_not_a_container(word):
+    """env_config's falsy spellings mean off here too: `JARVIS_CONTAINER=0` on a bare host must not
+    tell the model it runs in a container."""
+    got = _detect({"JARVIS_CONTAINER": word}, ("/.dockerenv",))
+    assert got.container == "" and got.prompt_line() == "" and got.environment_tags() == frozenset()
+    assert hi.container_marker.__module__  # the doctor reads the same detector
+
+
+@pytest.mark.parametrize("word", ["yes please", "banana", "1x"])
+def test_an_unknown_word_is_not_a_silent_container(word):
+    """Not a recognised kind or a yes: ignored, so the markers decide (here: none, so a bare host)."""
+    assert _detect({"JARVIS_CONTAINER": word}).container == ""
+    assert _detect({"JARVIS_CONTAINER": word}, ("/.dockerenv",)).container == "docker"
+
+
+def test_the_doctor_agrees_when_the_operator_says_off(monkeypatch):
+    monkeypatch.setenv("JARVIS_CONTAINER", "0")
+    assert hi.container_marker() is None
+
+
+@pytest.mark.parametrize("digits", [400, 5000])
+def test_an_oversized_watchdog_is_no_watchdog_and_costs_nothing_else(digits, monkeypatch):
+    """int() on 5000 digits is a ValueError and usec / 1e6 on 400 is an OverflowError: either used to
+    blank the whole identity (container, WSL, machine id) and, in sd_notify, escape after READY."""
+    from agents.core import sd_notify
+
+    big = "9" * digits
+    env = {"JARVIS_CONTAINER": "docker", "NOTIFY_SOCKET": "/run/x", "WATCHDOG_USEC": big,
+           "WATCHDOG_PID": big, "WSL_DISTRO_NAME": "Ubuntu"}
+    got = _detect(env, texts={"/etc/machine-id": MACHINE_ID})
+    assert got.container == "docker" and got.wsl == "wsl" and got.machine_id and got.watchdog_s == 0
+    assert got.supervisor_confirmed and "watchdog" not in got.prompt_line()
+    assert hi.watchdog_deadline({"WATCHDOG_USEC": big}, 1) is None
+    assert hi.watchdog_deadline({"WATCHDOG_USEC": "60000000", "WATCHDOG_PID": big}, 1) is None
+    monkeypatch.setenv("WATCHDOG_USEC", big)
+    monkeypatch.delenv("WATCHDOG_PID", raising=False)
+    assert sd_notify.watchdog_seconds() is None
+
+
+def test_a_sane_watchdog_still_parses():
+    assert hi.watchdog_deadline({"WATCHDOG_USEC": "60000000"}, 1) == 60.0
+    assert hi.watchdog_deadline({"WATCHDOG_USEC": "60000000", "WATCHDOG_PID": "7"}, 7) == 60.0
+
+
+def test_a_detector_bug_is_logged_and_reported_as_not_detected(monkeypatch, caplog):
+    """No silent bare host: the identity says it could not be detected, the probe and HUD show it."""
+    hi.identity.cache_clear()
+    try:
+        def boom(*a, **k):
+            raise RuntimeError("secret /proc path")
+        monkeypatch.setattr(hi, "detect", boom)
+        with caplog.at_level("WARNING"):
+            got = hi.identity()
+        assert got.detected is False and got.prompt_line() == "" and got.prompt_block() == ""
+        assert got.to_dict() == {"detected": False, "reason": "identity_failed"}
+        assert any("host identity" in r.getMessage() for r in caplog.records)
+        assert "secret" not in caplog.text
+    finally:
+        hi.identity.cache_clear()
+
+
+def test_a_detected_identity_says_so():
+    assert _detect().detected is True and _detect().to_dict()["detected"] is True
+
+
+@pytest.mark.parametrize("value", ["relative/path", "  ", "garbage", "vsock:2:1234", "unix:/run/x"])
+def test_a_socket_sd_notify_cannot_use_is_not_supervision(value, monkeypatch):
+    """One NOTIFY_SOCKET parser: when sd_notify would be inert the prompt must not say 'supervised'."""
+    from agents.core import sd_notify
+
+    got = _detect({"NOTIFY_SOCKET": value})
+    assert got.supervisor == "none" and not got.supervisor_confirmed and got.notify_socket is False
+    assert "supervised" not in got.prompt_line()
+    monkeypatch.setenv("NOTIFY_SOCKET", value)
+    assert sd_notify.enabled() is False
+
+
+@pytest.mark.parametrize("value", ["/run/systemd/notify", " /run/x ", "@abstract"])
+def test_a_socket_sd_notify_can_use_is_supervision(value, monkeypatch):
+    from agents.core import sd_notify
+
+    got = _detect({"NOTIFY_SOCKET": value})
+    assert got.supervisor == "systemd" and got.supervisor_confirmed and got.notify_socket is True
+    monkeypatch.setenv("NOTIFY_SOCKET", value)
+    assert sd_notify.enabled() is True
+    assert hi.notify_address(value) == sd_notify._address()

@@ -49,14 +49,7 @@ SEND_TIMEOUT_SECONDS = 1.0
 def _address() -> str | bytes | None:
     """``NOTIFY_SOCKET`` as a socket address: a path, or ``@name`` for the abstract
     namespace (Linux). Anything else (unset, relative) is no socket."""
-    raw = env_str("NOTIFY_SOCKET").strip()
-    if not raw:
-        return None
-    if raw.startswith("@"):
-        return b"\0" + raw[1:].encode("utf-8", "surrogateescape")
-    if raw.startswith("/"):
-        return raw
-    return None
+    return host_identity.notify_address(env_str("NOTIFY_SOCKET"))
 
 
 def enabled() -> bool:

@@ -206,6 +206,7 @@ def test_a_socket_nobody_listens_on_is_not_an_error(tmp_path, monkeypatch):
     ("100000", None, 0.08),                  # the floor never reaches the deadline
     ("0", None, None), ("-5", None, None), ("soon", None, None), ("", None, None),
     ("²000000", None, None), ("60000000", "²", None),   # digits int() refuses
+    ("9" * 5000, None, None), ("9" * 400, None, None), ("60000000", "9" * 400, None),  # int()/division overflow
 ])
 def test_the_heartbeat_is_half_the_watchdog_for_this_process_only(monkeypatch, usec, pid, expected):
     monkeypatch.setenv("WATCHDOG_USEC", usec)
