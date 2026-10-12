@@ -2350,6 +2350,23 @@ class Orchestrator:
                 raise ForeignHistoryRefused("owner_required", 403)
             mark_turn_recall_tainted()
 
+    async def _guard_media_history(self, sid: str) -> None:
+        """H586: a committed image turn (chat-prepared, selected-chat) put the model's
+        reading of an image into this history, and text in an image is untrusted input.
+        A turn reading such a history runs tainted, so an action it proposes is queued
+        for approval rather than auto-granted. Fail safe: a history that cannot be read
+        marks the turn too."""
+        from .security.recall_taint import mark_turn_recall_tainted
+
+        try:
+            turns = await self.memory.get_history(sid)
+        except Exception as exc:
+            logger.warning("image-history check failed (%s); marking the turn", type(exc).__name__)
+            mark_turn_recall_tainted()
+            return
+        if any(isinstance(turn, dict) and turn.get("media") for turn in turns):
+            mark_turn_recall_tainted()
+
     @measure_turn_latency
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
@@ -2417,6 +2434,7 @@ class Orchestrator:
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
         await self._guard_foreign_turn(self.session_id)
+        await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             return session_reply
@@ -2637,6 +2655,7 @@ class Orchestrator:
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
         await self._guard_foreign_turn(self.session_id)
+        await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             if on_token:
