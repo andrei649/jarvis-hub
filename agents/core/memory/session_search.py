@@ -267,7 +267,7 @@ def register_session_search(server: Any, *, directory: Path | None = None) -> st
     """Expose ``session_search`` on a ToolRPC server (ungated, read-only)."""
 
     async def _handle(args: dict) -> dict:
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             search_sessions,
             args.get("query"),
             directory=directory,
@@ -275,6 +275,13 @@ def register_session_search(server: Any, *, directory: Path | None = None) -> st
             session_id=args.get("session_id"),
             role=args.get("role"),
         )
+        # The mark search_sessions sets runs in to_thread's context copy and cannot reach
+        # the turn; declare it on the result, as search_memory does, so the tool loop and
+        # the ToolRPC broker raise the turn's origin (H586 image readings, SEC-B5 flags).
+        if result.get("ok"):
+            result["tainted"] = any(hit.get("image_derived") or hit.get("injection_flagged")
+                                    for hit in result.get("hits", []))
+        return result
 
     server.register_tool(
         TOOL_NAME,
