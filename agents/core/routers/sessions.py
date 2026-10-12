@@ -92,10 +92,13 @@ async def get_sessions(req: Request, archived: bool = False):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    sessions = orch.checkpoints.get_sessions(limit=20, archived=archived)
     from agents import web
     from agents.core.foreign_history import status
-    if not web._web_principal(req).admin:
+    admin = web._web_principal(req).admin
+    # The lineage predicate runs before the limit, so newer foreign rows cannot push
+    # a guest's native history out of the window; the row probe below stays authoritative.
+    sessions = orch.checkpoints.get_sessions(limit=20, archived=archived, native_only=not admin)
+    if not admin:
         import asyncio
         sessions = [row for row in sessions if not (await asyncio.to_thread(
             status, orch.checkpoints, row.get("session_id") or row.get("id"))).tainted]

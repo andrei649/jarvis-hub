@@ -156,6 +156,8 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     st.edgesByA = edgesByA;
     st.agentModelEdgeMap = agentModelEdgeMap;
     st.nodeMap = new Map(nodes.map((n) => [n.id, n]));
+    st.agentNodes = nodes.filter((n) => n.kind === 'agent');
+    st.agentNodesSorted = [...st.agentNodes].sort((p, q) => p.baseAng - q.baseAng);
     st.stars = Array.from({ length: 46 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.1 + 0.2, a: Math.random() * 0.4 + 0.1 }));
   }
 
@@ -222,6 +224,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       byOwner.set(owner, list);
     }
     S.current.tasksByOwner = byOwner;
+    S.current.tasksByOwnerList = Array.from(byOwner.entries());
   }, [taskList]);
 
   function draw() {
@@ -273,10 +276,10 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     drawTaskFan(ctx, st, foc);
     ctx.globalCompositeOperation = 'lighter';
     if (!calm && st.demo) {
-      if (st.tick % 46 === 0) { const ags = st.nodes.filter((n) => n.kind === 'agent'); const n = ags[Math.floor(Math.random() * ags.length)]; if (n) fire(n.id); }
+      if (st.tick % 46 === 0) { const ags = st.agentNodes || []; const n = ags[Math.floor(Math.random() * ags.length)]; if (n) fire(n.id); }
       if (st.tick - st.lastPulse > (cinema ? 150 : 185)) { st.lastPulse = st.tick; corePulse(); }
       if (st.tick - st.lastCascade > (cinema ? 300 : 430)) { st.lastCascade = st.tick; st.cascadeI = 0; }
-      if (st.cascadeI >= 0 && st.tick % 2 === 0) { const ags = st.nodes.filter((n) => n.kind === 'agent').sort((p, q) => p.baseAng - q.baseAng); const n = ags[st.cascadeI]; if (n) fire(n.id, true); st.cascadeI++; if (st.cascadeI >= ags.length) { st.cascadeI = -1; corePulse(); } }
+      if (st.cascadeI >= 0 && st.tick % 2 === 0) { const ags = st.agentNodesSorted || []; const n = ags[st.cascadeI]; if (n) fire(n.id, true); st.cascadeI++; if (st.cascadeI >= ags.length) { st.cascadeI = -1; corePulse(); } }
     }
     if (!calm && !st.demo && st.tick % 8 === 0) {
       // Bolt Optimization: Use indexed for loop instead of .forEach closure allocation
@@ -384,8 +387,8 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   }
 
   function drawTaskFan(ctx, st, foc) {
-    const byOwner = st.tasksByOwner;
-    if (!byOwner || !byOwner.size) return;
+    const tasksByOwnerList = st.tasksByOwnerList;
+    if (!tasksByOwnerList || !tasksByOwnerList.length) return;
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
     const outer = Math.min(W, H) * (st.cinema ? 0.48 : 0.46);
     ctx.globalCompositeOperation = 'source-over';
@@ -393,8 +396,10 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     // more tasks than a fixed-size arc can label legibly — cap what's drawn so
     // the fan never degrades into an unreadable overlapping block, no matter
     // how many tasks pile up under one owner.
-    // Bolt Optimization: Use for...of iteration over Map entries to avoid closure creation
-    for (const [owner, fullList] of byOwner as Map<string, any[]>) {
+    // Bolt Optimization: Use indexed for loop over tasksByOwnerList array to avoid MapIterator allocations per frame
+    const numOwners = tasksByOwnerList.length;
+    for (let ownerIdx = 0; ownerIdx < numOwners; ownerIdx++) {
+      const [owner, fullList] = tasksByOwnerList[ownerIdx];
       const origin = node(owner);
       if (!origin) continue;
       const focused = foc === owner;

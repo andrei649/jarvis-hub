@@ -86,6 +86,23 @@ def test_invalid_import_rolls_back_all_rows(store):
     assert store._conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
 
 
+def test_native_only_listing_counts_the_limit_over_native_rows(store):
+    """``native_only`` drops rows with a foreign receipt before the limit (the H218
+    ``archived`` precedent), so newer imports never empty a guest's list; the
+    default view keeps listing every row."""
+    store.create_session_record("session_native")
+    with store._lock, store._conn:
+        store._conn.execute("UPDATE sessions SET started_at=? WHERE id=?",
+                            ("2026-09-01T00:00:00+00:00", "session_native"))
+    foreign = {import_turns(store, source="claude", external_id=f"bulk-{i}", turns=turns(),
+                            request_id=str(uuid.uuid4()))["session_id"] for i in range(3)}
+    assert [r["id"] for r in store.get_sessions(limit=2, native_only=True)] == ["session_native"]
+    every = {r["id"] for r in store.get_sessions(limit=2)}
+    assert len(every) == 2 and every <= foreign
+    assert [r["id"] for r in store.get_sessions(limit=2, archived=False, native_only=True)] == ["session_native"]
+    assert store.get_sessions(limit=2, archived=True, native_only=True) == []
+
+
 def test_pre_h441_three_column_binding_migrates_before_foreign_receipt_probe(tmp_path):
     path = tmp_path / "old.db"
     with sqlite3.connect(path) as conn:

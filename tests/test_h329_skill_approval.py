@@ -334,3 +334,43 @@ def test_approved_task_payload_or_title_edits_cannot_widen(tmp_path, monkeypatch
     assert asyncio.run(switch_approval.apply_approved(task, ledger=orch.permission_ledger,
                                                       loader=loader))["reason"] == "task_binding_mismatch"
     assert switches.off_reason(skill) == "everywhere"
+
+
+@pytest.mark.parametrize("staleness", ["stale_switch_request", "stale_skill_source", "stale_skill_category"])
+def test_post_grant_refusal_retires_minted_grant(tmp_path, monkeypatch, staleness):
+    skill, orch, loader, queued = _approval_fixture(tmp_path, monkeypatch)
+    category = "info" if staleness == "stale_skill_category" else ""
+    if category:
+        skill.manifest["hermes"] = {"category": category}
+    switch_approval.disable([skill])
+    switch_approval.request_enable(orch, [skill], category=category)
+    retry = [skill]
+    if staleness == "stale_switch_request":
+        switch_approval.disable([skill])
+    elif staleness == "stale_skill_source":
+        (skill.path / "SKILL.md").write_text("# changed\n", encoding="utf-8")
+    else:
+        newcomer = _skill(tmp_path, "news", "News", category=category)
+        newcomer.source_fingerprint = source_snapshot(newcomer.path).fingerprint
+        loader.skills[newcomer.name] = newcomer
+        retry = [skill, newcomer]
+    out = asyncio.run(switch_approval.apply_approved(_task(queued), ledger=orch.permission_ledger,
+                                                     loader=loader))
+    assert out == {"status": "refused", "reason": staleness}
+    assert switches.off_reason(skill) == "everywhere"
+    # The refused apply wrote no receipt, so the grant it minted must not linger as active.
+    grants = orch.permission_ledger.list_grants(include_inactive=True)
+    assert [(g.surface, g.scope, g.status) for g in grants] == [("skill_switch", "once", "revoked")]
+    assert orch.permission_ledger.snapshot()["active"] == 0
+    audit = orch.permission_ledger.audit_rows(limit=1)[0]
+    assert (audit["event"], audit["actor"], audit["detail"]) == ("grant.revoked", "skill_switch", staleness)
+    # A fresh request after the refusal still approves and consumes its own grant.
+    if staleness == "stale_skill_source":
+        skill.source_fingerprint = source_snapshot(skill.path).fingerprint
+    retried = switch_approval.request_enable(orch, retry, category=category)
+    assert retried["status"] == "pending" and retried["task_id"] == 2
+    out = asyncio.run(switch_approval.apply_approved(_task(queued, task_id=2), ledger=orch.permission_ledger,
+                                                     loader=loader))
+    assert out["status"] == "ok" and switches.off_reason(skill) == ""
+    statuses = sorted(g.status for g in orch.permission_ledger.list_grants(include_inactive=True))
+    assert statuses == ["consumed", "revoked"] and orch.permission_ledger.snapshot()["active"] == 0

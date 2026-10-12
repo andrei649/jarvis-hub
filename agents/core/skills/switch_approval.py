@@ -134,6 +134,14 @@ def _binding(record: dict) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
+def _retire_grant(ledger, grant, *, reason: str) -> None:
+    """A refused apply writes no receipt, so the once grant it just minted is retired here."""
+    try:
+        ledger.revoke(grant.id, by="skill_switch", reason=reason)
+    except Exception:
+        logger.warning("refused skill switch grant cleanup pending", exc_info=True)
+
+
 def _approval_label(record: dict) -> str:
     display = ", ".join(item["name"] for item in record["targets"])
     if len(display) > 120:
@@ -272,6 +280,7 @@ async def apply_approved(task, *, ledger, loader, usage=None, intent_log=None) -
             if (fresh is None or fresh["status"] != "pending" or fresh["binding"] != row["binding"]
                     or fresh["record"] != row["record"] or _revision(conn) != record["revision"]):
                 conn.rollback()
+                _retire_grant(ledger, grant, reason="stale_switch_request")
                 return {"status": "refused", "reason": "stale_switch_request"}
             current = []
             for target in record["targets"]:
@@ -280,6 +289,7 @@ async def apply_approved(task, *, ledger, loader, usage=None, intent_log=None) -
                         or getattr(skill, "source_fingerprint", None) != target["fingerprint"]
                         or signing.source_snapshot(skill.path).fingerprint != target["fingerprint"]):
                     conn.rollback()
+                    _retire_grant(ledger, grant, reason="stale_skill_source")
                     return {"status": "refused", "reason": "stale_skill_source"}
                 current.append(skill)
             if record["category"]:
@@ -289,6 +299,7 @@ async def apply_approved(task, *, ledger, loader, usage=None, intent_log=None) -
                                    if _skill_category(s).casefold() == record["category"].casefold()}
                 if current_members != {s.name for s in current}:
                     conn.rollback()
+                    _retire_grant(ledger, grant, reason="stale_skill_category")
                     return {"status": "refused", "reason": "stale_skill_category"}
             state = switches.state_from_connection(conn)
             outcome = switches.plan(current, enabled=True, channel=record["channel"], now=state)
