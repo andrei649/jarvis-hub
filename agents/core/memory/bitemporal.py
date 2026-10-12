@@ -229,6 +229,10 @@ class BiTemporalKG(JsonStore):
         seen: dict = {}
         for f in facts:
             for n in (f["subject"], f["object"]):
+                # A row written before the route validated its names (a list or a dict
+                # object) must not take the whole map down: it names no entity.
+                if not isinstance(n, str):
+                    continue
                 if n not in seen or f["ingested_at"] < seen[n]:
                     seen[n] = f["ingested_at"]
         return seen

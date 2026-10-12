@@ -624,7 +624,7 @@ async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
     return nocache_json({"entities": entities[:limit], "total": len(entities)})
 
 
-@router.get("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
+@router.get("/api/kg/entities/{name:path}", dependencies=[Depends(user_guard)])
 async def kg_entity(name: str):
     """Get one entity plus its relations."""
     g = _kg()
@@ -638,6 +638,7 @@ async def kg_entity(name: str):
 
 _KG_MAP_MAX = 1000
 _KG_TIME_MAX = 8.64e12     # the largest |epoch seconds| a JavaScript Date can show
+_KG_FACT_TEXT_MAX = 1000   # subject / predicate / object of a bi-temporal fact
 
 
 @router.get("/api/kg/map", dependencies=[Depends(user_guard)])
@@ -657,7 +658,9 @@ async def kg_map(limit: int = 500):
     listed = [e for e in listed[:limit] if e.get("name")]
     names = {e["name"] for e in listed}
     rel_cap = min(limit * 4, 4000)
-    rels = await _kg_call(g.list_relations, rel_cap + 1)
+    # Only relations among the listed entities: a global LIMIT on a big graph samples edges
+    # whose ends are mostly not on the map, and the map would draw almost none.
+    rels = await _kg_call(g.list_relations, rel_cap + 1, names=sorted(names))
     bt = getattr(get_orch(), "bitemporal", None)
     first_seen = await _kg_call(bt.first_seen) if bt is not None else {}
     return nocache_json({
@@ -680,7 +683,13 @@ async def kg_upsert_entity(req: Request):
         body = await req.json()
     except Exception:
         body = {}
-    name = (body or {}).get("name", "").strip()
+    name = (body or {}).get("name", "")
+    if not isinstance(name, str):
+        return JSONResponse({"error": "name must be text"}, status_code=400)
+    # An edit is addressed by the exact stored name. Stripping it here used to write 'Foo '
+    # over a different entity called 'Foo' while the client reported success for 'Foo '.
+    if name != name.strip():
+        return JSONResponse({"error": "name must not start or end with whitespace"}, status_code=400)
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
     entity_type = body.get("type") or "unknown"
@@ -709,7 +718,14 @@ async def kg_upsert_entity(req: Request):
     return nocache_json({"ok": bool(ok), "entity": await _kg_call(g.get_entity, name)})
 
 
-@router.delete("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
+def _lookup(g, name: str):
+    """``(is the entity in the graph, why the graph could not be asked)`` — both from the
+    same worker thread, because the backend's error flag is per thread."""
+    present = g.get_entity(name) is not None
+    return present, (None if present else g.last_error() if hasattr(g, "last_error") else None)
+
+
+@router.delete("/api/kg/entities/{name:path}", dependencies=[Depends(user_guard)])
 async def kg_delete_entity(name: str, req: Request = None):
     """Delete an entity and any relations that touch it."""
     g = _kg()
@@ -739,7 +755,12 @@ async def kg_delete_entity(name: str, req: Request = None):
         # entity is not in the graph at all. The second case is the default install after
         # a restart: the in-memory graph is empty while the persisted timeline still
         # names the entity. Closing those facts is then the whole delete.
-        if bt is None or await _kg_call(g.get_entity, name) is not None:
+        present, error = await _kg_call(_lookup, g, name)
+        if error:
+            # The graph could not be asked (Neo4j down): the entity may well still be there, so
+            # closing its timeline facts would half-apply a delete that did not happen.
+            return JSONResponse({"error": f"graph backend unavailable: {error}"}, status_code=503)
+        if bt is None or present:
             return JSONResponse({"error": "not found"}, status_code=404)
         retracted = await _kg_call(bt.retract_entity, name)
         if not retracted:
@@ -830,6 +851,12 @@ async def kg_add_fact(req: Request):
     for k in ("subject", "predicate", "object"):
         if not (body or {}).get(k):
             return JSONResponse({"error": "subject, predicate, object required"}, status_code=400)
+    # H206: the names are text. A list or a dict stored here made every reader that keys on a
+    # name (the explorer's map) fail for good; an unbounded one cannot be drawn either.
+    for k, cap in (("subject", _KG_FACT_TEXT_MAX), ("predicate", _KG_FACT_TEXT_MAX), ("object", _KG_FACT_TEXT_MAX)):
+        v = body[k]
+        if not isinstance(v, str) or len(v) > cap:
+            return JSONResponse({"error": f"{k} must be text of at most {cap} characters"}, status_code=400)
     # H206: a timestamp the explorer cannot print (and no calendar can hold) would be stored
     # for good and break every view that reads the timeline. Seconds since the epoch, finite,
     # within what JavaScript's Date can show (+-8.64e12 s).
@@ -866,6 +893,8 @@ async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicat
     is what the store BELIEVED at `at` (ingested by then and not yet superseded or
     retracted by then). ``limit`` keeps the newest facts (``clipped`` says so) and a
     response to either option carries ``bounds``, the timeline's extent for the scrubber."""
+    if at is not None and (not math.isfinite(at) or abs(at) > _KG_TIME_MAX):
+        return JSONResponse({"error": "at must be a number of seconds within +-8.64e12"}, status_code=422)
     explorer = axis is not None or limit is not None
     if axis is not None and axis not in ("valid", "known"):
         return JSONResponse({"error": "axis must be 'valid' or 'known'"}, status_code=422)

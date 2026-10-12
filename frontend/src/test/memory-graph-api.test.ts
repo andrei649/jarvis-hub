@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  loadEntity, loadFacts, loadMemoryMap, loadSkills, removeEntity, saveEntity, switchSkill,
+  isAddressable, isEditable, loadEntity, loadFacts, loadMemoryMap, loadSkills, removeEntity, saveEntity, switchSkill,
 } from '../api/memory-graph';
 
 const json = (value: unknown, status = 200) =>
@@ -152,11 +152,44 @@ describe('memory graph writes use only the mediated routes', () => {
     await expect(removeEntity('A')).rejects.toMatchObject({ code: 'unavailable' });
   });
 
-  it('never sends a name the path route cannot carry (slash, dot segments)', async () => {
-    for (const name of ['a/b', '..', 'x\\y']) {
+  it('never sends a dot segment, which a URL path cannot carry', async () => {
+    for (const name of ['..', '.']) {
       await expect(removeEntity(name)).rejects.toMatchObject({ code: 'unaddressable' });
+      await expect(loadEntity(name)).rejects.toMatchObject({ code: 'unaddressable' });
+      await expect(saveEntity(name, 'person', {})).rejects.toMatchObject({ code: 'unaddressable' });
     }
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('carries a name with a slash or a backslash as one percent-encoded segment', async () => {
+    for (const name of ['AC/DC', 'x\\y', '/lead', 'trail/']) {
+      vi.mocked(fetch).mockClear();
+      vi.mocked(fetch).mockResolvedValue(json({ ok: true, deleted: name, graph_deleted: true, facts_retracted: 0 }));
+      await removeEntity(name);
+      const [path] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+      expect(path).toBe('/api/kg/entities/' + encodeURIComponent(name));
+      expect(path.slice('/api/kg/entities/'.length)).not.toMatch(/[/\\]/);
+    }
+    vi.mocked(fetch).mockClear();
+    vi.mocked(fetch).mockResolvedValue(json({ entity: { name: 'AC/DC', type: 'band', properties: { k: 'v' } } }));
+    expect(await loadEntity('AC/DC')).toMatchObject({ name: 'AC/DC', type: 'band' });
+  });
+
+  it('refuses to edit a name with surrounding whitespace, because the server stores the exact name', async () => {
+    for (const name of ['Foo ', ' Foo', 'Foo\u00a0']) {
+      await expect(saveEntity(name, 'person', {})).rejects.toMatchObject({ code: 'padded' });
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(isEditable('Foo ')).toBe(false);
+    expect(isEditable('Foo')).toBe(true);
+    expect(isAddressable('Foo ')).toBe(true);                 // Delete still works by path
+  });
+
+  it('leaves out a name that the map code would clean to nothing', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ entities: [{ name: '\u202e', type: 'x', first_seen: 1 }, { name: '\u0085', type: 'x', first_seen: 1 }, { name: 'Ok', type: 'x', first_seen: 1 }], relations: [] }));
+    const data = await loadMemoryMap();
+    expect(data.entities.map(e => e.name)).toEqual(['Ok']);
+    expect(data.skipped).toBe(2);
   });
 
   it('shows a kernel refusal on delete and a 404 as not found', async () => {
@@ -209,9 +242,9 @@ describe('fix round 2: times a calendar cannot hold', () => {
     expect(await removeEntity('A')).toEqual({ factsRetracted: 0, graphDeleted: true });
   });
 
-  it('says a name with a slash cannot be addressed, with its own code', async () => {
-    await expect(removeEntity('a/b')).rejects.toMatchObject({ code: 'unaddressable' });
-    await expect(loadEntity('a/b')).rejects.toMatchObject({ code: 'unaddressable' });
+  it('says a dot segment cannot be addressed, with its own code', async () => {
+    await expect(removeEntity('..')).rejects.toMatchObject({ code: 'unaddressable' });
+    await expect(loadEntity('.')).rejects.toMatchObject({ code: 'unaddressable' });
   });
 });
 

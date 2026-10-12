@@ -9,7 +9,7 @@
    "Could not load memory graph". Demo mode keeps its own sample star-map elsewhere. */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  MAX_TIME, isAddressable, loadFacts, loadMemoryMap, loadSkills, switchSkill,
+  MAX_TIME, isAddressable, isEditable, loadFacts, loadMemoryMap, loadSkills, switchSkill,
   type FactsPage, type MemoryMapData, type SkillInfo, type TimelineAxis, type TimelineBounds,
 } from '../api/memory-graph';
 import { MAP_CODE_LIMITS, decodeMapCode, encodeMapCode, type MapContent } from '../api/memory-map-code';
@@ -314,7 +314,7 @@ export function MemoryGraphExplorer() {
       items.push(['explore', 'Explore neighbours']);
       /* Delete also works on a timeline node: after a restart the persisted timeline can name entities the in-memory graph no longer holds. */
       if (isAddressable(node.label)) {
-        if (canWrite) items.push(['edit', 'Edit…']);
+        if (canWrite && isEditable(node.label)) items.push(['edit', 'Edit…']);
         if (canWrite || view.mode === 'timeline') items.push(['delete', 'Delete…']);
       }
     } else if (canWrite) {
@@ -485,7 +485,9 @@ export function MemoryGraphExplorer() {
           onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); const q = relativeTo(rect.left, rect.top); openMenu(selected.id, q.x, q.y); }}>⋯</button>
       </div>
       {selected.kind === 'memory' && view.mode !== 'imported' && !isAddressable(selected.label) && <p style={{ margin: '6px 0 0', color: 'var(--ink-2)' }}>
-        This name contains / or \\, so it cannot be edited or deleted here: the memory path route cannot carry it (MEM-098).</p>}
+        This name is a dot segment (. or ..), so it cannot be edited or deleted here: a URL path cannot carry it (MEM-098).</p>}
+      {selected.kind === 'memory' && view.mode !== 'imported' && isAddressable(selected.label) && !isEditable(selected.label) && <p style={{ margin: '6px 0 0', color: 'var(--ink-2)' }}>
+        This name starts or ends with whitespace, so it cannot be edited here: the server would store a different, trimmed name. Delete still works.</p>}
       {(() => {
         const rows = view.edges.filter(e => e.from === selected.id || e.to === selected.id).slice(0, 12);
         return rows.length > 0 && <ul aria-label="Relations of the selected node" style={{ margin: '6px 0 0', paddingLeft: 18, overflowWrap: 'anywhere' }}>

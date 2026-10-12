@@ -637,13 +637,35 @@ describe('fix round 2: honest limits', () => {
     hasText(screen.getByRole('alert'), /Too many nodes/);
   });
 
-  it('hides Edit and Delete for a name the path route cannot carry, and says why', async () => {
+  it('offers Edit and Delete for a name with a slash, and sends it by its exact name', async () => {
     vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities: [{ name: 'AC/DC', type: 'band', firstSeen: 1 }], relations: [] }));
+    vi.mocked(api.loadEntity).mockResolvedValue({ name: 'AC/DC', type: 'band', properties: { k: 'v' } });
+    vi.mocked(api.saveEntity).mockResolvedValue({ name: 'AC/DC', type: 'band', properties: { k: 'v' } });
     await ready();
     const menu = openMenu('AC/DC');
+    expect(within(menu).getByRole('menuitem', { name: 'Delete…' })).toBeTruthy();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Edit…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Edit AC\/DC/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.saveEntity).toHaveBeenCalledWith('AC/DC', 'band', { k: 'v' }));
+  });
+
+  it('offers only Delete for a name with surrounding whitespace, and says why', async () => {
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities: [{ name: 'Foo ', type: 'band', firstSeen: 1 }], relations: [] }));
+    await ready();
+    const menu = openMenu('Foo ');
+    expect(within(menu).queryByRole('menuitem', { name: 'Edit…' })).toBeNull();
+    expect(within(menu).getByRole('menuitem', { name: 'Delete…' })).toBeTruthy();
+    hasText(screen.getByRole('region', { name: 'Selected node' }), /cannot be edited here/);
+  });
+
+  it('offers neither for a dot segment, and says why', async () => {
+    vi.mocked(api.loadMemoryMap).mockResolvedValue(map({ entities: [{ name: '..', type: 'band', firstSeen: 1 }], relations: [] }));
+    await ready();
+    const menu = openMenu('\\.\\.');
     expect(within(menu).queryByRole('menuitem', { name: 'Edit…' })).toBeNull();
     expect(within(menu).queryByRole('menuitem', { name: 'Delete…' })).toBeNull();
-    hasText(screen.getByRole('region', { name: 'Selected node' }), /cannot be edited or deleted here/);
+    hasText(screen.getByRole('region', { name: 'Selected node' }), /dot segment/);
   });
 
   it('says on the timeline that only ingested facts are on it', async () => {
@@ -776,6 +798,30 @@ describe('mutation hardening: scrubber, editor and share edge cases', () => {
       addProperty(dialog, 'city', 'Brasov');
       hasText(await within(dialog).findByRole('alert'), 'city already exists.');
       expect(api.saveEntity).not.toHaveBeenCalled();
+    });
+
+    it('treats constructor, toString and __proto__ as ordinary new property names', async () => {
+      vi.mocked(api.saveEntity).mockResolvedValue({ name: 'Andrei', type: 'person', properties: {} });
+      for (const key of ['constructor', 'toString']) {
+        vi.mocked(api.saveEntity).mockClear();
+        const dialog = await openEditor();
+        addProperty(dialog, key, 'x');
+        await waitFor(() => expect(api.saveEntity).toHaveBeenCalled());
+        expect(Object.prototype.hasOwnProperty.call(vi.mocked(api.saveEntity).mock.calls[0][2], key)).toBe(true);
+        cleanup();
+      }
+    });
+
+    it('keeps a stored property called __proto__ when saving', async () => {
+      const stored = JSON.parse('{"__proto__": "kept", "city": "Cluj"}');
+      vi.mocked(api.loadEntity).mockResolvedValue({ name: 'Andrei', type: 'person', properties: stored });
+      vi.mocked(api.saveEntity).mockResolvedValue({ name: 'Andrei', type: 'person', properties: {} });
+      const dialog = await openEditor();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(api.saveEntity).toHaveBeenCalled());
+      const sent = vi.mocked(api.saveEntity).mock.calls[0][2];
+      expect(Object.prototype.hasOwnProperty.call(sent, '__proto__')).toBe(true);
+      expect(JSON.stringify(sent)).toBe('{"__proto__":"kept","city":"Cluj"}');
     });
 
     it('refuses a property name the server would not accept', async () => {

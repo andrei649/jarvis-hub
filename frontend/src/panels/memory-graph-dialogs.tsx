@@ -13,7 +13,8 @@ export function describeError(error: any, action: string): string {
     case 'invalid': return `Not accepted: ${detail || 'invalid request'}. Nothing was changed.`;
     case 'auth': return 'Memory access requires your current user credentials. Nothing was changed.';
     case 'admin': return `${action} needs the admin token. Nothing was changed.`;
-    case 'unaddressable': return `This name contains / or \\, which the memory path route cannot carry, so it cannot be edited or deleted here. Nothing was changed.`;
+    case 'unaddressable': return 'This name is a dot segment (. or ..), which a URL path cannot carry, so it cannot be edited or deleted here. Nothing was changed.';
+    case 'padded': return 'This name starts or ends with whitespace, so it cannot be edited here: the server would store a different, trimmed name. Delete still works. Nothing was changed.';
     case 'notfound': return 'Not found: nothing was deleted. It may already be gone. Refresh the map to see what is stored now.';
     case 'unknown': return `The result is unknown: the reply did not arrive${detail ? ' (' + detail + ')' : ''}, so the change may have been applied. The map is reloading; check it before trying again.`;
     default: return `Memory graph unavailable${detail ? ': ' + detail : ''}. Nothing was changed.`;
@@ -69,12 +70,13 @@ export function EditEntityDialog({ name, onClose, onSaved, onRefresh }: { name: 
 
   const save = async () => {
     if (!SAFE_TYPE.test(type.trim())) { setError(TYPE_RULE); return; }
-    const properties: Record<string, unknown> = {};
+    /* No prototype: a stored property called __proto__ or constructor is data here, not a setter or an inherited member. */
+    const properties: Record<string, unknown> = Object.create(null);
     for (const row of rows) properties[row.key] = row.value === String(row.original) ? row.original : row.value;
     for (const [key, value] of kept) properties[key] = value;
     if (adding && newKey.trim()) {
       if (!SAFE_PROPERTY_KEY.test(newKey.trim())) { setError('A property name is letters, digits and underscores, starting with a letter or underscore (max 64).'); return; }
-      if (newKey.trim() in properties) { setError(`${newKey.trim()} already exists.`); return; }
+      if (Object.prototype.hasOwnProperty.call(properties, newKey.trim())) { setError(`${newKey.trim()} already exists.`); return; }
       properties[newKey.trim()] = newValue;
     }
     if (Object.keys(properties).length > 50) { setError('At most 50 properties.'); return; }

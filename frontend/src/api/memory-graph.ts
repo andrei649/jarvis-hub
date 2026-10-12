@@ -13,8 +13,9 @@ import { SKILLS_PATH, SWITCH_PATH } from '../panels/skill-switches';
 
 /* 'unknown' = the request may have been executed but its reply never arrived (or the server broke
    while handling it): the caller must reload instead of claiming nothing changed. */
-/* 'unaddressable' = a name containing / or \ (or '.', '..'): the path route cannot carry it, so it can be neither read nor deleted by name. */
-export type MemoryGraphErrorCode = 'auth' | 'admin' | 'denied' | 'invalid' | 'notfound' | 'unavailable' | 'unknown' | 'unaddressable';
+/* 'unaddressable' = the dot segments '.' and '..': a URL cannot carry them as a path segment, so they can be neither read nor deleted by name.
+   'padded' = a name with leading or trailing whitespace: the server stores the exact name it is sent, so an edit is refused rather than risk writing a different entity. */
+export type MemoryGraphErrorCode = 'auth' | 'admin' | 'denied' | 'invalid' | 'notfound' | 'unavailable' | 'unknown' | 'unaddressable' | 'padded';
 export class MemoryGraphError extends Error {
   constructor(public code: MemoryGraphErrorCode = 'unavailable', public detail = '') { super(code); }
 }
@@ -40,16 +41,21 @@ export const SAFE_TYPE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 export const SAFE_PROPERTY_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 const CONTROL = /[\u0000-\u001f\u007f]/;
+/* Something the map code would keep: a name made only of C1, line-separator or bidi control characters is cleaned to nothing by the encoder and then refused by the decoder. */
+const VISIBLE = /[^\u0000-\u0020\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
 const text = (value: unknown, max = 256): value is string =>
-  typeof value === 'string' && value.trim().length > 0 && value.length <= max && !CONTROL.test(value);
+  typeof value === 'string' && value.trim().length > 0 && value.length <= max && !CONTROL.test(value) && VISIBLE.test(value);
 const num = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 /* The largest |epoch seconds| a JavaScript Date can show. A stored time beyond it would throw in the panel's formatter. */
 export const MAX_TIME = 8.64e12;
 const sane = (value: unknown): value is number => num(value) && Math.abs(value) <= MAX_TIME;
 /* A bound that is a number but out of range is dropped (null), anything else that is not a number fails the read. */
 const numOrNull = (value: unknown): number | null => (value === null || value === undefined ? null : num(value) ? (sane(value) ? value : null) : fail());
-/* Names the path route /api/kg/entities/{name} cannot carry (MEM-098). */
-export const isAddressable = (name: string): boolean => name !== '.' && name !== '..' && !/[/\\]/.test(name);
+/* The routes /api/kg/entities/{name:path} carry any name, '/' and '\\' included (the client sends it percent-encoded);
+   only the dot segments cannot travel in a URL path (MEM-098). */
+export const isAddressable = (name: string): boolean => name !== '.' && name !== '..';
+/* Edit writes by the exact name: one with surrounding whitespace is refused (the server would otherwise store a different, trimmed entity). Delete and read are by path and unaffected. */
+export const isEditable = (name: string): boolean => isAddressable(name) && name === name.trim();
 
 /* ── errors ─────────────────────────────────────────────────────────────── */
 const bodyError = (body: any): string => (body && typeof body === 'object' && typeof body.error === 'string' ? body.error.slice(0, 300) : '');
@@ -204,6 +210,8 @@ async function mutate<T>(run: () => Promise<T>, admin = false): Promise<T> {
 
 export async function saveEntity(name: string, type: string, properties: Record<string, unknown>): Promise<EntityDetail> {
   if (!text(name)) return fail('invalid', 'name required');
+  if (!isAddressable(name)) return fail('unaddressable');
+  if (name !== name.trim()) return fail('padded');
   if (!SAFE_TYPE.test(type.trim())) return fail('invalid', 'invalid entity type');
   const body = await mutate(() => apiPost<any>('/api/kg/entities', { name, type: type.trim(), properties }));
   const e = body?.entity;

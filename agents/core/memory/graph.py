@@ -75,9 +75,16 @@ class KnowledgeGraph(ABC):
             return True
         return self.add_entity(name, entity_type)
 
-    def list_relations(self, limit: int = 500) -> list[dict]:
-        """Up to *limit* relations as ``{source, relation, target}`` (no properties)."""
+    def list_relations(self, limit: int = 500, names: Optional[list] = None) -> list[dict]:
+        """Up to *limit* relations as ``{source, relation, target}`` (no properties).
+        With *names*, only relations whose BOTH ends are in that list: on a big graph a
+        global ``LIMIT`` returns an arbitrary sample whose edges mostly leave the set."""
         return []
+
+    def last_error(self) -> Optional[str]:
+        """Why the last call on THIS thread could not ask the backend (``None`` = it could).
+        Lets a caller tell "no such entity" from "the graph did not answer"."""
+        return None
 
     @abstractmethod
     def delete_relation(self, source: str, relation: str, target: str) -> bool:
@@ -124,9 +131,11 @@ class InMemoryGraph(KnowledgeGraph):
             self.add_entity(name, entity_type)
         return True
 
-    def list_relations(self, limit: int = 500) -> list[dict]:
+    def list_relations(self, limit: int = 500, names: Optional[list] = None) -> list[dict]:
+        wanted = set(names) if names is not None else None
+        rels = [r for r in self.relations if wanted is None or (r["source"] in wanted and r["target"] in wanted)]
         return [{"source": r["source"], "relation": r["relation"], "target": r["target"]}
-                for r in self.relations[:max(1, limit)]]
+                for r in rels[:max(1, limit)]]
 
     def add_relation(self, source: str, relation: str, target: str, properties: dict = None) -> bool:
         if source not in self.entities:
@@ -305,6 +314,9 @@ class Neo4jGraph(KnowledgeGraph):
         """The explorer's edit: ``SET n = {...}`` so a removed property really goes."""
         return self._write_entity(name, entity_type, properties, replace=True)
 
+    def last_error(self) -> Optional[str]:
+        return getattr(self._tls, "error", None)
+
     def _write_entity(self, name: str, entity_type: str, properties: dict, replace: bool) -> bool:
         # AUD-12 (F11): the label is interpolated into Cypher (Neo4j can't
         # parameterise it), so coerce it to a safe identifier — a legitimate
@@ -332,27 +344,41 @@ class Neo4jGraph(KnowledgeGraph):
             props.pop("name")
         pairs = ["name: $name"] + [f"{k}: $p_{k}" for k in props]
         params = {"name": name, **{f"p_{k}": v for k, v in props.items()}}
-        # `replace` (the explorer's edit only) uses `SET n = {...}`: an edit that drops a
-        # property must really drop it (`+=` only adds or overwrites keys). Every other
-        # writer (manager.add_fact, house projection, seed) keeps merging with `+=`.
-        assign = "n = " if replace else "n += "
+        # `replace` (the explorer's edit only) must make a removed property really go, which
+        # `+=` alone does not do. It is `+=` plus an explicit REMOVE of each stored property
+        # the edit left out, NOT `SET n = {...}`: that would also wipe every stored property
+        # whose key cannot be interpolated (`event-id`, `geo.lat`), which the dialog can show
+        # but never write back. Those keys are left alone. Every other writer
+        # (manager.add_fact, house projection, seed) keeps merging with `+=`.
         # A type edit must RELABEL the node. `MERGE (n:<new label> {name})` matches only
         # nodes that already carry the new label, so changing Unknown -> Person created
         # a second node with the same name next to the first.
         try:
-            existing = self._labels_of(name)
+            existing, stored_keys = self._node_shape(name)
         except RuntimeError as exc:
             # Could not ask: writing now could MERGE a duplicate next to a node that
             # exists under another label. Refuse instead.
             logger.warning("add_entity(%r) not written: label lookup failed (%s)", name, exc)
             return False
         if existing is not None:
-            stale = [lb for lb in existing if lb != label and is_safe_kg_label(lb)]
-            remove = f"REMOVE n:{':'.join(f'`{lb}`' for lb in stale)} " if stale else ""
-            cypher = (f"MATCH (n {{name: $name}}) {remove}SET n:`{label}` "
-                      f"SET {assign}{{{', '.join(pairs)}}} RETURN n")
+            # Labels compare case-insensitively: get_entity reports labels lower-cased and
+            # coerce_kg_label capitalises, so an edit that keeps the type must not turn a
+            # node labelled `ReconWindow` into `Reconwindow`.
+            keep = any(lb.lower() == label.lower() for lb in existing)
+            stale = [] if keep else [lb for lb in existing if is_safe_kg_label(lb)]
+            clauses = []
+            if stale:
+                clauses.append(f"REMOVE n:{':'.join(f'`{lb}`' for lb in stale)}")
+            if replace:
+                gone = [k for k in stored_keys if k != "name" and k not in props and is_safe_property_key(k)]
+                if gone:
+                    clauses.append("REMOVE " + ", ".join(f"n.`{k}`" for k in gone))
+            if not keep:
+                clauses.append(f"SET n:`{label}`")
+            clauses.append(f"SET n += {{{', '.join(pairs)}}}")
+            cypher = f"MATCH (n {{name: $name}}) {' '.join(clauses)} RETURN n"
         else:
-            cypher = f"MERGE (n:{label} {{name: $name}}) SET {assign}{{{', '.join(pairs)}}} RETURN n"
+            cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{', '.join(pairs)}}} RETURN n"
         results = self._call_neo4j([{"statement": cypher, "parameters": params}])
         return len(results) > 0
 
@@ -361,8 +387,13 @@ class Neo4jGraph(KnowledgeGraph):
 
         Raises ``RuntimeError`` when Neo4j could not be asked (unreachable / rejected),
         which is not the same answer as "no such node"."""
+        return self._node_shape(name)[0]
+
+    def _node_shape(self, name: str) -> tuple[Optional[list[str]], list[str]]:
+        """``(labels, stored property keys)`` of the node called *name*; labels are ``None``
+        when there is no such node. Raises ``RuntimeError`` like ``_labels_of``."""
         results = self._call_neo4j([{
-            "statement": "MATCH (n {name: $name}) RETURN labels(n) AS labels",
+            "statement": "MATCH (n {name: $name}) RETURN labels(n) AS labels, keys(n) AS keys",
             "parameters": {"name": name},
         }])
         error = getattr(self._tls, "error", None)
@@ -370,13 +401,16 @@ class Neo4jGraph(KnowledgeGraph):
             raise RuntimeError(error)
         found = False
         labels: list[str] = []
+        keys: list[str] = []
         for result in results:
             for row_data in result.get("data", []):
                 row = row_data.get("row") or [[]]
                 if isinstance(row[0], list):
                     found = True
                     labels.extend(str(lb) for lb in row[0])
-        return labels if found else None
+                    if len(row) > 1 and isinstance(row[1], list):
+                        keys.extend(k for k in row[1] if isinstance(k, str))
+        return (labels if found else None), keys
 
     def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
         # Bare MERGE on the name matches the node whatever its labels are, so it can
@@ -388,7 +422,13 @@ class Neo4jGraph(KnowledgeGraph):
         }])
         return len(results) > 0
 
-    def list_relations(self, limit: int = 500) -> list[dict]:
+    def list_relations(self, limit: int = 500, names: Optional[list] = None) -> list[dict]:
+        if names is not None:
+            return self.query(
+                "MATCH (a)-[r]->(b) WHERE a.name IN $names AND b.name IN $names "
+                "RETURN a.name AS source, type(r) AS relation, b.name AS target LIMIT $limit",
+                {"limit": max(1, limit), "names": list(names)},
+            )
         return self.query(
             "MATCH (a)-[r]->(b) RETURN a.name AS source, type(r) AS relation, "
             "b.name AS target LIMIT $limit",
@@ -534,7 +574,14 @@ class Neo4jGraph(KnowledgeGraph):
             "statement": "MATCH (n {name: $name}) DETACH DELETE n RETURN count(n) AS deleted",
             "parameters": {"name": name},
         }])
-        return len(results) > 0
+        # The aggregate answers one row even when nothing matched (count 0): True only when
+        # a node really left the graph, so the route can tell "deleted" from "never there".
+        for result in results:
+            for row_data in result.get("data", []):
+                row = row_data.get("row") or []
+                if row and isinstance(row[0], int) and not isinstance(row[0], bool) and row[0] > 0:
+                    return True
+        return False
 
     def delete_relation(self, source: str, relation: str, target: str) -> bool:
         # AUD-12 (F11): refuse a non-identifier relationship type rather than

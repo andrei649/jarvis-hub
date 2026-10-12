@@ -329,12 +329,15 @@ def test_delete_does_not_report_success_when_the_graph_delete_failed(tmp_path, m
 
 
 def test_neo4j_edit_replaces_the_property_map(tmp_path):
-    g, sent = _neo4j_stub(["Unknown"])
+    """A removed property really goes (REMOVE), without `SET n = {...}` wiping unwritable keys."""
+    g, sent = _shape_stub(["Unknown"], ["name", "city", "gone"])
     g.replace_entity("Andrei", "person", {"city": "Cluj"})
-    assert "SET n = {" in sent[-1]["statement"] and "+=" not in sent[-1]["statement"]
-    g, sent = _neo4j_stub(None)
+    stmt = sent[-1]["statement"]
+    assert "REMOVE n.`gone`" in stmt and "SET n += {name: $name, city: $p_city}" in stmt
+    assert "SET n = {" not in stmt
+    g, sent = _shape_stub(None, [])
     g.replace_entity("Andrei", "person", {"city": "Cluj"})
-    assert "SET n = {" in sent[-1]["statement"] and "+=" not in sent[-1]["statement"]
+    assert sent[-1]["statement"].startswith("MERGE (n:Person {name: $name}) SET n += {")
 
 
 def test_neo4j_failed_label_lookup_writes_nothing_instead_of_duplicating():
@@ -623,8 +626,9 @@ class _SpyGraph(InMemoryGraph):
         self.calls.append(("e", limit))
         return self._e[:limit]
 
-    def list_relations(self, limit=500):
+    def list_relations(self, limit=500, names=None):
         self.calls.append(("r", limit))
+        self.names = names
         return self._r[:limit]
 
 
@@ -761,3 +765,166 @@ def test_retract_entity_keeps_valid_time_and_transaction_time_apart(tmp_path):
     assert len(kg.believed_as_of(700)) == 1        # still believed until the transaction time 900
     assert kg.believed_as_of(950) == []
     assert [f["object"] for f in kg.as_of(400)] == ["X"] and kg.as_of(600) == []   # valid-time end 500
+
+
+# ── round 4: names, stored shapes and Neo4j fidelity ──────────────────────────
+
+def _shape_stub(labels, keys):
+    """A Neo4j transport stub whose lookup answers labels AND stored property keys."""
+    g = Neo4jGraph()
+    sent = []
+
+    def _stub(statements):
+        sent.extend(statements)
+        stmt = statements[-1]["statement"]
+        if stmt.startswith("MATCH (n {name: $name}) RETURN labels(n) AS labels"):
+            if labels is None:
+                return [{"columns": ["labels", "keys"], "data": []}]
+            return [{"columns": ["labels", "keys"], "data": [{"row": [labels, keys]}]}]
+        return [{"columns": ["n"], "data": [{"row": [{"name": "x"}]}]}]
+
+    g._call_neo4j = _stub
+    return g, sent
+
+
+def test_neo4j_replace_keeps_stored_properties_it_cannot_write_back():
+    g, sent = _shape_stub(["Reconwindow"], ["name", "aoi", "event-id", "geo.lat", "old"])
+    assert g.replace_entity("W1", "reconwindow", {"aoi": "x", "event-id": "7"}) is True
+    stmt = sent[-1]["statement"]
+    assert "SET n = {" not in stmt                            # a full replace would wipe the unsafe keys
+    assert "SET n += {name: $name, aoi: $p_aoi}" in stmt
+    assert "REMOVE n.`old`" in stmt                           # a property the dialog removed really goes
+    assert "event-id" not in stmt and "geo.lat" not in stmt  # unsafe keys are neither written nor removed
+    assert "REMOVE n.`aoi`" not in stmt and "n.`name`" not in stmt
+
+
+def test_neo4j_replace_of_a_new_node_still_merges_with_its_properties():
+    g, sent = _shape_stub(None, [])
+    g.replace_entity("W1", "reconwindow", {"aoi": "x"})
+    assert sent[-1]["statement"] == "MERGE (n:Reconwindow {name: $name}) SET n += {name: $name, aoi: $p_aoi} RETURN n"
+
+
+def test_neo4j_type_edit_that_keeps_the_type_does_not_relabel():
+    g, sent = _shape_stub(["ReconWindow"], ["name"])
+    g.replace_entity("W1", "reconwindow", {})                 # get_entity lower-cases the label; the dialog sends it back
+    stmt = sent[-1]["statement"]
+    assert "REMOVE n:" not in stmt and "SET n:" not in stmt
+    g, sent = _shape_stub(["ReconWindow"], ["name"])
+    g.replace_entity("W1", "person", {})
+    assert "REMOVE n:`ReconWindow`" in sent[-1]["statement"] and "SET n:`Person`" in sent[-1]["statement"]
+
+
+def test_neo4j_delete_of_a_node_that_is_not_there_is_false():
+    g = Neo4jGraph()
+    g._call_neo4j = lambda s: [{"columns": ["deleted"], "data": [{"row": [0]}]}]
+    assert g.delete_entity("Ghost") is False
+    g._call_neo4j = lambda s: [{"columns": ["deleted"], "data": [{"row": [1]}]}]
+    assert g.delete_entity("Real") is True
+    g._call_neo4j = lambda s: []
+    assert g.delete_entity("Real") is False
+
+
+def test_delete_with_an_unreachable_graph_leaves_the_timeline_alone(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    g = Neo4jGraph()
+    g._connected = False                                      # Neo4j cannot be asked
+    orch, _, bt = _orch(tmp_path, graph=g)
+    monkeypatch.setattr(web, "orch", orch)
+    bt.add_fact("Bob", "knows", "Eve", valid_from=100, ingested_at=100)
+    resp = _run(memory_kg.kg_delete_entity("Bob", _Req()))
+    assert _status(resp) == 503
+    assert len(bt.believed_as_of(10**12)) == 1                # not half-applied: the graph may still hold Bob
+
+
+def test_add_fact_refuses_names_that_are_not_text(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, _, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    for bad in (["x"], {"k": 1}, 7, True, "x" * 5000):
+        for field in ("subject", "predicate", "object"):
+            fact = {"subject": "A", "predicate": "p", "object": "B", field: bad}
+            assert _status(_run(memory_kg.kg_add_fact(_Req(fact)))) == 400, (field, bad)
+    assert bt.believed_as_of(10**12) == []
+
+
+def test_map_survives_a_stored_fact_with_a_non_text_name(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, graph, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    graph.add_entity("A", "person")
+    bt.add_fact(["x"], "p", {"k": 1}, valid_from=100, ingested_at=100)   # a row written before the route validated
+    bt.add_fact("A", "p", "B", valid_from=100, ingested_at=100)
+    assert bt.first_seen() == {"A": 100, "B": 100}
+    resp = _run(memory_kg.kg_map(limit=10))
+    assert _status(resp) == 200 and _body(resp)["entities"][0]["first_seen"] == 100
+
+
+def test_upsert_refuses_a_name_with_leading_or_trailing_whitespace(tmp_path, monkeypatch):
+    """The server used to strip it, so editing 'Foo ' silently overwrote 'Foo'."""
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, graph, _ = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    graph.add_entity("Foo", "person", {"secret": "keep"})
+    for padded in ("Foo ", " Foo", "\tFoo\n"):
+        resp = _run(memory_kg.kg_upsert_entity(_Req({"name": padded, "type": "person", "properties": {"x": 1}})))
+        assert _status(resp) == 400, padded
+    assert graph.get_entity("Foo")["properties"] == {"secret": "keep"}
+
+
+def test_entity_routes_carry_names_with_slashes_and_backslashes(tmp_path, monkeypatch):
+    from urllib.parse import quote
+
+    from fastapi.testclient import TestClient
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    orch, graph, bt = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    names = ("AC/DC", "R&D / QA", "a\\b", "/lead", "trail/", "plain")
+    for name in names:
+        graph.add_entity(name, "company", {"k": "v"})
+        bt.add_fact(name, "is", "loud", valid_from=100, ingested_at=100)
+    web.app.dependency_overrides[memory_kg.user_guard] = lambda: None   # the guard has its own tests
+    try:
+        client = TestClient(web.app)                       # no lifespan: the orchestrator above stays in place
+        for name in names:
+            enc = quote(name, safe="")
+            got = client.get("/api/kg/entities/" + enc)
+            assert got.status_code == 200 and got.json()["entity"]["name"] == name, (name, got.status_code)
+            gone = client.delete("/api/kg/entities/" + enc)
+            assert gone.status_code == 200 and gone.json()["deleted"] == name, (name, gone.status_code)
+            assert graph.get_entity(name) is None
+            assert client.delete("/api/kg/entities/" + enc).status_code == 404
+    finally:
+        web.app.dependency_overrides.pop(memory_kg.user_guard, None)
+
+
+def test_as_of_route_refuses_a_time_it_cannot_echo(tmp_path, monkeypatch):
+    orch, _, _ = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    for at in (float("nan"), float("inf"), float("-inf"), 1e13):
+        for axis in (None, "known", "valid"):
+            assert _status(_run(memory_kg.kg_facts_as_of(at=at, axis=axis))) == 422, (at, axis)
+
+
+def test_neo4j_list_relations_among_names_filters_in_the_query():
+    g = Neo4jGraph()
+    sent = []
+    g._call_neo4j = lambda statements: sent.extend(statements) or []
+    g.list_relations(25, names=["A", "B"])
+    assert "WHERE a.name IN $names AND b.name IN $names" in sent[-1]["statement"]
+    assert sent[-1]["parameters"] == {"limit": 25, "names": ["A", "B"]}
+
+
+def test_in_memory_list_relations_among_names_drops_edges_leaving_the_set():
+    g = InMemoryGraph()
+    g.add_relation("A", "r", "B")
+    for i in range(5):
+        g.add_relation("X", "r", f"Y{i}")                 # a crowd of edges that never touch the listed names
+    g.add_relation("B", "r", "A")
+    assert [(r["source"], r["target"]) for r in g.list_relations(3, names=["A", "B"])] == [("A", "B"), ("B", "A")]
+
+
+def test_map_route_asks_only_for_relations_among_the_listed_entities(tmp_path, monkeypatch):
+    graph = _SpyGraph(entities=[{"name": "A", "type": "t"}, {"name": "B", "type": "t"}],
+                      relations=[{"source": "A", "relation": "r", "target": "B"}])
+    body = _spy_map(tmp_path, monkeypatch, graph, limit=10)
+    assert graph.names == ["A", "B"] and len(body["relations"]) == 1
