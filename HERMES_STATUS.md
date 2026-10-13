@@ -11,14 +11,14 @@ Din acestea, **87** au fost reevaluate pe cod în această livrare; **108** păs
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 195 | 28.0% |
-| Parțial | 340 | 48.8% |
-| Lipsă | 56 | 8.0% |
+| Parțial | 393 | 56.4% |
+| Lipsă | 108 | 15.5% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 106 | 15.2% |
+| De reverificat | 1 | 0.1% |
 
 **Ținta acceptată în produs:** 697 rânduri; progres 195/697 = **28.0%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 235/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 340/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -26,30 +26,30 @@ Din acestea, **87** au fost reevaluate pe cod în această livrare; **108** păs
 
 | Domeniu | Total | Echiv. | Parțial | Lipsă | Exclus | Reverificare |
 |---|---:|---:|---:|---:|---:|---:|
-| cli | 56 | 20 | 25 | 1 | 0 | 10 |
-| gateway | 33 | 7 | 19 | 3 | 0 | 4 |
-| platforms | 39 | 7 | 21 | 3 | 0 | 8 |
-| web | 40 | 16 | 14 | 3 | 0 | 7 |
-| desktop | 54 | 8 | 34 | 6 | 0 | 6 |
-| tui | 25 | 3 | 11 | 2 | 0 | 9 |
-| config | 18 | 7 | 8 | 2 | 0 | 1 |
-| env | 28 | 5 | 17 | 1 | 0 | 5 |
-| tools — the agent-callable surface | 32 | 12 | 17 | 1 | 0 | 2 |
-| skills | 33 | 13 | 11 | 2 | 0 | 7 |
-| providers | 27 | 8 | 11 | 1 | 0 | 7 |
-| agent-core | 36 | 10 | 15 | 7 | 0 | 4 |
-| memory | 27 | 11 | 14 | 0 | 0 | 2 |
-| automation | 32 | 6 | 20 | 2 | 0 | 4 |
-| security | 34 | 13 | 15 | 1 | 0 | 5 |
-| media | 27 | 8 | 16 | 2 | 0 | 1 |
-| acp-mcp-dev | 33 | 3 | 13 | 11 | 0 | 6 |
-| docs-features | 48 | 11 | 25 | 3 | 0 | 9 |
-| rest-api | 33 | 12 | 15 | 2 | 0 | 4 |
-| delta | 42 | 15 | 19 | 3 | 0 | 5 |
+| cli | 56 | 20 | 30 | 6 | 0 | 0 |
+| gateway | 33 | 7 | 21 | 5 | 0 | 0 |
+| platforms | 39 | 7 | 22 | 10 | 0 | 0 |
+| web | 40 | 16 | 18 | 6 | 0 | 0 |
+| desktop | 54 | 8 | 37 | 9 | 0 | 0 |
+| tui | 25 | 3 | 17 | 5 | 0 | 0 |
+| config | 18 | 7 | 8 | 3 | 0 | 0 |
+| env | 28 | 5 | 21 | 2 | 0 | 0 |
+| tools — the agent-callable surface | 32 | 12 | 18 | 2 | 0 | 0 |
+| skills | 33 | 13 | 15 | 5 | 0 | 0 |
+| providers | 27 | 8 | 13 | 6 | 0 | 0 |
+| agent-core | 36 | 10 | 19 | 7 | 0 | 0 |
+| memory | 27 | 11 | 15 | 1 | 0 | 0 |
+| automation | 32 | 6 | 23 | 2 | 0 | 1 |
+| security | 34 | 13 | 18 | 3 | 0 | 0 |
+| media | 27 | 8 | 17 | 2 | 0 | 0 |
+| acp-mcp-dev | 33 | 3 | 14 | 16 | 0 | 0 |
+| docs-features | 48 | 11 | 29 | 8 | 0 | 0 |
+| rest-api | 33 | 12 | 16 | 5 | 0 | 0 |
+| delta | 42 | 15 | 22 | 5 | 0 | 0 |
 
 ## Actualizare
 
-Evaluare: `2026-10-12T18:45:59Z`. Cod inspectat: `307b33eb66d991e9450b1dfe724de366caaa675a`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-10-13T08:49:33Z`. Cod inspectat: `9f92d937c84c77daf662a813a9995419c87e17c2`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 
