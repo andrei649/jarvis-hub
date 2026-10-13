@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "c8a7a554b9bee1865c449bcac5215319803900c9",
-  "assessed_at": "2026-10-13T10:23:11Z",
+  "base_sha": "3c069955e122c14138821bfd84ee8a2e80e232e5",
+  "assessed_at": "2026-10-13T10:26:24Z",
   "reviews": [
     {
       "id": "H001",
@@ -18131,6 +18131,55 @@
         {
           "path": "tests/test_h011_checkpoint_origin_turn.py",
           "sha256": "165d5e561ef3e48a686465d88e8bf5413fbe5d1fc7826620d589c7275ef7d29f"
+        }
+      ]
+    },
+    {
+      "id": "H488",
+      "row_sha256": "4a844c02af5a7509f4bd8626011a56f2d0003ee301dd35781f2ba4946496d0f0",
+      "status": "partial",
+      "summary": "Fresh assessment 2026-10-13 (3c069955): Hermes gates both memory and skill writes behind one staging mechanism; Nerva stages only the skill half. Skills: the model-facing skill_propose tool never writes a live SKILL.md: a change becomes a pending SkillProposalStore proposal with an approval card showing the diff, and a new skill goes to CDX-8 quarantine pending review (agents/core/skills/tools.py:36-45, agents/core/skills/tools.py:528-541). The ledger is a durable JSON store (agents/core/skills/proposals.py:146). The owner reviews pending changes at GET /api/skills/proposals (agents/core/routers/skills.py:765), and deciding the card applies the change at once (agents/core/routers/actions.py:147-162). Tests: tests/test_h318_skill_tools.py:284 (a patch is pending and the live file is untouched) and tests/test_h318_skill_tools.py:565 (an approved proposal lands). Memory: no write is held for review. The memory tool writes the core rings directly, with owner-only posture, an untrusted-turn refusal, an intent-log record and after-the-fact undo (agents/core/memory_tool.py:1-35; undo at agents/core/routers/memory_kg.py:886), tested in tests/test_h314_memory_tool.py. POST /api/memory/remember writes immediately behind user_guard alone (agents/core/routers/memory_kg.py:901-918), and background review writes core facts autonomously (agents/core/learning/background_review.py:10-11). The kernel registry has no memory kind (agents/core/kernel/registry.py:74-79). Undo after a write is not a hold before it, so the row is partial.",
+      "remaining": "- A memory write-approval mode (memory tool, POST /api/memory/remember, background-review core facts) that stages the exact replayable write instead of committing it, durable across restarts.\n- Owner review surfaces for pending memory writes (list with gist/diff, approve, reject, toggle on/off) reachable from chat/CLI and the HUD, with approve replaying the staged payload.\n- A staged memory write reported to the model as not committed; tests pinning stage, approve, reject and restart survival.",
+      "evidence": [
+        {
+          "path": "agents/core/skills/tools.py",
+          "sha256": "baddb8a558766ce92701a45e59d076d6abf31d00098cb3fe975f29ec4ebf4f09"
+        },
+        {
+          "path": "agents/core/skills/proposals.py",
+          "sha256": "6a7c82d4cb1c0fb43dab96346f329315727e5f8d4565b0478fa661c166065f44"
+        },
+        {
+          "path": "agents/core/routers/skills.py",
+          "sha256": "a097d52cbfbe27a0b39842c68b1483b779761f156f991f22b3533da96c5fdbb1"
+        },
+        {
+          "path": "agents/core/routers/actions.py",
+          "sha256": "3f10f71cd726ba81625de27ad0ec013536b81e4a31511e1ae53c1aa371c69842"
+        },
+        {
+          "path": "agents/core/memory_tool.py",
+          "sha256": "5f4afc0132a088a106dfc0f9ba262cb2b84c6473dba19a1303abfad42fb1f6f5"
+        },
+        {
+          "path": "agents/core/routers/memory_kg.py",
+          "sha256": "5f7541cd8dc2a2a20e656f0dc7fa30562706ed47f4074c2b115a16c9d0a8f8ff"
+        },
+        {
+          "path": "agents/core/learning/background_review.py",
+          "sha256": "7821c12ebeef5541bdc1d343d4743f6a762f9c898e06cf745e417380275b73d8"
+        },
+        {
+          "path": "agents/core/kernel/registry.py",
+          "sha256": "7c1e1bdd43563452f4a8e6b0c63e6d6eea74e28c0854b537bea8b4c9ef054283"
+        },
+        {
+          "path": "tests/test_h318_skill_tools.py",
+          "sha256": "db4672a98d252f62ab12886ceeb8e0df5d4ae3abfebcea4350b2f1bcd5e088cc"
+        },
+        {
+          "path": "tests/test_h314_memory_tool.py",
+          "sha256": "352de6c812c15d354b26f3ab36543dc3e81038f306e38e07de6ad6fa2dc7b966"
         }
       ]
     },
