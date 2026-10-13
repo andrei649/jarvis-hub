@@ -122,3 +122,8 @@ export const CONSOLE_PANELS = [
   {"id": "inspector", "label": "Inspector", "group": "Admin", "component": "InspectorPanel"},
   {"id": "system-profile", "label": "System Profile", "group": "Admin", "component": "SystemProfilePanel"},
 ] as const;
+
+// Bolt Optimization: Maintain O(1) Map lookup index for CONSOLE_PANELS to avoid O(N) array scans during routing and panel lookup.
+export const CONSOLE_PANEL_MAP = new Map<string, typeof CONSOLE_PANELS[number]>(
+  CONSOLE_PANELS.map(p => [p.id, p])
+);

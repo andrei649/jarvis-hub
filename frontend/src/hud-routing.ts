@@ -1,6 +1,6 @@
 import { appUrl, logicalPath } from './base-path';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { CONSOLE_PANELS } from './console-routes';
+import { CONSOLE_PANELS, CONSOLE_PANEL_MAP } from './console-routes';
 
 import { HUD_MODES } from './hud-modes';
 export { HUD_MODES } from './hud-modes';
@@ -14,7 +14,8 @@ export function parseHudRoute(pathname: string, search = '', hash = '', floating
   const path = root ? `/v2/${floating ? 'chat' : legacyWorld ? 'world' : fallback}` : pathname.replace(/\/$/, '');
   const parts = path.split('/');
   const mode = parts[2];
-  const panel = mode === 'console' && parts.length === 4 ? CONSOLE_PANELS.find(p => p.id === parts[3]) : null;
+  // Bolt Optimization: O(1) Map lookup via CONSOLE_PANEL_MAP avoids O(120) array scan on every route parse call
+  const panel = mode === 'console' && parts.length === 4 ? CONSOLE_PANEL_MAP.get(parts[3]) || null : null;
   const valid = parts[1] === 'v2' && (!floating || mode === 'chat') && (
     (parts.length === 3 && (HUD_MODES.includes(mode as any) || mode === 'console')) || !!panel
   );
