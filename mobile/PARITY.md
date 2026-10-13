@@ -76,6 +76,11 @@ remain open, so the partial rows below do not become shipped. Details and source
 
 ## Parity matrix
 
+Nerva Business (2026-10-13 local candidate): `/api/business/*` is wired into the
+responsive browser Console → Business. Native iOS/Android has no Business panel;
+this pilot is intentionally browser-only. Dedicated native work is tracked as
+`BACKLOG.md` BIZ-7; backend users share one company's data, not department scopes.
+
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|
 | Managed Hermes runtime and exact action approvals | Admin `/api/hermes/{status,catalog,start,stop,rpc,ws,approvals}` and approval decision API | ✅ private runtime, sessions, methods, events, approve/deny controls | ➖ intentionally owner desktop administration; no native acceptance claimed | PR #1233 |

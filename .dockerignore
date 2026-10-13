@@ -1,0 +1,27 @@
+# Keep local environments, operator data and credentials out of COPY . . images.
+.git
+.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+!.env.example
+.mcp.json
+.claude
+.worktrees
+.graft
+agents/data
+data
+backups
+memory_logs
+memory_logs-profiles
+logs
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/SOUL.local.md
+**/HEARTBEAT.local.md
+**/IDENTITY.local.md
+frontend/e2e/.results
+frontend/e2e/artifacts

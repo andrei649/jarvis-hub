@@ -32,6 +32,7 @@ OPERATOR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "operat
 # first. Surfaces mirror the v2 modes + chrome. NOT_IN_HUD = surfaced nowhere by
 # design (machine-facing). Keep this in sync with the v2 IA when adding routes.
 RULES = [
+    ("/api/business", "business"),  # Console → Business: company data, reports and Q&A
     # served shells / infra
     ("/v2", "shell"),
     ("/v1/capabilities", "NOT_IN_HUD"),  # external-client chat/session protocol discovery

@@ -1,0 +1,6 @@
+# One company per Compose project/volume. See docs/BUSINESS.md.
+# docker compose -f docker-compose.quickstart.yml -f docker-compose.business.yml up --build
+services:
+  nerva:
+    environment:
+      NERVA_BUSINESS_ENABLED: "1"

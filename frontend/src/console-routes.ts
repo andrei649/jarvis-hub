@@ -4,6 +4,7 @@ export const CONSOLE_PANELS = [
   {"id": "today-receipt", "label": "Today Receipt", "group": "Start", "component": "TodayReceiptPanel"},
   {"id": "model-setup", "label": "Model Setup", "group": "Start", "component": "ModelSetupPanel"},
   {"id": "docs", "label": "Documentation", "group": "Start", "component": "DocsPanel"},
+  {"id": "business", "label": "Business", "group": "Business", "component": "BusinessPanel"},
   {"id": "presence-inbox", "label": "Presence Inbox", "group": "Home", "component": "PresenceInboxPanel"},
   {"id": "ambient-watch", "label": "Ambient Watch", "group": "Home", "component": "AmbientWatchPanel"},
   {"id": "house", "label": "House", "group": "Home", "component": "HousePanel"},

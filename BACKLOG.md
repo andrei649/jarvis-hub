@@ -12,6 +12,19 @@
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 
+## Nerva Business product direction — 2026-10-13
+
+Owner-requested Digitaholic company product. Local candidate only; no remote publication.
+The existing personal/AI OS surfaces remain available while the business offering evolves.
+
+- [x] BIZ-1: opt-in, one-company workspace; encrypted native WooCommerce/HubSpot connections, CSV import, bounded snapshots, deterministic sales/stock/pipeline reports, guarded AI questions and responsive Console panel. [Scope](docs/superpowers/specs/2026-10-13-nerva-business-design.md), [operator guide](docs/BUSINESS.md).
+- [x] BIZ-2: review proven connector/workflow projects and commercial reuse boundaries; [decisions and primary sources](docs/research/2026-10-13-business-open-source.md). No third-party framework imported.
+- [ ] BIZ-3: clothing-store acceptance with actual WooCommerce credentials/data, variation stock and refunds; live HubSpot account and provider/model checks.
+- [ ] BIZ-4: reusable scheduled automation bundles with action approvals, retries and idempotency; email/phone/lead connectors and OAuth lifecycle. Evaluate optional Node-RED only against measured needs.
+- [ ] BIZ-5: per-person and department permissions, SSO, tenant isolation if hosted together, usage metering/billing, operational backup/restore acceptance and client onboarding package.
+- [ ] BIZ-6: measured local model/DGX capacity for 10 users / 3 concurrent requests; size and price hardware from benchmark evidence. No hardware capacity guarantee from this increment.
+- [ ] BIZ-7: native mobile Business panel. Browser supports mobile widths; native client has no Business surface in this pilot (intentional current scope).
+
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
 - 2026-10-08 local continuation (H18.30): native mobile History now binds subsequent turns to the exact selected session; streaming adopts the server's returned ID. ID and settled transcript are stored together under an opaque connection scope, rotated on URL/user/admin credential changes. Hydration, cancelled streams and late History responses cannot replace a newer conversation. New uses the existing owner-governed `/new` command; `/new` and `/reset` clear the view only after confirmed ID rollover, while `/undo` reloads the returned transcript. Chat and History forward configured owner credentials; no authority is inferred. Native device/live-Hub acceptance remains open, and H063 stays partial for its existing server-side gaps. Local evidence: `mobile/docs/h1830-session-continuity.md`.
