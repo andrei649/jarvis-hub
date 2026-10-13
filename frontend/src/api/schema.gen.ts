@@ -6134,7 +6134,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Oauth Callback Redirect
+         * @description The provider's redirect lands here as a GET (REDIRECT_URI): the same
+         *     state-gated exchange as the POST, answered with a page the owner can close.
+         */
+        get: operations["oauth_callback_redirect_api_oauth_callback_get"];
         put?: never;
         /** Oauth Callback */
         post: operations["oauth_callback_api_oauth_callback_post"];
@@ -23835,6 +23840,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    oauth_callback_redirect_api_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

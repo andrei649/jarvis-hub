@@ -131,6 +131,7 @@ INTENTIONALLY_OPEN_READS = {
     # OAuth connect flow (pre-auth by nature: presence booleans + public URLs).
     "GET /api/oauth/status",
     "GET /api/oauth/auth-url",
+    "GET /api/oauth/callback",   # provider redirect; verify_state() gates the exchange, page shows only the service name
     "GET /api/oracle/status",
     # WorldView liveness booleans; the overview (recon/alerts) is guarded.
     "GET /api/worldview/status",
