@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "9f92d937c84c77daf662a813a9995419c87e17c2",
-  "assessed_at": "2026-10-13T08:49:33Z",
+  "base_sha": "1a13bc55a05e6c0a792cdfd8afc8e2b6769b0eb3",
+  "assessed_at": "2026-10-13T08:54:34Z",
   "reviews": [
     {
       "id": "H001",
@@ -13107,37 +13107,65 @@
     {
       "id": "H468",
       "row_sha256": "a56128504f9c83ae86d540d7428368696c18674b4420d5eb285593d1ddffa448",
-      "status": "missing",
-      "summary": "Current-source reread (2026-10-03, parent aec4348c): TaskStatus and its strict transition table contain no implementer/reviewer work-review or changes-requested state. MissionStatus and work-run statuses likewise have no reviewer handoff/reopen transition. The /api/review routes flag and score output traces or promote them to a dataset; they do not transfer work ownership. Ordinary decision cards remain one-party approve/edit/reject/defer. The new separate exact owner-once terminal lifecycle has offer/accept/claim/dispatch states and signed completion, but none is a work-review board state, reviewer reassignment, structured request-changes event or live work-claim handoff guard. Existing autonomy and review-queue regressions verify their own contracts; this increment adds no H468 capability. Missing verdict retained.",
-      "remaining": "Every accepted part is missing:\n- A `review` status that is explicitly not a block, so ready-queue accounting does not count it as blocked.\n- request-review, with an optional reassign-to-reviewer and a recorded summary plus structured handoff metadata.\n- request-changes, the reviewer's verdict: it returns the item to its implementer with concrete required changes recorded as an event and a comment.\n- reopen-review.\n- A live-claim guard that refuses to move a running, claimed item without force.\n- Entry points for all of the above: routes, CLI or HUD controls.",
+      "status": "partial",
+      "summary": "Fresh assessment 2026-10-13 (9f92d937): the ported Hermes Kanban board now carries the review cycle. 'review' is a first-class status (agents/core/kanban/upstream/kanban_db.py:80). request_review (agents/core/kanban/upstream/kanban_db.py:3327) moves running/ready to review, documented as never touching block recurrence accounting (agents/core/kanban/upstream/kanban_db.py:3332); it takes an optional reviewer that reassigns the task, a summary and a metadata dict, ends the run with outcome review_requested and appends a review_requested event naming implementer and reviewer (agents/core/kanban/upstream/kanban_db.py:3449). Its live-claim guard refuses a running task whose worker process is alive unless expected_run_id or force=True is given (agents/core/kanban/upstream/kanban_db.py:3376); liveness is the worker PID fingerprint (agents/core/kanban/upstream/kanban_db.py:2671). claim_review_task (agents/core/kanban/upstream/kanban_db.py:2243) opens a separate reviewer run. request_changes (agents/core/kanban/upstream/kanban_db.py:3477) requires a reason, only acts on a run claimed from review, routes the task back to the implementer from the review_requested event, records the reason as the ended run's summary and a changes_requested event (agents/core/kanban/upstream/kanban_db.py:3535); the implementer sees it under 'Prior attempts' in its worker context (agents/core/kanban/upstream/kanban_db.py:4079). It does not write a task comment. reopen_review_task (agents/core/kanban/upstream/kanban_db.py:3670) sends a review card back to ready/todo, restores the implementer and appends review_reopened. Owner entry points: the CLI tree (agents/core/kanban/cli_parser.py:336 request-review with --summary/--reviewer/--metadata/--force, cli_parser.py:345 request-changes, agents/core/kanban/cli_parser.py:347 reopen-review) runs through POST /api/kanban/command (agents/core/routers/kanban.py:59); the reopen-review handler adds a 'CHANGES REQUESTED' comment when a reason is given (agents/core/kanban/cli_upstream/handlers.py:899). PATCH status=review calls request_review and moving a review card back calls reopen_review_task (agents/core/kanban/dashboard_api.py:371, agents/core/kanban/dashboard_api.py:388). Agents get kanban_request_review and kanban_request_changes tools (agents/core/kanban/tools.py:756, agents/core/kanban/tools.py:802). However, Nerva's CLI wrapper refuses every transition on a claimed task (agents/core/kanban/cli.py:130) and refuses --force outright (agents/core/kanban/cli.py:134), so the owner cannot force a running claimed card into review; the HUD shows review as a locked, dispatcher-set column with no request-review/request-changes controls (frontend/src/panels/kanban/KanbanView.tsx:12). Tests: tests/test_hermes_kanban_state_port.py:136 pins request_review with reviewer reassignment, the separate reviewer run, request_changes run-id fencing and routing back to the implementer; tests/test_hermes_kanban_cli.py:78 pins CLI request-review; tests/test_hermes_kanban_tools_port.py:107 pins the tool request-review/request-changes cycle; tests/test_hermes_kanban_dashboard.py:93 pins PATCH to review. 67 passed across state_port, cli, tools_port, dashboard and dispatcher. No test pins the live-claim guard or force, reopen-review, metadata handoff, the changes_requested event payload, or that review is excluded from block accounting.",
+      "remaining": "- Owner force path: the Nerva CLI wrapper refuses `request-review --force` and any transition on a claimed task (agents/core/kanban/cli.py:130, agents/core/kanban/cli.py:134), and neither the PATCH route nor the HUD passes force, so a running claimed card cannot be moved to review with an explicit override as in Hermes.\n- request-changes records the reason as an event and the run summary but not as a task comment (Hermes records both).\n- HUD has no request-review / request-changes / reopen-review controls; review is a locked column (frontend/src/panels/kanban/KanbanView.tsx:12).\n- Tests missing for: the live-claim guard refusing a live worker without expected_run_id/force and accepting force; reopen-review (state, implementer restore, review_reopened event, comment); structured metadata and summary on the review_requested event/run; the changes_requested event payload; review not incrementing block recurrence counters.",
       "evidence": [
         {
-          "path": "agents/core/autonomy/queue.py",
-          "sha256": "876c6c818f4fc5440f0f987f0c989cc3f8648fc93dd71c863deed319c3f01d68"
+          "path": "agents/core/kanban/upstream/kanban_db.py",
+          "sha256": "583ea341cdd4863b0e8c06f432d79c27a54187b9258f152fa6daf5f11a1ce7ed"
         },
         {
-          "path": "agents/core/autonomy/missions.py",
-          "sha256": "929bd70885ad43df4d9d46780aebef13f89b8b3434347ecb842f9e5ee50d1634"
+          "path": "agents/core/kanban/cli_parser.py",
+          "sha256": "5d4b7e40d69b03693c4b3a5bb02b29bfc31a6d07ea9fe40f0dc2d2b501741d41"
         },
         {
-          "path": "agents/core/autonomy/work_runs.py",
-          "sha256": "c515989941d1a80eedbb0405a57121edcea6071be08e9a848aead69bcfdbc9d1"
+          "path": "agents/core/kanban/cli.py",
+          "sha256": "26488c6e29e911df99d99e03eb9f84469493ea3144bd8865bbc4d64c0f2212cc"
         },
         {
-          "path": "agents/core/routers/review.py",
-          "sha256": "a13dd98246502f6afdbd9d810413299136ca4bc0a531c4e833876974fe48f975"
+          "path": "agents/core/kanban/cli_upstream/handlers.py",
+          "sha256": "112fdd4dd1d724f884a27eb07c8efe5abb83ff79ddae09a4d96f212766e4c582"
         },
         {
-          "path": "agents/core/autonomy/inbox.py",
-          "sha256": "e07ae3cf38b2b88ca389539644e98a87b1146cb0a355e0f6e94a5003d3c712e0"
+          "path": "agents/core/kanban/dashboard_api.py",
+          "sha256": "24f124f8d685be3196bc8e190bc159c40d7b5511825df75d9ce56c8c595405ee"
         },
         {
-          "path": "tests/test_autonomy_queue.py",
-          "sha256": "1397c760675f1c50cf0392c6dd36669b0cac54db316266f02af07b5a688c2208"
+          "path": "agents/core/routers/kanban.py",
+          "sha256": "5f355eb52bbb86852cbef65e2c47e482ad8856cfd6e55bd9be6d206809b51d8c"
         },
         {
-          "path": "tests/test_h10_25_review_queue.py",
-          "sha256": "fd7c8db881e804c4518172a304baabb50e4f1e8e2964376407cb69bff3922128"
+          "path": "agents/core/kanban/tools.py",
+          "sha256": "5a7efb932e445bad5ff3292f82ebef681e18c9662283cc4c4d7a9be2680cc04b"
+        },
+        {
+          "path": "agents/core/kanban/schemas.py",
+          "sha256": "c570802050dfcca41541a935ce01b11de12f47a7bc5facc705b47c970c9264f4"
+        },
+        {
+          "path": "frontend/src/panels/kanban/KanbanView.tsx",
+          "sha256": "734dbb64539c326bf4dd59c3fef94a8ff642b89e18ba05dcd90342ccf643afe3"
+        },
+        {
+          "path": "tests/test_hermes_kanban_state_port.py",
+          "sha256": "5ed35f0d568cdef09bde9a2b2452880805fad53c4022a90de6dd4632eaae3283"
+        },
+        {
+          "path": "tests/test_hermes_kanban_cli.py",
+          "sha256": "b78d02085ddd386e499f3ee8e4fcbff0ba20453e830038562331c2b3b3267995"
+        },
+        {
+          "path": "tests/test_hermes_kanban_tools_port.py",
+          "sha256": "da990253f17e455a38fb916c364f60de127b5995460fd2861123b53b40fcd70d"
+        },
+        {
+          "path": "tests/test_hermes_kanban_dashboard.py",
+          "sha256": "cffa0fdd391c3d34f16c398c292ef37b36ef21527c45be39a0d1295225067bb5"
+        },
+        {
+          "path": "tests/test_hermes_kanban_dispatcher.py",
+          "sha256": "59ea44d03ccf7527d45689c4748653035af43561786a8ea52419da4c0cb3ad19"
         }
       ]
     },
