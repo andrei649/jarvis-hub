@@ -133,7 +133,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = verbs.add_parser("doctor", help="install check-up, one named reason per check (offline)")
     doctor.add_argument("--json", action="store_true")
-    doctor.add_argument("--smoke", action="store_true", help="also run the install smoke (~30 s)")
+    doctor_mode = doctor.add_mutually_exclusive_group()
+    doctor_mode.add_argument("--smoke", action="store_true", help="also run the install smoke (~30 s)")
+    doctor_mode.add_argument("--local-pilot", action="store_true",
+                             help="read-only local model and MCP memory prerequisite check")
 
     prompt_size = verbs.add_parser(
         "prompt-size",
@@ -569,6 +572,8 @@ def cmd_doctor(ns: argparse.Namespace, ctx: Context) -> int:
         argv.append("--json")
     if ns.smoke:
         argv.append("--smoke")
+    if ns.local_pilot:
+        argv.append("--local-pilot")
     return int(doctor.main(argv))
 
 
