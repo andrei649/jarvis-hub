@@ -11,8 +11,8 @@ Din acestea, **89** au fost reevaluate pe cod în această livrare; **108** păs
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 197 | 28.3% |
-| Parțial | 379 | 54.4% |
-| Lipsă | 121 | 17.4% |
+| Parțial | 381 | 54.7% |
+| Lipsă | 119 | 17.1% |
 | Exclus intenționat | 0 | 0.0% |
 | De reverificat | 0 | 0.0% |
 
@@ -41,15 +41,15 @@ Din acestea, **89** au fost reevaluate pe cod în această livrare; **108** păs
 | memory | 27 | 11 | 14 | 2 | 0 | 0 |
 | automation | 32 | 6 | 24 | 2 | 0 | 0 |
 | security | 34 | 13 | 18 | 3 | 0 | 0 |
-| media | 27 | 9 | 14 | 4 | 0 | 0 |
+| media | 27 | 9 | 15 | 3 | 0 | 0 |
 | acp-mcp-dev | 33 | 3 | 13 | 17 | 0 | 0 |
-| docs-features | 48 | 11 | 26 | 11 | 0 | 0 |
+| docs-features | 48 | 11 | 27 | 10 | 0 | 0 |
 | rest-api | 33 | 12 | 16 | 5 | 0 | 0 |
 | delta | 42 | 15 | 20 | 7 | 0 | 0 |
 
 ## Actualizare
 
-Evaluare: `2026-10-13T10:16:31Z`. Cod inspectat: `ff8641a76bb080dce426d4d04c717ea9328add69`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-10-13T10:23:11Z`. Cod inspectat: `c8a7a554b9bee1865c449bcac5215319803900c9`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 
