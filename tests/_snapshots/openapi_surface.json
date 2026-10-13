@@ -197,6 +197,7 @@
   "GET /api/notes/docs": "note_docs_list_api_notes_docs_get",
   "GET /api/notes/docs/{doc_id}": "note_docs_get_api_notes_docs__doc_id__get",
   "GET /api/oauth/auth-url": "oauth_auth_url_api_oauth_auth_url_get",
+  "GET /api/oauth/callback": "oauth_callback_redirect_api_oauth_callback_get",
   "GET /api/oauth/nous/status": "nous_status_api_oauth_nous_status_get",
   "GET /api/oauth/status": "oauth_status_api_oauth_status_get",
   "GET /api/onboarding/command-center": "command_center_api_onboarding_command_center_get",

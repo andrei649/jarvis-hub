@@ -197,6 +197,7 @@
   "GET /api/notes/docs",
   "GET /api/notes/docs/{doc_id}",
   "GET /api/oauth/auth-url",
+  "GET /api/oauth/callback",
   "GET /api/oauth/nous/status",
   "GET /api/oauth/status",
   "GET /api/onboarding/command-center",
