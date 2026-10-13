@@ -72,19 +72,34 @@ function Cell({ label, value, why, sub, prov }: any) {
 /* The card's stamp is a summary of the provenance of the values it is actually showing —
    never a blanket assumption from `demo`. Cells with no value contribute nothing. */
 export function cardStamp(provs: any[], liveLabel: string) {
-  const shown = (Array.isArray(provs) ? provs : []).filter(Boolean);
+  // Bolt Optimization: Single indexed loop over provs avoids allocating filtered arrays (.filter(Boolean))
+  // and predicate closures (.some / .every) on every cardStamp calculation during wall renders.
+  if (!Array.isArray(provs) || !provs.length) return 'no evidence';
+  let shownCount = 0;
+  let hasSeeded = false;
+  let hasDerived = false;
+  let hasLive = false;
+  let hasOther = false;
+
+  for (let i = 0; i < provs.length; i++) {
+    const p = provs[i];
+    if (!p) continue;
+    shownCount++;
+    if (p === 'seeded') hasSeeded = true;
+    else if (p === 'derived') hasDerived = true;
+    else if (p === 'live') hasLive = true;
+    else hasOther = true;
+  }
+
   // A card showing nothing has no provenance to summarize. Returning the live label
   // there let an all-`—` card announce evidence it does not have; absence of
   // contradiction is not proof of measurement.
-  if (!shown.length) return 'no evidence';
-  const seeded = shown.some((p) => p === 'seeded');
-  const derived = shown.some((p) => p === 'derived');
-  const live = shown.some((p) => p === 'live');
-  if (seeded && (live || derived)) return 'mixed · live + seeded';
-  if (seeded) return 'demo · seeded';
-  if (derived && live) return 'mixed · live + derived';
-  if (derived) return 'derived';
-  if (shown.every((p) => p === 'live')) return liveLabel;
+  if (shownCount === 0) return 'no evidence';
+  if (hasSeeded && (hasLive || hasDerived)) return 'mixed · live + seeded';
+  if (hasSeeded) return 'demo · seeded';
+  if (hasDerived && hasLive) return 'mixed · live + derived';
+  if (hasDerived) return 'derived';
+  if (hasLive && !hasOther) return liveLabel;
   return 'unverified';
 }
 
@@ -310,9 +325,9 @@ export function BriefingWall({
     : (demo ? 'seeded' : 'live');
   // The page caption follows the same evidence as the cells: a CONNECTED demo really is
   // showing live data, so calling the whole corpus seeded there is its own false claim.
-  const allProvs = [provRoster, provTasks, provModel, provCloud, provCal, provHb, provDecisions, provLocal];
-  const anyLive = allProvs.some((pv) => pv === 'live');
-  const anySeeded = allProvs.some((pv) => pv === 'seeded');
+  // Bolt Optimization: Direct boolean expressions avoid allocating intermediate arrays and closures on every render.
+  const anyLive = provRoster === 'live' || provTasks === 'live' || provModel === 'live' || provCloud === 'live' || provCal === 'live' || provHb === 'live' || provDecisions === 'live' || provLocal === 'live';
+  const anySeeded = provRoster === 'seeded' || provTasks === 'seeded' || provCal === 'seeded' || provHb === 'seeded' || provDecisions === 'seeded' || provLocal === 'seeded';
   const demoCaption = anyLive && anySeeded ? 'demo mode · live + seeded data'
     : anyLive ? 'demo mode · live data'
     : anySeeded ? 'demo corpus · seeded data'
