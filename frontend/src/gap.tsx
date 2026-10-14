@@ -6,7 +6,7 @@ import { internalLink } from './base-path';
    localhost; on a network they surface the 401 via the client's token prompt. */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FIRST_RUN_DISMISS_KEY } from './onboarding-state';
-import { CONSOLE_PANELS } from './console-routes';
+import { CONSOLE_PANELS, CONSOLE_PANEL_MAP } from './console-routes';
 import { navigateHud, routeHref } from './hud-routing';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { localModelStatus } from './api/live';
@@ -5422,7 +5422,8 @@ export function ActionFailureBanner() {
 }
 
 export function ConsoleOverlay({ onClose, panelId = null }: { onClose: () => void; panelId?: string | null }) {
-  const selected = CONSOLE_PANELS.find(p => p.id === panelId);
+  // Bolt Optimization: O(1) Map lookup via CONSOLE_PANEL_MAP avoids O(120) array scan
+  const selected = panelId ? CONSOLE_PANEL_MAP.get(panelId) || null : null;
   const Panel = selected ? PANEL_COMPONENTS[selected.component] : null;
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (selected) heading.current?.focus(); }, [panelId]);
