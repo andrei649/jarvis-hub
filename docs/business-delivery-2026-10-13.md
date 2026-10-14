@@ -1,5 +1,10 @@
 # Nerva Business — local delivery, 2026-10-13
 
+Historical delivery record. For the latest code, publication checkpoint,
+verification and continuation commands, read [BUSINESS_HANDOVER.md](BUSINESS_HANDOVER.md).
+The owner's 2026-10-14 instruction supersedes the original local-only publication
+scope below; this dated record preserves what was actually verified on 2026-10-13.
+
 Goal: turn the existing Nerva codebase into a concrete company-product pilot for
 Digitaholic, starting with ecommerce and sales data. Base SHA:
 `413a42ceedb9302f47b1dfff9f76f984cdd355e4`. Branch:

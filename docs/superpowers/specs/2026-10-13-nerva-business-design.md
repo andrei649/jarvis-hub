@@ -1,5 +1,8 @@
 # Nerva Business pilot design
 
+Historical design scope. The owner subsequently authorized GitHub checkpoints
+and handovers on 2026-10-14; see [the current handover](../../BUSINESS_HANDOVER.md).
+
 Generated: 2026-10-13. Goal: productize Nerva for Digitaholic-managed company deployments. Base SHA: `413a42ceedb9302f47b1dfff9f76f984cdd355e4`; feature branch `feat/nerva-business-platform`. Owner explicitly requested implementation in this conversation. Existing AGENTS.md authorizes local work; no publication or deployment is requested.
 
 ## Outcome and boundary

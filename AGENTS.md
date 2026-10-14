@@ -18,8 +18,18 @@ local implementation, tests, or fixes. The classifier reports this separately as
 `autonomous_local_development`; `decision` and `autonomous_merge` continue to
 describe remote integration eligibility. The protected-path restrictions below
 apply to unattended merge/deploy, not to this owner-authorized local work.
-Keep this sprint local: no push, merge, or deployment until the owner requests
-publication. Tests, truthful evidence, and preservation of existing work still apply.
+**Owner update, 2026-10-14: session continuity.** Before pausing or ending an
+implementation session, commit the session's owned changes, push the feature
+branch to GitHub, and update a resumable handover in the repository. Verify the
+remote head and report its link. This standing instruction supersedes the earlier
+local-only publication restriction. A checkpoint may include unfinished work,
+but its handover must name failing/unrun checks and the next concrete action;
+use a draft PR while acceptance remains incomplete. Preserve unrelated work and
+never commit credentials, private company data or local runtime state. If a push
+is blocked, state that GitHub is not synchronized and give the exact blocker.
+Checkpoint publication does not itself authorize merge or deployment; the
+existing integration policy still applies. Current Business continuation:
+[docs/BUSINESS_HANDOVER.md](docs/BUSINESS_HANDOVER.md).
 
 1. Inspect `git status`, the current branch, the requested scope, and changes already present.
 2. Preserve user and other-agent changes. Never reset, overwrite, stage, or reformat unrelated work.
@@ -141,8 +151,9 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
   loops. Record the model/effort, tests, delivered behavior and unfinished work per
   batch. Subscription usage is account-wide; do not claim exact per-agent savings
   without measured attribution.
-- Work remains local. Delegation does not authorize push, merge, deployment,
-  paid providers, or changes to unrelated projects or global Codex configuration.
+- The coordinator owns the GitHub checkpoint and handover required above.
+  Delegation does not independently authorize remote mutations, paid providers,
+  deployment, or changes to unrelated projects or global Codex configuration.
 
 - GitHub-backed path-prefix leases are planned, but no remote lease service or enforcement exists
   yet. Until it does, the only honest lease state is `none`; inspect open work and coordinate

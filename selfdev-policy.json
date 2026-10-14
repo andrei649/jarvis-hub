@@ -3,7 +3,7 @@
   "policy_id": "nerva.selfdev.v1",
   "owner_directive_date": "2026-09-27",
   "autonomous_default": true,
-  "description": "The owner authorizes autonomous local development across the entire repository, including kernel, security, workflows and this policy, without further owner approval. This local authorization does not authorize pushing, merging or deploying this sprint. Remote merge eligibility retains the trusted control-plane classification and automated proof requirements; autonomous deployment remains a target until its enforcement lands.",
+  "description": "The owner authorizes autonomous local development across the entire repository, including kernel, security, workflows and this policy, without further owner approval. The 2026-10-14 continuity directive also requires committing owned work, pushing the feature branch and updating a resumable repository handover before pausing or ending an implementation session, with remote-head verification and truthful blockers. Checkpoint publication does not itself authorize merge or deployment. Remote merge eligibility retains the trusted control-plane classification and automated proof requirements; autonomous deployment remains a target until its enforcement lands.",
   "local_development": {
     "enabled": true,
     "allow_protected_changes": true,

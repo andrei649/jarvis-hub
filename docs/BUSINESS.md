@@ -4,11 +4,18 @@ Nerva Business oferă un spațiu pentru profilul companiei, surse de date, rapoa
 
 ## Pornire
 
+Pentru reluarea dezvoltării sau instalarea acestei ramuri pe Mac, vezi
+[handover-ul curent](BUSINESS_HANDOVER.md), inclusiv commiturile și verificările.
+
 Pentru Docker, folosește fișierul Business peste quickstart-ul existent, din rădăcina proiectului:
 
 ```bash
 docker compose -f docker-compose.quickstart.yml -f docker-compose.business.yml up --build
 ```
+
+Pe Mac, această comandă cere Docker Desktop 4.34+ cu **Settings → Resources →
+Network → Enable host networking** activat. Poți folosi și instalarea nativă
+din handover; verificarea din această sesiune a fost făcută pe Linux, nu pe macOS.
 
 Pe Linux și NAS compatibil cu Docker host networking, această variantă păstrează datele în volumul persistent quickstart (`JARVIS_HOME=/data`) și activează Business prin `NERVA_BUSINESS_ENABLED=1`. Deschide `http://127.0.0.1:8080/v2`, apoi **Console → Business**. Quickstart-ul ascultă numai pe adresa locală; accesul de pe alt dispozitiv necesită configurarea separată a autentificării și a rețelei, descrisă în [PHONE_ACCESS.md](PHONE_ACCESS.md).
 
