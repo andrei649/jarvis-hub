@@ -14,8 +14,11 @@ Acest fișier este punctul de reluare pentru alt calculator sau alt agent.
   descrierea regulii de continuitate; codul aplicației este cel de la `4ab3f84`.
 - Regula proprietarului din 14 octombrie: înainte de pauză/final de sesiune,
   progresul trebuie salvat pe GitHub împreună cu handover. `AGENTS.md` o păstrează.
-- Publicare vizată: ramura de mai sus și un draft PR către `main`. Confirmarea
-  transportului este SHA-ul remote, verificabil prin `git ls-remote` și prin PR.
+- Publicat pe GitHub: [draft PR #1258](https://github.com/andrei649/jarvis-hub/pull/1258)
+  către `main`. Primul checkpoint verificat local/remote:
+  `48779933f748a39a3b305b091cb27dd86031e2d2`; acest paragraf este o actualizare
+  ulterioară numai de documentație. Pentru vârful actual consultă PR-ul sau
+  `git ls-remote origin refs/heads/feat/nerva-business-platform`.
   Publicarea codului nu înseamnă instalare pe MacBook, merge sau deployment.
 
 Mediul de dezvoltare a fost un executor Linux cloud, în `/workspace/jarvis-hub`.
@@ -87,6 +90,7 @@ date în Git. Restaurarea/migrarea între calculatoare nu a fost validată aici.
 Pentru codul aplicației de la `4ab3f84`, în această sesiune:
 
 - **208 teste backend de integrare selectate au trecut**, inclusiv cele 73 Business.
+  Aceeași suită a trecut din nou înainte de publicare, în 20,31 secunde.
 - **2.198 teste frontend au trecut** în suita completă.
 - 43 verificări suplimentare de schemă/status au trecut; TypeScript, build Vite,
   Ruff și verificările de paritate au trecut. Build-ul păstrează avertismentul
@@ -97,6 +101,9 @@ Pentru codul aplicației de la `4ab3f84`, în această sesiune:
 - **25.614 teste backend au fost colectate; suita backend completă nu a fost rulată.**
 - Conturile reale WooCommerce/HubSpot, inferența locală/cloud, DGX, VPN,
   construcția imaginii Docker și instalarea pe Mac rămân neverificate.
+- Pentru checkpoint: validarea și selftest-ul politicii, linkurile Markdown
+  locale și `git diff --check` au trecut. CI-ul remote se urmărește în PR;
+  rezultatele locale nu reprezintă o afirmație că CI-ul a trecut.
 
 Comandă reproductibilă pentru integrarea backend (după instalarea dependențelor
 de dezvoltare conform repository-ului):
