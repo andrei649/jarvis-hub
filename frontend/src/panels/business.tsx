@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   addBusinessConnection, askBusiness, deleteBusinessConnection, getBusinessCatalog,
   getBusinessWorkspace, importBusinessCsv, runBusinessReport, saveBusinessWorkspace,
   syncBusinessConnection,
   type Answer, type BusinessCatalog, type BusinessState, type Connection, type Report, type Workspace,
 } from '../api/business';
+import { ordersExample, productsExample, dealsExample } from './business-examples';
+import { downloadReport, visibleReportRows, VISIBLE_REPORT_ROWS } from './business-export';
 import './business.css';
 
 function errorText(error: unknown): string {
@@ -35,6 +37,12 @@ function replaceConnection(current: Connection[], connection: Connection): Conne
   return [connection, ...current.filter((item) => item.id !== connection.id)];
 }
 
+function validCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 const emptyProfile: Workspace = { name: '', industry: '', currency: 'RON', local_only: true };
 const templateCopy: Record<string, { name: string; description: string; departments: string }> = {
   ecommerce: { name: 'Comerț online', description: 'Comenzi online și stocuri', departments: 'Vânzări · Operațiuni · Asistență' },
@@ -48,7 +56,8 @@ const workflowCopy: Record<string, { name: string; description: string }> = {
 };
 const recordKind: Record<string, string> = { orders: 'comenzi', products: 'produse', deals: 'oportunități' };
 const fieldCopy: Record<string, string> = {
-  paid_orders: 'Comenzi incluse', excluded_orders: 'Comenzi excluse', sales_by_currency: 'Vânzări pe monedă',
+  paid_orders: 'Comenzi incluse', excluded_orders: 'Comenzi excluse', excluded_missing_date: 'Comenzi fără dată excluse',
+  excluded_invalid_date: 'Comenzi cu dată invalidă excluse', sales_by_currency: 'Vânzări pe monedă',
   unknown_amount: 'Sumă necunoscută', products: 'Produse', low_stock: 'Stoc redus', unknown_stock: 'Stoc necunoscut', deals: 'Oportunități',
   value_by_currency: 'Valoare pe monedă', by_stage: 'Pe etape', stock_quantity: 'Stoc', created_at: 'Data',
   status: 'Stare', amount: 'Valoare', total: 'Total', currency: 'Monedă', source: 'Sursă', stage: 'Etapă', name: 'Nume',
@@ -77,6 +86,11 @@ export function BusinessPanel() {
   const [csvKind, setCsvKind] = useState('orders');
   const [csvText, setCsvText] = useState('');
   const [activeReport, setActiveReport] = useState<Report | null>(null);
+  const [sourceId, setSourceId] = useState('');
+  const [salesStart, setSalesStart] = useState('');
+  const [salesEnd, setSalesEnd] = useState('');
+  const [askScope, setAskScope] = useState<'current' | 'selected'>('current');
+  const answerRequest = useRef(0);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<Answer | null>(null);
 
@@ -111,6 +125,48 @@ export function BusinessPanel() {
   const selectedConnector = catalog?.connectors.find((item) => item.id === provider);
   const reports = state?.reports || [];
   const selectedReport = activeReport || reports[0] || null;
+  const reportRows = selectedReport ? visibleReportRows(selectedReport) : [];
+  const selectedSource = selectedReport?.source_selection?.connection_id;
+  const selectedSourceName = selectedSource ? state?.connections.find((item) => item.id === selectedSource)?.name || selectedSource : 'Toate sursele';
+
+  function prepareExample(kind: 'orders' | 'products' | 'deals', text: string, label: string) {
+    setCsvKind(kind);
+    setCsvName(`Exemplu sintetic — ${label}`);
+    setCsvText(text);
+    setActionError('');
+    setNotice('Exemplul sintetic a completat formularul. Verifică datele și apasă „Importă CSV” doar dacă vrei să îl adaugi.');
+  }
+
+  function selectReport(report: Report) {
+    setActiveReport(report);
+    setAnswer(null);
+    answerRequest.current += 1;
+  }
+
+  function runReport(workflowId: string, name: string) {
+    if (workflowId === 'sales_overview') {
+      if ((salesStart && !validCalendarDate(salesStart)) || (salesEnd && !validCalendarDate(salesEnd))) {
+        setActionError('Introdu o dată validă în format YYYY-MM-DD.');
+        return;
+      }
+      if (salesStart && salesEnd && salesStart > salesEnd) {
+        setActionError('Data de început trebuie să fie înaintea datei de sfârșit.');
+        return;
+      }
+    }
+    void perform(`report-${workflowId}`, async () => {
+      const filters = {
+        ...(sourceId ? { connection_id: sourceId } : {}),
+        ...(workflowId === 'sales_overview' && salesStart ? { start_date: salesStart } : {}),
+        ...(workflowId === 'sales_overview' && salesEnd ? { end_date: salesEnd } : {}),
+      };
+      const result = await runBusinessReport(workflowId, filters);
+      if (!result?.report) throw new Error('Nerva nu a returnat un raport.');
+      setState((current) => current && ({ ...current, reports: [result.report, ...current.reports.filter((report) => report.id !== result.report.id)] }));
+      selectReport(result.report);
+      setNotice(`Raportul ${name} a fost salvat.`);
+    });
+  }
 
   return <div className="business">
     <header className="business-hero">
@@ -137,6 +193,14 @@ export function BusinessPanel() {
     {!loading && enabled && state && catalog && <>
       {actionError && <div className="business-alert" role="alert">{actionError}</div>}
       {notice && <div className="business-success" role="status">{notice}</div>}
+      <section className="business-card business-first-use" aria-labelledby="business-first-use-title">
+        <div className="business-section-head"><div><span className="business-kicker">START</span><h3 id="business-first-use-title">Primul test cu datele companiei</h3></div></div>
+        <ol aria-label="Pași pentru primul test">
+          <li>{state.workspace.name.trim() ? `Profil salvat: ${state.workspace.name}` : 'Completează și salvează profilul companiei.'}</li>
+          <li>{state.connections.length === 0 ? 'Adaugă o sursă: importă un CSV sau conectează un serviciu și sincronizează-l.' : state.connections.some((item) => item.status === 'connected' || item.status === 'partial' || item.status === 'stale') ? 'Sursă cu date disponibilă. Verifică starea și data ultimei sincronizări.' : 'Sursa este salvată. Sincronizeaz-o sau importă un CSV pentru a avea date.'}</li>
+          <li>{reports.length ? 'Raport salvat. Verifică perioada, sursele acoperite și avertismentele; apoi descarcă rezultatul sau întreabă Nerva.' : 'Rulează un raport, apoi verifică acoperirea și avertismentele înainte să interpretezi rezultatul.'}</li>
+        </ol>
+      </section>
 
       <div className="business-grid">
         <section className="business-card business-profile" aria-labelledby="business-profile-title">
@@ -181,6 +245,7 @@ export function BusinessPanel() {
               const result = await deleteBusinessConnection(item.id);
               if (!result?.ok) throw new Error('Ștergerea nu a fost confirmată.');
               setState((current) => current && ({ ...current, connections: current.connections.filter((connection) => connection.id !== item.id) }));
+              setSourceId((current) => current === item.id ? '' : current);
               setNotice(`Sursa ${item.name} a fost eliminată.`);
             })}>Elimină</button></div>
           </div>)}</div>}
@@ -204,6 +269,12 @@ export function BusinessPanel() {
           </form>
           <div className="business-divider" />
           <h4>Importă un fișier CSV</h4>
+          <p className="business-muted">Exemple sintetice pentru test. Alegerea completează doar formularul; importul începe numai când apeși „Importă CSV”.</p>
+          <div className="business-example-actions" aria-label="Exemple CSV sintetice">
+            <button type="button" disabled={!!busy} onClick={() => prepareExample('orders', ordersExample, 'comenzi')}>Pregătește exemplul sintetic: comenzi</button>
+            <button type="button" disabled={!!busy} onClick={() => prepareExample('products', productsExample, 'produse')}>Pregătește exemplul sintetic: produse</button>
+            <button type="button" disabled={!!busy} onClick={() => prepareExample('deals', dealsExample, 'oportunități')}>Pregătește exemplul sintetic: oportunități</button>
+          </div>
           <form onSubmit={(event) => { event.preventDefault(); void perform('import', async () => {
             const result = await importBusinessCsv({ name: csvName.trim(), kind: csvKind, csv_text: csvText });
             if (!result?.connection) throw new Error('Importul nu a fost confirmat.');
@@ -223,39 +294,63 @@ export function BusinessPanel() {
       <section className="business-card business-reports" aria-labelledby="business-reports-title">
         <div className="business-section-head"><div><span className="business-kicker">03 / PERSPECTIVĂ</span><h3 id="business-reports-title">Rapoarte</h3></div><span className="business-count">{reports.length}</span></div>
         <p className="business-intro">Rapoartele folosesc doar copiile importate sau sincronizate. Acoperirea și avertismentele arată limitele fiecărui rezultat.</p>
+        <div className="business-report-filters">
+          <label>Sursă pentru raport<select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
+            <option value="">Toate sursele</option>
+            {state.connections.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.status}</option>)}
+          </select></label>
+          <label>De la data (UTC)<input type="text" inputMode="numeric" placeholder="YYYY-MM-DD" maxLength={10} value={salesStart} onChange={(e) => setSalesStart(e.target.value)} /></label>
+          <label>Până la data (UTC)<input type="text" inputMode="numeric" placeholder="YYYY-MM-DD" maxLength={10} value={salesEnd} onChange={(e) => setSalesEnd(e.target.value)} /></label>
+        </div>
+        <p className="business-muted">Datele sunt incluse la ambele capete, în calendarul UTC. Perioada se aplică numai raportului Vânzări; celelalte rapoarte ignoră aceste câmpuri.</p>
         <div className="business-workflows">{catalog.workflows.map((item) => <article className="business-workflow" key={item.id}>
           <div><h4>{workflowCopy[item.id]?.name || item.name}</h4><p>{workflowCopy[item.id]?.description || item.description}</p><span>Necesită: {recordKind[item.requires] || item.requires}</span></div>
-          <button type="button" disabled={!!busy} onClick={() => void perform(`report-${item.id}`, async () => {
-            setActiveReport(null);
-            const result = await runBusinessReport(item.id);
-            if (!result?.report) throw new Error('Nerva nu a returnat un raport.');
-            setState((current) => current && ({ ...current, reports: [result.report, ...current.reports.filter((report) => report.id !== result.report.id)] }));
-            setActiveReport(result.report);
-            setNotice(`Raportul ${workflowCopy[item.id]?.name || item.name} a fost salvat.`);
-          })}>{busy === `report-${item.id}` ? 'Se rulează…' : `Rulează ${workflowCopy[item.id]?.name || item.name}`}</button>
+          <button type="button" disabled={!!busy} onClick={() => runReport(item.id, workflowCopy[item.id]?.name || item.name)}>{busy === `report-${item.id}` ? 'Se rulează…' : `Rulează ${workflowCopy[item.id]?.name || item.name}`}</button>
         </article>)}</div>
         {reports.length === 0 && !activeReport ? <div className="business-empty">Niciun raport rulat. Alege un raport pentru a vedea rezultatele disponibile.</div> : <div className="business-report-layout">
-          <nav className="business-report-list" aria-label="Rapoarte salvate">{reports.map((item) => <button type="button" className={selectedReport?.id === item.id ? 'is-selected' : ''} key={item.id} onClick={() => setActiveReport(item)}><strong>{item.title}</strong><span>{dateLabel(item.created_at)}</span></button>)}</nav>
+          <nav className="business-report-list" aria-label="Rapoarte salvate">{reports.map((item) => <button type="button" className={selectedReport?.id === item.id ? 'is-selected' : ''} aria-current={selectedReport?.id === item.id ? 'true' : undefined} key={item.id} onClick={() => selectReport(item)}><strong>{item.title}</strong><span>{dateLabel(item.created_at)}</span></button>)}</nav>
           {selectedReport && <article className="business-report" aria-label="Raport selectat">
             <div className="business-report__heading"><div><span className="business-kicker">REZULTAT SALVAT</span><h4>{selectedReport.title}</h4></div><time>{dateLabel(selectedReport.created_at)}</time></div>
+            <p className="business-muted">Acesta este un rezultat istoric, salvat la {dateLabel(selectedReport.created_at)}. Modificările ulterioare ale surselor nu îl actualizează.</p>
+            <div className="business-report__filters">
+              <span>Sursă salvată: {selectedReport.source_selection ? selectedSourceName : 'nespecificată în raportul vechi'}</span>
+              <span>Perioadă salvată: {selectedReport.filters ? `${selectedReport.filters.start_date || 'început nefiltrat'} – ${selectedReport.filters.end_date || 'sfârșit nefiltrat'}` : 'nespecificată în raportul vechi'}</span>
+            </div>
             <p className="business-report__summary">{selectedReport.summary || 'Nu există un rezumat pentru datele disponibile.'}</p>
             {Object.keys(selectedReport.metrics || {}).length > 0 && <dl className="business-metrics">{Object.entries(selectedReport.metrics).map(([key, value]) => <div key={key}><dt>{fieldLabel(key)}</dt><dd>{displayValue(value)}</dd></div>)}</dl>}
             {(selectedReport.coverage || []).length > 0 ? <div className="business-report__meta"><strong>Acoperire</strong><ul>{selectedReport.coverage.map((item, index) => <li key={index}><strong>{item.source}</strong> · {item.complete ? 'completă' : 'parțială'} · actualizată {dateLabel(item.synced_at)}{item.description ? ` · ${item.description}` : ''}</li>)}</ul></div> : <p className="business-muted">Nu există surse acoperite de acest raport.</p>}
             {(selectedReport.warnings || []).length > 0 && <div className="business-report__warnings"><strong>De verificat</strong><ul>{selectedReport.warnings.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
-            {(selectedReport.rows || []).length > 0 && <div className="business-table-wrap"><table><thead><tr>{Object.keys(selectedReport.rows[0]).map((key) => <th key={key}>{fieldLabel(key)}</th>)}</tr></thead><tbody>{selectedReport.rows.map((row, index) => <tr key={index}>{Object.keys(selectedReport.rows[0]).map((key) => <td key={key}>{displayValue(row[key])}</td>)}</tr>)}</tbody></table></div>}
+            {reportRows.length > 0 && <div className="business-table-wrap"><table><thead><tr>{Object.keys(reportRows[0]).map((key) => <th key={key}>{fieldLabel(key)}</th>)}</tr></thead><tbody>{reportRows.map((row, index) => <tr key={index}>{Object.keys(reportRows[0]).map((key) => <td key={key}>{displayValue(row[key])}</td>)}</tr>)}</tbody></table></div>}
+            <p className="business-muted">Tabelul și CSV-ul conțin maximum {VISIBLE_REPORT_ROWS} de rânduri vizibile. JSON-ul păstrează întregul raport salvat, inclusiv indicatorii, filtrele, acoperirea și avertismentele.</p>
+            <div className="business-actions">
+              <button type="button" onClick={() => downloadReport(selectedReport, 'json')}>Descarcă raportul JSON</button>
+              <button type="button" onClick={() => downloadReport(selectedReport, 'csv')}>Descarcă rândurile vizibile CSV</button>
+            </div>
           </article>}
         </div>}
       </section>
 
       <section className="business-card business-ask" aria-labelledby="business-ask-title">
-        <div className="business-section-head"><div><span className="business-kicker">04 / ÎNTREABĂ</span><h3 id="business-ask-title">Întreabă Nerva</h3></div><span className="business-quiet">Pe baza datelor sincronizate</span></div>
-        <p className="business-intro">Nerva recalculează indicatorii din ultimele date sincronizate și păstrează avertismentele surselor. Dacă lipsesc date, răspunsul trebuie citit cu această limită în minte.</p>
+        <div className="business-section-head"><div><span className="business-kicker">04 / ÎNTREABĂ</span><h3 id="business-ask-title">Întreabă Nerva</h3></div></div>
+        <label>Domeniul întrebării<select value={askScope} onChange={(e) => { setAskScope(e.target.value as 'current' | 'selected'); setAnswer(null); setActionError(''); answerRequest.current += 1; }}>
+          <option value="current">Toate datele curente</option>
+          <option value="selected" disabled={!selectedReport}>Raportul salvat selectat</option>
+        </select></label>
+        <p className="business-intro">{askScope === 'selected' && selectedReport ? `Întreabă despre raportul salvat „${selectedReport.title}” din ${dateLabel(selectedReport.created_at)}. Răspunsul folosește indicatorii și limitele acelui rezultat istoric.` : 'Întreabă despre toate datele curente. Nerva recalculează indicatorii din ultimele copii sincronizate și păstrează avertismentele surselor.'}</p>
         <form onSubmit={(event) => { event.preventDefault(); setAnswer(null); void perform('ask', async () => {
-          const result = await askBusiness(question.trim());
-          if (!result?.answer) throw new Error('Nerva nu a returnat un răspuns.');
-          setAnswer(result);
-        }); }}><label>Întrebare despre date<textarea required maxLength={2000} rows={3} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="De exemplu: Care este valoarea comenzilor incluse, pe fiecare monedă?" /></label><button className="business-button" disabled={!!busy || !question.trim()} type="submit">{busy === 'ask' ? 'Se analizează…' : 'Întreabă Nerva'}</button></form>
-        {answer && <div className="business-answer"><span className="business-kicker">Răspuns Nerva · {answer.model} · {answer.route}</span><p>{answer.answer}</p></div>}
+          const request = ++answerRequest.current;
+          const reportId = askScope === 'selected' ? selectedReport?.id : undefined;
+          if (askScope === 'selected' && !reportId) throw new Error('Selectează un raport salvat înainte de a întreba.');
+          try {
+            const result = await askBusiness(question.trim(), reportId);
+            if (answerRequest.current !== request) return;
+            if (!result?.answer) throw new Error('Nerva nu a returnat un răspuns.');
+            setAnswer(result);
+          } catch (error) {
+            if (answerRequest.current === request) throw error;
+          }
+        }); }}><label>Întrebare despre date<textarea required maxLength={2000} rows={3} value={question} onChange={(e) => { setQuestion(e.target.value); setAnswer(null); setActionError(''); answerRequest.current += 1; }} placeholder="De exemplu: Care este valoarea comenzilor incluse, pe fiecare monedă?" /></label><button className="business-button" disabled={!!busy || !question.trim()} type="submit">{busy === 'ask' ? 'Se analizează…' : 'Întreabă Nerva'}</button></form>
+        {answer && <div className="business-answer"><span className="business-kicker">{askScope === 'selected' && selectedReport ? `Răspuns despre raportul salvat · ${selectedReport.title} · ${dateLabel(selectedReport.created_at)}` : 'Răspuns despre toate datele curente'} · {answer.model} · {answer.route}</span><p>{answer.answer}</p></div>}
       </section>
 
       <section className="business-card business-activity" aria-labelledby="business-activity-title">

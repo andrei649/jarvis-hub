@@ -124,3 +124,23 @@ async def test_stream_stops_before_reading_unbounded_response(monkeypatch):
     with pytest.raises(ConnectorError, match='mare'):
         await fetch_snapshot('hubspot', '', {'access_token': 'test'})
     assert len(consumed) == 5
+
+
+def test_csv_validation_has_safe_row_and_column():
+    from agents.core.business.connectors import CsvImportError
+    with pytest.raises(CsvImportError) as failure:
+        parse_csv('id,status,total,currency\na,completed,10,EUR\nb,completed,SECRET-CELL,EUR', 'orders')
+    assert '3' in str(failure.value) and 'total' in str(failure.value)
+    assert 'SECRET-CELL' not in str(failure.value)
+
+
+async def test_woo_prefers_utc_timestamp_for_report_filters(monkeypatch):
+    @asynccontextmanager
+    async def stream(self, method, url, **kwargs):
+        items = ([{'id': 1, 'status': 'completed', 'total': '1', 'currency': 'EUR',
+                  'date_created': '2026-10-02T00:30:00', 'date_created_gmt': '2026-10-01T21:30:00'}]
+                 if url.endswith('/orders') else [])
+        yield httpx.Response(200, json=items, headers={'X-WP-TotalPages': '1'})
+    monkeypatch.setattr(BusinessHTTPClient, 'stream', stream)
+    data = await fetch_snapshot('woocommerce', 'https://shop.example', {'consumer_key': 'key', 'consumer_secret': 'secret'})
+    assert data['records']['orders'][0]['created_at'] == '2026-10-01T21:30:00Z'

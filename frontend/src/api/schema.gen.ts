@@ -11681,6 +11681,8 @@ export interface components {
         AskBody: {
             /** Question */
             question: string;
+            /** Report Id */
+            report_id?: string | null;
         };
         /** AssignSpaceBody */
         AssignSpaceBody: {
@@ -13249,6 +13251,15 @@ export interface components {
             default_workdir?: string | null;
             /** Project Id */
             project_id?: string | null;
+        };
+        /** ReportBody */
+        ReportBody: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /** Start Date */
+            start_date?: string | null;
+            /** End Date */
+            end_date?: string | null;
         };
         /** RequestPaymentBody */
         RequestPaymentBody: {
@@ -30837,7 +30848,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReportBody"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

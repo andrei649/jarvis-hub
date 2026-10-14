@@ -44,7 +44,7 @@ class BusinessService:
             raise BusinessError("limit_reached", "Connection limit reached", 409) from None
 
     async def sync(self, connection_id: str) -> dict:
-        from agents.core.business.connectors import fetch_snapshot
+        from agents.core.business.connectors import ConnectorError, fetch_snapshot
 
         connection = await asyncio.to_thread(self.store.get_connection, connection_id)
         if connection is None:
@@ -59,9 +59,9 @@ class BusinessService:
             snapshot = await fetch_snapshot(connection["provider"], connection["base_url"], credentials)
             return await asyncio.to_thread(self.store.replace_snapshot, connection_id, snapshot)
         except Exception as exc:
-            message = "Invalid provider data" if isinstance(exc, (ValueError, TypeError, KeyError)) else "Provider request failed"
+            message = str(exc) if isinstance(exc, ConnectorError) else "Sincronizarea nu a reușit. Verifică serviciul și configurarea."
             await asyncio.to_thread(self.store.mark_sync_error, connection_id, message)
-            raise BusinessError("sync_failed", f"{message}; previous data was kept", 502) from None
+            raise BusinessError("sync_failed", f"{message} Datele sincronizate anterior, dacă există, au fost păstrate.", 502) from None
 
     def remove_connection(self, connection_id: str) -> dict:
         if not self.store.remove_connection(connection_id):
@@ -69,12 +69,14 @@ class BusinessService:
         return {"ok": True}
 
     def import_csv(self, name: str, kind: str, csv_text: str) -> dict:
-        from agents.core.business.connectors import parse_csv
+        from agents.core.business.connectors import CsvImportError, parse_csv
 
         try:
             snapshot = parse_csv(csv_text, kind)
+        except CsvImportError as exc:
+            raise BusinessError("invalid_csv", str(exc), 422) from None
         except Exception:
-            raise BusinessError("invalid_csv", "CSV format or values are invalid", 422) from None
+            raise BusinessError("invalid_csv", "Fișierul CSV nu a putut fi validat. Verifică formatul și coloanele.", 422) from None
         existing = next((c for c in self.store.list_connections() if c["provider"] == "csv" and c["name"] == name), None)
         if existing and self.store.snapshot_kind(existing["id"]) != kind:
             raise BusinessError("source_kind_mismatch", "This CSV source name is already used for another record kind", 409)
@@ -89,48 +91,68 @@ class BusinessService:
 
     def _current_snapshots(self) -> list[dict]:
         snapshots = self.store.snapshots()
-        status = {item["id"]: item["status"] for item in self.store.list_connections()}
+        connections = {item["id"]: item for item in self.store.list_connections()}
         for snapshot in snapshots:
-            if status.get(snapshot["connection_id"]) == "stale":
+            connection = connections.get(snapshot["connection_id"], {})
+            snapshot["provider"] = connection.get("provider")
+            if connection.get("status") == "stale":
                 snapshot["complete"] = False
                 snapshot["stale"] = True
         return snapshots
 
-    def run_report(self, workflow_id: str) -> dict:
-        from agents.core.business.reports import build_report
+    def run_report(self, workflow_id: str, *, connection_id: str | None = None,
+                   start_date: str | None = None, end_date: str | None = None) -> dict:
+        from agents.core.business.reports import ReportFilterError, build_report
 
         if workflow_id not in {w["id"] for w in catalog()["workflows"]}:
             raise BusinessError("unknown_workflow", "Workflow not found", 404)
         snapshots = self._current_snapshots()
+        if connection_id is not None:
+            if self.store.get_connection(connection_id) is None:
+                raise BusinessError("source_not_found", "Sursa selectată nu mai există. Actualizează lista surselor.", 404)
+            snapshots = [item for item in snapshots if item["connection_id"] == connection_id]
         try:
-            report = build_report(workflow_id, snapshots)
+            report = build_report(workflow_id, snapshots, start_date=start_date, end_date=end_date)
+            report["source_selection"] = {"connection_id": connection_id}
             return self.store.save_report(report)
+        except ReportFilterError as exc:
+            raise BusinessError("invalid_report_filter", str(exc), 422) from None
         except Exception:
             raise BusinessError("report_failed", "Report could not be built from saved data", 502) from None
 
-    def _question_context(self) -> tuple[dict, bool]:
+    def _question_context(self, report_id: str | None = None) -> tuple[dict, bool]:
         from agents.core.business.reports import build_report
 
-        snapshots = self._current_snapshots()
+        if report_id is not None:
+            saved = next((report for report in self.store.list_reports() if report["id"] == report_id), None)
+            if saved is None:
+                raise BusinessError("report_not_found", "Raportul selectat nu mai este disponibil. Rulează sau selectează alt raport.", 404)
+            inputs = [saved]
+        else:
+            snapshots = self._current_snapshots()
+            inputs = [build_report(workflow["id"], snapshots) for workflow in catalog()["workflows"]]
         reports = []
-        for workflow in catalog()["workflows"]:
-            report = build_report(workflow["id"], snapshots)
+        for report in inputs:
             coverage = report["coverage"][:20]
             warnings = report["warnings"][:20]
             if len(report["coverage"]) > 20:
                 warnings.append(f"Coverage lists 20 of {len(report['coverage'])} sources; metrics include every source.")
             reports.append({"workflow_id": report["workflow_id"], "summary": report["summary"][:1000],
-                            "metrics": report["metrics"], "coverage": coverage, "warnings": warnings})
-        context = {"reports": reports}
+                            "metrics": report["metrics"], "coverage": coverage, "warnings": warnings,
+                            "created_at": report.get("created_at"), "filters": report.get("filters", {}),
+                            "source_selection": report.get("source_selection", {})})
+        context = {"scope": "saved_report" if report_id else "current_snapshots", "reports": reports}
+        if report_id:
+            context["scope_note"] = "Raport istoric salvat. Indicatorii sunt cei de la generare și nu sunt recalculați din datele curente."
         if len(json.dumps(context, ensure_ascii=False)) > 45_000:
             raise BusinessError("context_too_large", "Business aggregates exceed the assistant context limit", 413)
         return context, self.store.profile()["local_only"]
 
-    async def ask(self, question: str) -> dict:
+    async def ask(self, question: str, report_id: str | None = None) -> dict:
         from agents.core.business.assistant import BusinessAIError, answer_question
 
         try:
-            context, local_only = await asyncio.to_thread(self._question_context)
+            context, local_only = await asyncio.to_thread(self._question_context, report_id)
         except BusinessError:
             raise
         except Exception:

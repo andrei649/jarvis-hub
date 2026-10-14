@@ -19,6 +19,7 @@ The existing personal/AI OS surfaces remain available while the business offerin
 
 - [x] BIZ-1: opt-in, one-company workspace; encrypted native WooCommerce/HubSpot connections, CSV import, bounded snapshots, deterministic sales/stock/pipeline reports, guarded AI questions and responsive Console panel. [Scope](docs/superpowers/specs/2026-10-13-nerva-business-design.md), [operator guide](docs/BUSINESS.md).
 - [x] BIZ-2: review proven connector/workflow projects and commercial reuse boundaries; [decisions and primary sources](docs/research/2026-10-13-business-open-source.md). No third-party framework imported.
+- [x] BIZ-8: evening-test usability: explicit synthetic examples, first-use steps, single-source and UTC sales-date filters, historical-report AI context, JSON/CSV report downloads and safe actionable import/sync errors. Local implementation; [manual scenario](docs/BUSINESS_TEST.md).
 - [ ] BIZ-3: clothing-store acceptance with actual WooCommerce credentials/data, variation stock and refunds; live HubSpot account and provider/model checks.
 - [ ] BIZ-4: reusable scheduled automation bundles with action approvals, retries and idempotency; email/phone/lead connectors and OAuth lifecycle. Evaluate optional Node-RED only against measured needs.
 - [ ] BIZ-5: per-person and department permissions, SSO, tenant isolation if hosted together, usage metering/billing, operational backup/restore acceptance and client onboarding package.

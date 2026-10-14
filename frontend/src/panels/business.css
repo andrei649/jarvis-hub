@@ -63,6 +63,10 @@
 .business-status--error { color: var(--red, #f28484); }
 .business-status--pending, .business-status--partial, .business-status--stale { color: var(--amber, #f0bf68); }
 .business-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+.business-first-use ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding-left: 20px; margin: 8px 0 0; }
+.business-first-use li { padding-left: 3px; }
+.business-example-actions { display: flex; flex-wrap: wrap; gap: 7px; margin: 9px 0 13px; }
+.business-example-actions button { color: var(--accent-light, #a9d2fb); background: transparent; border: 1px solid var(--business-line); border-radius: 6px; padding: 5px 9px; font-size: 11px; }
 .business-actions button, .business-report-list button, .business-workflow button, .business-alert button { color: var(--accent-light, #a9d2fb); background: transparent; border: 1px solid var(--business-line); border-radius: 6px; padding: 5px 9px; font-size: 11px; }
 .business-actions button:hover:not(:disabled), .business-workflow button:hover:not(:disabled), .business-report-list button:hover { border-color: var(--accent-light, #a9d2fb); }
 .business-alert, .business-success { padding: 10px 12px; border-radius: 8px; font-size: 12px; }
@@ -74,6 +78,7 @@
 .business-off code { color: var(--accent-light, #a9d2fb); }
 .business-icon { font-size: 30px; color: var(--accent-light, #a9d2fb); }
 .business-workflows { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+.business-report-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .business-workflow { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 14px; border: 1px solid var(--business-line); border-radius: 10px; padding: 14px; background: color-mix(in srgb, var(--void, #0e1923) 38%, transparent); }
 .business-workflow p { color: var(--business-muted); font-size: 12px; margin: 0 0 8px; }
 .business-workflow span { color: var(--business-muted); font-size: 10px; }
@@ -87,6 +92,7 @@
 .business-report__heading h4 { font-size: 17px; margin-top: 3px; }
 .business-report__heading time { color: var(--business-muted); font-size: 10px; white-space: nowrap; }
 .business-report__summary { font-size: 13px; margin: 8px 0 17px; white-space: pre-wrap; }
+.business-report__filters { display: grid; gap: 3px; color: var(--business-muted); font-size: 11px; margin: 10px 0; }
 .business-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 0 0 18px; }
 .business-metrics div { background: color-mix(in srgb, var(--accent-light, #a9d2fb) 8%, transparent); padding: 10px; border-radius: 8px; overflow-wrap: anywhere; }
 .business-metrics dt { color: var(--business-muted); font-size: 10px; text-transform: capitalize; }
@@ -107,5 +113,5 @@
 .business-activity ol { list-style: none; padding: 0; margin: 0; }
 .business-activity li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--business-line); font-size: 11px; }
 .business-activity time { color: var(--business-muted); white-space: nowrap; }
-@media (max-width: 760px) { .business-grid, .business-report-layout { grid-template-columns: 1fr; } .business-workflows { grid-template-columns: 1fr; } .business-ask form { grid-template-columns: 1fr; } .business-card { padding: 16px; } }
+@media (max-width: 760px) { .business-grid, .business-report-layout { grid-template-columns: 1fr; } .business-workflows, .business-report-filters, .business-first-use ol { grid-template-columns: 1fr; } .business-ask form { grid-template-columns: 1fr; } .business-card { padding: 16px; } }
 @media (max-width: 450px) { .business-form-row { grid-template-columns: 1fr; } .business-hero { padding: 18px; } .business-hero__body { display: block; } .business-pill { display: inline-block; margin-top: 12px; } .business-report__heading { display: block; } }

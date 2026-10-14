@@ -24,6 +24,18 @@ class ConnectorError(ValueError):
     """A sanitized error suitable for the operator UI."""
 
 
+class CsvImportError(ValueError):
+    """Safe import diagnostics: row/field names, never cell values."""
+
+
+def _field_value(field, validator, value):
+    try:
+        return validator(value)
+    except ValueError as exc:
+        # Only internal validators with fixed messages are accepted here.
+        raise CsvImportError(f'Câmpul {field}: {exc}') from None
+
+
 def validate_connection(provider: str, base_url: str, credentials: dict) -> str:
     if provider not in _FIELDS:
         raise ValueError('Conector necunoscut.')
@@ -125,39 +137,42 @@ def _normalize(kind: str, item: dict) -> dict:
         status = _text(item.get('status'))
         if not status:
             raise ValueError('Comenzile necesită un status.')
-        return {'id': ident, 'status': status, 'total': _money(item.get('total')),
-                'currency': _currency(item.get('currency')), 'created_at': _text(item.get('created_at'))}
+        return {'id': ident, 'status': status, 'total': _field_value('total', _money, item.get('total')),
+                'currency': _field_value('currency', _currency, item.get('currency')), 'created_at': _text(item.get('created_at'))}
     if kind == 'products':
-        return {'id': ident, 'name': _text(item.get('name')), 'stock_quantity': _stock(item.get('stock_quantity'))}
-    return {'id': ident, 'name': _text(item.get('name')), 'amount': _money(item.get('amount')),
-            'currency': _currency(item.get('currency')), 'stage': _text(item.get('stage')) or 'unknown'}
+        return {'id': ident, 'name': _text(item.get('name')), 'stock_quantity': _field_value('stock_quantity', _stock, item.get('stock_quantity'))}
+    return {'id': ident, 'name': _text(item.get('name')), 'amount': _field_value('amount', _money, item.get('amount')),
+            'currency': _field_value('currency', _currency, item.get('currency')), 'stage': _text(item.get('stage')) or 'unknown'}
 
 
 def parse_csv(text: str, kind: str) -> dict:
     if kind not in KINDS or not isinstance(text, str) or len(text.encode('utf-8')) > MAX_CSV_BYTES:
-        raise ValueError('Tip CSV invalid sau fișier prea mare (maximum 1 MB).')
+        raise CsvImportError('Tip CSV invalid sau fișier prea mare (maximum 1 MB).')
     required = {'orders': {'id','status','total','currency'}, 'products': {'id','name','stock_quantity'},
                 'deals': {'id','name','amount','currency','stage'}}[kind]
     try:
         reader = csv.DictReader(io.StringIO(text.lstrip('\ufeff')), strict=True)
         fields = reader.fieldnames or []
         if len(fields) != len(set(fields)) or not required.issubset(fields):
-            raise ValueError('Coloane necesare: ' + ', '.join(sorted(required)))
+            raise CsvImportError('Antet invalid. Folosește virgulă ca separator și coloanele: ' + ', '.join(sorted(required)))
         rows, seen = [], set()
         for row in reader:
             if len(rows) >= MAX_RECORDS:
-                raise ValueError('Importul acceptă maximum 500 de rânduri.')
+                raise CsvImportError('Importul acceptă maximum 500 de rânduri.')
             if None in row or any(row.get(key) is None for key in required):
-                raise ValueError('Numărul de coloane diferă între rânduri.')
-            normalized = _normalize(kind, row)
+                raise CsvImportError(f'Rândul {reader.line_num}: numărul de coloane diferă față de antet.')
+            try:
+                normalized = _normalize(kind, row)
+            except ValueError as exc:
+                raise CsvImportError(f'Rândul {reader.line_num}: {exc}') from None
             if normalized['id'] in seen:
-                raise ValueError('ID duplicat în import.')
+                raise CsvImportError(f'Rândul {reader.line_num}: ID duplicat în import.')
             seen.add(normalized['id'])
             rows.append(normalized)
     except csv.Error:
-        raise ValueError('CSV invalid. Folosește virgulă ca separator și ghilimele pentru text.') from None
+        raise CsvImportError('CSV invalid. Folosește virgulă ca separator și ghilimele pentru text.') from None
     if not rows:
-        raise ValueError('CSV-ul nu conține înregistrări.')
+        raise CsvImportError('CSV-ul nu conține înregistrări.')
     return {'kind': kind, 'records': {key: rows if key == kind else [] for key in KINDS},
             'complete': True, 'coverage': f'Import CSV explicit: {len(rows)} înregistrări; perioada este cea din fișier.'}
 
@@ -166,7 +181,12 @@ async def _get_json(client, url, **kwargs):
     async with client.stream('GET', url, follow_redirects=False,
                              timeout=client.timeouts.to_httpx_timeout(), **kwargs) as response:
         if not 200 <= response.status_code < 300:
-            raise ConnectorError(f'Conectarea a eșuat (HTTP {response.status_code}). Verifică accesul și permisiunile.')
+            repair = {401: 'Verifică cheia sau tokenul de acces.',
+                      403: 'Verifică permisiunile de citire ale aplicației.',
+                      404: 'Verifică adresa magazinului și activarea API-ului.',
+                      429: 'Limita furnizorului a fost atinsă. Reîncearcă mai târziu.'}
+            raise ConnectorError(f'Conectarea a eșuat (HTTP {response.status_code}). '
+                                 + repair.get(response.status_code, 'Verifică disponibilitatea serviciului.'))
         body = bytearray()
         async for chunk in response.aiter_bytes(chunk_size=65_536):
             if len(body) + len(chunk) > 4_000_000:
@@ -200,7 +220,9 @@ async def fetch_snapshot(provider: str, base_url: str, credentials: dict) -> dic
                         if not isinstance(item, dict):
                             raise ValueError('invalid record')
                         value = dict(item)
-                        value['created_at'] = value.get('date_created', '')
+                        utc_created = value.get('date_created_gmt')
+                        value['created_at'] = (str(utc_created).removesuffix('Z') + 'Z'
+                                               if utc_created else value.get('date_created', ''))
                         row = _normalize(kind, value)
                         if row['id'] in seen:
                             complete = False

@@ -54,6 +54,13 @@ class ImportBody(_StrictBody):
 
 class AskBody(_StrictBody):
     question: str = Field(min_length=1, max_length=2_000)
+    report_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+
+
+class ReportBody(_StrictBody):
+    connection_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    start_date: str | None = Field(default=None, max_length=10)
+    end_date: str | None = Field(default=None, max_length=10)
 
 
 def enabled() -> bool:
@@ -141,11 +148,11 @@ def import_business_csv(body: ImportBody):
 
 
 @router.post("/api/business/reports/{workflow_id}/run", dependencies=[Depends(user_guard)])
-def run_business_report(workflow_id: str):
+def run_business_report(workflow_id: str, body: ReportBody | None = None):
     if not enabled():
         return _off()
     try:
-        report = _service().run_report(workflow_id)
+        report = _service().run_report(workflow_id, **(body.model_dump() if body else {}))
     except BusinessError as error:
         return _error(error)
     return nocache_json({"report": report})
@@ -157,7 +164,7 @@ async def ask_business(body: AskBody):
         return _off()
     try:
         service = await asyncio.to_thread(_service)
-        answer = await service.ask(body.question)
+        answer = await service.ask(body.question, body.report_id)
     except BusinessError as error:
         return _error(error)
     return nocache_json(answer)

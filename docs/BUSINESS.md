@@ -16,6 +16,11 @@ Dacă pornești Nerva fără Docker, setează `NERVA_BUSINESS_ENABLED=1` în med
 
 ## Primii pași
 
+Pentru o probă de zece minute fără conturi externe, urmează
+[scenariul de test](BUSINESS_TEST.md). În ecran apar pașii de pornire și trei
+butoane cu exemple sintetice. Alegerea unui exemplu completează formularul;
+datele sunt salvate numai după apăsarea butonului **Importă CSV**.
+
 1. În **Profilul companiei**, introdu numele, alege modelul de domeniu (*Comerț online*, *Auto* sau *Servicii*) și codul monedei de trei litere, de exemplu `RON`. Modelul organizează spațiul; nu încarcă automat date. Salvează profilul cu acces de administrator.
 2. Adaugă o sursă. Poți importa un CSV local sau salva o conexiune WooCommerce/HubSpot. Conexiunea salvată este inițial **Neconfirmat**; apasă **Sincronizează** pentru a verifica accesul și a prelua date. Sincronizarea este manuală.
 3. Rulează raportul potrivit tipului de date și citește **Acoperire** și **De verificat** înainte de a folosi indicatorii. Rapoartele se păstrează cu data generării; o sursă nesincronizată nu produce cifre inventate.
@@ -43,11 +48,38 @@ Conexiunile externe nu fac cereri la simpla deschidere a paginii. Dacă o resinc
 
 ## Rapoarte și întrebări
 
+Poți selecta **o singură sursă** înainte de a genera raportul. Folosește această
+opțiune când același magazin apare atât prin conector, cât și într-un CSV.
+Opțiunea **Toate sursele** cumulează sursele relevante fără deduplicare.
+
+Raportul de vânzări acceptă date de început și sfârșit în format `YYYY-MM-DD`,
+incluse la ambele capete, în calendarul **UTC**. Filtrarea folosește data creării
+comenzii din instantaneul disponibil; nu descarcă alte comenzi de la furnizor.
+Datele cu fus orar sunt convertite în UTC. Cele fără fus orar sunt tratate ca UTC,
+cu avertisment. Comenzile fără dată sau cu dată invalidă sunt excluse din raportul
+filtrat și numărate separat. WooCommerce folosește prioritar `date_created_gmt`.
+Stocurile și oportunitățile folosesc numai selecția sursei, fără filtru de dată.
+
 - **Vânzări** însumează comenzile `completed`/`processing` separat pe monedă. Sumele includ valorile totale din sursă, nu reprezintă profit și nu reconciliază rambursările parțiale.
 - **Stocuri** indică produsele cu maximum 3 unități, inclusiv valori negative, și numără separat stocurile necunoscute. Variațiile WooCommerce nu sunt importate separat.
 - **Oportunități** grupează etapele din CRM și păstrează sumele separate pe monedă. Valoarea oportunităților nu este venit realizat.
 
 Rapoartele arată sursele, data instantaneului, caracterul complet/parțial și avertismentele. Cu mai multe surse, Nerva nu deduplică automat înregistrările comune; evită importuri care se suprapun cu o conexiune. Datele remote sunt instantanee limitate, fără filtru de perioadă. Tabelul unui raport afișează cel mult 100 de rânduri, deși indicatorii folosesc înregistrările disponibile în instantanee.
+
+**Descărcarea raportului** păstrează rezultatul salvat. JSON conține indicatorii,
+filtrele, acoperirea, avertismentele și rândurile salvate. CSV include metadatele,
+indicatorii și cel mult cele 100 de rânduri vizibile; nu este un export integral
+al magazinului. Celulele care ar putea fi interpretate drept formule sunt
+neutralizate. Raportul istoric rămâne neschimbat după o resincronizare.
+
+În **Domeniul întrebării**, alege **Raportul salvat selectat** pentru a discuta
+exact indicatorii și perioada acelui rezultat istoric. **Toate datele curente**
+recalculează indicatorii din instantaneele existente. Un raport expirat din
+istoricul limitat este refuzat explicit; întrebarea nu trece automat la alte date.
+
+La import, erorile indică rândul și câmpul problematic, fără a repeta valoarea
+celulei. Un răspuns HTTP 401 la sincronizare cere verificarea cheii/tokenului;
+403 indică permisiunile de citire, iar 429 cere o nouă încercare mai târziu.
 
 Întrebările folosesc routerul de modele deja configurat în Nerva. Opțiunea **Folosește doar modele AI locale** este activă implicit; dacă nu există un model local disponibil sau politica de date refuză ruta, întrebarea primește o eroare explicită. Dezactivarea opțiunii în profil permite încercarea rutei configurate, dar nu acordă prin ea însăși permisiune cloud: politica generală a Nerva rămâne în vigoare. Poți verifica modelul și ruta folosite lângă fiecare răspuns.
 

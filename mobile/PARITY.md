@@ -80,6 +80,9 @@ Nerva Business (2026-10-13 local candidate): `/api/business/*` is wired into the
 responsive browser Console → Business. Native iOS/Android has no Business panel;
 this pilot is intentionally browser-only. Dedicated native work is tracked as
 `BACKLOG.md` BIZ-7; backend users share one company's data, not department scopes.
+2026-10-14 continuation: report source/date filters, saved-report question context,
+synthetic examples and report downloads are browser features. The existing
+Business API paths gained optional request fields; native Business remains BIZ-7.
 
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|

@@ -127,8 +127,9 @@ def test_failed_refresh_marks_snapshot_stale_and_hides_provider_exception(tmp_pa
 
 def test_report_failure_has_safe_error_envelope(tmp_path, monkeypatch):
     reports = types.ModuleType("agents.core.business.reports")
+    reports.ReportFilterError = type("ReportFilterError", (ValueError,), {})
 
-    def broken(*args):
+    def broken(*args, **kwargs):
         raise RuntimeError("SECRET-RAW provider payload")
 
     reports.build_report = broken
@@ -219,3 +220,96 @@ def test_actual_guard_dependencies_reject_unauthorized_requests(tmp_path, monkey
     assert c.post("/api/business/connections/x/sync").status_code == 403
     assert c.delete("/api/business/connections/x").status_code == 403
     assert c.post("/api/business/import", json={"name": "A", "kind": "orders", "csv_text": "x"}).status_code == 403
+
+
+def test_report_can_select_one_source_and_invalid_source_is_refused(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    first = c.post('/api/business/import', json={'name': 'First', 'kind': 'orders',
+        'csv_text': 'id,status,total,currency,created_at\na,completed,10,EUR,2026-10-01'}).json()['connection']
+    c.post('/api/business/import', json={'name': 'Second', 'kind': 'orders',
+        'csv_text': 'id,status,total,currency,created_at\na,completed,99,EUR,2026-10-02'})
+    response = c.post('/api/business/reports/sales_overview/run', json={'connection_id': first['id']})
+    assert response.status_code == 200, response.text
+    report = response.json()['report']
+    assert report['metrics']['sales_by_currency'] == {'EUR': '10.00'}
+    assert report['source_selection'] == {'connection_id': first['id']}
+    assert [source['source'] for source in report['coverage']] == ['First']
+    assert c.post('/api/business/reports/sales_overview/run', json={'connection_id': '0' * 32}).status_code == 404
+
+
+def test_selected_report_question_uses_historical_filtered_metrics(tmp_path, monkeypatch):
+    from agents.core.business import assistant
+    c = _client(tmp_path, monkeypatch)
+    original = {'name': 'Orders', 'kind': 'orders', 'csv_text': 'id,status,total,currency\nPRIVATE-ROW,completed,10,EUR'}
+    c.post('/api/business/import', json=original)
+    report = c.post('/api/business/reports/sales_overview/run').json()['report']
+    original['csv_text'] = 'id,status,total,currency\nPRIVATE-ROW,completed,999,EUR'
+    c.post('/api/business/import', json=original)
+    contexts = []
+    async def answer(question, context, local_only):
+        contexts.append(context)
+        return {'answer': '10 EUR', 'model': 'local', 'route': 'local'}
+    monkeypatch.setattr(assistant, 'answer_question', answer)
+    result = c.post('/api/business/ask', json={'question': 'How much?', 'report_id': report['id']})
+    assert result.status_code == 200, result.text
+    assert contexts[0]['scope'] == 'saved_report'
+    assert contexts[0]['reports'][0]['metrics']['sales_by_currency'] == {'EUR': '10.00'}
+    assert contexts[0]['reports'][0]['created_at'] == report['created_at']
+    assert 'PRIVATE-ROW' not in json.dumps(contexts)
+    assert c.post('/api/business/ask', json={'question': 'What?', 'report_id': '0' * 32}).status_code == 404
+    assert len(contexts) == 1
+
+
+def test_csv_error_identifies_row_and_field_without_echoing_cell(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    response = c.post('/api/business/import', json={'name': 'Orders', 'kind': 'orders',
+        'csv_text': 'id,status,total,currency\na,completed,12,EUR\nb,completed,PRIVATE-CELL,EUR'})
+    assert response.status_code == 422
+    message = response.json()['error']['message']
+    assert '3' in message and 'total' in message
+    assert 'PRIVATE-CELL' not in response.text
+    assert c.get('/api/business/workspace').json()['connections'] == []
+
+
+def test_safe_connector_failure_explains_status_to_operator(tmp_path, monkeypatch):
+    from agents.core.business import connectors
+    async def fail(*args):
+        raise connectors.ConnectorError('Acces refuzat (HTTP 401). Verifică tokenul de acces.')
+    monkeypatch.setattr(connectors, 'fetch_snapshot', fail)
+    c = _client(tmp_path, monkeypatch)
+    cid = c.post('/api/business/connections', json={'provider': 'hubspot', 'name': 'CRM',
+        'base_url': '', 'credentials': {'access_token': 'PRIVATE-TOKEN'}}).json()['connection']['id']
+    response = c.post(f'/api/business/connections/{cid}/sync')
+    assert response.status_code == 502
+    assert '401' in response.json()['error']['message']
+    assert 'PRIVATE-TOKEN' not in response.text
+    assert c.get('/api/business/workspace').json()['connections'][0]['status'] == 'error'
+
+
+def test_date_filters_are_validated_and_recorded_in_saved_report(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    c.post('/api/business/import', json={'name': 'Dated', 'kind': 'orders',
+        'csv_text': 'id,status,total,currency,created_at\na,completed,10,EUR,2026-10-01T23:00:00Z\nb,completed,99,EUR,2026-10-02T01:00:00Z'})
+    response = c.post('/api/business/reports/sales_overview/run', json={
+        'start_date': '2026-10-01', 'end_date': '2026-10-01'})
+    assert response.status_code == 200, response.text
+    report = response.json()['report']
+    assert report['metrics']['sales_by_currency'] == {'EUR': '10.00'}
+    assert report['filters'] == {'start_date': '2026-10-01', 'end_date': '2026-10-01'}
+    for bad in ({'start_date': '2026-10-02', 'end_date': '2026-10-01'}, {'start_date': '2026-02-30'}):
+        rejected = c.post('/api/business/reports/sales_overview/run', json=bad)
+        assert rejected.status_code == 422
+        assert rejected.json()['error']['code'] == 'invalid_report_filter'
+    assert c.post('/api/business/reports/stock_watch/run', json={'start_date': '2026-10-01'}).status_code == 422
+    assert len(c.get('/api/business/workspace').json()['reports']) == 1
+
+
+def test_unexpected_csv_exception_is_sanitized(tmp_path, monkeypatch):
+    from agents.core.business import connectors
+    def broken(*args):
+        raise ValueError('PRIVATE-PROVIDER-PAYLOAD')
+    monkeypatch.setattr(connectors, 'parse_csv', broken)
+    c = _client(tmp_path, monkeypatch)
+    result = c.post('/api/business/import', json={'name': 'File', 'kind': 'orders', 'csv_text': 'x'})
+    assert result.status_code == 422
+    assert 'PRIVATE-PROVIDER-PAYLOAD' not in result.text
