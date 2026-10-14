@@ -502,6 +502,7 @@ def test_a_stale_generation_warning_does_not_survive_an_early_return(tmp_path, m
     monkeypatch.setattr(skill_loader, "SKILLS_DIR", tmp_path / "skills")
     monkeypatch.setattr(skill_loader, "_user_skills_dir", lambda: tmp_path / "user-skills")
     loader = SkillLoader()
+    monkeypatch.setattr(loader, "_name_from_task", lambda task: "summarise_weather_report_fixed")
     assert loader.generate_skill("jarvis", "summarise the weather report", ["read it", "sum it"])
     loader.last_generation_warnings = [{"path": "main.py", "rule": "py-eval", "line": 1, "message": "m"}]
     assert loader.generate_skill("jarvis", "summarise the weather report", ["read it", "sum it"]) is None
