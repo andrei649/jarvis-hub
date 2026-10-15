@@ -1,0 +1,4 @@
+id,name,amount,currency,stage
+demo-deal-001,Proiect consultanță,3500.00,EUR,qualified
+demo-deal-002,Abonament suport,850.00,EUR,proposal
+demo-deal-003,Implementare CRM,4200.00,RON,closedwon

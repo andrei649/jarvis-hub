@@ -16,6 +16,15 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+Nerva Business (2026-10-13 local candidate): the nine `/api/business/*` routes
+have a real Console → Business caller (profile, sources, sync/import, reports,
+questions). Empty/disabled/error/partial/stale states are visible. Native mobile,
+department permissions and transactional automation remain BIZ-4/5/7 backlog
+work; the current browser panel does not imply those features are delivered.
+2026-10-14: Business adds first-use steps, explicit synthetic CSV examples, source
+and UTC sales-date filters, saved-report Q&A scope and metadata-bearing downloads.
+All controls use the same guarded routes; live account/model acceptance remains open.
+
 Session ID validation (local backend candidate, 2026-10-09): existing chat and
 session routes reject a terminal newline through the corrected shared validator,
 before session or memory work. Valid IDs keep their exact value; no new HUD

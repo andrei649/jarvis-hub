@@ -56,6 +56,7 @@ import { JobsPanel } from './panels/jobs';
 import { ModelSetupPanel } from './panels/model-setup';
 import { HostReadinessPanel } from './panels/host-readiness';
 import { CompanyRoomPanel } from './panels/company-room';
+import { BusinessPanel } from './panels/business';
 import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
@@ -5367,6 +5368,7 @@ const PANEL_COMPONENTS = {
   OperatorPanel,
   ScreenReflexPanel,
   CompanyRoomPanel,
+  BusinessPanel,
   QuickbarPanel,
   AutonomyControlPanel,
   MissionCanvasPanel,

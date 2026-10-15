@@ -48,6 +48,8 @@
     "/v2/console/model-setup/",
     "/v2/console/docs",
     "/v2/console/docs/",
+    "/v2/console/business",
+    "/v2/console/business/",
     "/v2/console/presence-inbox",
     "/v2/console/presence-inbox/",
     "/v2/console/ambient-watch",
