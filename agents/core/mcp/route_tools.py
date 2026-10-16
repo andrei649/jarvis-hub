@@ -315,6 +315,11 @@ class RouteTool:
             "name": self.tool_name,
             "description": self.spec.summary,
             "inputSchema": self.input_schema,
+            # Custom specs must be reviewed before inheriting read permission.
+            # Binding a callable remains trusted application code, not a sandbox.
+            "annotations": {
+                "readOnlyHint": self.spec.method == "GET" and self.spec in ROUTE_TOOL_ALLOWLIST,
+            },
         }
 
     def filtered_kwargs(self, arguments: dict | None) -> dict:
