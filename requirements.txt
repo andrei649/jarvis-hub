@@ -19,7 +19,7 @@ ollama>=0.6.3
 # fastapi 0.137 route-introspection change handled by tests/_route_introspect.py;
 # starlette pinned below the untested 1.x major. See
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
-fastapi>=0.142.2,<0.143
+fastapi>=0.143.0,<0.144
 starlette>=1.7.0,<2.0
 uvicorn>=0.54.0
 
