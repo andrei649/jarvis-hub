@@ -86,6 +86,7 @@ export const assistant = defineMessages({
     'source.note': 'Este textul exact pe care asistentul l-a primit ca sursă pentru răspuns.',
     'source.openDocument': 'Deschide documentul',
     'source.download': 'Descarcă originalul',
+    'source.notOpenable': 'Documentul sursă nu îți este accesibil: aparține altui departament sau a fost șters între timp. Fragmentul de mai sus este cel folosit în raport.',
 
     'prompts.general.1': 'Care sunt cele mai importante proceduri pe care ar trebui să le cunoască un coleg nou?',
     'prompts.general.2': 'Rezumă pe scurt ce conțin documentele departamentului.',
@@ -189,6 +190,7 @@ export const assistant = defineMessages({
     'source.note': 'This is the exact text the assistant received as a source for the answer.',
     'source.openDocument': 'Open the document',
     'source.download': 'Download the original',
+    'source.notOpenable': 'The source document is not available to you: it belongs to another department or has been deleted since. The excerpt above is the passage the report used.',
 
     'prompts.general.1': 'Which procedures should a new colleague know first?',
     'prompts.general.2': 'Briefly summarise what the department’s documents contain.',

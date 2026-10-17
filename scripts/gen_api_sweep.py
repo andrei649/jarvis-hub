@@ -11,7 +11,8 @@ route PR and a hand-maintained table would silently rot into fabrication:
 
 Sources of truth (both reseeded by the route snapshot tests):
   tests/_snapshots/route_surface.json   every "METHOD /path" the app serves
-  tests/_snapshots/route_auth.json      the same, mapped to its guard tier (admin/user/open)
+  tests/_snapshots/route_auth.json      the same, mapped to its guard tier (admin/user/open,
+                                        plus ws_admin/ws_user for Nerva Workspace)
 
 `route_auth.json` additionally carries FastAPI's own doc routes (/docs, /redoc,
 /openapi.json, /docs/oauth2-redirect), which are not part of the app surface snapshot; they
@@ -30,6 +31,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SURFACE = ROOT / "tests/_snapshots/route_surface.json"
 AUTH = ROOT / "tests/_snapshots/route_auth.json"
 TARGET = ROOT / "docs/test-manual/14-api-surface-sweep.md"
+
+#: Rendered after "§" — the Workspace routes are specified in the pilot contract, not here.
+WORKSPACE_OWNER = "7 of `docs/business/WORKSPACE_PILOT_SPEC.md`"
 
 # Which manual section owns the semantics of each route group. The sweep proves a route
 # EXISTS and is guarded correctly; the owning section proves it BEHAVES correctly.
@@ -54,6 +58,8 @@ OWNER = {
     "system-profiles": "05", "toolrpc": "05", "tools": "05", "traces": "09",
     "transcripts": "05", "trust": "04", "vlm": "05", "voice": "11", "webhooks": "11",
     "widget": "06", "workflows": "10", "worldview": "06", "wyoming": "11",
+    # Nerva Workspace is a separate product surface; its contract is the pilot spec.
+    "workspace": WORKSPACE_OWNER,
     # non-/api groups (prefixed "~" while grouping)
     "~(root)": "03", "~.well-known": "08", "~admin": "03 · 06", "~agents": "02",
     "~autonomy": "07", "~bench": "10", "~brain": "06", "~chat": "02",
@@ -62,14 +68,23 @@ OWNER = {
     "~plugins": "02", "~readyz": "01", "~sandbox": "08", "~security": "08",
     "~sessions": "09", "~skills": "08", "~status": "01", "~sw.js": "06",
     "~tasks": "07", "~ticker": "03", "~tts": "11", "~v1": "03", "~v2": "03",
+    "~workspace": WORKSPACE_OWNER,
     "~docs": "01", "~openapi.json": "01", "~redoc": "01",
 }
 
 HEADER = {
     "admin": '-H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" ',
     "user": '-H "X-User-Token: $JARVIS_USER_TOKEN" ',
+    # Nerva Workspace: the session cookie of a signed-in workspace user (an admin's for
+    # ws_admin). Hub tokens open no workspace route, and a session opens no hub route.
+    "ws_admin": '-b "nerva_ws_session=$NERVA_WS_ADMIN_SESSION" ',
+    "ws_user": '-b "nerva_ws_session=$NERVA_WS_SESSION" ',
     "open": "",
 }
+
+#: Every tier the auth snapshot can name, in the order the tier table lists them.
+TIERS = ("user", "admin", "ws_user", "ws_admin", "open")
+WORKSPACE_TIERS = ("ws_user", "ws_admin")
 
 READ_METHODS = {"GET", "HEAD"}
 
@@ -104,6 +119,12 @@ def probe(method: str, path: str, tier: str) -> tuple[str, str]:
                 f"{method} {path}",
                 "**200** for a live id · **404** for a bogus one — never a fabricated record"),
         )
+    if tier in WORKSPACE_TIERS:
+        return (
+            f"mutating — needs a body; exercise it in §{OWNER.get(group_of(path), '—')}",
+            "**401** `auth_required` with no session · **403** `csrf_failed` without "
+            "`X-CSRF-Token` · state actually changes only on a valid call",
+        )
     return (
         f"mutating — needs a body; exercise it in §{OWNER.get(group_of(path), '—')}",
         "**401/403** with no token · state actually changes only on a valid call",
@@ -119,7 +140,7 @@ def build() -> str:
         method, path = route.split(" ", 1)
         groups.setdefault(group_of(path), []).append((method, path, auth.get(route, "?")))
 
-    tiers = {t: sum(1 for v in auth.values() if v == t) for t in ("user", "admin", "open")}
+    tiers = {t: sum(1 for v in auth.values() if v == t) for t in TIERS}
     doc_only = sorted(set(auth) - set(surface))
 
     out: list[str] = []
@@ -135,7 +156,11 @@ def build() -> str:
       "This chapter proves a route **exists and is guarded correctly**; the *owning section* "
       "proves it **behaves correctly** — follow the §-pointer in each group heading.")
     w("> **Prereqs.** A booted server and both tokens exported. "
-      "`export B=http://127.0.0.1:8080` first — every probe uses `$B`.")
+      "`export B=http://127.0.0.1:8080` first — every probe uses `$B`. For the Nerva "
+      "Workspace groups also start the hub with `NERVA_WORKSPACE=1` and export the "
+      "`nerva_ws_session` cookie values of a signed-in member (`NERVA_WS_SESSION`) and "
+      "admin (`NERVA_WS_ADMIN_SESSION`); while the flag is off every `/api/workspace` route "
+      "answers 404 `workspace_disabled`, which is itself a check.")
     w("> **Time.** ~90 min for the read-route sweep with the loop in 14.1; the mutating routes "
       "are exercised by their owning sections, not here.")
     w("")
@@ -158,6 +183,12 @@ def build() -> str:
       "is unset, 401 when set but missing/wrong |")
     w(f"| `admin` | {tiers['admin']} | `admin_guard` (`X-Admin-Token`) | must reject a user token "
       "as well as no token |")
+    w(f"| `ws_user` | {tiers['ws_user']} | `ws_user_guard` (cookie `nerva_ws_session`, "
+      "`X-CSRF-Token` on writes) | Nerva Workspace: **401** `auth_required` without a "
+      "session, **403** `csrf_failed` for a write without the token; a hub token opens "
+      "nothing here |")
+    w(f"| `ws_admin` | {tiers['ws_admin']} | `ws_admin_guard` (a workspace admin's session) "
+      "| must reject a member's or approver's session with **403** `forbidden` |")
     w(f"| `open` | {tiers['open']} | none by design | must expose nothing tier-gated — the "
       "highest-value leak hunt in this chapter |")
     w("")
@@ -166,7 +197,9 @@ def build() -> str:
       "server host proves *routing*, not *authorization*: everything will answer 200 and you will "
       "learn nothing about the guards. Every tier assertion in 14.1 must be re-run 🌐 **from a "
       "second device on the LAN** (the owner's phone works). A sweep run only on localhost must be "
-      "recorded as **partial — localhost bypass**, never as a passing auth test.")
+      "recorded as **partial — localhost bypass**, never as a passing auth test. The "
+      "`ws_user`/`ws_admin` tiers have no localhost bypass: a workspace session is required "
+      "from every address, so those rows test authorization even on the server host.")
     w("")
     w("## 14.1 The sweep protocol")
     w("")
@@ -186,7 +219,9 @@ def build() -> str:
     w("B = os.environ['B']")
     w("auth = json.load(open('tests/_snapshots/route_auth.json'))")
     w("hdr = {'admin': {'X-Admin-Token': os.environ.get('JARVIS_ADMIN_TOKEN','')},")
-    w("       'user':  {'X-User-Token':  os.environ.get('JARVIS_USER_TOKEN','')}, 'open': {}}")
+    w("       'user':  {'X-User-Token':  os.environ.get('JARVIS_USER_TOKEN','')}, 'open': {},")
+    w("       'ws_user':  {'Cookie': 'nerva_ws_session=' + os.environ.get('NERVA_WS_SESSION','')},")
+    w("       'ws_admin': {'Cookie': 'nerva_ws_session=' + os.environ.get('NERVA_WS_ADMIN_SESSION','')}}")
     w("for route, tier in sorted(auth.items()):")
     w("    m, p = route.split(' ', 1)")
     w("    if m != 'GET' or '{' in p: continue          # templated + mutating: owning section")
@@ -202,7 +237,10 @@ def build() -> str:
     w("**Pass B — tier enforcement 🌐 (second device, the real test).** From another device on the "
       "LAN, for a sample of at least **10 `admin`**, **10 `user`** and **all `open`** routes: no "
       "token → expected 401/403; a *user* token on an *admin* route → still rejected; the correct "
-      "token → 200. Any admin route answering a user token is a **BLOCKER**.")
+      "token → 200. Any admin route answering a user token is a **BLOCKER**. For the "
+      "Nerva Workspace tiers: a member's session on a `ws_admin` route → **403** "
+      "`forbidden`; a hub token without a session on any `ws_*` route → **401** "
+      "`auth_required`. Either answering 200 is a **BLOCKER**.")
     w("")
     w("**Pass C — payload-tier leak hunt.** For every `user`-tier and `open` route that returns a "
       "collection, read the body and ask: *does this contain anything the admin tier is meant to "

@@ -202,7 +202,16 @@ def test_admin_rule_kinds_are_for_admins_and_an_admins_own_request_runs_at_once(
     immediate = _request(conn, cast.admin, cast.dept_a, label="acum", kind=ADMIN_KIND)
     assert immediate["status"] == "approved"
     assert immediate["decider"]["id"] == cast.admin.id
-    assert immediate["decision_note"] == approvals.ADMIN_ACTION_NOTE
+    # No English marker in stored user-facing data: the note column stays empty, and the
+    # audit row of the approval says it was an admin's immediate action.
+    assert immediate["decision_note"] is None
+    assert conn.execute("SELECT decision_note FROM approvals WHERE id = ?",
+                        (immediate["id"],)).fetchone()[0] is None
+    approved = conn.execute(
+        "SELECT details_json FROM audit WHERE action = 'approval.approved' AND target_id = ?",
+        (str(immediate["id"]),)).fetchone()
+    assert json.loads(approved[0]) == {"kind": ADMIN_KIND, "immediate": True,
+                                       "note": approvals.ADMIN_ACTION_NOTE}
     assert immediate["result"] == {"done": "acum"}
     assert effect.executions == [{"approval_id": immediate["id"],
                                   "payload": {"department_id": cast.dept_a, "label": "acum"},

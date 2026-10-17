@@ -171,6 +171,63 @@ def test_fts_index_follows_chunks_including_cascade_and_diacritics(ws):
     conn.close()
 
 
+#: Tables whose ids leave the row (audit target_ids, approval payloads, notification links,
+#: files/<id>.bin, ids held across an await): an id must never name two objects over time.
+MONOTONIC_ID_TABLES = ("departments", "documents", "conversations", "messages", "reports",
+                       "report_runs", "approvals", "notifications")
+
+
+def _seed_one_of_each(conn: sqlite3.Connection, dept: int, user: int) -> dict[str, str]:
+    """INSERT statements (one row each) for every table in MONOTONIC_ID_TABLES."""
+    now = workspace_db.now()
+    conv = conn.execute("INSERT INTO conversations (user_id, department_id, title, created_at, "
+                        "updated_at) VALUES (?, ?, 't', ?, ?)", (user, dept, now, now)).lastrowid
+    report = conn.execute("INSERT INTO reports (department_id, name, instructions, created_at, "
+                          "updated_at) VALUES (?, 'r', 'i', ?, ?)", (dept, now, now)).lastrowid
+    return {
+        "departments": f"INSERT INTO departments (slug, name, created_at) "
+                       f"VALUES ('d-' || hex(randomblob(4)), 'D', {now})",
+        "documents": f"INSERT INTO documents (department_id, title, filename, mime, size_bytes, "
+                     f"sha256, status, created_at, updated_at) VALUES ({dept}, 't', 'f.txt', "
+                     f"'text/plain', 1, 'x', 'ready', {now}, {now})",
+        "conversations": f"INSERT INTO conversations (user_id, department_id, title, created_at, "
+                         f"updated_at) VALUES ({user}, {dept}, 't', {now}, {now})",
+        "messages": f"INSERT INTO messages (conversation_id, role, content, created_at) "
+                    f"VALUES ({conv}, 'user', 'q', {now})",
+        "reports": f"INSERT INTO reports (department_id, name, instructions, created_at, "
+                   f"updated_at) VALUES ({dept}, 'r', 'i', {now}, {now})",
+        "report_runs": f"INSERT INTO report_runs (report_id, status, trigger, created_at) "
+                       f"VALUES ({report}, 'queued', 'manual', {now})",
+        "approvals": f"INSERT INTO approvals (kind, requester_id, summary, payload_json, status, "
+                     f"created_at, expires_at) VALUES ('k', {user}, 's', '{{}}', 'pending', "
+                     f"{now}, {now + 60})",
+        "notifications": f"INSERT INTO notifications (user_id, kind, title, created_at) "
+                         f"VALUES ({user}, 'k', 't', {now})",
+    }
+
+
+@pytest.mark.parametrize("table", MONOTONIC_ID_TABLES)
+def test_ids_that_leave_the_row_are_never_reused(ws, table):
+    """SQLite gives the id of the newest deleted row to the next insert unless the table is
+    AUTOINCREMENT; a late write or a stale link would then reach another object."""
+    conn = db()
+    seed_org(conn)
+    dept = make_department(conn, "Vânzări")
+    with workspace_db.tx(conn):
+        user = conn.execute("INSERT INTO users (email, name, role, status, created_at) "
+                            "VALUES ('a@acme.test', 'A', 'member', 'active', ?)",
+                            (workspace_db.now(),)).lastrowid
+        insert = _seed_one_of_each(conn, dept, user)[table]
+        first = conn.execute(insert).lastrowid
+        conn.execute(f"DELETE FROM {table} WHERE id = ?", (first,))  # table: a fixed name
+        second = conn.execute(insert).lastrowid
+    assert second > first
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+                       (table,)).fetchone()[0]
+    assert "AUTOINCREMENT" in sql
+    conn.close()
+
+
 def test_department_documents_need_a_department(ws):
     conn = db()
     insert = ("INSERT INTO documents (department_id, visibility, title, filename, mime, size_bytes, "

@@ -427,7 +427,13 @@ img, svg { display: block; }
 .ws-badge--success { background: var(--ws-success-soft); color: var(--ws-success); }
 .ws-badge--warning { background: var(--ws-warning-soft); color: var(--ws-warning); }
 .ws-badge--danger { background: var(--ws-danger-soft); color: var(--ws-danger); }
-.ws-badge-list { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.ws-badge-list { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; max-width: 100%; }
+/* In a list, a badge carries a name (a document title, a department) that can be longer than
+   its column: it wraps inside the badge instead of pushing the badge out of its card. */
+.ws-badge-list > .ws-badge {
+  max-width: 100%; height: auto; min-height: 22px; padding-block: 2px; line-height: 16px;
+  white-space: normal; overflow-wrap: anywhere; border-radius: 11px;
+}
 .ws-count {
   display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px;
   border-radius: 999px; background: var(--ws-accent); color: var(--ws-on-accent); font-size: 11px; font-weight: 700;

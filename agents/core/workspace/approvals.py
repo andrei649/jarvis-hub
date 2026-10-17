@@ -9,8 +9,10 @@ The rules it enforces, and why:
 
 * Nobody decides their own request. The one exception is an admin requesting an
   ``admin``-rule kind: admins are exactly the people who may do it, so it executes at
-  once (``decided_by`` = the requester, note ``admin action``) instead of waiting for a
-  second admin who would add no control.
+  once (``decided_by`` = the requester, no decision note — the audit row carries the
+  ``admin action`` marker) instead of waiting for a second admin who would add no
+  control. Stored notes are what people wrote, in their language; the UI words the
+  "decided by the requester" case itself.
 * A request nobody else could decide is refused up front (``409 no_eligible_approver``)
   rather than left to expire.
 * Deciding is a compare-and-set: ``pending`` → ``executing`` (or ``rejected``) only while
@@ -52,6 +54,7 @@ EXECUTING_TIMEOUT_SECONDS = 10 * 60
 STATUSES = ("pending", "executing", "approved", "rejected", "cancelled", "expired", "failed")
 BOXES = ("inbox", "mine", "all")
 DECISIONS = ("approve", "reject")
+#: Marks an admin's immediate action in the audit details (never stored as a decision note).
 ADMIN_ACTION_NOTE = "admin action"
 SCHEDULER_ACTOR = "scheduler"
 MAX_NOTE = 1000
@@ -385,8 +388,7 @@ def create_request(conn: sqlite3.Connection, requester: WorkspaceUser, kind: str
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (kind, validated.department_id, requester.id, summary, payload_json,
              "executing" if immediate else "pending", requester.id if immediate else None,
-             stamp if immediate else None, ADMIN_ACTION_NOTE if immediate else None, stamp,
-             stamp + APPROVAL_TTL_SECONDS),
+             stamp if immediate else None, None, stamp, stamp + APPROVAL_TTL_SECONDS),
         ).lastrowid)
         hooks = _HOOKS.get(kind)
         if hooks is not None and hooks.on_requested is not None:
@@ -397,7 +399,7 @@ def create_request(conn: sqlite3.Connection, requester: WorkspaceUser, kind: str
         if immediate:
             audit.record(conn, actor=requester, action="approval.approved", target_type="approval",
                          target_id=approval_id, department_id=validated.department_id, ip=ip,
-                         details={"kind": kind, "note": ADMIN_ACTION_NOTE})
+                         details={"kind": kind, "immediate": True, "note": ADMIN_ACTION_NOTE})
         else:
             notify_localized(conn, deciders, kind="approval.requested", titles=_TITLES["requested"],
                              body=f"{requester.name}: {summary}", link=_link(approval_id))

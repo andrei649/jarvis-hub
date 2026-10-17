@@ -234,6 +234,40 @@ def test_a_shared_run_opens_that_run_only_and_never_its_recipients(conn, world):
     assert shared[0]["delivered_to"] == [RECIPIENT_A]
 
 
+def test_a_shared_runs_sources_link_only_to_documents_the_reader_may_open(conn, world, ws):
+    """Every reader of a shared run gets its excerpts, but ``can_open`` — which decides whether
+    the source drawer links to the document and its file — is true only where the reader may
+    open that document, judged when the run is read: publishing it company-wide opens it."""
+    common = seed_document(conn, department_id=None, uploader_id=world.cast.admin.id,
+                           title="Regulament comun", chunks=["Regula comună a companiei."],
+                           visibility="company")
+    ws.engine.reply = "# Raport\n\nMarje [1] și reguli [2].\n\n## Surse\n1. [1]\n2. [2]"
+    report = reports.create_report(conn, world.cast.member_a, {
+        "department_id": world.cast.dept_a, "name": "Marje și reguli", "instructions": "Rezumă.",
+        "document_ids": [world.doc_a, common]})
+    run_id = _finished_run(conn, world.cast.member_a, report)
+    admin, headers = signed_in(world.cast.admin)
+    shared = admin.post("/api/workspace/approvals", headers=headers, json={
+        "kind": "report.share_company", "payload": {"run_id": run_id}})
+    assert shared.json()["status"] == "approved", shared.text
+
+    def openable(user: WorkspaceUser) -> dict[int, bool]:
+        client, _ = signed_in(user)
+        body = client.get(f"/api/workspace/report-runs/{run_id}").json()
+        assert all(c["excerpt"] for c in body["citations"])
+        return {c["document_id"]: c["can_open"] for c in body["citations"]}
+
+    assert openable(world.cast.member_b) == {world.doc_a: False, common: True}
+    assert openable(world.cast.member_a) == {world.doc_a: True, common: True}
+    assert openable(world.cast.admin) == {world.doc_a: True, common: True}
+    outsider, _ = signed_in(world.cast.member_b)
+    _assert_hidden(outsider.get(f"/api/workspace/documents/{world.doc_a}"), label="document")
+    _assert_hidden(outsider.get(f"/api/workspace/documents/{world.doc_a}/file"), label="file")
+    with db.tx(conn):
+        conn.execute("UPDATE documents SET visibility = 'company' WHERE id = ?", (world.doc_a,))
+    assert openable(world.cast.member_b) == {world.doc_a: True, common: True}
+
+
 # ── another user of the same department ──────────────────────────────────────────────
 
 def test_a_colleague_sees_and_runs_but_cannot_change_a_members_report(conn, world):

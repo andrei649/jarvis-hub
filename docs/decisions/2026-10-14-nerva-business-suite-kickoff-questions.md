@@ -14,6 +14,11 @@
 > *înainte* de orice implementare). Când owner-ul răspunde, răspunsurile intră în acest fișier sub
 > fiecare întrebare și documentul devine decision record; abia apoi se deschid rânduri în `BACKLOG.md`.
 >
+> **2026-10-17 — pilotul Nerva Workspace a fost livrat conform contractului**
+> [`WORKSPACE_PILOT_SPEC.md`](../business/WORKSPACE_PILOT_SPEC.md) (v3; instalare și operare în
+> [`PILOT_GUIDE.md`](../business/PILOT_GUIDE.md); rândurile `NWS-*` din `BACKLOG.md`). Este o livrare pe
+> ipotezele de mai sus, nu un răspuns: D1–D7 rămân deschise.
+>
 > **Ideea (owner, 2026-10-13):** după Jarvis (asistent personal) și Nerva (AI OS personal), un
 > **produs vândut de Digitaholic**: o suită de agenți care se conectează la abonamentele și API-urile
 > principalelor sisteme ale unei companii, cu „AI in a box” — fie inferență locală pe un pachet de

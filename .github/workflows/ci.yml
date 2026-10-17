@@ -185,9 +185,16 @@ jobs:
         run: npm run build
         working-directory: frontend
       - name: Committed bundle is up to date
+        # Both bundles: the HUD (agents/web/v2) and Nerva Workspace (agents/web/workspace).
+        # `--exit-code` misses a file the build added but nobody committed, so new
+        # untracked files under either bundle fail the step too.
         run: |
-          git diff --exit-code -- agents/web/v2 \
-            || { echo "::error::agents/web/v2 is stale — run 'cd frontend && npm run build' and commit."; exit 1; }
+          git diff --exit-code -- agents/web/v2 agents/web/workspace \
+            || { echo "::error::agents/web/v2 or agents/web/workspace is stale — run 'cd frontend && npm run build' and commit."; exit 1; }
+          untracked="$(git ls-files --others --exclude-standard -- agents/web/v2 agents/web/workspace)"
+          if [ -n "$untracked" ]; then
+            echo "::error::the build wrote files that are not committed: $untracked"; exit 1
+          fi
 
   openapi-types:
     # Post-merge only. Generated TypeScript must match the live FastAPI OpenAPI

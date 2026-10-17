@@ -83,6 +83,11 @@ KEEP_FILES: frozenset[str] = frozenset({
 })
 KEEP_DIRS: frozenset[str] = frozenset({
     "security",         # append-only audit chain + intent log: compliance evidence
+    # Nerva Workspace (workspace.db, files/, secrets.enc): the COMPANY's accounts,
+    # documents, reports and tamper-evident audit trail, not the owner's personal data.
+    # The owner's "forget me" must never erase what other people put there; the
+    # workspace has its own lifecycle (admins delete documents and users). Spec §3.
+    "workspace",
 })
 
 # Explicit lifecycle inventory for ADV-131/G35. The KEEP-inverted sweep below

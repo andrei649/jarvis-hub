@@ -292,6 +292,18 @@ describe('Shared reports', () => {
     expect(screen.getByText('Partajat în companie')).toBeTruthy();
   });
 
+  it('names the department of a run shared from a department the reader is not in', async () => {
+    const foreign = run({
+      shared_company: true, can_share: false, can_email: false, department_id: 9, department_name: 'Vânzări',
+      report: { id: 3, name: 'Raport lunar contracte', department_id: 9 },
+    });
+    boot('/workspace/shared-reports', { 'GET /api/workspace/shared-reports': { runs: [foreign] } }, 'member');
+    const table = await screen.findByRole('table', { name: 'Rapoarte partajate' });
+    const row = (await within(table).findByRole('link', { name: 'Raport lunar contracte' })).closest('tr') as HTMLElement;
+    expect(within(row).getByText('Vânzări')).toBeTruthy();
+    expect(within(row).queryByText('—')).toBeNull();
+  });
+
   it('sends an email request about a shared run of another department to the admins', async () => {
     const foreign = run({ shared_company: true, can_share: false, can_email: true, department_id: 9, report: { id: 3, name: 'Raport lunar contracte', department_id: 9 } });
     const mock = boot('/workspace/shared-reports/40', {
@@ -305,6 +317,34 @@ describe('Shared reports', () => {
     expect(probes.length).toBeGreaterThan(0);
     for (const probe of probes) expect(probe.search).toBe('?kind=email.send');
     expect((within(email).getByRole('button', { name: 'Cere aprobarea' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps the excerpt of a source the reader may not open, without links to the document', async () => {
+    const foreign = run({
+      shared_company: true, can_share: false, can_email: false, department_id: 9, department_name: 'Vânzări',
+      report: { id: 3, name: 'Raport lunar contracte', department_id: 9 },
+      content_md: '# Raport\n\nPlata în 30 de zile [1], conform regulamentului [2].',
+      citations: [
+        { n: 1, document_id: 5, title: 'Contract cadru', chunk_id: 2, page: 1, excerpt: 'Plata în 30 de zile.', can_open: false },
+        { n: 2, document_id: 6, title: 'Regulament intern', chunk_id: 3, page: null, excerpt: 'Regula comună.', can_open: true },
+      ],
+    });
+    boot('/workspace/shared-reports/40', { 'GET /api/workspace/report-runs/40': foreign }, 'member');
+    const article = (await screen.findByRole('heading', { level: 1, name: 'Raport' })).closest('article') as HTMLElement;
+    fireEvent.click(within(article).getByRole('button', { name: 'Sursa 1: Contract cadru' }));
+    let drawer = await screen.findByRole('dialog', { name: 'Sursa [1]' });
+    expect(within(drawer).getByText('Plata în 30 de zile.')).toBeTruthy();
+    expect(within(drawer).getByText(/Documentul sursă nu îți este accesibil/)).toBeTruthy();
+    expect(within(drawer).queryByRole('link', { name: 'Descarcă originalul' })).toBeNull();
+    expect(within(drawer).queryByRole('link', { name: 'Deschide documentul' })).toBeNull();
+    fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sursa [1]' })).toBeNull());
+
+    fireEvent.click(within(article).getByRole('button', { name: 'Sursa 2: Regulament intern' }));
+    drawer = await screen.findByRole('dialog', { name: 'Sursa [2]' });
+    expect(within(drawer).queryByText(/Documentul sursă nu îți este accesibil/)).toBeNull();
+    expect(within(drawer).getByRole('link', { name: 'Descarcă originalul' }).getAttribute('href')).toBe('/api/workspace/documents/6/file');
+    expect(within(drawer).getByRole('link', { name: 'Deschide documentul' }).getAttribute('href')).toBe('/workspace/documents/6');
   });
 
   it('teaches what shared reports are when there are none', async () => {

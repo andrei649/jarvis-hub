@@ -3,10 +3,13 @@
 Each test pins a defect found in the independent review of the chat router and the
 model layer, so it cannot come back:
 
-* SQLite reuses the rowids of deleted rows (``messages`` has no ``AUTOINCREMENT``). An
-  answer still being written when its conversation is deleted must never land in —
-  or be read back from — the newer message that inherited its id, which may belong to
-  another user in another department;
+* an answer row is identified by (id, conversation_id, created_at), never by its id
+  alone. ``messages`` is ``AUTOINCREMENT`` now, so SQLite no longer hands a deleted
+  row's id to the next insert by itself, but the guard must hold on its own (a restored
+  or hand-edited database can still reuse ids): an answer still being written when its
+  conversation is deleted must never land in — or be read back from — a newer message
+  that inherited its id, which may belong to another user in another department. The
+  test rewinds the id sequence to force that reuse;
 * a failure between storing the pending row and finishing the answer (building the
   prompt, writing the outcome, the runner itself) must answer the workspace's own
   error and never leave the conversation busy or the stream pinging forever;
@@ -139,6 +142,11 @@ async def test_an_answer_whose_conversation_was_deleted_never_lands_in_a_reused_
         stale_id = await _pending_in(cast.conn, conv_a)
         assert (await a.delete(f"/api/workspace/conversations/{conv_a}",
                                headers=headers_a)).status_code == 204
+        # AUTOINCREMENT would give B fresh ids; rewind the sequence so B's question and
+        # pending answer take exactly the ids A's deleted rows had.
+        with workspace_db.tx(cast.conn):
+            cast.conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = 'messages'",
+                              (stale_id - 2,))
         second = asyncio.create_task(b.post(f"/api/workspace/conversations/{conv_b}/messages",
                                             headers=headers_b, json={"content": QUESTION_B}))
         # The defect needs SQLite to really hand A's id to B: prove that it did.

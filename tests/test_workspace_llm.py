@@ -309,6 +309,32 @@ async def test_local_only_accepts_an_acknowledged_remote_local_server_as_unknown
     assert result.locality == "unknown"
 
 
+@pytest.mark.parametrize("route", ["local", "local-deep", "local-fallback", "ollama-howard",
+                                   "local-ollama"])
+async def test_allow_cloud_keeps_a_local_route_the_gate_allowed(hub, route):
+    """``allow_cloud`` widens what ``local_only`` allows, never narrows it: a LAN model
+    server whose ``unknown`` handling the owner acknowledged answers under both."""
+    lan = StubBackend()
+    router = hub(StubRouter(selection=(lan, "qwen-lan", route),
+                            handling={"provider": "lm-studio", "policy": "unknown"}))
+    result = await _complete("allow_cloud")
+    assert (result.text, result.route, result.locality) == (LONG_ANSWER, route, "unknown")
+    assert len(lan.calls) == 1 and router.selected == [("workspace", "Câte zile de concediu?")]
+    posture = await llm.posture("allow_cloud")
+    assert (posture["available"], posture["reason"], posture["locality"]) == (
+        True, "", "unknown")
+
+
+async def test_allow_cloud_still_refuses_a_cloud_route_with_the_same_unknown_policy(hub):
+    cloud = StubBackend()
+    hub(StubRouter(selection=(cloud, "deepinfra-model", "cloud-compatible"),
+                   handling={"provider": "openai-compatible", "policy": "unknown"}))
+    with pytest.raises(llm.ModelPolicyBlocked) as caught:
+        await _complete("allow_cloud")
+    assert caught.value.extra["reason"] == "provider_may_train"
+    assert cloud.calls == []
+
+
 # ── steps 5–6: guardrails, scope, deadline ───────────────────────────────────────────
 
 async def test_guardrails_in_block_mode_turn_into_content_blocked(hub):
@@ -429,6 +455,54 @@ async def test_a_plain_function_works_as_the_sink(hub):
     tokens: list[str] = []
     await _complete(on_token=tokens.append)
     assert "".join(tokens) == LONG_ANSWER
+
+
+# A model stream decoded chunk by chunk can split a UTF-16 surrogate pair (an emoji);
+# a lone surrogate cannot be encoded as UTF-8, so SQLite, JSON and SSE would all fail.
+EMOJI = "\U0001F600"
+HIGH, LOW = "\ud83d", "\ude00"
+
+
+def test_clean_text_rejoins_split_pairs_and_replaces_lone_surrogates():
+    assert llm.clean_text("Gata " + HIGH + LOW + "!") == "Gata " + EMOJI + "!"
+    assert llm.clean_text("a" + HIGH + "b") == "a?b"
+    assert llm.clean_text(LOW + "x" + HIGH) == "?x?"
+    assert llm.clean_text("Șef de echipă " + EMOJI) == "Șef de echipă " + EMOJI
+    for text in ("a" + HIGH + "b", LOW, HIGH + HIGH + LOW):
+        llm.clean_text(text).encode("utf-8")  # never raises
+
+
+async def test_a_pair_split_across_chunks_streams_and_returns_whole(hub):
+    pieces = [LONG_ANSWER + " " + HIGH, LOW + " Spor!"]
+    reply = "".join(pieces)
+    hub(StubRouter(StubBackend(reply, pieces=pieces)))
+    tokens, on_token = _collector()
+    result = await _complete(on_token=on_token)
+    expected = LONG_ANSWER + " " + EMOJI + " Spor!"
+    assert result.text == expected
+    assert "".join(tokens) == expected
+    for token in tokens:
+        token.encode("utf-8")
+
+
+async def test_lone_surrogates_never_reach_the_stream_or_the_result(hub):
+    pieces = ["Răspuns " + HIGH, " cu ", LOW + "două jumătăți rupte și destul text cât să "
+              "treacă de pragul de reținere."]
+    reply = "".join(pieces)
+    hub(StubRouter(StubBackend(reply, pieces=pieces)))
+    tokens, on_token = _collector()
+    result = await _complete(on_token=on_token)
+    assert "".join(tokens) == result.text
+    assert result.text.startswith("Răspuns ? cu ?două")
+    result.text.encode("utf-8")
+
+
+async def test_a_trailing_high_surrogate_is_flushed_at_the_end(hub):
+    pieces = ["Scurt " + HIGH]
+    hub(StubRouter(StubBackend("".join(pieces), pieces=pieces)))
+    tokens, on_token = _collector()
+    result = await _complete(on_token=on_token)
+    assert (result.text, "".join(tokens)) == ("Scurt ?", "Scurt ?")
 
 
 async def test_latency_is_measured_around_the_generation(hub):

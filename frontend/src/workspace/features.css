@@ -48,7 +48,13 @@
 .ws-md hr { border: 0; border-top: 1px solid var(--ws-border); margin: 1.2em 0; }
 .ws-md__table { max-width: 100%; overflow-x: auto; border-radius: var(--ws-radius-sm); }
 .ws-md table { border-collapse: collapse; font-size: 0.94em; }
-.ws-md th, .ws-md td { border: 1px solid var(--ws-border); padding: 6px 10px; text-align: left; vertical-align: top; }
+/* Cells break long words only when one cannot fit at all (break-word, unlike the inherited
+   `anywhere`, leaves the cell's minimum width at its longest word): a table too wide for a phone
+   scrolls sideways in its focusable frame instead of splitting "Document" into "Docum" + "ent". */
+.ws-md th, .ws-md td {
+  border: 1px solid var(--ws-border); padding: 6px 10px; text-align: left; vertical-align: top;
+  overflow-wrap: break-word;
+}
 .ws-md th { background: var(--ws-surface-2); font-weight: 600; }
 
 /* Citation chips inside the text, and the numbered source list under it. */

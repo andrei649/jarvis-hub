@@ -37,13 +37,18 @@ logger = logging.getLogger("nerva.workspace.db")
 
 DB_FILE = "workspace.db"
 
+# AUTOINCREMENT on every table whose ids leave the row — in audit target_ids, approval
+# payloads, notification links, files/<id>.bin, ids a request holds across an await: SQLite
+# otherwise hands the id of the newest deleted row to the next insert, so one id could name
+# two objects over time (another department's, even). The slices' own (id, created_at)
+# guards stay as defence in depth; tables whose ids never leave the row keep plain rowids.
 _SCHEMA_V1 = """
 CREATE TABLE org (id INTEGER PRIMARY KEY CHECK (id = 1), name TEXT NOT NULL,
   default_locale TEXT NOT NULL DEFAULT 'ro' CHECK (default_locale IN ('ro','en')),
   model_policy TEXT NOT NULL DEFAULT 'local_only' CHECK (model_policy IN ('local_only','allow_cloud')),
   settings_json TEXT NOT NULL DEFAULT '{}', created_at REAL NOT NULL);
 
-CREATE TABLE departments (id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+CREATE TABLE departments (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '', assistant_instructions TEXT NOT NULL DEFAULT '',
   archived INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL);
 
@@ -73,7 +78,7 @@ CREATE TABLE login_attempts (id INTEGER PRIMARY KEY, ip TEXT NOT NULL, email TEX
   ok INTEGER NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('login','setup','invite_lookup','sso')),
   ts REAL NOT NULL);
 
-CREATE TABLE documents (id INTEGER PRIMARY KEY, department_id INTEGER REFERENCES departments(id),
+CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, department_id INTEGER REFERENCES departments(id),
   visibility TEXT NOT NULL DEFAULT 'department' CHECK (visibility IN ('department','company')),
   title TEXT NOT NULL, filename TEXT NOT NULL, mime TEXT NOT NULL, size_bytes INTEGER NOT NULL,
   sha256 TEXT NOT NULL, uploader_id INTEGER REFERENCES users(id),
@@ -99,11 +104,11 @@ CREATE TRIGGER chunks_au AFTER UPDATE ON chunks BEGIN
   INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text);
 END;
 
-CREATE TABLE conversations (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id)
+CREATE TABLE conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id)
   ON DELETE CASCADE, department_id INTEGER NOT NULL REFERENCES departments(id), title TEXT NOT NULL,
   created_at REAL NOT NULL, updated_at REAL NOT NULL);
 
-CREATE TABLE messages (id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL
+CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL
   REFERENCES conversations(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('user','assistant')),
   content TEXT NOT NULL, citations_json TEXT NOT NULL DEFAULT '[]',
@@ -111,7 +116,7 @@ CREATE TABLE messages (id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL
   error_code TEXT, model TEXT, route TEXT, locality TEXT, latency_ms INTEGER, feedback INTEGER,
   feedback_note TEXT, created_at REAL NOT NULL);
 
-CREATE TABLE reports (id INTEGER PRIMARY KEY, department_id INTEGER NOT NULL REFERENCES departments(id),
+CREATE TABLE reports (id INTEGER PRIMARY KEY AUTOINCREMENT, department_id INTEGER NOT NULL REFERENCES departments(id),
   name TEXT NOT NULL, instructions TEXT NOT NULL, document_ids_json TEXT NOT NULL DEFAULT '[]',
   schedule_kind TEXT NOT NULL DEFAULT 'manual' CHECK (schedule_kind IN ('manual','daily','weekly')),
   schedule_time TEXT, schedule_weekday INTEGER, timezone TEXT NOT NULL DEFAULT 'Europe/Bucharest',
@@ -121,7 +126,7 @@ CREATE TABLE reports (id INTEGER PRIMARY KEY, department_id INTEGER NOT NULL REF
   owner_id INTEGER REFERENCES users(id), active INTEGER NOT NULL DEFAULT 1,
   next_run_at REAL, last_run_at REAL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 
-CREATE TABLE report_runs (id INTEGER PRIMARY KEY, report_id INTEGER NOT NULL REFERENCES reports(id)
+CREATE TABLE report_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, report_id INTEGER NOT NULL REFERENCES reports(id)
   ON DELETE CASCADE, status TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','failed')),
   trigger TEXT NOT NULL CHECK (trigger IN ('manual','schedule')),
   triggered_by INTEGER REFERENCES users(id),
@@ -130,7 +135,7 @@ CREATE TABLE report_runs (id INTEGER PRIMARY KEY, report_id INTEGER NOT NULL REF
   delivered_to_json TEXT NOT NULL DEFAULT '[]', started_at REAL, finished_at REAL,
   created_at REAL NOT NULL);
 
-CREATE TABLE approvals (id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
+CREATE TABLE approvals (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
   department_id INTEGER REFERENCES departments(id),
   requester_id INTEGER NOT NULL REFERENCES users(id), summary TEXT NOT NULL, payload_json TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('pending','executing','approved','rejected','cancelled',
@@ -138,7 +143,7 @@ CREATE TABLE approvals (id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
   decided_by INTEGER REFERENCES users(id), decided_at REAL, decision_note TEXT, result_json TEXT,
   error_code TEXT, created_at REAL NOT NULL, expires_at REAL NOT NULL);
 
-CREATE TABLE notifications (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id)
+CREATE TABLE notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id)
   ON DELETE CASCADE, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
   link TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, read_at REAL);
 

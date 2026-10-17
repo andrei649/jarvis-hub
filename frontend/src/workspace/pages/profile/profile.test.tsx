@@ -60,7 +60,8 @@ describe('Profile → password', () => {
     fireEvent.click(form.submit);
     expect(await screen.findByText('Parola a fost schimbată. Celelalte sesiuni au fost închise.')).toBeTruthy();
     const call = mock.find('POST', '/api/workspace/me/password')[0];
-    expect(call.body).toEqual({ current_password: 'Vechea-Parola-1', new_password: 'Munte-Albastru-2026' });
+    // A fixture password the secret scan (gitleaks) would read as a credential: allowed on the line.
+    expect(call.body).toEqual({ current_password: 'Vechea-Parola-1', new_password: 'Munte-Albastru-2026' }); // gitleaks:allow
     expect(call.headers['X-CSRF-Token']).toBe('csrf-1');
     expect((form.current as HTMLInputElement).value).toBe('');
     await waitFor(() => expect(mock.find('GET', '/api/workspace/me/sessions').length).toBeGreaterThan(before));
@@ -116,6 +117,33 @@ describe('Profile → sessions and preferences', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Profile' })).toBeTruthy();
     expect(mock.find('PATCH', '/api/workspace/me')[0].body).toEqual({ locale: 'en' });
     expect(document.documentElement.lang).toBe('en');
+  });
+
+  it('checks the chosen theme at once, while the save is still on its way', async () => {
+    const { mock, user } = setup();
+    let answer: (value: unknown) => void = () => undefined;
+    mock.on('PATCH /api/workspace/me', () => new Promise((resolve) => { answer = resolve; }));
+    const dark = await screen.findByLabelText(/^Întunecată/) as HTMLInputElement;
+    fireEvent.click(dark);
+    expect(dark.checked).toBe(true);
+    expect((screen.getByLabelText(/^Luminoasă/) as HTMLInputElement).checked).toBe(false);
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    answer({ user: { ...user, theme: 'dark' } });
+    await waitFor(() => expect(mock.find('PATCH', '/api/workspace/me')).toHaveLength(1));
+    expect(dark.checked).toBe(true);
+  });
+
+  it('shows the chosen language in its select at once, and reverts both when saving fails', async () => {
+    const { mock } = setup();
+    let fail: (value: unknown) => void = () => undefined;
+    mock.on('PATCH /api/workspace/me', () => new Promise((resolve) => { fail = resolve; }));
+    fireEvent.change(await screen.findByLabelText('Limbă', { selector: 'select' }), { target: { value: 'en' } });
+    const select = await screen.findByLabelText('Language', { selector: 'select' }) as HTMLSelectElement;
+    expect(select.value).toBe('en');
+    fail(apiError(500, 'server_error'));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Profil' })).toBeTruthy();
+    expect((screen.getByLabelText('Limbă', { selector: 'select' }) as HTMLSelectElement).value).toBe('ro');
+    expect(document.documentElement.lang).toBe('ro');
   });
 
   it('applies the theme to <html> and reverts it when saving fails', async () => {

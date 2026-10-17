@@ -228,7 +228,7 @@ def test_an_admin_shares_at_once_and_bad_requests_are_refused(conn, cast):
     assert immediate.status_code == 201
     item = immediate.json()
     assert item["status"] == "approved" and item["decider"]["id"] == cast.admin.id
-    assert item["decision_note"] == "admin action"
+    assert item["decision_note"] is None  # an admin's own action: no stored note, audit marks it
     assert conn.execute("SELECT shared_company FROM report_runs WHERE id = ?",
                         (run_id,)).fetchone()[0] == 1
 

@@ -129,8 +129,9 @@ describe('First-run setup', () => {
     fill();
     fireEvent.click(screen.getByRole('button', { name: 'Creează spațiul de lucru' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Utilizatori' })).toBeTruthy();
+    // Fixture passwords in this file are allowed on their line for the secret scan (gitleaks).
     expect(mock.find('POST', '/api/workspace/setup')[0].body).toEqual({
-      setup_code: 'cod-123', org_name: 'Acme SRL', name: 'Ana Pop', email: 'ana@acme.ro', password: 'Munte-Albastru-2026', locale: 'ro',
+      setup_code: 'cod-123', org_name: 'Acme SRL', name: 'Ana Pop', email: 'ana@acme.ro', password: 'Munte-Albastru-2026', locale: 'ro', // gitleaks:allow
     });
     expect(window.location.pathname).toBe('/workspace/admin/users');
   });
@@ -187,7 +188,7 @@ describe('Invite and reset', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Activează contul' }));
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Asistent' })).toBeTruthy();
-    expect(mock.find('POST', '/api/workspace/invites/accept')[0].body).toEqual({ token: TOKEN, password: 'Munte-Albastru-2026', name: 'Ion Popescu' });
+    expect(mock.find('POST', '/api/workspace/invites/accept')[0].body).toEqual({ token: TOKEN, password: 'Munte-Albastru-2026', name: 'Ion Popescu' }); // gitleaks:allow
   });
 
   it('resets a password without asking for a name and maps a server policy refusal', async () => {

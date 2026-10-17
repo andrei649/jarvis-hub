@@ -523,6 +523,55 @@ router hosts `_recall_scope` (bind-on-entry / reset-after-the-response for the w
 `agents/core/hardware.py` — `detect_gpu` now probes NVIDIA → Apple Silicon (`sysctl hw.memsize`) →
 AMD (`rocm-smi` CSV) through `_run_argv`.
 
+### Nerva Workspace — B2B pilot (2026-10-17)
+
+A separate product surface served by the hub: company employees with their own accounts,
+departments and roles, a governed assistant over uploaded company documents, reports,
+four-eyes approvals and a keyed audit chain. **Default-off** behind `NERVA_WORKSPACE`
+(see [`FLAGS.md`](FLAGS.md) → *Nerva Workspace*). It never calls `orch.handle_input`,
+`orch.process` or the personal memory: model calls go straight to `orch.llm_router` under the
+organisation's policy, through the hub's guardrails and data-handling gate. One SQLite file,
+`<data root>/workspace/workspace.db`, holds every table. Contract (exact names, shapes, error
+codes): [`business/WORKSPACE_PILOT_SPEC.md`](business/WORKSPACE_PILOT_SPEC.md); install and
+operations: [`business/PILOT_GUIDE.md`](business/PILOT_GUIDE.md). Every route answers
+`{"error", "message", …}` through `errors.register_handlers`; out-of-scope resources answer
+`404 not_found`, never 403. Hub wiring (`agents/web.py`): the workspace error and validation
+handlers, the per-IP rate limiter skipping `/workspace*` and `/api/workspace/*` (the workspace
+throttles per account itself), the `/workspace/assets` mount, the six API routers plus
+`workspace_ui`, and `scheduler.start_background()` / `stop_background()` in the lifespan;
+`data_purge.KEEP_DIRS` keeps `workspace` through the owner's forget.
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/workspace/config.py` | The ten `NERVA_WORKSPACE*` variables, read at call time and clamped; the first-run setup code (env, else a generated 0600 file, never logged) | `enabled`, `setup_code`, `clear_setup_code`, `cookie_secure_mode`, `max_upload_bytes`, `session_idle_seconds`, `session_max_seconds`, `max_concurrent_llm`, `sso_configured`, `scheduler_enabled`, `workspace_dir`, `create_private_file` |
+| `agents/core/workspace/db.py` | The whole schema (v1) migrated through `PRAGMA user_version`; autocommit connections (WAL, foreign keys, 5 s busy timeout); `tx` = `BEGIN IMMEDIATE`; `get_db` refuses `404 workspace_disabled` before opening anything; `now()` is the one clock (tests patch it) | `connect`, `tx`, `get_db`, `Db`, `migrate`, `MIGRATIONS`, `now` |
+| `agents/core/workspace/errors.py` | `WorkspaceError(code, message, status, **extra)` → JSON with `Cache-Control: no-store` (and `Retry-After`); FastAPI validation errors reshaped to `422 invalid_request {field, reason}` on `/api/workspace` only | `WorkspaceError`, `error_response`, `register_handlers`, `validation_error_handler` |
+| `agents/core/workspace/http.py` | Streamed JSON body reader (cap, NaN/depth refused) and the body validators (control characters, lone surrogates, SQLite-range ids) | `read_json`, `ws_json`, `ws_no_content`, `require_str`, `require_int`, `require_id_list`, `require_email`, `require_email_list`, `invalid`, `MAX_ID` |
+| `agents/core/workspace/identity.py` | Users and departments: scrypt hashing (n=2¹⁵, run in a thread), password policy, the frozen `WorkspaceUser` with its scope predicates | `WorkspaceUser`, `hash_password`, `verify_password`, `validate_password`, `get_user`, `user_to_json`, `department_to_json`, `unique_department_slug` |
+| `agents/core/workspace/auth.py` | Sessions (SHA-256 of the cookie token stored), CSRF (synchronizer token + same-origin rule), login/setup/invite throttling with up-front attempt reservation, invites (token in the URL fragment), trusted-proxy client IP. **The guard `__name__`s are what the route-auth matrix reads** | `ws_enabled`, `ws_user_guard`, `ws_admin_guard`, `WsUser`, `WsAdmin`, `issue_session`, `resolve_session`, `reserve_login_attempt`, `issue_invite`, `invite_url`, `client_ip`, `check_public_origin` |
+| `agents/core/workspace/audit.py` | Append-only HMAC-SHA256 chain (key `JARVIS_AUDIT_KEY` or `$JARVIS_KEY_DIR/workspace_audit.key`, outside the data root); secret- and content-bearing detail keys dropped at any depth | `record`, `verify_chain`, `audit_key`, `key_fingerprint` |
+| `agents/core/workspace/notifications.py` | In-app notifications (links kept only when app-relative) and the decider lookups | `notify`, `department_approvers`, `admins`, `list_for_user`, `mark_read` |
+| `agents/core/workspace/effects_api.py` | The approval-effect registry each domain module fills at import; decider rules `department` / `admin` | `EffectSpec`, `ValidatedRequest`, `register_effect`, `get_effect`, `kinds`, `eligible_decider_ids`, `can_decide` |
+| `agents/core/workspace/extract.py` | Text out of PDF (pypdf, ≤ 500 pages), DOCX/XLSX (through `archive_safe` + bounded `defusedxml` iterparse), CSV/TXT/MD; magic-number check; a dedicated 2-thread pool under a 60 s bound (queue time included) | `extract_document`, `extract_bytes`, `kind_for_filename`, `content_matches`, `ExtractionError`, `ERROR_CODES` |
+| `agents/core/workspace/documents.py` | Upload (raw body, size/rate/in-flight caps), chunking, indexing, access rules, delete/re-index, download, and the `document.company_publish` effect; late writes guarded against id reuse | `upload_document`, `reindex_document`, `delete_document`, `list_documents`, `document_detail`, `open_original`, `can_manage`, `validate_publish`, `execute_publish` |
+| `agents/core/workspace/retrieval.py` | FTS5/BM25 search scoped in SQL (`json_each`) to departments + company-wide documents; folded `[^\W_]+` prefix-stem query, never raises | `search`, `Passage`, `build_match_query`, `query_terms`, `fold` |
+| `agents/core/workspace/llm.py` | The one door to a model: hub router under `local_only` / `allow_cloud`, data-handling check, guardrails binding, physical-request scope, process-wide semaphore, 64-character hold-back, failure-reply detection | `complete`, `posture`, `LLMResult`, `LLMUnavailable`, `ModelPolicyBlocked`, `ModelBusy`, `ModelTimeout`, `ContentBlocked`, `set_engine_for_tests` |
+| `agents/core/workspace/assistant.py` | Prompt building: RO/EN system prompt, `<source id="n">` fencing, history budget, citation filtering, auto-titles | `plan_answer`, `AnswerPlan`, `build_sources_block`, `build_prompt`, `filter_citations`, `auto_title` |
+| `agents/core/workspace/reports.py` | Report definitions, schedules (IANA zones), runs (2 at a time, 300 s), the safe Markdown→HTML export, email delivery, and the `report.delivery` / `report.share_company` / `email.send` effects | `create_report`, `update_report`, `start_manual_run`, `create_run`, `execute_run`, `spawn_run`, `cancel_runs`, `compute_next_run`, `claim_due_reports`, `render_markdown`, `export_run` |
+| `agents/core/workspace/approvals.py` | The four-eyes engine: request (no self-decision, `no_eligible_approver` up front), compare-and-set decide, re-validation before execute, cancel, 7-day expiry, 10-minute `executing` sweep | `request`, `create_request`, `decide`, `cancel`, `eligible`, `list_items`, `expire_due`, `fail_stale_executing`, `register_hooks` |
+| `agents/core/workspace/mailer.py` | SMTP settings in `org.settings_json`, the password in `SecretStore(<data>/workspace/secrets.enc)`, recipient guards, `smtplib` in a thread through `tls_trust.trust_context()` | `send_mail`, `send_test`, `smtp_configured`, `smtp_settings`, `parse_update`, `check_deliverable` |
+| `agents/core/workspace/scheduler.py` | The in-process 30 s tick: due reports, approval expiry, stale runs and answers, retention deletes; started and stopped from the hub lifespan | `WorkspaceScheduler`, `start_background`, `stop_background`, `housekeeping` |
+| `agents/core/workspace/cli.py` + `__main__.py` | `python -m agents.core.workspace setup-code` · `reset-link --email E --base-url U` · `promote --email E` — loads the hub `.env` files first, refuses (exit 2) while disabled, audits as `actor_email='cli'` | `main`, `build_parser` |
+| `agents/core/routers/workspace_auth.py` | `/api/workspace` session, first-run setup, login, SSO login, invites, profile, own sessions, departments, notifications (the six public routes take `ws_enabled` + `check_public_origin`) | `router`, `departments_json` |
+| `agents/core/routers/workspace_admin.py` | Admin console API: users and links, departments, organisation, audit list / CSV export / chain verification, usage stats (all `ws_admin_guard`) | `router`, `admin_user_json` |
+| `agents/core/routers/workspace_documents.py` | Documents list / upload / detail / download / delete / re-index | `router` |
+| `agents/core/routers/workspace_chat.py` | Conversations, questions as SSE or JSON, feedback, model posture, admin model test | `router` |
+| `agents/core/routers/workspace_reports.py` | Reports CRUD, run now, run history, run detail, MD/HTML export, shared reports | `router` |
+| `agents/core/routers/workspace_approvals.py` | Approvals inbox / mine / all, eligibility probe, request, decide, cancel; admin SMTP settings and test | `router` |
+| `agents/core/routers/workspace_ui.py` | The SPA shell: `GET /workspace` → 307 `/workspace/`, every client route answers `workspace.html` with root-path-aware asset URLs, the `window.__NERVA_BASE_PATH__` bootstrap and a CSP that allows only that bootstrap's hash; hashed assets (fonts as `font/woff2`) mounted at `/workspace/assets` by `agents/web.py`. Disabled → plain 404 page, missing bundle → 503 | `router`, `render_workspace_html`, `shell_csp`, `bootstrap_script`, `assets_app`, `ASSETS_MOUNT` |
+| `frontend/src/workspace/` · `frontend/workspace.html` · `frontend/vite.workspace.config.ts` | The React 19 SPA (own router, typed RO/EN dictionary, safe Markdown) built to `agents/web/workspace/` by `npm run build` | `App`, `ROUTES`, `SignedInRoutes`, `api/*` |
+| `tests/support/workspace_fixtures.py` · `fake_openai_server.py` · `smtp_sink.py` | Slice-test app factory and `FakeEngine`; a fake OpenAI-compatible model server and an SMTP sink for the end-to-end journey | `make_app`, `ws_env`, `FakeEngine`, `make_user`, `login` |
+
 ### Agent Registry
 
 | File | Purpose |
@@ -1006,6 +1055,8 @@ docs/
 | `docs/research/` | Deep research notes on design decisions |
 | `docs/superpowers/` | Feature specs for Horizons 5, 6, 7 (memory, autonomy, performance) |
 | `docs/ARCHITECTURE.md` | Module index, request lifecycle, recipes (this file) |
+| `docs/business/WORKSPACE_PILOT_SPEC.md` | **Nerva Workspace** build contract — schema, Python contracts, security model, HTTP API, error codes, Appendix A of verified facts |
+| `docs/business/PILOT_GUIDE.md` | **Nerva Workspace** pilot guide (RO) — install, model server, Caddy, SSO, limits, security posture, backup, upgrade, CLI recovery, troubleshooting |
 | `docs/VOICE.md` | Voice subsystem — browser HUD loop + server pipeline, endpoints, what's real vs scaffolded |
 | `docs/COGNITION.md` | Cognition subsystem (planned ORIZONT 21) — living memory + personality **schematic & diagnostic map** (brain analogies, tiers, troubleshooting playbook) |
 | `worldview/README.md` | **WorldView (4D OSINT)** — separate Vite + CesiumJS + Fastify stack (ports 3000/4000), not sharing the Python runtime. Bridged into JARVIS by the **Argus** agent (`agents/argus/`, geoint router intent → read-only governed plugin). Launched by `START.bat`/`start.sh`. |

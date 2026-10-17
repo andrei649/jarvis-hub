@@ -48,7 +48,7 @@ import tempfile
 import threading
 import unicodedata
 from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -119,6 +119,10 @@ _VISIBLE_DOCUMENT_SQL = (
     "LEFT JOIN departments dep ON dep.id = d.department_id "
     "WHERE d.id = ? AND (? = 1 OR d.visibility = 'company' "
     "OR d.department_id IN (SELECT value FROM json_each(?)))"
+)
+_VISIBLE_IDS_SQL = (
+    "SELECT d.id FROM documents d WHERE d.id IN (SELECT value FROM json_each(?)) "
+    "AND (? = 1 OR d.visibility = 'company' OR d.department_id IN (SELECT value FROM json_each(?)))"
 )
 _LIST_SQL = (
     "SELECT d.*, u.name AS uploader_name, dep.name AS department_name FROM documents d "
@@ -283,6 +287,21 @@ def visible_document(conn: sqlite3.Connection, user: WorkspaceUser,
     if row is None:
         raise _not_found()
     return row
+
+
+def visible_ids(conn: sqlite3.Connection, user: WorkspaceUser,
+                document_ids: Iterable[int]) -> set[int]:
+    """The ids among *document_ids* that *user* may open now (the rule of ``visible_document``).
+
+    For content that quotes documents to readers outside their department, such as a report run
+    shared company-wide: its citations keep their excerpts, but only these ids may be offered as
+    a link to the document or its file.
+    """
+    ids = sorted({int(document_id) for document_id in document_ids})
+    if not ids:
+        return set()
+    rows = conn.execute(_VISIBLE_IDS_SQL, (json.dumps(ids), *_scope_params(user))).fetchall()
+    return {int(row["id"]) for row in rows}
 
 
 def _document_row(conn: sqlite3.Connection, document_id: int) -> sqlite3.Row:

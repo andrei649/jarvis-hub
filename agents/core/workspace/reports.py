@@ -48,7 +48,17 @@ from typing import Any
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from agents.core.workspace import approvals, assistant, audit, db, identity, llm, mailer, retrieval
+from agents.core.workspace import (
+    approvals,
+    assistant,
+    audit,
+    db,
+    documents,
+    identity,
+    llm,
+    mailer,
+    retrieval,
+)
 from agents.core.workspace.effects_api import EffectSpec, ValidatedRequest, register_effect
 from agents.core.workspace.errors import WorkspaceError
 from agents.core.workspace.http import (
@@ -695,17 +705,35 @@ def _can_share(user: WorkspaceUser, row: sqlite3.Row) -> bool:
             and user.can_access_department(int(row["department_id"])))
 
 
-def run_detail_json(row: sqlite3.Row, user: WorkspaceUser) -> dict:
+def _citations_for(conn: sqlite3.Connection, user: WorkspaceUser, raw: str | None) -> list[dict]:
+    """The stored citations, each marked ``can_open``: whether *user* may open its document.
+
+    A run shared company-wide is read outside its department; its excerpts are part of the
+    shared report, but the documents stay where they are, so the source drawer offers a link
+    to the document or its file only when the reader may really open it (checked now: a
+    document published, moved or deleted since the run is judged as it is today).
+    """
+    citations = [dict(c) for c in _loads(raw, []) if isinstance(c, Mapping)]
+    wanted = [c["document_id"] for c in citations
+              if isinstance(c.get("document_id"), int) and not isinstance(c.get("document_id"), bool)]
+    openable = documents.visible_ids(conn, user, wanted)
+    for citation in citations:
+        citation["can_open"] = citation.get("document_id") in openable
+    return citations
+
+
+def run_detail_json(conn: sqlite3.Connection, row: sqlite3.Row, user: WorkspaceUser) -> dict:
     """A run with content, citations and what the caller may do with it."""
     data = run_json(row, user)
     succeeded = row["status"] == "succeeded" and bool(row["content_md"])
-    data.update({"content_md": row["content_md"], "citations": _loads(row["citations_json"], []),
+    data.update({"content_md": row["content_md"],
+                 "citations": _citations_for(conn, user, row["citations_json"]),
                  "can_share": _can_share(user, row) and succeeded, "can_email": succeeded})
     return data
 
 
 def get_run(conn: sqlite3.Connection, user: WorkspaceUser, run_id: int) -> dict:
-    return run_detail_json(visible_run(conn, user, run_id), user)
+    return run_detail_json(conn, visible_run(conn, user, run_id), user)
 
 
 def list_runs(conn: sqlite3.Connection, user: WorkspaceUser, report_id: int) -> list[dict]:

@@ -2,12 +2,11 @@
 
    Language and theme apply at once (optimistically) and are saved to the account with
    PATCH /me, so they follow the user to every device; a failed save reverts and says why. */
-import React from 'react';
+import React, { useRef } from 'react';
 import { updateMe } from '../api/account';
-import type { Locale, Theme } from '../api/types';
+import type { Locale, Theme, WorkspaceUser } from '../api/types';
 import { useErrorText } from '../app/errors';
 import { useSession, useUser } from '../app/session';
-import { applyTheme } from '../app/theme';
 import { useI18n } from '../i18n';
 import { navigate } from '../router';
 import { Avatar, Icon, Menu, useToast, type MenuEntry } from '../ui';
@@ -15,34 +14,39 @@ import { Avatar, Icon, Menu, useToast, type MenuEntry } from '../ui';
 export const THEMES: Theme[] = ['light', 'dark', 'system'];
 export const LANGUAGES: Locale[] = ['ro', 'en'];
 
-/** Saves a preference with an optimistic apply and a revert on failure. */
+/** Saves a preference with an optimistic apply and a revert on failure.
+
+    The optimistic value goes into the signed-in user itself, not only onto <html> and the
+    i18n provider: the controls that show the preference (the profile's theme radios and
+    language select, the menu's radio items) read the user, so they reflect the choice at once
+    instead of springing back until the server answers. Only the latest save's answer is
+    applied, so two quick changes cannot finish in the wrong order. */
 export function usePreferenceSaver() {
   const { setUser } = useSession();
   const user = useUser();
-  const { setLocale } = useI18n();
   const toast = useToast();
   const errorText = useErrorText();
+  const latest = useRef(0);
 
-  const saveTheme = async (theme: Theme) => {
-    if (theme === user.theme) return;
-    applyTheme(theme);
+  const save = async (change: Pick<WorkspaceUser, 'theme'> | Pick<WorkspaceUser, 'locale'>) => {
+    const request = ++latest.current;
+    const before = user;
+    setUser({ ...user, ...change });
     try {
-      setUser((await updateMe({ theme })).user);
+      const saved = (await updateMe(change)).user;
+      if (request === latest.current) setUser(saved);
     } catch (err) {
-      applyTheme(user.theme);
+      if (request === latest.current) setUser(before);
       toast.error(errorText(err));
     }
   };
 
+  const saveTheme = async (theme: Theme) => {
+    if (theme !== user.theme) await save({ theme });
+  };
+
   const saveLocale = async (locale: Locale) => {
-    if (locale === user.locale) return;
-    setLocale(locale);
-    try {
-      setUser((await updateMe({ locale })).user);
-    } catch (err) {
-      setLocale(user.locale);
-      toast.error(errorText(err));
-    }
+    if (locale !== user.locale) await save({ locale });
   };
 
   return { saveTheme, saveLocale };

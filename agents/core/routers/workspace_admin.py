@@ -581,6 +581,16 @@ def _count(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> int:
     return int(conn.execute(sql, params).fetchone()[0])
 
 
+# Questions asked and report runs started in a period are counted from the audit trail, not
+# from the messages and report_runs tables: those rows go away when someone deletes a
+# conversation or a report, and a usage figure for a period must not shrink afterwards. The
+# trail is append-only (an HMAC chain) and records exactly one row, with its department, per
+# question (chat.asked, written with the question) and per run (report.run_started, written
+# when a manual or scheduled run is queued); the run-rate limit counts the same rows.
+ACTIVITY_ACTIONS = {"questions": "chat.asked", "report_runs": "report.run_started"}
+_ACTIVITY_SQL = "SELECT COUNT(*) FROM audit WHERE action = ? AND ts >= ?"
+
+
 def _totals(conn: sqlite3.Connection, *, since: float, week_ago: float) -> dict:
     return {
         "users": _count(conn, "SELECT COUNT(*) FROM users WHERE status != 'disabled'"),
@@ -589,11 +599,9 @@ def _totals(conn: sqlite3.Connection, *, since: float, week_ago: float) -> dict:
             (week_ago,)),
         "documents": _count(conn, "SELECT COUNT(*) FROM documents"),
         "conversations": _count(conn, "SELECT COUNT(*) FROM conversations"),
-        "questions": _count(
-            conn, "SELECT COUNT(*) FROM messages WHERE role = 'user' AND created_at >= ?", (since,)),
+        "questions": _count(conn, _ACTIVITY_SQL, (ACTIVITY_ACTIONS["questions"], since)),
         "reports": _count(conn, "SELECT COUNT(*) FROM reports"),
-        "report_runs": _count(conn, "SELECT COUNT(*) FROM report_runs WHERE created_at >= ?",
-                              (since,)),
+        "report_runs": _count(conn, _ACTIVITY_SQL, (ACTIVITY_ACTIONS["report_runs"], since)),
         "approvals_pending": _count(conn, "SELECT COUNT(*) FROM approvals WHERE status = 'pending'"),
         "feedback_up": _count(
             conn, "SELECT COUNT(*) FROM messages WHERE role = 'assistant' AND feedback = 1 "
@@ -610,17 +618,18 @@ _PER_DEPARTMENT_SQL = (
     " WHERE ud.department_id = d.id AND u.status != 'disabled') AS members, "
     "(SELECT COUNT(*) FROM documents doc WHERE doc.department_id = d.id) AS documents, "
     "(SELECT COUNT(*) FROM conversations c WHERE c.department_id = d.id) AS conversations, "
-    "(SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id "
-    " WHERE c.department_id = d.id AND m.role = 'user' AND m.created_at >= ?) AS questions, "
+    "(SELECT COUNT(*) FROM audit a WHERE a.department_id = d.id AND a.action = ? "
+    " AND a.ts >= ?) AS questions, "
     "(SELECT COUNT(*) FROM reports r WHERE r.department_id = d.id) AS reports, "
-    "(SELECT COUNT(*) FROM report_runs rr JOIN reports r ON r.id = rr.report_id "
-    " WHERE r.department_id = d.id AND rr.created_at >= ?) AS report_runs "
+    "(SELECT COUNT(*) FROM audit a WHERE a.department_id = d.id AND a.action = ? "
+    " AND a.ts >= ?) AS report_runs "
     "FROM departments d ORDER BY d.archived, d.name COLLATE NOCASE, d.id"
 )
 
 
 def _per_department(conn: sqlite3.Connection, *, since: float) -> list[dict]:
-    rows = conn.execute(_PER_DEPARTMENT_SQL, (since, since)).fetchall()
+    rows = conn.execute(_PER_DEPARTMENT_SQL, (ACTIVITY_ACTIONS["questions"], since,
+                                              ACTIVITY_ACTIONS["report_runs"], since)).fetchall()
     return [{
         "department_id": int(row["id"]), "slug": row["slug"], "name": row["name"],
         "archived": bool(row["archived"]),
@@ -640,13 +649,10 @@ def _daily(conn: sqlite3.Connection, *, days: int, since: float) -> list[dict]:
     first = datetime.fromtimestamp(since, tz=UTC).date()
     series = {(first + timedelta(days=offset)).isoformat(): {"questions": 0, "report_runs": 0}
               for offset in range(days)}
-    for key, sql in (
-        ("questions", "SELECT date(created_at, 'unixepoch') AS day, COUNT(*) AS n FROM messages "
-                      "WHERE role = 'user' AND created_at >= ? GROUP BY day"),
-        ("report_runs", "SELECT date(created_at, 'unixepoch') AS day, COUNT(*) AS n "
-                        "FROM report_runs WHERE created_at >= ? GROUP BY day"),
-    ):
-        for row in conn.execute(sql, (since,)).fetchall():
+    for key, action in ACTIVITY_ACTIONS.items():
+        rows = conn.execute("SELECT date(ts, 'unixepoch') AS day, COUNT(*) AS n FROM audit "
+                            "WHERE action = ? AND ts >= ? GROUP BY day", (action, since)).fetchall()
+        for row in rows:
             if row["day"] in series:
                 series[row["day"]][key] = int(row["n"])
     return [{"date": day, **values} for day, values in series.items()]
@@ -659,8 +665,10 @@ def usage_stats(admin: WsAdmin, conn: Db,
 
     The window is the last *days* UTC calendar days (today included): ``questions``,
     ``report_runs`` and feedback count inside it, so the daily series sums to the
-    totals. The other totals are current counts; ``active_users_7d`` counts users seen
-    in the last seven days.
+    totals. Questions and runs come from the audit trail (see ``ACTIVITY_ACTIONS``), so
+    deleting a conversation or a report does not rewrite past usage; feedback is the
+    current rating of the answers still stored. The other totals are current counts;
+    ``active_users_7d`` counts users seen in the last seven days.
     """
     stamp = db.now()
     since = _window_start(days, stamp)

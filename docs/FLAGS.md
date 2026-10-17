@@ -6,7 +6,9 @@ this page ships default-off** (`env_flag` returns False unless explicitly set,
 surface behind them refuses by name. The two exceptions ship **on** because off is the
 dangerous setting: `JARVIS_CHANNEL_PAIRING` (an unpaired chat bot answers anyone) and,
 since H502, `JARVIS_MCP_STDIO_ENV_BASELINE` (off hands every spawned MCP server the
-whole keyring). The `Default` column of the decision table is the authority. This is what each one actually buys you — and
+whole keyring). `NERVA_WORKSPACE_SCHEDULER` also ships on, but does nothing until
+`NERVA_WORKSPACE` itself is switched on (off would stop scheduled reports and approval
+expiry). The `Default` column of the decision table is the authority. This is what each one actually buys you — and
 what it costs. The first three are the posture flags everything else composes with;
 verified against code at `75e92811`. The wave-2026-09-06 flags are appended after
 them and verified against `214bc5eb`.
@@ -1207,6 +1209,101 @@ newcomer rather than killing a running cell.
 **Revert:** set it back to `false` and restart. The next call is a one-shot again, and
 says nothing about continuity — the fallback is named in the result shape, not silent.
 
+## Wave 2026-10-17 — Nerva Workspace (B2B pilot)
+
+Ten variables, all read through `agents/core/env_config.py` by
+`agents/core/workspace/config.py` **at call time** (nothing is cached; a systemd install still
+needs a restart for the process to see a changed environment file). Out-of-range numbers are
+clamped, never refused: a typo must not take the workspace down. The whole product surface —
+`/workspace` and `/api/workspace/*` — exists only while `NERVA_WORKSPACE` is on. Install,
+proxy and operations: [`business/PILOT_GUIDE.md`](business/PILOT_GUIDE.md); contract:
+[`business/WORKSPACE_PILOT_SPEC.md`](business/WORKSPACE_PILOT_SPEC.md) §3.
+
+### `NERVA_WORKSPACE`
+
+**Default: OFF** (`config.enabled()`, `env_flag(..., False)`, read per request).
+
+**OFF:** every `/api/workspace/*` answers `404 {"error": "workspace_disabled"}` — refused by
+`db.get_db` before a connection is opened, so a disabled workspace never creates
+`<data root>/workspace/workspace.db` — and the UI route answers a plain 404 page. The
+scheduler's tick is a no-op, so switching the flag on later needs no scheduler restart. The
+CLI (`python -m agents.core.workspace …`) refuses with exit code 2.
+**ON:** the company web app: local accounts (scrypt, httpOnly sessions, CSRF tokens),
+departments and roles, the governed assistant over uploaded documents, reports, four-eyes
+approvals and a keyed audit chain. It never calls the owner's personal pipeline, memory or
+agents; model calls go through the hub router, its guardrails and its data-handling gate.
+**Cost:** a new authenticated surface. Behind a reverse proxy it is meant to be the only
+thing published (the pilot guide's Caddyfile publishes nothing else); it brings its own
+per-user limits (the hub's per-IP limiter skips it) and its data lives in
+`<data root>/workspace/`, which the nightly backup archives and the hub's forget keeps.
+**Revert:** unset + restart; the data stays on disk, unreachable, and comes back as it was.
+
+### `NERVA_WORKSPACE_SETUP_CODE`
+
+**Default: unset.** Unset, a code (`secrets.token_urlsafe(18)`) is generated on first need
+and written with mode 0600 to `<data root>/workspace/setup-code.txt`; the log line names the
+file, never the code; `python -m agents.core.workspace setup-code` prints it; the file is
+deleted after a successful first-run setup. Set, the value is the code (and is never
+deleted — remove it from the environment after setup). Guessing is throttled: 10 wrong codes
+per hour per IP and 50 per hour overall → `429 too_many_attempts`.
+
+### `NERVA_WORKSPACE_COOKIE_SECURE`
+
+**Default: `auto`** — the `nerva_ws_session` cookie carries `Secure` when the request
+arrived as `https` (behind a proxy that needs `JARVIS_TRUSTED_PROXIES`, so the hub believes
+`X-Forwarded-Proto`). A recognized boolean forces it (`1` → always `Secure`, `0` → never);
+anything else falls back to `auto` with one warning naming the variable. **Set it to `1`
+on every proxied pilot install**; on plain http a browser then refuses the cookie, so
+sign-in loops instead of silently working without TLS.
+
+### `NERVA_WORKSPACE_SSO_HEADER` · `NERVA_WORKSPACE_SSO_SECRET`
+
+**Defaults: unset · unset.** SSO through a trusted reverse proxy (e.g. oauth2-proxy behind
+Caddy) needs **both**: the name of the header that carries the user's email
+(`X-Forwarded-Email`) and the shared secret the proxy injects as `X-Nerva-Proxy-Secret`.
+`POST /api/workspace/login/sso` then succeeds only from a `JARVIS_TRUSTED_PROXIES` peer,
+with exactly one email header holding a valid address, exactly one matching secret
+(`compare_digest`) and an **active** user — no auto-provisioning. A later request from a
+trusted peer carrying a different email revokes the session. A malformed
+`JARVIS_TRUSTED_PROXIES` answers `404 sso_disabled`.
+**Cost:** anyone who can reach the hub from a trusted peer address and knows the secret can
+sign in as any active user — keep the proxy on loopback, strip client-sent copies of both
+headers, and keep the secret out of the proxy's stored config.
+**Revert:** unset either one + restart; `sso_available` turns false and password sign-in is
+unchanged.
+
+### `NERVA_WORKSPACE_MAX_UPLOAD_MB`
+
+**Default: 25** (MiB; `min(env_int(..., 25, minimum=1), 200)`). The largest accepted
+upload; the raw body is streamed and refused with `413 file_too_large` the moment it crosses
+the cap. A reverse proxy in front must allow a slightly larger body, or users see the proxy's
+error instead of the translated one.
+
+### `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS`
+
+**Defaults: 12 (clamped 1..168) · 7 (clamped 1..90).** Idle and absolute lifetime of a
+workspace session. The idle limit is checked on every request against `last_seen_at`, which is
+refreshed at most once a minute (60 s granularity); the absolute expiry (and the cookie's
+`max_age`) is stamped when the session is issued, so a change applies to sessions issued
+afterwards. Longer values keep stolen cookies useful for longer.
+
+### `NERVA_WORKSPACE_MAX_CONCURRENT_LLM`
+
+**Default: 2** (clamped 1..16). The process-wide model semaphore shared by chat answers,
+report runs and the admin model test; a caller waits up to 30 s for a slot, then gets
+`503 model_busy` with `retry_after_seconds=10`. Raise it only when the model server really
+serves that many requests in parallel — otherwise answers just queue inside the server and
+time out (180 s chat, 300 s reports).
+
+### `NERVA_WORKSPACE_SCHEDULER`
+
+**Default: ON** (`env_flag(..., True)`; checked when the hub starts the loop). One tick every
+30 s: due scheduled reports (compare-and-set claims), approval expiry (7 days) and the
+10-minute `executing` sweep, stale report runs (15 min running / 30 min queued) and pending
+answers (10 min), plus retention deletes (login attempts 24 h; expired invites, dead
+sessions 7 days; read notifications 90 days). **OFF:** none of that happens — scheduled
+reports never run and pending approvals never expire. **Revert:** unset + restart.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |
@@ -1240,6 +1337,14 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_TLS_INSECURE_TARGETS` | unset (`tls_trust.py` `verify_for`) | Named model provider ids or hosts get clients with certificate verification **off**, each announced by a WARNING naming the URL | A listed target can be impersonated by anyone on the path — list only a LAN server you cannot anchor; ignored (ERROR) under `JARVIS_HARDENED=1` | Unset + restart: every client verifies again |
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) believed only from these networks; XFF walked right-to-left; uvicorn's own proxy-header layer is off under `serve.py` | A listed peer can name any client address — list only proxies you run; a malformed list, or a `FORWARDED_ALLOW_IPS` wider than it, refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
+| `NERVA_WORKSPACE` | off (`workspace/config.py`, read per request) | Serves Nerva Workspace: `/workspace` UI + `/api/workspace/*` (accounts, departments, documents, assistant, reports, approvals, audit) | A new authenticated surface; publish it only through the pilot Caddyfile (workspace paths only, TLS, `JARVIS_TRUSTED_PROXIES=127.0.0.1`) | Unset + restart: every route `404 workspace_disabled`, no database is created; existing data stays on disk |
+| `NERVA_WORKSPACE_SETUP_CODE` | unset → generated 0600 file `<data>/workspace/setup-code.txt` | Fixes the first-run setup code instead of generating one | A guessable value hands the first admin seat to whoever reaches setup first (throttled 10/h/IP, 50/h overall) | Unset: the generated file is used; it is deleted after setup |
+| `NERVA_WORKSPACE_COOKIE_SECURE` | `auto` (Secure on https) | `1` forces `Secure` on `nerva_ws_session`; `0` never | `0` behind TLS sends the session cookie over plain http if anything ever serves it | Unset: `auto`; junk values log one warning and act as `auto` |
+| `NERVA_WORKSPACE_SSO_HEADER` + `NERVA_WORKSPACE_SSO_SECRET` | unset · unset | Both set: `POST /api/workspace/login/sso` signs in the active user named by the trusted proxy's email header + matching `X-Nerva-Proxy-Secret` | Anyone reaching the hub from a trusted peer with the secret can be any active user — loopback proxy, strip client copies of both headers | Unset either + restart: `sso_disabled`, password sign-in unchanged |
+| `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 (MiB, capped 200) | Larger documents accepted (streamed, early `413 file_too_large`) | Each in-flight upload is held in memory (≤ 3 per user); the proxy body limit must follow | Unset: 25 MiB |
+| `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS` | 12 (1..168) · 7 (1..90) | Longer idle / absolute session lifetime | A stolen cookie stays useful longer | Unset + restart: 12 h idle on the next request; 7 days for sessions issued afterwards |
+| `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` | 2 (1..16) | More simultaneous model calls (chat + reports + model test share it) | Overcommits a model server that cannot run them in parallel → timeouts instead of `model_busy` | Unset + restart: 2 for new callers |
+| `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run and pending-answer sweeps, retention deletes every 30 s | Off: scheduled reports never run, pending approvals never expire, old rows are never deleted | Unset + restart: on again |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
 | `llm.execute_code_sessions` *(runtime setting)* | on when code enabled · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, requires a current Action Kernel GRANT after its interpreter lock, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Explicitly set `false` + restart: back to the K1 one-shot, kernels destroyed |
 | `llm.tool_result_thresholds` *(runtime setting)* | `{}` (`tool_result_store.py`) | Per-tool byte ceilings for what a result may put in the context window, as `{tool: bytes}`. Beats the tool's own declaration and the `mcp_` family default; loses to a pinned tool (`file_read` is pinned to no limit, because it is how a spilled result is read back) | Raising one lets that tool fill more of the window; lowering it sends more of its output to disk. Nothing is lost either way — over the ceiling the full result is spilled and the model gets a preview naming the file | Set `{}` (no restart): back to the window-scaled default |

@@ -12,7 +12,8 @@ import types
 import pytest
 from fastapi.testclient import TestClient
 
-from agents.core.routers import workspace_admin, workspace_auth
+from agents.core.routers import workspace_admin, workspace_auth, workspace_chat
+from agents.core.workspace import audit, reports
 from agents.core.workspace import db as workspace_db
 from agents.core.workspace.errors import WorkspaceError
 from tests.support.workspace_fixtures import (  # noqa: F401  (ws is a fixture)
@@ -557,7 +558,10 @@ def test_audit_verify_detects_tampering(admin):
 
 # ── usage ────────────────────────────────────────────────────────────────────────────
 
-def _seed_activity(conn, company, now: float) -> None:
+def _seed_activity(conn, company, clock) -> dict:
+    """Rows as the product writes them: each question and each run start also leaves the audit
+    row its route records (chat.asked / report.run_started, with the department), at its time."""
+    now = clock.current
     day = 86400
     with workspace_db.tx(conn):
         doc = conn.execute(
@@ -587,16 +591,29 @@ def _seed_activity(conn, company, now: float) -> None:
         conn.execute("INSERT INTO approvals (kind, department_id, requester_id, summary, payload_json, "
                      "status, created_at, expires_at) VALUES ('x', ?, ?, 's', '{}', 'pending', ?, ?)",
                      (company.dept_a, company.member_a.id, now, now + 7 * day))
+    activity = [(company.member_a, "chat.asked", "conversation", conv_a, company.dept_a, at)
+                for at in (now, now - day)]
+    activity += [(company.member_b, "chat.asked", "conversation", conv_b, company.dept_b, at)
+                 for at in (now - 2 * day, now - 40 * day)]
+    activity += [(company.member_a, "report.run_started", "report_run", run_id, company.dept_a, at)
+                 for run_id, at in ((1, now), (2, now - day))]
+    for actor, action, target_type, target_id, department_id, at in activity:
+        clock.current = at
+        with workspace_db.tx(conn):
+            audit.record(conn, actor=actor, action=action, target_type=target_type,
+                         target_id=target_id, department_id=department_id)
+    clock.current = now
+    return {"conv_a": conv_a, "conv_b": conv_b, "report": report}
 
 
 def test_stats_with_seeded_rows(ws, monkeypatch):
     now = 1_800_014_400.0  # 2027-01-15 12:00 UTC
-    freeze_clock(monkeypatch, start=now)
+    clock = freeze_clock(monkeypatch, start=now)
     conn = db()
     company = seed_company(conn)
     client = _client()
     login(client, company.admin.email)
-    _seed_activity(conn, company, now)
+    _seed_activity(conn, company, clock)
     body = client.get("/api/workspace/admin/stats").json()
     assert body["days"] == 30
     assert body["totals"] == {
@@ -617,6 +634,38 @@ def test_stats_with_seeded_rows(ws, monkeypatch):
     assert sum(d["questions"] for d in daily) == body["totals"]["questions"]
     week = client.get("/api/workspace/admin/stats?days=1").json()
     assert week["totals"]["questions"] == 1 and len(week["daily"]) == 1
+
+
+def test_deleting_conversations_and_reports_does_not_rewrite_past_usage(ws, monkeypatch):
+    """The period's questions and runs stay counted after their rows are deleted (they were
+    asked and run; the audit trail says so), while current totals drop as they should."""
+    now = 1_800_014_400.0
+    clock = freeze_clock(monkeypatch, start=now)
+    conn = db()
+    company = seed_company(conn)
+    admin_client = _client()
+    login(admin_client, company.admin.email)
+    seeded = _seed_activity(conn, company, clock)
+    before = admin_client.get("/api/workspace/admin/stats").json()
+
+    member = TestClient(make_app(workspace_auth.router, workspace_chat.router))
+    csrf = login(member, company.member_a.email)
+    deleted = member.delete(f"/api/workspace/conversations/{seeded['conv_a']}", headers=authed(member, csrf))
+    assert deleted.status_code == 204
+    reports.delete_report(conn, company.admin, seeded["report"])
+    assert conn.execute("SELECT COUNT(*) FROM report_runs").fetchone()[0] == 0
+
+    after = admin_client.get("/api/workspace/admin/stats").json()
+    for key in ("questions", "report_runs"):
+        assert after["totals"][key] == before["totals"][key], key
+    assert after["daily"] == before["daily"]
+    per_before = {d["department_id"]: d for d in before["per_department"]}
+    per_after = {d["department_id"]: d for d in after["per_department"]}
+    assert per_after[company.dept_a]["questions"] == per_before[company.dept_a]["questions"] == 2
+    assert per_after[company.dept_a]["report_runs"] == per_before[company.dept_a]["report_runs"] == 2
+    assert after["totals"]["conversations"] == before["totals"]["conversations"] - 1
+    assert after["totals"]["reports"] == before["totals"]["reports"] - 1
+    assert per_after[company.dept_a]["conversations"] == 0 and per_after[company.dept_a]["reports"] == 0
 
 
 @pytest.mark.parametrize("days", ["0", "366", "x"])

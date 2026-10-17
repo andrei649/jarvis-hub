@@ -389,6 +389,9 @@ export interface Citation {
   chunk_id: number;
   page: number | null;
   excerpt: string;
+  /** Report runs only: whether the reader may open the document itself (false for another
+      department's document in a company-shared run, or one deleted since). */
+  can_open?: boolean;
 }
 
 export interface ConversationSummary {
@@ -511,6 +514,9 @@ export interface ReportRunDetail extends ReportRun {
   /** Flat alternatives to `report` that list rows (shared reports) may carry instead. */
   report_name?: string;
   department_id?: number;
+  /** The report's department by name, sent for every run: a company-shared run is read by
+      people outside that department, whose own department list cannot name it. */
+  department_name?: string | null;
 }
 
 export interface ReportsResponse { reports: Report[] }

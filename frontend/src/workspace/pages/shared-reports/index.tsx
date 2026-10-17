@@ -20,7 +20,10 @@ function SharedList() {
   useDocumentTitle(t('nav.sharedReports'));
   const { departments } = useWorkspace();
   const runs = useAsync(listSharedReports, []);
+  // The server names the department: a shared run is mostly read from other departments, which
+  // the reader's own department list does not contain. That list is only the fallback.
   const deptName = (run: ReportRunDetail) => {
+    if (run.department_name) return run.department_name;
     const id = run.report?.department_id ?? run.department_id;
     return id === undefined ? '—' : departments.find((d) => d.id === id)?.name ?? '—';
   };

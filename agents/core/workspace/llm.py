@@ -12,14 +12,17 @@ The algorithm (Appendix A, followed step by step in :class:`HubEngine`):
 2. ``local_only`` takes ``router.local_backend`` (never ``select_backend``, which may
    spill to the cloud); ``allow_cloud`` lets the router choose;
 3. ``check_data_handling`` must allow the route: an unattended call with no owner
-   acknowledgment is refused, and under ``allow_cloud`` a provider that may train on
-   prompts is refused;
+   acknowledgment is refused, and under ``allow_cloud`` a cloud provider that may train
+   on prompts is refused (a local route the gate allowed is allowed under both
+   policies — ``allow_cloud`` widens what ``local_only`` permits, never narrows it);
 4. locality is reported honestly: ``local`` only when the data policy says so;
 5. the backend is bound to the hub's guardrails policy;
 6. the stream runs inside the physical-request scope (every HTTP request the backend
    makes is re-checked) under a hard deadline;
 7. backends never raise on failure — they answer fixed degraded strings — so those
-   strings, and an empty answer, are turned into ``model_unavailable`` here.
+   strings, and an empty answer, are turned into ``model_unavailable`` here;
+8. model text is made valid Unicode (:func:`clean_text`) before any of it is streamed
+   or returned: a lone surrogate could be neither stored nor sent as UTF-8.
 
 Two layers. :func:`complete` and :func:`posture` are what callers use; they apply
 the process-wide concurrency limit, the 64-character hold-back of streamed text (a
@@ -34,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import re
 import threading
 import time
 import weakref
@@ -68,6 +72,23 @@ ACQUIRE_TIMEOUT_SECONDS = 30.0
 BUSY_RETRY_AFTER_SECONDS = 10
 
 TokenSink = Callable[[str], Awaitable[None] | None]
+
+_SURROGATE = re.compile("[\ud800-\udfff]")
+_HIGH_SURROGATES = ("\ud800", "\udbff")
+
+
+def clean_text(text: str) -> str:
+    """*text* as valid Unicode: no lone surrogates.
+
+    A backend that decodes a stream chunk by chunk can split a UTF-16 surrogate pair
+    (an emoji) across two chunks; joined again, the two halves are re-paired into the
+    character they encode. Any surrogate still alone becomes ``?`` (UTF-8 ``replace``) —
+    SQLite, JSON and the SSE stream all need text they can encode as UTF-8.
+    """
+    if not _SURROGATE.search(text):
+        return text
+    paired = text.encode("utf-16", "surrogatepass").decode("utf-16", "surrogatepass")
+    return paired.encode("utf-8", "replace").decode("utf-8")
 
 
 # ── results and errors ───────────────────────────────────────────────────────────────
@@ -196,7 +217,11 @@ def _authorize(router: Any, backend: Any, model: str, route: str, policy: str, *
     except RuntimeError as exc:
         logger.warning("workspace data-handling check failed: %s", type(exc).__name__)
         raise LLMUnavailable("backend_error", "the data-handling check failed") from exc
-    if policy == ALLOW_CLOUD and handling.get("policy") not in CLOUD_SAFE_POLICIES:
+    # Only a cloud route can train on company text: a local route the gate allowed (a
+    # LAN model server whose "unknown" handling the owner acknowledged) runs under
+    # allow_cloud exactly as it does under local_only.
+    if (policy == ALLOW_CLOUD and not route.startswith(LOCAL_ROUTE_PREFIXES)
+            and handling.get("policy") not in CLOUD_SAFE_POLICIES):
         raise ModelPolicyBlocked("provider_may_train",
                                  "this provider may use prompts for training")
     return handling
@@ -361,11 +386,14 @@ class TokenGate:
     if they read as a failure reply nothing is ever forwarded. A failure appended
     after a partial answer (a stream that broke midway) is dropped the same way.
     Whatever is still held when the answer succeeds is released by :meth:`finish`.
+    Forwarded text is :func:`clean_text`-ed; a high surrogate ending one piece waits for
+    the next, so an emoji split across chunks reaches the user whole.
     """
 
     def __init__(self, sink: TokenSink) -> None:
         self._sink = sink
         self._held = ""
+        self._carry = ""
         self._released = False
         self._muted = False
 
@@ -401,6 +429,9 @@ class TokenGate:
         """Release what is still held — called only once the answer is known good."""
         if not self._muted and self._held:
             await self._release()
+        if not self._muted and self._carry:
+            carry, self._carry = self._carry, ""
+            await self._emit(clean_text(carry))
 
     async def _release(self) -> None:
         held, self._held = self._held, ""
@@ -408,6 +439,14 @@ class TokenGate:
         await self._forward(held)
 
     async def _forward(self, text: str) -> None:
+        text = self._carry + text
+        self._carry = ""
+        if text and _HIGH_SURROGATES[0] <= text[-1] <= _HIGH_SURROGATES[1]:
+            self._carry, text = text[-1], text[:-1]
+        if text:
+            await self._emit(clean_text(text))
+
+    async def _emit(self, text: str) -> None:
         outcome = self._sink(text)
         if inspect.isawaitable(outcome):
             await outcome
@@ -447,6 +486,8 @@ async def complete(*, system: str, prompt: str, policy: str, max_tokens: int = 1
             max_tokens=max_tokens, temperature=temperature,
             on_token=gate.feed if gate is not None else None, timeout_seconds=timeout_seconds,
         )
+    if isinstance(result.text, str):
+        result.text = clean_text(result.text)
     _check_reply(result)
     if gate is not None:
         await gate.finish()
