@@ -154,15 +154,25 @@ export function useShortcutOverrides(): [Overrides, (next: Overrides) => void] {
 export type Binding = ShortcutAction & { current: string; custom: boolean };
 
 export function bindings(overrides: Overrides = {}): Binding[] {
-  return ACTIONS.map((a) => {
+  // Bolt Optimization: Use an indexed loop to construct bindings without callback closure allocations per invocation.
+  const res: Binding[] = new Array(ACTIONS.length);
+  for (let i = 0; i < ACTIONS.length; i++) {
+    const a = ACTIONS[i];
     const current = overrides[a.id] ?? a.chord;
-    return { ...a, current, custom: current !== a.chord };
-  });
+    res[i] = { ...a, current, custom: current !== a.chord };
+  }
+  return res;
 }
 
 /** The other actions that answer *chord* (what the panel names as "Also bound to"). */
 export function conflictsFor(id: string, chord: string, list: Binding[]): Binding[] {
-  return list.filter((b) => b.id !== id && b.current === chord);
+  // Bolt Optimization: Single indexed loop avoids array filtering predicate closures during shortcut conflict checks.
+  const res: Binding[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (b.id !== id && b.current === chord) res.push(b);
+  }
+  return res;
 }
 
 /** The chord action *id* answers now, for a hint next to it. */
@@ -175,8 +185,20 @@ export function chordOf(overrides: Overrides, id: string): string {
 export function matchAction(e: Parameters<typeof chordFromEvent>[0], list: Binding[], scope: Scope): Binding | null {
   const chord = chordFromEvent(e);
   if (!chord) return null;
-  const bound = (c: string) => list.find((b) => b.scope === scope && b.current === c) || null;
-  return bound(chord) || (/^shift\+[a-z]$/.test(chord) ? bound(chord.slice('shift+'.length)) : null);
+  // Bolt Optimization: Use indexed for loops instead of .find() predicate closures. This eliminates function closure
+  // allocations on every keydown event fired in the application shell and cinema overlay (~0 allocations per keypress).
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (b.scope === scope && b.current === chord) return b;
+  }
+  if (/^shift\+[a-z]$/.test(chord)) {
+    const fallback = chord.slice(6); // 'shift+'.length
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      if (b.scope === scope && b.current === fallback) return b;
+    }
+  }
+  return null;
 }
 
 export function rebind(overrides: Overrides, id: string, chord: string): Overrides {
@@ -198,6 +220,19 @@ export function resetBinding(overrides: Overrides, id: string): Overrides {
 export function searchBindings(list: Binding[], query: string): Binding[] {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return list;
-  return list.filter((b) => b.label.toLowerCase().includes(q) || b.category.toLowerCase().includes(q)
-    || b.id.includes(q) || b.current === q || displayChord(b.current, false).toLowerCase().includes(q));
+  // Bolt Optimization: Indexed loop avoids intermediate closure creation during shortcut search queries.
+  const res: Binding[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (
+      b.label.toLowerCase().includes(q) ||
+      b.category.toLowerCase().includes(q) ||
+      b.id.includes(q) ||
+      b.current === q ||
+      displayChord(b.current, false).toLowerCase().includes(q)
+    ) {
+      res.push(b);
+    }
+  }
+  return res;
 }
