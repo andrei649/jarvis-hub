@@ -29,6 +29,13 @@ cryptography>=50.0.2
 # stdlib xml.etree is unsafe on hostile XML (entity-expansion DoS).
 defusedxml>=0.7.1
 
+# Nerva Workspace (docs/business/WORKSPACE_PILOT_SPEC.md)
+# pypdf: text extraction from uploaded PDF documents (pure Python, no system deps).
+pypdf>=6.0,<7
+# tzdata: IANA zones for zoneinfo on hosts without a system zone database (report
+# schedules run in each report's timezone; slim Linux images and Windows lack one).
+tzdata>=2024.1
+
 # Voice (optional — install manually or use requirements-beta.txt)
 # openwakeword
 # faster-whisper

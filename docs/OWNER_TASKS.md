@@ -909,6 +909,18 @@ built on your Windows box:
 
 ## Parking lot (decisions, no rush)
 
+- [ ] **🔴 Nerva Business Suite („AI in a box” pentru companii) — 7 decizii blocante, toate ale tale**
+  (chestionar + hartă onestă a codului + fapte de piață datate 2026-10-13:
+  [`docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md`](decisions/2026-10-14-nerva-business-suite-kickoff-questions.md),
+  status DRAFT). În ordinea dependențelor: D1 clientul #1 + un singur flux (Digitaholic intern?);
+  D2 postura v1 (cloud/VM software-only vs appliance DGX Spark — nimic nu a rulat încă pe ARM64, imaginea
+  GHCR e privată, benchmark-urile sunt goale); D3 identitate/tenancy (single-user e ratificat; auditul nu
+  poate numi aprobatorul — `decided_by='admin'`); D4 MCP-first vs plugin-uri native vs n8n (bucla de tool-uri
+  e default-off); D5 copyright holder (LICENSE:190 e șablon necompletat), open-core, licență semnată, brand
+  „Nerva” neînregistrat; D6 cine operează / SLA realist (NBD, nu 4h) / rol GDPR / telemetrie; D7 înghețarea
+  roadmap-ului personal 1.x pe durata pivotului. Răspunsurile se scriu sub fiecare întrebare în același
+  fișier; abia apoi se deschid rânduri în BACKLOG. Până la D1–D3 nicio lucrare pe conectori/UI/hardware.
+
 - [ ] **Is the web HUD a phone surface? — one decision, and it unblocks a nightly that has never
   been green.** Packet refreshed 2026-09-04 against `main` @ `bf48cf2`; the question itself is the
   2026-07-29 call recorded in `BACKLOG.md` → *"The phone surface"*. Nothing about it is engineering-
