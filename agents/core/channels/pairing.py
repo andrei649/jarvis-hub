@@ -435,9 +435,9 @@ class SenderPairing(JsonStore):
 
         A pre-H497 entry *is* keyed by its token, so the token is recoverable here
         and only here: it is rehashed under a fresh opaque id and the entry keeps
-        its channel, ``created_at`` and ``expires_at``. An outstanding link
-        therefore still redeems after the upgrade, and still dies at its original
-        moment rather than getting a fresh TTL.
+        its channel, ``created_at`` and ``expires_at``. Its original expiry remains
+        visible, but H689 refuses redemption without the hub ID that binds a link
+        to the install; the owner must mint a new identity-bound link.
 
         "Legacy" is decided by the *absence of both* digest fields, not by the
         digest being unusable. Since H497 a dict key is an opaque id rather than a
@@ -701,6 +701,11 @@ class SenderPairing(JsonStore):
         the store keeps only what it needs to redeem it — which since H497 is a
         salted digest under an opaque id, never the token itself.
         """
+        from agents.core.install_identity import InstallIdentityUnavailable
+
+        hub = _install_id()
+        if not hub:
+            raise InstallIdentityUnavailable()
         moment = time.time() if now is None else float(now)
         token = secrets.token_urlsafe(_DEEPLINK_BYTES)
         with self._lock:
@@ -715,7 +720,7 @@ class SenderPairing(JsonStore):
                 self._deeplinks.pop(oldest, None)
             self._deeplinks[_fresh_link_id(self._deeplinks)] = {
                 "channel": str(channel or "telegram"),
-                "hub": _install_id(),          # H689: redeemable only on this install
+                "hub": hub,                    # H689: never an unbound portable link
                 "created_at": moment,
                 "expires_at": moment + max(1.0, float(ttl)),
                 **_hash_secret(token),
@@ -760,7 +765,8 @@ class SenderPairing(JsonStore):
             self._save()
         if entry.get("channel") and entry["channel"] != channel:
             return {"ok": False, "reason": "wrong_channel"}
-        if entry.get("hub") and entry["hub"] != _install_id():
+        hub = _install_id()
+        if not entry.get("hub") or not hub or entry["hub"] != hub:
             return {"ok": False, "reason": "other_install"}
         record = self.approve(channel, sender_id, name=name)
         return {"ok": True, "status": ALLOWED, "channel": channel,

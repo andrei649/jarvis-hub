@@ -15,6 +15,7 @@ from agents.core.llm import vlm
 from agents.core.llm.base import OllamaBackend
 from agents.core.llm.egress import llm_async_client
 from agents.core.orchestrator import Orchestrator
+from tests.h441_native_fixture import bind_native
 from tests.test_composer_vision import PNG
 from tests.test_h277_vision_auto_consumer import approved, route  # noqa: F401
 
@@ -23,6 +24,7 @@ IMAGE_DIGEST = hashlib.sha256(PNG.encode("utf-8")).hexdigest()
 
 def test_selected_ollama_image_uses_native_chat_wire(route, monkeypatch):
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = OllamaBackend("http://127.0.0.1:11434", trust_env=False)
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, "qwen3-vl:8b", "local")
@@ -75,6 +77,7 @@ def test_selected_ollama_image_uses_native_chat_wire(route, monkeypatch):
 
 def test_selected_ollama_destination_drift_refuses_before_image_request(route, monkeypatch):
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = OllamaBackend("http://127.0.0.1:11434", trust_env=False)
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, "qwen3-vl:8b", "local")
@@ -102,6 +105,7 @@ def test_selected_ollama_destination_drift_refuses_before_image_request(route, m
 
 def test_remote_ollama_requires_explicit_acknowledgement(route, monkeypatch):
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = OllamaBackend("https://ollama.example", trust_env=False)
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, "qwen3-vl:8b", "local")
@@ -133,6 +137,7 @@ def test_remote_ollama_requires_explicit_acknowledgement(route, monkeypatch):
 def test_late_ollama_image_body_mutation_never_reaches_transport(route, monkeypatch, retry):
     monkeypatch.setenv("JARVIS_ROLE_VISION_EMPTY_RETRIES", retry)
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = OllamaBackend("http://127.0.0.1:11434", trust_env=False)
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, "qwen3-vl:8b", "local")

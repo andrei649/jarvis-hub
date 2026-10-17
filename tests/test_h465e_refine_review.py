@@ -96,7 +96,7 @@ def test_a_refine_cut_off_leaves_the_days_line_to_the_per_turn_pass(caplog):
     assert len(lines) == 1
 
 
-def test_every_skipped_passes_reason_is_logged(caplog):
+def test_every_skipped_passes_reason_is_logged(caplog, monkeypatch):
     from agents.core.orchestrator import Orchestrator
 
     class Memory:
@@ -105,6 +105,8 @@ def test_every_skipped_passes_reason_is_logged(caplog):
 
     orch = Orchestrator.__new__(Orchestrator)
     orch.memory = Memory()
+    from tests.h441_native_fixture import bind_native
+    bind_native(orch, monkeypatch, session_ids=("web-1",))
     orch.reviewer = _reviewer(_LLM(CUT_AFTER_INNER))
     orch.reviewer.should_run()
     orch._session_id_default = "web-1"

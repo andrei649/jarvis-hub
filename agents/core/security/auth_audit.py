@@ -34,6 +34,10 @@ _KINDS = {
     SecurityEventType.TOKEN_ISSUED, SecurityEventType.TOKEN_ROTATED,
     SecurityEventType.TOKEN_REVOKED,
 }
+_MCP_SURFACE_KINDS = {
+    SecurityEventType.AUTH_SUCCESS, SecurityEventType.AUTH_FAILURE,
+    SecurityEventType.TOKEN_ISSUED,
+}
 _REASONS = {
     "credential", "admin_credential", "local_bypass", "missing", "invalid",
     "network_disabled", "issue", "rotate", "revoke",
@@ -126,11 +130,11 @@ def _record_auth_event(
         }
         if event_type in (SecurityEventType.AUTH_SUCCESS, SecurityEventType.AUTH_FAILURE):
             fields["client"] = _safe_client(client)
-            if type(surface) is str and surface == "mcp":
-                fields["surface"] = "mcp"
         else:
             fields["count"] = max(0, min(int(count or 0), 1_000_000))
             fields["revoke_env"] = bool(revoke_env)
+        if event_type in _MCP_SURFACE_KINDS and type(surface) is str and surface == "mcp":
+            fields["surface"] = "mcp"
         event = SecurityEvent(
             event_type=event_type,
             timestamp=event_time,
@@ -185,7 +189,7 @@ def submit_auth_event(kind: SecurityEventType | str, **fields: object) -> None:
             "count": max(0, min(int(fields.get("count") or 0), 1_000_000)),
             "revoke_env": bool(fields.get("revoke_env", False)),
         }
-        if (event_type in (SecurityEventType.AUTH_SUCCESS, SecurityEventType.AUTH_FAILURE)
+        if (event_type in _MCP_SURFACE_KINDS
                 and type(fields.get("surface")) is str and fields["surface"] == "mcp"):
             safe_fields["surface"] = "mcp"
         # The orchestrator may be replaced between submission and writing. Keep

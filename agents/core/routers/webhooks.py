@@ -276,12 +276,12 @@ _now = time.time
 def _quiet_hours(orch) -> bool:
     """The owner's night, as the jobs read it: ``ambient.quiet_hours_start`` to
     ``ambient.quiet_hours_end`` (22 to 7 by default), hours taken modulo 24, on the
-    router's clock."""
+    router's clock read in the app zone the jobs use (H450), not the host's."""
     from agents.core.autonomy.jobs import (
-        DEFAULT_QUIET_END, DEFAULT_QUIET_START, QUIET_END_SETTING, QUIET_START_SETTING, setting_hour)
+        DEFAULT_QUIET_END, DEFAULT_QUIET_START, QUIET_END_SETTING, QUIET_START_SETTING, quiet_hour, setting_hour)
     from agents.core.autonomy.schedule_runtime import is_night
 
-    return is_night(time.localtime(_now()).tm_hour,
+    return is_night(quiet_hour(_now()),
                     start=setting_hour(orch, QUIET_START_SETTING, DEFAULT_QUIET_START),
                     end=setting_hour(orch, QUIET_END_SETTING, DEFAULT_QUIET_END))
 

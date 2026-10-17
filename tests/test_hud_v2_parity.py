@@ -506,6 +506,8 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/sessions/import": "Owner CLI imports a bounded transcript from its local host (agents/cli/nerva.py)",
+    "/sessions/resolve": "Owner CLI resolves -c/-r selectors and retrieves a free recap (agents/cli/nerva.py)",
     "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
     "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",
     "/api/vlm/composer/status":
@@ -577,6 +579,11 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # H015: the owner CLI/API is live; dedicated web/mobile controls remain in
+    # HUD_V2_REMAINING.md and mobile/PARITY.md, not a completed UI claim.
+    "/api/jobs/incidents/{incident_id}/ack",
+    "/api/jobs/runs",
+    "/api/jobs/{job_id}/notepad/keys",
     # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
     # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
     # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.

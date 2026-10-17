@@ -49,7 +49,7 @@ async def list_skills():
         switched = switches.state()
     except Exception:
         logger.warning("skill switches unreadable", exc_info=True)
-        switched = {switches.GLOBAL_KEY: [], switches.CHANNEL_KEY: {}}
+        return JSONResponse({"error": "skill switches unavailable", "reason": "switches_unavailable"}, status_code=503)
     result = {}
     for name, skill in orch.skills.skills.items():
         key = skill.name.casefold()
@@ -92,9 +92,9 @@ class SkillSwitchBody(BaseModel):
 @router.post("/api/skills/switch", dependencies=[Depends(admin_guard)])
 async def switch_skill(body: SkillSwitchBody):
     """H329 — switch one skill, or every skill of a category, on or off: everywhere, or
-    on one channel. Nothing is uninstalled. Off is always allowed and recorded when it
-    can be; on widens what the hub does, so it is refused unless the intent log records
-    it. An essential skill is never switched off."""
+    on one channel. Nothing is uninstalled. Off applies at once; on creates an
+    exact once-scoped human approval task and stays pending until its worker runs.
+    An essential skill is never switched off."""
     import asyncio
 
     from agents.core.skills import switches
@@ -127,72 +127,56 @@ async def switch_skill(body: SkillSwitchBody):
     if body.skill and not body.enabled and switches.is_essential(targets[0]):
         return JSONResponse({"error": f"{targets[0].name} is essential and cannot be switched off",
                              "reason": "essential"}, status_code=409)
-    audit = getattr(orch, "intent_log", None)
-    recordable = audit is not None and callable(getattr(audit, "record", None))
-    if body.enabled and not recordable:
-        return JSONResponse({"error": "switching a skill back on is recorded in the intent log, "
-                                      "which is not available", "reason": "audit_unavailable"}, status_code=503)
+    from agents.core.skills import switch_approval
     try:
-        outcome = await asyncio.to_thread(switches.apply, targets, enabled=body.enabled, channel=channel)
-    except Exception:
-        logger.warning("skill switch failed", exc_info=True)
-        return JSONResponse({"error": "the skill switches could not be saved", "reason": "write_failed"},
-                            status_code=500)
-    if body.skill and not outcome["changed"]:
-        # One skill the switch did nothing for, and "unchanged" would be untrue (review-H329 F3, F6).
+        if body.enabled:
+            outcome = await asyncio.to_thread(
+                switch_approval.request_enable, orch, targets, channel=channel,
+                category=body.category or "", requested_by="owner",
+            )
+        else:
+            outcome = await asyncio.to_thread(switch_approval.disable, targets, channel=channel, actor="owner")
+    except Exception as exc:
+        from agents.core.permission_ledger import PermissionRequestError
+        from agents.core.settings_db import SettingsUnreadable
+
+        logger.warning("skill switch request failed", exc_info=True)
+        reason = ("approval_unavailable" if isinstance(exc, PermissionRequestError) else
+                  "switches_unavailable" if isinstance(exc, SettingsUnreadable) else "write_failed")
+        return JSONResponse({"error": "the skill switch could not be requested or saved", "reason": reason},
+                            status_code=503)
+    if body.skill and not outcome.get("changed") and outcome.get("status") != "pending":
         name = targets[0].name
         if outcome["off_everywhere"]:
-            return JSONResponse({"error": f"{name} is switched off everywhere; switch it on everywhere "
-                                          f"(no channel) to use it on {channel}", "reason": "off_everywhere"},
-                                status_code=409)
+            return JSONResponse({"error": f"{name} is switched off everywhere; switch it on everywhere",
+                                 "reason": "off_everywhere"}, status_code=409)
         if outcome["unstorable"]:
-            return JSONResponse({"error": f"{name} cannot be stored as a switch (a name of at most "
-                                          f"{switches.MAX_NAME_CHARS} printable characters, at most "
-                                          f"{switches.MAX_NAMES} skills and {switches.MAX_CHANNELS} channels)",
+            return JSONResponse({"error": f"{name} cannot be stored as a switch",
                                  "reason": "unstorable"}, status_code=409)
+    if outcome.get("status") == "pending":
+        return JSONResponse({"ok": True, "status": "pending", "task_id": outcome["task_id"],
+                             "pending": outcome["pending"], "enabled": False,
+                             "channel": channel or None, "switches": outcome["state"],
+                             "off_everywhere": outcome["off_everywhere"]}, status_code=202)
     audited = False
-    if outcome["changed"]:
-        where = f"on {channel}" if channel else "everywhere"
-        try:
-            audit.record(actor="owner", action="skill.enable" if body.enabled else "skill.disable",
-                         why=f"the owner switched {', '.join(outcome['changed'])} "
-                             f"{'on' if body.enabled else 'off'} {where}",
-                         cause="skills.switch",
-                         metadata={"skills": outcome["changed"], "channel": channel or None,
-                                   "category": body.category or None})
-            audited = True
-        except Exception:
-            logger.warning("skill switch not recorded in the intent log", exc_info=True)
-            if body.enabled:
-                # Never widened unrecorded: put the switches back as they were.
-                restored = await asyncio.to_thread(switches.restore, outcome["before"], outcome["state"])
-                if restored:
-                    # IntentLog keeps an entry whose save failed and writes it with the next
-                    # one, so the revert follows it (review-H329 F8).
-                    try:
-                        audit.record(actor="owner", action="skill.disable",
-                                     why=f"the switch-on of {', '.join(outcome['changed'])} could not be "
-                                         "recorded, so it was not kept",
-                                     cause="skills.switch.revert",
-                                     metadata={"skills": outcome["changed"], "channel": channel or None,
-                                               "category": body.category or None})
-                    except Exception:
-                        logger.warning("skill switch revert not recorded in the intent log", exc_info=True)
-                return JSONResponse({"error": "the switch could not be recorded, so it was not kept"
-                                              if restored else "the switch could not be recorded and a later "
-                                              "change landed first; check the skill switches",
-                                     "reason": "audit_failed", "restored": restored}, status_code=503)
-    if audited and body.enabled:
-        # The months a skill spent switched off are not neglect: its idle clock restarts
-        # now, so the curator's next pass does not archive it (batch-6 verify of H329 F9).
-        usage = getattr(orch, "skill_usage", None)
-        if usage is not None and callable(getattr(usage, "bump", None)):
-            for name in outcome["changed"]:
-                usage.bump(name, "switch_on")
-    return {"ok": True, "enabled": body.enabled, "channel": channel or None, "changed": outcome["changed"],
+    if not body.enabled and outcome["changed"]:
+        audit = getattr(orch, "intent_log", None)
+        if callable(getattr(audit, "record", None)):
+            try:
+                audit.record(actor="owner", action="skill.disable",
+                             why=f"the owner switched {', '.join(outcome['changed'])} off "
+                                 f"{'on ' + channel if channel else 'everywhere'}",
+                             cause="skills.switch",
+                             metadata={"skills": outcome["changed"], "channel": channel or None,
+                                       "category": body.category or None})
+                audited = True
+            except Exception:
+                logger.warning("optional skill switch intent projection failed", exc_info=True)
+    return {"ok": True, "status": outcome.get("status", "applied"), "enabled": body.enabled,
+            "channel": channel or None, "changed": outcome["changed"],
             "unchanged": outcome["unchanged"], "essential": outcome["essential"],
-            "off_everywhere": outcome["off_everywhere"], "unstorable": outcome["unstorable"], "audited": audited,
-            "switches": outcome["state"]}
+            "off_everywhere": outcome["off_everywhere"], "unstorable": outcome["unstorable"],
+            "switches": outcome["state"], "audited": audited}
 
 
 @router.get("/sandbox/status")

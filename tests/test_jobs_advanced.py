@@ -106,10 +106,9 @@ async def test_tick_runs_only_due_once_and_does_not_compete_with_scheduler(store
         options={"deliver": []},
     )
     from datetime import datetime
+    from zoneinfo import ZoneInfo
 
-    from tzlocal import get_localzone
-
-    now = datetime(2026, 9, 15, 9, 0, tzinfo=get_localzone())
+    now = datetime(2026, 9, 15, 9, 0, tzinfo=ZoneInfo("Europe/Bucharest"))
     assert len(await r.tick(now)) == 1
     assert await r.tick(now) == []
     assert len(store.runs(j.id)) == 1

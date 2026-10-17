@@ -110,6 +110,8 @@ class CheckpointManager:
                 value TEXT DEFAULT '{}'
             )
         """)
+        from .foreign_history import initialize as initialize_foreign_history
+        initialize_foreign_history(self._conn)
         from .session_continuation import initialize
         initialize(self._conn)
         # list_sessions() orders by started_at and the table grows one row per
@@ -547,6 +549,7 @@ class CheckpointManager:
                        ("session_continuations", "continuation", "session_id", False),
                        ("session_history_instances", "history_instance", "session_id", False),
                        ("session_history_rewinds", "rewind", "session_id", False),
+                       ("session_imports", "import", "session_id", False),
                        ("sessions", "session", "id", False))
 
     def session_rows_for_backup(self, session_id: str) -> dict:
@@ -696,16 +699,22 @@ class CheckpointManager:
             logger.warning(f"Failed to update session: {e}")
 
 
-    def get_sessions(self, limit: int = 20, *, archived: bool | None = None) -> list[dict]:
+    def get_sessions(self, limit: int = 20, *, archived: bool | None = None,
+                     native_only: bool = False) -> list[dict]:
         """The newest sessions; ``archived`` True lists only archived ones, False only
-        the others, None (the default, for existing callers) all of them."""
+        the others, None (the default, for existing callers) all of them. ``native_only``
+        drops rows with a foreign-lineage receipt before the limit, so a window of
+        newer imported/derived rows never empties a guest's list."""
         if not self._conn:
             return []
-        where = ""
+        clauses = []
         if archived is True:
-            where = f" WHERE {self._ARCHIVED_SQL} IS NOT NULL"
+            clauses.append(f"{self._ARCHIVED_SQL} IS NOT NULL")
         elif archived is False:
-            where = f" WHERE {self._ARCHIVED_SQL} IS NULL"
+            clauses.append(f"{self._ARCHIVED_SQL} IS NULL")
+        if native_only:
+            clauses.append("id NOT IN (SELECT session_id FROM session_imports)")
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         try:
             with self._lock:
                 cursor = self._conn.execute(

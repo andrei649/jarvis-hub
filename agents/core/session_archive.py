@@ -334,7 +334,8 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
                 outcome_cleanup_error = exc
         removed["embeddings"] = embeddings
         conversation = getattr(memory, "conversation", memory)
-        for live in (getattr(conversation, "sessions", None), getattr(conversation, "instances", None)):
+        for live in (getattr(conversation, "sessions", None), getattr(conversation, "instances", None),
+                     getattr(conversation, "foreign_origins", None)):
             if isinstance(live, dict):
                 live.pop(session_id, None)
         removed["todo"] = bool(todos.forget(session_id)) if todos is not None else False

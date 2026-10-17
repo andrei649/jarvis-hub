@@ -99,11 +99,11 @@ def test_no_connection_answers_empty(tmp_path):
     assert cold.stale_sessions("2030") == [] and cold.session_row("s") is None
     assert cold.session_rows_for_backup("s") == {"session": None, "checkpoints": [], "clock": None,
                                                  "continuation": None, "history_instance": None,
-                                                 "rewind": None,
+                                                 "rewind": None, "import": None,
                                                  "continued_by": []}
     assert cold.delete_session_rows("s") == {"checkpoints": 0, "session_clock": 0, "session_continuations": 0,
                                              "session_history_instances": 0, "session_history_rewinds": 0,
-                                             "sessions": 0}
+                                             "session_imports": 0, "sessions": 0}
 
 
 def test_a_store_error_while_archiving_is_not_a_missing_session(cp):
@@ -217,6 +217,31 @@ async def _delete(cp, stores, sid="gone", **kw):
     return await sa.delete_session(sid, checkpoints=cp, backup_root=stores.backup, archive_root=stores.archive_root, **kw)
 
 
+async def test_foreign_receipt_is_encrypted_backed_up_and_deleted(cp, stores):
+    from uuid import uuid4
+
+    from agents.core.foreign_history import status
+    from agents.core.session_import import import_turns
+
+    imported = import_turns(cp, source="codex", external_id="synthetic-backup",
+                            request_id=str(uuid4()), turns=[{
+                                "role": "user", "content": "foreign backup secret",
+                                "timestamp": "2026-10-01T00:00:00+00:00",
+                            }])
+    sid = imported["session_id"]
+    before = cp.session_rows_for_backup(sid)["import"]
+    assert status(cp, sid).tainted and before["source"] == "codex"
+    got = await _delete(cp, stores, sid=sid, active="other")
+    backup = Path(got["backup"])
+    assert b"foreign backup secret" not in backup.read_bytes()
+    record = sa.read_backup(backup)
+    assert record["import"] == before
+    assert record["history_instance"]["foreign_lineage"] == 1
+    assert got["removed"]["rows"]["session_imports"] == 1
+    assert cp.session_rows_for_backup(sid)["import"] is None
+    assert cp.session_row(sid) is None
+
+
 async def test_a_delete_backs_up_every_trace_first_then_removes_them(cp, stores, tmp_path):
     from agents.core.notes import NotesStore
 
@@ -238,7 +263,7 @@ async def test_a_delete_backs_up_every_trace_first_then_removes_them(cp, stores,
     assert (backup.stat().st_mode & 0o777) == 0o600
     assert got["removed"]["rows"] == {"checkpoints": 1, "session_clock": 0, "session_continuations": 0,
                                       "session_history_instances": 1, "session_history_rewinds": 0,
-                                      "sessions": 1}
+                                      "session_imports": 0, "sessions": 1}
     assert got["removed"]["snapshot"] is True and got["removed"]["log"] is True and got["removed"]["compaction_archive"] is True
     assert got["removed"]["todo"] is True and stores.todos.read("gone")["todos"] == []
     assert got["removed"]["note"] is True and notes.get("gone") == ""

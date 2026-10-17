@@ -224,7 +224,8 @@ class ChannelSessionLifecycle:
                         for turn in turns[:last_user]:
                             await self.orch.memory.add_turn(
                                 new_actual, turn["role"], turn["content"],
-                                agent_id=turn.get("agent_id"), tools=turn.get("tools"))
+                                agent_id=turn.get("agent_id"), tools=turn.get("tools"),
+                                media=turn.get("media"))   # H586: keep image provenance
                         self.store.rotate(base, self.now(), source.channel, kind)
                         self.orch._channel_sessions[base] = new_actual
                         return "Removed the last exchange. Earlier conversation is preserved."

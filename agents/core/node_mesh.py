@@ -98,10 +98,14 @@ class NodeMesh:
         node_id = str(node_id)
         caps = sorted({str(c) for c in (capabilities or []) if str(c).strip()})
         token_id = ""
-        hub = self._hub()   # H689: the grant is scoped to this install, not just the node
+        hub = self._hub()   # H689: never issue an unscoped node grant
+        if not hub:
+            from agents.core.install_identity import InstallIdentityUnavailable
+
+            raise InstallIdentityUnavailable()
         if self._broker is not None:
             token_id = self._broker.issue(
-                caps, source=f"node:{node_id}@{hub}" if hub else f"node:{node_id}",
+                caps, source=f"node:{node_id}@{hub}",
                 task_id=node_id, ttl=self._ttl)["id"]
         rec = {"id": node_id, "capabilities": caps, "token_id": token_id, "hub_id": hub,
                "meta": meta or {}, "registered_at": time.time()}

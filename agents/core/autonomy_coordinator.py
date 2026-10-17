@@ -21,6 +21,7 @@ import logging
 import math
 # Telegram destinations use the shared channels.outbound resolver.
 import time
+from collections.abc import Mapping
 from datetime import datetime
 
 from .autonomy import TaskExecutor
@@ -717,6 +718,14 @@ class AutonomyCoordinator:
         return worker.govern_enqueue(agent='jarvis', kind='toolrpc.terminal_run',
             title='Scheduled Python script awaiting this run approval', payload=payload,
             risk_tier=3, autonomy_level='ask', origin=origin)
+
+    def _submit_job_task(self, **kwargs):
+        """An unattended job may propose one ASK task through the live worker only."""
+        worker = getattr(self._orch, 'autonomy', None)
+        enqueue = getattr(worker, 'govern_enqueue', None)
+        if not callable(enqueue):
+            raise RuntimeError('governed scheduled-task intake is unavailable')
+        return enqueue(**kwargs)
 
     def _wire_agent_tool_runtime(self, action_kernel=None):
         """Build the shared, default-off governed tool loop for loaded agents."""
@@ -1752,6 +1761,7 @@ class AutonomyCoordinator:
             gap_callback=acquisition.capture_gap,
             context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
             per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
+            stall_halt_enabled=lambda: _get_setting("llm.tool_loop_stall_halt_enabled", False) is True,
             # H298 — an oversized tool result is spilled to disk instead of being
             # thrown away, and the caps scale to the model's real context window.
             # The store writes under the file tools' default root, so the path in a
@@ -1781,6 +1791,8 @@ class AutonomyCoordinator:
         if callable(getattr(jobs, 'bind_scripts', None)) and queue is not None:
             jobs.bind_scripts(submit=self._submit_job_script, get=queue.get,
                               find=lambda origin: queue.list(origin=origin, limit=2))
+        if callable(getattr(jobs, 'bind_task_intake', None)):
+            jobs.bind_task_intake(submit=self._submit_job_task)
 
         async def _approved_desktop_tool_rpc_execute(task):
             # Publish the durable row for the length of this turn so a gated tool can
@@ -2235,7 +2247,21 @@ class AutonomyCoordinator:
                            exc_info=True)
         ledger = getattr(self._orch, "permission_ledger", None)
         if ledger is not None:
-            executor.register("permission.grant", ledger.apply_grant)
+            async def _apply_permission_grant(task):
+                payload = getattr(task, "payload", None)
+                if isinstance(payload, Mapping) and payload.get("surface") == "skill_switch":
+                    from .skills.switch_approval import apply_approved
+
+                    return await apply_approved(
+                        task,
+                        ledger=ledger,
+                        loader=getattr(self._orch, "skills", None),
+                        usage=getattr(self._orch, "skill_usage", None),
+                        intent_log=getattr(self._orch, "intent_log", None),
+                    )
+                return await ledger.apply_grant(task)
+
+            executor.register("permission.grant", _apply_permission_grant)
 
         # The work-run ledger. Bound whatever the flag says, because reading past
         # runs is honest with company mode off — what it must never do is open one,

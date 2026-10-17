@@ -954,12 +954,17 @@ class Agent:
             )
         sink = usage_sink if usage_sink is not None else current_observer()
         with clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
-            return await self._generate_response(
+            response = await self._generate_response(
                 backend, model, prompt, system, max_tokens, temperature,
                 on_token=on_token, wall_seconds=wall_seconds,
                 usage_sink=observer if sink is not None else None,
                 effective_window=effective_window,
             )
+            from .llm.base import THINKING_EXHAUSTED_REPLY
+            if response == THINKING_EXHAUSTED_REPLY:
+                from .turn_stops import record_runtime_stop
+                record_runtime_stop("thinking_exhausted")
+            return response
 
     def _check_prepared_budget(self, prepared_route, prompt, rendered_system,
                                *, cached_input_tokens=0) -> None:
@@ -1164,21 +1169,23 @@ class Agent:
                     clock_snapshot = snapshot
                     if self._checkpoint_manager:
                         self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
-                response = await self.generate_response(
-                    backend=backend,
-                    model=model,
-                    prompt=prompt,
-                    system=system_prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    # The orchestrator's per-agent ceiling rides in on the context
-                    # (Hermes absorption 5c); absent, the tool loop keeps its default.
-                    effective_window=effective_window,
-                    session_id=context.get("session_id"),
-                    clock_snapshot=clock_snapshot,
-                    wall_seconds=context.get("wall_seconds") if isinstance(context, dict) else None,
-                    **({"prepared_route": prepared} if prepared is not None else {}),
-                )
+                from .turn_usage import model_usage_scope
+                with model_usage_scope(model=model, route=route_name):
+                    response = await self.generate_response(
+                        backend=backend,
+                        model=model,
+                        prompt=prompt,
+                        system=system_prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        # The orchestrator's per-agent ceiling rides in on the context
+                        # (Hermes absorption 5c); absent, the tool loop keeps its default.
+                        effective_window=effective_window,
+                        session_id=context.get("session_id"),
+                        clock_snapshot=clock_snapshot,
+                        wall_seconds=context.get("wall_seconds") if isinstance(context, dict) else None,
+                        **({"prepared_route": prepared} if prepared is not None else {}),
+                    )
             latency = time.monotonic() - start
             self._last_latency = latency
 
@@ -1342,7 +1349,8 @@ class Agent:
                     check(backend, model, route_name)
                 from .llm.data_handling import physical_request_scope
                 guard = (lambda: check(backend, model, route_name)) if callable(check) else None
-                with physical_request_scope(guard):
+                from .turn_usage import model_usage_scope
+                with model_usage_scope(model=model, route=route_name), physical_request_scope(guard):
                     response = await backend.generate(
                         model=model,
                         prompt=prompt,

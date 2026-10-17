@@ -141,7 +141,7 @@ def ensure_user_home() -> "Path | None":
 
 
 #: H689 — ``JARVIS_PROFILE=<name>`` runs an isolated hub: its own data root (settings,
-#: memory, secret store, install id, hub lock) at ``<root>-profiles/<name>``, beside the
+#: memory, secret store and hub lock) at ``<root>-profiles/<name>``, beside the
 #: default root and never inside it, so the default hub's forget, backup and restore never
 #: reach another profile. H689b — its credentials too: its hub reads ``<profile root>/.env``
 #: and neither shared ``.env`` (``env_provenance.load_hub_env``).
@@ -174,24 +174,30 @@ def profile_error(environ: "Mapping[str, str] | None" = None) -> "str | None":
     return None
 
 
-def data_root(environ: "Mapping[str, str] | None" = None) -> Path:
-    """Return the runtime-data root (honors $JARVIS_HOME / $JARVIS_MEMORY_DIR, and
-    $JARVIS_PROFILE as a sibling root beside it). A profile name that is refused raises:
-    the default root is never used in its place. *environ* answers for another
-    environment than this process's."""
-    source = os.environ if environ is None else environ
-    env = str(source.get("JARVIS_HOME", "") or "").strip() or str(source.get("JARVIS_MEMORY_DIR", "") or "").strip()
-    if env:
-        base = Path(env).expanduser()
-    else:
-        home = user_home(environ)
-        base = home / "memory" if home is not None else _DEFAULT_ROOT
-    profile = profile_name(environ)
-    if profile:
-        return base.parent / f"{base.name}-profiles" / profile
+def install_root(environ: "Mapping[str, str] | None" = None) -> Path:
+    """Unprofiled root shared by one installation's profiles.
+
+    Validate the selected profile even here: a bad name must not silently select
+    the default installation's identity. An explicit environment can be inspected
+    without changing the active process.
+    """
     refused = profile_error(environ)
     if refused:
         raise RuntimeError(refused)
+    source = os.environ if environ is None else environ
+    env = str(source.get("JARVIS_HOME", "") or "").strip() or str(source.get("JARVIS_MEMORY_DIR", "") or "").strip()
+    if env:
+        return Path(env).expanduser()
+    home = user_home(environ)
+    return home / "memory" if home is not None else _DEFAULT_ROOT
+
+
+def data_root(environ: "Mapping[str, str] | None" = None) -> Path:
+    """Profile-local runtime root; the identity alone lives at :func:`install_root`."""
+    base = install_root(environ)
+    profile = profile_name(environ)
+    if profile:
+        return base.parent / f"{base.name}-profiles" / profile
     return base
 
 

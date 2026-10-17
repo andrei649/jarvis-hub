@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from .client import HubClient, HubError, HubUnavailable, hub_url
 
@@ -254,6 +255,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     logs = verbs.add_parser("logs", help="the newest records of the hub log, read from the end "
                             "and redacted (offline; -n counts records, a traceback is one)")
+    logs.add_argument("name", nargs="?", help="exact configured log basename or numbered rotation; "
+                      "'list' shows available files (use --name to read a file named 'list')")
+    logs.add_argument("--name", dest="exact_name", help="exact configured log basename, including 'list'")
     logs.add_argument("-n", "--lines", type=int, default=50)
 
     skills = verbs.add_parser("skills", help="skill authoring tools (offline)")
@@ -264,11 +268,12 @@ def build_parser() -> argparse.ArgumentParser:
                              help="a SKILL.md, a skill folder, or a folder of skill folders")
     skills_lint.add_argument("--strict", action="store_true", help="advice fails the run too")
     skills_lint.add_argument("--json", action="store_true")
-    # H329 — switched off, not uninstalled (admin; applies at once).
+    # H329 — switched off, not uninstalled; enabling waits for approval.
     skills_verbs.add_parser("list", help="installed skills and where each is switched off").add_argument(
         "--json", action="store_true")
+    skills_verbs.add_parser("config", help="interactively switch a skill or category on/off")
     for verb, text in (("off", "switch a skill off without uninstalling it (admin)"),
-                       ("on", "switch a skill back on (admin; recorded in the intent log)")):
+                       ("on", "request owner approval to switch a skill back on (admin)")):
         switch = skills_verbs.add_parser(verb, help=text)
         switch.add_argument("name", nargs="?", help="the skill's name or folder")
         switch.add_argument("--category", help="every skill of this category instead of one skill")
@@ -308,9 +313,18 @@ def build_parser() -> argparse.ArgumentParser:
                                   "interval job fires at once")
     jobs_create.add_argument("--json", action="store_true")
     jobs_create.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
+    jobs_create.add_argument("--reasoning-effort", choices=("default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+                             help="model ask: one canonical reasoning effort or default; requires complete --options")
     jobs_create.add_argument("--workdir", help="script-only cwd; requires complete --options with script and no_agent true")
     jobs_create.add_argument("--media-id", action="append", help="opaque artifact ID for an explicit reminder action; repeat up to 8 times")
     jobs_create.add_argument("--options", help='JSON options: repeat, deliver ([] disables delivery); ask jobs accept model/provider pins (configured route only; deterministic compression, no embedding recall)')
+    create_continuity = jobs_create.add_mutually_exclusive_group()
+    create_continuity.add_argument("--continuity", dest="continuity", action="store_true", default=None,
+                                   help="include previous model output on later runs")
+    create_continuity.add_argument("--no-continuity", dest="continuity", action="store_false",
+                                   help="omit previous model output on later runs")
+    jobs_create.add_argument("--context-from", action="append", metavar="ID",
+                             help="include the latest eligible output of this job; repeat for up to eight IDs or self")
     _selection_flags(jobs_create)
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
@@ -319,25 +333,46 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_edit.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_edit.add_argument("--json", action="store_true")
     jobs_edit.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
+    jobs_edit.add_argument("--reasoning-effort", choices=("default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+                           help="model ask: one canonical reasoning effort or default; requires complete --options")
     jobs_edit.add_argument("--workdir", help="script-only cwd; requires complete --options; empty clears the field")
     jobs_edit.add_argument("--media-id", action="append", help="replace reminder attachments; requires --action and explicitly reauthorizes content/owner")
     jobs_edit.add_argument("--options", help="replace advanced options as JSON; model/provider pins use deterministic compression and omit embedding recall")
+    edit_continuity = jobs_edit.add_mutually_exclusive_group()
+    edit_continuity.add_argument("--continuity", dest="continuity", action="store_true", default=None,
+                                 help="include previous model output on later runs")
+    edit_continuity.add_argument("--no-continuity", dest="continuity", action="store_false",
+                                 help="omit previous model output on later runs")
+    edit_context = jobs_edit.add_mutually_exclusive_group()
+    edit_context.add_argument("--context-from", action="append", metavar="ID",
+                              help="replace external context sources; repeat for up to eight IDs or self")
+    edit_context.add_argument("--clear-context-from", action="store_true",
+                              help="clear external context sources without replacing other options")
     _selection_flags(jobs_edit)
-    for verb in ("doctor", "incidents", "tick"):
+    for verb in ("doctor", "tick"):
         sub = jobs_verbs.add_parser(verb)
         sub.add_argument("--json", action="store_true")
-    notepad = jobs_verbs.add_parser("notepad", help="read or replace a job's bounded notes")
+    incidents = jobs_verbs.add_parser("incidents", help="list or acknowledge durable job failures")
+    incidents.add_argument("operation", nargs="?", choices=("list", "ack"), default="list")
+    incidents.add_argument("incident_id", nargs="?", type=int)
+    incidents.add_argument("--state", choices=("detected", "alerted", "closed"))
+    incidents.add_argument("--job-id")
+    incidents.add_argument("--limit", type=int)
+    incidents.add_argument("--json", action="store_true")
+    notepad = jobs_verbs.add_parser("notepad", help="read legacy note or manage named job notes")
     notepad.add_argument("job_id")
+    notepad.add_argument("operation", nargs="?", choices=("list", "get", "set", "delete"), default="list")
+    notepad.add_argument("key", nargs="?")
+    notepad.add_argument("value", nargs="?")
     notepad.add_argument("--text", help="replacement text; an empty string clears notes")
     notepad.add_argument("--json", action="store_true")
     for name, help_text in (
         ("status", "job configuration and recent runs"),
-        ("remove", "remove a job and its history"),
+        ("remove", "remove a job but retain its run history"),
         ("pause", "stop a job from firing"),
         ("resume", "let a paused job fire again"),
         ("run", "fire a job now, even if paused"),
-        ("delete", "remove a job and its history"),
-        ("runs", "the last attempts of a job"),
+        ("delete", "remove a job but retain its run history"),
     ):
         sub = jobs_verbs.add_parser(name, help=help_text)
         sub.add_argument("job_id")
@@ -346,6 +381,10 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("--reason", default="")
         if name == "status":
             sub.add_argument("--request", help="durable manual-run receipt id")
+    runs = jobs_verbs.add_parser("runs", help="recent attempts, including deleted jobs")
+    runs.add_argument("job_id", nargs="?")
+    runs.add_argument("--limit", type=int)
+    runs.add_argument("--json", action="store_true")
 
     todo = verbs.add_parser("todo", help="the checklists the agent keeps while it works")
     todo.add_argument("session", nargs="?", help="one session's plan (else the recent ones)")
@@ -358,6 +397,10 @@ def build_parser() -> argparse.ArgumentParser:
     continuation.add_argument("source_session_id")
     continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
     continuation.add_argument("--json", action="store_true")
+    imported = session_verbs.add_parser("import", help="import a local Claude Code/Codex JSONL conversation")
+    imported.add_argument("--from", dest="foreign_source", choices=("claude", "codex"), required=True)
+    imported.add_argument("path", help="owner-selected local JSONL path")
+    imported.add_argument("--json", action="store_true")
 
     chat = verbs.add_parser(
         "chat",
@@ -393,7 +436,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Keep CLI help/completion stdlib-only; test parity with the runtime ladder.
     chat.add_argument("--reasoning", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
                       help="reasoning effort for this invocation only")
-    chat.add_argument("--session", help="explicit existing conversation session")
+    selection = chat.add_mutually_exclusive_group()
+    selection.add_argument("--session", help="explicit existing conversation session")
+    selection.add_argument("-r", "--resume", metavar="SELECTOR", help="exact ID, unique prefix, title, latest, or @claude/@codex")
+    selection.add_argument("-c", "--continue", dest="continue_latest", action="store_true",
+                           help="use the latest unarchived conversation and print a free recap")
     chat.add_argument("--json", action="store_true")
     chat.add_argument("--image", action="append", metavar="PATH",
                       help="ask the vision model about this PNG/JPEG/GIF/WebP file (up to 8, 4 MiB "
@@ -1496,6 +1543,20 @@ def log_path(environ: Mapping[str, str]) -> Path:
     return data_path("logs", "jarvis.log")
 
 
+def _log_display(value: Any, width: int = 200, *, keep_tail: bool = False) -> str:
+    """Printable log filename/error text, including bidi and surrogate-safe names."""
+    visible = re.sub(r"[\u202a-\u202e\u2066-\u2069]", "", str(value))
+    visible = visible.encode("utf-8", "backslashreplace").decode("utf-8")
+    return _plain(visible, width, keep_tail=keep_tail)
+
+
+def _job_note_display(value: str) -> str:
+    """Preserve a bounded note's line breaks while removing terminal controls and bidi marks."""
+    visible = re.sub(r"[\u202a-\u202e\u2066-\u2069]", "", value)
+    visible = visible.encode("utf-8", "backslashreplace").decode("utf-8")
+    return "\n".join(_plain(line, len(line) + 1) for line in visible.split("\n"))
+
+
 def _skill_files(raw: str) -> list[Path] | None:
     """The SKILL.md files *raw* names: itself, a skill folder's, or each skill folder's."""
     path = Path(raw)
@@ -1510,8 +1571,8 @@ def _skill_files(raw: str) -> list[Path] | None:
 
 def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
-    H329 — ``nerva skills list | off | on``: the skill switches on the running hub."""
-    if ns.action in ("list", "off", "on"):
+    H329 — ``nerva skills list | off | on | config``: running-hub skill switches."""
+    if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
@@ -1566,36 +1627,67 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
+    positional_name = getattr(ns, "name", None)
+    exact_name = getattr(ns, "exact_name", None)
+    if positional_name is not None and exact_name is not None:
+        ctx.err.write("choose one log name: positional NAME or --name NAME\n")
+        return EXIT_USAGE
+    name = exact_name if exact_name is not None else positional_name
     path = log_path(ctx.environ)
-    if not path.exists():
+    from agents.core import log_tail
+
+    files = log_tail.list_files(path)
+    if positional_name == "list":
+        if not files:
+            ctx.say("no log files for the configured hub log")
+        else:
+            for item in files:
+                ctx.say(f"{_log_display(item['name'], 120)}  {item['size']} bytes  "
+                        f"modified {item['modified']}")
+        return EXIT_OK
+    if not files:
+        if path.exists():
+            ctx.err.write(f"{_log_display(path, 200, keep_tail=True)} could not be read "
+                          "(not a regular log file)\n")
+            return EXIT_FAILED
         ctx.err.write(
-            f"no log file at {path} — file logging is off unless system.log_to_file is on "
+            f"no log file at {_log_display(path, 200, keep_tail=True)} — file logging is off unless system.log_to_file is on "
             "(`nerva config set system.log_to_file on`) or JARVIS_LOG_FILE is set\n"
         )
         return EXIT_FAILED
+    allowed = {item["name"] for item in files}
+    if name is not None and name not in allowed:
+        available = ", ".join(_log_display(item["name"], 120) for item in files[:10])
+        more = " …" if len(files) > 10 else ""
+        ctx.err.write(f"no configured log named {_log_display(name, 120)}; available: {available}{more}\n")
+        return EXIT_FAILED
+    chosen = files[0]["name"] if name is None else name
+    selected = path.parent / chosen
     # H145: read from the end within a byte budget and redacted again, as the HUD's log
     # page reads it; a multi-gigabyte log costs the same as a small one.
-    from agents.core import log_tail
-
     if ns.lines <= 0:
         return EXIT_OK
     try:
-        tail = log_tail.read_path(path, lines=ns.lines, cap=max(ns.lines, 1))
+        tail = log_tail.read_path(selected, lines=ns.lines, cap=max(ns.lines, 1))
     except log_tail.RedactionUnavailable as exc:
-        ctx.err.write(f"the secret redactor could not be loaded ({exc}); the log is not shown\n")
+        ctx.err.write(f"the secret redactor could not be loaded ({_log_display(exc)}); the log is not shown\n")
         return EXIT_FAILED
     except OSError as exc:
-        ctx.err.write(f"{path} could not be read ({exc.strerror or exc.__class__.__name__})\n")
+        ctx.err.write(f"{_log_display(selected, 200, keep_tail=True)} could not be read "
+                      f"({_log_display(exc.strerror or exc.__class__.__name__)})\n")
         return EXIT_FAILED
     for entry in tail["entries"]:
         ctx.say(entry["text"])
     if tail["truncated"] and len(tail["entries"]) < ns.lines:
-        ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of {path} were read)\n")
+        ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of "
+                      f"{_log_display(selected, 200, keep_tail=True)} were read)\n")
     return EXIT_OK
 
 
 def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
+    if ns.action == "config":
+        return _skill_switch_config(ctx, client)
     if ns.action == "list":
         reply = client.get("/skills")
         skills = reply.get("skills") if isinstance(reply, dict) else None
@@ -1622,6 +1714,12 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.json:
         ctx.dump(reply)
         return EXIT_OK
+    if isinstance(reply, dict) and reply.get("status") == "pending":
+        ctx.say(f"pending owner approval: task {reply.get('task_id')} · "
+                f"{', '.join(reply.get('pending') or [])}")
+        for name in reply.get("off_everywhere") or []:
+            ctx.say(f"{name}: still off everywhere after a channel-only approval")
+        return EXIT_OK
     changed = reply.get("changed") or [] if isinstance(reply, dict) else []
     where = f"on {ns.channel}" if ns.channel else "everywhere"
     if changed:
@@ -1636,6 +1734,83 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"{name}: essential, stays on")
     if changed and isinstance(reply, dict) and not reply.get("audited"):
         ctx.say("note: the intent log could not record this switch")
+    return EXIT_OK
+
+
+def _skill_switch_config(ctx: Context, client: HubClient) -> int:
+    """A literal terminal picker using the same owner route as the HUD."""
+    if not callable(getattr(ctx.inp, "isatty", None)) or not ctx.inp.isatty():
+        ctx.err.write("skills config requires an interactive terminal\n")
+        return EXIT_USAGE
+    reply = client.get("/skills")
+    skills = reply.get("skills") if isinstance(reply, dict) else None
+    if not isinstance(skills, dict):
+        ctx.err.write("skill list unavailable\n")
+        return EXIT_FAILED
+    choices = [("skill", name) for name in sorted(skills, key=str.casefold)]
+    categories = sorted({row.get("category") for row in skills.values()
+                         if isinstance(row, dict) and isinstance(row.get("category"), str)
+                         and row.get("category")}, key=str.casefold)
+    choices.extend(("category", name) for name in categories)
+    def where(row: dict) -> str:
+        if row.get("disabled"):
+            return "off everywhere"
+        channels = row.get("disabled_channels")
+        if isinstance(channels, list) and channels:
+            return "off on " + ", ".join(str(item) for item in channels)
+        return "on"
+
+    for number, (kind, name) in enumerate(choices, 1):
+        if kind == "skill":
+            state = where(skills[name] if isinstance(skills[name], dict) else {})
+        else:
+            members = [where(row) for row in skills.values()
+                       if isinstance(row, dict) and row.get("category") == name]
+            state = members[0] if len(set(members)) == 1 else "mixed"
+        ctx.say(f"{number}. {kind}: {name} ({state})")
+    try:
+        ctx.out.write("Choose number (Enter cancels): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        selected = line.strip()
+        if not selected:
+            return EXIT_OK
+        if not selected.isdigit() or not 1 <= int(selected) <= len(choices):
+            ctx.err.write("invalid choice\n")
+            return EXIT_USAGE
+        kind, name = choices[int(selected) - 1]
+        ctx.out.write("Switch on or off (Enter cancels): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        action = line.strip().casefold()
+        if not action:
+            return EXIT_OK
+        if action not in ("on", "off"):
+            ctx.err.write("choose on or off\n")
+            return EXIT_USAGE
+        if action == "off" and kind == "skill" and isinstance(skills[name], dict) and skills[name].get("essential"):
+            ctx.err.write("essential skill stays on\n")
+            return EXIT_FAILED
+        ctx.out.write("Channel (Enter means everywhere): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        channel = line.strip()
+    except (EOFError, KeyboardInterrupt):
+        return EXIT_OK
+    if channel and not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,31}", channel):
+        ctx.err.write("invalid channel\n")
+        return EXIT_USAGE
+    body = {kind: name, "enabled": action == "on"}
+    if channel:
+        body["channel"] = channel
+    result = client.post("/api/skills/switch", body)
+    if isinstance(result, dict) and result.get("status") == "pending":
+        ctx.say(f"pending owner approval: task {result.get('task_id')}")
+    else:
+        ctx.say(f"switched {action}: {', '.join(result.get('changed') or [])}")
     return EXIT_OK
 
 
@@ -1728,19 +1903,109 @@ def _job_cli_options(ns):
             value.pop('enabled_toolsets', None)
         else:
             value['enabled_toolsets'] = [] if ns.toolsets == 'none' else ns.toolsets.split(',')
+    if ns.reasoning_effort is not None:
+        if ns.options is None:
+            raise ValueError('--reasoning-effort requires complete --options')
+        if ns.reasoning_effort == 'default':
+            value.pop('reasoning_effort', None)
+        else:
+            value['reasoning_effort'] = ns.reasoning_effort
+    if ns.continuity is not None:
+        value['continuity'] = ns.continuity
+    if getattr(ns, 'clear_context_from', False):
+        value['context_from'] = []
+    elif ns.context_from is not None:
+        value['context_from'] = ns.context_from
     return value
 
 
 def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
-    if ns.action in ("doctor", "incidents", "tick", "status", "notepad"):
+    def machine(payload: Any) -> None:
+        ctx.out.write(json.dumps(payload, indent=2, ensure_ascii=True, default=str) + "\n")
+
+    if ns.action == "incidents":
+        if ns.operation == "ack":
+            if ns.incident_id is None or ns.incident_id <= 0 or ns.state or ns.job_id or ns.limit is not None:
+                ctx.err.write("ack requires one positive incident ID and no list filters\n")
+                return EXIT_USAGE
+            reply = client.post(f"/api/jobs/incidents/{ns.incident_id}/ack", {})
+            if ns.json:
+                machine(reply)
+            else:
+                ctx.say(f"acknowledged incident {ns.incident_id}; job remains unchanged")
+            return EXIT_OK
+        if ns.incident_id is not None or (ns.limit is not None and not 1 <= ns.limit <= 100):
+            ctx.err.write("list accepts filters and a limit from 1 to 100, not an incident ID\n")
+            return EXIT_USAGE
+        params = {key: value for key, value in (("state", ns.state), ("job_id", ns.job_id),
+                                                ("limit", ns.limit)) if value is not None}
+        reply = client.get("/api/jobs/incidents" + ("?" + urlencode(params) if params else ""))
+        if ns.json:
+            machine(reply)
+        else:
+            for row in reply.get("incidents") or []:
+                ctx.say(f"#{row.get('id')}  {_log_display(row.get('state'), 20)}  "
+                        f"{_log_display(row.get('job_id'), 80)}  {_log_display(row.get('safe_error'), 160)}")
+            if not reply.get("incidents"):
+                ctx.say("no incidents")
+        return EXIT_OK
+    if ns.action == "notepad":
+        job_path = f"/api/jobs/{quote(ns.job_id, safe='')}"
+        if ns.text is not None and (ns.operation != "list" or ns.key is not None or ns.value is not None):
+            ctx.err.write("--text replaces the legacy note and cannot be combined with a key operation\n")
+            return EXIT_USAGE
+        if ns.text is not None:
+            reply = client.request("PUT", job_path + "/notepad", {"text": ns.text})
+        else:
+            path = job_path + "/notepad/keys"
+            if ns.operation == "list":
+                if ns.key is not None or ns.value is not None:
+                    ctx.err.write("notepad list takes no key or value\n")
+                    return EXIT_USAGE
+                entries = client.get(path).get("entries") or []
+                legacy = (client.get(job_path).get("job") or {}).get("notepad") or ""
+                reply = {"entries": entries, "notepad": legacy}
+            elif ns.operation == "get":
+                if ns.key is None or ns.value is not None:
+                    ctx.err.write("notepad get requires one key\n")
+                    return EXIT_USAGE
+                reply = client.get(path + "?" + urlencode({"key": ns.key}))
+            elif ns.operation == "set":
+                if ns.key is None or ns.value is None:
+                    ctx.err.write("notepad set requires a key and value\n")
+                    return EXIT_USAGE
+                reply = client.request("PUT", path, {"key": ns.key, "value": ns.value})
+            else:
+                if ns.key is None or ns.value is not None:
+                    ctx.err.write("notepad delete requires one key\n")
+                    return EXIT_USAGE
+                reply = client.request("DELETE", path + "?" + urlencode({"key": ns.key}))
+        if ns.json:
+            machine(reply)
+        elif ns.operation == "list" and ns.text is None:
+            for row in reply["entries"]:
+                ctx.say(f"{_log_display(row.get('key'), 128)}  {_log_display(row.get('value'), 200)}")
+            if reply["notepad"]:
+                ctx.say(f"previous output: {_log_display(reply['notepad'], 200)}")
+            elif not reply["entries"]:
+                ctx.say("no notes")
+        elif ns.operation == "get" and ns.text is None:
+            value = (reply.get("entry") or {}).get("value")
+            if not isinstance(value, str):
+                ctx.err.write("unexpected note reply from hub\n")
+                return EXIT_FAILED
+            shown = _job_note_display(value)
+            ctx.out.write(shown + ("" if shown.endswith("\n") else "\n"))
+        else:
+            ctx.say("note updated" if ns.operation == "set" or ns.text is not None else "note deleted")
+        return EXIT_OK
+    if ns.action in ("doctor", "tick", "status"):
         if ns.action == "tick":
             reply = client.post("/api/jobs/tick", {})
-        elif ns.action == "notepad" and ns.text is not None:
-            reply = client.request("PUT", f"/api/jobs/{ns.job_id}/notepad", {"text":ns.text})
         elif ns.action == "status" and ns.request:
             reply = client.get(f"/api/jobs/{ns.job_id}/requests/{ns.request}")
-        elif ns.action in ("status", "notepad"):
+        elif ns.action == "status":
             reply = client.get(f"/api/jobs/{ns.job_id}")
         else:
             reply = client.get(f"/api/jobs/{ns.action}")
@@ -1776,7 +2041,9 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "create":
         body: dict[str, Any] = {}
         try:
-            if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
+            if (ns.options is not None or ns.workdir is not None or ns.toolsets is not None
+                    or ns.reasoning_effort is not None
+                    or ns.continuity is not None or ns.context_from is not None):
                 body["options"] = _job_cli_options(ns)
             if ns.media_id and ns.blueprint:
                 raise ValueError("--media-id requires an explicit --action reminder, not a blueprint")
@@ -1819,12 +2086,20 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write("--media-id requires --action to explicitly reauthorize the reminder\n")
             return EXIT_USAGE
         body = {}
-        if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
+        if (ns.options is not None or ns.workdir is not None or ns.toolsets is not None
+                or ns.reasoning_effort is not None):
             try:
                 body["options"] = _job_cli_options(ns)
             except ValueError as exc:
                 ctx.err.write(f"{exc}\n")
                 return EXIT_USAGE
+        else:
+            if ns.continuity is not None:
+                body["continuity"] = ns.continuity
+            if ns.context_from is not None:
+                body["context_from"] = ns.context_from
+            elif ns.clear_context_from:
+                body["context_from"] = []
         if ns.name:
             body["name"] = ns.name
         if ns.when:
@@ -1855,15 +2130,20 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"edited {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
         return EXIT_OK
     if ns.action == "runs":
-        reply = client.get(f"/api/jobs/{ns.job_id}/runs") or {}
+        if ns.limit is not None and not 1 <= ns.limit <= 100:
+            ctx.err.write("run limit must be 1-100\n")
+            return EXIT_USAGE
+        path = (f"/api/jobs/{quote(ns.job_id, safe='')}/runs" if ns.job_id else "/api/jobs/runs")
+        reply = client.get(path + ("?" + urlencode({"limit": ns.limit}) if ns.limit is not None else "")) or {}
         if ns.json:
-            ctx.dump(reply)
+            machine(reply)
             return EXIT_OK
         runs = reply.get("runs") or []
         if not runs:
             ctx.say("no runs yet")
         for run in runs:
-            ctx.say(f"{run.get('started_at')}  {run.get('status'):7s} {run.get('summary', '')[:100]}")
+            ctx.say(f"{_log_display(run.get('job_id'), 80)}  {_log_display(run.get('started_at'), 40)}  "
+                    f"{_log_display(run.get('status'), 20):7s} {_log_display(run.get('summary'), 100)}")
         return EXIT_OK
     if ns.action in ("delete", "remove"):
         reply = client.request("DELETE", f"/api/jobs/{ns.job_id}") or {}
@@ -1896,6 +2176,25 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.dump(reply)
         else:
             ctx.say(f"Created {reply['session_id']}; continue with nerva chat --session {reply['session_id']} MESSAGE")
+        return EXIT_OK
+    if getattr(ns, "session_action", None) == "import":
+        from .client import is_loopback_url
+        from .foreign_sessions import ForeignSourceError, read_file
+
+        if not is_loopback_url(hub_url(ctx.environ)):
+            ctx.err.write("foreign transcripts can only be imported to a local hub\n")
+            return EXIT_AUTH
+        try:
+            parsed = read_file(ns.foreign_source, ns.path)
+        except ForeignSourceError as exc:
+            ctx.err.write(f"{exc}\n")
+            return EXIT_FAILED
+        import uuid
+        reply = ctx.client().post("/sessions/import", {**parsed, "request_id": str(uuid.uuid4())})
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            ctx.say(f"Imported {reply['session_id']}; resume with nerva chat -r {reply['session_id']} MESSAGE")
         return EXIT_OK
     reply = ctx.client().get("/sessions")
     sessions = (reply or {}).get("sessions") or []
@@ -2075,9 +2374,9 @@ def _not_an_answer(answer: str) -> str | None:
     exactly the Hermes behaviour this verb exists to invert.
 
     Containment survives the wrapper. It does NOT survive the other synthesis branch,
-    where `jarvis.synthesize` re-writes the text through a model — nothing in a reply
-    string can survive that, which is why the hub reporting `pending_approvals` is the
-    real fix and why this row stays partial until that lands. The trade is deliberate:
+    where `jarvis.synthesize` re-writes the text through a model. The hub's source-assigned
+    ``runtime_stops`` and ``pending_approvals`` fields cover those paths; this table is
+    the fallback for older hubs. The trade is deliberate:
     a model that quotes one of these sentences verbatim makes the verb exit non-zero
     with a stated reason, which is the safe direction to be wrong in.
     """
@@ -2169,10 +2468,9 @@ def _elapsed_ms(started: str, finished: str) -> int | None:
 def _usage_report(**fields: Any) -> dict[str, Any]:
     """The run report, with `null` wherever the value was not actually obtained.
 
-    Never 0 for "unknown": a spend report that prints $0.00 because nobody measured is
-    the exact lie this file exists to avoid. `cost_basis` says which it is, and today it
-    is always "unavailable" — see the H002 row's remainder for why the hub cannot yet
-    attribute one turn's spend.
+    Never 0 for "unknown": a spend report that prints $0.00 because nobody measured
+    is the exact lie this file exists to avoid. A validated server snapshot can fill
+    these fields; a missing or malformed one leaves the original null values.
     """
     report: dict[str, Any] = {
         "schema": "nerva.chat.usage.v1",
@@ -2181,11 +2479,123 @@ def _usage_report(**fields: Any) -> dict[str, Any]:
         "session_id": None, "requested_session_id": None,
         "agent": None, "model": None, "provider": None,
         "api_calls": None, "input_tokens": None, "output_tokens": None,
-        "estimated_cost_usd": None, "cost_basis": "unavailable",
+        "estimated_cost_usd": None, "usage_basis": "unavailable", "cost_basis": "unavailable",
+        "runtime_stops": [],
         "pending_approvals": [], "reason": None,
     }
     report.update(fields)
     return report
+
+
+def _validated_turn_usage(value: Any) -> dict[str, Any] | None:
+    """Copy only the bounded, internally consistent v1 telemetry object.
+
+    The CLI cannot infer spend from prose, a model display name, or a legacy hub.
+    Treat any malformed field as an unavailable snapshot instead of writing a
+    plausible looking partial bill to the atomic receipt.
+    """
+    import math
+
+    if not isinstance(value, dict) or value.get("schema") != "nerva.turn.usage.v1":
+        return None
+    usage_bases = {"measured_zero", "provider_complete", "unknown"}
+    cost_bases = {"measured_zero", "local_zero", "price_table", "unknown"}
+
+    def count(item: Any, limit: int) -> bool:
+        return item is None or (type(item) is int and 0 <= item <= limit)
+
+    def cost(item: Any) -> bool:
+        return item is None or (type(item) in (int, float) and 0 <= item <= 1_000_000_000
+                                and math.isfinite(item))
+
+    def identity(item: Any, limit: int) -> bool:
+        return item is None or (isinstance(item, str) and 0 < len(item) <= limit
+                                and re.fullmatch(r"[A-Za-z0-9._/+:-]+", item) is not None
+                                and "://" not in item)
+
+    def row(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        if not {"api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+                "model", "provider", "usage_basis", "cost_basis"} <= item.keys():
+            return False
+        calls, inp, out = (item.get(key) for key in ("api_calls", "input_tokens", "output_tokens"))
+        amount = item.get("estimated_cost_usd")
+        usage, basis = item.get("usage_basis"), item.get("cost_basis")
+        if not (count(calls, 1_000_000) and count(inp, 1_000_000_000_000)
+                and count(out, 1_000_000_000_000) and cost(amount)
+                and identity(item.get("model"), 120) and identity(item.get("provider"), 64)
+                and isinstance(usage, str) and usage in usage_bases
+                and isinstance(basis, str) and basis in cost_bases):
+            return False
+        if usage == "measured_zero":
+            return (calls == inp == out == 0 and amount == 0 and basis == "measured_zero"
+                    and item.get("model") is None and item.get("provider") is None)
+        if usage == "provider_complete" and (calls is None or calls < 1 or inp is None or out is None):
+            return False
+        if usage == "unknown" and (inp is not None or out is not None):
+            return False
+        if basis == "unknown":
+            return amount is None
+        if basis == "local_zero":
+            return usage == "provider_complete" and amount == 0
+        if basis == "price_table":
+            return usage == "provider_complete" and amount is not None
+        return False
+
+    if not row(value):
+        return None
+    breakdown = value.get("breakdown")
+    if not isinstance(breakdown, list) or len(breakdown) > 16 or not all(row(entry) for entry in breakdown):
+        return None
+    if value.get("usage_basis") == "measured_zero" and breakdown:
+        return None
+    truncated = value.get("breakdown_truncated", False)
+    if type(truncated) is not bool:
+        return None
+    date = value.get("price_verified_at")
+    if (value.get("cost_basis") == "price_table") != (date is not None):
+        return None
+    if date is not None:
+        from datetime import date as calendar_date
+
+        if not isinstance(date, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) is None:
+            return None
+        try:
+            calendar_date.fromisoformat(date)
+        except ValueError:
+            return None
+    fields = {key: value[key] for key in (
+        "api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+        "model", "provider", "usage_basis", "cost_basis",
+    )}
+    fields["breakdown"] = [{key: entry.get(key) for key in (
+        "api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+        "model", "provider", "usage_basis", "cost_basis",
+    )} for entry in breakdown]
+    if "breakdown_truncated" in value:
+        fields["breakdown_truncated"] = truncated
+    if date is not None:
+        fields["price_verified_at"] = date
+    return fields
+
+
+# Keep this stdlib-only CLI list aligned with agents.core.turn_stops.STOP_REASONS.
+TURN_STOP_REASONS = frozenset({
+    "window_invalid", "context_refused", "turn_revoked", "replay_refused",
+    "tool_call_limit", "no_capability", "no_tools", "tools_withdrawn",
+    "guardian_denied", "repeated_call", "approval_required", "failing_tool",
+    "iteration_limit", "deadline", "thinking_exhausted", "generation_failed",
+    "generation_refused", "continuation_refused",
+})
+
+
+def _validated_runtime_stops(value: Any) -> list[str] | None:
+    if (not isinstance(value, list) or len(value) > len(TURN_STOP_REASONS)
+            or any(type(reason) is not str or reason not in TURN_STOP_REASONS for reason in value)
+            or value != sorted(set(value))):
+        return None
+    return list(value)
 
 
 def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
@@ -2246,9 +2656,17 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     # A request names intent; only a decoded /chat response can establish the session
     # actually used. The vision branch and every pre-response failure leave this unknown.
     observed_session_id: str | None = None
+    observed_usage: dict[str, Any] | None = None
+    observed_stops: list[str] = []
+    observed_pending: list[Any] = []
+    stops_unreadable = False
+    interrupted_receipt_written = False
 
     def finish(code: int, *, status: str, reason: str | None = None,
                pending: list[Any] | None = None, completed: bool | None = None) -> int:
+        nonlocal interrupted_receipt_written
+        if code == EXIT_INTERRUPTED and interrupted_receipt_written:
+            return code
         if usage_file:
             finished = _utc_now()
             _write_usage(usage_file, _usage_report(
@@ -2264,113 +2682,168 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
                 session_id=observed_session_id,
                 requested_session_id=getattr(ns, "session", None) or None,
                 agent=getattr(ns, "agent", None) or None,
+                runtime_stops=list(observed_stops),
                 pending_approvals=list(pending or []), reason=reason,
+                **(observed_usage or {}),
             ), ctx)
+        if code == EXIT_INTERRUPTED:
+            interrupted_receipt_written = True
         return code
 
-    if oneshot and ns.json:
-        ctx.err.write("-z and --json both own stdout; pick one\n")
-        return finish(EXIT_USAGE, status="usage", reason="-z and --json are mutually exclusive")
-    message, why = _send_body(ns, ctx, verb="nerva chat", bound=CHAT_MAX_CHARS)
-    if message is None:
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
-    if len(message) > CHAT_MAX_CHARS:
-        # _send_body bounds what it *reads* from a file or stdin; an argument arrives
-        # whole. `ChatRequest.message` is max_length=4096, so the hub would answer 422 —
-        # which a script reads as "the turn failed". It is a usage error, and it is one
-        # before the request rather than after it.
-        why = (f"the prompt is {len(message):,} characters, and one chat turn carries up to "
-               f"{CHAT_MAX_CHARS:,} — trim it, or split the turn")
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
+    def perform() -> int:
+        nonlocal observed_session_id, observed_usage, observed_stops, observed_pending, stops_unreadable
+        if oneshot and ns.json:
+            ctx.err.write("-z and --json both own stdout; pick one\n")
+            return finish(EXIT_USAGE, status="usage", reason="-z and --json are mutually exclusive")
+        message, why = _send_body(ns, ctx, verb="nerva chat", bound=CHAT_MAX_CHARS)
+        if message is None:
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+        if len(message) > CHAT_MAX_CHARS:
+            # _send_body bounds what it *reads* from a file or stdin; an argument arrives
+            # whole. `ChatRequest.message` is max_length=4096, so the hub would answer 422 —
+            # which a script reads as "the turn failed". It is a usage error, and it is one
+            # before the request rather than after it.
+            why = (f"the prompt is {len(message):,} characters, and one chat turn carries up to "
+                   f"{CHAT_MAX_CHARS:,} — trim it, or split the turn")
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
 
-    if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
-        return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
-    if getattr(ns, "remote_vision", None) is not None:
-        why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
-    if getattr(ns, "acknowledge_training", False) or getattr(ns, "confirm_expensive", False):
-        why = "selection confirmation flags on chat apply only to an image turn (--image or --clipboard-image)"
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
+        selected_session = getattr(ns, "session", None)
+        selector = getattr(ns, "resume", None)
+        latest_mode = bool(getattr(ns, "continue_latest", False))
+        if selector or latest_mode:
+            from .foreign_sessions import ForeignSourceError
+            try:
+                if selector and selector.startswith(("@claude", "@codex")):
+                    from .client import is_loopback_url
+                    from .foreign_sessions import discover, read_file
 
-    body: dict[str, Any] = {"message": message}
-    if ns.agent:
-        body["agent"] = ns.agent
-    if getattr(ns, "reasoning", None) is not None:
-        body["reasoning"] = ns.reasoning
-    if getattr(ns, "session", None):
-        body["session_id"] = ns.session
+                    if not is_loopback_url(hub_url(ctx.environ)):
+                        raise ForeignSourceError("foreign transcripts can only be imported to a local hub")
+                    source, _, external_id = selector[1:].partition(":")
+                    if source not in {"claude", "codex"}:
+                        raise ForeignSourceError("invalid foreign selector")
+                    parsed = read_file(source, discover(source, external_id or None))
+                    import uuid
+                    imported = ctx.client().post("/sessions/import", {**parsed, "request_id": str(uuid.uuid4())})
+                    selector = imported["session_id"]
+                resolved = ctx.client().post("/sessions/resolve", {
+                    "selector": selector or "latest", "latest_mode": latest_mode})
+                selected_session = resolved["session_id"]
+                recap = resolved.get("recap")
+                if recap:
+                    ctx.err.write(str(recap.get("text", "") if isinstance(recap, dict) else recap).rstrip() + "\n")
+            except ForeignSourceError as exc:
+                ctx.err.write(f"{exc}\n")
+                return finish(EXIT_FAILED, status="failed", reason=str(exc))
+            except HubError as exc:
+                ctx.err.write(f"{exc}\n")
+                return finish(EXIT_AUTH if exc.status in {401, 403} else EXIT_FAILED,
+                              status="unauthorised" if exc.status in {401, 403} else "failed", reason=str(exc))
+        if selected_session:
+            ns.session = selected_session
+
+        if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
+            return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
+        if getattr(ns, "remote_vision", None) is not None:
+            why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+        if getattr(ns, "acknowledge_training", False) or getattr(ns, "confirm_expensive", False):
+            why = "selection confirmation flags on chat apply only to an image turn (--image or --clipboard-image)"
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+
+        body: dict[str, Any] = {"message": message}
+        if ns.agent:
+            body["agent"] = ns.agent
+        if getattr(ns, "reasoning", None) is not None:
+            body["reasoning"] = ns.reasoning
+        if selected_session:
+            body["session_id"] = selected_session
+        try:
+            reply = ctx.client().post("/chat", body)
+        except HubUnavailable:
+            finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
+            raise
+        except HubError as exc:
+            observed_usage = _validated_turn_usage(getattr(exc, "usage", None))
+            if getattr(exc, "runtime_stops", None) is not None:
+                parsed_stops = _validated_runtime_stops(exc.runtime_stops)
+                stops_unreadable = parsed_stops is None
+                observed_stops = parsed_stops or []
+            status = "unauthorised" if exc.status in (401, 403) else "failed"
+            finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
+                   status=status, reason=("the hub returned invalid runtime-stop metadata"
+                                          if stops_unreadable else str(exc)))
+            raise
+
+        if isinstance(reply, dict):
+            observed_usage = _validated_turn_usage(reply.get("usage"))
+            if "runtime_stops" in reply:
+                parsed_stops = _validated_runtime_stops(reply["runtime_stops"])
+                stops_unreadable = parsed_stops is None
+                observed_stops = parsed_stops or []
+            returned_session = reply.get("session_id")
+            if isinstance(returned_session, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", returned_session):
+                observed_session_id = returned_session
+
+        raw = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
+        # Sanitise BEFORE judging, not after. The verdict used to read the raw reply while
+        # the printer read the cleaned one, so a reply made only of control characters was
+        # "not empty" to the guard and an empty line to stdout — exit 0 over nothing — and
+        # a sentinel padded with control bytes slipped the table entirely.
+        answer = _answer_text(raw)
+        # A hub that reports what the turn queued (ChatResponse.pending_approvals) lets this
+        # name the ids; an older one does not, and then the refusal is reported without them.
+        pending, pending_unreadable = _pending_ids(
+            (reply or {}).get("pending_approvals") if isinstance(reply, dict) else None)
+        observed_pending = list(pending)
+        refusal = _not_an_answer(answer)
+        queued = bool(pending or pending_unreadable or "approval_required" in observed_stops
+                      or (refusal and "approval" in refusal))
+        incomplete = bool(refusal or queued or not answer.strip() or observed_stops or stops_unreadable)
+        stop_reason = ("the hub returned invalid runtime-stop metadata" if stops_unreadable else
+                       f"model turn stopped: {', '.join(observed_stops)}" if observed_stops else None)
+
+        if not oneshot:
+            # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
+            # that need the verdict use -z; changing this would break every existing caller.
+            # The receipt is new surface, so it is allowed to say what the exit code cannot.
+            if ns.json:
+                ctx.dump(reply)
+            else:
+                ctx.say(str(raw))
+            status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
+            return finish(EXIT_OK, status=status, reason=stop_reason or refusal, pending=pending,
+                          completed=not incomplete)
+
+        if incomplete:
+            reason = stop_reason or refusal or ("the turn queued an action for approval and was not executed"
+                                 if queued else "the hub returned an empty answer")
+            if pending:
+                ids = ", ".join(_plain(i, 40) for i in pending)
+                reason = f"{reason} (approval {ids})"
+                ctx.err.write(f"{reason}; decide it with `nerva approvals`\n")
+            elif pending_unreadable:
+                ctx.err.write(f"{reason}; this hub reported the approval in a shape this "
+                              "version cannot read — run `nerva approvals` to find it\n")
+            elif queued:
+                ctx.err.write(f"{reason}; this hub did not report the id — run `nerva approvals` to find it\n")
+            else:
+                ctx.err.write(f"{reason}\n")
+            status = "queued_for_approval" if queued else "refused"
+            return finish(EXIT_FAILED, status=status, reason=reason, pending=pending)
+
+        _write_answer(ctx, answer)
+        return finish(EXIT_OK, status="completed", pending=pending)
+
     try:
-        reply = ctx.client().post("/chat", body)
+        return perform()
     except KeyboardInterrupt:
-        # The receipt is promised on every path, and an interrupt is the path a cron
-        # wrapper most needs one for — it is what a timeout kill looks like from in
-        # here. main() still prints the one line and returns 130; this only makes sure
-        # the run leaves a record behind saying so.
-        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted", pending=observed_pending)
         raise
-    except HubUnavailable:
-        finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
-        raise
-    except HubError as exc:
-        status = "unauthorised" if exc.status in (401, 403) else "failed"
-        finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
-               status=status, reason=str(exc))
-        raise
-
-    if isinstance(reply, dict):
-        returned_session = reply.get("session_id")
-        if isinstance(returned_session, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", returned_session):
-            observed_session_id = returned_session
-
-    raw = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
-    # Sanitise BEFORE judging, not after. The verdict used to read the raw reply while
-    # the printer read the cleaned one, so a reply made only of control characters was
-    # "not empty" to the guard and an empty line to stdout — exit 0 over nothing — and
-    # a sentinel padded with control bytes slipped the table entirely.
-    answer = _answer_text(raw)
-    # A hub that reports what the turn queued (ChatResponse.pending_approvals) lets this
-    # name the ids; an older one does not, and then the refusal is reported without them.
-    pending, pending_unreadable = _pending_ids(
-        (reply or {}).get("pending_approvals") if isinstance(reply, dict) else None)
-    refusal = _not_an_answer(answer)
-    queued = bool(pending or pending_unreadable or (refusal and "approval" in refusal))
-    incomplete = bool(refusal or queued or not answer.strip())
-
-    if not oneshot:
-        # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
-        # that need the verdict use -z; changing this would break every existing caller.
-        # The receipt is new surface, so it is allowed to say what the exit code cannot.
-        if ns.json:
-            ctx.dump(reply)
-        else:
-            ctx.say(str(raw))
-        status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
-        return finish(EXIT_OK, status=status, reason=refusal, pending=pending,
-                      completed=not incomplete)
-
-    if incomplete:
-        reason = refusal or ("the turn queued an action for approval and was not executed"
-                             if queued else "the hub returned an empty answer")
-        if pending:
-            ids = ", ".join(_plain(i, 40) for i in pending)
-            reason = f"{reason} (approval {ids})"
-            ctx.err.write(f"{reason}; decide it with `nerva approvals`\n")
-        elif pending_unreadable:
-            ctx.err.write(f"{reason}; this hub reported the approval in a shape this "
-                          "version cannot read — run `nerva approvals` to find it\n")
-        elif queued:
-            ctx.err.write(f"{reason}; this hub did not report the id — run `nerva approvals` to find it\n")
-        else:
-            ctx.err.write(f"{reason}\n")
-        status = "queued_for_approval" if queued else "refused"
-        return finish(EXIT_FAILED, status=status, reason=reason, pending=pending)
-
-    _write_answer(ctx, answer)
-    return finish(EXIT_OK, status="completed", pending=pending)
 
 
 #: What one vision turn carries (agents/core/routers/composer_vision.py, the HUD's
@@ -3074,51 +3547,102 @@ def _fish_completion(parser: argparse.ArgumentParser) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _completion_paths(parser: argparse.ArgumentParser) -> dict[tuple[str, ...], tuple[str, ...]]:
+    """Each parser node's exact command path and its immediate child names."""
+    paths = {}
+
+    def walk(node: argparse.ArgumentParser, path: tuple[str, ...]) -> None:
+        children = {
+            name: child
+            for action in node._actions if isinstance(action, argparse._SubParsersAction)
+            for name, child in action.choices.items()
+        }
+        if children:
+            paths[path] = tuple(sorted(children))
+            for name, child in sorted(children.items()):
+                walk(child, (*path, name))
+
+    walk(parser, ())
+    return paths
+
+
+def _shell_candidates(names: tuple[str, ...]) -> str:
+    """An array of literal shell words, never code or a split completion string."""
+    return " ".join(shlex.quote(name) for name in names)
+
+
 def completion_script(shell: str, parser: argparse.ArgumentParser | None = None) -> str:
     if shell not in {"bash", "zsh", "fish"}:
         raise ValueError(f"unsupported completion shell: {shell!r}")
     if shell == "fish":
         return _fish_completion(parser or build_parser())
-    tree = command_tree(parser)
-    verbs = " ".join(sorted(tree))
+    paths = _completion_paths(parser or build_parser())
+    root = _shell_candidates(paths.get((), ()))
     if shell == "bash":
-        cases = "\n".join(
-            f'        {verb}) COMPREPLY=( $(compgen -W "{" ".join(subs)}" -- "$cur") ) ;;'
-            for verb, subs in sorted(tree.items())
-            if subs
+        lines = [
+            '# nerva bash completion — generated from the parser tree; eval "$(nerva completion bash)"',
+            "_nerva() {",
+            '    local cur="${COMP_WORDS[COMP_CWORD]}" candidate',
+            "    local -a candidates=()",
+            "    COMPREPLY=()",
+            "    if (( COMP_CWORD == 1 )); then",
+            f"        candidates=({root})",
+            "    elif (( COMP_CWORD == 2 )); then",
+            '        case "${COMP_WORDS[1]}" in',
+        ]
+        for path, names in sorted(paths.items()):
+            if len(path) == 1:
+                lines.append(f"            {shlex.quote(path[0])}) COMPREPLY=(); candidates=({_shell_candidates(names)}) ;;")
+        lines.append("        esac")
+        for path, names in sorted(paths.items()):
+            if len(path) < 2:
+                continue
+            checks = " && ".join(
+                f'[[ "${{COMP_WORDS[{i}]}}" == {shlex.quote(part)} ]]'
+                for i, part in enumerate(path, 1)
+            )
+            lines.extend([
+                f"    elif (( COMP_CWORD == {len(path) + 1} )) && {checks}; then",
+                f"        candidates=({_shell_candidates(names)})",
+            ])
+        lines.extend([
+            "    fi",
+            '    for candidate in "${candidates[@]}"; do',
+            '        [[ "$candidate" == "$cur"* ]] && COMPREPLY+=("$candidate")',
+            "    done",
+            "}",
+            "complete -F _nerva nerva",
+        ])
+        return "\n".join(lines) + "\n"
+    lines = [
+        "#compdef nerva",
+        "# nerva zsh completion — generated from the parser tree",
+        "_nerva() {",
+        "    local -a candidates=()",
+        "    if (( CURRENT == 2 )); then",
+        f"        candidates=({root})",
+    ]
+    for path, names in sorted(paths.items()):
+        if not path:
+            continue
+        checks = " && ".join(
+            f'[[ "${{words[{i}]}}" == {shlex.quote(part)} ]]'
+            for i, part in enumerate(path, 2)
         )
-        return (
-            "# nerva bash completion — generated from the parser tree; eval \"$(nerva completion bash)\"\n"
-            "_nerva() {\n"
-            '    local cur="${COMP_WORDS[COMP_CWORD]}"\n'
-            "    if [ \"$COMP_CWORD\" -eq 1 ]; then\n"
-            f'        COMPREPLY=( $(compgen -W "{verbs}" -- "$cur") ); return\n'
-            "    fi\n"
-            '    case "${COMP_WORDS[1]}" in\n'
-            f"{cases}\n"
-            "        *) COMPREPLY=() ;;\n"
-            "    esac\n"
-            "}\n"
-            "complete -F _nerva nerva\n"
-        )
-    lines = "\n".join(
-        f"        {verb}) _values 'action' {' '.join(subs)} ;;"
-        for verb, subs in sorted(tree.items())
-        if subs
-    )
-    return (
-        "#compdef nerva\n"
-        "# nerva zsh completion — generated from the parser tree\n"
-        "_nerva() {\n"
-        "    if (( CURRENT == 2 )); then\n"
-        f"        _values 'verb' {verbs}; return\n"
-        "    fi\n"
-        "    case \"${words[2]}\" in\n"
-        f"{lines}\n"
-        "    esac\n"
-        "}\n"
-        "_nerva \"$@\"\n"
-    )
+        lines.extend([
+            f"    elif (( CURRENT == {len(path) + 2} )) && {checks}; then",
+            f"        candidates=({_shell_candidates(names)})",
+        ])
+    lines.extend([
+        "    fi",
+        '    if (( ${#candidates[@]} )); then',
+        '        compadd -- "${candidates[@]}"',
+        '    fi',
+        "    return 0",
+        "}",
+        '_nerva "$@"',
+    ])
+    return "\n".join(lines) + "\n"
 
 
 def cmd_completion(ns: argparse.Namespace, ctx: Context) -> int:

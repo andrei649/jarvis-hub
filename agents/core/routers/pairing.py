@@ -105,7 +105,12 @@ async def pairing_mint_link(body: PairingLinkBody):
     exists; it is safe because the token can only ever pair one sender, once.
     """
     reg = _get_sender_pairing()
-    minted = reg.mint_deeplink(body.channel)
+    from agents.core.install_identity import InstallIdentityUnavailable, UNAVAILABLE_REASON
+
+    try:
+        minted = reg.mint_deeplink(body.channel)
+    except InstallIdentityUnavailable:
+        return nocache_json({"ok": False, "reason": UNAVAILABLE_REASON}, status_code=503)
     username = (body.bot_username or "").strip().lstrip("@")
     url = f"https://t.me/{username}?start={minted['token']}" if username else ""
     return nocache_json({

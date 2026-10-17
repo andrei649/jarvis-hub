@@ -71,10 +71,43 @@ async def test_each_producer_uses_its_own_model_without_changing_active(producer
     assert producer.calls[0][0] == ("stream" if task == "compression" else "generate")
 
 
+async def test_unset_title_model_never_inherits_a_large_active_chat_model(producer):
+    producer.router.active_model = "large-chat-70b"
+    assert await producer.invoke("session_title") == "local answer"
+    assert producer.calls == [("generate", {
+        "model": DEFAULT_LOCAL_MODEL, "system": "title system",
+        "prompt": "private prompt\n/no_think", "max_tokens": 24, "temperature": 0,
+    })]
+    assert producer.router.active_model == "large-chat-70b"
+
+
+async def test_default_title_does_not_read_the_active_chat_model(producer):
+    class Router:
+        local_backend = producer.backend
+        _backend = producer.backend
+
+        @property
+        def active_model(self):
+            pytest.fail("a default title must not inspect the active chat model")
+
+    producer.orch.llm_router = Router()
+    assert await producer.invoke("session_title") == "local answer"
+    assert producer.calls[-1][1]["model"] == DEFAULT_LOCAL_MODEL
+
+
+def test_title_override_is_deliberate_while_other_tasks_keep_active_fallback():
+    env = {TASKS["session_title"]: ""}
+    assert resolve_auxiliary_model("session_title", "large-chat-70b", env=env) == DEFAULT_LOCAL_MODEL
+    assert resolve_auxiliary_model("session_title", "large-chat-70b",
+                                   env={TASKS["session_title"]: "owner-title-model"}) == "owner-title-model"
+    for task in TASKS.keys() - {"session_title"}:
+        assert resolve_auxiliary_model(task, "large-chat-70b", env={}) == "large-chat-70b"
+
+
 @pytest.mark.parametrize("task", TASKS)
-async def test_unset_and_space_only_keep_legacy_selection(producer, monkeypatch, task):
+async def test_unset_and_space_only_use_each_tasks_default_selection(producer, monkeypatch, task):
     assert await producer.invoke(task) == "local answer"
-    assert producer.calls[-1][1]["model"] == "active-local"
+    assert producer.calls[-1][1]["model"] == (DEFAULT_LOCAL_MODEL if task == "session_title" else "active-local")
     monkeypatch.setenv(TASKS[task], "   ")
     producer.router.active_model = None
     await producer.invoke(task)

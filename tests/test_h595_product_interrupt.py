@@ -24,6 +24,7 @@ from agents.core.sandbox import Sandbox
 from agents.core.security.taint import TAINTED_RECALL_ORIGIN
 from agents.core.session_kernels import WORKER_SOURCE, PipeKernelBackend, SessionKernelManager
 from agents.core.tool_rpc import ToolRPCServer
+from tests.h441_native_fixture import bind_native
 
 
 @pytest.mark.asyncio
@@ -46,6 +47,7 @@ async def test_http_new_message_interrupts_registered_code_before_turn_lease(tmp
     orch._turn_lease_max_wait = 1
     orch._runtime_settings = {}
     orch.notes = None
+    bind_native(orch, monkeypatch, session_ids=("h595_http",))
     register_code_tools(
         server, sandbox=lambda: box,
         settings=lambda key, default: {

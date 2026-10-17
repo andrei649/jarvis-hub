@@ -875,7 +875,7 @@ on the router's existing local backend independently of the conversation model:
 
 | Setting | Consumer | Fallback when unset or ASCII-space-only |
 |---|---|---|
-| `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Active local model, then `qwen3:7b` |
+| `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Dedicated `qwen3:7b`; an unavailable model keeps the instant title |
 | `JARVIS_AUX_QUERY_REWRITE_MODEL` | Recall query rewriting | Active local model, then `qwen3:7b` |
 | `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review | Active local model, then `google/gemma-4-31b-a4b` |
 | `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
@@ -1248,3 +1248,26 @@ says nothing about continuity — the fallback is named in the result shape, not
 
 Kernel flag alone ≠ smart home. Both kernel + unified flags = facades live.
 Webhook channels cost no dependency, only configuration discipline.
+
+## H299/H397 result-aware stall policy (2026-10-10 local candidate)
+
+`llm.tool_loop_stall_halt_enabled` is a runtime toggle, default **false**.
+Each new turn reads it: only literal true enables controlled stops after five
+identical failures, eight consecutive failures of one tool, or five unchanged
+successful results. Guidance starts at two exact failures, three same-tool
+failures, two unchanged successes and three identical tool/argument/result
+signatures. Unreadable settings retain guidance only. Changing results continue
+to execute; all calls in a concurrent batch receive a response before a stop.
+
+`process`, `*_poll` and `*_get_result` skip stall guidance and duplicate stubs.
+Owner per-tool caps, approval, wall/iteration/context limits still apply; todo
+retains its full-plan/no-cap/no-stub behavior. Duplicate successful results of at
+least 512 characters use reference stubs with safe argument previews; errors
+retain their content subject to existing context/spill budgets.
+
+Constructor compatibility: `repeat_limit=0` disables identical/no-progress
+tracks; positive values set the identical warning threshold. `failure_limit=0`
+disables both failure tracks; a positive value overrides only the same-tool
+halt threshold. The default `None` selects eight, independently of the exact
+failure threshold of five. The owner toggle is separate from these detector
+settings and grants no tool authority.

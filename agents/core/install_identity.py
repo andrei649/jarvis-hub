@@ -3,7 +3,7 @@
 Hermes names an install once and keeps the name; Nerva had only an analytics id that a
 broken record re-minted. Here:
 
-- **The install id.** One 32-hex opaque id in ``<data root>/install_id``, minted once under
+- **The install id.** One 32-hex opaque id in ``<install root>/install_id``, minted once under
   an in-process lock and a cross-process file lock (``fcntl.flock``, or ``msvcrt.locking``
   on Windows), written atomically (mkstemp, fsync, ``os.replace``, directory fsync) and
   read back before it is returned. :func:`install_id` returns ``None`` — never a fresh or
@@ -16,11 +16,8 @@ broken record re-minted. Here:
   :func:`holds_hub_lock` and :func:`hub_lock_held_elsewhere` (a read-only probe of the pid
   in ``hub.lock`` — it never takes the lock and never creates the data root) let a
   coordinator leave the lifecycle sweep to a running hub.
-- **Profiles.** ``JARVIS_PROFILE=<name>`` (see :func:`agents.core.paths.data_root`) gives
-  each profile its own data root, beside the default one, and with it its own id, lock,
-  settings and secret store (``agents/core/secrets.py`` resolves it under the data root the
-  process starts with). The ``.env`` files are not per profile: every profile reads the
-  repo's and the data home's.
+- **Profiles.** ``JARVIS_PROFILE=<name>`` gives each profile its own data root, hub lock,
+  settings and credentials while all profiles share the unprofiled install id.
 """
 from __future__ import annotations
 
@@ -28,6 +25,7 @@ import logging
 import os
 import re
 import secrets
+import stat
 import tempfile
 import threading
 from pathlib import Path
@@ -47,6 +45,21 @@ _lock = threading.Lock()
 _cache: dict[str, str] = {}
 _hub_handle = None
 
+UNAVAILABLE_REASON = "install_identity_unavailable"
+UNAVAILABLE_MESSAGE = (
+    "install identity unavailable; inspect install_id in the install root and direct "
+    "profile roots, reconcile conflicting or damaged legacy IDs, then re-pair "
+    "identity-bound devices"
+)
+
+
+class InstallIdentityUnavailable(RuntimeError):
+    """An identity-bound grant or pairing cannot safely be created."""
+
+    def __init__(self) -> None:
+        super().__init__(UNAVAILABLE_MESSAGE)
+        self.reason = UNAVAILABLE_REASON
+
 
 class HubAlreadyRunning(RuntimeError):
     """Another hub holds this data root."""
@@ -57,12 +70,27 @@ class HubAlreadyRunning(RuntimeError):
         self.pid = pid
 
 
-def _root(root: str | Path | None) -> Path:
+def _identity_root(root: str | Path | None) -> Path:
+    if root is not None:
+        return Path(root)
+    from agents.core.paths import install_root
+
+    return install_root()
+
+
+def _hub_root(root: str | Path | None) -> Path:
     if root is not None:
         return Path(root)
     from agents.core.paths import data_root
-
     return data_root()
+
+
+def require_install_id() -> str:
+    """An identity-bound operation must fail before issuing an unscoped credential."""
+    value = install_id()
+    if value is None:
+        raise InstallIdentityUnavailable()
+    return value
 
 
 def _file_lock(handle, *, blocking: bool) -> None:
@@ -70,6 +98,13 @@ def _file_lock(handle, *, blocking: bool) -> None:
     if os.name == "nt":                                    # pragma: no cover - Windows
         import msvcrt
 
+        # Windows cannot lock a byte past EOF. Pad with spaces rather than NULs so
+        # hub.lock's readable PID remains a plain number after strip().
+        handle.seek(0, os.SEEK_END)
+        missing = _NT_LOCK_BYTE + 1 - handle.tell()
+        if missing > 0:
+            handle.write(" " * missing)
+            handle.flush()
         handle.seek(_NT_LOCK_BYTE)
         msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK, 1)
     else:
@@ -93,6 +128,13 @@ def _file_unlock(handle) -> None:
 def _read(path: Path) -> str | None:
     """The stored id, or None when there is none. Raises ValueError for a file that
     exists but holds anything else, and OSError when it cannot be read."""
+    if path.is_symlink():
+        raise ValueError("symlinked id")
+    try:
+        if not stat.S_ISREG(path.stat().st_mode):
+            raise ValueError("not a regular id file")
+    except FileNotFoundError:
+        return None
     try:
         text = path.read_text(encoding="ascii").strip()
     except FileNotFoundError:
@@ -102,6 +144,38 @@ def _read(path: Path) -> str | None:
     if not ID_RE.match(text):
         raise ValueError("not an id")
     return text
+
+
+def _legacy_id(base: Path) -> str | None:
+    """One unambiguous direct-profile ID, while the shared lock is held.
+
+    Never follow a profile directory or ID symlink, and never treat a malformed
+    legacy file as absence. Those conditions need owner reconciliation.
+    """
+    from agents.core.paths import PROFILE_ENV, profile_error
+
+    siblings = base.parent / f"{base.name}-profiles"
+    if not siblings.exists() and not siblings.is_symlink():
+        return None
+    if siblings.is_symlink() or not siblings.is_dir():
+        raise ValueError("unsafe profile root")
+    found: set[str] = set()
+    for profile in siblings.iterdir():
+        if profile_error({PROFILE_ENV: profile.name}) is not None or profile.name == "default":
+            continue
+        if profile.is_symlink():
+            raise ValueError("symlinked profile")
+        if not profile.is_dir():
+            continue
+        legacy = profile / ID_FILE
+        if legacy.is_symlink():
+            raise ValueError("symlinked legacy id")
+        value = _read(legacy)
+        if value is not None:
+            found.add(value)
+        if len(found) > 1:
+            raise ValueError("conflicting legacy ids")
+    return next(iter(found), None)
 
 
 def _fsync_dir(folder: Path) -> None:
@@ -131,7 +205,7 @@ def _write(path: Path, value: str) -> None:
 
 def install_id(root: str | Path | None = None) -> str | None:
     """This install's id, minted on first use; None when it cannot be read or kept."""
-    base = _root(root)
+    base = _identity_root(root)
     key = str(base)
     cached = _cache.get(key)
     if cached is not None:
@@ -147,12 +221,13 @@ def install_id(root: str | Path | None = None) -> str | None:
                     try:
                         value = _read(path)
                         if value is None:
-                            _write(path, secrets.token_hex(16))
+                            prior = _legacy_id(base) if root is None else None
+                            _write(path, prior or secrets.token_hex(16))
                             value = _read(path)            # read back what landed
                     finally:
                         _file_unlock(guard)
         except (OSError, ValueError) as exc:
-            logger.warning("install id unavailable at %s (%s): not minting a new one", path, type(exc).__name__)
+            logger.warning("%s at %s (%s)", UNAVAILABLE_MESSAGE, path, type(exc).__name__)
             return None
         if value is None:                                  # pragma: no cover - a write that vanished
             return None
@@ -165,15 +240,25 @@ def forget_cache() -> None:
     _cache.clear()
 
 
+def _open_hub_lock(path: Path):
+    """Open the existing lock inode for in-place PID updates, without append mode."""
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        return os.fdopen(descriptor, "r+", encoding="ascii")
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def acquire_hub_lock(root: str | Path | None = None):
     """Hold ``hub.lock`` under the data root for this process's life; raise
     :class:`HubAlreadyRunning` when another hub holds it. Idempotent in-process."""
     global _hub_handle
     if _hub_handle is not None:
         return _hub_handle
-    base = _root(root)
+    base = _hub_root(root)
     base.mkdir(parents=True, exist_ok=True)
-    handle = open(base / HUB_LOCK_FILE, "a+", encoding="ascii")   # noqa: SIM115 - held until exit
+    handle = _open_hub_lock(base / HUB_LOCK_FILE)   # held until exit, same inode
     try:
         _file_lock(handle, blocking=False)
     except OSError:
@@ -186,8 +271,12 @@ def acquire_hub_lock(root: str | Path | None = None):
             handle.close()
         raise HubAlreadyRunning(base, pid) from None
     handle.seek(0)
-    handle.truncate()
-    handle.write(str(os.getpid()))
+    # POSIX can shorten the pid file. On Windows byte 64 is locked; truncating
+    # the file below it would remove the very byte whose lock protects this hub.
+    if os.name != "nt":
+        handle.truncate()
+    pid = str(os.getpid())
+    handle.write(pid.ljust(_NT_LOCK_BYTE + 1) if os.name == "nt" else pid)
     handle.flush()
     _hub_handle = handle
     return handle
@@ -233,7 +322,7 @@ def hub_lock_held_elsewhere(root: str | Path | None = None) -> bool:
     if _hub_handle is not None:
         return False
     try:
-        with open(_root(root) / HUB_LOCK_FILE, encoding="ascii") as handle:
+        with open(_hub_root(root) / HUB_LOCK_FILE, encoding="ascii") as handle:
             text = handle.read(32).strip()
     except (OSError, ValueError):
         return False
@@ -256,6 +345,8 @@ def release_hub_lock() -> None:
 
 
 __all__ = [
-    "HUB_LOCK_FILE", "HubAlreadyRunning", "ID_FILE", "LOCK_FILE", "acquire_hub_lock", "forget_cache",
+    "HUB_LOCK_FILE", "HubAlreadyRunning", "ID_FILE", "LOCK_FILE", "InstallIdentityUnavailable",
+    "UNAVAILABLE_MESSAGE", "UNAVAILABLE_REASON", "acquire_hub_lock", "forget_cache",
     "holds_hub_lock", "hub_lock_held_elsewhere", "install_id", "release_hub_lock",
+    "require_install_id",
 ]

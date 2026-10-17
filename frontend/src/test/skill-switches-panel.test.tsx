@@ -52,24 +52,24 @@ describe('SkillSwitchesPanel — H329', () => {
   });
 
   it('switches on one channel only, and turns a skill off there back on', async () => {
-    switchReply = () => reply(200, { ok: true, changed: ['Spotify'], unchanged: [], essential: [], audited: true });
+    switchReply = () => reply(202, { ok: true, status: 'pending', task_id: 42, pending: ['Spotify'] });
     render(<SkillSwitchesPanel />);
     await waitFor(() => expect(screen.getByLabelText('switch off Spotify')).toBeTruthy());
     fireEvent.change(screen.getByLabelText('channel'), { target: { value: 'Telegram' } });
     fireEvent.click(screen.getByLabelText('switch on Spotify'));
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('switched on on telegram · Spotify'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('pending owner approval · task 42 · Spotify'));
     expect(posts()[0].body).toEqual({ skill: 'Spotify', enabled: true, channel: 'telegram' });
   });
 
   it('switches a skill off everywhere back on everywhere, even with a channel typed (review-H329 F3)', async () => {
     body.skills['Weather Intel'].disabled = true;
-    switchReply = () => reply(200, { ok: true, changed: ['Weather Intel'], unchanged: [], essential: [], audited: true });
+    switchReply = () => reply(202, { ok: true, status: 'pending', task_id: 43, pending: ['Weather Intel'] });
     render(<SkillSwitchesPanel />);
     await waitFor(() => expect(screen.getByLabelText('switch on Weather Intel')).toBeTruthy());
     fireEvent.change(screen.getByLabelText('channel'), { target: { value: 'telegram' } });
     expect(screen.getByLabelText('switch on Weather Intel').textContent).toBe('switch on everywhere');
     fireEvent.click(screen.getByLabelText('switch on Weather Intel'));
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('switched on everywhere · Weather Intel'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('pending owner approval · task 43 · Weather Intel'));
     expect(posts()[0].body).toEqual({ skill: 'Weather Intel', enabled: true });
   });
 

@@ -55,13 +55,21 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     "file": ("file_read", "file_list", "file_search", "file_write", "file_delete"),
     "files": ("file_read", "file_list", "file_search", "file_write", "file_delete"),
     "code_execution": ("execute_code",),
+    "coding": ("file_write", "terminal_run", "execute_code"),
+    "computer_use": ("desktop_run",),
     "image_gen": ("image_generate",),
-    "memory": ("memory",),
+    "memory": ("memory", "search_memory"),
     "todo": ("todo",),
     "tts": ("speak",),
     "session_search": ("session_search",),
-    "skills": ("skills_list", "skill_view"),
+    "skills": ("skills_list", "skill_view", "skill_propose"),
     "desktop": ("desktop_plan", "desktop_run"),
+    "kanban": (
+        "kanban_attach", "kanban_attach_url", "kanban_attachments", "kanban_block",
+        "kanban_comment", "kanban_complete", "kanban_create", "kanban_heartbeat",
+        "kanban_link", "kanban_list", "kanban_request_changes", "kanban_request_review",
+        "kanban_show", "kanban_unblock",
+    ),
     "basic": ("echo", "time"),
 }
 _SYS_PLATFORMS = (("darwin", "macos"), ("linux", "linux"), ("win", "windows"))
