@@ -6,7 +6,9 @@
   "description": "Jarvis Hub HUD v2 — Vite + React + TS. Built output is committed to ../agents/web/v2 and served by FastAPI at /v2.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "dev:workspace": "vite -c vite.workspace.config.ts",
+    "build": "vite build && vite build -c vite.workspace.config.ts",
+    "build:workspace": "vite build -c vite.workspace.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
