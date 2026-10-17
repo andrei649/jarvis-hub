@@ -63,11 +63,27 @@ function subscribe(onChange: () => void): () => void {
   };
 }
 
-export function navigate(to: string, opts: { replace?: boolean } = {}): void {
+/** The in-app path of the last `quiet` navigation, until the shell consumes it. */
+let quietPath: string | null = null;
+
+/**
+ * `quiet`: the page is updating its own URL in place (a new conversation got its id, a drawer
+ * opened or closed) — the shell keeps focus where the user is instead of moving it to the
+ * page heading as it does for a real page change.
+ */
+export function navigate(to: string, opts: { replace?: boolean; quiet?: boolean } = {}): void {
   const url = hrefFor(to);
+  quietPath = opts.quiet ? toAppPath(new URL(url, window.location.origin).pathname) : null;
   if (opts.replace) window.history.replaceState(null, '', url);
   else window.history.pushState(null, '', url);
   window.dispatchEvent(new Event(NAVIGATE_EVENT));
+}
+
+/** True when the shell's path change at *path* came from a quiet navigation (read once). */
+export function consumeQuietNavigation(path: string): boolean {
+  const quiet = quietPath !== null && quietPath === path;
+  quietPath = null;
+  return quiet;
 }
 
 /** The current location; `path` starts with "\0" when the URL is not a Workspace page. */

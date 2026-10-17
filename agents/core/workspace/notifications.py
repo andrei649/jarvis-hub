@@ -20,8 +20,15 @@ MAX_LINK = 500
 
 
 def _safe_link(link: str) -> str:
+    """*link* when it is an app-relative path, else ``''``.
+
+    Browsers read ``/\\host`` as ``//host`` and drop tabs and line breaks inside URLs
+    (``/<tab>/host`` → ``//host``), so backslashes, whitespace and control characters are
+    refused along with ``//`` — any of them could turn the link into an external one.
+    """
     link = (link or "").strip()
-    if not link.startswith("/") or link.startswith("//") or len(link) > MAX_LINK:
+    if (not link.startswith("/") or link.startswith("//") or len(link) > MAX_LINK
+            or "\\" in link or any(ch.isspace() or not ch.isprintable() for ch in link)):
         return ""
     return link
 

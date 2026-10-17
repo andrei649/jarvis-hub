@@ -228,3 +228,43 @@ export function RadioCards<V extends string>({ name, legend, value, options, onC
     </fieldset>
   );
 }
+
+export interface PasswordFieldProps extends Omit<TextFieldProps, 'type'> {}
+
+/** A password input with a show/hide toggle (a pressed-state button, keyboard reachable). */
+export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(function PasswordField(
+  { label, hint, error, optional, aside, className, id, 'aria-describedby': extraDescribedBy, ...input },
+  ref,
+) {
+  const { t } = useI18n();
+  const [visible, setVisible] = React.useState(false);
+  return (
+    <FormField label={label} hint={hint} error={error} optional={optional} aside={aside} className={className} id={id}>
+      {(ids) => (
+        <div className="ws-password">
+          <input
+            ref={ref}
+            id={ids.id}
+            type={visible ? 'text' : 'password'}
+            className="ws-input ws-password__input"
+            aria-invalid={ids.invalid || undefined}
+            aria-describedby={[ids.describedBy, extraDescribedBy].filter(Boolean).join(' ') || undefined}
+            spellCheck={false}
+            autoCapitalize="off"
+            {...input}
+          />
+          <button
+            type="button"
+            className="ws-password__toggle"
+            aria-pressed={visible}
+            aria-label={visible ? t('password.hide') : t('password.show')}
+            title={visible ? t('password.hide') : t('password.show')}
+            onClick={() => setVisible((v) => !v)}
+          >
+            <Icon name={visible ? 'eyeOff' : 'eye'} size={18} />
+          </button>
+        </div>
+      )}
+    </FormField>
+  );
+});

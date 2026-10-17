@@ -197,8 +197,4 @@ export function query(params: Record<string, string | number | boolean | null | 
   return text ? `?${text}` : '';
 }
 
-export function isApiError(err: unknown): err is WorkspaceApiError {
-  return err instanceof WorkspaceApiError;
-}
-
 export { isAbort };

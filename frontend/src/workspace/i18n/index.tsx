@@ -22,10 +22,6 @@ export function languageTag(locale: Locale): string {
   return LANGUAGE_TAGS[locale];
 }
 
-export function isLocale(value: unknown): value is Locale {
-  return value === 'ro' || value === 'en';
-}
-
 function interpolate(template: string, vars: Vars | undefined, locale: Locale): string {
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (match, name: string) => {
@@ -52,6 +48,8 @@ export interface Formatters {
   percent(value: number): string;
   date(ts: EpochSeconds): string;
   dateTime(ts: EpochSeconds): string;
+  /** Wall-clock time in an IANA zone (a report's schedule zone); the browser's zone if unknown. */
+  dateTimeIn(ts: EpochSeconds, timeZone: string): string;
   time(ts: EpochSeconds): string;
   relative(ts: EpochSeconds, now?: number): string;
   /** A calendar day `YYYY-MM-DD` (server UTC dates) as a short label, e.g. „17 oct.". */
@@ -76,6 +74,13 @@ export function makeFormatters(locale: Locale): Formatters {
     percent: (value) => new Intl.NumberFormat(tag, { style: 'percent', maximumFractionDigits: 0 }).format(value),
     date: (ts) => dateFmt.format(new Date(ts * 1000)),
     dateTime: (ts) => dateTimeFmt.format(new Date(ts * 1000)),
+    dateTimeIn: (ts, timeZone) => {
+      try {
+        return new Intl.DateTimeFormat(tag, { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(new Date(ts * 1000));
+      } catch {
+        return dateTimeFmt.format(new Date(ts * 1000));
+      }
+    },
     time: (ts) => timeFmt.format(new Date(ts * 1000)),
     relative: (ts, now = Date.now()) => {
       let value = (ts * 1000 - now) / 1000;

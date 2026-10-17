@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import re
 import secrets
 import sqlite3
@@ -24,6 +25,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.core.workspace.errors import WorkspaceError
+
+logger = logging.getLogger("nerva.workspace.identity")
 
 COMPANY = "company"
 SCRYPT_N = 2 ** 15
@@ -93,10 +96,30 @@ def _parse_hash(stored: str) -> tuple[int, int, int, bytes, bytes] | None:
         digest = base64.b64decode(parts[5], validate=True)
     except ValueError:
         return None
-    # Bounds keep a corrupted row from turning one login into a memory bomb.
+    # Bounds keep a corrupted row from turning one login into a memory bomb; parameters
+    # OpenSSL would refuse (over SCRYPT_MAXMEM, or n >= 2**(16r)) count as unreadable.
     if not (1 <= log_n <= 20 and 1 <= r <= 16 and 1 <= p <= 4 and salt and 16 <= len(digest) <= 64):
         return None
-    return 1 << log_n, r, p, salt, digest
+    n = 1 << log_n
+    if log_n >= 16 * r or _scrypt_memory(n, r, p) > SCRYPT_MAXMEM:
+        return None
+    return n, r, p, salt, digest
+
+
+def _scrypt_memory(n: int, r: int, p: int) -> int:
+    """Bytes OpenSSL's scrypt allocates for these parameters (its ``maxmem`` check)."""
+    return 128 * r * (n + 2) + 128 * r * p
+
+
+def _matches(pw: str, parsed: tuple[int, int, int, bytes, bytes]) -> bool:
+    n, r, p, salt, digest = parsed
+    try:
+        computed = _scrypt(pw, salt, n, r, p, len(digest))
+    except ValueError:
+        # OpenSSL refused the stored parameters: a failed login, never a 500.
+        logger.warning("a stored login hash has parameters scrypt refuses")
+        return False
+    return hmac.compare_digest(computed, digest)
 
 
 def _dummy_hash() -> str:
@@ -112,11 +135,9 @@ def verify_password(pw: str, stored: str | None) -> bool:
     if parsed is None:
         dummy = _parse_hash(_dummy_hash())
         if dummy is not None:
-            n, r, p, salt, digest = dummy
-            hmac.compare_digest(_scrypt(pw, salt, n, r, p, len(digest)), digest)
+            _matches(pw, dummy)
         return False
-    n, r, p, salt, digest = parsed
-    return hmac.compare_digest(_scrypt(pw, salt, n, r, p, len(digest)), digest)
+    return _matches(pw, parsed)
 
 
 def _too_common(pw: str) -> bool:

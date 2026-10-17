@@ -1,7 +1,7 @@
 /* In-page tabs (WAI-ARIA tabs with automatic activation): one tab stop for the whole list,
    arrows/Home/End move and select, the panel is labelled by its tab. Route-level sections (the
    admin area) use NavTabs instead — real links, so each section has a URL. */
-import React, { useId, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { Link } from '../router';
 
 export interface TabItem<V extends string> { value: V; label: React.ReactNode; badge?: React.ReactNode }
@@ -58,11 +58,25 @@ export function Tabs<V extends string>({ label, items, value, onChange, children
 
 export interface NavTabItem { to: string; label: React.ReactNode; active: boolean }
 
-/** Section navigation styled as tabs; each entry is a link with `aria-current="page"`. */
+/**
+ * Section navigation styled as tabs; each entry is a link with `aria-current="page"`. On a
+ * narrow screen the row scrolls sideways, so the current section is scrolled into view —
+ * otherwise a phone opened on the last section shows only the first ones.
+ */
 export function NavTabs({ label, items }: { label: string; items: NavTabItem[] }) {
+  const list = useRef<HTMLUListElement>(null);
+  const activeTo = items.find((item) => item.active)?.to;
+  useEffect(() => {
+    const row = list.current;
+    const current = row?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!row || !current) return;
+    const rowBox = row.getBoundingClientRect();
+    const box = current.getBoundingClientRect();
+    row.scrollLeft += box.left - rowBox.left - (rowBox.width - box.width) / 2;
+  }, [activeTo]);
   return (
     <nav aria-label={label} className="ws-navtabs">
-      <ul className="ws-navtabs__list">
+      <ul ref={list} className="ws-navtabs__list">
         {items.map((item) => (
           <li key={item.to}>
             <Link to={item.to} className="ws-navtabs__tab" aria-current={item.active ? 'page' : undefined}>{item.label}</Link>

@@ -11,8 +11,9 @@ lock), so reading the previous hash and inserting the next one cannot interleave
 another writer — in this process or another.
 
 Details never carry passwords, tokens, prompts, answers or document text; a key with
-such a name is dropped (and the drop logged by key name) rather than failing the
-user's action.
+such a name — at any nesting depth, or any key naming a credential such as
+``smtp_password`` — is dropped (and the drop logged by key name) rather than failing
+the user's action.
 """
 
 from __future__ import annotations
@@ -74,14 +75,39 @@ def key_fingerprint(key: bytes | None = None) -> str:
     return hashlib.sha256(key if key is not None else audit_key()).hexdigest()[:16]
 
 
-def _clean_details(details: dict | None, action: str) -> dict:
+#: A key containing one of these names a credential (``smtp_password``, ``api_token`` …).
+_CREDENTIAL_KEY_PARTS = ("password", "token", "secret", "api_key", "apikey")
+
+
+def _forbidden_detail(name: str, value: Any) -> bool:
+    lowered = name.lower()
+    if lowered in FORBIDDEN_DETAIL_KEYS:
+        return True
+    # Flags and counts cannot carry a credential, so ``has_password: true`` and
+    # ``prompt_tokens: 512`` stay readable; text and structures under such a name go.
+    if value is None or isinstance(value, bool | int | float):
+        return False
+    return any(part in lowered for part in _CREDENTIAL_KEY_PARTS)
+
+
+def _clean_value(value: Any, action: str, path: str) -> Any:
+    if isinstance(value, dict):
+        return _clean_details(value, action, path)
+    if isinstance(value, list | tuple):
+        return [_clean_value(item, action, path) for item in value]
+    return value
+
+
+def _clean_details(details: dict | None, action: str, path: str = "") -> dict:
+    """*details* without credential or content keys, at any nesting depth."""
     cleaned: dict[str, Any] = {}
     for name, value in (details or {}).items():
-        if str(name).lower() in FORBIDDEN_DETAIL_KEYS:
+        key = str(name)
+        if _forbidden_detail(key, value):
             logger.warning("audit %s: dropped detail key %r (content never goes to audit)",
-                           action, name)
+                           action, path + key)
             continue
-        cleaned[str(name)] = value
+        cleaned[key] = _clean_value(value, action, f"{path}{key}.")
     return cleaned
 
 

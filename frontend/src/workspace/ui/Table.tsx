@@ -2,8 +2,10 @@
 
    The table scrolls horizontally inside its own frame on narrow screens (the page itself never
    scrolls sideways), and the caption names the table for screen readers even when it is
-   visually hidden. While loading, skeleton rows keep the final height so nothing jumps. */
-import React from 'react';
+   visually hidden. When the frame really overflows it becomes a focusable, labelled region so
+   keyboard users can scroll it too (WCAG 2.1.1); otherwise it adds no extra tab stop. While
+   loading, skeleton rows keep the final height so nothing jumps. */
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Skeleton } from './display';
 
 export interface Column<Row> {
@@ -30,14 +32,37 @@ export interface TableProps<Row> {
   rowClassName?: (row: Row) => string | undefined;
 }
 
+/** True while the element is wider inside than outside; re-measured on resize and content change. */
+function useOverflowX(ref: React.RefObject<HTMLElement | null>, deps: unknown[]): boolean {
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const measure = () => {
+      const node = ref.current;
+      setOverflowing(Boolean(node && node.scrollWidth > node.clientWidth + 1));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+    // `deps` are the table contents: a new row set can change the width.
+  }, deps);
+  return overflowing;
+}
+
 export function Table<Row>({ caption, captionVisible = false, columns, rows, rowKey, loading = false, empty, footer, rowClassName }: TableProps<Row>) {
   const showSkeleton = loading && (!rows || rows.length === 0);
   const showEmpty = !loading && rows !== null && rows.length === 0;
+  const scroller = useRef<HTMLDivElement>(null);
+  const captionId = `t${useId().replace(/:/g, '')}`;
+  const scrollable = useOverflowX(scroller, [rows, loading, columns.length]);
   return (
     <div className="ws-table-frame">
-      <div className="ws-table-scroll">
+      <div
+        ref={scroller}
+        className="ws-table-scroll"
+        {...(scrollable ? { tabIndex: 0, role: 'region', 'aria-labelledby': captionId } : {})}
+      >
         <table className="ws-table" aria-busy={loading || undefined}>
-          <caption className={captionVisible ? 'ws-table__caption' : 'ws-sr-only'}>{caption}</caption>
+          <caption id={captionId} className={captionVisible ? 'ws-table__caption' : 'ws-sr-only'}>{caption}</caption>
           <thead>
             <tr>
               {columns.map((col) => (

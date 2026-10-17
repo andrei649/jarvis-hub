@@ -30,7 +30,16 @@ export interface WorkspaceUser {
   locale: Locale;
   theme: Theme;
   department_ids: number[];
-  permissions?: Record<string, boolean>;
+  permissions?: UserPermissions;
+}
+
+/** Capability flags the server derives from the role; `department_ids` = departments usable now. */
+export interface UserPermissions {
+  admin_console?: boolean;
+  approve?: boolean;
+  decide_admin_approvals?: boolean;
+  upload_company?: boolean;
+  department_ids?: number[];
 }
 
 /** Admin listing rows add login and invite bookkeeping to the user. */
@@ -201,7 +210,9 @@ export interface IssueInviteResponse {
   invite_url: string;
   purpose: InvitePurpose;
   emailed: boolean;
+  /** An error code (e.g. `smtp_not_configured`, `smtp_failed`) when the email was not sent. */
   email_error?: string;
+  expires_at?: EpochSeconds;
 }
 
 export interface DepartmentRequest {
@@ -222,6 +233,7 @@ export interface AuditEntry {
   ts: EpochSeconds;
   actor_user_id: number | null;
   actor_email: string;
+  actor_name?: string | null;
   action: string;
   target_type: string;
   target_id: string;
@@ -275,6 +287,8 @@ export interface UsageDepartmentRow {
 export interface UsageDay { date: string; questions: number; report_runs: number }
 
 export interface UsageStats {
+  days?: number;
+  since?: EpochSeconds;
   totals: UsageTotals;
   per_department: UsageDepartmentRow[];
   daily: UsageDay[];
@@ -299,7 +313,9 @@ export interface ModelTestResult {
   model: string | null;
   locality: Locality | null;
   route: string | null;
+  /** A failure code (model_unavailable, model_timeout, …) with the model `reason` when known. */
   error?: string;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------- email (SMTP)
@@ -330,7 +346,8 @@ export interface SmtpUpdate {
   allowed_domains: string[];
 }
 
-export interface SmtpTestResult { ok: boolean; error?: string }
+/** `error` is a code (smtp_failed, smtp_not_configured, …); `reason` the mail server's cause. */
+export interface SmtpTestResult { ok: boolean; error?: string; reason?: string }
 
 // ---------------------------------------------------------------- documents (S2)
 
@@ -354,6 +371,10 @@ export interface WorkspaceDocument {
   can_delete: boolean;
   can_reindex: boolean;
   can_publish: boolean;
+  /** The department's name (null for company-wide documents stored without one). */
+  department_name?: string | null;
+  /** A request to publish it company-wide is waiting for an admin. */
+  publish_pending?: boolean;
 }
 
 export interface DocumentDetail extends WorkspaceDocument { preview: string }
@@ -413,7 +434,8 @@ export interface ChatStreamEvents {
   sources: { citations: Citation[] };
   token: { t: string };
   done: { assistant_message: ChatMessage };
-  error: { error: string; message?: string };
+  /** `reason` names the model problem for model_unavailable / model_policy_blocked. */
+  error: { error: string; message?: string; reason?: string };
 }
 
 // ---------------------------------------------------------------- reports (S4)
@@ -486,6 +508,9 @@ export interface ReportRunDetail extends ReportRun {
   can_share: boolean;
   can_email: boolean;
   report?: Pick<Report, 'id' | 'name' | 'department_id'>;
+  /** Flat alternatives to `report` that list rows (shared reports) may carry instead. */
+  report_name?: string;
+  department_id?: number;
 }
 
 export interface ReportsResponse { reports: Report[] }
@@ -504,6 +529,8 @@ export interface Approval {
   id: number;
   kind: string;
   department_id: number | null;
+  /** The server's name for the department (also for one the viewer does not belong to). */
+  department_name?: string | null;
   summary: string;
   payload: Record<string, unknown>;
   status: ApprovalStatus;
@@ -521,6 +548,10 @@ export interface Approval {
 }
 
 export interface ApprovalsResponse { items: Approval[]; pending_inbox_count: number }
-export interface EligibleResponse { count: number }
+/**
+ * `smtp_configured` lets a non-admin screen hide an email action that could not be delivered;
+ * `immediate`: the caller is an admin and the kind is admin-decided, so it executes at once.
+ */
+export interface EligibleResponse { count: number; immediate?: boolean; smtp_configured?: boolean }
 export interface ApprovalRequest { kind: string; payload: Record<string, unknown> }
 export interface DecisionRequest { decision: 'approve' | 'reject'; note?: string }

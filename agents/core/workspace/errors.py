@@ -63,21 +63,44 @@ def is_workspace_path(request: Request) -> bool:
     return path == API_PREFIX or path.startswith(API_PREFIX + "/")
 
 
+# pydantic error types → the ``reason`` vocabulary of the workspace's own validators.
+_VALIDATION_REASONS = {
+    "missing": "required",
+    "string_too_long": "too_long",
+    "string_too_short": "too_short",
+    "greater_than": "too_small",
+    "greater_than_equal": "too_small",
+    "less_than": "too_large",
+    "less_than_equal": "too_large",
+    "string_pattern_mismatch": "malformed",
+}
+
+
+def _validation_reason(error_type: str) -> str:
+    if error_type in _VALIDATION_REASONS:
+        return _VALIDATION_REASONS[error_type]
+    return "type" if error_type.endswith(("_parsing", "_type")) else "invalid"
+
+
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """``RequestValidationError`` → ``422 invalid_request`` on workspace paths only.
 
-    The first failing location names the ``field`` (``limit``, ``user_id`` …) so the UI
-    can point at it; elsewhere FastAPI's default handler answers unchanged.
+    The first failing location names the ``field`` (``limit``, ``user_id`` …) and its
+    ``reason`` uses the same words as the body validators of ``http.py``, so the UI
+    handles both alike; elsewhere FastAPI's default handler answers unchanged.
     """
     if not is_workspace_path(request):
         return await request_validation_exception_handler(request, exc)
     errors = exc.errors()
     field = ""
+    reason = "invalid"
     if errors:
         location = [str(part) for part in errors[0].get("loc", ()) if part not in ("body",)]
         field = location[-1] if location else ""
+        reason = _validation_reason(str(errors[0].get("type", "")))
     message = f"invalid value for {field}" if field else "invalid request"
-    return error_response(WorkspaceError("invalid_request", message, 422, field=field))
+    return error_response(WorkspaceError("invalid_request", message, 422, field=field,
+                                         reason=reason))
 
 
 def register_handlers(app: FastAPI) -> None:

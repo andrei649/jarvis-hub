@@ -15,10 +15,16 @@ export function Badge({ tone = 'neutral', children, dot = false, className }: { 
   );
 }
 
-/** A small count pill (unread notifications, pending approvals); hidden when zero. */
+/** A small count pill (unread notifications, pending approvals); hidden when zero. The digits
+    are decorative; `label` ("3 pending") is read instead, as part of the parent control's name. */
 export function CountBadge({ count, label }: { count: number; label: string }) {
   if (count <= 0) return null;
-  return <span className="ws-count" aria-label={label}>{count > 99 ? '99+' : count}</span>;
+  return (
+    <>
+      <span className="ws-count" aria-hidden="true">{count > 99 ? '99+' : count}</span>
+      <span className="ws-sr-only">{label}</span>
+    </>
+  );
 }
 
 const AVATAR_TONES = 6;

@@ -10,3 +10,17 @@ export function focusableWithin(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
     .filter((el) => !el.closest('[inert]') && el.getAttribute('aria-hidden') !== 'true');
 }
+
+/**
+ * After a submit that failed validation (here or on the server), brings the first problem into
+ * view and focus. Long forms in drawers and dialogs otherwise show the message below the fold,
+ * and the person sees "nothing happened". A fieldset-level error (`.has-error`) focuses its
+ * first control.
+ */
+export function focusFirstInvalid(root: HTMLElement | null): void {
+  const target = root?.querySelector<HTMLElement>('[aria-invalid="true"], .has-error');
+  if (!target) return;
+  const control = target.matches('[aria-invalid="true"]') ? target : focusableWithin(target)[0];
+  target.scrollIntoView?.({ block: 'center' });
+  control?.focus({ preventScroll: true });
+}

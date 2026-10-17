@@ -15,6 +15,7 @@ and tabs only.
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -28,9 +29,18 @@ NO_STORE = {"Cache-Control": "no-store"}
 MAX_EMAIL_LEN = 254
 MAX_EMAILS = 20
 MAX_IDS = 50
+#: SQLite's INTEGER range. A larger Python int makes sqlite3 raise OverflowError (a 500)
+#: when bound as a parameter, so every integer the API accepts stays inside it — routers
+#: bound their id path/query parameters with ``le=MAX_ID`` for the same reason.
+MAX_ID = 2 ** 63 - 1
+MIN_INT = -(2 ** 63)
 
-_SINGLE_LINE_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
-_MULTI_LINE_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# C0 and C1 control characters (U+0085 NEL is a C1 line break) plus the Unicode line and
+# paragraph separators: str.splitlines() and many renderers treat all of them as breaks.
+# Lone surrogates (JSON allows "\ud800") are refused too: they cannot be encoded as
+# UTF-8, so SQLite, hashing and email would all raise on them.
+_SINGLE_LINE_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029\ud800-\udfff]")
+_MULTI_LINE_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff]")
 _EMAIL = re.compile(
     r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
@@ -46,6 +56,19 @@ def invalid(field: str, reason: str, message: str = "") -> WorkspaceError:
 def _is_json_content_type(request: Request) -> bool:
     raw = request.headers.get("content-type", "")
     return raw.split(";", 1)[0].strip().lower() == "application/json"
+
+
+def _finite_float(text: str) -> float:
+    """Numbers like ``1e999`` overflow to infinity, which JSON responses cannot carry."""
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError("number out of range")
+    return value
+
+
+def _refuse_constant(name: str) -> float:
+    """``NaN``/``Infinity`` are Python extensions, not JSON."""
+    raise ValueError(f"{name} is not valid JSON")
 
 
 async def read_json(request: Request, *, max_bytes: int = 65536,
@@ -81,8 +104,10 @@ async def read_json(request: Request, *, max_bytes: int = 65536,
     if not _is_json_content_type(request):
         raise WorkspaceError("unsupported_media_type", "send application/json", 415)
     try:
-        data = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
+        data = json.loads(raw.decode("utf-8"), parse_float=_finite_float,
+                          parse_constant=_refuse_constant)
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+        # RecursionError: "[[[[…" nested deeper than the parser's stack, within the cap.
         raise invalid("body", "malformed", "the body is not valid JSON") from exc
     if not isinstance(data, dict):
         raise invalid("body", "not_an_object", "the body must be a JSON object")
@@ -115,7 +140,8 @@ def _clean_text(value: str, key: str, *, max_len: int, min_len: int, strip: bool
                 multiline: bool) -> str:
     text = value.strip() if strip else value
     if multiline:
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = (text.replace("\r\n", "\n").replace("\r", "\n")
+                .replace("\u2028", "\n").replace("\u2029", "\n"))
     pattern = _MULTI_LINE_CONTROL if multiline else _SINGLE_LINE_CONTROL
     if pattern.search(text):
         raise invalid(key, "control_characters")
@@ -152,9 +178,9 @@ def optional_str(d: Mapping[str, Any], key: str, *, max_len: int, min_len: int =
 def _as_int(value: Any, key: str, minimum: int | None, maximum: int | None) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise invalid(key, "type", f"{key} must be an integer")
-    if minimum is not None and value < minimum:
+    if value < (MIN_INT if minimum is None else max(minimum, MIN_INT)):
         raise invalid(key, "too_small")
-    if maximum is not None and value > maximum:
+    if value > (MAX_ID if maximum is None else min(maximum, MAX_ID)):
         raise invalid(key, "too_large")
     return value
 
@@ -231,6 +257,8 @@ def require_id_list(d: Mapping[str, Any], key: str, *, max_items: int = MAX_IDS,
     for item in items:
         if isinstance(item, bool) or not isinstance(item, int) or item < 1:
             raise invalid(key, "type", f"{key} must hold positive integer ids")
+        if item > MAX_ID:
+            raise invalid(key, "too_large", f"{key} holds an id beyond the database range")
         if item not in ids:
             ids.append(item)
     if len(ids) < min_items:

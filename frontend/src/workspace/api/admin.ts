@@ -35,14 +35,37 @@ export const updateDepartment = async (id: number, body: DepartmentRequest): Pro
 export const deleteDepartment = (id: number) => api.del(appUrl(`/api/workspace/admin/departments/${id}`));
 
 export const getOrg = async (): Promise<Org> => unwrap<Org>(await api.get(appUrl('/api/workspace/admin/org')), 'org');
-export const updateOrg = async (body: OrgPatch): Promise<Org> =>
-  unwrap<Org>(await api.patch(appUrl('/api/workspace/admin/org'), body), 'org');
+/** Answers the saved organisation; re-reads it when the server replies without a body. */
+export async function updateOrg(body: OrgPatch): Promise<Org> {
+  const saved = unwrap<Org | undefined>(await api.patch(appUrl('/api/workspace/admin/org'), body), 'org');
+  return saved && typeof saved === 'object' && 'name' in saved ? saved : getOrg();
+}
 
 export const testModel = () => api.post<ModelTestResult>(appUrl('/api/workspace/admin/model/test'), {});
 
-export const getSmtp = async (): Promise<SmtpSettings> => unwrap<SmtpSettings>(await api.get(appUrl('/api/workspace/admin/smtp')), 'smtp');
-export const saveSmtp = async (body: SmtpUpdate): Promise<SmtpSettings> =>
-  unwrap<SmtpSettings>(await api.put(appUrl('/api/workspace/admin/smtp'), body), 'smtp');
+/** Never-configured installs may omit fields; the form always gets a complete object. */
+function normalizeSmtp(raw: Partial<SmtpSettings> | null | undefined): SmtpSettings {
+  const security = raw?.security === 'ssl' || raw?.security === 'none' ? raw.security : 'starttls';
+  return {
+    host: raw?.host ?? '', port: Number(raw?.port) || 0, security, username: raw?.username ?? '',
+    from_address: raw?.from_address ?? '', from_name: raw?.from_name ?? '',
+    allowed_domains: Array.isArray(raw?.allowed_domains) ? raw.allowed_domains : [],
+    has_password: Boolean(raw?.has_password), configured: raw?.configured,
+  };
+}
+
+export const getSmtp = async (): Promise<SmtpSettings> =>
+  normalizeSmtp(unwrap<Partial<SmtpSettings>>(await api.get(appUrl('/api/workspace/admin/smtp')), 'smtp'));
+/** Answers the stored settings (never the password); re-reads them when the reply has no body. */
+export async function saveSmtp(body: SmtpUpdate): Promise<SmtpSettings> {
+  const saved = unwrap<SmtpSettings | undefined>(await api.put(appUrl('/api/workspace/admin/smtp'), body), 'smtp');
+  return saved && typeof saved === 'object' && 'host' in saved ? normalizeSmtp(saved) : getSmtp();
+}
+
+/** SMTP counts as configured once a host and a sender exist (or when the server says so). */
+export function smtpConfigured(settings: SmtpSettings): boolean {
+  return settings.configured ?? Boolean(settings.host && settings.from_address);
+}
 export const testSmtp = (to: string) => api.post<SmtpTestResult>(appUrl('/api/workspace/admin/smtp/test'), { to });
 
 function auditQuery(filters: AuditFilters): string {
