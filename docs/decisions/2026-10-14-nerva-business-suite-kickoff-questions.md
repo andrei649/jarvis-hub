@@ -1,6 +1,15 @@
 # Nerva Business Suite („AI in a box” pentru companii) — întrebările de kickoff
 
-> **Status: DRAFT — așteaptă răspunsurile owner-ului.** Data: 2026-10-14. Nu este o decizie; este
+> **Status: DRAFT — întrebările D1–D7 rămân deschise; pilotul a pornit pe ipoteze declarate.**
+> **Directiva owner-ului, 2026-10-17:** *„avansează, pregătește interfața B2B pentru un pilot, rulează agenți
+> pentru dezvoltarea armonioasă cu verificări astfel încât produsul să fie de nota 9/10 chiar și pentru pilot,
+> toate funcțiile trebuie să funcționeze"*. Construcția urmează contractul
+> [`docs/business/WORKSPACE_PILOT_SPEC.md`](../business/WORKSPACE_PILOT_SPEC.md), care adoptă recomandările de mai jos
+> ca ipoteze: D1 o companie cu mai multe departamente (prima instalare poate fi Digitaholic); D2 software-only, modelul
+> servit de router-ul hub-ului (local OpenAI-compatible sau cloud aprobat), fără hardware; D3 single-tenant cu conturi
+> locale, invitații, sesiuni httpOnly, roluri admin/approver/member pe departamente și SSO prin header de la un
+> reverse proxy de încredere; D4 fără conectori ERP/CRM în această felie — cunoașterea vine din documente încărcate.
+> D5–D7 nu sunt cod și rămân la owner. Data inițială a chestionarului: 2026-10-14. Nu este o decizie; este
 > chestionarul care precede decizia (regula din `AGENTS.md`: scop, non-scopuri, căi probabile, riscuri,
 > *înainte* de orice implementare). Când owner-ul răspunde, răspunsurile intră în acest fișier sub
 > fiecare întrebare și documentul devine decision record; abia apoi se deschid rânduri în `BACKLOG.md`.
