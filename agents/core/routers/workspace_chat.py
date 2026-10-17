@@ -49,7 +49,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Path, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from agents.core.workspace import assistant, audit, auth, db, llm
+from agents.core.workspace import assistant, audit, auth, db, documents, llm
 from agents.core.workspace.assistant import AnswerPlan
 from agents.core.workspace.auth import WsAdmin, WsUser
 from agents.core.workspace.db import Db, tx
@@ -123,16 +123,46 @@ def _citations(raw: str | None) -> list:
     return value if isinstance(value, list) else []
 
 
-def message_json(row: sqlite3.Row) -> dict:
+def _cited_document_id(citation: object) -> int | None:
+    if not isinstance(citation, dict):
+        return None
+    document_id = citation.get("document_id")
+    if isinstance(document_id, int) and not isinstance(document_id, bool):
+        return document_id
+    return None
+
+
+def openable_documents(conn: sqlite3.Connection, user: WorkspaceUser,
+                       rows: list[sqlite3.Row]) -> set[int]:
+    """The documents cited by *rows* that *user* may open now (``documents.visible_ids``).
+
+    An answer keeps the excerpts it was given, but a cited document can be deleted later,
+    or its department can leave the reader's scope; like a report run's, each citation is
+    then judged at read time, so the source drawer offers a link only where it works.
+    """
+    wanted = [document_id for row in rows for citation in _citations(row["citations_json"])
+              if (document_id := _cited_document_id(citation)) is not None]
+    return documents.visible_ids(conn, user, wanted)
+
+
+def message_json(row: sqlite3.Row, openable: set[int] | None = None) -> dict:
     """A message as the API shows it. A pending row no process is producing reads as
-    ``error`` / ``interrupted`` — that is what it is."""
+    ``error`` / ``interrupted`` — that is what it is.
+
+    With *openable* (:func:`openable_documents` for the reader) every citation carries
+    ``can_open``: whether the reader may open its document now.
+    """
     status, error_code = row["status"], row["error_code"]
     if status == "pending" and not _is_live(row):
         status, error_code = "error", "interrupted"
+    citations = _citations(row["citations_json"])
+    if openable is not None:
+        citations = [{**citation, "can_open": _cited_document_id(citation) in openable}
+                     if isinstance(citation, dict) else citation for citation in citations]
     return {
         "id": int(row["id"]), "conversation_id": int(row["conversation_id"]),
         "role": row["role"], "content": row["content"],
-        "citations": _citations(row["citations_json"]), "status": status,
+        "citations": citations, "status": status,
         "error_code": error_code, "model": row["model"], "locality": row["locality"],
         "latency_ms": row["latency_ms"], "feedback": row["feedback"],
         "feedback_note": row["feedback_note"], "created_at": row["created_at"],
@@ -255,7 +285,9 @@ def get_conversation(conversation_id: ConversationId, user: WsUser, conn: Db) ->
         "WHERE m.conversation_id = ? AND c.user_id = ? ORDER BY m.id DESC LIMIT ?",
         (conversation_id, user.id, MAX_MESSAGES + 1)).fetchall()
     truncated = len(rows) > MAX_MESSAGES
-    messages = [message_json(message) for message in reversed(rows[:MAX_MESSAGES])]
+    shown = rows[:MAX_MESSAGES]
+    openable = openable_documents(conn, user, shown)
+    messages = [message_json(message, openable) for message in reversed(shown)]
     return ws_json({"conversation": conversation_json(conn, row), "messages": messages,
                     "truncated": truncated})
 
@@ -452,15 +484,17 @@ def _store_outcome(turn: Turn, *, status: str, content: str = "", citations: lis
                              (db.now(), turn.conversation_id))
         row = conn.execute("SELECT * FROM messages WHERE id = ? AND conversation_id = ? "
                            "AND created_at = ?", identity).fetchone()
+        stored = None if row is None else message_json(
+            row, openable_documents(conn, turn.user, [row]))
     finally:
         conn.close()
         _release(turn)
-    if row is None:
+    if stored is None:
         logger.info("conversation %s was deleted before its answer was stored",
                     turn.conversation_id)
         return _transient_message(turn, status=status, content=content, citations=citations,
                                   error_code=error_code, meta=meta)
-    return message_json(row)
+    return stored
 
 
 def _stored(turn: Turn, error: WorkspaceError | None,
@@ -698,7 +732,8 @@ async def message_feedback(message_id: MessageId, request: Request, user: WsUser
                      ip=auth.client_ip(request),
                      details={"value": value, "has_note": stored_note is not None})
         rated = _message(conn, message_id)
-    return ws_json({"message": message_json(rated)})
+        openable = openable_documents(conn, user, [rated])
+    return ws_json({"message": message_json(rated, openable)})
 
 
 # ── model status ─────────────────────────────────────────────────────────────────────

@@ -9,10 +9,11 @@
 
    Runs only under playwright.workspace.config.ts (the HUD lanes ignore workspace*.spec.ts). */
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   assertNoPageProblems, buildDocuments, checkPage, guard, guardFor, hubLog, pageGet, readMail,
-  SETUP_CODE, SMTP_PORT, waitForMail, type SampleDoc, type SampleKey,
+  RUN_DIR, SETUP_CODE, SMTP_PORT, waitForMail, type SampleDoc, type SampleKey,
 } from './support/workspace-helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -975,6 +976,20 @@ test('repeated wrong passwords end in the same generic throttle message for a re
   const strip = (text: string) => text.replace(/\d+/g, 'N');
   expect(strip(real[5].message)).toBe(strip(unknown[5].message));
   await checkPage(page, 'login-throttled');
+});
+
+test('the company data lives in its own directory, never in the owner\'s file-tool root', async () => {
+  // Spec §3: <data>/business. <data>/workspace is the hub's default root of the owner's file
+  // tools, local terminal and tool-result spills, so nothing of the company's may land there.
+  const home = path.join(RUN_DIR, 'home');
+  const business = path.join(home, 'business');
+  expect(existsSync(path.join(business, 'workspace.db')), 'the database is in business/').toBe(true);
+  expect(readdirSync(path.join(business, 'files')).filter((name) => name.endsWith('.bin')).length).toBeGreaterThan(0);
+  const shared = path.join(home, 'workspace');
+  const company = existsSync(shared)
+    ? readdirSync(shared, { recursive: true }).map(String).filter((name) => /workspace\.db|\.bin$|secrets\.enc|setup-code/.test(name))
+    : [];
+  expect(company, 'company files in the owner\'s workspace/ directory').toEqual([]);
 });
 
 test('the hub log holds no traceback or error from the whole journey', async () => {

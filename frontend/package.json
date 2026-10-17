@@ -14,7 +14,8 @@
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "test": "vitest run",
     "typegen:openapi": "npx --yes openapi-typescript@7.13.0 http://127.0.0.1:8765/openapi.json -o src/api/schema.gen.ts",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:workspace": "playwright test -c playwright.workspace.config.ts"
   },
   "dependencies": {
     "react": "^19.3.0",

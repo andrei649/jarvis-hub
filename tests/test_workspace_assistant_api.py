@@ -209,8 +209,77 @@ def test_asking_answers_with_cited_sources_and_titles_the_conversation(cast):
     assert isinstance(answer["latency_ms"], int)
     assert body["conversation"]["title"] == "Câte zile de concediu de odihnă avem?"
     row = message_row(cast.conn, answer["id"])
-    assert json.loads(row["citations_json"]) == answer["citations"]
+    assert [{**c, "can_open": True} for c in json.loads(row["citations_json"])] == (
+        answer["citations"])
     assert row["route"] == "local"
+
+
+def _store_citations(conn, message_id: int, citations: list[dict]) -> None:
+    with workspace_db.tx(conn):
+        conn.execute("UPDATE messages SET citations_json = ? WHERE id = ?",
+                     (json.dumps(citations, ensure_ascii=False), message_id))
+
+
+def test_citations_say_at_read_time_whether_the_reader_may_open_each_document(cast):
+    """Like a report run's, an answer's citations carry ``can_open`` judged when read: a
+    document deleted since, or one outside the reader's departments, keeps its excerpt but
+    is no longer offered as a link (spec §7 S3, §10 source drawer)."""
+    kept = seed_doc(cast.conn, department_id=cast.company.dept_a, title="Politica de concedii",
+                    text=POLICY_TEXT)
+    company = seed_doc(cast.conn, department_id=None, visibility="company", title="Regulament",
+                       text="Concediul medical se anunță în aceeași zi.")
+    deleted = seed_doc(cast.conn, department_id=cast.company.dept_a, title="Anexă veche",
+                       text="Anexa veche a politicii de concedii.")
+    other = seed_doc(cast.conn, department_id=cast.company.dept_b, title="Buget Financiar",
+                     text="Bugetul departamentului Financiar.")
+    conversation_id = _conversation(cast)
+    answer = ask(cast.client, cast.csrf, conversation_id, "Câte zile de concediu avem?").json()[
+        "assistant_message"]
+    assert answer["citations"] and all(c["can_open"] is True for c in answer["citations"])
+
+    def citation(n: int, document_id: int, title: str) -> dict:
+        return {"n": n, "document_id": document_id, "title": title, "chunk_id": n, "page": None,
+                "excerpt": f"Fragmentul {n}."}
+
+    _store_citations(cast.conn, answer["id"], [
+        citation(1, kept, "Politica de concedii"), citation(2, company, "Regulament"),
+        citation(3, deleted, "Anexă veche"), citation(4, other, "Buget Financiar")])
+    with workspace_db.tx(cast.conn):
+        cast.conn.execute("DELETE FROM documents WHERE id = ?", (deleted,))
+
+    read = cast.client.get(f"/api/workspace/conversations/{conversation_id}").json()
+    stored = [m for m in read["messages"] if m["role"] == "assistant"][0]
+    assert [(c["n"], c["can_open"]) for c in stored["citations"]] == [
+        (1, True), (2, True), (3, False), (4, False)]
+    assert [c["excerpt"] for c in stored["citations"]] == [
+        "Fragmentul 1.", "Fragmentul 2.", "Fragmentul 3.", "Fragmentul 4."]
+    assert "can_open" not in message_row(cast.conn, answer["id"])["citations_json"], (
+        "judged when read, never stored")
+
+    rated = _feedback(cast, answer["id"], {"value": 1}).json()["message"]
+    assert [(c["n"], c["can_open"]) for c in rated["citations"]] == [
+        (1, True), (2, True), (3, False), (4, False)]
+
+    # A document published company-wide since is judged as it is today.
+    with workspace_db.tx(cast.conn):
+        cast.conn.execute("UPDATE documents SET visibility = 'company', department_id = NULL "
+                          "WHERE id = ?", (other,))
+    again = cast.client.get(f"/api/workspace/conversations/{conversation_id}").json()
+    stored = [m for m in again["messages"] if m["role"] == "assistant"][0]
+    assert [(c["n"], c["can_open"]) for c in stored["citations"]] == [
+        (1, True), (2, True), (3, False), (4, True)]
+
+
+def test_a_malformed_citation_is_shown_as_stored_and_never_crashes_the_read(cast):
+    conversation_id = _conversation(cast)
+    answer = ask(cast.client, cast.csrf, conversation_id, "Întrebare").json()["assistant_message"]
+    _store_citations(cast.conn, answer["id"], [
+        {"n": 1, "document_id": True, "title": "bool"}, {"n": 2, "title": "fără id"}, "text"])
+    read = cast.client.get(f"/api/workspace/conversations/{conversation_id}")
+    assert read.status_code == 200
+    stored = [m for m in read.json()["messages"] if m["role"] == "assistant"][0]
+    assert stored["citations"] == [{"n": 1, "document_id": True, "title": "bool", "can_open": False},
+                                   {"n": 2, "title": "fără id", "can_open": False}, "text"]
 
 
 def test_the_model_gets_the_departments_instructions_sources_and_the_org_policy(cast):

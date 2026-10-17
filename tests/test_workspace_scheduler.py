@@ -11,6 +11,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -304,3 +307,123 @@ async def test_background_start_respects_the_flag_and_stop_interrupts_runs(conn,
     await scheduler.stop_background()
     assert json.loads(conn.execute("SELECT details_json FROM audit WHERE action = "
                                    "'report.run_failed'").fetchone()[0])["error_code"] == "interrupted"
+
+
+# ── more than one event loop (nested lifespans) ──────────────────────────────────────
+#
+# A second lifespan of the app in the same process (a nested TestClient, an embedding
+# host) runs on its own event loop in its own thread. Its startup must start a scheduler
+# task of its own, and its shutdown must stop only that task and its own report runs —
+# never cancel or await a task of the outer lifespan's loop.
+
+@contextmanager
+def _other_loop() -> Iterator[asyncio.AbstractEventLoop]:
+    """An event loop running in a background thread (the "outer lifespan")."""
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, name="ws-test-other-loop", daemon=True)
+    thread.start()
+    try:
+        yield loop
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        loop.close()
+
+
+async def _on(loop: asyncio.AbstractEventLoop, coroutine):
+    """Run *coroutine* on *loop* (another thread) and wait for it from this loop."""
+    return await asyncio.wait_for(
+        asyncio.wrap_future(asyncio.run_coroutine_threadsafe(coroutine, loop)), timeout=10)
+
+
+async def _start_background() -> None:
+    scheduler.start_background()
+
+
+async def _alive_on(loop: asyncio.AbstractEventLoop) -> bool:
+    current = scheduler._scheduler
+    return current is not None and current.running and loop in current.loops
+
+
+async def test_a_nested_lifespan_starts_its_own_scheduler_and_stops_only_its_own(ws,
+                                                                                monkeypatch):
+    monkeypatch.setenv("NERVA_WORKSPACE_SCHEDULER", "1")
+    monkeypatch.setattr(scheduler.WorkspaceScheduler, "tick",
+                        lambda self, now=None: asyncio.sleep(0))
+    here = asyncio.get_running_loop()
+    with _other_loop() as outer:
+        await _on(outer, _start_background())
+        assert await _on(outer, _alive_on(outer))
+        outer_task = scheduler._scheduler._tasks[outer]
+
+        scheduler.start_background()          # the nested lifespan's startup, on this loop
+        assert scheduler._scheduler.running, "a loop without a task gets one of its own"
+        assert set(scheduler._scheduler.loops) == {outer, here}
+        scheduler.start_background()          # idempotent on the same loop
+        assert len(scheduler._scheduler.loops) == 2
+
+        await scheduler.stop_background()     # the nested lifespan's shutdown
+        assert scheduler._scheduler is not None, "the outer loop still runs it"
+        assert scheduler._scheduler.loops == [outer]
+        assert not outer_task.done(), "the outer loop's scheduler was not touched"
+        assert await _on(outer, _alive_on(outer))
+
+        await _on(outer, scheduler.stop_background())   # the outer lifespan's shutdown
+        assert outer_task.done() and outer_task.cancelled()
+        assert scheduler._scheduler is None
+
+
+async def test_stop_on_a_loop_that_never_started_leaves_the_other_loop_running(ws,
+                                                                               monkeypatch):
+    loop_scheduler = scheduler.WorkspaceScheduler(interval_seconds=3600)
+    monkeypatch.setattr(loop_scheduler, "tick", lambda now=None: asyncio.sleep(0))
+
+    async def start() -> asyncio.Task:
+        loop_scheduler.start()
+        return loop_scheduler._tasks[asyncio.get_running_loop()]
+
+    with _other_loop() as outer:
+        task = await _on(outer, start())
+        assert not loop_scheduler.running, "nothing runs on this loop"
+        await loop_scheduler.stop()           # a no-op here: the task is the outer loop's
+        assert not task.done() and loop_scheduler.loops == [outer]
+        await _on(outer, loop_scheduler.stop())
+        assert task.cancelled() and loop_scheduler.loops == []
+
+
+async def test_cancel_runs_interrupts_only_the_running_loops_runs(conn, cast, clock, monkeypatch):
+    first = _daily(conn, cast, name="Pe bucla exterioară", schedule={"kind": "manual"})
+    second = _daily(conn, cast, name="Pe bucla interioară", schedule={"kind": "manual"})
+    outer_run = reports.start_manual_run(conn, cast.member_a, first)
+    inner_run = reports.start_manual_run(conn, cast.member_a, second)
+
+    async def wait_forever(run_id_):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(reports, "_execute", wait_forever)
+
+    async def spawn_outer() -> asyncio.Task:
+        reports.spawn_run(outer_run)
+        await asyncio.sleep(0)
+        return next(t for t in reports._TASKS if t.get_loop() is asyncio.get_running_loop())
+
+    def status(run_id):
+        return tuple(conn.execute("SELECT status, error_code FROM report_runs WHERE id = ?",
+                                  (run_id,)).fetchone())
+
+    with _other_loop() as outer:
+        outer_task = await _on(outer, spawn_outer())
+        reports.spawn_run(inner_run)
+        await asyncio.sleep(0)
+        assert len(reports._TASKS) == 2
+
+        await reports.cancel_runs()           # the nested lifespan's shutdown
+        assert status(inner_run) == ("failed", "interrupted")
+        assert not outer_task.done(), "a run of the outer loop is not this loop's to cancel"
+        assert status(outer_run)[0] in ("queued", "running")
+        assert list(reports._TASKS) == [outer_task]
+
+        await _on(outer, reports.cancel_runs())
+        assert outer_task.cancelled()
+        assert status(outer_run) == ("failed", "interrupted")
+        assert not reports._TASKS

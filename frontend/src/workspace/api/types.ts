@@ -389,8 +389,10 @@ export interface Citation {
   chunk_id: number;
   page: number | null;
   excerpt: string;
-  /** Report runs only: whether the reader may open the document itself (false for another
-      department's document in a company-shared run, or one deleted since). */
+  /** Whether the reader may open the document itself, judged when the run or the conversation
+      is read (false for another department's document in a company-shared run, or one deleted
+      or moved since). Absent on the live `sources` event, whose passages were just retrieved
+      in the reader's own scope. */
   can_open?: boolean;
 }
 

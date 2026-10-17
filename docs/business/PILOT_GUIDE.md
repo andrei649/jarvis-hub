@@ -271,7 +271,7 @@ secțiunea *Nerva Workspace*):
 | Variabilă | Implicit | Efect |
 |---|---|---|
 | `NERVA_WORKSPACE` | oprit | Citit la fiecare cerere. Oprit: fiecare `/api/workspace/*` răspunde `404 workspace_disabled`, pagina `/workspace` un 404 simplu, iar baza de date nu este creată. |
-| `NERVA_WORKSPACE_SETUP_CODE` | nesetat | Codul pentru configurarea inițială. Nesetat: generat la prima nevoie în `<JARVIS_HOME>/workspace/setup-code.txt` (mod 0600) și șters după configurare. |
+| `NERVA_WORKSPACE_SETUP_CODE` | nesetat | Codul pentru configurarea inițială. Nesetat: generat la prima nevoie în `<JARVIS_HOME>/business/setup-code.txt` (mod 0600) și șters după configurare. |
 | `NERVA_WORKSPACE_COOKIE_SECURE` | `auto` | `1` = cookie-ul de sesiune poartă mereu `Secure`. `auto` = doar când cererea ajunge ca `https`. O valoare nerecunoscută revine la `auto` cu un avertisment în jurnal. |
 | `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 | Cel mai mare fișier acceptat, în MiB, între 1 și 200. |
 | `NERVA_WORKSPACE_SESSION_IDLE_HOURS` | 12 | O sesiune neatinsă atâtea ore expiră (1–168). |
@@ -353,7 +353,7 @@ nerva-run -m agents.core.workspace setup-code
 ```
 
 Comanda afișează codul (din `NERVA_WORKSPACE_SETUP_CODE`, sau îl generează în
-`<JARVIS_HOME>/workspace/setup-code.txt`). Codul nu apare niciodată în jurnale — jurnalul numește
+`<JARVIS_HOME>/business/setup-code.txt`). Codul nu apare niciodată în jurnale — jurnalul numește
 doar fișierul. Comanda refuză cu codul de ieșire 2 dacă `NERVA_WORKSPACE` este oprit, și cu 1 după
 ce configurarea a fost făcută.
 
@@ -434,7 +434,7 @@ Administrare → Email:
 |---|---|
 | Server și port | Gazdă sau IP; portul implicit depinde de securitate: `starttls` 587, `ssl` 465, `none` 25. |
 | Securitate | `starttls` (implicit), `ssl` sau `none`. TLS folosește depozitul de certificate al hub-ului (inclusiv `JARVIS_CA_BUNDLE`). |
-| Utilizator și parolă | Doar caractere ASCII (`422 … reason not_ascii`; biblioteca SMTP din Python nu poate trimite altceva). Parola se păstrează criptat în `<JARVIS_HOME>/workspace/secrets.enc`, nu este returnată niciodată de API (doar `has_password`). |
+| Utilizator și parolă | Doar caractere ASCII (`422 … reason not_ascii`; biblioteca SMTP din Python nu poate trimite altceva). Parola se păstrează criptat în `<JARVIS_HOME>/business/secrets.enc`, nu este returnată niciodată de API (doar `has_password`). |
 | Expeditor | Adresa și numele afișat. |
 | Domenii permise | Opțional, până la 50. Dacă lista nu e goală, fiecare destinatar trebuie să aibă **exact** unul dintre domenii (`sub.firma.ro` nu este acoperit de `firma.ro`) → altfel `422 recipient_not_allowed`. |
 
@@ -576,26 +576,34 @@ peste 90 de zile.
   poate fi verificat, iar verificarea raportează `key_mismatch`. Limita cunoscută: lipsa celor mai
   noi rânduri (trunchierea la coadă) nu este detectabilă fără o ancoră externă. Detaliile de audit
   nu conțin parole, tokenuri, prompturi, răspunsuri sau text din documente.
-- **Secrete:** parola SMTP stă în `<JARVIS_HOME>/workspace/secrets.enc`. **`JARVIS_SECRET_KEY` și
+- **Secrete:** parola SMTP stă în `<JARVIS_HOME>/business/secrets.enc`. **`JARVIS_SECRET_KEY` și
   `JARVIS_BACKUP_KEY` sunt obligatorii pe un pilot:** fără `JARVIS_SECRET_KEY`, cheia secretelor este
   generată în `secrets.enc.key`, chiar lângă ele, în directorul de date; fără `JARVIS_BACKUP_KEY`,
   copiile de siguranță nocturne nu sunt criptate — deci o copie conține și secretele, și cheia lor.
+- **Datele companiei au directorul lor: `<JARVIS_HOME>/business/`** (baza `workspace.db`,
+  originalele `files/`, `secrets.enc`, codul de configurare). Nu îl folosește niciun alt modul al
+  hub-ului — în special **nu** `<JARVIS_HOME>/workspace/`, care este rădăcina implicită a
+  instrumentelor de fișiere (`JARVIS_FILE_ROOTS`), a terminalului local
+  (`JARVIS_TERMINAL_LOCAL_ROOTS`) și a rezultatelor mari ale uneltelor (`workspace/tool_results/`)
+  ale asistentului personal al proprietarului.
 - **„Uită-mă” al hub-ului nu atinge spațiul de lucru:** ștergerea datelor personale ale
-  proprietarului hub-ului păstrează directorul `workspace` (datele companiei nu sunt datele lui).
+  proprietarului hub-ului păstrează directorul `business` (datele companiei nu sunt datele lui) și
+  șterge, ca înainte, directorul `workspace` al proprietarului, cu rezultatele uneltelor lui.
 - **Instrumentele de fișiere și terminalul hub-ului.** Pe serverul pilot lăsați
-  `JARVIS_FILE_TOOLS` și `JARVIS_TERMINAL_LOCAL_HOST` oprite (implicit). Dacă le porniți, setați
-  `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` la un director **în afara**
-  `<JARVIS_HOME>/workspace`: rădăcina lor implicită este chiar acest director, adică baza de date și
-  documentele companiei.
+  `JARVIS_FILE_TOOLS` și `JARVIS_TERMINAL_LOCAL_HOST` oprite (implicit) — spațiul de lucru nu are
+  nevoie de ele. Cu rădăcinile implicite nu ajung la datele companiei. Dacă setați explicit
+  `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS`, **nu** le îndreptați spre directorul de date
+  (`<JARVIS_HOME>`) sau spre `<JARVIS_HOME>/business`: asistentul personal ar putea citi atunci baza
+  de date și documentele companiei.
 - **Ce rămâne în responsabilitatea operatorului:** firewall (doar 80/443 publice), actualizările
   sistemului de operare, accesul SSH, copiile off-site (§14), cheile (§4).
 
 ## 14. Backup și restaurare
 
 **Ce se salvează.** Hub-ul face o copie în fiecare noapte la 03:20 și păstrează ultimele 7, în
-`<JARVIS_HOME>/backups/`. Copia cuprinde tot directorul de date — inclusiv `workspace/workspace.db`
+`<JARVIS_HOME>/backups/`. Copia cuprinde tot directorul de date — inclusiv `business/workspace.db`
 (prin API-ul de backup SQLite, consistent cu serverul pornit), originalele documentelor
-`workspace/files/<id>.bin` și `workspace/secrets.enc`. Cu `JARVIS_BACKUP_KEY` arhiva este criptată
+`business/files/<id>.bin` și `business/secrets.enc`. Cu `JARVIS_BACKUP_KEY` arhiva este criptată
 (`.tar.gz.enc`).
 
 **Ce NU se salvează și trebuie păstrat separat, off-site:** `/etc/jarvis-hub/jarvis.env` (toate
@@ -767,3 +775,5 @@ storage_failed`: discul nu poate fi scris (spațiu, permisiuni).
 - [ ] `nerva-run -m agents.core.backup verify <ultima copie>` răspunde `"ok": true`, iar copiile
       ajung pe alt sistem.
 - [ ] Administrare → Audit → **Verifică lanțul** răspunde `ok`.
+- [ ] `JARVIS_FILE_TOOLS` și `JARVIS_TERMINAL_LOCAL_HOST` sunt oprite, sau rădăcinile lor explicite
+      nu cuprind `<JARVIS_HOME>` ori `<JARVIS_HOME>/business` (§13).

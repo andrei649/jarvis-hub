@@ -2,20 +2,32 @@
    the model was given, and the way to the document itself (its preview in Documents, or the
    original file). The passage is shown as plain text — it is document content, not markup.
 
-   A report run shared company-wide is read outside its department: the server marks each of its
-   citations with `can_open`, and where the reader may not open the document (another
-   department's, or deleted since) the drawer keeps the excerpt and says so instead of offering
-   links that could only answer "not found". */
+   The server marks every citation with `can_open`, judged when the answer or the run is read: a
+   report run shared company-wide is read outside its department, and a document an answer or a
+   run cited can be deleted (or moved) later. Where the reader may not open the document the
+   drawer keeps the excerpt, hides the links that could only answer "not found", and says why in
+   the words of its context (`answer` in the assistant, `report` in a run view). A citation
+   without the flag (the live `sources` event, retrieved in the reader's scope a moment ago) is
+   openable. */
 import React from 'react';
 import { documentFileUrl } from '../../api/documents';
 import type { Citation } from '../../api/types';
-import { useI18n } from '../../i18n';
+import { useI18n, type MessageKey } from '../../i18n';
 import { Drawer, Icon, Notice } from '../../ui';
 import { ButtonLink, DownloadLink } from './ButtonLink';
 
-export function SourceDrawer({ citation, onClose }: { citation: Citation | null; onClose: () => void }) {
+/** Where the cited passage was used: an assistant answer or a report run. */
+export type SourceContext = 'answer' | 'report';
+
+const COPY: Record<SourceContext, { note: MessageKey; notOpenable: MessageKey }> = {
+  answer: { note: 'source.note', notOpenable: 'source.notOpenableAnswer' },
+  report: { note: 'source.noteReport', notOpenable: 'source.notOpenable' },
+};
+
+export function SourceDrawer({ citation, context, onClose }: { citation: Citation | null; context: SourceContext; onClose: () => void }) {
   const { t } = useI18n();
   const openable = citation?.can_open !== false;
+  const copy = COPY[context];
   return (
     <Drawer
       open={citation !== null}
@@ -39,8 +51,8 @@ export function SourceDrawer({ citation, onClose }: { citation: Citation | null;
             <figcaption className="ws-quote__label">{t('source.excerpt')}</figcaption>
             <blockquote className="ws-quote__text">{citation.excerpt}</blockquote>
           </figure>
-          <p className="ws-muted ws-small">{t('source.note')}</p>
-          {!openable && <Notice tone="accent">{t('source.notOpenable')}</Notice>}
+          <p className="ws-muted ws-small">{t(copy.note)}</p>
+          {!openable && <Notice tone="accent">{t(copy.notOpenable)}</Notice>}
         </div>
       )}
     </Drawer>

@@ -104,7 +104,8 @@ def test_sources_list_every_retrieved_passage_and_done_keeps_only_the_cited(cast
     assert {c["title"] for c in sources} == {"Politica de concedii", "Regulament"}
     done = events[-1][1]["assistant_message"]
     assert done["content"].endswith("[1]")
-    assert done["citations"] == [sources[0]]  # numbering exactly as streamed
+    # Numbering exactly as streamed; the stored answer also says the reader may open it.
+    assert done["citations"] == [{**sources[0], "can_open": True}]
     row = message_row(cast.conn, done["id"])
     assert row["status"] == "complete" and json.loads(row["citations_json"]) == [sources[0]]
 

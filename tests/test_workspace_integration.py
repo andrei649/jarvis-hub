@@ -346,7 +346,7 @@ def test_with_the_flag_off_every_workspace_path_is_a_404(ws, monkeypatch):
     for name in _bundle_assets():
         response = client.get(f"/workspace/assets/{name}")
         assert response.status_code == 404 and "Workspace" not in response.text
-    assert not (ws.data_dir / "workspace" / "workspace.db").exists()
+    assert not (ws.data_dir / "business" / "workspace.db").exists()
 
 
 # ── one journey across the real app ──────────────────────────────────────────────────

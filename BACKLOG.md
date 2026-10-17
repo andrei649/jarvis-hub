@@ -75,7 +75,8 @@
 - [x] ✅ **NWS-7 — S6 hub integration and the end-to-end journey.** `agents/web.py` (the six routers plus
   `workspace_ui`, the `/workspace/assets` mount with `font/woff2`, scheduler start/stop in the lifespan, the
   per-IP rate-limit exemption, the workspace error and validation handlers),
-  `agents/core/routers/workspace_ui.py`, `workspace` in `data_purge.KEEP_DIRS`, AUTOINCREMENT on the tables
+  `agents/core/routers/workspace_ui.py`, the workspace directory in `data_purge.KEEP_DIRS` (`business` since
+  NWS-14), AUTOINCREMENT on the tables
   whose ids leave the row, the cloud-only `provider_may_train` rule, the route-auth matrix and parity
   snapshots, the `mobile/PARITY.md` row. The Playwright lane `frontend/playwright.workspace.config.ts` runs
   `frontend/e2e/workspace-journey.spec.ts` (19 serial steps) against the real hub, the fake model server and
@@ -84,7 +85,41 @@
   counted from the audit trail, `can_open` on the citations of a shared run, the shared-reports department
   column, theme and language controls that update at once, badge overflow and split table headers. Final
   gate run: 27,037 backend tests, 2,340 vitest, the journey 19/19, status files regenerated with
-  `scripts/status_sync.py`. The lane is not in CI yet (`e2e.yml` is the owner's to change).
+  `scripts/status_sync.py`. The lane runs in CI since NWS-15 (`e2e.yml`, a control-plane file: owner merges).
+- [x] ✅ **NWS-14 — separate the company data directory from the hub's file-tool root.** The workspace
+  used `data_path("workspace")`, which is also the default root of `JARVIS_FILE_TOOLS` (`JARVIS_FILE_ROOTS`),
+  of `JARVIS_TERMINAL_LOCAL_ROOTS` and of the tool-result spill directory (`workspace/tool_results/`): with
+  file tools on and default roots the owner's personal assistant could read the company database and
+  documents, and `workspace` in `data_purge.KEEP_DIRS` kept the owner's spilled tool results through a
+  forget. **Delivered 2026-10-17:** the workspace moved to its own `data_path("business")`
+  (`agents/core/workspace/config.py` `DATA_DIRNAME`, used by `workspace_dir()`, `setup_code_path()` and the
+  SMTP secret store); `KEEP_DIRS` keeps `business`, so the owner's `workspace/` (spills included) is purged
+  by a forget again. `tests/test_workspace_integration_purge.py` proves the directory is disjoint from the
+  three default roots, that nothing under `agents/` outside the workspace names `business`, that nothing
+  the workspace writes lands in `workspace/`, and that a forget empties the spill directory and the file
+  root while the company database, index, files and secrets survive. The pilot never shipped from
+  `workspace/`, so there is no migration; spec §3, pilot guide §13 / §14 / §19, `docs/FLAGS.md` and
+  `docs/ARCHITECTURE.md` updated. Explicit `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` pointed at
+  the data root still reach `business/` — the guide's checklist says not to (a hub-side refusal belongs to
+  the file-tools owner).
+- [x] ✅ **NWS-15 — the known-issues pass before the pilot assessment.** (1) NWS-14 above. (2)
+  `scheduler.py` and `reports.spawn_run` / `cancel_runs` are loop-aware: each loop task records its owning
+  event loop, `start()` starts one on a loop that has none even while another loop's runs, and `stop()` /
+  `stop_background()` / `cancel_runs()` touch only the running loop's scheduler task and report runs, so a
+  nested lifespan never cancels or awaits a foreign-loop task (two-loop tests in
+  `tests/test_workspace_scheduler.py`). (3) Chat citations carry `can_open` for the reader at read time
+  (`GET /conversations/{id}`, the `done` event, the JSON answer, the feedback `{message}`;
+  `documents.visible_ids`, like report runs); the source drawer takes a `context` and in the assistant
+  hides the document/file links of a citation the reader may no longer open and says why
+  (`source.notOpenableAnswer`, RO/EN; run views keep `source.notOpenable` and get a report-specific note).
+  (4) `tests/support/fake_openai_server.py` no longer writes „Raport: Raport: …" (the prompt's own
+  „Raport:" / „Report:" label is stripped from the heading, deterministically). (5) CI: `e2e.yml` runs the
+  workspace journey after the HUD lane (`npx playwright test -c playwright.workspace.config.ts`,
+  `E2E_PYTHON=python`) and uploads `frontend/e2e/.results/workspace-screens/` on failure; `npm run
+  e2e:workspace` in `frontend/package.json`. (6) Spec v3.1: §1/§13 the lane, §3 the data directory, §5/§9
+  the loop rule, §7 `/admin/stats` counted from the `chat.asked` / `report.run_started` audit rows and
+  `can_open` on run and conversation citations, §10 the source-drawer rule, the shared-reports
+  `department_name` and the optimistic theme/language save with revert.
 
 **Open follow-ups**
 
@@ -104,12 +139,6 @@
 - [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
   `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
   contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.
-- [ ] ⬜ **NWS-14 — separate the company data directory from the hub's file-tool root.** `data_path("workspace")`
-  is also the default root of `JARVIS_FILE_TOOLS` (`JARVIS_FILE_ROOTS`), of `JARVIS_TERMINAL_LOCAL_ROOTS` and
-  of the tool-result spill directory (`workspace/tool_results/`). With file tools on and default roots, the
-  owner's personal assistant can read the company database and documents, and keeping `workspace` in
-  `data_purge.KEEP_DIRS` also keeps the owner's spilled tool results through a forget. Move one side before a
-  pilot stores real data; until then the pilot guide (§13) says to keep both flags off or set explicit roots.
 
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09

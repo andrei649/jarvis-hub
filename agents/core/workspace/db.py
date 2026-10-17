@@ -198,7 +198,7 @@ def schema_version() -> int:
 
 
 def db_path() -> Path:
-    """``<data>/workspace/workspace.db`` (resolved at call time)."""
+    """``<data>/business/workspace.db`` (resolved at call time; see ``config.DATA_DIRNAME``)."""
     return config.workspace_dir() / DB_FILE
 
 

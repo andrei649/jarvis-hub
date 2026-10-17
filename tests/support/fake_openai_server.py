@@ -66,6 +66,9 @@ _ROMANIAN_WORDS = re.compile(
     re.IGNORECASE,
 )
 _REPORT = re.compile(r"\b(raport|report)", re.IGNORECASE)
+#: The label the workspace's report prompt puts before the report's name ("Raport: Zilnic"),
+#: stripped from the subject so the heading never reads "Raport: Raport: Zilnic".
+_REPORT_LABEL = re.compile(r"^\s*(?:raport|report)\s*:\s*", re.IGNORECASE)
 _SAY_OK = re.compile(r"\breply with (?:the single word )?ok\b", re.IGNORECASE)
 _WORD = re.compile(r"\w+", re.UNICODE)
 
@@ -122,7 +125,8 @@ def _cell(text: str) -> str:
 
 def compose_report(question: str, sources: dict[int, tuple[str, str]], *, romanian: bool) -> str:
     """A well-formed Markdown report built only from *sources*."""
-    subject = first_sentence(question.splitlines()[0] if question else "", 80).rstrip(".:")
+    first_line = next((line for line in question.splitlines() if line.strip()), "")
+    subject = first_sentence(_REPORT_LABEL.sub("", first_line, count=1), 80).rstrip(".:")
     heading = ("Raport" if romanian else "Report") + (f": {subject}" if subject else "")
     words = {
         "summary": "Rezumat executiv" if romanian else "Executive summary",

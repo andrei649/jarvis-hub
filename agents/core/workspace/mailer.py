@@ -3,7 +3,7 @@
 Where things live. The connection settings (host, port, security, username, sender,
 allowed recipient domains) are plain JSON under ``org.settings_json["smtp"]``. The
 password is the one secret, so it lives encrypted in
-``SecretStore(data_path("workspace", "secrets.enc"))`` and is never returned by any API
+``SecretStore(data_path(config.DATA_DIRNAME, "secrets.enc"))`` (``<data>/business/secrets.enc``) and is never returned by any API
 (``has_password`` says whether one is stored). Building a store costs ~230 ms with a
 passphrase key, so one instance per path is cached and every function that touches it
 runs off the event loop (sync routes or worker threads).
@@ -101,7 +101,7 @@ def _failed(reason: str) -> WorkspaceError:
 
 def secret_store() -> SecretStore:
     """The cached workspace secret store (built on first use: call it off the event loop)."""
-    path = data_path("workspace", STORE_FILE)
+    path = data_path(config.DATA_DIRNAME, STORE_FILE)
     key = str(path)
     with _stores_lock:
         store = _stores.get(key)

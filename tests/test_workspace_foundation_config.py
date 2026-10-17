@@ -112,7 +112,7 @@ def test_scheduler_enabled_defaults_on(monkeypatch, raw, expected):
 
 def test_workspace_dir_is_created_private_under_the_data_root(ws):
     path = config.workspace_dir()
-    assert path == ws.data_dir / "workspace"
+    assert path == ws.data_dir / "business"
     assert path.is_dir()
     if os.name == "posix":
         assert stat.S_IMODE(path.stat().st_mode) == 0o700

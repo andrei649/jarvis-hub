@@ -1225,7 +1225,7 @@ proxy and operations: [`business/PILOT_GUIDE.md`](business/PILOT_GUIDE.md); cont
 
 **OFF:** every `/api/workspace/*` answers `404 {"error": "workspace_disabled"}` — refused by
 `db.get_db` before a connection is opened, so a disabled workspace never creates
-`<data root>/workspace/workspace.db` — and the UI route answers a plain 404 page. The
+`<data root>/business/workspace.db` — and the UI route answers a plain 404 page. The
 scheduler's tick is a no-op, so switching the flag on later needs no scheduler restart. The
 CLI (`python -m agents.core.workspace …`) refuses with exit code 2.
 **ON:** the company web app: local accounts (scrypt, httpOnly sessions, CSRF tokens),
@@ -1235,13 +1235,16 @@ agents; model calls go through the hub router, its guardrails and its data-handl
 **Cost:** a new authenticated surface. Behind a reverse proxy it is meant to be the only
 thing published (the pilot guide's Caddyfile publishes nothing else); it brings its own
 per-user limits (the hub's per-IP limiter skips it) and its data lives in
-`<data root>/workspace/`, which the nightly backup archives and the hub's forget keeps.
+`<data root>/business/`, which the nightly backup archives and the hub's forget keeps. That is
+not the `<data root>/workspace/` default root of `JARVIS_FILE_ROOTS` /
+`JARVIS_TERMINAL_LOCAL_ROOTS` and the tool-result spills: with default roots the owner's tools
+never reach company data; do not point explicit roots at the data root or at `business/`.
 **Revert:** unset + restart; the data stays on disk, unreachable, and comes back as it was.
 
 ### `NERVA_WORKSPACE_SETUP_CODE`
 
 **Default: unset.** Unset, a code (`secrets.token_urlsafe(18)`) is generated on first need
-and written with mode 0600 to `<data root>/workspace/setup-code.txt`; the log line names the
+and written with mode 0600 to `<data root>/business/setup-code.txt`; the log line names the
 file, never the code; `python -m agents.core.workspace setup-code` prints it; the file is
 deleted after a successful first-run setup. Set, the value is the code (and is never
 deleted — remove it from the environment after setup). Guessing is throttled: 10 wrong codes
@@ -1338,7 +1341,7 @@ reports never run and pending approvals never expire. **Revert:** unset + restar
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) believed only from these networks; XFF walked right-to-left; uvicorn's own proxy-header layer is off under `serve.py` | A listed peer can name any client address — list only proxies you run; a malformed list, or a `FORWARDED_ALLOW_IPS` wider than it, refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 | `NERVA_WORKSPACE` | off (`workspace/config.py`, read per request) | Serves Nerva Workspace: `/workspace` UI + `/api/workspace/*` (accounts, departments, documents, assistant, reports, approvals, audit) | A new authenticated surface; publish it only through the pilot Caddyfile (workspace paths only, TLS, `JARVIS_TRUSTED_PROXIES=127.0.0.1`) | Unset + restart: every route `404 workspace_disabled`, no database is created; existing data stays on disk |
-| `NERVA_WORKSPACE_SETUP_CODE` | unset → generated 0600 file `<data>/workspace/setup-code.txt` | Fixes the first-run setup code instead of generating one | A guessable value hands the first admin seat to whoever reaches setup first (throttled 10/h/IP, 50/h overall) | Unset: the generated file is used; it is deleted after setup |
+| `NERVA_WORKSPACE_SETUP_CODE` | unset → generated 0600 file `<data>/business/setup-code.txt` | Fixes the first-run setup code instead of generating one | A guessable value hands the first admin seat to whoever reaches setup first (throttled 10/h/IP, 50/h overall) | Unset: the generated file is used; it is deleted after setup |
 | `NERVA_WORKSPACE_COOKIE_SECURE` | `auto` (Secure on https) | `1` forces `Secure` on `nerva_ws_session`; `0` never | `0` behind TLS sends the session cookie over plain http if anything ever serves it | Unset: `auto`; junk values log one warning and act as `auto` |
 | `NERVA_WORKSPACE_SSO_HEADER` + `NERVA_WORKSPACE_SSO_SECRET` | unset · unset | Both set: `POST /api/workspace/login/sso` signs in the active user named by the trusted proxy's email header + matching `X-Nerva-Proxy-Secret` | Anyone reaching the hub from a trusted peer with the secret can be any active user — loopback proxy, strip client copies of both headers | Unset either + restart: `sso_disabled`, password sign-in unchanged |
 | `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 (MiB, capped 200) | Larger documents accepted (streamed, early `413 file_too_large`) | Each in-flight upload is held in memory (≤ 3 per user); the proxy body limit must follow | Unset: 25 MiB |

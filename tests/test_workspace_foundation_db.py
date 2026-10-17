@@ -53,7 +53,7 @@ def test_connect_configures_the_connection(ws):
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
-    assert workspace_db.db_path() == ws.data_dir / "workspace" / "workspace.db"
+    assert workspace_db.db_path() == ws.data_dir / "business" / "workspace.db"
     conn.close()
 
 
@@ -290,7 +290,7 @@ def test_get_db_refuses_when_disabled_without_creating_the_database(ws, monkeypa
     with pytest.raises(WorkspaceError) as caught:
         next(generator)
     assert (caught.value.status, caught.value.code) == (404, "workspace_disabled")
-    assert not (ws.data_dir / "workspace" / "workspace.db").exists()
+    assert not (ws.data_dir / "business" / "workspace.db").exists()
 
 
 def test_get_db_rolls_back_a_leftover_transaction_and_closes(ws):

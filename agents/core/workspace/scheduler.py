@@ -22,6 +22,15 @@ compare-and-set claims.
 The loop starts with the hub (``start_background``) unless ``NERVA_WORKSPACE_SCHEDULER``
 is off, and each tick is a no-op while ``NERVA_WORKSPACE`` itself is off, so enabling the
 workspace later needs no restart of the scheduler.
+
+Event loops. A task belongs to the loop that created it, and only that loop may cancel and
+await it. The hub runs one loop, but an app lifespan can run more than once in one process
+on different loops (a nested ``TestClient``, an embedding host): the scheduler therefore
+records the loop of each loop task it starts. ``start()`` on a loop that has no live task
+starts one there, even while another loop's task runs; ``stop()`` stops only the task of
+the running loop, and ``stop_background()`` with it cancels only that loop's report runs
+(``reports.cancel_runs``). A nested lifespan's shutdown never cancels, or awaits, a task of
+a foreign loop — which would raise there, or kill the outer lifespan's scheduler.
 """
 
 from __future__ import annotations
@@ -75,15 +84,41 @@ def housekeeping(conn: sqlite3.Connection, now: float) -> dict[str, int]:
 
 
 class WorkspaceScheduler:
-    """Runs :meth:`tick` every *interval_seconds* while started."""
+    """Runs :meth:`tick` every *interval_seconds* while started, once per event loop."""
 
     def __init__(self, interval_seconds: float = DEFAULT_INTERVAL_SECONDS) -> None:
         self.interval_seconds = interval_seconds
-        self._task: asyncio.Task | None = None
+        #: The loop task of each event loop this scheduler was started on (its owning loop).
+        self._tasks: dict[asyncio.AbstractEventLoop, asyncio.Task] = {}
+
+    def _prune(self) -> None:
+        """Forget finished tasks and the tasks of closed loops (nothing can stop those)."""
+        for loop, task in list(self._tasks.items()):   # a snapshot: loops run in other threads
+            if task.done() or loop.is_closed():
+                self._tasks.pop(loop, None)
+
+    def _running_loop_task(self) -> asyncio.Task | None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+        task = self._tasks.get(loop)
+        return task if task is not None and not task.done() else None
 
     @property
     def running(self) -> bool:
-        return self._task is not None and not self._task.done()
+        """Whether a loop task is live — on the running loop when called from one."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return any(not task.done() for task in self._tasks.values())
+        return self._running_loop_task() is not None
+
+    @property
+    def loops(self) -> list[asyncio.AbstractEventLoop]:
+        """The event loops with a live loop task (diagnostics and tests)."""
+        return [loop for loop, task in self._tasks.items()
+                if not task.done() and not loop.is_closed()]
 
     async def tick(self, now: float | None = None) -> dict:
         """One pass (the testable unit); returns what each step did.
@@ -121,11 +156,15 @@ class WorkspaceScheduler:
             conn.close()
 
     def start(self) -> None:
-        """Start the loop on the running event loop (idempotent)."""
-        if self.running:
+        """Start the loop on the running event loop (idempotent per loop).
+
+        A live task of another loop is left alone: that loop owns it and stops it.
+        """
+        self._prune()
+        if self._running_loop_task() is not None:
             return
-        self._task = asyncio.get_running_loop().create_task(self._loop(),
-                                                            name="workspace-scheduler")
+        loop = asyncio.get_running_loop()
+        self._tasks[loop] = loop.create_task(self._loop(), name="workspace-scheduler")
 
     async def _loop(self) -> None:
         while True:
@@ -136,8 +175,13 @@ class WorkspaceScheduler:
             await asyncio.sleep(self.interval_seconds)
 
     async def stop(self) -> None:
-        """Stop the loop and wait for it to end (idempotent)."""
-        task, self._task = self._task, None
+        """Stop the running loop's task and wait for it to end (idempotent).
+
+        Only the running loop's task: cancelling or awaiting a task of another loop is not
+        this loop's to do (it would raise, or stop another lifespan's scheduler).
+        """
+        task = self._tasks.pop(asyncio.get_running_loop(), None)
+        self._prune()
         if task is None:
             return
         task.cancel()
@@ -149,7 +193,7 @@ _scheduler: WorkspaceScheduler | None = None
 
 
 def start_background() -> None:
-    """Start the process-wide scheduler (the hub lifespan calls this on startup)."""
+    """Start the process-wide scheduler on the running loop (the hub lifespan's startup)."""
     global _scheduler
     if not config.scheduler_enabled():
         logger.info("workspace scheduler disabled (%s is off)", config.ENV_SCHEDULER)
@@ -160,9 +204,15 @@ def start_background() -> None:
 
 
 async def stop_background() -> None:
-    """Stop the scheduler and interrupt running report runs (hub shutdown)."""
+    """Stop the running loop's scheduler and interrupt its report runs (hub shutdown).
+
+    A scheduler still running on another loop (an outer lifespan) keeps running, and the
+    process-wide instance is kept for it; it is released once no loop runs it any more.
+    """
     global _scheduler
-    scheduler, _scheduler = _scheduler, None
+    scheduler = _scheduler
     if scheduler is not None:
         await scheduler.stop()
+        if not scheduler.loops and _scheduler is scheduler:
+            _scheduler = None
     await reports.cancel_runs()

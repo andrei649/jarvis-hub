@@ -97,6 +97,25 @@ jobs:
         env:
           E2E_PYTHON: python   # CI installs deps into the system python, not a venv
 
+      # Nerva Workspace journey (docs/business/WORKSPACE_PILOT_SPEC.md §1): the real hub
+      # through its sealed launcher, the fake OpenAI-compatible model and the SMTP sink,
+      # Chromium only (playwright.workspace.config.ts); it runs even when the HUD lane failed.
+      - name: Workspace journey E2E (real hub, fake model, SMTP sink)
+        if: ${{ !cancelled() }}
+        run: npx playwright test -c playwright.workspace.config.ts
+        working-directory: frontend
+        env:
+          E2E_PYTHON: python
+
+      - name: Upload workspace screenshots
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: workspace-e2e-screens
+          path: frontend/e2e/.results/workspace-screens/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload artifacts (screenshots + report)
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

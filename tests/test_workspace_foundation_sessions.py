@@ -268,4 +268,4 @@ def test_disabled_workspace_answers_404_before_401(ws, monkeypatch, method, path
     r = _client().request(method, path, json={})
     assert r.status_code == 404
     assert r.json()["error"] == "workspace_disabled"
-    assert not (ws.data_dir / "workspace" / "workspace.db").exists()
+    assert not (ws.data_dir / "business" / "workspace.db").exists()

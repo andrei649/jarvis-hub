@@ -5,7 +5,10 @@
 > the build: the builders' and reviewers' deviations are folded in so this file matches the code —
 > response shapes, extra error codes, reasons and JSON fields, the extraction pool, the folded
 > tokenizer, the delivery-status transitions, AUTOINCREMENT plus the id-reuse guards, and the
-> cloud-only `provider_may_train` rule**). Operator documentation: [`PILOT_GUIDE.md`](PILOT_GUIDE.md).
+> cloud-only `provider_may_train` rule**; **v3.1, the same day, after the known-issues pass: the
+> data directory moved to `data_path("business")` (NWS-14), loop-aware scheduler and run
+> cancellation, `can_open` on conversation citations, the e2e lane in CI**). Operator
+> documentation: [`PILOT_GUIDE.md`](PILOT_GUIDE.md).
 > Owner directive (2026-10-17): *„avansează, pregătește interfața B2B pentru un pilot … produsul să fie
 > de nota 9/10 chiar și pentru pilot, toate funcțiile trebuie să funcționeze"*. This file is the single
 > shared contract every builder, reviewer and integrator follows. When code and this file disagree,
@@ -42,7 +45,11 @@ workspace never calls `orch.handle_input`, `orch.process` or the personal memory
 2. Department isolation is enforced server-side in every query and proven by tests.
 3. Backend pytest suites for every module, green; frontend vitest + `tsc --noEmit`, green; a Playwright
    journey drives the real server end to end with a fake OpenAI-compatible model server and a local
-   SMTP sink, green, with an axe scan of every main page (zero serious/critical violations).
+   SMTP sink, green, with an axe scan of every main page (zero serious/critical violations). The
+   journey is `frontend/e2e/workspace-journey.spec.ts` under `frontend/playwright.workspace.config.ts`
+   (`npm run e2e:workspace` in `frontend/`); CI runs it in `.github/workflows/e2e.yml` right after the
+   HUD lane (nightly, on push to `main`, on dispatch) and uploads
+   `frontend/e2e/.results/workspace-screens/` when it fails.
 4. Every repo gate in §11 stays green.
 5. A reviewer scoring the pilot against the rubric (§12) gives ≥ 9/10 on every dimension.
 
@@ -55,7 +62,7 @@ workspace never calls `orch.handle_input`, `orch.process` or the personal memory
 | **S3 Assistant** | `agents/core/workspace/llm.py`, `assistant.py`; `agents/core/routers/workspace_chat.py`; `tests/support/fake_openai_server.py`; `tests/test_workspace_assistant*.py`, `tests/test_workspace_llm*.py` |
 | **S4 Automation** | `agents/core/workspace/reports.py`, `scheduler.py`, `approvals.py`, `mailer.py`; `agents/core/routers/workspace_reports.py`, `agents/core/routers/workspace_approvals.py`; `tests/support/smtp_sink.py`; `tests/test_workspace_reports*.py`, `tests/test_workspace_scheduler*.py`, `tests/test_workspace_approvals*.py`, `tests/test_workspace_mailer*.py` |
 | **S5 Frontend** | everything under `frontend/src/workspace/**`, `frontend/workspace.html`, `frontend/vite.workspace.config.ts`, the `scripts` block of `frontend/package.json`, any new font files under `frontend/src/assets/fonts/`, built output `agents/web/workspace/**` |
-| **S6 Integration** | `agents/web.py` (static mount, router includes, lifespan start/stop, rate-limit exemption, `RequestValidationError` + `WorkspaceError` handler wiring), `agents/core/routers/workspace_ui.py`, `agents/core/data_purge.py` (KEEP_DIRS), `tests/test_route_auth_matrix.py`, `tests/test_route_parity_guard.py` snapshot, `tests/test_hud_v2_parity.py`, `scripts/gen_api_sweep.py`, `tests/test_api_sweep_current.py`, `docs/test-manual/14-api-surface-sweep.md`, `tests/_snapshots/*.json`, `frontend/src/api/schema.gen.ts`, `frontend/playwright.config.ts`, `frontend/playwright.workspace.config.ts`, `frontend/tsconfig.e2e.json`, `frontend/e2e/workspace*.spec.ts`, `frontend/e2e/support/workspace*`, `.github/workflows/ci.yml` (bundle check only), `Dockerfile` (tzdata only if needed), status files written by `scripts/status_sync.py`, `mobile/PARITY.md`, `tests/test_workspace_integration*.py`, and the docs in §13 |
+| **S6 Integration** | `agents/web.py` (static mount, router includes, lifespan start/stop, rate-limit exemption, `RequestValidationError` + `WorkspaceError` handler wiring), `agents/core/routers/workspace_ui.py`, `agents/core/data_purge.py` (KEEP_DIRS), `tests/test_route_auth_matrix.py`, `tests/test_route_parity_guard.py` snapshot, `tests/test_hud_v2_parity.py`, `scripts/gen_api_sweep.py`, `tests/test_api_sweep_current.py`, `docs/test-manual/14-api-surface-sweep.md`, `tests/_snapshots/*.json`, `frontend/src/api/schema.gen.ts`, `frontend/playwright.config.ts`, `frontend/playwright.workspace.config.ts`, `frontend/tsconfig.e2e.json`, `frontend/e2e/workspace*.spec.ts`, `frontend/e2e/support/workspace*`, `.github/workflows/ci.yml` (bundle check only), `.github/workflows/e2e.yml` (the journey step, v3.1), `Dockerfile` (tzdata only if needed), status files written by `scripts/status_sync.py`, `mobile/PARITY.md`, `tests/test_workspace_integration*.py`, and the docs in §13 |
 
 Rules for every builder: never edit a file you do not own (report the need instead); never run
 `git add/commit/stash/checkout/reset/restore`; never run repo-wide formatters; use
@@ -70,7 +77,7 @@ behind) and always install a model engine with `llm.set_engine_for_tests(...)` w
 | Variable | Default | Rule |
 |---|---|---|
 | `NERVA_WORKSPACE` | off | `env_flag(name, False)`, read at request time. Off → every `/api/workspace/*` answers `404 {"error":"workspace_disabled"}` and the UI route answers a plain 404 page. `db.get_db` refuses before opening a connection, so a disabled workspace never creates `workspace.db`; the scheduler tick is a no-op; the CLI exits 2. |
-| `NERVA_WORKSPACE_SETUP_CODE` | unset | When unset, a code `secrets.token_urlsafe(18)` is generated on first need and written with `O_EXCL`, mode 0600, to `<data>/workspace/setup-code.txt`; never logged (the log line names the file only). Deleted after a successful setup. `python -m agents.core.workspace setup-code` prints it. |
+| `NERVA_WORKSPACE_SETUP_CODE` | unset | When unset, a code `secrets.token_urlsafe(18)` is generated on first need and written with `O_EXCL`, mode 0600, to `<data>/business/setup-code.txt`; never logged (the log line names the file only). Deleted after a successful setup. `python -m agents.core.workspace setup-code` prints it. |
 | `NERVA_WORKSPACE_COOKIE_SECURE` | `auto` | `raw = env_str(name, 'auto').strip().lower()`; `''`/`auto` → auto (Secure when `request.url.scheme == 'https'`); `is_recognized_bool(raw)` → `truthy(raw)`; anything else → auto plus one warning naming the variable. |
 | `NERVA_WORKSPACE_SSO_HEADER` | unset | Header carrying the user's email (e.g. `X-Forwarded-Email`). SSO also requires `NERVA_WORKSPACE_SSO_SECRET` (see §6). |
 | `NERVA_WORKSPACE_SSO_SECRET` | unset | Shared secret the proxy injects as `X-Nerva-Proxy-Secret` (constant names `config.ENV_SSO_KEY`, `auth.PROXY_KEY_HEADER`; `config.sso_configured()` needs both variables). |
@@ -82,17 +89,23 @@ behind) and always install a model engine with `llm.set_engine_for_tests(...)` w
 
 Never write `"1", "true"`-style literal pairs or `== "1"` next to an env read (AUD-14 ratchet).
 
-**Data location.** Everything lives under `data_path("workspace")`, resolved at call time: `workspace.db`,
-`files/<document_id>.bin`, `setup-code.txt`, `secrets.enc` (+ `secrets.enc.key` when no
-`JARVIS_SECRET_KEY`). The audit HMAC key lives outside the data root (§6). The hub's nightly backup
-(03:20, kept a week) archives the whole data root including the workspace (databases through the SQLite
-backup API); it is encrypted only when `JARVIS_BACKUP_KEY` is set, so the pilot guide requires
-`JARVIS_BACKUP_KEY` and `JARVIS_SECRET_KEY` on pilot installs. The hub's "forget me" purge never touches
-the workspace (S6 adds `workspace` to `data_purge.KEEP_DIRS`). **Known collision (v3, open as
-`BACKLOG.md` NWS-14):** `data_path("workspace")` is also the default root of the hub's file tools
-(`JARVIS_FILE_ROOTS`), of `JARVIS_TERMINAL_LOCAL_ROOTS` and of the tool-result spill directory
-(`workspace/tool_results/`). Until one side moves, the pilot guide requires those flags off or explicit
-roots outside it; and with `workspace` in `KEEP_DIRS`, the owner's spilled tool results survive a forget.
+**Data location.** Everything lives under `data_path("business")` (`config.DATA_DIRNAME`), resolved
+at call time: `workspace.db`, `files/<document_id>.bin`, `setup-code.txt`, `secrets.enc` (+
+`secrets.enc.key` when no `JARVIS_SECRET_KEY`). The audit HMAC key lives outside the data root (§6).
+The hub's nightly backup (03:20, kept a week) archives the whole data root including the workspace
+(databases through the SQLite backup API); it is encrypted only when `JARVIS_BACKUP_KEY` is set, so the
+pilot guide requires `JARVIS_BACKUP_KEY` and `JARVIS_SECRET_KEY` on pilot installs. The hub's "forget
+me" purge never touches the workspace (`business` is in `data_purge.KEEP_DIRS`). **Why `business`
+(v3.1, `BACKLOG.md` NWS-14, closed):** `data_path("workspace")` is the hub's default root of the
+owner's file tools (`JARVIS_FILE_ROOTS`), of `JARVIS_TERMINAL_LOCAL_ROOTS` and of the tool-result
+spill directory (`workspace/tool_results/`), so company data there was readable by the owner's
+personal assistant, and keeping `workspace` in `KEEP_DIRS` kept the owner's spilled tool results
+through a forget. No other hub module uses `business`; `tests/test_workspace_integration_purge.py`
+proves the directory is disjoint from all three default roots, that no other module under `agents/`
+names it, and that a forget empties the spill directory while the workspace survives. The pilot was
+never released from `workspace/`, so there is no migration. An operator who sets explicit
+`JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` must not point them at the data root or at
+`<data>/business` (pilot guide §13).
 
 ## 4. Data model (`db.py` owns the whole schema; migrations through `PRAGMA user_version`)
 
@@ -228,7 +241,7 @@ def enabled() -> bool; def setup_code() -> str; def max_upload_bytes() -> int
 def cookie_secure_mode() -> str          # 'auto' | 'on' | 'off'
 def session_idle_seconds() -> int; def session_max_seconds() -> int; def max_concurrent_llm() -> int
 def sso_header() -> str; def sso_secret() -> str; def sso_configured() -> bool; def scheduler_enabled() -> bool
-def workspace_dir() -> Path               # data_path("workspace"), created 0700 on demand
+def workspace_dir() -> Path               # data_path(DATA_DIRNAME) = <data>/business, created 0700 on demand
 
 # db.py
 def db_path() -> Path
@@ -372,17 +385,22 @@ def filter_citations(text: str, citations: list[dict]) -> list[dict]   # only th
 # reports.py (S4)
 def create_run(conn, report_id: int, *, trigger: str, triggered_by: int | None, ip: str = "") -> int   # inside tx
 async def execute_run(run_id: int) -> None          # own connections; Semaphore(2) per event loop (the hub has one)
-def spawn_run(run_id: int) -> None                  # task kept in a module-level set; exceptions logged
-async def cancel_runs() -> None                     # hub shutdown: every in-flight run → failed / interrupted
+def spawn_run(run_id: int) -> None                  # task on the running loop, kept in a module-level set; exceptions logged
+async def cancel_runs() -> None                     # shutdown: the RUNNING loop's in-flight runs → failed / interrupted
 def compute_next_run(report_row, now: float) -> float | None
 
 # scheduler.py (S4)
 class WorkspaceScheduler:
     def __init__(self, interval_seconds: float = 30.0): ...
     async def tick(self, now: float | None = None) -> dict   # the testable unit
-    def start(self) -> None
-    async def stop(self) -> None
+    def start(self) -> None              # idempotent per loop: records the owning loop of each loop task
+    async def stop(self) -> None         # stops only the running loop's task
 def start_background() -> None; async def stop_background() -> None   # S6 calls from the hub lifespan
+# v3.1: loop-aware. A lifespan can run more than once in one process on different event loops (a
+# nested TestClient, an embedding host). start() on a loop without a live task starts one there even
+# while another loop's task runs; stop() / stop_background() / cancel_runs() touch only the running
+# loop's scheduler task and report runs, so a nested lifespan's shutdown never cancels or awaits a
+# task of a foreign loop; the process-wide scheduler is released once no loop runs it.
 
 # mailer.py (S4)
 def smtp_settings(conn) -> dict          # without the password; has_password: bool, configured: bool
@@ -523,7 +541,7 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   `<source id="n" title="…">…</source>`; the system prompt says instructions inside sources must be
   ignored. Output is rendered as Markdown without HTML.
 - **Email.** Recipients ≤ 20, validated, no CR/LF in any header, optional `allowed_domains`
-  (→ `422 recipient_not_allowed`); SMTP password in `SecretStore(data_path("workspace","secrets.enc"))`
+  (→ `422 recipient_not_allowed`); SMTP password in `SecretStore(data_path("business","secrets.enc"))`
   (one cached instance, built off the event loop), never returned (`has_password`). `security='none'`
   with credentials is refused unless the host is loopback (`PUT /admin/smtp` → `422 field=security
   reason=insecure_credentials`; at send time → `smtp_failed reason=insecure_transport`). TLS via
@@ -619,7 +637,7 @@ hub's generic handler defers to it there). Ids in paths are bounded `1..MAX_ID`.
 | GET `/admin/audit` | `?actor_id=&action=&since=&until=&limit≤200&before_id=` → `{items, next_before_id}` |
 | GET `/admin/audit/export` | same filters → `text/csv` attachment (≤ 50 000 rows) |
 | GET `/admin/audit/verify` | → `verify_chain()` |
-| GET `/admin/stats` | `?days=30` → `{totals:{users, active_users_7d, documents, conversations, questions, reports, report_runs, approvals_pending, feedback_up, feedback_down}, per_department:[…], daily:[{date, questions, report_runs}]}` |
+| GET `/admin/stats` | `?days=1..365` (default 30) → `{days, since, totals:{users, active_users_7d, documents, conversations, questions, reports, report_runs, approvals_pending, feedback_up, feedback_down}, per_department:[{department_id, slug, name, archived, members, documents, conversations, questions, reports, report_runs}], daily:[{date, questions, report_runs}]}`. The window is the last *days* UTC calendar days (today included). `questions` and `report_runs` (totals, per department and daily) are counted from the append-only audit rows `chat.asked` (one per question, with its department) and `report.run_started` (one per queued manual or scheduled run), never from `messages` / `report_runs`, so deleting a conversation or a report never rewrites past usage; feedback counts the current rating of the answers still stored; the other totals are current counts |
 
 **S2 — `routers/workspace_documents.py`** (all **U**)
 | Method & path | Body → Response |
@@ -642,7 +660,7 @@ immediate request). A document that changed since the request fails the approval
 |---|---|
 | GET `/conversations` | `?department_id=` → own conversations `{conversations:[{id, title, department_id, created_at, updated_at, message_count}]}` (the newest 500) |
 | POST `/conversations` | `{department_id, title?}` → 201 bare conversation; `409 department_archived` |
-| GET `/conversations/{conversation_id}` | → `{conversation, messages:[{id, conversation_id, role, content, citations, status, error_code, model, locality, latency_ms, feedback, feedback_note, created_at}], truncated}` (the newest 1 000 messages) |
+| GET `/conversations/{conversation_id}` | → `{conversation, messages:[{id, conversation_id, role, content, citations, status, error_code, model, locality, latency_ms, feedback, feedback_note, created_at}], truncated}` (the newest 1 000 messages). v3.1: every citation carries `can_open` for the current reader, judged at read time with `documents.visible_ids` like a report run's (a document deleted or moved since → `false`; the excerpt stays); `can_open` is never stored. The `done` event, the JSON answer and the feedback `{message}` carry it too; the live `sources` event does not (its passages were just retrieved in the reader's scope) |
 | PATCH `/conversations/{conversation_id}` | `{title}` → bare conversation |
 | DELETE `/conversations/{conversation_id}` | → 204 |
 | POST `/conversations/{conversation_id}/messages` | `{content}` (≤ 8 000 chars; body cap 128 KiB); `Accept: text/event-stream` → SSE (§8); otherwise JSON `201 {user_message, assistant_message, conversation}` — a failed answer answers that error's status (503/409/504/422/500) with the error body plus both stored messages; `409 conversation_busy` while a live `pending` assistant row exists; `409 department_archived`; `429 rate_limited` |
@@ -660,9 +678,9 @@ immediate request). A document that changed since the request fails the approval
 | DELETE `/reports/{report_id}` | → 204 |
 | POST `/reports/{report_id}/run` | → 202 `{run}` (queued; `create_run` → `spawn_run`); `409 run_in_progress {run_id}` while a run of this report is queued or running; `429 rate_limited`; `409 department_archived` |
 | GET `/reports/{report_id}/runs` | → `{runs:[…without content]}` (the newest 100) |
-| GET `/report-runs/{run_id}` | → bare run with `content_md`, `citations`, `can_share`, `can_email` (= succeeded; the UI combines it with `smtp_configured`), plus `report:{id, name, department_id}`, `report_name`, `department_id`, `department_name`; `delivered_to` is `[]` for a viewer outside the report's department (visible to the report's department; company-shared runs visible to everyone) |
+| GET `/report-runs/{run_id}` | → bare run with `content_md`, `citations` (each with `can_open`: whether the reader may open its document now, `documents.visible_ids` at read time — `false` for another department's document in a company-shared run, or one deleted since), `can_share`, `can_email` (= succeeded; the UI combines it with `smtp_configured`), plus `report:{id, name, department_id}`, `report_name`, `department_id`, `department_name`; `delivered_to` is `[]` for a viewer outside the report's department (visible to the report's department; company-shared runs visible to everyone) |
 | GET `/report-runs/{run_id}/export` | `?format=md|html` → attachment; HTML is a standalone, print-ready page (inline CSS, no scripts); `409 run_not_ready` for a run without a finished report |
-| GET `/shared-reports` | → `{runs:[…]}`, company-shared succeeded runs visible to everyone (the newest 200) |
+| GET `/shared-reports` | → `{runs:[…]}`, company-shared succeeded runs visible to everyone (the newest 200), each in the run-list shape with `report:{id, name, department_id}`, `report_name`, `department_id` and **`department_name`** (the reader is mostly outside that department, so the UI cannot name it from its own department list); `delivered_to` is `[]` outside the report's department |
 Effects registered by S4: `report.delivery` `{report_id, emails}` (decider `department`; execute
 snapshots the approved list into `delivery_approved_json`, sets `approved`), `report.share_company`
 `{run_id}` (decider `admin`), `email.send` `{to[], subject, body_markdown, source:{type:'message'|
@@ -718,7 +736,9 @@ is registered as `font/woff2` (the CSS loads its fonts relative to itself under 
   passages from the conversation's department + company-wide documents; query = the new question plus
   the previous user turn.
 - **Citations.** Numbering stays exactly as streamed; the stored message keeps only the citations whose
-  `[n]` occurs in the final text; the `done` event carries that filtered list.
+  `[n]` occurs in the final text; the `done` event carries that filtered list. Every read of a stored
+  answer (`GET /conversations/{id}`, `done`, the JSON answer, the feedback `{message}`) marks each
+  citation with `can_open` for the reader at that moment (v3.1, §7); the stored JSON never holds it.
 - **SSE framing.** `event: <start|sources|token|done|error>\ndata: <json>\n\n`, plus `: ping\n\n` every
   15 s. Headers `Cache-Control: no-store`, `X-Accel-Buffering: no`. Flow: in one tx store the user
   message + a `pending` assistant row (and the auto-title), commit, then stream through a queue + runner
@@ -767,7 +787,9 @@ while any run of the report is queued or running (`409 run_in_progress`) and doe
 that cannot load a zone fails that run with `timezone_unavailable` and retries in 24 h. Delivery
 follows the `delivery_status` transitions in §7. Report runs wait up to 30 s for one of the shared
 `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` model slots, then fail honestly with `model_busy`. On hub shutdown
-`scheduler.stop_background()` cancels in-flight runs, which end `failed` / `interrupted`.
+`scheduler.stop_background()` cancels in-flight runs, which end `failed` / `interrupted` — only the
+runs and the scheduler task of the loop that is shutting down (v3.1, loop-aware, §5): a second
+lifespan in the same process on another loop never cancels the first one's.
 
 ## 10. Frontend (S5)
 
@@ -799,6 +821,20 @@ follows the `delivery_status` transitions in §7. Report runs wait up to 30 s fo
   disable/enable, reset link), Departments (CRUD + assistant instructions), Organisation (name,
   default language, model policy + live model status + test), Email (SMTP + test), Audit (filters,
   table, CSV export, chain verification), Usage (KPIs + daily chart in SVG).
+- **Behaviour fixed during the build (v3.1).**
+  - *Source drawer.* The drawer behind a citation chip shows the document title, page and the exact
+    excerpt as plain text, plus „Deschide documentul" (its preview in Documents) and „Descarcă
+    originalul". When the citation says `can_open: false` (a report run shared company-wide that
+    cites another department's document, or any answer or run whose document was deleted or moved
+    since) it keeps the excerpt, hides both links (they could only answer `404`) and says why in the
+    words of its context: in the assistant `source.notOpenableAnswer`, in a run view
+    `source.notOpenable` (RO/EN). A citation without the flag (the live `sources` event) is openable.
+  - *Shared reports.* The list's department column reads the run's `department_name` from the
+    server; the reader's own department list is only a fallback.
+  - *Theme and language.* The profile controls and the account menu apply a new theme or language
+    at once (optimistically, into the signed-in user, so the controls themselves update), save it
+    with `PATCH /me`, apply only the latest save's answer, and on failure revert to the previous
+    value with a translated toast.
 - **Quality bar.** Every async action has loading, success and error states; empty states teach the next
   step; destructive actions confirm; forms validate inline and map server `error` codes to translated
   messages; dialogs and drawers trap and return focus; everything keyboard reachable with visible focus;
@@ -827,7 +863,7 @@ literals assigned to `*password*/*token*/*secret*` names); semgrep `p/python` + 
 scripts/status_sync.py` after adding tests; frontend `npx tsc --noEmit`, `npm run typecheck:e2e`,
 `npm test`, `npm run build` (both bundles committed; CI checks both); `./scripts/lock_deps.sh --check`
 and `pip-audit -r requirements-beta.lock`; `frontend/playwright.config.ts` ignores `workspace*.spec.ts`.
-The `ci.yml` change makes the PR control-plane (owner merges).
+The `ci.yml` and `e2e.yml` changes make the PR control-plane (owner merges).
 
 ## 12. Quality rubric (pilot must score ≥ 9 on each)
 
@@ -857,6 +893,11 @@ file), `mobile/PARITY.md` row („Nerva Workspace: web only, no native surface �
 oauth2-proxy variant that injects the email header and `X-Nerva-Proxy-Secret`; both pass `caddy
 validate`), the `docs/FLAGS.md` rows, the `docs/ARCHITECTURE.md` module index, the `CLAUDE.md` routing
 line, the `BACKLOG.md` section „Nerva Workspace — pilot B2B (2026-10-17)” and the kickoff note.
+**E2E lane (v3.1):** `frontend/playwright.workspace.config.ts` runs
+`frontend/e2e/workspace-journey.spec.ts` (`npm run e2e:workspace` in `frontend/`; ports
+`WS_E2E_MODEL_PORT` / `WS_E2E_SMTP_PORT` / `WS_E2E_HUB_PORT`, default 18491–18493; a run directory
+from `WS_E2E_RUN_DIR`, else a fresh temporary one), and `.github/workflows/e2e.yml` runs it after the
+HUD lane with `E2E_PYTHON=python`, uploading `frontend/e2e/.results/workspace-screens/` on failure.
 
 ---
 
@@ -958,7 +999,7 @@ line, the `BACKLOG.md` section „Nerva Workspace — pilot B2B (2026-10-17)” 
   `SecretStoreError` on a wrong key → show „parola nu poate fi citită, reintroduceți"), `delete(name)`,
   `names()`. Without `JARVIS_SECRET_KEY` it creates `<path>.key` (0600). A passphrase key costs ~230 ms
   per construction: cache one instance per path and build it off the event loop. Always pass
-  `data_path('workspace','secrets.enc')` (the default store path is frozen at import).
+  `data_path('business','secrets.enc')` (the default store path is frozen at import).
 - env_config: `truthy`, `is_recognized_bool`, `env_flag(name, default)`, `env_str` (no strip),
   `env_int(name, default, minimum=None)` (no max), `env_float`, `env_list`. `boot_guards` refuses only
   `NERVA_PUBLIC_PROFILE`, `JARVIS_CHANNEL_PAIRING`, `JARVIS_CHANNEL_OPEN` when malformed.
@@ -1003,8 +1044,8 @@ line, the `BACKLOG.md` section „Nerva Workspace — pilot B2B (2026-10-17)” 
   `frontend/src/base-path.ts`. Fonts: `frontend/src/assets/fonts/space-grotesk-latin-var.woff2`,
   `jetbrains-mono-latin-var.woff2` (latin subset — check Romanian glyphs).
 - Backup archives every regular file under the data root; `data_purge` removes everything except
-  `KEEP_FILES`/`KEEP_DIRS` (S6 adds `workspace`); one hub per data root (hub lock), so one in-process
+  `KEEP_FILES`/`KEEP_DIRS` (S6 adds `business`, the workspace's directory since v3.1); one hub per data root (hub lock), so one in-process
   scheduler is safe.
 - Protected paths make a PR control-plane: `.github/workflows/**`, `agents/core/kernel/**`,
   `agents/core/security/**`, `agents/core/secret*`, `AGENTS.md`, `MOONSHOT.md`. The plan touches only
-  `ci.yml` among them.
+  `ci.yml` and (v3.1) `e2e.yml` among them.

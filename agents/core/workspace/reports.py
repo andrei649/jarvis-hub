@@ -1236,7 +1236,11 @@ def _task_done(task: asyncio.Task) -> None:
 
 
 def spawn_run(run_id: int) -> None:
-    """Start :func:`execute_run` in the background (the task is kept until it finishes)."""
+    """Start :func:`execute_run` in the background on the running loop.
+
+    The task is kept until it finishes; it belongs to that loop (``task.get_loop()``),
+    which is the only one :func:`cancel_runs` lets cancel it.
+    """
     task = asyncio.get_running_loop().create_task(execute_run(run_id),
                                                   name=f"workspace-report-run-{run_id}")
     _TASKS.add(task)
@@ -1244,8 +1248,14 @@ def spawn_run(run_id: int) -> None:
 
 
 async def cancel_runs() -> None:
-    """Cancel every background run (hub shutdown); each is marked ``interrupted``."""
-    tasks = list(_TASKS)
+    """Cancel the running loop's background runs (its lifespan's shutdown).
+
+    Each is marked ``interrupted``. Runs spawned on another event loop — another lifespan
+    in the same process — are left to that loop: cancelling a foreign-loop task from here
+    is not thread-safe, and awaiting it here would raise.
+    """
+    loop = asyncio.get_running_loop()
+    tasks = [task for task in list(_TASKS) if task.get_loop() is loop]
     for task in tasks:
         task.cancel()
     if tasks:

@@ -254,6 +254,43 @@ describe('Assistant → answer actions', () => {
     Reflect.deleteProperty(navigator, 'clipboard');
   });
 
+  it('keeps the excerpt of a source the reader may no longer open, says why, and offers no link to it', async () => {
+    const gone: Citation = { ...CITATION, can_open: false };
+    const kept: Citation = { n: 2, document_id: 6, title: 'Regulament intern', chunk_id: 32, page: null, excerpt: 'Regula comună.', can_open: true };
+    const answer = { ...ANSWER, content: 'Termenul este de **30 de zile** [1], conform regulamentului [2].', citations: [gone, kept] };
+    const mock = boot('/workspace/assistant/7', {
+      'GET /api/workspace/conversations/7': { conversation: CONVERSATION, messages: [QUESTION, answer] },
+      'POST /api/workspace/messages/12/feedback': (call) => ({ message: { ...answer, feedback: (call.body as { value: number }).value } }),
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sursa 1: Contract cadru.pdf' }));
+    let drawer = await screen.findByRole('dialog', { name: 'Sursa [1]' });
+    expect(within(drawer).getByText('Plata se face în 30 de zile de la factură.')).toBeTruthy();
+    expect(within(drawer).getByText(/Documentul sursă nu îți mai este accesibil: a fost șters sau mutat între timp/)).toBeTruthy();
+    expect(within(drawer).getByText(/asistentul l-a folosit în răspuns/)).toBeTruthy();
+    expect(within(drawer).queryByText(/folosit în raport/)).toBeNull();
+    expect(within(drawer).queryByRole('link', { name: 'Deschide documentul' })).toBeNull();
+    expect(within(drawer).queryByRole('link', { name: 'Descarcă originalul' })).toBeNull();
+    fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sursa [1]' })).toBeNull());
+
+    // The rating's answer replaces the message: the flags it carries still decide the links.
+    fireEvent.click(screen.getByRole('button', { name: 'Răspuns util' }));
+    await waitFor(() => expect(mock.find('POST', '/api/workspace/messages/12/feedback')).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Răspuns util' }).getAttribute('aria-pressed')).toBe('true'));
+    fireEvent.click(screen.getByRole('button', { name: 'Sursa 1: Contract cadru.pdf' }));
+    drawer = await screen.findByRole('dialog', { name: 'Sursa [1]' });
+    expect(within(drawer).queryByRole('link', { name: 'Deschide documentul' })).toBeNull();
+    fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sursa [1]' })).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sursa 2: Regulament intern' }));
+    drawer = await screen.findByRole('dialog', { name: 'Sursa [2]' });
+    expect(within(drawer).queryByText(/nu îți mai este accesibil/)).toBeNull();
+    expect(within(drawer).getByRole('link', { name: 'Deschide documentul' }).getAttribute('href')).toBe('/workspace/documents/6');
+    expect(within(drawer).getByRole('link', { name: 'Descarcă originalul' }).getAttribute('href')).toBe('/api/workspace/documents/6/file');
+  });
+
   it('requests an email approval with the answer and its sources prefilled', async () => {
     const mock = boot('/workspace/assistant/7', {
       'GET /api/workspace/conversations/7': history,

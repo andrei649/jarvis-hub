@@ -178,7 +178,7 @@ def _storage_failed() -> WorkspaceError:
 # ── storage ──────────────────────────────────────────────────────────────────────────
 
 def files_dir() -> Path:
-    """``<data>/workspace/files`` (mode 0700, created on demand)."""
+    """``<data>/business/files`` (mode 0700, created on demand)."""
     path = config.workspace_dir() / FILES_DIR
     path.mkdir(mode=0o700, exist_ok=True)
     return path

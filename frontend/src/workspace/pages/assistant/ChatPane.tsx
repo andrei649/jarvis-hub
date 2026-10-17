@@ -384,7 +384,7 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
         />
       </div>
       <p className="ws-sr-only" role="status" aria-live="polite">{announcement}</p>
-      <SourceDrawer citation={citation} onClose={() => setCitation(null)} />
+      <SourceDrawer citation={citation} context="answer" onClose={() => setCitation(null)} />
       {emailFor && (
         <EmailRequestDialog
           onClose={() => setEmailFor(null)} departmentId={departmentId} departmentName={department.name}

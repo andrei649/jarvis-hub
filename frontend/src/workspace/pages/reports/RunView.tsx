@@ -175,7 +175,7 @@ export function RunView({ runId, shared = false }: { runId: number; shared?: boo
           {data.citations && data.citations.length > 0 && <Card><SourcesList citations={data.citations} onCite={setCitation} /></Card>}
         </div>
       </div>
-      <SourceDrawer citation={citation} onClose={() => setCitation(null)} />
+      <SourceDrawer citation={citation} context="report" onClose={() => setCitation(null)} />
       {emailing && (
         <EmailRequestDialog
           onClose={() => setEmailing(false)} departmentId={departmentId} departmentName={departmentName}

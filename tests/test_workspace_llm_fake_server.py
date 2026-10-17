@@ -124,6 +124,28 @@ def test_a_report_request_gets_a_well_formed_markdown_report():
     assert "[1]" in report.split("## Constatări")[0]
 
 
+@pytest.mark.parametrize(("locale", "name", "ask", "empty", "heading"), [
+    ("ro", "Vânzări lunare Nord", "Rezumă vânzările.", "Gol", "# Raport: Vânzări lunare Nord"),
+    ("en", "Monthly sales North", "Summarize the sales.", "Empty", "# Report: Monthly sales North"),
+])
+def test_the_heading_of_a_real_report_prompt_names_the_report_once(locale, name, ask, empty,
+                                                                     heading):
+    """The workspace prompt says "Raport: <name>" itself; the heading must not repeat it."""
+    from agents.core.workspace import reports
+
+    def prompt(sources: str, report_name: str) -> str:
+        return reports.report_prompt(locale, sources=sources, name=report_name, instructions=ask,
+                                     date="2026-10-17", timezone="Europe/Bucharest")
+
+    system = reports.system_prompt(locale, org="Acme", department="Vânzări", guidance="")
+    report = fake.compose_reply(system, prompt(SOURCES, name))
+    assert report.splitlines()[0] == heading
+    assert "Raport: Raport" not in report and "Report: Report" not in report
+    assert fake.compose_reply(system, prompt(SOURCES, name)) == report, "deterministic"
+    without_sources = fake.compose_reply(system, prompt("", empty))
+    assert without_sources.splitlines()[0] == f"{heading.split(':')[0]}: {empty}"
+
+
 def test_an_english_report_without_sources_says_there_is_no_data():
     report = fake.compose_reply("You write a report.", "Summarize the quarter for the board.")
     assert report.startswith("# Report: Summarize the quarter for the board")

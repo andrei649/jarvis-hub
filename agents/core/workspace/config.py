@@ -38,6 +38,14 @@ ENV_SCHEDULER = "NERVA_WORKSPACE_SCHEDULER"
 
 SETUP_CODE_FILE = "setup-code.txt"
 
+#: The workspace's own directory under the data root. It is NOT ``workspace``: that name is
+#: the hub's default root for the owner's file tools (``JARVIS_FILE_ROOTS``), for
+#: ``JARVIS_TERMINAL_LOCAL_ROOTS`` and for the tool-result spill directory
+#: (``workspace/tool_results``), so company data there would be readable by the owner's
+#: personal assistant. No other hub module uses ``business``; ``data_purge.KEEP_DIRS`` keeps
+#: it through the owner's "forget me" (spec §3 "Data location", BACKLOG NWS-14).
+DATA_DIRNAME = "business"
+
 _MIB = 1024 * 1024
 _HOUR = 3600
 _DAY = 86400
@@ -57,19 +65,19 @@ def enabled() -> bool:
 
 
 def workspace_dir() -> Path:
-    """``data_path("workspace")``, created with mode 0700 on demand.
+    """``data_path(DATA_DIRNAME)`` (``<data>/business``), created with mode 0700 on demand.
 
     The directory holds the database, uploaded files and the setup code, so it is
     created private; an existing directory keeps whatever mode the operator chose.
     """
-    path = data_path("workspace")
+    path = data_path(DATA_DIRNAME)
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
 
 
 def setup_code_path() -> Path:
     """Where a generated setup code lives (it may not exist)."""
-    return data_path("workspace", SETUP_CODE_FILE)
+    return data_path(DATA_DIRNAME, SETUP_CODE_FILE)
 
 
 def create_private_file(path: Path, data: bytes) -> bytes:

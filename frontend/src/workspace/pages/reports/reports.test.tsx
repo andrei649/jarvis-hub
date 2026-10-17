@@ -335,6 +335,7 @@ describe('Shared reports', () => {
     let drawer = await screen.findByRole('dialog', { name: 'Sursa [1]' });
     expect(within(drawer).getByText('Plata în 30 de zile.')).toBeTruthy();
     expect(within(drawer).getByText(/Documentul sursă nu îți este accesibil/)).toBeTruthy();
+    expect(within(drawer).getByText('Este textul exact pe care modelul l-a primit ca sursă pentru raport.')).toBeTruthy();
     expect(within(drawer).queryByRole('link', { name: 'Descarcă originalul' })).toBeNull();
     expect(within(drawer).queryByRole('link', { name: 'Deschide documentul' })).toBeNull();
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);

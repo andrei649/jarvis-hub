@@ -142,7 +142,7 @@ def test_the_password_lives_only_in_the_secret_store(conn, ws):
     configure_smtp(conn, 2525, username="robot")
     raw = conn.execute("SELECT settings_json FROM org").fetchone()[0]
     assert "Parola-SMTP-Secreta" not in raw
-    store_file = ws.data_dir / "workspace" / "secrets.enc"
+    store_file = ws.data_dir / "business" / "secrets.enc"
     assert "Parola-SMTP-Secreta" not in store_file.read_text(encoding="utf-8")
     mailer.set_password(None)
     assert mailer.has_password() is False
