@@ -50,14 +50,21 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
   const [consents,setConsents]=useState<Partial<Record<SelectionNeed,string>>>({});
   const [refreshId,setRefreshId]=useState(0);
   const refreshCatalog=useRef(false);
-  const activeCount=selectedHandles.reduce((total,handle)=>total+(activeImages.find(image=>image.handle===handle)?.count||0),0);
+  // Bolt Optimization: Maintain an O(1) Map lookup index for activeImages to avoid repeated O(N) array scans during count/toggle/submission.
+  const activeImageMap=React.useMemo(()=>new Map(activeImages.map(img=>[img.handle,img])),[activeImages]);
+  const activeCount=selectedHandles.reduce((total,handle)=>total+(activeImageMap.get(handle)?.count||0),0);
   const reviewPrompt=prompt.trim()||'Describe these images.';
   const invalidateReview=()=>{setDestination(null);setReviewedSelection(null);setAck('');setConsents({});};
   const publish=()=>setImages([...records.current]);
   const dispose=(entry:Draft)=>{entry.reader.onload=null;entry.reader.onerror=null;entry.reader.onabort=null;if(entry.reader.readyState===1)entry.reader.abort();if(entry.url)URL.revokeObjectURL(entry.url);};
   const clear=()=>{activeRequest.current?.abort();records.current.forEach(dispose);records.current=[];publish();setActiveImages([]);setSelectedHandles([]);setActiveSession('');setActiveState('idle');invalidateReview();setNote('');};
   useEffect(()=>{clear();},[sessionId,agent,selectedTurn]); // eslint-disable-line react-hooks/exhaustive-deps
-  const remove=(id:number)=>{const entry=records.current.find(item=>item.id===id);records.current=records.current.filter(item=>item.id!==id);if(entry){dispose(entry);invalidateReview();}publish();};
+  const remove=(id:number)=>{
+    let entry:Draft|undefined;
+    const recs=records.current;
+    for(let i=0;i<recs.length;i++){if(recs[i].id===id){entry=recs[i];break;}}
+    records.current=recs.filter(item=>item.id!==id);if(entry){dispose(entry);invalidateReview();}publish();
+  };
   const loadActiveImages=async()=>{
     activeRequest.current?.abort();
     const controller=new AbortController();activeRequest.current=controller;
@@ -80,9 +87,9 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
     finally {if(activeRequest.current===controller)activeRequest.current=null;}
   };
   const toggleActive=(handle:string)=>{
-    const row=activeImages.find(image=>image.handle===handle);if(!row)return;
+    const row=activeImageMap.get(handle);if(!row)return;
     const next=selectedHandles.includes(handle)?selectedHandles.filter(item=>item!==handle):[...selectedHandles,handle];
-    const count=next.reduce((total,item)=>total+(activeImages.find(image=>image.handle===item)?.count||0),0);
+    const count=next.reduce((total,item)=>total+(activeImageMap.get(item)?.count||0),0);
     if(count+records.current.length>MAX_IMAGES){setNote('At most eight images across previous and new selections');return;}
     setSelectedHandles(next);setNote('');invalidateReview();
   };
@@ -173,7 +180,7 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
     !xaiUnsupported&&(destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
   const submission=():VisionDraft|null=>ready?{
     images:images.map(image=>image.data!),names:[...images.map(image=>image.name),
-      ...selectedHandles.map(handle=>`Previous: ${activeImages.find(image=>image.handle===handle)?.question||'image'}`)],
+      ...selectedHandles.map(handle=>`Previous: ${activeImageMap.get(handle)?.question||'image'}`)],
     ...(selectedHandles.length?{active_image_handles:selectedHandles}:{}),
     expected_destination:destination!.destination!,expected_binding:destination!.binding!,review_token:destination!.review_token!,agent,
     selected_turn:true,session_id:destination!.session_id!,
