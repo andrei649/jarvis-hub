@@ -7,8 +7,12 @@
 > tokenizer, the delivery-status transitions, AUTOINCREMENT plus the id-reuse guards, and the
 > cloud-only `provider_may_train` rule**; **v3.1, the same day, after the known-issues pass: the
 > data directory moved to `data_path("business")` (NWS-14), loop-aware scheduler and run
-> cancellation, `can_open` on conversation citations, the e2e lane in CI**). Operator
-> documentation: [`PILOT_GUIDE.md`](PILOT_GUIDE.md).
+> cancellation, `can_open` on conversation citations, the e2e lane in CI**; **v3.2, 2026-10-18,
+> after the first assessment round: the audit key guard (§6 Audit), the CLI preflight (§5 `cli.py`),
+> `invalid_identifier` sign-ins, `/admin/stats?tz=`, `ready_document_count`, `share_pending`, the
+> withdrawal reason kept on superseded approvals, the localized delivery-failure notice,
+> `LLMResult.failure_kind` and the model-server liveness probe, the interrupted-document sweep
+> and the frontend behaviours in §10**). Operator documentation: [`PILOT_GUIDE.md`](PILOT_GUIDE.md).
 > Owner directive (2026-10-17): *„avansează, pregătește interfața B2B pentru un pilot … produsul să fie
 > de nota 9/10 chiar și pentru pilot, toate funcțiile trebuie să funcționeze"*. This file is the single
 > shared contract every builder, reviewer and integrator follows. When code and this file disagree,
@@ -76,8 +80,8 @@ behind) and always install a model engine with `llm.set_engine_for_tests(...)` w
 
 | Variable | Default | Rule |
 |---|---|---|
-| `NERVA_WORKSPACE` | off | `env_flag(name, False)`, read at request time. Off → every `/api/workspace/*` answers `404 {"error":"workspace_disabled"}` and the UI route answers a plain 404 page. `db.get_db` refuses before opening a connection, so a disabled workspace never creates `workspace.db`; the scheduler tick is a no-op; the CLI exits 2. |
-| `NERVA_WORKSPACE_SETUP_CODE` | unset | When unset, a code `secrets.token_urlsafe(18)` is generated on first need and written with `O_EXCL`, mode 0600, to `<data>/business/setup-code.txt`; never logged (the log line names the file only). Deleted after a successful setup. `python -m agents.core.workspace setup-code` prints it. |
+| `NERVA_WORKSPACE` | off | `env_flag(name, False)`, read at request time. Off → every `/api/workspace/*` answers `404 {"error":"workspace_disabled"}` and the UI route answers a plain 404 page. `db.get_db` refuses before opening a connection, so a disabled workspace never creates `workspace.db`; the scheduler tick is a no-op; the CLI exits 2 (one of its preflight refusals, §5 `cli.py`). |
+| `NERVA_WORKSPACE_SETUP_CODE` | unset | When unset, a code `secrets.token_urlsafe(18)` is generated on first need and written with `O_EXCL`, mode 0600, to `<data>/business/setup-code.txt`; never logged (the log line names the file and the command that prints it, `nerva-run -m agents.core.workspace setup-code`: the pilot guide's §2 wrapper, so it runs with the service's environment). Deleted after a successful setup. |
 | `NERVA_WORKSPACE_COOKIE_SECURE` | `auto` | `raw = env_str(name, 'auto').strip().lower()`; `''`/`auto` → auto (Secure when `request.url.scheme == 'https'`); `is_recognized_bool(raw)` → `truthy(raw)`; anything else → auto plus one warning naming the variable. |
 | `NERVA_WORKSPACE_SSO_HEADER` | unset | Header carrying the user's email (e.g. `X-Forwarded-Email`). SSO also requires `NERVA_WORKSPACE_SSO_SECRET` (see §6). |
 | `NERVA_WORKSPACE_SSO_SECRET` | unset | Shared secret the proxy injects as `X-Nerva-Proxy-Secret` (constant names `config.ENV_SSO_KEY`, `auth.PROXY_KEY_HEADER`; `config.sso_configured()` needs both variables). |
@@ -86,6 +90,10 @@ behind) and always install a model engine with `llm.set_engine_for_tests(...)` w
 | `NERVA_WORKSPACE_SESSION_MAX_DAYS` | 7 | `env_int(minimum=1)`, clamped to 1..90. |
 | `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` | 2 | `env_int(minimum=1)`, clamped to 1..16; one process-wide semaphore. |
 | `NERVA_WORKSPACE_SCHEDULER` | on | `env_flag(name, True)`; read by `scheduler.start_background()` only, so a change needs a restart. |
+
+The numeric rows clamp only from above: `env_int(..., minimum=1)` returns the **default** for 0, a
+negative or a non-integer value (`2.5`, `abc`), so the lower bound is never applied by clamping. No
+numeric value is refused or logged.
 
 Never write `"1", "true"`-style literal pairs or `== "1"` next to an env read (AUD-14 ratchet).
 
@@ -234,7 +242,8 @@ def require_int(...), require_list(...), require_id_list(...), require_email(...
 MAX_ID = 2 ** 63 - 1   # every id Path/Query parameter is Annotated[int, Path(ge=1, le=MAX_ID)]; body
     # integers stay in SQLite's range (422 reason too_large) — 10**20 must never reach sqlite3
 # 422 reasons: required, too_long, too_short, too_small, too_large, malformed, type, invalid,
-# control_characters, invalid_choice, invalid_email, too_few, too_many, not_ascii, …
+# control_characters, invalid_choice, invalid_email, too_few, too_many, not_ascii,
+# not_an_object (field=body: valid JSON that is not an object), …
 
 # config.py
 def enabled() -> bool; def setup_code() -> str; def max_upload_bytes() -> int
@@ -314,8 +323,46 @@ def record(conn, *, actor: WorkspaceUser | None, action: str, target_type: str =
     # prompt, answer, content, content_md, text, body, body_markdown, preview) are dropped at any
     # depth, as is any key containing password/token/secret/api_key whose value is text or a
     # structure (bools, numbers and None survive: has_password, prompt_tokens); each drop is logged
-    # by key path and never fails the user's action
-def verify_chain(conn) -> dict   # {"ok", "checked", "broken_at", "keyed": True, "key_mismatch": bool}
+    # by key path and never fails the user's action. v3.2: raises AuditKeyMissing /
+    # AuditKeyMismatch (503, nothing written — the caller's tx rolls back) when this process's
+    # key is not the one the newest row was signed with
+def verify_chain(conn) -> dict   # {"ok", "checked", "broken_at", "keyed": True, "key_mismatch": bool,
+    # "unverified": int, "rekeyed_at": int | None}; after a re-key to the current key, the earlier
+    # rows another key signed count as `unverified` (not a break) while the re-key row's pin of
+    # them holds; `checked` counts the rows the current key verified
+# v3.2 — the key guard (review OPS2-01)
+class AuditKeyError(WorkspaceError)        # this process cannot extend the trail (503)
+class AuditKeyMissing(AuditKeyError)       # 503 audit_key_missing: the trail has rows, the process
+    # has neither JARVIS_AUDIT_KEY nor the key file (never minted: a new key would break the chain)
+class AuditKeyMismatch(AuditKeyError)      # 503 audit_key_mismatch: a key, but not the newest row's
+    # (logged with the key's source and both fingerprints, never the key)
+def audit_key(conn=None) -> bytes          # env value, else the key file; a key file is created
+    # only for an empty trail — with conn given and rows in its trail a missing key raises
+    # AuditKeyMissing (record and verify_chain always pass their connection)
+def existing_key() -> bytes | None; def key_source() -> str   # never create a key
+def key_check(conn) -> str                 # 'ok' (empty trail, or the newest row's key) |
+    # 'missing' | 'unreadable' | 'mismatch'; reads only, never creates a key
+def startup_key_check() -> str | None      # the hub lifespan: workspace on and a database present →
+    # opened read-only (db.connect_read_only), key_check, an ERROR log line when not 'ok'
+    # ("Nerva Workspace cannot sign its audit trail: …"); never blocks the start
+REKEY_ACTION = "audit.rekeyed"
+def rekey_plan(conn) -> dict               # read-only: {state, rows, unverified, broken_at,
+    # from_key_fp, to_key_fp, through_id, digest}
+def rekey(conn, *, actor_email: str) -> int   # a key that is truly lost: one audit.rekeyed row,
+    # signed with the new key, records both fingerprints and pins every earlier row (SHA-256 over
+    # all their columns); RekeyRefused('not_needed' | 'no_key' | 'broken') writes nothing
+
+# cli.py (v3.2) — `python -m agents.core.workspace <command>`, run through the pilot guide's
+# `nerva-run`: setup-code · reset-link --email E --base-url U · promote --email E · check ·
+# audit-rekey [--confirm]. Preflight before anything is opened or created, exit 2 with a message
+# naming nerva-run: NERVA_WORKSPACE off; no JARVIS_HOME / JARVIS_MEMORY_DIR and the data root
+# inside the checkout; no database (reset-link, promote, audit-rekey; setup-code creates it);
+# key_check not 'ok' (audit-rekey alone proceeds on 'mismatch'). Exit 1: no such user, user
+# disabled (reset-link), already set up (setup-code), an invalid --base-url (scheme + host
+# [+ root path]; a trailing /workspace is dropped, any other path under /workspace refused).
+# `check` never refuses and writes nothing (the database opened read-only, no key created):
+# workspace on/off, data root, database + schema, audit key state with fingerprints → "ready"
+# exit 0, else "NOT ready" exit 1. `audit-rekey` without --confirm shows the plan and exits 2.
 
 # notifications.py
 def notify(conn, user_ids: Iterable[int], *, kind: str, title: str, body: str = "", link: str = "") -> None
@@ -324,6 +371,16 @@ def notify(conn, user_ids: Iterable[int], *, kind: str, title: str, body: str = 
 def department_approvers(conn, department_id: int, *, exclude: int | None = None) -> list[int]
     # active approvers who are members of it + active admins, minus `exclude`
 def admins(conn, *, exclude: int | None = None) -> list[int]
+
+# approvals.py (S4) — the helpers other domain modules call
+def notify_localized(conn, user_ids, *, kind: str, titles: Mapping[str, str], body: str = "",
+                     link: str = "", bodies: Mapping[str, str] | None = None) -> None
+    # one notification per active user, titled — and with `bodies` (v3.2) worded — in that
+    # user's locale (fallback 'ro')
+def cancel_superseded(conn, approval_ids, *, actor, reason: str, ip: str = "") -> list[int]
+    # joins the caller's tx: pending → 'cancelled'; v3.2 stores `reason` in error_code
+    # ('superseded' | 'recipients_removed' | 'report_deleted'), so the item says why it was
+    # withdrawn; a request its requester cancelled keeps error_code null
 
 # effects_api.py — the approval effect registry
 @dataclass
@@ -341,6 +398,14 @@ def get_effect(kind: str) -> EffectSpec         # WorkspaceError('unknown_kind',
 def kinds() -> list[str]
 # Each domain module calls register_effect() at import; its router imports that module.
 
+# documents.py (S2)
+STALE_PROCESSING_SECONDS = 600; INTERRUPTED = "interrupted"
+def fail_interrupted(conn, now: float, *, claimed_before: float | None = None) -> int
+    # v3.2, the scheduler's documents step: 'processing' rows claimed at or before now - 600 s,
+    # or before claimed_before (the hub's start: one hub per data root, so that extraction died
+    # with its process) → status 'failed', error 'interrupted', chunks deleted, counts 0, in one
+    # tx; returns how many (logged as a count only). Re-index works on them at once
+
 # retrieval.py (S2)
 @dataclass
 class Passage:
@@ -354,10 +419,13 @@ def search(conn, *, department_ids: Sequence[int], include_company: bool, query:
 @dataclass
 class LLMResult:
     text: str; model: str; route: str; locality: str; latency_ms: int   # locality: local|cloud|unknown
+    failure_kind: str = ""   # v3.2: what the backend noted for a failed call (provider_failure_scope;
+    # 'unreachable' wins when noted); '' when nothing was noted. It only qualifies a degraded reply
 class LLMUnavailable(WorkspaceError)       # code model_unavailable, status 503, extra reason=…:
     # hub_not_ready, no_local_model, no_model (allow_cloud, nothing selectable), model_not_approved,
     # backend_error (the data-handling gate could not decide, or an unexpected backend fault),
-    # model_error (a degraded reply), thinking_exhausted, empty_answer
+    # model_unreachable (the server cannot be reached: down, or the connection dropped mid-answer),
+    # model_error (the server answered with an error), thinking_exhausted, empty_answer
 class ModelPolicyBlocked(WorkspaceError)   # code model_policy_blocked, status 409, extra reason=…
     # data_policy_unacknowledged | provider_may_train
 class ModelBusy(WorkspaceError)            # code model_busy, 503, extra retry_after_seconds=10
@@ -373,6 +441,9 @@ async def posture(policy: str) -> dict
     # guardrails_mode=unknown
 def set_engine_for_tests(engine) -> None   # engine exposes async complete(**same kwargs) and async
     # posture(policy); None restores the real HubEngine
+def note_liveness(backend, alive: bool) -> None   # v3.2: what a real call just learned about a local
+    # model server (an unreachable failure reply → down, a non-empty answer → up); feeds the
+    # posture's liveness cache (LIVENESS_TIMEOUT_SECONDS = 2.0, LIVENESS_TTL_SECONDS = 30.0, App. A)
 # The semaphore (one per event loop — the hub runs one), the 64-character hold-back, clean_text and
 # the failure-reply check live in the public complete() wrapper, so they apply to every engine,
 # FakeEngine included, and reports share the one process-wide model semaphore.
@@ -391,8 +462,12 @@ def compute_next_run(report_row, now: float) -> float | None
 
 # scheduler.py (S4)
 class WorkspaceScheduler:
-    def __init__(self, interval_seconds: float = 30.0): ...
-    async def tick(self, now: float | None = None) -> dict   # the testable unit
+    def __init__(self, interval_seconds: float = 30.0, started_at: float | None = None): ...
+        # started_at (v3.2): db.now() when start_background() builds the process-wide scheduler;
+        # None (tests) = only the 600 s age rule of documents.fail_interrupted applies
+    async def tick(self, now: float | None = None) -> dict   # the testable unit; {now, errors,
+        # runs_started, approvals_expired, approvals_interrupted, runs_interrupted,
+        # messages_interrupted, documents_interrupted (v3.2), deleted} — or {skipped} while off
     def start(self) -> None              # idempotent per loop: records the owning loop of each loop task
     async def stop(self) -> None         # stops only the running loop's task
 def start_background() -> None; async def stop_background() -> None   # S6 calls from the hub lifespan
@@ -446,12 +521,20 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   mutating `/api/workspace` request (public or authenticated) with an `Origin` header must match the
   request's own origin (scheme://host from `request.base_url`), or `Sec-Fetch-Site` must be
   `same-origin`/`none`, else `403 csrf_failed`. Public mutating routes also require
-  `Content-Type: application/json`. The workspace never sends CORS headers.
+  `Content-Type: application/json`. The workspace never sends CORS headers: the hub-wide
+  `JARVIS_CORS_ORIGINS` middleware is installed as `http.WorkspaceExemptCORSMiddleware`, which passes
+  every `/api/workspace*` and `/workspace*` request (preflights included, root-path aware) straight to
+  the app, so a listed origin gets no `Access-Control-*` header there.
 - **Login throttling (no enumeration).** Keyed on the lowercased email through `login_attempts`, for
   existing and nonexistent emails alike: after 5 consecutive failures for that email within 15 min the
   answer is `429 too_many_attempts` with `retry_after_seconds`. Per IP: 20 failures / 15 min → same 429.
   Failures answer the generic `401 invalid_credentials` (unknown, invited and disabled users included);
   unknown or password-less users are verified against a fixed dummy scrypt hash so timing does not leak.
+  v3.2: what was typed in the email field is kept (attempt row, `auth.login_failed`) only when
+  `http.normalize_email` accepts it; anything else — a password typed into the wrong field — is
+  recorded as `''` with reason `invalid_identifier`, so it never reaches the append-only audit. `''`
+  has no per-email bucket (no account can match it, and one shared bucket would let anyone's garbage
+  lock the next mistyped login out); the per-IP limit still counts it.
   Setup code: 10 failures / hour / IP and 50 failures / hour globally → 429; invite lookup and accept:
   30 tries / hour / IP. Attempt rows are committed before the error is raised. Each login attempt is
   **reserved as a failure before its password is verified** (`reserve_login_attempt`: the check and the
@@ -470,7 +553,9 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   occurs exactly once and holds a valid email without CR/LF; header `X-Nerva-Proxy-Secret` matches
   `NERVA_WORKSPACE_SSO_SECRET` (compare_digest). The email must belong to an active user (no
   auto-provisioning). The session stores `sso_email`; a later request from a trusted peer carrying a
-  different email header revokes it. A malformed `JARVIS_TRUSTED_PROXIES` (ValueError) → `sso_disabled`.
+  different email header revokes it. A malformed `JARVIS_TRUSTED_PROXIES` (ValueError) → `sso_disabled`
+  in the route, but the boot guard (`proxy_trust.assert_parseable_trusted_proxies`, run by the web
+  lifespan) refuses to start the hub with such a list, so a running hub does not reach that branch.
   The secret header must also occur exactly once. Requests from untrusted peers answer
   `401 sso_no_identity` and leave no attempt or audit rows (they cannot grow the trail).
 - **Authorization (server-side, every query).**
@@ -516,7 +601,8 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   cooperative deadline inside the worker (a thread stops at its next page, row or sheet checkpoint; it
   cannot be killed mid-page). Any extraction problem → document `failed` with a stable `error` code
   (`invalid_file`, `encrypted_pdf`, `too_many_pages`, `no_text`, `timeout`, `too_much_text` — over
-  10 000 000 extracted characters). Stored as `files/<id>.bin`, moved into place inside the transaction
+  10 000 000 extracted characters; v3.2 `interrupted`, set by the scheduler's sweep, §9, for an
+  extraction that died with its process). Stored as `files/<id>.bin`, moved into place inside the transaction
   that inserts the row (nobody sees a row without its file; a delete renames the file aside inside its
   transaction); the user's filename never touches the filesystem. 60 uploads / hour / user, and
   **re-indexing spends from the same budget**; at most 3 uploads in flight per user → `429 rate_limited`
@@ -552,6 +638,17 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   off. An unreadable stored password (`SecretStoreError`) → `409 smtp_password_unreadable`.
 - **Audit.** Key = env `JARVIS_AUDIT_KEY`, else a persisted 32-byte key at
   `(JARVIS_KEY_DIR or ~/.config/jarvis)/workspace_audit.key` (0600, created atomically) — always keyed.
+  **Key guard (v3.2, review OPS2-01).** The key file is created only while the trail is empty. A
+  process whose key is not the one the newest row was signed with never writes: no key at all →
+  `503 audit_key_missing`; another key → `503 audit_key_mismatch`; the action's transaction rolls
+  back, so every sign-in and every change answers that 503 (reads such as `GET /session` still
+  answer) until the service's key is back. The refusal is logged with the key's source and both
+  fingerprints, never the key, and the hub says so once at start (`audit.startup_key_check`). A
+  successful password check refused this way settles its reserved attempt as a success, so people
+  retrying during the incident are not locked out after it. A key that is truly lost is replaced
+  on purpose with the CLI's `audit-rekey --confirm` (§5): one `audit.rekeyed` row, signed with the
+  new key, pins every earlier row; `verify_chain` then checks every row the new key signed and
+  counts the others as `unverified`, still detecting any later edit, deletion or reordering of them.
   `hash = HMAC-SHA256(key, b"nerva-ws-audit-v1" + prev_hash + canonical)`, `canonical = json.dumps({ts,
   actor_user_id, actor_email, action, target_type, target_id, department_id, ip, details},
   sort_keys=True, separators=(",",":"), ensure_ascii=False)`, first `prev_hash = "0"*64`, `key_fp` =
@@ -564,7 +661,7 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   conversation.deleted chat.asked message.feedback report.created report.updated report.deleted
   report.run_started report.run_succeeded report.run_failed report.delivered approval.requested
   approval.approved approval.rejected approval.cancelled approval.expired approval.executed
-  approval.failed email.sent email.failed` (CLI actions use `actor_email='cli'`, scheduler-driven ones
+  approval.failed email.sent email.failed audit.rekeyed` (CLI actions use `actor_email='cli'`, scheduler-driven ones
   `actor_email='scheduler'`). `approval.executed` / `approval.failed` carry `details.late=true` when an
   effect finished after the 10-minute sweep had already failed it — the row and the notifications then
   keep the sweep's outcome. An admin's immediate admin-rule action stores **no** decision note (stored
@@ -616,9 +713,9 @@ hub's generic handler defers to it there). Ids in paths are bounded `1..MAX_ID`.
 | PATCH `/me` | U | `{name?, locale?, theme?}` → `{user}` |
 | POST `/me/password` | U | `{current_password, new_password}` → 204 (other sessions revoked); `403 wrong_password` (counts toward the lockout), `422 weak_password` |
 | GET `/me/sessions` | U | → `{sessions:[{id, current, created_at, last_seen_at, ip, user_agent, via}]}` (`id` = first 12 hex of the hash) |
-| DELETE `/me/sessions/{session_id}` | U | → 204 (cannot revoke the current one here; use logout) |
+| DELETE `/me/sessions/{session_id}` | U | → 204; the current session answers `409 cannot_revoke_current` (use logout) |
 | POST `/me/sessions/revoke-others` | U | → `{revoked}` |
-| GET `/departments` | U | → departments the caller may use `{departments:[{id, slug, name, description, archived, created_at, member_count, document_count}]}` (v3: wrapped like every list; `assistant_instructions` left out) |
+| GET `/departments` | U | → departments the caller may use `{departments:[{id, slug, name, description, archived, created_at, member_count, document_count, ready_document_count}]}` (v3: wrapped like every list; `assistant_instructions` left out; v3.2 `ready_document_count` = documents with status `ready`, the ones the assistant can cite — the chat's empty state uses it, §10; also in the `departments` of `GET /session` and `GET /me`) |
 | GET `/notifications` | U | `?unread=1&limit=` → `{items, unread_count}` |
 | POST `/notifications/read` | U | `{ids?: [], all?: bool}` → `{unread_count}` |
 
@@ -629,15 +726,15 @@ hub's generic handler defers to it there). Ids in paths are bounded `1..MAX_ID`.
 | POST `/admin/users` | `{email, name, role, department_ids[≥1], send_email?}` → 201 `{user, invite_url, emailed}`; `emailed` uses `mailer.send_mail` when SMTP is configured (import lazily; a mail failure — `smtp_configured` raising included — leaves the user created and answers `emailed:false, email_error`, and the router audits `email.sent` / `email.failed` itself); `409 email_taken` (field `email`) |
 | PATCH `/admin/users/{user_id}` | `{name?, role?, department_ids?, status?: active|disabled}` → `{user}` |
 | POST `/admin/users/{user_id}/invite` | `{send_email?}` (empty body allowed) → `{invite_url, purpose, emailed, expires_at}` (invite for `invited`, reset for `active`; `409 user_disabled` for `disabled`; enabling a disabled user without a password sets `invited`) |
-| GET `/admin/departments` | → `{departments:[…]}`, all incl. archived, each with `member_count`, `document_count`, `report_count`, `conversation_count` |
+| GET `/admin/departments` | → `{departments:[…]}`, all incl. archived, each with `member_count`, `document_count`, `ready_document_count` (v3.2), `report_count`, `conversation_count`; the department answered by POST and PATCH carries the same counts |
 | POST `/admin/departments` | `{name, description?, assistant_instructions?}` → 201 department (slug derived, unique); `409 department_exists` (case-insensitive, Unicode-aware) |
 | PATCH `/admin/departments/{department_id}` | `{name?, description?, assistant_instructions?, archived?}` |
 | DELETE `/admin/departments/{department_id}` | → 204 only when it has no members, documents, reports or conversations; else 409 `department_not_empty` |
 | GET `/admin/org` · PATCH `/admin/org` | `{name, default_locale, model_policy}` |
 | GET `/admin/audit` | `?actor_id=&action=&since=&until=&limit≤200&before_id=` → `{items, next_before_id}` |
 | GET `/admin/audit/export` | same filters → `text/csv` attachment (≤ 50 000 rows) |
-| GET `/admin/audit/verify` | → `verify_chain()` |
-| GET `/admin/stats` | `?days=1..365` (default 30) → `{days, since, totals:{users, active_users_7d, documents, conversations, questions, reports, report_runs, approvals_pending, feedback_up, feedback_down}, per_department:[{department_id, slug, name, archived, members, documents, conversations, questions, reports, report_runs}], daily:[{date, questions, report_runs}]}`. The window is the last *days* UTC calendar days (today included). `questions` and `report_runs` (totals, per department and daily) are counted from the append-only audit rows `chat.asked` (one per question, with its department) and `report.run_started` (one per queued manual or scheduled run), never from `messages` / `report_runs`, so deleting a conversation or a report never rewrites past usage; feedback counts the current rating of the answers still stored; the other totals are current counts |
+| GET `/admin/audit/verify` | → `verify_chain()` (v3.2 adds `unverified` and `rekeyed_at`, §5). Without a key it answers `503 audit_key_missing`; with another key — reachable only through a session issued before the key changed, since a new sign-in is refused (§6) — it writes nothing and reports `key_mismatch` at the first row the key does not verify |
+| GET `/admin/stats` | `?days=1..365` (default 30) `&tz=<IANA zone>` (v3.2, optional, ≤ 64 chars; an unknown or malformed zone → `422 invalid_request` `field=tz`, `reason=invalid`) → `{days, since, timezone, totals:{users, active_users_7d, documents, conversations, questions, reports, report_runs, approvals_pending, feedback_up, feedback_down}, per_department:[{department_id, slug, name, archived, members, documents, conversations, questions, reports, report_runs}], daily:[{date, questions, report_runs}]}`. The window is the last *days* calendar days (today included) in `timezone` — the `tz` asked for (the UI sends the browser's zone and, on a `field=tz` refusal, asks again without it), else `Europe/Bucharest` (`STATS_TIMEZONE`; `UTC`, named so in `timezone`, on a host whose zone database cannot load it); `since` is the local midnight of the first day, and each `daily` bucket runs from one local midnight to the next (a DST day is 23 or 25 h). `questions` and `report_runs` (totals, per department and daily) are counted from the append-only audit rows `chat.asked` (one per question, with its department) and `report.run_started` (one per queued manual or scheduled run), never from `messages` / `report_runs`, so deleting a conversation or a report never rewrites past usage; feedback counts the current rating of the answers still stored; the other totals are current counts |
 
 **S2 — `routers/workspace_documents.py`** (all **U**)
 | Method & path | Body → Response |
@@ -678,7 +775,7 @@ immediate request). A document that changed since the request fails the approval
 | DELETE `/reports/{report_id}` | → 204 |
 | POST `/reports/{report_id}/run` | → 202 `{run}` (queued; `create_run` → `spawn_run`); `409 run_in_progress {run_id}` while a run of this report is queued or running; `429 rate_limited`; `409 department_archived` |
 | GET `/reports/{report_id}/runs` | → `{runs:[…without content]}` (the newest 100) |
-| GET `/report-runs/{run_id}` | → bare run with `content_md`, `citations` (each with `can_open`: whether the reader may open its document now, `documents.visible_ids` at read time — `false` for another department's document in a company-shared run, or one deleted since), `can_share`, `can_email` (= succeeded; the UI combines it with `smtp_configured`), plus `report:{id, name, department_id}`, `report_name`, `department_id`, `department_name`; `delivered_to` is `[]` for a viewer outside the report's department (visible to the report's department; company-shared runs visible to everyone) |
+| GET `/report-runs/{run_id}` | → bare run with `content_md`, `citations` (each with `can_open`: whether the reader may open its document now, `documents.visible_ids` at read time — `false` for another department's document in a company-shared run, or one deleted since), `can_share`, `share_pending` (v3.2: a `report.share_company` request for this run is `pending` or `executing`; `can_share` is then false — a second request would only answer `409 already_requested` — and the run view says the share is waiting), `can_email` (= succeeded; the UI combines it with `smtp_configured`), plus `report:{id, name, department_id}`, `report_name`, `department_id`, `department_name`; `delivered_to` is `[]` for a viewer outside the report's department (visible to the report's department; company-shared runs visible to everyone) |
 | GET `/report-runs/{run_id}/export` | `?format=md|html` → attachment; HTML is a standalone, print-ready page (inline CSS, no scripts); `409 run_not_ready` for a run without a finished report |
 | GET `/shared-reports` | → `{runs:[…]}`, company-shared succeeded runs visible to everyone (the newest 200), each in the run-list shape with `report:{id, name, department_id}`, `report_name`, `department_id` and **`department_name`** (the reader is mostly outside that department, so the UI cannot name it from its own department list); `delivered_to` is `[]` outside the report's department |
 Effects registered by S4: `report.delivery` `{report_id, emails}` (decider `department`; execute
@@ -691,7 +788,14 @@ record `delivered_to_json` (the addresses the server accepted). **`delivery_stat
 recipients set → `pending`; approved → `approved` (the approved list snapshotted); rejected, expired
 or failed → `rejected`; withdrawn (cancelled, also when superseded) → `none`; recipients removed →
 `none`. A succeeded run whose email delivery fails stays `succeeded`, with `error='delivery_failed'` and
-`error_code` = the mail error code. Effect failure codes: `stale_request` (`report.delivery`: the
+`error_code` = the mail error code; the owner and the trigger user get a `report.delivery_failed`
+notification whose body (v3.2) is a sentence in their language for that code (`smtp_failed`,
+`smtp_not_configured`, `recipient_not_allowed`, `smtp_password_unreadable`, else a generic one), never
+the raw code. A pending request a domain change withdrew is `cancelled` with `error_code` (v3.2,
+`approvals.cancel_superseded`): `superseded` (the recipients changed, the report moved, a newer
+delivery request replaced it), `recipients_removed`, or `report_deleted` (its pending
+`report.delivery`, and the `report.share_company` / `email.send` requests about its runs); the UI
+words each one. Effect failure codes: `stale_request` (`report.delivery`: the
 recipients changed, or a newer delivery request replaced this one), `409 already_shared`, `409
 run_not_ready`, `not_found`. `email.send` limits: subject ≤ 200, `body_markdown` ≤ 30 000 characters,
 ≤ 20 recipients; a source message must belong to one of the requester's conversations in a department
@@ -757,6 +861,11 @@ is registered as `font/woff2` (the CSS loads its fonts relative to itself under 
   next to AUTOINCREMENT, §4). A `pending` row this process is not producing (a crash or restart left
   it) never causes `conversation_busy`: the next question's transaction marks it `error` /
   `interrupted`, and the scheduler does the same after 10 minutes.
+- **Failure reasons (v3.2).** A failure reply is `model_unreachable` (not `model_error`) when the
+  backend noted the call as `unreachable` (`LLMResult.failure_kind`) or the reply is the local
+  backend's „can't reach" string; the UI words the two reasons differently, and the posture's
+  liveness probe (Appendix A) turns the model chip `Indisponibil` without waiting for the router's
+  5-minute re-probe.
 - **Concurrency.** `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` semaphore, 30 s acquire → `503 model_busy`;
   180 s per answer → `model_timeout` (reports 300 s).
 - **Title.** The first user message titles a conversation still called „Conversație nouă" / "New
@@ -774,7 +883,10 @@ timezone (`zoneinfo`, validated on create/edit; a tick that cannot load a zone f
 `timezone_unavailable`). `next_run_at` is recomputed after each scheduled run and each schedule
 change (v3 details below); due reports are claimed with compare-and-set on `next_run_at`. At most 2 runs execute concurrently; the tick marks `running` >
 15 min and `queued` > 30 min as failed (`interrupted`). Housekeeping in the tick: pending messages > 10
-min → `error interrupted`; delete `login_attempts` > 24 h, invites expired > 7 d, sessions revoked,
+min → `error interrupted`; documents left `processing` by an extraction that died — claimed over
+600 s ago, or before this hub started — → `failed` / `interrupted` (v3.2, `documents.fail_interrupted`;
+extraction runs inside the upload or re-index request under a 60 s bound, so such a claim has no
+worker left); delete `login_attempts` > 24 h, invites expired > 7 d, sessions revoked,
 expired or idle-dead > 7 d, read notifications > 90 d. The tick is a no-op while `NERVA_WORKSPACE` is
 off; each step runs in its own short transactions and one failing step never stops the others.
 
@@ -822,11 +934,15 @@ lifespan in the same process on another loop never cancels the first one's.
   default language, model policy + live model status + test), Email (SMTP + test), Audit (filters,
   table, CSV export, chain verification), Usage (KPIs + daily chart in SVG).
 - **Behaviour fixed during the build (v3.1).**
-  - *Source drawer.* The drawer behind a citation chip shows the document title, page and the exact
-    excerpt as plain text, plus „Deschide documentul" (its preview in Documents) and „Descarcă
-    originalul". When the citation says `can_open: false` (a report run shared company-wide that
-    cites another department's document, or any answer or run whose document was deleted or moved
-    since) it keeps the excerpt, hides both links (they could only answer `404`) and says why in the
+  - *Source drawer.* The drawer behind a citation chip shows the document title, page and the
+    exact excerpt, plus „Deschide documentul" (its preview in Documents) and „Descarcă
+    originalul". v3.2: the excerpt is rendered through `CitedMarkdown` (the shared safe renderer,
+    no HTML, headings one level below the drawer's h2) after `pages/shared/excerpt.ts`
+    `excerptMarkdown()` has put back the line breaks a table extracted from DOCX/XLSX/CSV lost when
+    the excerpt was stored with collapsed whitespace — it adds line breaks only and never changes a
+    word; text that is not a table is left alone. When the citation says `can_open: false` (a
+    report run shared company-wide that cites another department's document, or any answer or run
+    whose document was deleted or moved since) it keeps the excerpt, hides both links (they could only answer `404`) and says why in the
     words of its context: in the assistant `source.notOpenableAnswer`, in a run view
     `source.notOpenable` (RO/EN). A citation without the flag (the live `sources` event) is openable.
   - *Shared reports.* The list's department column reads the run's `department_name` from the
@@ -835,6 +951,37 @@ lifespan in the same process on another loop never cancels the first one's.
     at once (optimistically, into the signed-in user, so the controls themselves update), save it
     with `PATCH /me`, apply only the latest save's answer, and on failure revert to the previous
     value with a translated toast.
+- **Behaviour added in the first assessment round (v3.2).**
+  - *Document preview.* The document drawer renders its `preview` through `CitedMarkdown` too (the
+    extractor writes tables, sheets and headings as Markdown).
+  - *Unsent drafts.* The assistant composer (key `composer.<conversation id>`, or
+    `composer.new.<department id>`) and the report form (`report.<id>` / `report.new`) mirror
+    their text into `sessionStorage` (this tab only) under `nerva.workspace.draft.<user id>.<key>`,
+    so a session ended under the user (a 401 after a revocation or an expiry) does not lose it: the
+    same user's page restores it after signing in again. A draft is dropped when it is sent or
+    saved, when the form is cancelled, and — every user's — on a deliberate sign-out; blocked
+    storage just keeps no draft.
+  - *„Primii pași" (getting started).* At the top of Admin → Users a card lists five steps, each
+    checked from real data: email configured, a department besides General, a colleague invited,
+    a `ready` document (`ready_document_count`), the newest `model.tested` audit row with
+    `details.ok`. Each open step links to where it is done (the invite step opens the invite
+    dialog); the card disappears once every step is done and can be hidden earlier (per admin, in
+    this browser's `localStorage`).
+  - *No citable documents.* The chat's empty state warns when the department has no `ready`
+    document — worded differently when it has documents that all failed or are still processing —
+    and links to Documents.
+  - *Tables on small screens.* Below 768 px every `ui/Table` row becomes a stacked card: the first
+    column is the card's title, the other cells follow with their column name, the actions column
+    sits in the card's corner. From 768 px a wide table scrolls inside its own frame (focusable and
+    labelled only while it really overflows) with the actions column sticky.
+  - *Run view.* The h1 is the report's name; the report's own `# Title` renders one level down,
+    inside the article. While `share_pending` is true the view says the share request is waiting
+    and offers no second request.
+  - *Approvals.* The approval drawer says why a request was withdrawn: its `error_code`
+    (`superseded`, `recipients_removed`, `report_deleted`, §7) has its own sentence, a code without
+    one reads as a generic withdrawal, and a request with no code was cancelled by its requester.
+  - *Usage.* The admin usage page sends the browser's time zone as `tz` and names the zone the
+    days were counted in.
 - **Quality bar.** Every async action has loading, success and error states; empty states teach the next
   step; destructive actions confirm; forms validate inline and map server `error` codes to translated
   messages; dialogs and drawers trap and return focus; everything keyboard reachable with visible focus;
@@ -934,13 +1081,18 @@ HUD lane with `E2E_PYTHON=python`, uploading `frontend/e2e/.results/workspace-sc
   `WorkspaceError('content_blocked', status=422)`; `RuntimeError`, `LocalBackendUnavailableError`,
   `ModelNotApprovedError`, `SelectionError` → `LLMUnavailable`; `BackendTimeout` → `ModelTimeout`.
   (7) Failure detection: `agents.core.llm.base.is_backend_failure_reply(text)` or `text.strip()==''` →
-  `LLMUnavailable(reason='model_error'|'empty_answer')`; never `is_degraded_reply`. (8) Hold tokens
+  `LLMUnavailable(reason='model_error'|'empty_answer')`; never `is_degraded_reply`. A failure reply the
+  backend noted as `unreachable` (`provider_failure_scope`), or the „can't reach the local …” reply, is
+  `reason='model_unreachable'` instead. (8) Hold tokens
   until 64 chars or end; forward nothing when the buffer is a failure reply.
 - `posture()`: `router.local_backend` (local_only) or `router.preview_backend('workspace','x')`
   (allow_cloud), plus `check_data_handling(..., actual_use=False)` inside try (it still raises
   `DataHandlingRefused`); add `reason` and `guardrails_mode` (`orch.security.stats()['mode']`). Reasons:
   `hub_not_ready`, `no_local_model`, `data_policy_unacknowledged`, `provider_may_train` (v3, also
-  `no_model`, `model_not_approved`, `backend_error`).
+  `no_model`, `model_not_approved`, `backend_error`). The router re-probes local servers only every
+  5 min, so for a local route the posture also GETs the server itself (`/v1/models` or `/api/tags`,
+  2 s, cached 30 s; every real call refreshes the cache) and answers `available:false`,
+  `reason='model_unreachable'` when it does not answer.
 - `check_data_handling` → `{provider, policy ('local'|'no-training'|'unknown'|'trains-on-inputs'), note,
   scope, warning, acknowledged, last_used}`. Workspace calls are unattended (no bound principal), so any
   warning raises `DataHandlingRefused`. A loopback lm-studio/ollama endpoint is `local`; a non-loopback
@@ -1046,6 +1198,18 @@ HUD lane with `E2E_PYTHON=python`, uploading `frontend/e2e/.results/workspace-sc
 - Backup archives every regular file under the data root; `data_purge` removes everything except
   `KEEP_FILES`/`KEEP_DIRS` (S6 adds `business`, the workspace's directory since v3.1); one hub per data root (hub lock), so one in-process
   scheduler is safe.
+- (v3.2) `paths.data_root()` is `JARVIS_HOME` / `JARVIS_MEMORY_DIR`, else `<user home>/memory` when
+  a user home is active (`JARVIS_USER_HOME`, or a frozen build's default), else
+  `<checkout>/memory_logs` — the last fallback, inside `paths.app_root()`, is what the CLI
+  preflight refuses (a shell without the service's environment would create a second, empty
+  workspace there). The backup CLI (`python -m agents.core.backup`, not workspace code) resolves
+  `verify` / `restore` names only against the file names in `<data root>/backups/`
+  (`resolve_backup`; a full path → `no such backup`, exit 2), and lets `SecretStoreError` (wrong
+  `JARVIS_BACKUP_KEY`) and `FileExistsError` (non-empty target) escape as tracebacks (exit 1); the
+  pilot guide §17 names all three. Files are created with the process umask: `sqlite3` makes
+  `workspace.db` 0644 and `mkdir` makes `backups/` 0755 under systemd's default 0022, and a restore
+  writes `0o666`/`0o777 & ~umask` (`archive_safe`) — hence `UMask=0077` in the pilot guide's §2
+  drop-in and `nerva-run`.
 - Protected paths make a PR control-plane: `.github/workflows/**`, `agents/core/kernel/**`,
   `agents/core/security/**`, `agents/core/secret*`, `AGENTS.md`, `MOONSHOT.md`. The plan touches only
   `ci.yml` and (v3.1) `e2e.yml` among them.

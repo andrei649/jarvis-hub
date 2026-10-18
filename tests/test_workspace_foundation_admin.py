@@ -292,9 +292,20 @@ def test_last_active_admin_rule_ignores_disabled_admins(admin):
 
 def test_another_admin_can_be_disabled_while_one_remains(admin):
     company, client, headers = admin
-    other = make_user(db(), role="admin", department_ids=[company.dept_a])
+    conn = db()
+    other = make_user(conn, role="admin", department_ids=[company.dept_a])
+    others_phone = _client()
+    login(others_phone, other.email)
+    assert others_phone.get(USERS).status_code == 200
     r = client.patch(f"{USERS}/{other.id}", headers=headers, json={"status": "disabled"})
-    assert r.status_code == 200
+    assert r.status_code == 200 and r.json()["user"]["status"] == "disabled"
+    assert conn.execute("SELECT status FROM users WHERE id = ?", (other.id,)).fetchone()[0] == "disabled"
+    assert others_phone.get(USERS).status_code == 401, "the disabled admin's live session ends"
+    assert conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ? AND revoked_at IS NULL",
+                        (other.id,)).fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM audit WHERE action = 'user.disabled' AND target_id = ?",
+                        (str(other.id),)).fetchone()[0] == 1
+    assert client.get(USERS).status_code == 200, "the remaining admin keeps working"
 
 
 @pytest.mark.parametrize(("path", "status"), [(f"{USERS}/999", 404), (f"{USERS}/0", 422)])
@@ -328,8 +339,8 @@ def test_list_departments_includes_archived_with_counts(admin):
     items = client.get(DEPTS).json()["departments"]
     assert [d["archived"] for d in items] == [False, False, True]
     sales = next(d for d in items if d["id"] == company.dept_a)
-    assert (sales["member_count"], sales["document_count"], sales["report_count"],
-            sales["conversation_count"]) == (3, 0, 0, 0)
+    assert (sales["member_count"], sales["document_count"], sales["ready_document_count"],
+            sales["report_count"], sales["conversation_count"]) == (3, 0, 0, 0, 0)
     assert "assistant_instructions" in sales
 
 
@@ -666,6 +677,72 @@ def test_deleting_conversations_and_reports_does_not_rewrite_past_usage(ws, monk
     assert after["totals"]["conversations"] == before["totals"]["conversations"] - 1
     assert after["totals"]["reports"] == before["totals"]["reports"] - 1
     assert per_after[company.dept_a]["conversations"] == 0 and per_after[company.dept_a]["reports"] == 0
+
+
+# ── usage days are local calendar days (review fix UX-17) ────────────────────────────
+
+def _questions_at(conn, company, clock, stamps: list[float]) -> None:
+    for at in stamps:
+        clock.current = at
+        with workspace_db.tx(conn):
+            audit.record(conn, actor=company.member_a, action="chat.asked",
+                         target_type="conversation", target_id=1, department_id=company.dept_a)
+
+
+def test_usage_days_follow_the_local_calendar_not_utc(ws, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    utc, bucharest = ZoneInfo("UTC"), ZoneInfo("Europe/Bucharest")
+    late_evening = datetime(2026, 10, 17, 22, 30, tzinfo=utc).timestamp()   # 01:30 on the 18th
+    afternoon = datetime(2026, 10, 17, 12, 0, tzinfo=utc).timestamp()
+    now = datetime(2026, 10, 18, 9, 0, tzinfo=bucharest).timestamp()
+    clock = freeze_clock(monkeypatch, start=now)
+    conn = db()
+    company = seed_company(conn)
+    client = _client()
+    login(client, company.admin.email)
+    _questions_at(conn, company, clock, [afternoon, late_evening])
+    clock.current = now
+    local = client.get("/api/workspace/admin/stats?days=2").json()
+    assert local["timezone"] == "Europe/Bucharest"
+    assert local["daily"] == [{"date": "2026-10-17", "questions": 1, "report_runs": 0},
+                              {"date": "2026-10-18", "questions": 1, "report_runs": 0}]
+    assert local["since"] == datetime(2026, 10, 17, tzinfo=bucharest).timestamp()
+    in_utc = client.get("/api/workspace/admin/stats?days=2&tz=UTC").json()
+    assert in_utc["timezone"] == "UTC"
+    assert [d["questions"] for d in in_utc["daily"]] == [2, 0]
+    today_only = client.get("/api/workspace/admin/stats?days=1").json()
+    assert today_only["totals"]["questions"] == 1, "the 01:30 question is today's, locally"
+
+
+def test_a_dst_day_is_counted_from_midnight_to_midnight(ws, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    bucharest = ZoneInfo("Europe/Bucharest")       # 2026-10-25: 25 hours (EEST → EET)
+    first = datetime(2026, 10, 25, 0, 30, tzinfo=bucharest).timestamp()
+    last = datetime(2026, 10, 25, 23, 30, tzinfo=bucharest).timestamp()
+    next_day = datetime(2026, 10, 26, 0, 10, tzinfo=bucharest).timestamp()
+    now = datetime(2026, 10, 26, 12, 0, tzinfo=bucharest).timestamp()
+    clock = freeze_clock(monkeypatch, start=now)
+    conn = db()
+    company = seed_company(conn)
+    client = _client()
+    login(client, company.admin.email)
+    _questions_at(conn, company, clock, [first, last, next_day])
+    clock.current = now
+    body = client.get("/api/workspace/admin/stats?days=2").json()
+    assert [(d["date"], d["questions"]) for d in body["daily"]] == [("2026-10-25", 2),
+                                                                     ("2026-10-26", 1)]
+    assert sum(d["questions"] for d in body["daily"]) == body["totals"]["questions"] == 3
+
+
+@pytest.mark.parametrize("tz", ["Mars/Olympus", "../etc/passwd", "Europe/Bucharest;x", "a" * 65])
+def test_an_unknown_stats_time_zone_is_refused(admin, tz):
+    _company, client, _headers = admin
+    r = client.get("/api/workspace/admin/stats", params={"tz": tz})
+    assert r.status_code == 422 and r.json()["field"] == "tz"
 
 
 @pytest.mark.parametrize("days", ["0", "366", "x"])

@@ -10,8 +10,10 @@ enough of that protocol for the real backend to work against it:
 * ``POST /v1/embeddings`` — deterministic hashed bag-of-words vectors.
 
 Answers are deterministic and citation-aware, like ``FakeEngine``: with a
-``<source id="1" …>`` in the prompt the answer quotes that source's first sentence
-and cites ``[1]``; without sources it says it found nothing. The language follows the
+``<source id="1" …>`` in the prompt the answer quotes that source's gist (:func:`gist`:
+its first prose sentence, skipping Markdown headings and tables; for a table-only source —
+a spreadsheet, a CSV — its first data row as ``Lună: Iulie — Județ: Sibiu``) and cites
+``[1]``; without sources it says it found nothing. The language follows the
 question (the text after "Întrebarea utilizatorului:" / "User question:", else after
 the last ``</source>``): Romanian when it has Romanian diacritics or at least two common
 Romanian words. When the system prompt is about a report ("raport" / "report"), the
@@ -105,10 +107,10 @@ def looks_romanian(text: str) -> bool:
 
 
 def sources_of(prompt: str) -> dict[int, tuple[str, str]]:
-    """``{n: (title, body)}`` of every ``<source>`` fence in *prompt*."""
+    """``{n: (title, body)}`` of every ``<source>`` fence in *prompt* (line breaks kept)."""
     found: dict[int, tuple[str, str]] = {}
     for number, title, body in _SOURCE.findall(prompt):
-        found.setdefault(int(number), (title or f"#{number}", " ".join(body.split())))
+        found.setdefault(int(number), (title or f"#{number}", body.strip()))
     return found
 
 
@@ -117,6 +119,69 @@ def first_sentence(text: str, limit: int = 240) -> str:
     cleaned = " ".join(text.split())
     sentence = _SENTENCE_END.split(cleaned, maxsplit=1)[0] if cleaned else ""
     return sentence[:limit].rstrip()
+
+
+_HEADING_LINE = re.compile(r"^\s{0,3}#{1,6}\s+")
+_TABLE_LINE = re.compile(r"^\s*\|")
+_RULE_CELL = re.compile(r"^:?-{3,}:?$")
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
+
+
+def _table_cells(line: str) -> list[str]:
+    inner = line.strip()
+    inner = inner[1:] if inner.startswith("|") else inner
+    inner = inner[:-1] if inner.endswith("|") and not inner.endswith("\\|") else inner
+    return [" ".join(cell.replace("\\|", "|").split()) for cell in _UNESCAPED_PIPE.split(inner)]
+
+
+def _is_rule(cells: list[str]) -> bool:
+    return bool(cells) and all(_RULE_CELL.match(cell) for cell in cells if cell) and any(cells)
+
+
+def _first_table_row(lines: list[str]) -> str:
+    """The first data row of the first Markdown table, as ``header: value — …``."""
+    header: list[str] | None = None
+    for line in lines:
+        if not _TABLE_LINE.match(line):
+            if header is not None:
+                break
+            continue
+        cells = _table_cells(line)
+        if _is_rule(cells):
+            continue
+        if header is None:
+            header = cells
+            continue
+        pairs = [f"{name}: {value}" if name else value
+                 for name, value in zip(header + [""] * len(cells), cells, strict=False) if value]
+        return " — ".join(pairs)
+    return " — ".join(header or [])
+
+
+def gist(body: str, limit: int = 240) -> str:
+    """What a reader takes from a source: its first prose sentence, at most *limit* chars.
+
+    The workspace sends sources with their line breaks, as the extractor wrote them:
+    Markdown headings (``## Încasări``) and tables (``| Lună | Județ |``). Headings and
+    table lines are skipped for the first prose paragraph; a source that is only a table
+    reads as its first data row (``Lună: Iulie — Județ: Sibiu — Încasări (lei): 41250``);
+    one that is only headings reads as its first heading.
+    """
+    lines = body.splitlines()
+    paragraph: list[str] = []
+    for line in lines:
+        if not line.strip() or _HEADING_LINE.match(line) or _TABLE_LINE.match(line):
+            if paragraph:
+                break
+            continue
+        paragraph.append(line.strip())
+    if paragraph:
+        return first_sentence(" ".join(paragraph), limit)
+    row = _first_table_row(lines)
+    if row:
+        return row[:limit].rstrip()
+    heading = next((_HEADING_LINE.sub("", line) for line in lines if _HEADING_LINE.match(line)), "")
+    return first_sentence(heading, limit)
 
 
 def _cell(text: str) -> str:
@@ -144,11 +209,11 @@ def compose_report(question: str, sources: dict[int, tuple[str, str]], *, romani
         lines += [words["none"], "", f"## {words['sources']}", f"- {words['no_sources']}"]
         return "\n".join(lines)
     first = min(sources)
-    lines += [f"{first_sentence(sources[first][1])} [{first}]", "", f"## {words['findings']}"]
-    lines += [f"- {first_sentence(body)} [{n}]" for n, (_, body) in sorted(sources.items())]
+    lines += [f"{gist(sources[first][1])} [{first}]", "", f"## {words['findings']}"]
+    lines += [f"- {gist(body)} [{n}]" for n, (_, body) in sorted(sources.items())]
     lines += ["", f"## {words['data']}", "",
               f"| Nr. | {words['document']} | {words['excerpt']} |", "| --- | --- | --- |"]
-    lines += [f"| [{n}] | {_cell(title)} | {_cell(first_sentence(body, 100))} |"
+    lines += [f"| [{n}] | {_cell(title)} | {_cell(gist(body, 100))} |"
               for n, (title, body) in sorted(sources.items())]
     lines += ["", f"## {words['sources']}"]
     lines += [f"{n}. [{n}] {_cell(title)}" for n, (title, _) in sorted(sources.items())]
@@ -165,7 +230,7 @@ def compose_reply(system: str, prompt: str) -> str:
     if _REPORT.search(system):
         return compose_report(question, sources, romanian=romanian)
     if 1 in sources:
-        sentence = first_sentence(sources[1][1])
+        sentence = gist(sources[1][1])
         if romanian:
             return f"Conform documentelor companiei: {sentence} [1]"
         return f"According to the company documents: {sentence} [1]"

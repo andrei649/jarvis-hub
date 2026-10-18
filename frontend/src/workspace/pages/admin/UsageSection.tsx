@@ -1,13 +1,16 @@
 /* Admin → Usage: headline numbers, daily activity and the per-department breakdown, for a
    chosen period. Every number comes from GET /admin/stats; a department column appears only
-   for metrics the server actually reports, so nothing is padded with zeros it did not send. */
+   for metrics the server actually reports, so nothing is padded with zeros it did not send.
+   Days are the reader's calendar days: the browser's time zone goes to the server as `tz`, so a
+   question asked at 00:30 in Bucharest counts on today's bar, not on yesterday's UTC one. */
 import React, { useMemo, useState } from 'react';
 import { getUsage, listAdminDepartments } from '../../api/admin';
 import type { UsageDepartmentRow, UsageStats } from '../../api/types';
-import { describeError } from '../../app/errors';
+import { describeError, errorField } from '../../app/errors';
 import { useAsync } from '../../app/hooks';
 import { useI18n, type MessageKey } from '../../i18n';
 import { Button, Card, EmptyState, LoadingBlock, Notice, Select, Skeleton, Table, type Column } from '../../ui';
+import { browserTimeZone } from '../reports/schedule';
 import { DailyBarChart } from './DailyBarChart';
 
 const PERIODS = [7, 30, 90] as const;
@@ -51,7 +54,7 @@ function Kpis({ stats }: { stats: UsageStats }) {
       <Kpi label={t('usage.kpi.approvals')} value={fmt.number(totals.approvals_pending)} />
       <Kpi
         label={t('usage.kpi.feedback')} value={rated ? fmt.percent(totals.feedback_up / rated) : '—'}
-        sub={rated ? t('usage.kpi.feedbackSplit', { up: totals.feedback_up, down: totals.feedback_down }) : t('usage.kpi.noFeedback')}
+        sub={rated ? `${tn('usage.kpi.helpful', totals.feedback_up)} · ${tn('usage.kpi.notHelpful', totals.feedback_down)}` : t('usage.kpi.noFeedback')}
       />
     </div>
   );
@@ -81,7 +84,16 @@ export function UsageSection() {
   const i18n = useI18n();
   const { t, tn, fmt } = i18n;
   const [days, setDays] = useState<number>(30);
-  const stats = useAsync(() => getUsage(days), [days]);
+  const [zone] = useState(browserTimeZone);
+  // A zone the server does not know (an exotic browser setting) falls back to its default.
+  const stats = useAsync(async () => {
+    try {
+      return await getUsage(days, zone);
+    } catch (err) {
+      if (zone && errorField(err) === 'tz') return getUsage(days);
+      throw err;
+    }
+  }, [days, zone]);
   const departments = useAsync(listAdminDepartments, []);
   const names = useMemo(() => new Map((departments.data ?? []).map((d) => [d.id, d.name])), [departments.data]);
 
@@ -124,7 +136,7 @@ export function UsageSection() {
       {stats.data && (
         <>
           <Kpis stats={stats.data} />
-          <Card title={t('usage.activity')} description={tn('usage.activityDesc', days)}>
+          <Card title={t('usage.activity')} description={tn('usage.activityDesc', days, { zone: (stats.data.timezone || zone || 'Europe/Bucharest').replace(/_/g, ' ') })}>
             {stats.data.daily.length === 0 ? (
               <EmptyState compact icon="activity" title={t('usage.chart.none')} />
             ) : (

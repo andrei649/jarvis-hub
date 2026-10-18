@@ -1,13 +1,18 @@
 /* State shared by every signed-in screen: the departments the user may work in, the one
-   currently selected in the sidebar switcher, and the shell counters (pending approvals).
+   currently selected in the sidebar switcher, the shell counters (pending approvals) and the
+   model posture (GET /model) that the top-bar chip and the pages' notices read.
+
+   The posture is one shared read, polled every 30 s and re-read at once by any screen that has
+   just seen the model fail (a failed answer, report or model test): the server marks a dead
+   model server down on that failure, so the chip never says "Local" above a red result.
 
    The selected department is remembered per user in this browser and validated against the
    server's list on every load, so a department the user lost access to is never used. Pages
    that change departments (admin) or decide approvals call the refresh functions, which keeps
    the sidebar honest without polling for everything. */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { listDepartments, pendingApprovalsCount } from '../api/account';
-import type { Department } from '../api/types';
+import { getModelPosture, listDepartments, pendingApprovalsCount } from '../api/account';
+import type { Department, ModelPosture } from '../api/types';
 import { usePolling } from './hooks';
 import { useSession } from './session';
 import { readPref, writePref } from './storage';
@@ -21,10 +26,16 @@ export interface WorkspaceContextValue {
   refreshDepartments: () => Promise<void>;
   pendingApprovals: number;
   refreshPendingApprovals: () => Promise<void>;
+  /** The model posture; null until the first read answers. */
+  posture: ModelPosture | null;
+  /** The last read failed (the chip says "status unknown"). */
+  postureFailed: boolean;
+  refreshPosture: () => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 const APPROVALS_POLL_MS = 60_000;
+export const POSTURE_POLL_MS = 30_000;
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const { user, session } = useSession();
@@ -34,6 +45,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [departmentsError, setError] = useState<unknown>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pendingApprovals, setPending] = useState(0);
+  const [posture, setPosture] = useState<ModelPosture | null>(null);
+  const [postureFailed, setPostureFailed] = useState(false);
 
   const refreshDepartments = useCallback(async () => {
     try {
@@ -68,6 +81,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, []);
   usePolling(refreshPendingApprovals, APPROVALS_POLL_MS, userId !== null);
 
+  const refreshPosture = useCallback(async () => {
+    try {
+      setPosture(await getModelPosture());
+      setPostureFailed(false);
+    } catch {
+      setPostureFailed(true);
+    }
+  }, []);
+  usePolling(refreshPosture, POSTURE_POLL_MS, userId !== null);
+
   // Default to a department the user belongs to (admins can use every department, but their
   // own membership is the sensible starting point), then to the first one listed.
   const memberOf = user?.department_ids;
@@ -80,9 +103,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<WorkspaceContextValue>(() => ({
     departments, departmentsLoaded, departmentsError, currentDepartment, setCurrentDepartmentId,
-    refreshDepartments, pendingApprovals, refreshPendingApprovals,
+    refreshDepartments, pendingApprovals, refreshPendingApprovals, posture, postureFailed, refreshPosture,
   }), [departments, departmentsLoaded, departmentsError, currentDepartment, setCurrentDepartmentId,
-    refreshDepartments, pendingApprovals, refreshPendingApprovals]);
+    refreshDepartments, pendingApprovals, refreshPendingApprovals, posture, postureFailed, refreshPosture]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

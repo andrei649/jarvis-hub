@@ -1213,8 +1213,11 @@ says nothing about continuity — the fallback is named in the result shape, not
 
 Ten variables, all read through `agents/core/env_config.py` by
 `agents/core/workspace/config.py` **at call time** (nothing is cached; a systemd install still
-needs a restart for the process to see a changed environment file). Out-of-range numbers are
-clamped, never refused: a typo must not take the workspace down. The whole product surface —
+needs a restart for the process to see a changed environment file). Numbers are never refused —
+a typo must not take the workspace down: a value above the maximum is clamped to the maximum, while
+zero, a negative or a non-integer value (`2.5`, `abc`) falls back to the **default**, not to the
+minimum (`env_int(..., minimum=1)` returns the default below its minimum). Neither case logs a
+warning. The whole product surface —
 `/workspace` and `/api/workspace/*` — exists only while `NERVA_WORKSPACE` is on. Install,
 proxy and operations: [`business/PILOT_GUIDE.md`](business/PILOT_GUIDE.md); contract:
 [`business/WORKSPACE_PILOT_SPEC.md`](business/WORKSPACE_PILOT_SPEC.md) §3.
@@ -1227,7 +1230,11 @@ proxy and operations: [`business/PILOT_GUIDE.md`](business/PILOT_GUIDE.md); cont
 `db.get_db` before a connection is opened, so a disabled workspace never creates
 `<data root>/business/workspace.db` — and the UI route answers a plain 404 page. The
 scheduler's tick is a no-op, so switching the flag on later needs no scheduler restart. The
-CLI (`python -m agents.core.workspace …`) refuses with exit code 2.
+operator CLI (`nerva-run -m agents.core.workspace …`, the pilot guide's §2 wrapper) refuses with
+exit code 2 — as it does, before changing anything, when it is not run with the service's
+environment: no `JARVIS_HOME` (a data root inside the checkout), no database for `reset-link` /
+`promote` / `audit-rekey`, or an audit key that is missing or not the trail's. Its read-only
+`check` command reports the same conditions instead (`ready` exit 0, `NOT ready` exit 1).
 **ON:** the company web app: local accounts (scrypt, httpOnly sessions, CSRF tokens),
 departments and roles, the governed assistant over uploaded documents, reports, four-eyes
 approvals and a keyed audit chain. It never calls the owner's personal pipeline, memory or
@@ -1245,7 +1252,8 @@ never reach company data; do not point explicit roots at the data root or at `bu
 
 **Default: unset.** Unset, a code (`secrets.token_urlsafe(18)`) is generated on first need
 and written with mode 0600 to `<data root>/business/setup-code.txt`; the log line names the
-file, never the code; `python -m agents.core.workspace setup-code` prints it; the file is
+file and the command that prints it, never the code; `nerva-run -m agents.core.workspace
+setup-code` (the pilot guide's §2 wrapper: the service's own environment) prints it; the file is
 deleted after a successful first-run setup. Set, the value is the code (and is never
 deleted — remove it from the environment after setup). Guessing is throttled: 10 wrong codes
 per hour per IP and 50 per hour overall → `429 too_many_attempts`.
@@ -1268,7 +1276,8 @@ Caddy) needs **both**: the name of the header that carries the user's email
 with exactly one email header holding a valid address, exactly one matching secret
 (`compare_digest`) and an **active** user — no auto-provisioning. A later request from a
 trusted peer carrying a different email revokes the session. A malformed
-`JARVIS_TRUSTED_PROXIES` answers `404 sso_disabled`.
+`JARVIS_TRUSTED_PROXIES` never reaches this route: the boot guard refuses to start the hub
+(`Refusing to start: JARVIS_TRUSTED_PROXIES: …`).
 **Cost:** anyone who can reach the hub from a trusted peer address and knows the secret can
 sign in as any active user — keep the proxy on loopback, strip client-sent copies of both
 headers, and keep the secret out of the proxy's stored config.
@@ -1279,12 +1288,14 @@ unchanged.
 
 **Default: 25** (MiB; `min(env_int(..., 25, minimum=1), 200)`). The largest accepted
 upload; the raw body is streamed and refused with `413 file_too_large` the moment it crosses
-the cap. A reverse proxy in front must allow a slightly larger body, or users see the proxy's
-error instead of the translated one.
+the cap. The body is collected in memory (`documents.read_upload`: a `bytearray`, then a `bytes`
+copy — up to twice the file while it is received), at most 3 uploads in flight per user and no
+process-wide cap, so size RAM for `2 × cap × concurrent uploads`. A reverse proxy in front must allow
+a slightly larger body, or users see the proxy's error instead of the translated one.
 
 ### `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS`
 
-**Defaults: 12 (clamped 1..168) · 7 (clamped 1..90).** Idle and absolute lifetime of a
+**Defaults: 12 (1..168; above 168 → 168, below 1 → 12) · 7 (1..90; above 90 → 90, below 1 → 7).** Idle and absolute lifetime of a
 workspace session. The idle limit is checked on every request against `last_seen_at`, which is
 refreshed at most once a minute (60 s granularity); the absolute expiry (and the cookie's
 `max_age`) is stamped when the session is issued, so a change applies to sessions issued
@@ -1292,7 +1303,7 @@ afterwards. Longer values keep stolen cookies useful for longer.
 
 ### `NERVA_WORKSPACE_MAX_CONCURRENT_LLM`
 
-**Default: 2** (clamped 1..16). The process-wide model semaphore shared by chat answers,
+**Default: 2** (1..16; above 16 → 16, below 1 → 2). The process-wide model semaphore shared by chat answers,
 report runs and the admin model test; a caller waits up to 30 s for a slot, then gets
 `503 model_busy` with `retry_after_seconds=10`. Raise it only when the model server really
 serves that many requests in parallel — otherwise answers just queue inside the server and
@@ -1302,10 +1313,13 @@ time out (180 s chat, 300 s reports).
 
 **Default: ON** (`env_flag(..., True)`; checked when the hub starts the loop). One tick every
 30 s: due scheduled reports (compare-and-set claims), approval expiry (7 days) and the
-10-minute `executing` sweep, stale report runs (15 min running / 30 min queued) and pending
-answers (10 min), plus retention deletes (login attempts 24 h; expired invites, dead
-sessions 7 days; read notifications 90 days). **OFF:** none of that happens — scheduled
-reports never run and pending approvals never expire. **Revert:** unset + restart.
+10-minute `executing` sweep, stale report runs (15 min running / 30 min queued), pending
+answers (10 min) and documents left `processing` by an extraction that died (claimed over
+10 min ago, or before this hub started → `failed` / `interrupted`, re-indexable at once), plus
+retention deletes (login attempts 24 h; expired invites, dead sessions 7 days; read
+notifications 90 days). **OFF:** none of that happens — scheduled reports never run, pending
+approvals never expire, and a document interrupted by a restart reads `processing` until a
+re-index after 10 min. **Revert:** unset + restart.
 
 ## Decision table
 
@@ -1347,7 +1361,7 @@ reports never run and pending approvals never expire. **Revert:** unset + restar
 | `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 (MiB, capped 200) | Larger documents accepted (streamed, early `413 file_too_large`) | Each in-flight upload is held in memory (≤ 3 per user); the proxy body limit must follow | Unset: 25 MiB |
 | `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS` | 12 (1..168) · 7 (1..90) | Longer idle / absolute session lifetime | A stolen cookie stays useful longer | Unset + restart: 12 h idle on the next request; 7 days for sessions issued afterwards |
 | `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` | 2 (1..16) | More simultaneous model calls (chat + reports + model test share it) | Overcommits a model server that cannot run them in parallel → timeouts instead of `model_busy` | Unset + restart: 2 for new callers |
-| `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run and pending-answer sweeps, retention deletes every 30 s | Off: scheduled reports never run, pending approvals never expire, old rows are never deleted | Unset + restart: on again |
+| `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run, pending-answer and interrupted-extraction sweeps, retention deletes every 30 s | Off: scheduled reports never run, pending approvals never expire, interrupted documents stay `processing`, old rows are never deleted | Unset + restart: on again |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
 | `llm.execute_code_sessions` *(runtime setting)* | on when code enabled · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, requires a current Action Kernel GRANT after its interpreter lock, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Explicitly set `false` + restart: back to the K1 one-shot, kernels destroyed |
 | `llm.tool_result_thresholds` *(runtime setting)* | `{}` (`tool_result_store.py`) | Per-tool byte ceilings for what a result may put in the context window, as `{tool: bytes}`. Beats the tool's own declaration and the `mcp_` family default; loses to a pinned tool (`file_read` is pinned to no limit, because it is how a spilled result is read back) | Raising one lets that tool fill more of the window; lowering it sends more of its output to disk. Nothing is lost either way — over the ceiling the full result is spilled and the model gets a preview naming the file | Set `{}` (no restart): back to the window-scaled default |

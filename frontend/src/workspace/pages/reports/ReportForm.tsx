@@ -5,16 +5,25 @@
    department plus the company-wide ones (spec §9); in an edited report, a document that has
    since been deleted or failed is named and dropped, since the server refuses ids it cannot
    use. Email delivery is explained up front: it needs a department approver's yes and a
-   configured mail server, and changing the recipients asks for a new approval. */
+   configured mail server, and changing the recipients asks for a new approval.
+
+   When every chosen document has gone, saving would leave the report with no chosen
+   documents — which means every ready document of the department and the company (spec §9).
+   That widening is never silent: the form says so and asks for an explicit confirmation.
+
+   What is typed is kept as a draft in this tab (app/drafts.ts) until it is saved or the form is
+   cancelled, so a session that ends under the person does not lose a half-written report. */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { listDocuments } from '../../api/documents';
 import { createReport, updateReport } from '../../api/reports';
 import type { Report, ReportRequest, ScheduleKind, WorkspaceDocument } from '../../api/types';
 import { describeError, errorCode, errorField } from '../../app/errors';
+import { clearDraft, readDraft, writeDraft } from '../../app/drafts';
 import { useAsync } from '../../app/hooks';
+import { useUser } from '../../app/session';
 import { useWorkspace } from '../../app/workspace';
 import { useI18n, type MessageKey } from '../../i18n';
-import { Button, Checkbox, Drawer, focusFirstInvalid, LoadingBlock, Notice, RadioCards, Select, TextArea, TextField, useToast } from '../../ui';
+import { Button, Checkbox, Drawer, focusFirstInvalid, Icon, LoadingBlock, Notice, RadioCards, Select, TextArea, TextField, useToast } from '../../ui';
 import { SCHEDULE_KINDS } from '../shared/labels';
 import { MAX_RECIPIENTS, parseRecipients } from '../shared/recipients';
 import { useApprovalReadiness } from '../shared/useApprovalReadiness';
@@ -24,7 +33,19 @@ const NAME_MAX = 200;
 const INSTRUCTIONS_MAX = 4000;
 const EXAMPLES: MessageKey[] = ['reports.example.1', 'reports.example.2', 'reports.example.3'];
 
-type FormErrors = Partial<Record<'name' | 'instructions' | 'documents' | 'time' | 'timezone' | 'delivery', string>>;
+type FormErrors = Partial<Record<'name' | 'instructions' | 'documents' | 'widen' | 'time' | 'timezone' | 'delivery', string>>;
+
+interface ReportDraft {
+  departmentId: number;
+  name: string;
+  instructions: string;
+  documentIds: number[];
+  kind: ScheduleKind;
+  time: string;
+  weekday: number;
+  timezone: string;
+  emails: string;
+}
 
 function inScope(doc: WorkspaceDocument, departmentId: number): boolean {
   return doc.status === 'ready' && (doc.visibility === 'company' || doc.department_id === departmentId);
@@ -48,16 +69,20 @@ export function ReportForm({ report, defaultDepartmentId, onClose, onSaved }: Re
   const { t, tn } = i18n;
   const toast = useToast();
   const { departments } = useWorkspace();
-  const [departmentId, setDepartmentId] = useState(report?.department_id ?? defaultDepartmentId);
-  const [name, setName] = useState(report?.name ?? '');
-  const [instructions, setInstructions] = useState(report?.instructions ?? '');
-  const [documentIds, setDocumentIds] = useState<number[]>(report?.document_ids ?? []);
+  const userId = useUser().id;
+  const draftKey = report ? `report.${report.id}` : 'report.new';
+  const [restored] = useState<ReportDraft | null>(() => readDraft<ReportDraft>(userId, draftKey));
+  const [departmentId, setDepartmentId] = useState(restored?.departmentId ?? report?.department_id ?? defaultDepartmentId);
+  const [name, setName] = useState(restored?.name ?? report?.name ?? '');
+  const [instructions, setInstructions] = useState(restored?.instructions ?? report?.instructions ?? '');
+  const [documentIds, setDocumentIds] = useState<number[]>(restored?.documentIds ?? report?.document_ids ?? []);
   const [docSearch, setDocSearch] = useState('');
-  const [kind, setKind] = useState<ScheduleKind>(report?.schedule_kind ?? 'manual');
-  const [time, setTime] = useState(report?.schedule_time || DEFAULT_TIME);
-  const [weekday, setWeekday] = useState(report?.schedule_weekday ?? 0);
-  const [timezone, setTimezone] = useState(report?.timezone || DEFAULT_TIMEZONE);
-  const [emails, setEmails] = useState((report?.delivery_emails ?? []).join(', '));
+  const [kind, setKind] = useState<ScheduleKind>(restored?.kind ?? report?.schedule_kind ?? 'manual');
+  const [time, setTime] = useState(restored?.time ?? (report?.schedule_time || DEFAULT_TIME));
+  const [weekday, setWeekday] = useState(restored?.weekday ?? report?.schedule_weekday ?? 0);
+  const [timezone, setTimezone] = useState(restored?.timezone ?? (report?.timezone || DEFAULT_TIMEZONE));
+  const [emails, setEmails] = useState(restored?.emails ?? (report?.delivery_emails ?? []).join(', '));
+  const [widenConfirmed, setWidenConfirmed] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,6 +103,20 @@ export function ReportForm({ report, defaultDepartmentId, onClose, onSaved }: Re
 
   useEffect(() => { if (Object.keys(errors).length) focusFirstInvalid(formRef.current); }, [errors]);
 
+  // Mirror what is typed into the tab's draft store; a new report with nothing typed keeps none.
+  useEffect(() => {
+    const draft: ReportDraft = { departmentId, name, instructions, documentIds, kind, time, weekday, timezone, emails };
+    if (!report && !name && !instructions && !emails) clearDraft(userId, draftKey);
+    else writeDraft(userId, draftKey, draft);
+  }, [departmentId, name, instructions, documentIds, kind, time, weekday, timezone, emails]);
+
+  const cancel = () => { clearDraft(userId, draftKey); onClose(); };
+
+  // Saving would empty a report that had chosen documents: it would then read every ready
+  // document of the department and the company. Say so, and ask for a confirmation.
+  const keptIds = documentIds.filter((id) => availableIds.has(id));
+  const widens = Boolean(report && report.document_ids.length > 0 && documents.data && keptIds.length === 0);
+
   const toggleDocument = (id: number, on: boolean) => setDocumentIds((ids) => (on ? [...ids, id] : ids.filter((x) => x !== id)));
 
   const validate = (): FormErrors => {
@@ -86,6 +125,7 @@ export function ReportForm({ report, defaultDepartmentId, onClose, onSaved }: Re
     if (!instructions.trim()) found.instructions = t('reports.form.error.instructions');
     else if (instructions.length > INSTRUCTIONS_MAX) found.instructions = t('common.tooLong', { max: INSTRUCTIONS_MAX });
     if (kind !== 'manual' && !TIME_PATTERN.test(time)) found.time = t('schedule.error.time');
+    if (widens && !widenConfirmed) found.widen = t('reports.form.error.widen');
     if (parsedEmails.invalid) found.delivery = t('emailRequest.error.invalid', { email: parsedEmails.invalid });
     else if (parsedEmails.emails.length > MAX_RECIPIENTS) found.delivery = t('emailRequest.error.tooMany', { max: MAX_RECIPIENTS });
     return found;
@@ -132,6 +172,7 @@ export function ReportForm({ report, defaultDepartmentId, onClose, onSaved }: Re
         toast.success(t('reports.form.created', { name: payload.name }));
         onSaved(saved, true);
       }
+      clearDraft(userId, draftKey);
       onClose();
     } catch (err) {
       mapServerError(err);
@@ -143,16 +184,17 @@ export function ReportForm({ report, defaultDepartmentId, onClose, onSaved }: Re
   const deliveryUnavailable = delivery.smtpReady === false;
   return (
     <Drawer
-      open onClose={onClose} busy={busy} size="lg"
+      open onClose={cancel} busy={busy} size="lg"
       title={report ? t('reports.form.editTitle') : t('reports.form.createTitle')}
       footer={(
         <>
-          <Button onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
+          <Button onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form="ws-report-form" busy={busy}>{report ? t('common.save') : t('reports.form.submitCreate')}</Button>
         </>
       )}
     >
       <p className="ws-muted">{t('reports.form.desc')}</p>
+      {restored && <Notice tone="accent">{t('reports.form.draftRestored')}</Notice>}
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
       <form id="ws-report-form" ref={formRef} className="ws-form" onSubmit={submit} noValidate>
         {!report && (
@@ -203,8 +245,19 @@ export function ReportForm({ report, defaultDepartmentId, onClose, onSaved }: Re
               </div>
             </>
           )}
-          {missing.length > 0 && <Notice tone="warning">{tn('reports.form.documentsMissing', missing.length)}</Notice>}
-          {errors.documents && <p className="ws-field__error">{errors.documents}</p>}
+          {missing.length > 0 && !widens && <Notice tone="warning">{tn('reports.form.documentsMissing', missing.length)}</Notice>}
+          {widens && (
+            <Notice tone="warning" title={t('reports.form.widenTitle')}>
+              <p>{t('reports.form.widenBody')}</p>
+              <Checkbox
+                label={t('reports.form.widenConfirm')} checked={widenConfirmed}
+                aria-invalid={Boolean(errors.widen) || undefined} aria-errormessage={errors.widen ? 'ws-widen-error' : undefined}
+                onChange={(e) => { setWidenConfirmed(e.target.checked); if (e.target.checked && errors.widen) setErrors(({ widen: _gone, ...rest }) => rest); }}
+              />
+              {errors.widen && <p className="ws-field__error" id="ws-widen-error"><Icon name="alert" size={14} /> <span>{errors.widen}</span></p>}
+            </Notice>
+          )}
+          {errors.documents && <p className="ws-field__error"><Icon name="alert" size={14} /> <span>{errors.documents}</span></p>}
         </fieldset>
 
         <div className="ws-stack">

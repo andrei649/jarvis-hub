@@ -27,9 +27,9 @@ describe('describeCode', () => {
 
   it('adds why the model is out after the model headline', () => {
     expect(describeCode(ro, 'model_unavailable', 'no_local_model'))
-      .toBe('Modelul AI nu este disponibil acum. Niciun model local nu este configurat sau pornit pe serverul hubului.');
+      .toBe('Modelul AI nu este disponibil acum. Niciun model local nu este configurat sau pornit pe serverul Nerva.');
     expect(describeCode(en, 'model_policy_blocked', 'provider_may_train'))
-      .toBe('The organisation’s policy does not allow the model available right now. The cloud provider may train on submitted data, so the organisation’s policy blocks it.');
+      .toBe('The organisation’s policy does not allow the model available right now. The cloud provider may use submitted data to train its models, so the organisation’s policy blocks it.');
     expect(describeCode(ro, 'model_timeout', 'ignored')).toBe('Modelul AI nu a răspuns la timp.');
   });
 

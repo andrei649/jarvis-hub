@@ -136,8 +136,8 @@ def setup_code() -> str:
     workspace_dir()
     stored = create_private_file(path, secrets.token_urlsafe(18).encode("utf-8"))
     logger.warning(
-        "Nerva Workspace setup code written to %s (print it with: "
-        "python -m agents.core.workspace setup-code)", path,
+        "Nerva Workspace setup code written to %s (print it with the service's environment: "
+        "nerva-run -m agents.core.workspace setup-code — PILOT_GUIDE §2, §6)", path,
     )
     return stored.decode("utf-8").strip()
 

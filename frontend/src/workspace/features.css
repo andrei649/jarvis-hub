@@ -6,25 +6,32 @@
 
 /* ───────────────────────────── shared pieces ───────────────────────────── */
 .ws-linklike {
-  padding: 0; border: 0; background: none; color: var(--ws-accent-text); cursor: pointer; text-align: left;
+  padding: 2px 0; border: 0; background: none; color: var(--ws-accent-text); cursor: pointer; text-align: left;
   font: inherit; font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px;
   text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
 }
 .ws-linklike:hover { text-decoration-color: currentColor; text-decoration-thickness: 2px; }
 .ws-row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--ws-s1); }
+.ws-badge-row { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+/* A link that is a table cell's only content gets a 24 px tall target (WCAG 2.5.8). */
+.ws-table-link { display: inline-block; padding-block: 4px; }
 .ws-footer-spacer { flex: 1; }
 .ws-danger-text { color: var(--ws-danger); }
 .ws-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* One line with an ellipsis; the full text is in the title attribute and in the detail view. */
+.ws-truncate { display: block; max-width: 38ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-backlink { margin-bottom: calc(-1 * var(--ws-s2)); }
 .ws-backlink .ws-btn { margin-left: calc(-1 * var(--ws-s3)); }
 .ws-section-title { font-family: var(--ws-font-display); font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
 .ws-subtitle { font-family: var(--ws-font-display); font-weight: 600; font-size: 15px; }
 
+/* Where an answer or a run was produced, in words („Pe serverul companiei"): it may wrap on a
+   narrow card, so it grows in height instead of having a fixed one. */
 .ws-locality {
-  display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 999px;
-  font-size: 11.5px; font-weight: 600; background: var(--ws-surface-2); color: var(--ws-text-muted);
+  display: inline-flex; align-items: center; gap: 6px; min-height: 20px; max-width: 100%; padding: 2px 8px; border-radius: 10px;
+  font-size: 11.5px; font-weight: 600; line-height: 16px; background: var(--ws-surface-2); color: var(--ws-text-muted);
 }
-.ws-locality::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ws-locality::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .ws-locality--local { background: var(--ws-success-soft); color: var(--ws-success); }
 .ws-locality--cloud { background: var(--ws-accent-soft); color: var(--ws-accent-text); }
 .ws-locality--unknown { background: var(--ws-warning-soft); color: var(--ws-warning); }
@@ -65,6 +72,9 @@
   vertical-align: 2px; cursor: pointer;
 }
 .ws-cite:hover:not(.ws-cite--static) { background: var(--ws-accent); color: var(--ws-on-accent); }
+/* A chip that starts its block (a table's "Nr." cell, a source list item) is a target on its own:
+   24 × 24 px (WCAG 2.5.8). Inside a sentence it keeps the compact size of the line. */
+.ws-cite--lead { min-width: 24px; height: 24px; vertical-align: middle; }
 .ws-cite--static { cursor: inherit; vertical-align: 0; flex: none; }
 .ws-sources { display: flex; flex-direction: column; gap: var(--ws-s2); }
 .ws-sources__title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ws-text-subtle); }
@@ -84,6 +94,10 @@
   margin: 0; padding: var(--ws-s3) var(--ws-s4); border-left: 3px solid var(--ws-accent); border-radius: 0 var(--ws-radius) var(--ws-radius) 0;
   background: var(--ws-surface-2); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6;
 }
+/* A passage rendered as Markdown keeps the renderer's own spacing; its tables sit on the
+   surface colour so the cell borders stay visible on the quote's tinted background. */
+.ws-quote__text--md { white-space: normal; }
+.ws-quote__text .ws-md table, .ws-doc-preview__text .ws-md table { background: var(--ws-surface); }
 
 /* ───────────────────────────── assistant ───────────────────────────── */
 .ws-assistant {
@@ -91,6 +105,11 @@
   height: max(480px, calc(100vh - 230px)); height: max(480px, calc(100dvh - 230px));
 }
 .ws-assistant__list { display: none; min-height: 0; }
+/* A short viewport (a laptop at 200 % zoom is about 640×400): the chat shrinks so the
+   composer is on screen when the page opens, instead of below the fold. */
+@media (max-height: 600px) {
+  .ws-assistant { height: max(240px, calc(100vh - 156px)); height: max(240px, calc(100dvh - 156px)); }
+}
 @media (min-width: 1180px) {
   .ws-assistant { grid-template-columns: 280px minmax(0, 1fr); }
   .ws-assistant__list { display: flex; }
@@ -124,23 +143,24 @@
 .ws-chat__foot { display: flex; flex-direction: column; gap: var(--ws-s2); padding: var(--ws-s3) var(--ws-s4) var(--ws-s4); border-top: 1px solid var(--ws-border); background: var(--ws-surface); }
 .ws-chat__note { font-size: 12.5px; color: var(--ws-text-muted); }
 
-.ws-chat-empty { max-width: 640px; margin: var(--ws-s6) auto; display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--ws-s3); }
+.ws-chat-empty { max-width: 680px; margin: var(--ws-s2) auto 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--ws-s2); }
 .ws-chat-empty > .ws-notice { text-align: left; width: 100%; }
-.ws-chat-empty__mark, .ws-msg__mark {
+.ws-msg__mark {
   display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 10px;
   background: var(--ws-accent); color: var(--ws-on-accent); font-family: var(--ws-font-display); font-weight: 700;
 }
-.ws-chat-empty__mark { width: 44px; height: 44px; font-size: 20px; border-radius: 12px; }
-.ws-chat-empty__title { font-family: var(--ws-font-display); font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.ws-chat-empty__title { font-family: var(--ws-font-display); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
 .ws-chat-empty__body { color: var(--ws-text-muted); max-width: 52ch; }
-.ws-chat-empty__label { margin-top: var(--ws-s3); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ws-text-subtle); }
-.ws-prompts { display: grid; gap: var(--ws-s2); width: 100%; }
-@media (min-width: 720px) { .ws-prompts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.ws-chat-empty__label { margin-top: var(--ws-s2); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ws-text-subtle); }
+/* Suggested questions wrap as chips, so all of them fit above the composer at 1280×800. */
+.ws-prompts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--ws-s2); width: 100%; }
+.ws-prompts > li { flex: 0 1 auto; max-width: 100%; }
 .ws-prompt {
-  width: 100%; height: 100%; padding: var(--ws-s3) var(--ws-s4); border: 1px solid var(--ws-border); border-radius: var(--ws-radius);
-  background: var(--ws-surface); color: var(--ws-text); text-align: left; font-size: 13.5px; line-height: 1.45; cursor: pointer;
+  width: 100%; padding: 6px var(--ws-s3); border: 1px solid var(--ws-border); border-radius: 999px;
+  background: var(--ws-surface); color: var(--ws-text); text-align: left; font-size: 13px; line-height: 1.4; cursor: pointer;
   transition: border-color var(--ws-fast) var(--ws-ease), background-color var(--ws-fast) var(--ws-ease);
 }
+@media (max-width: 599px) { .ws-prompt { border-radius: var(--ws-radius); } }
 .ws-prompt:hover:not(:disabled) { border-color: var(--ws-accent); background: var(--ws-accent-soft); }
 .ws-prompt:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -166,14 +186,15 @@
   border-radius: 12px; background: var(--ws-surface); box-shadow: var(--ws-shadow-sm);
   transition: border-color var(--ws-fast) var(--ws-ease), box-shadow var(--ws-fast) var(--ws-ease);
 }
-.ws-composer__box:focus-within { border-color: var(--ws-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ws-focus) 28%, transparent); }
+.ws-composer__box:focus-within { border-color: var(--ws-focus); outline: 2px solid var(--ws-focus); outline-offset: 1px; }
 .ws-composer.has-error .ws-composer__box { border-color: var(--ws-danger); }
 .ws-composer__input {
   flex: 1; min-width: 0; min-height: 44px; max-height: 40vh; padding: 6px 0; border: 0; outline: none; resize: vertical;
   background: transparent; color: var(--ws-text); line-height: 1.5;
 }
 .ws-composer__input::placeholder { color: var(--ws-text-subtle); opacity: 1; }
-/* The box draws the focus ring (:focus-within); a second outline on the textarea would double it. */
+/* The box draws the focus ring (:focus-within, an outline so forced-colours mode keeps it); a
+   second outline on the textarea would double it. */
 .ws-composer__input:focus-visible { outline: none; }
 .ws-composer__hint { display: flex; justify-content: space-between; gap: var(--ws-s2); font-size: 12px; color: var(--ws-text-subtle); }
 .ws-composer__error { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; font-weight: 500; color: var(--ws-danger); }
@@ -187,6 +208,12 @@
   transition: border-color var(--ws-fast) var(--ws-ease), background-color var(--ws-fast) var(--ws-ease);
 }
 .ws-dropzone.is-dragging { border-color: var(--ws-accent); background: var(--ws-accent-soft); }
+/* With documents already listed the zone is one line: still a drop target, no longer the page. */
+.ws-dropzone--compact { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: var(--ws-s2) var(--ws-s3); padding: var(--ws-s3) var(--ws-s4); border-width: 1px; }
+.ws-dropzone--compact .ws-dropzone__icon { width: 32px; height: 32px; border-radius: 8px; }
+.ws-dropzone--compact .ws-dropzone__title { font-size: 14px; }
+.ws-dropzone--compact .ws-dropzone__formats { flex-basis: 100%; }
+.ws-upload__summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ws-s2); }
 .ws-dropzone__icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: var(--ws-surface); color: var(--ws-accent-text); }
 .ws-dropzone__title { font-weight: 600; font-size: 15px; }
 .ws-upload { display: flex; flex-direction: column; gap: var(--ws-s2); }
@@ -209,8 +236,7 @@
 .ws-doc-preview__title { font-family: var(--ws-font-display); font-weight: 600; font-size: 15px; }
 .ws-doc-preview__text {
   margin: 0; max-height: 360px; overflow: auto; padding: var(--ws-s3) var(--ws-s4); border: 1px solid var(--ws-border);
-  border-radius: var(--ws-radius); background: var(--ws-surface-2); font-family: var(--ws-font-mono); font-size: 12.5px;
-  line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
+  border-radius: var(--ws-radius); background: var(--ws-surface-2); font-size: 13.5px; line-height: 1.6; overflow-wrap: anywhere;
 }
 
 /* ───────────────────────────── reports ───────────────────────────── */
@@ -225,7 +251,20 @@
   border: 1px solid var(--ws-border); border-radius: var(--ws-radius);
 }
 .ws-picker.has-error .ws-picker__list { border-color: var(--ws-danger); }
-.ws-run-actions { display: flex; flex-wrap: wrap; gap: var(--ws-s2); }
+.ws-run-actions { display: flex; flex-wrap: wrap; gap: var(--ws-s2); align-items: center; }
+/* The three ways to take the report out (Markdown, HTML, print) read as one control. */
+.ws-btn-group { display: inline-flex; flex-wrap: nowrap; }
+.ws-btn-group > .ws-btn { border-radius: 0; box-shadow: none; }
+.ws-btn-group > .ws-btn + .ws-btn { margin-left: -1px; }
+.ws-btn-group > .ws-btn:first-child { border-radius: 8px 0 0 8px; }
+.ws-btn-group > .ws-btn:last-child { border-radius: 0 8px 8px 0; }
+.ws-btn-group > .ws-btn:focus-visible { position: relative; z-index: 1; }
+@media (max-width: 479px) {
+  .ws-run-actions { width: 100%; }
+  .ws-btn-group { width: 100%; }
+  .ws-btn-group > .ws-btn { flex: 1 1 0; min-width: 0; padding: 6px var(--ws-s2); white-space: normal; line-height: 1.25; text-align: center; }
+  .ws-btn-group > .ws-btn .ws-icon { display: none; }
+}
 .ws-run-live { display: inline-flex; align-items: center; gap: var(--ws-s2); }
 .ws-run { margin-top: var(--ws-s2); }
 .ws-card.ws-run__doc { padding: var(--ws-s6); }

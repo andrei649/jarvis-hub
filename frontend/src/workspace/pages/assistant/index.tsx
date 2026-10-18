@@ -4,15 +4,18 @@
    The department comes from the sidebar switcher. Opening a conversation of another
    department (a link from a notification) switches the sidebar to it, and switching the
    sidebar away from the open conversation's department starts a new chat there, so the list
-   and the chat never disagree. The model posture is polled here too: it decides the honest
-   notices above the composer (model unavailable, answers arriving in one piece under
-   REDACT/BLOCK guardrails); the status chip itself lives in the top bar on every page. */
+   and the chat never disagree. The model posture (the shell's shared read, app/workspace.tsx)
+   decides the honest notices above the composer (model unavailable, answers arriving in one
+   piece under REDACT/BLOCK guardrails); the status chip itself lives in the top bar.
+
+   Below 1180 px the conversation list opens in a drawer from a "Conversații" button with its
+   own icon (the top bar's menu button opens the app navigation), and on a phone the page
+   description is dropped so the chat gets the height. */
 import React, { useEffect, useRef, useState } from 'react';
-import { getModelPosture } from '../../api/account';
 import { deleteConversation, listConversations, renameConversation } from '../../api/chat';
-import type { Conversation, ConversationSummary, ModelPosture } from '../../api/types';
+import type { Conversation, ConversationSummary } from '../../api/types';
 import { describeError } from '../../app/errors';
-import { useAsync, usePolling } from '../../app/hooks';
+import { useAsync } from '../../app/hooks';
 import { useWorkspace } from '../../app/workspace';
 import { useI18n } from '../../i18n';
 import { navigate, useDocumentTitle } from '../../router';
@@ -23,7 +26,6 @@ import { ChatPane } from './ChatPane';
 import { ConversationList } from './ConversationList';
 import '../../features.css';
 
-const POSTURE_POLL_MS = 60_000;
 const TITLE_MAX = 200;
 
 function RenameDialog({ conversation, onClose, onRenamed }: { conversation: ConversationSummary; onClose: () => void; onRenamed: (c: Conversation) => void }) {
@@ -71,27 +73,18 @@ export function AssistantPage({ params }: PageProps) {
   const { t } = i18n;
   const toast = useToast();
   useDocumentTitle(t('nav.assistant'));
-  const { departments, departmentsLoaded, currentDepartment, setCurrentDepartmentId } = useWorkspace();
+  const { departments, departmentsLoaded, currentDepartment, setCurrentDepartmentId, posture } = useWorkspace();
   const routeId = optionalRouteId(params.conversationId);
   const departmentId = currentDepartment?.id ?? null;
   const conversations = useAsync(
     () => (departmentId === null ? Promise.resolve([] as ConversationSummary[]) : listConversations(departmentId)),
     [departmentId],
   );
-  const [posture, setPosture] = useState<ModelPosture | null>(null);
   const [search, setSearch] = useState('');
   const [listOpen, setListOpen] = useState(false);
   const [open, setOpen] = useState<Conversation | null>(null);
   const [renaming, setRenaming] = useState<ConversationSummary | null>(null);
   const [deleting, setDeleting] = useState<ConversationSummary | null>(null);
-
-  usePolling(async () => {
-    try {
-      setPosture(await getModelPosture());
-    } catch {
-      // The notices are advisory; the chip in the top bar reports a failed read on its own.
-    }
-  }, POSTURE_POLL_MS);
 
   // The sidebar moved away from the open conversation's department: start a new chat there.
   const previousDepartment = useRef(departmentId);
@@ -148,7 +141,9 @@ export function AssistantPage({ params }: PageProps) {
   const current = activeId !== null ? summary ?? (open ? { ...open, message_count: 0 } : null) : null;
   const header = (
     <>
-      <IconButton className="ws-chat__list-toggle" icon="menu" label={t('assistant.list.open')} onClick={() => setListOpen(true)} aria-expanded={listOpen} />
+      <Button className="ws-chat__list-toggle" variant="ghost" size="sm" icon="history" onClick={() => setListOpen(true)} aria-expanded={listOpen}>
+        {t('assistant.list.label')}
+      </Button>
       <h2 className="ws-chat__title" id="ws-chat-title">{title}</h2>
       {current && (
         <Menu
@@ -169,6 +164,7 @@ export function AssistantPage({ params }: PageProps) {
         eyebrow={currentDepartment?.name}
         title={t('nav.assistant')}
         description={t('assistant.description')}
+        compact
       />
       {!currentDepartment ? <LoadingBlock label={t('common.loading')} lines={3} /> : (
         <div className="ws-assistant">
@@ -181,6 +177,7 @@ export function AssistantPage({ params }: PageProps) {
             <ChatPane
               conversationId={activeId} department={currentDepartment} posture={posture} header={header}
               onCreated={onCreated} onLoaded={onLoaded} onActivity={() => void conversations.reload()}
+              firstVisit={conversations.data?.length === 0}
             />
           )}
         </div>

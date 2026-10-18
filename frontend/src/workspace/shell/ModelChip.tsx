@@ -1,18 +1,17 @@
 /* The model status chip in the top bar: Local, Cloud or Unavailable, from GET /model.
 
-   It polls once a minute so an outage shows up before someone asks a question, and the popover
-   explains the state in plain words (which model, which route, why it is unavailable). Admins
-   get a shortcut to the model settings. */
-import React, { useCallback, useState } from 'react';
-import { getModelPosture } from '../api/account';
+   The posture is the shell's shared read (app/workspace.tsx: polled every 30 s, re-read at once
+   after any failed answer, report or model test), so an outage shows up before someone asks a
+   question and the chip agrees with the result on screen. The popover explains the state in
+   plain words; the engine, the route and the model id are technical, so only admins see them.
+   Admins also get a shortcut to the model settings. */
+import React, { useCallback } from 'react';
 import type { ModelPosture } from '../api/types';
-import { usePolling } from '../app/hooks';
 import { useUser } from '../app/session';
+import { useWorkspace } from '../app/workspace';
 import { useI18n, type MessageKey } from '../i18n';
 import { Link } from '../router';
 import { Popover, Skeleton } from '../ui';
-
-const POLL_MS = 60_000;
 
 export type ModelState = 'local' | 'cloud' | 'unverified' | 'unavailable';
 
@@ -36,17 +35,30 @@ export function useModelReason(): (reason: string | null) => string {
   }, [t, has]);
 }
 
-export function ModelDetails({ posture }: { posture: ModelPosture }) {
+/** Where the answers are produced, in words: the company's own server or an approved cloud provider. */
+export function useWhereText(): (posture: Pick<ModelPosture, 'locality' | 'route'>) => string | null {
+  const { t } = useI18n();
+  return useCallback((posture) => {
+    const where = posture.locality ?? (posture.route === 'local' ? 'local' : posture.route === 'cloud' ? 'cloud' : null);
+    if (where === 'local') return t('model.where.local');
+    if (where === 'cloud') return t('model.where.cloud');
+    return null;
+  }, [t]);
+}
+
+export function ModelDetails({ posture, technical = false }: { posture: ModelPosture; technical?: boolean }) {
   const { t } = useI18n();
   const reasonText = useModelReason();
+  const whereText = useWhereText();
   const state = modelState(posture);
+  const where = whereText(posture);
   return (
     <dl className="ws-dl">
       <dt>{t('model.field.status')}</dt>
       <dd><span className={`ws-model-dot ws-model-dot--${state}`} aria-hidden="true" /> {t(STATE_LABEL[state])}</dd>
-      {posture.model && <><dt>{t('model.field.model')}</dt><dd className="ws-mono">{posture.model}</dd></>}
-      {posture.backend && <><dt>{t('model.field.backend')}</dt><dd className="ws-mono">{posture.backend}</dd></>}
-      {posture.route && <><dt>{t('model.field.route')}</dt><dd className="ws-mono">{posture.route}</dd></>}
+      {where && <><dt>{t('model.field.where')}</dt><dd>{where}</dd></>}
+      {technical && posture.model && <><dt>{t('model.field.model')}</dt><dd className="ws-mono">{posture.model}</dd></>}
+      {technical && posture.backend && <><dt>{t('model.field.backend')}</dt><dd className="ws-mono">{posture.backend}</dd></>}
       <dt>{t('model.field.policy')}</dt>
       <dd>{t(posture.policy === 'allow_cloud' ? 'org.policy.allow_cloud' : 'org.policy.local_only')}</dd>
       {!posture.available && <><dt>{t('model.field.reason')}</dt><dd>{reasonText(posture.reason)}</dd></>}
@@ -58,18 +70,7 @@ export function ModelDetails({ posture }: { posture: ModelPosture }) {
 export function ModelChip() {
   const { t } = useI18n();
   const user = useUser();
-  const [posture, setPosture] = useState<ModelPosture | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      setPosture(await getModelPosture());
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    }
-  }, []);
-  usePolling(load, POLL_MS);
+  const { posture, postureFailed: failed, refreshPosture: load } = useWorkspace();
 
   if (!posture && !failed) return <Skeleton width={96} height={28} radius={999} />;
   const state: ModelState = posture ? modelState(posture) : 'unavailable';
@@ -89,7 +90,7 @@ export function ModelChip() {
       {() => (
         <div className="ws-popover__body">
           <p className="ws-popover__title">{t('model.title')}</p>
-          {posture ? <ModelDetails posture={posture} /> : <p className="ws-muted">{t('model.loadFailed')}</p>}
+          {posture ? <ModelDetails posture={posture} technical={user.role === 'admin'} /> : <p className="ws-muted">{t('model.loadFailed')}</p>}
           {user.role === 'admin' && (
             <p className="ws-popover__foot"><Link to="/admin/organisation">{t('model.adminLink')}</Link></p>
           )}

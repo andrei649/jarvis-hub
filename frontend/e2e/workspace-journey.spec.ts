@@ -12,7 +12,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  assertNoPageProblems, buildDocuments, checkPage, guard, guardFor, hubLog, pageGet, readMail,
+  assertNoPageProblems, buildDocuments, checkPage, controlsUnderTopBar, focusRing, guard, guardFor, hubLog, pageGet, readMail,
   RUN_DIR, SETUP_CODE, SMTP_PORT, waitForMail, type SampleDoc, type SampleKey,
 } from './support/workspace-helpers';
 
@@ -75,6 +75,20 @@ function userMenu(page: Page, name: string) {
   return page.getByRole('button', { name: new RegExp(`(Contul tău|Your account): ${name}`) });
 }
 
+/** Toasts drawn over a dialog's or drawer's controls (they move aside while one is open). */
+async function toastsOverControls(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const hits: string[] = [];
+    const toasts = Array.from(document.querySelectorAll<HTMLElement>('.ws-toast')).map((t) => t.getBoundingClientRect());
+    for (const control of Array.from(document.querySelectorAll<HTMLElement>('.ws-surface button, .ws-surface a[href]'))) {
+      const r = control.getBoundingClientRect();
+      if (r.width === 0) continue;
+      if (toasts.some((t) => t.left < r.right && t.right > r.left && t.top < r.bottom && t.bottom > r.top)) hits.push((control.textContent || '').trim());
+    }
+    return hits;
+  });
+}
+
 test.afterEach(() => assertNoPageProblems());
 
 test.afterAll(async () => {
@@ -122,6 +136,8 @@ test('the admin creates the Vânzări and Financiar departments', async () => {
   for (const [name, description] of [[SALES, 'Echipa comercială și agenții de teren.'], [FINANCE, 'Contabilitate, facturare și bugete.']]) {
     await page.getByRole('button', { name: 'Departament nou' }).first().click();
     const drawer = page.getByRole('dialog', { name: 'Departament nou' });
+    // The previous department's confirmation may still show: it must not cover this drawer's buttons.
+    expect(await toastsOverControls(page)).toEqual([]);
     await drawer.getByLabel('Nume', { exact: true }).fill(name);
     await drawer.getByLabel(/^Descriere/).fill(description);
     await drawer.getByRole('button', { name: 'Creează departamentul' }).click();
@@ -145,7 +161,8 @@ async function invite(page: Page, person: Person, roleLabel: string, department:
   await dialog.getByLabel('Nume', { exact: true }).fill(person.name);
   await dialog.getByLabel('Rol').selectOption({ label: roleLabel });
   await dialog.getByRole('checkbox', { name: department, exact: true }).check();
-  await dialog.getByRole('button', { name: 'Trimite invitația' }).click();
+  // Email is not configured yet: nothing is sent, so the button says it creates the invitation.
+  await dialog.getByRole('button', { name: 'Creează invitația' }).click();
   const done = page.getByRole('dialog', { name: 'Invitație creată' });
   await expect(done).toBeVisible();
   const field = done.getByLabel('Link personal');
@@ -179,7 +196,7 @@ async function acceptInvite(browser: Browser, link: string, person: Person, who:
   const page = await newPage(browser, who);
   await page.goto(link);
   await expect(page.getByRole('heading', { name: `Bine ai venit în ${ORG}` })).toBeVisible();
-  await expect(page.getByText(`Ai fost invitat(ă) cu adresa ${person.email}.`)).toBeVisible();
+  await expect(page.getByText(`Invitația este pentru adresa ${person.email}.`)).toBeVisible();
   // The token left the address bar as soon as it was read (spec §6).
   await expect.poll(() => new URL(page.url()).hash).toBe('');
   await expect(page.getByLabel('Nume', { exact: true })).toHaveValue(person.name);
@@ -234,6 +251,10 @@ test('the Vânzări member uploads a DOCX, a PDF, an XLSX and a CSV, and each is
   await expect(page.getByText('Niciun document încă')).toBeVisible();
 
   await page.locator('input[type="file"]').setInputFiles(Object.values(docs).map((d) => d.path));
+  // Once every upload has finished, the ready ones fold into one line (they are table rows now);
+  // their per-file detail is a click away.
+  await expect(page.getByText('4 fișiere încărcate și indexate; le găsești în listă.')).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Arată detaliile' }).click();
   const queue = page.locator('.ws-upload__list');
   for (const doc of Object.values(docs)) {
     await expect(queue.getByRole('listitem').filter({ hasText: doc.file }))
@@ -275,7 +296,7 @@ test('the Vânzări member uploads a DOCX, a PDF, an XLSX and a CSV, and each is
 
 interface ApiMessage {
   id: number; role: string; content: string; status: string; feedback: number | null; feedback_note: string | null;
-  citations: { n: number; document_id: number; title: string; excerpt: string }[]; model: string | null; locality: string | null;
+  citations: { n: number; document_id: number; title: string; excerpt: string; can_open?: boolean }[]; model: string | null; locality: string | null;
 }
 
 const QUESTION = 'Care este discountul maxim pentru clienții noi din Țara Bârsei?';
@@ -284,7 +305,8 @@ test('the member asks a question the DOCX answers: tokens stream, the answer cit
   const page = need(state.member, 'member page');
   const docs = need(state.docs, 'documents');
   await nav(page, 'Asistent');
-  await expect(page.getByText('Cu ce te pot ajuta?')).toBeVisible();
+  // A first visit (no conversation yet) is greeted by name.
+  await expect(page.getByText('Bine ai venit, Mihai!')).toBeVisible();
   await expect(page.getByText('Nicio conversație încă')).toBeVisible();
 
   // Record the answer's text length on every DOM change while it is still streaming.
@@ -320,7 +342,10 @@ test('the member asks a question the DOCX answers: tokens stream, the answer cit
   const stored = answers[answers.length - 1];
   expect(stored).toMatchObject({ status: 'complete', locality: 'local', model: 'nerva-fake-model' });
   expect(stored?.content).toContain(docs.docx.fact);
-  expect(stored?.citations.map((c) => [c.n, c.document_id])).toEqual([[1, state.documentIds.docx]]);
+  // Under the answer, where it was produced in words; the model id is for admins only (UX-13).
+  await expect(answer.locator('.ws-msg__meta')).toContainText('Pe serverul companiei');
+  await expect(answer.locator('.ws-msg__meta')).not.toContainText('nerva-fake-model');
+  expect(stored?.citations.map((c) => [c.n, c.document_id, c.can_open])).toEqual([[1, state.documentIds.docx, true]]);
 
   // The inline chip opens the source drawer with the exact passage.
   await answer.getByRole('button', { name: `Sursa 1: ${docs.docx.title}` }).click();
@@ -395,6 +420,8 @@ test('through the real hub stack answers stream token by token, and Stop stores 
   await page.getByRole('button', { name: 'Oprește' }).click();
   await expect(page.locator('.ws-msg--assistant').last()).toContainText('Ai oprit răspunsul');
   await expect(page.getByLabel('Întrebarea ta')).toBeEnabled();
+  // The Stop button went away under the pointer: focus is in the question box, not on <body>.
+  await expect(page.getByLabel('Întrebarea ta')).toBeFocused();
   await expect(page).toHaveURL(/\/workspace\/assistant\/\d+$/);
   const stoppedId = Number(/\/assistant\/(\d+)$/.exec(page.url())?.[1]);
   await expect.poll(async () => {
@@ -476,7 +503,9 @@ test('the admin points email at the SMTP sink and a test message arrives', async
 
   await expect(page.getByLabel('Trimite la')).toHaveValue(ADMIN.email);
   await page.getByRole('button', { name: 'Trimite testul' }).click();
-  await expect(page.getByText(`Mesajul de test a fost acceptat de server pentru ${ADMIN.email}.`)).toBeVisible();
+  await expect(page.locator('.ws-notice').getByText(`Mesajul de test a fost acceptat de server pentru ${ADMIN.email}.`)).toBeVisible();
+  // …and said by a status region that was on the page before the result (A11Y-09).
+  await expect(page.locator('p.ws-sr-only[role="status"]').filter({ hasText: `Mesajul de test a fost acceptat de server pentru ${ADMIN.email}.` })).toHaveCount(1);
   const mail = await waitForMail((m) => m.subject === 'Nerva Workspace — test de email', 'the SMTP test message');
   expect(mail.rcpt_tos).toEqual([ADMIN.email]);
   expect(mail.mail_from).toBe('nerva@acme.ro');
@@ -485,7 +514,7 @@ test('the admin points email at the SMTP sink and a test message arrives', async
   await checkPage(page, 'admin-email');
 });
 
-test('"Trimite pe email": the member asks, the approver approves under "De decis", the mail reaches the sink', async () => {
+test('"Trimite pe email": the member asks, the approver approves under "De aprobat", the mail reaches the sink', async () => {
   const member = need(state.member, 'member page');
   const approver = need(state.approver, 'approver page');
   const docs = need(state.docs, 'documents');
@@ -513,11 +542,11 @@ test('"Trimite pe email": the member asks, the approver approves under "De decis
   expect(readMail().some((m) => m.subject === subject), 'nothing is sent before the approval').toBe(false);
   await checkPage(member, 'approvals-member');
 
-  // The approver's inbox ("De decis") lists it; approving executes it.
+  // The approver's inbox ("De aprobat") lists it; approving executes it.
   await approver.reload();
   await nav(approver, 'Aprobări');
-  await expect(approver.getByRole('tab', { name: /De decis/ })).toHaveAttribute('aria-selected', 'true');
-  const inbox = approver.getByRole('table', { name: 'De decis' });
+  await expect(approver.getByRole('tab', { name: /De aprobat/ })).toHaveAttribute('aria-selected', 'true');
+  const inbox = approver.getByRole('table', { name: 'De aprobat' });
   await expect(inbox.getByRole('row')).toHaveCount(2);
   await expect(inbox).toContainText(SALES_MEMBER.name);
   await checkPage(approver, 'approvals');
@@ -532,6 +561,8 @@ test('"Trimite pe email": the member asks, the approver approves under "De decis
   await expect(toast(approver, 'Cererea a fost aprobată și executată.')).toBeVisible();
   await expect(drawer.getByText('Aprobată și executată')).toBeVisible();
   await expect(drawer.getByText(`Trimis către: ${recipient}`)).toBeVisible();
+  // Once decided, the preview is the action that was asked for, not what approving „will" do (UX-20).
+  await expect(drawer.getByRole('heading', { name: 'Acțiunea cerută' })).toBeVisible();
 
   const mail = await waitForMail((m) => m.subject === subject, 'the approved answer email');
   expect(mail.rcpt_tos).toEqual([recipient]);
@@ -594,18 +625,31 @@ test('the member creates a daily report and runs it now: it succeeds as Markdown
   await page.getByRole('button', { name: 'Rulează acum' }).click();
   await expect(page).toHaveURL(/\/workspace\/report-runs\/\d+$/);
   state.runId = Number(/\/report-runs\/(\d+)$/.exec(page.url())?.[1]);
+  // The run page's h1 is the report's name, and it holds the focus the navigation gave it even
+  // though a loading heading came first (A11Y-03).
+  await expect(page.getByRole('heading', { level: 1, name: REPORT_NAME })).toBeFocused();
   const meta = page.locator('.ws-run-meta');
   await expect(meta.getByText('Gata', { exact: true })).toBeVisible({ timeout: 60_000 });
   const article = page.locator('article.ws-report');
-  await expect(article.getByRole('heading', { level: 1 })).toContainText('Raport');
+  // The report's own title sits one level under the page's h1.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+  await expect(article.getByRole('heading', { level: 2 }).first()).toHaveText(`Raport: ${REPORT_NAME}`);
   await expect(article.getByRole('heading', { name: 'Surse' })).toBeVisible();
   await expect(article.getByRole('table')).toBeVisible();
   await expect(article.getByRole('button', { name: /^Sursa 1: / }).first()).toBeVisible();
+  // How it was produced: where, in words; the model id is for admins only (UX-13).
+  await expect(meta).toContainText('Unde a fost generat');
+  await expect(meta).toContainText('Pe serverul companiei');
+  await expect(meta).not.toContainText('nerva-fake-model');
+  // The "Nr." column's chips stand alone in their cell: full 24 px targets (A11Y-15).
+  const leadChip = await article.locator('td > .ws-cite').first().boundingBox();
+  expect(leadChip && leadChip.width >= 24 && leadChip.height >= 24, 'a chip alone in its cell is 24 × 24 px').toBe(true);
 
   const run = await pageGet<ApiRun>(page, `/api/workspace/report-runs/${state.runId}`);
   expect(run.body).toMatchObject({ status: 'succeeded', error: null, shared_company: false, report_name: REPORT_NAME, department_name: SALES, locality: 'local' });
   const markdown = run.body.content_md ?? '';
-  expect(markdown).toMatch(/^# Raport/m);
+  expect(markdown.split('\n')[0]).toBe(`# Raport: ${REPORT_NAME}`);
+  expect(markdown).not.toContain('Raport: Raport');
   expect(markdown).toMatch(/^## Surse$/m);
   const cited = new Set(run.body.citations.map((c) => c.document_id));
   expect(cited.size).toBeGreaterThan(0);
@@ -658,10 +702,15 @@ test('a company-wide share request is approved by the admin, and the Financiar m
   const request = mine.body.items.find((a) => a.kind === 'report.share_company');
   expect(request?.status).toBe('pending');
 
-  // The admin decides it from "De decis".
+  // While it waits, the run says so and does not offer a second request (F8).
+  await member.reload();
+  await expect(member.getByText('Partajarea în companie așteaptă aprobarea')).toBeVisible();
+  await expect(member.getByRole('button', { name: 'Partajează în companie' })).toHaveCount(0);
+
+  // The admin decides it from "De aprobat".
   await admin.reload();
   await nav(admin, 'Aprobări');
-  const inbox = admin.getByRole('table', { name: 'De decis' });
+  const inbox = admin.getByRole('table', { name: 'De aprobat' });
   await expect(inbox.getByRole('row')).toHaveCount(2);
   await inbox.getByRole('button').first().click();
   const drawer = admin.getByRole('dialog', { name: `Cererea #${request?.id}` });
@@ -786,11 +835,27 @@ test('audit names the person behind every action, the chain verifies, and the CS
   for (let i = 1; i < count; i += 1) await expect(rows.nth(i)).toContainText(SALES_MEMBER.name);
   await page.getByRole('button', { name: 'Resetează' }).click();
 
+  // An entry's drawer reads the codes it recorded as words, never raw (UX-13): the email settings'
+  // security and password change, as the admin saved them.
+  await table.getByRole('row').filter({ hasText: 'Setări de email modificate' }).first().getByRole('button', { name: /^Detaliile intrării/ }).click();
+  const entry = page.getByRole('dialog', { name: /^Intrarea #\d+ din jurnal$/ });
+  await expect(entry.getByText('Fără criptare', { exact: true })).toBeVisible();
+  await expect(entry.getByText('Parola a rămas neschimbată', { exact: true })).toBeVisible();
+  await expect(entry.getByText('kept', { exact: true })).toHaveCount(0);
+  await entry.getByRole('button', { name: 'Închide' }).first().click();
+  await expect(entry).toBeHidden();
+
   await page.getByRole('button', { name: 'Verifică lanțul' }).click();
-  await expect(page.getByText('Lanțul de audit este intact')).toBeVisible();
+  const notice = page.locator('.ws-notice').filter({ hasText: 'Lanțul de audit este intact' });
+  await expect(notice).toBeVisible();
   const verify = await pageGet<{ ok: boolean; checked: number }>(page, '/api/workspace/admin/audit/verify');
   expect(verify.body.ok).toBe(true);
-  await expect(page.getByText(/Am verificat \d+ intrări; niciuna nu a fost modificată\./)).toBeVisible();
+  // Romanian plural, by the count (UX-08): „1 intrare", „3 intrări", „20 de intrări".
+  const n = verify.body.checked;
+  const shown = new Intl.NumberFormat('ro-RO').format(n);
+  const form = new Intl.PluralRules('ro-RO').select(n);
+  const counted = form === 'one' ? `${shown} intrare; nu a fost modificată.` : form === 'few' ? `${shown} intrări; niciuna nu a fost modificată.` : `${shown} de intrări; niciuna nu a fost modificată.`;
+  await expect(notice).toContainText(`Am verificat ${counted}`);
 
   const [csv] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Exportă CSV' }).click()]);
   expect(csv.suggestedFilename()).toMatch(/\.csv$/);
@@ -831,7 +896,8 @@ test('usage shows the real activity, and the organisation page tests the model',
   await expect(page.getByLabel('Numele organizației')).toHaveValue(ORG);
   await expect(page.getByRole('radio', { name: /^Doar model local/ })).toBeChecked();
   await page.getByRole('button', { name: 'Testează modelul' }).click();
-  await expect(page.getByText(/^Modelul a răspuns în /)).toBeVisible();
+  await expect(page.locator('.ws-notice').getByText(/^Modelul a răspuns în /)).toBeVisible();
+  await expect(page.locator('.ws-notice').getByText('nerva-fake-model · Pe serverul companiei')).toBeVisible();
   await checkPage(page, 'admin-organisation');
 });
 
@@ -939,6 +1005,41 @@ test('logout ends the session; the old password is refused and the new one signs
   expect((await me(page)).status).toBe(200);
 });
 
+test('an admin disables the Financiar member mid-question: the open page lands on sign-in, and the question waits in the composer', async () => {
+  const admin = need(state.admin, 'admin page');
+  const finance = need(state.finance, 'finance page');
+  const question = 'Care sunt termenele de raportare financiară din luna aceasta?';
+  await finance.goto('/workspace/assistant');
+  await finance.getByLabel('Întrebarea ta').fill(question);
+
+  await admin.goto('/workspace/admin/users');
+  await admin.getByRole('button', { name: `Acțiuni pentru ${FIN_MEMBER.name}` }).click();
+  await admin.getByRole('menuitem', { name: 'Dezactivează' }).click();
+  await admin.getByRole('alertdialog', { name: 'Dezactivezi contul?' }).getByRole('button', { name: 'Dezactivează' }).click();
+  await expect(toast(admin, `Cont dezactivat: ${FIN_MEMBER.name}.`)).toBeVisible();
+  const row = admin.getByRole('table', { name: 'Utilizatori' }).getByRole('row').filter({ hasText: FIN_MEMBER.email });
+  await expect(row).toContainText('Dezactivat');
+
+  // The disabled member's next action answers 401: the app shows sign-in, honestly.
+  guardFor(finance).allowHttp(/\/api\/workspace\//, 401);
+  await finance.getByRole('button', { name: 'Trimite', exact: true }).click();
+  await expect(finance.getByRole('heading', { name: 'Conectează-te' })).toBeVisible();
+  await expect(finance.getByText('Sesiunea ta s-a încheiat. Conectează-te din nou pentru a continua.')).toBeVisible();
+  expect((await me(finance)).status).toBe(401);
+
+  // Enabled again, they sign in: the question they had typed is still in the composer (F3).
+  await admin.getByRole('button', { name: `Acțiuni pentru ${FIN_MEMBER.name}` }).click();
+  await admin.getByRole('menuitem', { name: 'Activează' }).click();
+  await admin.getByRole('alertdialog', { name: 'Activezi contul?' }).getByRole('button', { name: 'Activează' }).click();
+  await expect(toast(admin, `Cont activat: ${FIN_MEMBER.name}.`)).toBeVisible();
+  await finance.getByLabel('Email', { exact: true }).fill(FIN_MEMBER.email);
+  await finance.getByLabel('Parolă', { exact: true }).fill(FIN_MEMBER.password);
+  await finance.getByRole('button', { name: 'Conectează-te' }).click();
+  await expect(userMenu(finance, FIN_MEMBER.name)).toBeVisible();
+  await expect(finance.getByLabel('Întrebarea ta')).toHaveValue(question);
+  await finance.getByLabel('Întrebarea ta').fill('');
+});
+
 test('repeated wrong passwords end in the same generic throttle message for a real and an unknown account', async ({ browser }) => {
   const page = await newPage(browser, 'anonymous');
   await page.goto('/workspace/');
@@ -978,6 +1079,189 @@ test('repeated wrong passwords end in the same generic throttle message for a re
   await checkPage(page, 'login-throttled');
 });
 
+test('a cited document deleted since: the answer keeps its excerpt, and the source drawer says why it offers no link', async () => {
+  const page = need(state.member, 'member page');
+  const docs = need(state.docs, 'documents');
+  const conversationId = need(state.conversationId, 'conversation id');
+  const docxId = need(state.documentIds.docx, 'DOCX id');
+  await page.goto(`/workspace/documents/${docxId}`);
+  await page.getByRole('dialog', { name: docs.docx.title }).getByRole('button', { name: 'Șterge' }).click();
+  await page.getByRole('alertdialog', { name: 'Ștergi documentul?' }).getByRole('button', { name: 'Șterge' }).click();
+  await expect(toast(page, 'Documentul a fost șters.')).toBeVisible();
+  guardFor(page).expectHttp(new RegExp(`/api/workspace/documents/${docxId}$`), 404);
+  expect((await pageGet(page, `/api/workspace/documents/${docxId}`)).status).toBe(404);
+
+  // Judged when read: the stored answer still quotes the DOCX, but may no longer link to it.
+  const detail = await pageGet<{ messages: ApiMessage[] }>(page, `/api/workspace/conversations/${conversationId}`);
+  const first = detail.body.messages.filter((m) => m.role === 'assistant')[0];
+  expect(first?.citations.map((c) => [c.document_id, c.can_open])).toEqual([[docxId, false]]);
+
+  await page.goto(`/workspace/assistant/${conversationId}`);
+  await page.locator('.ws-msg--assistant').first().getByRole('button', { name: `Sursa 1: ${docs.docx.title}` }).click();
+  const source = page.getByRole('dialog', { name: 'Sursa [1]' });
+  await expect(source.locator('blockquote')).toContainText(docs.docx.fact);
+  await expect(source.getByText(/Documentul sursă nu îți mai este accesibil: a fost șters sau mutat între timp/)).toBeVisible();
+  await expect(source.getByRole('link', { name: 'Deschide documentul' })).toHaveCount(0);
+  await expect(source.getByRole('link', { name: 'Descarcă originalul' })).toHaveCount(0);
+  await checkPage(page, 'source-drawer-deleted');
+});
+
+test('a rejected email request reaches its requester with the approver\'s note, and nothing is sent', async () => {
+  const member = need(state.member, 'member page');
+  const approver = need(state.approver, 'approver page');
+  const subject = 'Comision agenți — de verificat';
+  await member.goto(`/workspace/assistant/${need(state.conversationId, 'conversation id')}`);
+  await member.locator('.ws-msg--assistant').last().getByRole('button', { name: 'Trimite pe email' }).click();
+  let dialog = member.getByRole('dialog', { name: 'Trimite pe email' });
+  await dialog.getByLabel('Destinatari').fill('auditor@acme.ro');
+  await dialog.getByLabel('Subiect').fill(subject);
+
+  // The session ends under the member before the request is sent (an admin disables the account,
+  // then enables it again): signed in again, the reopened dialog has what was typed (F3).
+  const admin = need(state.admin, 'admin page');
+  const toggleMember = async (menuItem: 'Dezactivează' | 'Activează', title: string, done: string) => {
+    await admin.goto('/workspace/admin/users');
+    await admin.getByRole('button', { name: `Acțiuni pentru ${SALES_MEMBER.name}` }).click();
+    await admin.getByRole('menuitem', { name: menuItem }).click();
+    await admin.getByRole('alertdialog', { name: title }).getByRole('button', { name: menuItem }).click();
+    await expect(toast(admin, `${done}: ${SALES_MEMBER.name}.`)).toBeVisible();
+  };
+  await toggleMember('Dezactivează', 'Dezactivezi contul?', 'Cont dezactivat');
+  guardFor(member).allowHttp(/\/api\/workspace\//, 401);
+  await dialog.getByRole('button', { name: 'Cere aprobarea' }).click();
+  await expect(member.getByRole('heading', { name: 'Conectează-te' })).toBeVisible();
+  await toggleMember('Activează', 'Activezi contul?', 'Cont activat');
+  await member.getByLabel('Email', { exact: true }).fill(SALES_MEMBER.email);
+  await member.getByLabel('Parolă', { exact: true }).fill(NEW_MEMBER_PASSWORD);
+  await member.getByRole('button', { name: 'Conectează-te' }).click();
+  await expect(userMenu(member, SALES_MEMBER.name)).toBeVisible();
+  await member.locator('.ws-msg--assistant').last().getByRole('button', { name: 'Trimite pe email' }).click();
+  dialog = member.getByRole('dialog', { name: 'Trimite pe email' });
+  await expect(dialog.getByText(/Am păstrat ce scriseseși și nu trimiseseși/)).toBeVisible();
+  await expect(dialog.getByLabel('Destinatari')).toHaveValue('auditor@acme.ro');
+  await expect(dialog.getByLabel('Subiect')).toHaveValue(subject);
+  // The message can be previewed as the recipient will read it.
+  await dialog.getByRole('button', { name: 'Previzualizare' }).click();
+  await expect(dialog.getByRole('region', { name: 'Așa vede destinatarul mesajul' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Previzualizare' }).click();
+  await dialog.getByRole('button', { name: 'Cere aprobarea' }).click();
+  const done = member.getByRole('dialog', { name: 'Cererea a fost trimisă' });
+  await done.getByRole('link', { name: 'Vezi cererea' }).click();
+  const approvalId = Number(/\/approvals\/(\d+)$/.exec(member.url())?.[1]);
+
+  await approver.goto(`/workspace/approvals/${approvalId}`);
+  const drawer = approver.getByRole('dialog', { name: `Cererea #${approvalId}` });
+  await drawer.getByRole('button', { name: 'Respinge' }).click();
+  const confirm = approver.getByRole('alertdialog', { name: 'Respingi cererea?' });
+  await confirm.getByLabel(/^Notă pentru solicitant/).fill('Cifrele nu sunt încă finale; revino după închiderea lunii.');
+  await confirm.getByRole('button', { name: 'Respinge' }).click();
+  await expect(toast(approver, 'Cererea a fost respinsă.')).toBeVisible();
+  await expect(drawer.getByText('Cererea a fost respinsă.')).toBeVisible();
+
+  await member.reload();
+  const mine = member.getByRole('dialog', { name: `Cererea #${approvalId}` });
+  await expect(mine.getByText('Respinsă', { exact: true })).toBeVisible();
+  await expect(mine.getByText('Cifrele nu sunt încă finale; revino după închiderea lunii.')).toBeVisible();
+  await expect(mine.getByText(SALES_APPROVER.name, { exact: true })).toBeVisible();
+  // A rejected request says what approving would have done, the recipient aligned with the subject (UX-20).
+  await expect(mine.getByRole('heading', { name: 'Ce s-ar fi întâmplat la aprobare' })).toBeVisible();
+  const head = mine.locator('.ws-email-preview__head');
+  const [toBox, subjectBox] = await Promise.all([head.getByText('auditor@acme.ro', { exact: true }).boundingBox(), head.getByText(subject, { exact: true }).boundingBox()]);
+  expect(toBox && subjectBox && Math.abs(toBox.x - subjectBox.x) < 1, 'the recipient starts where the subject starts').toBe(true);
+  const stored = await pageGet<{ status: string; decision_note: string; decider: { name: string } }>(member, `/api/workspace/approvals/${approvalId}`);
+  expect(stored.body).toMatchObject({ status: 'rejected', decision_note: 'Cifrele nu sunt încă finale; revino după închiderea lunii.', decider: { name: SALES_APPROVER.name } });
+  expect(readMail().some((m) => m.subject === subject), 'a rejected request sends nothing').toBe(false);
+  await checkPage(member, 'approval-rejected');
+});
+
+test('the model\'s failures are honest: an error and an empty answer are explained, stored as errors, and Retry keeps the keyboard in place', async () => {
+  const page = need(state.member, 'member page');
+  for (const [marker, reason] of [['nerva-fake-error', 'Serverul modelului a întors o eroare.'], ['nerva-fake-empty', 'Modelul a trimis un răspuns gol.']] as const) {
+    await page.goto('/workspace/assistant');
+    await page.getByLabel('Întrebarea ta').fill(`Ce prevede regulamentul comisioanelor? ${marker}`);
+    await page.getByRole('button', { name: 'Trimite', exact: true }).click();
+    const failed = page.locator('.ws-msg--assistant').last();
+    await expect(failed.getByText('Răspunsul nu a putut fi generat')).toBeVisible({ timeout: 30_000 });
+    await expect(failed.getByText(`Modelul AI nu este disponibil acum. ${reason}`)).toBeVisible();
+    await expect(failed.getByText(/simulated|model_error|empty_answer/)).toHaveCount(0);
+    await expect(page).toHaveURL(/\/workspace\/assistant\/\d+$/);
+    const id = Number(/\/assistant\/(\d+)$/.exec(page.url())?.[1]);
+    const detail = await pageGet<{ messages: (ApiMessage & { error_code: string | null })[] }>(page, `/api/workspace/conversations/${id}`);
+    expect(detail.body.messages.map((m) => [m.role, m.status, m.error_code])).toEqual([['user', 'complete', null], ['assistant', 'error', 'model_unavailable']]);
+    // The server answered (with an error, or with nothing): the model is still reachable.
+    await expect(page.getByRole('button', { name: 'Modelul AI: Local' })).toBeVisible();
+    // Retry from the keyboard: its button goes away with the failed answer, focus does not drop.
+    await failed.getByRole('button', { name: 'Întreabă din nou' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByLabel('Întrebarea ta')).toBeFocused();
+    await expect(page.locator('.ws-msg--assistant').last().getByText('Răspunsul nu a putut fi generat')).toBeVisible({ timeout: 30_000 });
+    if (marker === 'nerva-fake-empty') await checkPage(page, 'assistant-failed-answer');
+  }
+});
+
+test('an archived department takes no uploads, and the toggle that shows it appears only then', async () => {
+  const admin = need(state.admin, 'admin page');
+  await admin.goto('/workspace/admin/departments');
+  await expect(admin.getByRole('switch', { name: /Arată și arhivate/ })).toHaveCount(0);
+  await admin.getByRole('button', { name: 'Departament nou' }).first().click();
+  const drawer = admin.getByRole('dialog', { name: 'Departament nou' });
+  await drawer.getByLabel('Nume', { exact: true }).fill('Proiecte închise');
+  await drawer.getByRole('button', { name: 'Creează departamentul' }).click();
+  await expect(toast(admin, 'Departamentul „Proiecte închise” a fost creat.')).toBeVisible();
+  await admin.getByRole('button', { name: 'Acțiuni pentru Proiecte închise' }).click();
+  await admin.getByRole('menuitem', { name: 'Arhivează' }).click();
+  await admin.getByRole('alertdialog', { name: 'Arhivezi departamentul?' }).getByRole('button', { name: 'Arhivează' }).click();
+  await expect(toast(admin, 'Departamentul „Proiecte închise” a fost arhivat.')).toBeVisible();
+  await expect(admin.getByRole('switch', { name: 'Arată și arhivate (1)' })).toBeVisible();
+  const listed = await pageGet<{ departments: { id: number; name: string; archived: boolean }[] }>(admin, '/api/workspace/admin/departments');
+  const archived = listed.body.departments.find((d) => d.name === 'Proiecte închise');
+  expect(archived?.archived).toBe(true);
+
+  guardFor(admin).expectHttp(/\/api\/workspace\/documents\?/, 409);
+  const upload = await admin.evaluate(async (departmentId) => {
+    const session = await (await fetch('/api/workspace/session', { cache: 'no-store' })).json() as { csrf_token: string };
+    const response = await fetch(`/api/workspace/documents?department_id=${departmentId}&filename=nota.txt`, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain', 'X-CSRF-Token': session.csrf_token }, body: 'O notă.',
+    });
+    return { status: response.status, body: await response.json() as { error: string } };
+  }, archived?.id);
+  expect(upload).toMatchObject({ status: 409, body: { error: 'department_archived' } });
+  // And the sidebar never offers it as a place to work in.
+  await expect(admin.getByLabel('Departament', { exact: true }).locator('option', { hasText: 'Proiecte închise' })).toHaveCount(0);
+});
+
+test('keyboard focus stays visible in forced colours and never hides under the sticky top bar', async () => {
+  const admin = need(state.admin, 'admin page');
+  await admin.emulateMedia({ forcedColors: 'active' });
+  try {
+    await admin.goto('/workspace/admin/email');
+    expect(await focusRing(admin, 'main input.ws-input')).toMatchObject({ style: 'solid' });
+    expect((await focusRing(admin, 'main input.ws-input')).width).toBeGreaterThanOrEqual(2);
+    await admin.goto('/workspace/assistant');
+    expect(await focusRing(admin, '.ws-composer__input')).toMatchObject({ style: 'solid' });
+    await admin.goto('/workspace/admin/users');
+    await admin.getByRole('button', { name: `Acțiuni pentru ${SALES_APPROVER.name}` }).click();
+    await admin.keyboard.press('ArrowDown');
+    const item = await admin.evaluate(() => {
+      const style = getComputedStyle(document.activeElement as Element);
+      return { role: (document.activeElement as Element).getAttribute('role'), style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+    });
+    expect(item.role).toBe('menuitem');
+    expect(item.style).toBe('solid');
+    expect(item.width).toBeGreaterThanOrEqual(2);
+    await admin.keyboard.press('Escape');
+  } finally {
+    await admin.emulateMedia({ forcedColors: 'none' });
+  }
+  for (const [url, size] of [['/workspace/admin/audit', { width: 1280, height: 600 }], ['/workspace/admin/email', { width: 1280, height: 600 }], [`/workspace/report-runs/${need(state.runId, 'run id')}`, { width: 390, height: 700 }]] as const) {
+    await admin.setViewportSize(size);
+    await admin.goto(url);
+    await admin.waitForLoadState('networkidle');
+    expect(await controlsUnderTopBar(admin), `focus hidden under the top bar on ${url}`).toEqual([]);
+  }
+  await admin.setViewportSize({ width: 1280, height: 800 });
+});
+
 test('the company data lives in its own directory, never in the owner\'s file-tool root', async () => {
   // Spec §3: <data>/business. <data>/workspace is the hub's default root of the owner's file
   // tools, local terminal and tool-result spills, so nothing of the company's may land there.
@@ -995,6 +1279,12 @@ test('the company data lives in its own directory, never in the owner\'s file-to
 test('the hub log holds no traceback or error from the whole journey', async () => {
   const log = hubLog();
   expect(log.length, 'the hub log was captured').toBeGreaterThan(0);
-  const bad = log.split('\n').filter((line) => /Traceback \(most recent call last\)|\bERROR\b|\bCRITICAL\b/.test(line));
+  const lines = log.split('\n');
+  // The one failure the journey causes on purpose: the fake model answering 500 to the
+  // "nerva-fake-error" question (and its retry). The hub logs that provider failure; it must
+  // have happened, and it is the only error allowed.
+  const SIMULATED = /LM Studio request failed .*simulated model failure/;
+  expect(lines.filter((line) => SIMULATED.test(line)).length, 'the simulated model failure was logged').toBeGreaterThan(0);
+  const bad = lines.filter((line) => /Traceback \(most recent call last\)|\bERROR\b|\bCRITICAL\b/.test(line) && !SIMULATED.test(line));
   expect(bad, `the hub logged:\n${bad.join('\n')}`).toEqual([]);
 });

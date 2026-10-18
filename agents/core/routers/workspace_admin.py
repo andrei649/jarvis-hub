@@ -18,10 +18,12 @@ import importlib
 import io
 import json
 import logging
+import re
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Annotated
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
@@ -32,6 +34,7 @@ from agents.core.workspace.db import Db, tx
 from agents.core.workspace.errors import WorkspaceError
 from agents.core.workspace.http import (
     MAX_ID,
+    invalid,
     optional_bool,
     optional_choice,
     optional_id_list,
@@ -316,12 +319,15 @@ _DEPARTMENT_COUNTS_SQL = (
     "SELECT d.*, "
     "(SELECT COUNT(*) FROM user_departments ud WHERE ud.department_id = d.id) AS member_count, "
     "(SELECT COUNT(*) FROM documents doc WHERE doc.department_id = d.id) AS document_count, "
+    "(SELECT COUNT(*) FROM documents doc WHERE doc.department_id = d.id "
+    " AND doc.status = 'ready') AS ready_document_count, "
     "(SELECT COUNT(*) FROM reports r WHERE r.department_id = d.id) AS report_count, "
     "(SELECT COUNT(*) FROM conversations c WHERE c.department_id = d.id) AS conversation_count "
     "FROM departments d WHERE (? IS NULL OR d.id = ?) "
     "ORDER BY d.archived, d.name COLLATE NOCASE, d.id"
 )
-_COUNT_KEYS = ("member_count", "document_count", "report_count", "conversation_count")
+_COUNT_KEYS = ("member_count", "document_count", "ready_document_count", "report_count",
+               "conversation_count")
 
 
 def _department_rows(conn: sqlite3.Connection, department_id: int | None = None) -> list[dict]:
@@ -638,43 +644,95 @@ def _per_department(conn: sqlite3.Connection, *, since: float) -> list[dict]:
     } for row in rows]
 
 
-def _window_start(days: int, stamp: float) -> float:
-    """Midnight UTC of the first day of a *days*-day window ending today."""
-    first = datetime.fromtimestamp(stamp, tz=UTC).date() - timedelta(days=days - 1)
-    return datetime(first.year, first.month, first.day, tzinfo=UTC).timestamp()
+#: The calendar the usage days follow unless the caller names one (``?tz=``): the pilot's
+#: (and the reports' default) zone, so work done after 22:00 UTC counts on its local day.
+STATS_TIMEZONE = "Europe/Bucharest"
+_TIMEZONE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+){0,3}$")
 
 
-def _daily(conn: sqlite3.Connection, *, days: int, since: float) -> list[dict]:
-    """One row per UTC day of the window (zero days included, so a chart has no gaps)."""
-    first = datetime.fromtimestamp(since, tz=UTC).date()
-    series = {(first + timedelta(days=offset)).isoformat(): {"questions": 0, "report_runs": 0}
-              for offset in range(days)}
+def _stats_zone(requested: str | None) -> tuple[str, tzinfo]:
+    """``(name, zone)`` the days are counted in; an unknown ``tz`` is ``422 field=tz``.
+
+    Without ``tz``, :data:`STATS_TIMEZONE` — or UTC, said so in the answer, on a host
+    whose time-zone database cannot load it.
+    """
+    if requested is None or not requested.strip():
+        try:
+            return STATS_TIMEZONE, ZoneInfo(STATS_TIMEZONE)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            logger.warning("time zone %s unavailable; usage days are counted in UTC",
+                           STATS_TIMEZONE)
+            return "UTC", UTC
+    name = requested.strip()
+    error = invalid("tz", "invalid", "tz is not a known time zone")
+    if len(name) > 64 or not _TIMEZONE_NAME.match(name):
+        raise error
+    try:
+        return name, ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
+        raise error from exc
+
+
+def _local_midnight(day: date, zone: tzinfo) -> float:
+    return datetime(day.year, day.month, day.day, tzinfo=zone).timestamp()
+
+
+def _window_days(days: int, stamp: float, zone: tzinfo) -> list[date]:
+    """The *days* calendar days in *zone* ending today, oldest first."""
+    today = datetime.fromtimestamp(stamp, tz=zone).date()
+    return [today - timedelta(days=days - 1 - offset) for offset in range(days)]
+
+
+def _window_start(days: int, stamp: float, zone: tzinfo = UTC) -> float:
+    """Midnight (in *zone*) of the first day of a *days*-day window ending today."""
+    return _local_midnight(_window_days(days, stamp, zone)[0], zone)
+
+
+_DAILY_SQL = (
+    "SELECT CAST(b.key AS INTEGER) AS i, COUNT(a.id) AS n FROM json_each(?) b "
+    "JOIN audit a ON a.ts >= json_extract(b.value, '$[0]') AND a.ts < json_extract(b.value, '$[1]') "
+    "WHERE a.action = ? GROUP BY b.key"
+)
+
+
+def _daily(conn: sqlite3.Connection, *, days: int, stamp: float,
+           zone: tzinfo = UTC) -> list[dict]:
+    """One row per calendar day in *zone* (zero days included, so a chart has no gaps).
+
+    Each day runs from its local midnight to the next one, so a DST day is 23 or 25 hours
+    long, exactly as the people who worked it lived it.
+    """
+    window = _window_days(days, stamp, zone)
+    bounds = [[_local_midnight(day, zone), _local_midnight(day + timedelta(days=1), zone)]
+              for day in window]
+    series = [{"date": day.isoformat(), "questions": 0, "report_runs": 0} for day in window]
     for key, action in ACTIVITY_ACTIONS.items():
-        rows = conn.execute("SELECT date(ts, 'unixepoch') AS day, COUNT(*) AS n FROM audit "
-                            "WHERE action = ? AND ts >= ? GROUP BY day", (action, since)).fetchall()
-        for row in rows:
-            if row["day"] in series:
-                series[row["day"]][key] = int(row["n"])
-    return [{"date": day, **values} for day, values in series.items()]
+        for row in conn.execute(_DAILY_SQL, (json.dumps(bounds), action)).fetchall():
+            series[int(row["i"])][key] = int(row["n"])
+    return series
 
 
 @router.get("/admin/stats")
 def usage_stats(admin: WsAdmin, conn: Db,
-                days: Annotated[int, Query(ge=1, le=365)] = 30) -> JSONResponse:
+                days: Annotated[int, Query(ge=1, le=365)] = 30,
+                tz: Annotated[str | None, Query(max_length=64)] = None) -> JSONResponse:
     """Usage KPIs: current totals, window activity per department, and a daily series.
 
-    The window is the last *days* UTC calendar days (today included): ``questions``,
-    ``report_runs`` and feedback count inside it, so the daily series sums to the
-    totals. Questions and runs come from the audit trail (see ``ACTIVITY_ACTIONS``), so
-    deleting a conversation or a report does not rewrite past usage; feedback is the
-    current rating of the answers still stored. The other totals are current counts;
-    ``active_users_7d`` counts users seen in the last seven days.
+    The window is the last *days* calendar days (today included) in ``timezone`` — the
+    ``tz`` asked for (an IANA name, e.g. the admin's browser zone), else
+    :data:`STATS_TIMEZONE`: ``questions``, ``report_runs`` and feedback count inside it,
+    so the daily series sums to the totals. Questions and runs come from the audit
+    trail (see ``ACTIVITY_ACTIONS``), so deleting a conversation or a report does not
+    rewrite past usage; feedback is the current rating of the answers still stored. The
+    other totals are current counts; ``active_users_7d`` counts users seen in the last
+    seven days.
     """
+    zone_name, zone = _stats_zone(tz)
     stamp = db.now()
-    since = _window_start(days, stamp)
+    since = _window_start(days, stamp, zone)
     return ws_json({
-        "days": days, "since": since,
+        "days": days, "since": since, "timezone": zone_name,
         "totals": _totals(conn, since=since, week_ago=stamp - 7 * 86400),
         "per_department": _per_department(conn, since=since),
-        "daily": _daily(conn, days=days, since=since),
+        "daily": _daily(conn, days=days, stamp=stamp, zone=zone),
     })

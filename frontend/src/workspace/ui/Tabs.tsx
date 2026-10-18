@@ -1,7 +1,7 @@
 /* In-page tabs (WAI-ARIA tabs with automatic activation): one tab stop for the whole list,
    arrows/Home/End move and select, the panel is labelled by its tab. Route-level sections (the
    admin area) use NavTabs instead — real links, so each section has a URL. */
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Link } from '../router';
 
 export interface TabItem<V extends string> { value: V; label: React.ReactNode; badge?: React.ReactNode }
@@ -61,22 +61,35 @@ export interface NavTabItem { to: string; label: React.ReactNode; active: boolea
 /**
  * Section navigation styled as tabs; each entry is a link with `aria-current="page"`. On a
  * narrow screen the row scrolls sideways, so the current section is scrolled into view —
- * otherwise a phone opened on the last section shows only the first ones.
+ * otherwise a phone opened on the last section shows only the first ones — and the edge with
+ * more sections fades out, so a cut-off row reads as one that continues.
  */
 export function NavTabs({ label, items }: { label: string; items: NavTabItem[] }) {
   const list = useRef<HTMLUListElement>(null);
   const activeTo = items.find((item) => item.active)?.to;
+  const [more, setMore] = useState({ start: false, end: false });
   useEffect(() => {
     const row = list.current;
-    const current = row?.querySelector<HTMLElement>('[aria-current="page"]');
-    if (!row || !current) return;
-    const rowBox = row.getBoundingClientRect();
-    const box = current.getBoundingClientRect();
-    row.scrollLeft += box.left - rowBox.left - (rowBox.width - box.width) / 2;
+    if (!row) return undefined;
+    const current = row.querySelector<HTMLElement>('[aria-current="page"]');
+    if (current) {
+      const rowBox = row.getBoundingClientRect();
+      const box = current.getBoundingClientRect();
+      row.scrollLeft += box.left - rowBox.left - (rowBox.width - box.width) / 2;
+    }
+    const measure = () => {
+      const start = row.scrollLeft > 1;
+      const end = row.scrollLeft + row.clientWidth < row.scrollWidth - 1;
+      setMore((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+    };
+    measure();
+    row.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    return () => { row.removeEventListener('scroll', measure); window.removeEventListener('resize', measure); };
   }, [activeTo]);
   return (
     <nav aria-label={label} className="ws-navtabs">
-      <ul ref={list} className="ws-navtabs__list">
+      <ul ref={list} className={['ws-navtabs__list', more.start && 'is-more-start', more.end && 'is-more-end'].filter(Boolean).join(' ')}>
         {items.map((item) => (
           <li key={item.to}>
             <Link to={item.to} className="ws-navtabs__tab" aria-current={item.active ? 'page' : undefined}>{item.label}</Link>

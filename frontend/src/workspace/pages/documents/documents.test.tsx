@@ -58,6 +58,10 @@ describe('Documents → upload', () => {
 
     listed = [doc({ id: 9, title: 'Politica concedii', filename: 'Politica concedii.pdf', chunk_count: 4 })];
     await act(async () => { xhr.respond(201, listed[0]); });
+    // Every upload finished: the ready one folds into a summary (it is a table row now); its
+    // detail is one click away.
+    expect(await screen.findByText('1 fișier încărcat și indexat; îl găsești în listă.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Arată detaliile' }));
     expect(await screen.findByText('Gata · 4 fragmente indexate')).toBeTruthy();
     const table = screen.getByRole('table', { name: 'Documente' });
     expect(await within(table).findByRole('button', { name: 'Politica concedii' })).toBeTruthy();
@@ -95,7 +99,7 @@ describe('Documents → upload', () => {
     await waitFor(() => expect(Xhr.instances).toHaveLength(2));
     expect(mock.find('GET', '/api/workspace/session').length).toBeGreaterThan(sessionReads);
     await act(async () => { Xhr.instances[1].respond(201, doc({ id: 11, title: 'note', filename: 'note.txt', chunk_count: 1 })); });
-    expect(await screen.findByText('Gata · 1 fragment indexat')).toBeTruthy();
+    expect(await screen.findByText('1 fișier încărcat și indexat; îl găsești în listă.')).toBeTruthy();
   });
 
   it('shows the company collection from the server and uploads to it as an admin', async () => {

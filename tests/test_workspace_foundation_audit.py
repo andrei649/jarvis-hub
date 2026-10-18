@@ -46,7 +46,8 @@ def test_chain_links_and_verifies(ws):
         assert current["prev_hash"] == previous["hash"]
     assert {row["key_fp"] for row in rows} == {audit.key_fingerprint()}
     assert audit.verify_chain(conn) == {"ok": True, "checked": 4, "broken_at": None, "keyed": True,
-                                        "key_mismatch": False}
+                                        "key_mismatch": False, "unverified": 0,
+                                        "rekeyed_at": None}
 
 
 def test_empty_chain_verifies(ws):
@@ -128,7 +129,8 @@ def test_key_mismatch_is_reported(ws, monkeypatch):
     _write(conn, 2)
     monkeypatch.setenv("JARVIS_AUDIT_KEY", "second-key")
     result = audit.verify_chain(conn)
-    assert result == {"ok": False, "checked": 0, "broken_at": 1, "keyed": True, "key_mismatch": True}
+    assert result == {"ok": False, "checked": 0, "broken_at": 1, "keyed": True, "key_mismatch": True,
+                      "unverified": 0, "rekeyed_at": None}
 
 
 def test_forbidden_detail_keys_never_reach_the_table(ws, caplog):
@@ -207,3 +209,43 @@ def test_actor_and_explicit_email(ws):
     rows = conn.execute("SELECT actor_user_id, actor_email FROM audit ORDER BY id").fetchall()
     assert [tuple(row) for row in rows] == [(company.member_a.id, company.member_a.email),
                                             (None, "ghost@acme.test"), (company.member_a.id, "cli")]
+
+
+# ── a process without the trail's key never mints a new one (review fix OPS-02) ───────
+
+def test_a_new_key_is_minted_only_for_an_empty_trail(ws, caplog):
+    conn = db()
+    _write(conn, 2)
+    key_file = ws.key_dir / audit.KEY_FILE
+    original = key_file.read_bytes()
+    key_file.unlink()                     # e.g. a shell without the service's JARVIS_KEY_DIR
+    with caplog.at_level(logging.ERROR, logger="nerva.workspace.audit"), \
+            pytest.raises(audit.AuditKeyMissing) as caught:
+        _write(conn, 1)
+    assert (caught.value.code, caught.value.status) == ("audit_key_missing", 503)
+    assert not key_file.exists(), "no key was created"
+    assert str(key_file) in caplog.text and "refusing" in caplog.text
+    assert conn.execute("SELECT COUNT(*) FROM audit").fetchone()[0] == 2, "nothing was written"
+    with pytest.raises(audit.AuditKeyMissing):
+        audit.verify_chain(conn)
+    key_file.write_bytes(original)        # the remedy: the service's key is back
+    _write(conn, 1)
+    assert audit.verify_chain(conn)["ok"] is True
+
+
+def test_key_check_names_what_is_wrong(ws, monkeypatch):
+    conn = db()
+    assert audit.key_check(conn) == "ok", "an empty trail can take any key"
+    _write(conn, 1)
+    assert audit.key_check(conn) == "ok"
+    key_file = ws.key_dir / audit.KEY_FILE
+    original = key_file.read_bytes()
+    key_file.unlink()
+    assert audit.key_check(conn) == "missing" and not key_file.exists()
+    key_file.write_bytes(b"\n")
+    assert audit.key_check(conn) == "unreadable"
+    key_file.write_bytes(original)
+    monkeypatch.setenv("JARVIS_AUDIT_KEY", "another-key")
+    assert audit.key_check(conn) == "mismatch"
+    monkeypatch.setenv("JARVIS_AUDIT_KEY", original.decode())
+    assert audit.key_check(conn) == "ok"

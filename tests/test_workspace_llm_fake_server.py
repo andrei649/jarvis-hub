@@ -225,3 +225,72 @@ def test_the_script_prints_ready_serves_and_stops_on_sigterm():
         if process.poll() is None:
             process.kill()
             process.wait(timeout=5)
+
+
+# ── review fix T-FIX-1: reports read like prose, not like flattened Markdown ────────────
+
+def _real_sources(*bodies: tuple[str, str]) -> str:
+    """A sources block exactly as the workspace builds it (line breaks kept)."""
+    from types import SimpleNamespace
+
+    from agents.core.workspace import assistant
+
+    passages = [SimpleNamespace(text=text, title=title, document_id=n, chunk_id=n, page=None)
+                for n, (title, text) in enumerate(bodies, start=1)]
+    return assistant.build_sources_block(passages, locale="ro")[0]
+
+
+def _extracted(data: bytes, kind: str) -> str:
+    from agents.core.workspace import extract
+
+    return "\n\n".join(segment.text for segment in extract.extract_bytes(data, kind).segments)
+
+
+def test_a_spreadsheet_source_reads_as_its_first_row_not_as_table_syntax():
+    from tests.fixtures.workspace.samples import build_xlsx
+
+    sheet = _extracted(build_xlsx({"Încasări": [["Lună", "Județ", "Încasări (lei)"],
+                                                ["Iulie", "Sibiu", 41250],
+                                                ["August", "Constanța", 38900.5]]}), "xlsx")
+    assert sheet.startswith("## Încasări\n\n| Lună |"), "the extractor's real shape"
+    prompt = _real_sources(("incasari-trimestrul-3", sheet)) + \
+        "\n\nÎntrebarea utilizatorului:\nRezumă încasările pe trimestru."
+    report = fake.compose_reply("Scrii un raport structurat în Markdown.", prompt)
+    summary = report.split("## Rezumat executiv", 1)[1].split("## Constatări", 1)[0]
+    findings = report.split("## Constatări", 1)[1].split("## Date cheie", 1)[0]
+    data = report.split("## Date cheie", 1)[1].split("## Surse", 1)[0]
+    row = "Lună: Iulie — Județ: Sibiu — Încasări (lei): 41250"
+    assert summary.strip() == f"{row} [1]"
+    assert findings.strip() == f"- {row} [1]"
+    assert "| [1] | incasari-trimestrul-3 | Lună: Iulie — Județ: Sibiu" in data
+    for section in (summary, findings):
+        assert "|" not in section and "##" not in section and "---" not in section
+    answer = fake.compose_reply("", prompt.replace("Rezumă încasările pe trimestru.",
+                                                   "Cât am încasat în iulie?"))
+    assert answer == f"Conform documentelor companiei: {row} [1]"
+
+
+def test_headings_are_skipped_for_the_first_prose_sentence():
+    from tests.fixtures.workspace.samples import build_docx, docx_paragraph, docx_table
+
+    body = ("# Politica de concedii — Acme SRL\n\n## Concediul de odihnă\n\n"
+            "Angajații au dreptul la 21 de zile lucrătoare pe an. Cererea se face din timp.")
+    docx = _extracted(build_docx(docx_paragraph("Discountul maxim este de 12% din comandă.")
+                                 + docx_table([["Categorie", "Discount"], ["Client nou", "12%"]])),
+                      "docx")
+    csv = _extracted("Client;Oraș\nȚesătoria Mureș;Târgu Mureș\n".encode(), "csv")
+    prompt = _real_sources(("Politica de concedii", body), ("politica-discount", docx),
+                           ("clienti-cheie", csv)) + "\n\nRezumă documentele pentru conducere."
+    report = fake.compose_reply("Scrii un raport.", prompt)
+    findings = report.split("## Constatări", 1)[1].split("## Date cheie", 1)[0].strip().splitlines()
+    assert findings == ["- Angajații au dreptul la 21 de zile lucrătoare pe an. [1]",
+                        "- Discountul maxim este de 12% din comandă. [2]",
+                        "- Client: Țesătoria Mureș — Oraș: Târgu Mureș [3]"]
+
+
+def test_a_source_with_only_a_heading_or_an_escaped_pipe_still_reads_well():
+    assert fake.gist("## Doar un titlu") == "Doar un titlu"
+    assert fake.gist("| Cod | Preț \\| lei |\n| --- | --- |\n| A1 | 12,5 |") == \
+        "Cod: A1 — Preț | lei: 12,5"
+    assert fake.gist("| Total | | 100 |\n| --- | --- | --- |\n| a | b | |") == "Total: a — b"
+    assert fake.gist("") == ""

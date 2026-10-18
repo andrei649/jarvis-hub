@@ -68,17 +68,17 @@ export function ApprovalsPage({ params }: PageProps) {
       render: (a) => (
         <span className="ws-cell-stack">
           <span className="ws-muted ws-small">{approvalKindLabel(i18n, a.kind)}</span>
-          <button type="button" className="ws-linklike ws-strong" onClick={() => open(a)}>{a.summary}</button>
+          <button type="button" className="ws-linklike ws-strong ws-clamp" title={a.summary} onClick={() => open(a)}>{a.summary}</button>
         </span>
       ),
     },
     {
       key: 'requester', header: t('approvals.col.requester'), secondary: true,
-      render: (a) => <span className="ws-person"><Avatar name={a.requester?.name ?? '?'} size={24} /><span>{a.requester?.name}</span></span>,
+      render: (a) => <span className="ws-person"><Avatar name={a.requester?.name ?? '?'} size={24} /><span className="ws-nowrap">{a.requester?.name}</span></span>,
     },
     { key: 'department', header: t('approvals.col.department'), secondary: true, render: (a) => deptName(a) },
     {
-      key: 'created', header: t('approvals.col.created'),
+      key: 'created', header: t('approvals.col.created'), nowrap: true,
       render: (a) => <time dateTime={new Date(a.created_at * 1000).toISOString()} title={fmt.dateTime(a.created_at)}>{fmt.relative(a.created_at)}</time>,
     },
     {
@@ -86,7 +86,7 @@ export function ApprovalsPage({ params }: PageProps) {
       render: (a) => (
         <span className="ws-cell-stack">
           <Badge tone={APPROVAL_STATUS[a.status].tone} dot>{t(APPROVAL_STATUS[a.status].label)}</Badge>
-          {a.status === 'pending' && <span className="ws-muted ws-small">{t('approvals.expiresIn', { when: fmt.relative(a.expires_at) })}</span>}
+          {a.status === 'pending' && <span className="ws-muted ws-small ws-nowrap">{t('approvals.expiresIn', { when: fmt.relative(a.expires_at) })}</span>}
         </span>
       ),
     },

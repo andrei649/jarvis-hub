@@ -1,6 +1,8 @@
-/* The source drawer behind a citation chip: which document, which page, the exact passage
-   the model was given, and the way to the document itself (its preview in Documents, or the
-   original file). The passage is shown as plain text — it is document content, not markup.
+/* The source drawer behind a citation chip: which document, which page, the passage the model
+   was given, and the way to the document itself (its preview in Documents, or the original
+   file). The passage goes through the shared safe Markdown renderer (no HTML), after
+   excerptMarkdown() has put back the line breaks a table extracted from a DOCX, XLSX or CSV
+   lost when the excerpt was stored — so a cited price list reads as a table, not as pipes.
 
    The server marks every citation with `can_open`, judged when the answer or the run is read: a
    report run shared company-wide is read outside its department, and a document an answer or a
@@ -15,6 +17,11 @@ import type { Citation } from '../../api/types';
 import { useI18n, type MessageKey } from '../../i18n';
 import { Drawer, Icon, Notice } from '../../ui';
 import { ButtonLink, DownloadLink } from './ButtonLink';
+import { CitedMarkdown } from './CitedMarkdown';
+import { excerptMarkdown } from './excerpt';
+
+const NO_CITATIONS: Citation[] = [];
+const ignore = () => undefined;
 
 /** Where the cited passage was used: an assistant answer or a report run. */
 export type SourceContext = 'answer' | 'report';
@@ -49,7 +56,10 @@ export function SourceDrawer({ citation, context, onClose }: { citation: Citatio
           </p>
           <figure className="ws-quote">
             <figcaption className="ws-quote__label">{t('source.excerpt')}</figcaption>
-            <blockquote className="ws-quote__text">{citation.excerpt}</blockquote>
+            <blockquote className="ws-quote__text ws-quote__text--md">
+              {/* The drawer title is an h2: a heading inside the passage starts at h3. */}
+              <CitedMarkdown text={excerptMarkdown(citation.excerpt)} citations={NO_CITATIONS} onCite={ignore} headingOffset={2} />
+            </blockquote>
           </figure>
           <p className="ws-muted ws-small">{t(copy.note)}</p>
           {!openable && <Notice tone="accent">{t(copy.notOpenable)}</Notice>}

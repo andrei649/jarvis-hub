@@ -71,6 +71,8 @@ export interface Department {
   description: string;
   member_count?: number;
   document_count?: number;
+  /** Documents the assistant can cite (status ready); failed or processing ones are not counted. */
+  ready_document_count?: number;
 }
 
 /** Admin listing rows include archived departments, the assistant brief and report counts. */
@@ -260,6 +262,11 @@ export interface AuditVerifyResult {
   broken_at: number | null;
   keyed: boolean;
   key_mismatch: boolean;
+  /** Rows before the re-key in effect that a retired key signed: pinned, but not checkable
+      (optional so an older server's answer still reads). */
+  unverified?: number;
+  /** The `audit.rekeyed` row in effect, or null when the trail was never re-keyed. */
+  rekeyed_at?: number | null;
 }
 
 export interface UsageTotals {
@@ -289,6 +296,8 @@ export interface UsageDay { date: string; questions: number; report_runs: number
 export interface UsageStats {
   days?: number;
   since?: EpochSeconds;
+  /** The IANA zone whose calendar days `daily` counts (the `tz` asked for, else Europe/Bucharest). */
+  timezone?: string;
   totals: UsageTotals;
   per_department: UsageDepartmentRow[];
   daily: UsageDay[];
@@ -511,6 +520,8 @@ export interface ReportRunDetail extends ReportRun {
   content_md: string | null;
   citations: Citation[];
   can_share: boolean;
+  /** A request to share this run company-wide is waiting for its decision. */
+  share_pending?: boolean;
   can_email: boolean;
   report?: Pick<Report, 'id' | 'name' | 'department_id'>;
   /** Flat alternatives to `report` that list rows (shared reports) may carry instead. */

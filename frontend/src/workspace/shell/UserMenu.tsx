@@ -66,7 +66,7 @@ export function UserMenu() {
     {
       kind: 'group', id: 'lang', label: t('userMenu.language'),
       items: LANGUAGES.map((locale) => ({
-        kind: 'radio' as const, id: `lang-${locale}`, label: t(`language.${locale}`), checked: user.locale === locale,
+        kind: 'radio' as const, id: `lang-${locale}`, label: t(`language.${locale}`), checked: user.locale === locale, lang: locale,
         onSelect: () => void saveLocale(locale),
       })),
     },

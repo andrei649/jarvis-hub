@@ -90,14 +90,18 @@ def test_the_old_shared_directory_is_left_to_the_owners_tools(ws, monkeypatch):
         seed_company(conn)
     finally:
         conn.close()
-    mailer.set_password("Parola-SMTP-Secreta")
-    config.setup_code_path().parent.mkdir(parents=True, exist_ok=True)
+    store = mailer.secret_store()          # the SMTP secret store writes secrets.enc
+    store.set("probe", "valoare")
+    monkeypatch.delenv(config.ENV_SETUP_CODE, raising=False)
+    config.setup_code()                     # a generated setup code is a file too
     shared = ws.data_dir / "workspace"
     written = sorted(p.relative_to(ws.data_dir).as_posix()
                      for p in ws.data_dir.rglob("*") if p.is_file())
     assert any(name.startswith("business/") for name in written), written
+    assert {"business/workspace.db", "business/secrets.enc",
+            "business/setup-code.txt"} <= set(written), written
     assert not shared.exists() or not any(shared.rglob("*")), written
-    mailer.set_password(None)
+    store.delete("probe")
 
 
 def test_no_other_hub_module_uses_the_workspace_directory_name():

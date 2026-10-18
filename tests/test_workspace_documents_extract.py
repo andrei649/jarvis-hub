@@ -10,7 +10,6 @@ import asyncio
 import codecs
 import io
 import threading
-import time
 import zipfile
 
 import pytest
@@ -229,7 +228,24 @@ EXTERNAL_ENTITY = ('<?xml version="1.0"?><!DOCTYPE d [<!ENTITY x SYSTEM "file://
                    '</w:r></w:p></w:body></w:document>')
 
 
-@pytest.mark.parametrize("document_xml", [BILLION_LAUGHS, EXTERNAL_ENTITY,
+# A DTD that declares nothing: defusedxml's entity checks have nothing to refuse, so only
+# ``forbid_dtd=True`` (spec §6) stops it (review T7).
+_PLAIN_BODY = (f'<w:document xmlns:w="{samples.W_NS}"><w:body><w:p><w:r><w:t>Text</w:t>'
+               '</w:r></w:p></w:body></w:document>')
+BARE_DOCTYPE = '<?xml version="1.0"?><!DOCTYPE w:document>' + _PLAIN_BODY
+
+
+def test_a_bare_doctype_is_refused_although_the_same_part_without_it_reads():
+    def docx(document_xml: str) -> bytes:
+        return samples._zip({"[Content_Types].xml": samples._CONTENT_TYPES_DOCX,
+                             "_rels/.rels": samples._package_rels("word/document.xml"),
+                             "word/document.xml": document_xml})
+
+    assert _text(extract.extract_bytes(docx('<?xml version="1.0"?>' + _PLAIN_BODY), "docx")) == "Text"
+    assert _code(docx(BARE_DOCTYPE), "docx") == "invalid_file"
+
+
+@pytest.mark.parametrize("document_xml", [BILLION_LAUGHS, EXTERNAL_ENTITY, BARE_DOCTYPE,
                                           "<w:document><unclosed>", ""])
 def test_hostile_or_broken_docx_xml_is_invalid_file(document_xml):
     data = samples._zip({"[Content_Types].xml": samples._CONTENT_TYPES_DOCX,
@@ -466,16 +482,25 @@ async def test_extract_document_runs_off_the_loop_and_matches_the_sync_result():
 
 
 async def test_extract_document_is_bounded(monkeypatch):
+    """The call answers ``timeout`` while its worker is still busy — shown with events, not
+    with a wall-clock bound that a loaded CI machine could miss (review T11)."""
+    release, finished = threading.Event(), threading.Event()
+
     def slow(data: bytes, guard) -> extract.Extracted:
-        time.sleep(0.3)
+        release.wait(10)
+        finished.set()
         return extract.Extracted((Segment(None, "târziu"),), None)
 
     monkeypatch.setitem(extract._HANDLERS, "txt", slow)
-    started = time.monotonic()
-    with pytest.raises(ExtractionError) as caught:
-        await extract.extract_document(b"x", "txt", timeout=0.05)
-    assert caught.value.code == "timeout" and time.monotonic() - started < 0.25
-    await asyncio.sleep(0.3)  # let the worker finish before the monkeypatch is undone
+    try:
+        with pytest.raises(ExtractionError) as caught:
+            await extract.extract_document(b"x", "txt", timeout=0.05)
+        assert caught.value.code == "timeout"
+        assert not finished.is_set(), "the call returned before the worker finished"
+    finally:
+        release.set()
+        # join the worker before the monkeypatch is undone
+        assert await asyncio.to_thread(finished.wait, 10)
 
 
 def test_the_extraction_bound_is_sixty_seconds():

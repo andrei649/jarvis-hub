@@ -12,7 +12,7 @@ import { Link, navigate, useDocumentTitle } from '../../router';
 import { Badge, Button, ConfirmDialog, EmptyState, IconButton, Menu, Notice, PageHeader, Table, useToast, type Column, type MenuEntry } from '../../ui';
 import { DELIVERY_STATUS, RUN_STATUS } from '../shared/labels';
 import { ReportForm } from './ReportForm';
-import { scheduleSummary } from './schedule';
+import { browserTimeZone, scheduleSummary } from './schedule';
 import { startRun } from './startRun';
 
 export function ReportsList() {
@@ -64,8 +64,8 @@ export function ReportsList() {
       key: 'schedule', header: t('reports.col.schedule'), secondary: true,
       render: (r) => (
         <span className="ws-cell-stack">
-          <span>{scheduleSummary(i18n, r)}</span>
-          {r.schedule_kind !== 'manual' && <span className="ws-muted ws-small">{r.timezone}</span>}
+          <span className="ws-nowrap">{scheduleSummary(i18n, r)}</span>
+          {r.schedule_kind !== 'manual' && r.timezone !== browserTimeZone() && <span className="ws-muted ws-small ws-nowrap">{r.timezone}</span>}
         </span>
       ),
     },
@@ -75,13 +75,14 @@ export function ReportsList() {
         ? (
           <span className="ws-cell-stack">
             <Badge tone={RUN_STATUS[r.last_run.status].tone} dot>{t(RUN_STATUS[r.last_run.status].label)}</Badge>
-            {r.last_run.finished_at && <Link to={`/report-runs/${r.last_run.id}`} className="ws-small">{fmt.relative(r.last_run.finished_at)}</Link>}
+            {r.last_run.finished_at && <Link to={`/report-runs/${r.last_run.id}`} className="ws-small ws-nowrap ws-table-link">{fmt.relative(r.last_run.finished_at)}</Link>}
           </span>
         )
         : <span className="ws-muted">{t('reports.never')}</span>),
     },
     {
       key: 'next', header: t('reports.col.nextRun'), secondary: true,
+      nowrap: true,
       render: (r) => (r.next_run_at ? <span>{fmt.dateTimeIn(r.next_run_at, r.timezone)}</span> : <span className="ws-muted">{t('reports.manualOnly')}</span>),
     },
     {

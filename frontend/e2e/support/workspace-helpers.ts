@@ -6,7 +6,12 @@
                 non-2xx fetch as "Failed to load resource", so a deliberate 404 probe would read as
                 a failure, and an undeclared one is exactly what this guard exists to catch.
    checkPage  — the per-page quality bar: an axe scan (WCAG 2.0/2.1 A + AA, failing on serious or
-                critical) and screenshots at 1280×800 and 390×844, at both sizes.
+                critical) in the light theme at 1280×800 and 390×844 and in the dark theme at
+                1280×800; layout faults at those sizes and at 320×640 (a page wider than the
+                screen, a badge out of its card, a split table header, a dialog or drawer control
+                outside its surface); and screenshots at the two main sizes.
+   focus      — keyboard checks axe cannot make: the focused control keeps a solid outline in
+                forced-colours mode, and Shift+Tab never leaves focus under the sticky top bar.
    mail       — the SMTP sink's JSON-lines file, polled until the expected message arrives.
    documents  — the four Romanian sample files, written by workspace_docs.py. */
 import AxeBuilder from '@axe-core/playwright';
@@ -30,8 +35,11 @@ export function repoRoot(): string {
   return path.resolve(testDir(), '..', '..');
 }
 
+/** Screenshots and axe reports: e2e/.results/workspace-screens/, or WS_E2E_RESULTS_DIR/workspace-screens
+    when a run must not overwrite the shared folder (several agents on one checkout). */
 export function screenDir(): string {
-  return path.join(testDir(), '.results', 'workspace-screens');
+  const base = process.env.WS_E2E_RESULTS_DIR || path.join(testDir(), '.results');
+  return path.join(base, 'workspace-screens');
 }
 
 // ── console and page-error guard ────────────────────────────────────────────────────
@@ -120,11 +128,16 @@ export function assertNoPageProblems(): void {
 type Impact = 'critical' | 'serious' | 'moderate' | 'minor';
 const BLOCKING: readonly Impact[] = ['critical', 'serious'];
 
+/** Fonts loaded, the network quiet, and every CSS animation (drawer slide, toast rise) finished
+    — axe reads computed colours, so it must not scan a half-faded surface. Waits on the
+    animations themselves rather than on a fixed delay. */
 async function settle(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   await page.waitForLoadState('networkidle').catch(() => undefined);
-  // CSS transitions (drawers, toasts) finish well within this; axe reads computed colours.
-  await page.waitForTimeout(350);
+  await page.waitForFunction(
+    () => document.getAnimations().every((a) => a.playState !== 'running' || (a.effect?.getTiming().iterations ?? 1) === Infinity),
+    undefined, { timeout: 5_000 },
+  ).catch(() => undefined);
 }
 
 async function axeScan(page: Page, name: string, size: string): Promise<string[]> {
@@ -138,21 +151,25 @@ async function axeScan(page: Page, name: string, size: string): Promise<string[]
     .map((v) => `${name} @${size}: ${v.impact} ${v.id} — ${v.help}\n    ${v.nodes.slice(0, 5).map((n) => n.target.join(' ')).join('\n    ')}`);
 }
 
-/** Closes the toasts still showing, so a screenshot shows the page and not the last confirmation. */
+/** Closes the toasts still showing, so a screenshot shows the page and not the last confirmation.
+    A toast may close itself between the count and the click (they live 4–8 s): such a click is
+    given up after a second instead of waiting out the whole test (the journey's one flake). */
 async function dismissToasts(page: Page): Promise<void> {
   const close = page.locator('.ws-toasts .ws-toast__close');
-  for (let i = await close.count(); i > 0; i -= 1) await close.first().click();
+  for (let guard = 0; guard < 10 && await close.count() > 0; guard += 1) {
+    await close.first().click({ timeout: 1_000 }).catch(() => undefined);
+  }
 }
 
 /** Layout faults axe does not look for: a page wider than the viewport (sideways scrolling on
-    a phone), a badge that sticks out of the card or drawer holding it, and a report table whose
+    a phone), a badge or locality chip that sticks out of the card or drawer holding it, and a report table whose
     header is split inside a word. */
 async function layoutFaults(page: Page, name: string, size: string): Promise<string[]> {
   const faults = await page.evaluate(() => {
     const found: string[] = [];
     const root = document.documentElement;
     if (root.scrollWidth > root.clientWidth + 1) found.push(`the page is ${root.scrollWidth}px wide in a ${root.clientWidth}px viewport`);
-    for (const badge of Array.from(document.querySelectorAll<HTMLElement>('.ws-badge'))) {
+    for (const badge of Array.from(document.querySelectorAll<HTMLElement>('.ws-badge, .ws-locality'))) {
       const box = badge.closest<HTMLElement>('.ws-card, .ws-surface');
       if (!box || badge.closest('[role="region"][tabindex="0"]')) continue;
       const inner = badge.getBoundingClientRect();
@@ -177,9 +194,43 @@ async function layoutFaults(page: Page, name: string, size: string): Promise<str
       }
     }
     probe.remove();
+    // A dialog or drawer control outside its surface or off screen: a footer that spilled off
+    // the left edge left Delete and Re-index unreachable on phones (UX-01 / A11Y-01).
+    for (const surface of Array.from(document.querySelectorAll<HTMLElement>('.ws-surface'))) {
+      const box = surface.getBoundingClientRect();
+      for (const control of Array.from(surface.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea'))) {
+        if (control.closest('.ws-sr-only') || control.hidden || (control as HTMLInputElement).type === 'hidden') continue;
+        const r = control.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        const left = Math.max(box.left, 0);
+        const right = Math.min(box.right, document.documentElement.clientWidth);
+        if (r.left < left - 1 || r.right > right + 1) {
+          found.push(`"${(control.textContent || control.getAttribute('aria-label') || control.tagName).trim()}" lies outside its ${surface.getAttribute('role') ?? 'surface'} (${Math.round(r.left)}..${Math.round(r.right)} in ${Math.round(left)}..${Math.round(right)})`);
+        }
+      }
+    }
     return found;
   });
   return faults.map((fault) => `${name} @${size}: ${fault}`);
+}
+
+export const NARROW = { width: 320, height: 640 } as const;
+
+/** The light-themed page's axe scan once more in the dark theme (the tokens differ). */
+async function axeScanDark(page: Page, name: string): Promise<string[]> {
+  const previous = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  await settle(page);
+  try {
+    return await axeScan(page, `${name}-dark`, '1280x800');
+  } finally {
+    await page.evaluate((theme) => {
+      if (theme === null) document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', theme);
+    }, previous);
+    // Colour transitions run back to the light theme; the screenshot must not catch them midway.
+    await settle(page);
+  }
 }
 
 /** axe (serious/critical fail), layout faults and a full-page screenshot, at desktop and at phone
@@ -193,12 +244,17 @@ export async function checkPage(page: Page, name: string): Promise<void> {
     await page.setViewportSize(viewport);
     await settle(page);
     blocking.push(...await axeScan(page, name, size));
+    if (viewport === DESKTOP) blocking.push(...await axeScanDark(page, name));
     layout.push(...await layoutFaults(page, name, size));
     await dismissToasts(page);
     // A full-page capture of a scrolled page paints the sticky top bar mid-page.
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: path.join(screenDir(), `${name}-${size}.png`), fullPage: true });
   }
+  // The narrowest phones and a 1280 px desktop zoomed to 400 %: layout only.
+  await page.setViewportSize(NARROW);
+  await settle(page);
+  layout.push(...await layoutFaults(page, name, '320x640'));
   await page.setViewportSize(original);
   await settle(page);
   expect(blocking, `axe found serious/critical violations:\n${blocking.join('\n')}`).toEqual([]);
@@ -267,4 +323,49 @@ export async function pageGet<T = unknown>(page: Page, url: string): Promise<{ s
     try { body = text ? JSON.parse(text) : null; } catch { body = text; }
     return { status: response.status, body };
   }, url) as Promise<{ status: number; body: T }>;
+}
+
+// ── keyboard focus checks axe does not make ───────────────────────────────────────────
+
+/** The outline that marks *target* as focused, as computed (forced colours keep outlines and drop
+    box-shadows, so a ring drawn with box-shadow alone disappears there). For the chat composer,
+    the ring is on the box around the textarea. */
+export async function focusRing(page: Page, selector: string): Promise<{ style: string; width: number }> {
+  await page.locator(selector).first().waitFor();
+  return page.evaluate((sel) => {
+    const el = document.querySelector<HTMLElement>(sel);
+    if (!el) throw new Error(`no element for ${sel}`);
+    el.focus();
+    const ringed = el.closest<HTMLElement>('.ws-composer__box') ?? el;
+    const style = getComputedStyle(ringed);
+    return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) || 0 };
+  }, selector);
+}
+
+/** Walks backwards with Shift+Tab from the last control of <main>; returns every focused control
+    that sat (even partly) under the sticky top bar (WCAG 2.4.11). */
+export async function controlsUnderTopBar(page: Page, steps = 30): Promise<string[]> {
+  await page.locator('main [data-page-heading]').first().waitFor();
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await page.evaluate(() => {
+    const controls = Array.from(document.querySelectorAll<HTMLElement>('main a[href], main button:not([disabled]), main input:not([disabled]), main select, main textarea'))
+      .filter((el) => el.getBoundingClientRect().height > 0);
+    const last = controls[controls.length - 1];
+    last?.focus();
+    last?.scrollIntoView({ block: 'end' });
+  });
+  const hidden: string[] = [];
+  for (let i = 0; i < steps; i += 1) {
+    await page.keyboard.press('Shift+Tab');
+    const hit = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      const bar = document.querySelector<HTMLElement>('.ws-topbar');
+      if (!el || !bar || !el.closest('main')) return null;
+      const r = el.getBoundingClientRect();
+      const top = bar.getBoundingClientRect().bottom;
+      return r.top < top - 1 && r.bottom > 0 ? `${(el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 40)} (top ${Math.round(r.top)} < ${Math.round(top)})` : null;
+    });
+    if (hit) hidden.push(hit);
+  }
+  return hidden;
 }

@@ -16,7 +16,7 @@
 
 > **Directiva owner-ului, 2026-10-17:** *„avansează, pregătește interfața B2B pentru un pilot … produsul să
 > fie de nota 9/10 chiar și pentru pilot, toate funcțiile trebuie să funcționeze"*. Contractul:
-> [`docs/business/WORKSPACE_PILOT_SPEC.md`](docs/business/WORKSPACE_PILOT_SPEC.md) (v3) · instalare și operare:
+> [`docs/business/WORKSPACE_PILOT_SPEC.md`](docs/business/WORKSPACE_PILOT_SPEC.md) (v3.2) · instalare și operare:
 > [`docs/business/PILOT_GUIDE.md`](docs/business/PILOT_GUIDE.md) · întrebările de business, D1–D7 încă deschise:
 > [`docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md`](docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md).
 > Cinci felii construite și revizuite independent (fiecare cu propriul review adversarial și fix-urile lui),
@@ -119,7 +119,26 @@
   e2e:workspace` in `frontend/package.json`. (6) Spec v3.1: §1/§13 the lane, §3 the data directory, §5/§9
   the loop rule, §7 `/admin/stats` counted from the `chat.asked` / `report.run_started` audit rows and
   `can_open` on run and conversation citations, §10 the source-drawer rule, the shared-reports
-  `department_name` and the optimistic theme/language save with revert.
+  `department_name` and the optimistic theme/language save with revert. The journey grew to 21 steps: a
+  cited document deleted since (the stored answer keeps the excerpt, `can_open: false`, the drawer explains
+  and offers no link) and the company data found only under `home/business/`; the run view's heading is
+  pinned to „Raport: <name>". Gate run: 1,529 workspace backend tests, 2,341 vitest, the journey 21/21,
+  status files regenerated (27,048 backend tests).
+- [x] ✅ **NWS-16 — the first assessment round (2026-10-18): findings fixed before the pilot.**
+  Backend: the audit key guard — a key file is minted only for an empty trail, and a process whose key
+  is not the newest row's never writes (`503 audit_key_missing` / `audit_key_mismatch`, said once at hub
+  start), with the read-only CLI `check` and the audited `audit-rekey` for a key that is truly lost; the
+  CLI preflight (exit 2, nothing changed, outside the service's environment) and `--base-url`
+  normalisation; `invalid_identifier` sign-ins kept out of the audit; `/admin/stats?tz=` with local-day
+  buckets; `ready_document_count`; `share_pending`; the withdrawal reason on superseded approvals;
+  localized delivery-failure notices; `model_unreachable` from what the backend noted, plus a 2 s / 30 s
+  liveness probe of the local model server; the sweep that fails documents an interrupted extraction left
+  `processing`; no CORS headers on the workspace's paths. Frontend: unsent drafts in `sessionStorage`, the
+  „Primii pași" card, table excerpts and previews rendered through `CitedMarkdown`, tables as cards below
+  768 px, the run view's h1 = the report's name. Docs: spec v3.2; pilot guide §2 (`UMask=0077`, a git
+  checkout or bundle, `python3.12` on Ubuntu with 3.13 present), §14 (the archive name, restore on a new
+  server, the `check` step), §16 (refusals, `check`, `audit-rekey`), §17 (audit-key and backup rows), §18,
+  §20 (every key in the handover); `docs/FLAGS.md` and `docs/ARCHITECTURE.md`.
 
 **Open follow-ups**
 
@@ -134,8 +153,18 @@
 - [ ] ⬜ **NWS-11 — a killable extraction subprocess.** pypdf has no checkpoint inside a page, so one
   pathological page keeps a pool thread busy past the 60 s bound (the document is still marked `timeout`).
   Run extraction in a subprocess with `RLIMIT_AS` and a hard kill.
-- [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~561 kB raw / ~159 kB gzip);
+- [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
   lazy-load the admin console and reports to cut the first load.
+- [ ] ⬜ **NWS-17 — hub-side refusal of explicit file roots that reach the company data.**
+  `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` set explicitly to `<data root>` or `<data
+  root>/business` would let the owner's personal assistant read the workspace database and documents;
+  only the pilot guide (§13, §18, §19) says not to. `FileScope.from_env()` (`agents/core/file_tools.py`) and
+  `local_transport.default_roots()` should drop such a root with a warning, with a test (file-tools owner).
+- [ ] ⬜ **NWS-18 — backup CLI ergonomics.** `python -m agents.core.backup verify|restore` accept only
+  the file name from `list` (the `"archive"` path `create` prints answers `no such backup`), and a wrong
+  `JARVIS_BACKUP_KEY` or a non-empty target prints a raw traceback (`SecretStoreError`,
+  `FileExistsError`). Accept a path inside `<data root>/backups/` and print one-line errors; pilot guide
+  §14 / §17 document the current behaviour.
 - [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
   `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
   contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.

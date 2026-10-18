@@ -122,15 +122,17 @@ export function Dialog({ open, onClose, title, description, children, footer, si
       open={open} onClose={onClose} dismissible={!busy} labelledBy={`${id}-title`}
       describedBy={description ? `${id}-desc` : undefined} initialFocus={initialFocus} variant="dialog" size={size} role={role}
     >
-      <header className="ws-surface__header">
+      {/* Plain divs: a <header>/<footer> portalled into <body> would be a second banner and a
+          contentinfo landmark. */}
+      <div className="ws-surface__header">
         <div>
           <h2 id={`${id}-title`} className="ws-surface__title">{title}</h2>
           {description && <p id={`${id}-desc`} className="ws-surface__desc">{description}</p>}
         </div>
         <IconButton icon="close" label={t('common.close')} onClick={onClose} disabled={busy} data-modal-close="true" />
-      </header>
+      </div>
       {children && <div className="ws-surface__body">{children}</div>}
-      {footer && <footer className="ws-surface__footer">{footer}</footer>}
+      {footer && <div className="ws-surface__footer">{footer}</div>}
     </ModalLayer>
   );
 }
@@ -202,12 +204,12 @@ export function Drawer({ open, onClose, title, side = 'right', children, footer,
   const id = useId().replace(/:/g, '');
   return (
     <ModalLayer open={open} onClose={onClose} dismissible={!busy} labelledBy={`${id}-title`} variant={side === 'left' ? 'drawer-left' : 'drawer-right'} size={size}>
-      <header className={['ws-surface__header', bare && 'ws-sr-only'].filter(Boolean).join(' ')}>
+      <div className={['ws-surface__header', bare && 'ws-sr-only'].filter(Boolean).join(' ')}>
         <h2 id={`${id}-title`} className="ws-surface__title">{title}</h2>
         {!bare && <IconButton icon="close" label={t('common.close')} onClick={onClose} disabled={busy} data-modal-close="true" />}
-      </header>
+      </div>
       <div className="ws-surface__body ws-surface__body--scroll">{children}</div>
-      {footer && <footer className="ws-surface__footer">{footer}</footer>}
+      {footer && <div className="ws-surface__footer">{footer}</div>}
     </ModalLayer>
   );
 }

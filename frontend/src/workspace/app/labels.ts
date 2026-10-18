@@ -21,5 +21,5 @@ export const AUDIT_ACTIONS = [
   'report.created', 'report.updated', 'report.deleted', 'report.run_started', 'report.run_succeeded',
   'report.run_failed', 'report.delivered',
   'approval.requested', 'approval.approved', 'approval.rejected', 'approval.cancelled', 'approval.expired',
-  'approval.executed', 'approval.failed', 'email.sent', 'email.failed',
+  'approval.executed', 'approval.failed', 'email.sent', 'email.failed', 'audit.rekeyed',
 ] as const;

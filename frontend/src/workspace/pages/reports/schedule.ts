@@ -61,3 +61,12 @@ export function runDurationMs(run: Pick<ReportRun, 'started_at' | 'finished_at'>
 export function isRunActive(run: Pick<ReportRun, 'status'> | null | undefined): boolean {
   return run?.status === 'queued' || run?.status === 'running';
 }
+
+/** The reader's own IANA zone ('' when the browser does not say). */
+export function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch {
+    return '';
+  }
+}

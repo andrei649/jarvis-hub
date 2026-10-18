@@ -10,15 +10,28 @@
    re-sent once, as the JSON client does for its own requests.
 
    A new conversation is created on the first question, so opening the Assistant never leaves
-   an empty conversation behind; the page then gives it its URL without moving focus. */
+   an empty conversation behind; the page then gives it its URL without moving focus.
+
+   Focus: when the control the person used goes away — Send turning into Stop and back into a
+   disabled Send, the Retry button of a failed answer, a suggested question of the empty state —
+   focus moves to the question box instead of falling to <body> (WCAG 2.4.3). One status region
+   announces "writing…", then "the answer is ready" (or why it failed).
+
+   A failed answer re-reads the model posture at once (the server has just marked a dead model
+   server down), so the chip and the notice above the composer agree with the failure. What is
+   typed in the composer is mirrored into the tab's draft store per conversation, so a session
+   that ends under the person does not lose a long question. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createConversation, getConversation, sendFeedback, streamAnswer } from '../../api/chat';
 import { isAbort } from '../../api/client';
 import { eventJson } from '../../api/sse';
 import type { ChatMessage, ChatStreamEvents, Citation, Conversation, Department, ModelPosture } from '../../api/types';
+import { clearDraft, readDraft, writeDraft } from '../../app/drafts';
 import { describeCode, describeError, errorCode, useErrorText } from '../../app/errors';
 import { copyText } from '../../app/hooks';
+import { readPref, writePref } from '../../app/storage';
 import { useSession, useUser } from '../../app/session';
+import { useWorkspace } from '../../app/workspace';
 import { useI18n } from '../../i18n';
 import { modelState, useModelReason } from '../../shell/ModelChip';
 import { Button, Dialog, EmptyState, LoadingBlock, Notice, TextArea, useToast } from '../../ui';
@@ -104,16 +117,20 @@ export interface ChatPaneProps {
   onLoaded: (conversation: Conversation) => void;
   /** Something changed server-side (new message, new title): the page refreshes its list. */
   onActivity: () => void;
+  /** The person has no conversation yet (in this department): the empty chat welcomes them. */
+  firstVisit?: boolean;
 }
 
-export function ChatPane({ conversationId, department, posture, header, onCreated, onLoaded, onActivity }: ChatPaneProps) {
+export function ChatPane({ conversationId, department, posture, header, onCreated, onLoaded, onActivity, firstVisit = false }: ChatPaneProps) {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
   const errorText = useErrorText();
   const reasonText = useModelReason();
-  const isAdmin = useUser().role === 'admin';
+  const user = useUser();
+  const isAdmin = user.role === 'admin';
   const { refresh: refreshSession } = useSession();
+  const { refreshPosture } = useWorkspace();
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
@@ -126,7 +143,14 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
   const [citation, setCitation] = useState<Citation | null>(null);
   const [emailFor, setEmailFor] = useState<LocalMessage | null>(null);
   const [noteFor, setNoteFor] = useState<LocalMessage | null>(null);
+  // First visit (no conversation yet, and not greeted in this browser): the empty chat greets the
+  // person by name until they ask their first question.
+  const welcomeKey = `welcomed.${user.id}`;
+  const [greeted, setWelcomed] = useState(() => readPref(welcomeKey) === '1');
+  const welcomed = greeted || !firstVisit;
   const abortRef = useRef<AbortController | null>(null);
+  const stoppedRef = useRef(false);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const createdIdRef = useRef<number | null>(null);
   const keySeq = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -135,9 +159,25 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
   onLoadedRef.current = onLoaded;
 
   const nextKey = () => { keySeq.current += 1; return `m${keySeq.current}`; };
+  const draftKey = `composer.${conversationId ?? `new.${department.id}`}`;
+  const focusComposer = () => composerRef.current?.focus();
+  /** After an answer settles: back to the question box when focus sat in the composer (its button
+      changed under it) or was lost; a person reading a citation elsewhere keeps their place. */
+  const restoreFocus = () => {
+    const active = document.activeElement;
+    const box = composerRef.current;
+    if (!box) return;
+    if (!active || active === document.body || (box.form && box.form.contains(active))) box.focus();
+  };
   const withKeys = (list: ChatMessage[]): LocalMessage[] => list.map((m) => ({ ...m, key: `s${m.id}` }));
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Each conversation (and each department's new chat) has its own unsent draft.
+  useEffect(() => {
+    if (conversationId !== null && conversationId === createdIdRef.current) return;
+    setQuestion(readDraft<string>(user.id, draftKey) ?? '');
+  }, [draftKey]);
 
   useEffect(() => {
     if (conversationId !== null && conversationId === createdIdRef.current) return undefined;
@@ -190,14 +230,18 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
     setMessages((list) => [...list, draft(userKey, 'user', text, -1), { ...draft(replyKey, 'assistant', '', -2), status: 'pending', streaming: true }]);
     const controller = new AbortController();
     abortRef.current = controller;
+    stoppedRef.current = false;
     setPhase('streaming');
     setAnnouncement(t('chat.streaming'));
     let started = false;
     let settled = false;
     const fail = (code: string, reason?: string) => {
       settled = true;
-      patch(replyKey, { status: 'error', error_code: code, error_reason: reason, content: '', citations: [], streaming: false });
-      setAnnouncement(code === 'cancelled' ? t('chat.stopped') : `${t('chat.error.title')}: ${describeCode(i18n, code, reason)}`);
+      const byUser = code === 'cancelled' && stoppedRef.current;
+      patch(replyKey, { status: 'error', error_code: code, error_reason: reason, stopped_by_user: byUser, content: '', citations: [], streaming: false });
+      setAnnouncement(code === 'cancelled' ? t(byUser ? 'chat.stopped' : 'chat.interrupted') : `${t('chat.error.title')}: ${describeCode(i18n, code, reason)}`);
+      // The server marks a model server that failed us down at once: show it everywhere now.
+      if (code !== 'cancelled') void refreshPosture();
     };
     try {
       for await (const event of streamAnswer(id, text, controller.signal)) {
@@ -218,7 +262,7 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
           const final = eventJson<ChatStreamEvents['done']>(event).assistant_message;
           settled = true;
           patch(replyKey, { ...final, citations: final.citations ?? [], streaming: false });
-          setAnnouncement('');
+          setAnnouncement(t('chat.answerReady'));
         } else if (event.event === 'error') {
           const failure = eventJson<ChatStreamEvents['error']>(event);
           fail(failure.error, failure.reason);
@@ -238,6 +282,7 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
           return;
         }
         setQuestion(text);
+        writeDraft(user.id, `composer.${id}`, text);
         setComposerError(errorText(err));
         setAnnouncement('');
       } else {
@@ -246,6 +291,7 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setPhase('idle');
+      restoreFocus();
       onActivity();
     }
   };
@@ -256,6 +302,8 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
     if (text.length > MAX_QUESTION) { setComposerError(t('common.tooLong', { max: MAX_QUESTION })); return; }
     setComposerError(null);
     setQuestion('');
+    clearDraft(user.id, draftKey);
+    if (!greeted) { writePref(welcomeKey, '1'); setWelcomed(true); }
     let id = conversationId;
     if (id === null) {
       setPhase('creating');
@@ -269,6 +317,7 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
       } catch (err) {
         setPhase('idle');
         setQuestion(text);
+        writeDraft(user.id, draftKey, text);
         setComposerError(errorText(err));
         return;
       }
@@ -278,6 +327,8 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
 
   const retry = (index: number) => {
     const asked = [...messages.slice(0, index)].reverse().find((m) => m.role === 'user');
+    // The Retry button disappears with the failed answer: keep focus in the composer.
+    focusComposer();
     if (asked) void ask(asked.content);
   };
 
@@ -307,7 +358,7 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
     return [...messages.slice(0, index)].reverse().find((m) => m.role === 'user')?.content ?? '';
   };
 
-  const stop = useCallback(() => abortRef.current?.abort(), []);
+  const stop = useCallback(() => { stoppedRef.current = true; abortRef.current?.abort(); }, []);
   /** Re-reads the conversation from the server, including one this pane created. */
   const reload = () => { createdIdRef.current = null; setReloadTick((n) => n + 1); };
 
@@ -332,19 +383,20 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
           : <Notice tone="danger" live="assertive" action={<Button size="sm" icon="refresh" onClick={reload}>{t('common.retry')}</Button>}>{describeError(i18n, loadError)}</Notice>)}
         {showEmpty && (
           <div className="ws-chat-empty">
-            <span className="ws-chat-empty__mark" aria-hidden="true">N</span>
-            <p className="ws-chat-empty__title">{t('chat.empty.title')}</p>
-            <p className="ws-chat-empty__body">{t('chat.empty.body', { department: department.name })}</p>
-            {department.document_count === 0 && (
+            <p className="ws-chat-empty__title">{welcomed ? t('chat.empty.title') : t('chat.empty.welcome', { name: user.name.split(/\s+/)[0] || user.name })}</p>
+            <p className="ws-chat-empty__body">{t(welcomed ? 'chat.empty.body' : 'chat.empty.welcomeBody', { department: department.name })}</p>
+            {(department.ready_document_count ?? department.document_count) === 0 && (
               <Notice tone="warning" action={<ButtonLink to="/documents" size="sm">{t('chat.empty.uploadLink')}</ButtonLink>}>
-                {t('chat.empty.noDocuments', { department: department.name })}
+                {(department.document_count ?? 0) > 0
+                  ? t('chat.empty.noReadyDocuments', { department: department.name })
+                  : t('chat.empty.noDocuments', { department: department.name })}
               </Notice>
             )}
             <p className="ws-chat-empty__label" id="ws-prompts-label">{t('chat.empty.prompts')}</p>
             <ul className="ws-prompts" aria-labelledby="ws-prompts-label">
               {suggestedPrompts(department).map((key) => (
                 <li key={key}>
-                  <button type="button" className="ws-prompt" disabled={phase !== 'idle'} onClick={() => void ask(t(key))}>
+                  <button type="button" className="ws-prompt" disabled={phase !== 'idle'} onClick={() => { focusComposer(); void ask(t(key)); }}>
                     <span>{t(key)}</span>
                   </button>
                 </li>
@@ -378,9 +430,11 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
         )}
         {guarded && !unavailable && <p className="ws-chat__note"><span aria-hidden="true">ⓘ</span> {t('chat.guardrails')}</p>}
         <Composer
-          value={question} onChange={(value) => { setQuestion(value); if (composerError) setComposerError(null); }}
+          value={question}
+          onChange={(value) => { setQuestion(value); writeDraft(user.id, draftKey, value); if (composerError) setComposerError(null); }}
           onSubmit={() => void ask(question)} onStop={stop} phase={phase} error={composerError}
-          placeholder={t('chat.composer.placeholder')}
+          placeholder={t('chat.composer.placeholder')} shortPlaceholder={t('chat.composer.placeholderShort')}
+          inputRef={composerRef}
         />
       </div>
       <p className="ws-sr-only" role="status" aria-live="polite">{announcement}</p>

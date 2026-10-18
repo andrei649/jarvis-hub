@@ -125,7 +125,7 @@ describe('First-run setup', () => {
     });
     renderApp('/workspace/');
     expect(await screen.findByRole('heading', { name: 'Configurează Nerva Workspace' })).toBeTruthy();
-    expect(screen.getByText(/setup-code\.txt/)).toBeTruthy();
+    expect(screen.getByText(/business\/setup-code\.txt/)).toBeTruthy();
     fill();
     fireEvent.click(screen.getByRole('button', { name: 'Creează spațiul de lucru' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Utilizatori' })).toBeTruthy();

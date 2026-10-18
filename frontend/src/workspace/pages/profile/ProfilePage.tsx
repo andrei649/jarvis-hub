@@ -15,10 +15,7 @@ import { useI18n } from '../../i18n';
 import { ROLE_LABEL } from '../../app/labels';
 import { useDocumentTitle } from '../../router';
 import { LANGUAGES, THEMES, usePreferenceSaver } from '../../shell/UserMenu';
-import {
-  Badge, Button, Card, ConfirmDialog, Notice, PageHeader, PasswordField, RadioCards, Select, Table, TextField,
-  useToast, type Column, EmptyState,
-} from '../../ui';
+import { Badge, Button, Card, type Column, ConfirmDialog, EmptyState, Notice, PageHeader, PasswordField, RadioCards, Select, Table, TextField, useInvalidFocus, useToast } from '../../ui';
 import { PasswordPolicy, passwordProblemText } from '../auth/PasswordPolicy';
 
 function PersonalCard() {
@@ -31,6 +28,7 @@ function PersonalCard() {
   const [name, setName] = useState(user.name);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const nameFormRef = useInvalidFocus(error);
   const mine = departments.filter((d) => user.department_ids.includes(d.id));
 
   const save = async (event: React.FormEvent) => {
@@ -50,7 +48,7 @@ function PersonalCard() {
 
   return (
     <Card title={t('profile.personal')} description={t('profile.personalDesc')}>
-      <form className="ws-form ws-form--inline" onSubmit={save} noValidate>
+      <form ref={nameFormRef} className="ws-form ws-form--inline" onSubmit={save} noValidate>
         <TextField label={t('field.name')} value={name} onChange={(e) => setName(e.target.value)} error={error} autoComplete="name" maxLength={200} required />
         <Button type="submit" variant="primary" busy={busy} disabled={name.trim() === user.name}>{t('common.save')}</Button>
       </form>
@@ -73,7 +71,7 @@ function PreferencesCard() {
       <div className="ws-stack">
         <Select
           label={t('userMenu.language')} value={user.locale} onChange={(e) => void saveLocale(e.target.value as Locale)}
-          options={LANGUAGES.map((l) => ({ value: l, label: t(`language.${l}`) }))}
+          options={LANGUAGES.map((l) => ({ value: l, label: t(`language.${l}`), lang: l }))}
         />
         <RadioCards<Theme>
           name="theme" legend={t('userMenu.theme')} value={user.theme} onChange={(v) => void saveTheme(v)}
@@ -94,6 +92,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [errors, setErrors] = useState<{ current?: string; next?: string; confirm?: string }>({});
+  const formRef = useInvalidFocus(errors);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -104,7 +103,8 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
     const weak = passwordProblemText(t, next, user.email);
     if (weak) found.next = weak;
     else if (next === current) found.next = t('profile.password.same');
-    if (confirm !== next) found.confirm = t('password.mismatch');
+    if (!confirm) found.confirm = t('password.confirmRequired');
+    else if (confirm !== next) found.confirm = t('password.mismatch');
     setErrors(found);
     setFormError(null);
     if (Object.keys(found).length) return;
@@ -129,7 +129,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
   return (
     <Card title={t('profile.password')} description={t('profile.passwordDesc')}>
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
-      <form className="ws-form ws-form--narrow" onSubmit={submit} noValidate>
+      <form ref={formRef} className="ws-form ws-form--narrow" onSubmit={submit} noValidate>
         <input type="email" value={user.email} autoComplete="username" readOnly hidden />
         <PasswordField label={t('field.currentPassword')} value={current} onChange={(e) => setCurrent(e.target.value)} error={errors.current} autoComplete="current-password" maxLength={256} required />
         <PasswordField

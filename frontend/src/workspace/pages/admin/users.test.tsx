@@ -90,7 +90,7 @@ describe('Admin → Users', () => {
     fireEvent.change(within(dialog).getByLabelText(/^Email/), { target: { value: 'ion@acme.ro' } });
     fireEvent.change(within(dialog).getByLabelText(/^Nume/), { target: { value: 'Ion' } });
     fireEvent.click(within(dialog).getByLabelText('General'));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Trimite invitația' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Creează invitația' }));
     expect(await within(dialog).findByText('Există deja un utilizator cu acest email.')).toBeTruthy();
     expect(mock.find('POST', '/api/workspace/admin/users')[0].body).toMatchObject({ send_email: false });
   });
@@ -106,7 +106,7 @@ describe('Admin → Users', () => {
     fireEvent.click(within(confirm).getByRole('button', { name: 'Dezactivează' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(mock.find('PATCH', '/api/workspace/admin/users/2')[0].body).toEqual({ status: 'disabled' });
-    expect(await screen.findByText('Contul lui Ion Ionescu a fost dezactivat.')).toBeTruthy();
+    expect(await screen.findByText('Cont dezactivat: Ion Ionescu.')).toBeTruthy();
     expect(mock.find('GET', '/api/workspace/admin/users').length).toBeGreaterThan(listCalls);
   });
 

@@ -10,8 +10,9 @@ import type { InviteLookup } from '../../api/types';
 import { describeError, errorCode } from '../../app/errors';
 import { useSession } from '../../app/session';
 import { useI18n } from '../../i18n';
+import { ButtonLink } from '../shared/ButtonLink';
 import { navigate } from '../../router';
-import { Button, LoadingBlock, Notice, PasswordField, TextField } from '../../ui';
+import { Button, LoadingBlock, Notice, PasswordField, TextField, useInvalidFocus } from '../../ui';
 import { AuthLayout } from './AuthLayout';
 import { PasswordPolicy, passwordProblemText } from './PasswordPolicy';
 
@@ -42,6 +43,7 @@ export function InvitePage() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [errors, setErrors] = useState<{ name?: string; password?: string; confirm?: string }>({});
+  const formRef = useInvalidFocus(errors);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -72,7 +74,8 @@ export function InvitePage() {
     if (isInvite && !name.trim()) next.name = t('auth.error.name');
     const weak = passwordProblemText(t, password, state.invite.email);
     if (weak) next.password = weak;
-    if (confirm !== password) next.confirm = t('password.mismatch');
+    if (!confirm) next.confirm = t('password.confirmRequired');
+    else if (confirm !== password) next.confirm = t('password.mismatch');
     setErrors(next);
     setFormError(null);
     if (Object.keys(next).length) return;
@@ -98,6 +101,8 @@ export function InvitePage() {
     return (
       <AuthLayout title={t('invite.invalidTitle')}>
         <Notice tone="warning">{t('invite.invalidBody')}</Notice>
+        {/* Not a dead end: someone who already has a password signs in from here. */}
+        <ButtonLink to="/" variant="secondary">{t('invite.toLogin')}</ButtonLink>
       </AuthLayout>
     );
   }
@@ -121,7 +126,7 @@ export function InvitePage() {
         <Notice tone="warning">{t('invite.otherAccount', { email: user.email })}</Notice>
       )}
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
-      <form className="ws-form" onSubmit={submit} noValidate>
+      <form ref={formRef} className="ws-form" onSubmit={submit} noValidate>
         <input type="email" value={invite.email} autoComplete="username" readOnly hidden />
         {isInvite && (
           <TextField label={t('field.name')} value={name} onChange={(e) => setName(e.target.value)} error={errors.name} autoComplete="name" maxLength={200} required />

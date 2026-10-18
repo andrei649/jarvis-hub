@@ -41,7 +41,22 @@ def test_me_returns_user_org_and_departments(member):
     assert body["org"]["name"] == "Acme"
     assert [d["id"] for d in body["departments"]] == [company.dept_a]
     assert set(body["departments"][0]) == {"id", "slug", "name", "description", "archived",
-                                           "created_at", "member_count", "document_count"}
+                                           "created_at", "member_count", "document_count",
+                                           "ready_document_count"}
+
+
+def test_a_department_counts_its_ready_documents_apart(member):
+    """Failed or still-processing uploads are documents, but the assistant cannot cite them:
+    the chat's "no documents yet" guidance reads ready_document_count."""
+    from tests.fixtures.workspace.doc_helpers import seed_document
+
+    company, client, _csrf = member
+    conn = db()
+    for status in ("ready", "failed", "processing"):
+        seed_document(conn, department_id=company.dept_a, uploader_id=company.member_a.id,
+                      title=f"Doc {status}", chunks=["Text."], status=status)
+    sales = client.get("/api/workspace/departments").json()["departments"][0]
+    assert (sales["document_count"], sales["ready_document_count"]) == (3, 1)
 
 
 def test_update_profile(member):

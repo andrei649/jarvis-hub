@@ -30,8 +30,10 @@ export function passwordProblems(password: string, email: string): PasswordProbl
   return problems;
 }
 
-/** The first local problem as translated text, for the field error on submit. */
+/** The first local problem as translated text, for the field error on submit ("choose a
+    password" when the field is still empty, not the length rule). */
 export function passwordProblemText(t: (key: MessageKey) => string, password: string, email: string): string | null {
+  if (!password) return t('password.required');
   const [first] = passwordProblems(password, email);
   return first ? t(`error.weak_password.${first}`) : null;
 }

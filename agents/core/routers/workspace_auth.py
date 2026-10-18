@@ -54,14 +54,21 @@ def _invalid_credentials() -> WorkspaceError:
 
 
 def departments_json(conn: sqlite3.Connection, department_ids: list[int]) -> list[dict]:
-    """The given departments with member and document counts, by name."""
+    """The given departments with member and document counts, by name.
+
+    ``ready_document_count`` counts only documents the assistant can cite (status ``ready``):
+    a department whose uploads all failed or are still processing has documents but nothing
+    to answer from, and the chat says so.
+    """
     if not department_ids:
         return []
     rows = conn.execute(
         "SELECT d.*, "
         "(SELECT COUNT(*) FROM user_departments ud JOIN users u ON u.id = ud.user_id "
         " WHERE ud.department_id = d.id AND u.status != 'disabled') AS member_count, "
-        "(SELECT COUNT(*) FROM documents doc WHERE doc.department_id = d.id) AS document_count "
+        "(SELECT COUNT(*) FROM documents doc WHERE doc.department_id = d.id) AS document_count, "
+        "(SELECT COUNT(*) FROM documents doc WHERE doc.department_id = d.id "
+        " AND doc.status = 'ready') AS ready_document_count "
         "FROM departments d WHERE d.id IN (SELECT value FROM json_each(?)) "
         "ORDER BY d.name COLLATE NOCASE, d.id",
         (json.dumps(department_ids),),
@@ -70,6 +77,7 @@ def departments_json(conn: sqlite3.Connection, department_ids: list[int]) -> lis
     for row in rows:
         item = identity.department_to_json(row, counts={
             "member_count": int(row["member_count"]), "document_count": int(row["document_count"]),
+            "ready_document_count": int(row["ready_document_count"]),
         })
         item.pop("assistant_instructions", None)
         result.append(item)
@@ -169,18 +177,28 @@ async def setup(request: Request, conn: Db, _on: Enabled) -> JSONResponse:
 
 @router.post("/login")
 async def login(request: Request, conn: Db, _on: Enabled) -> JSONResponse:
-    """Email + password sign-in; one generic 401 for every kind of failure."""
+    """Email + password sign-in; one generic 401 for every kind of failure.
+
+    What was typed in the email field is kept (attempt row, audit) only when it is an
+    email address: anything else — a password typed into the wrong field, say — is
+    recorded as ``''`` with reason ``invalid_identifier``, so it never lands in the
+    append-only audit. No account can match it, so it has no per-email lockout of its
+    own; the per-IP limit still counts it.
+    """
     auth.check_public_origin(request)
     body = await read_json(request, max_bytes=8192)
-    email = require_str(body, "email", max_len=254, min_len=1).lower()
+    typed = require_str(body, "email", max_len=254, min_len=1)
     password = require_str(body, "password", max_len=MAX_PASSWORD_INPUT, min_len=1, strip=False)
+    email = normalize_email(typed) or ""
     ip = auth.client_ip(request)
     attempt = auth.reserve_login_attempt(conn, email=email, ip=ip)
-    row = identity.get_user_by_email(conn, email)
+    row = identity.get_user_by_email(conn, email) if email else None
     stored = row["password_hash"] if row is not None else None
     ok = await asyncio.to_thread(identity.verify_password, password, stored)
     if not ok or row is None or row["status"] != "active":
-        if row is None:
+        if not email:
+            reason = "invalid_identifier"
+        elif row is None:
             reason = "unknown_user"
         elif row["status"] != "active":
             reason = f"user_{row['status']}"
@@ -190,13 +208,20 @@ async def login(request: Request, conn: Db, _on: Enabled) -> JSONResponse:
                                   target_user_id=int(row["id"]) if row is not None else None)
         raise _invalid_credentials()
     holder = Response()
-    with tx(conn):
+    try:
+        with tx(conn):
+            auth.settle_login_success(conn, attempt)
+            csrf = auth.issue_session(conn, holder, request, int(row["id"]), via="password")
+            user = _loaded_user(conn, int(row["id"]))
+            audit.record(conn, actor=user, action="auth.login", target_type="user",
+                         target_id=user.id, ip=ip, details={"via": "password"})
+            payload = _signed_in_payload(conn, user, csrf)
+    except audit.AuditKeyError:
+        # The server cannot sign the row (503, the sign-in rolled back), but the password
+        # was right: the reserved attempt must not count toward this account's lockout,
+        # or people retrying during the incident stay locked out after it is fixed.
         auth.settle_login_success(conn, attempt)
-        csrf = auth.issue_session(conn, holder, request, int(row["id"]), via="password")
-        user = _loaded_user(conn, int(row["id"]))
-        audit.record(conn, actor=user, action="auth.login", target_type="user", target_id=user.id,
-                     ip=ip, details={"via": "password"})
-        payload = _signed_in_payload(conn, user, csrf)
+        raise
     return ws_json(payload, cookies_from=holder)
 
 

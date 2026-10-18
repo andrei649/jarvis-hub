@@ -292,7 +292,7 @@ async def test_complete_streams_nothing_when_a_short_start_is_followed_by_a_fail
 
     with pytest.raises(llm.LLMUnavailable) as caught:
         await llm.complete(system="s", prompt="p", policy="local_only", on_token=on_token)
-    assert caught.value.extra["reason"] == "model_error"
+    assert caught.value.extra["reason"] == "model_unreachable"
     assert tokens == []
 
 

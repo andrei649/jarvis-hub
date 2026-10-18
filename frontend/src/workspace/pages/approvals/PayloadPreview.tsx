@@ -33,7 +33,9 @@ function EmailPreview({ payload }: { payload: Record<string, unknown> }) {
   return (
     <div className="ws-email-preview">
       <dl className="ws-dl ws-email-preview__head">
-        <dt>{t('approvals.preview.email.to')}</dt><dd><Recipients emails={list(payload.to)} /></dd>
+        {/* Plain text, like the other rows of the grid: a neutral badge on this tinted head showed
+            no pill, only its padding, so the address sat indented from the values under it. */}
+        <dt>{t('approvals.preview.email.to')}</dt><dd>{list(payload.to).join(', ')}</dd>
         <dt>{t('approvals.preview.email.subject')}</dt><dd className="ws-strong">{text(payload.subject)}</dd>
         {typeof source.type === 'string' && (
           <>

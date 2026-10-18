@@ -3,26 +3,45 @@
    Links: the server returns an invite URL only when it issues one (on create, or on request);
    issuing a new one revokes the person's older unused links, so "copy link" always means
    "issue a fresh link" and the dialog says so before doing it. Email delivery is offered only
-   when SMTP is configured; otherwise the admin copies the link and sends it themselves. */
+   when SMTP is configured; otherwise the admin copies the link and sends it themselves.
+
+   The invite and edit dialogs keep what was typed as a draft in this tab (app/drafts.ts) until
+   it is saved or cancelled, so a session that ends under the admin does not lose it: reopening
+   the dialog after signing in again brings it back, with a note saying so. */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createUser, getSmtp, issueInvite, listAdminDepartments, listUsers, smtpConfigured, updateUser } from '../../api/admin';
 import type { AdminDepartment, AdminUser, CreateUserResponse, IssueInviteResponse, Role } from '../../api/types';
+import { draftIds, draftText, useDraftMirror, useRestoredDraft } from '../../app/drafts';
 import { describeCode, describeError, errorCode, errorField } from '../../app/errors';
 import { copyText, useAsync } from '../../app/hooks';
 import { ROLE_HINT, ROLE_LABEL, ROLES, STATUS_LABEL } from '../../app/labels';
+import { GettingStarted } from './GettingStarted';
 import { getMe } from '../../api/account';
 import { useSession, useUser } from '../../app/session';
 import { useWorkspace } from '../../app/workspace';
 import { useI18n } from '../../i18n';
-import {
-  Avatar, Badge, Button, Checkbox, ConfirmDialog, Dialog, EmptyState, IconButton, Menu, Notice, Select, Table,
-  TextField, useToast, type Column, type MenuEntry, type Tone,
-} from '../../ui';
+import { Avatar, Badge, Button, Checkbox, type Column, ConfirmDialog, Dialog, EmptyState, Icon, IconButton, Menu, type MenuEntry, Notice, Select, Table, TextField, type Tone, useInvalidFocus, useToast } from '../../ui';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STATUS_TONE: Record<AdminUser['status'], Tone> = { active: 'success', invited: 'warning', disabled: 'neutral' };
 
 type StatusFilter = 'all' | AdminUser['status'];
+
+interface InviteDraft { email: string; name: string; role: Role; deptIds: number[] }
+interface EditDraft { name: string; role: Role; deptIds: number[] }
+
+function draftRole(value: unknown, fallback: Role): Role {
+  return ROLES.includes(value as Role) ? (value as Role) : fallback;
+}
+
+/** Restored department ids without the ones deleted since (when the list is known). */
+function knownIds(ids: number[], departments: AdminDepartment[]): number[] {
+  return departments.length ? ids.filter((id) => departments.some((d) => d.id === id)) : ids;
+}
+
+function sameIds(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((id) => b.includes(id));
+}
 
 /** The link panel shown after a link is issued: copy button, delivery outcome. */
 function InviteLinkResult({ url, emailed, emailError, email }: { url: string; emailed: boolean; emailError?: string; email: string }) {
@@ -74,7 +93,7 @@ function DepartmentChecklist({ departments, value, onChange, error }: {
           />
         ))}
       </div>
-      {error && <p className="ws-field__error" id="dept-error">{error}</p>}
+      {error && <p className="ws-field__error" id="dept-error"><Icon name="alert" size={14} /> <span>{error}</span></p>}
     </fieldset>
   );
 }
@@ -89,7 +108,7 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (role: Role) =
   );
 }
 
-/** Mounted only while open, so every invitation starts from an empty form. */
+/** Mounted only while open, so every invitation starts from an empty form (or its draft). */
 function InviteDialog({ onClose, departments, smtpReady, onCreated }: {
   onClose: () => void;
   departments: AdminDepartment[];
@@ -98,16 +117,21 @@ function InviteDialog({ onClose, departments, smtpReady, onCreated }: {
 }) {
   const i18n = useI18n();
   const { t } = i18n;
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [role, setRole] = useState<Role>('member');
-  const [deptIds, setDeptIds] = useState<number[]>([]);
+  const userId = useUser().id;
+  const restored = useRestoredDraft<InviteDraft>(userId, 'invite.new');
+  const [email, setEmail] = useState(draftText(restored?.email, ''));
+  const [name, setName] = useState(draftText(restored?.name, ''));
+  const [role, setRole] = useState<Role>(draftRole(restored?.role, 'member'));
+  const [deptIds, setDeptIds] = useState<number[]>(() => knownIds(draftIds(restored?.deptIds, []), departments));
   const [sendEmail, setSendEmail] = useState(smtpReady);
   const [errors, setErrors] = useState<{ email?: string; name?: string; departments?: string }>({});
+  const formRef = useInvalidFocus(errors);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CreateUserResponse | null>(null);
-  const close = onClose;
+  const pristine = !email.trim() && !name.trim() && role === 'member' && deptIds.length === 0;
+  const clearDraft = useDraftMirror<InviteDraft>(userId, 'invite.new', { email, name, role, deptIds }, pristine);
+  const close = () => { clearDraft(); onClose(); };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -121,6 +145,7 @@ function InviteDialog({ onClose, departments, smtpReady, onCreated }: {
     setBusy(true);
     try {
       const created = await createUser({ email: email.trim(), name: name.trim(), role, department_ids: deptIds, send_email: smtpReady && sendEmail });
+      clearDraft();
       setResult(created);
       onCreated();
     } catch (err) {
@@ -150,12 +175,13 @@ function InviteDialog({ onClose, departments, smtpReady, onCreated }: {
       footer={(
         <>
           <Button onClick={close} disabled={busy}>{t('common.cancel')}</Button>
-          <Button variant="primary" type="submit" form="ws-invite-form" busy={busy} icon="userPlus">{t('users.invite.submit')}</Button>
+          <Button variant="primary" type="submit" form="ws-invite-form" busy={busy} icon="userPlus">{t(smtpReady && sendEmail ? 'users.invite.submitSend' : 'users.invite.submit')}</Button>
         </>
       )}
     >
+      {restored && <Notice tone="accent">{t('draft.restored')}</Notice>}
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
-      <form id="ws-invite-form" className="ws-form" onSubmit={submit} noValidate>
+      <form id="ws-invite-form" ref={formRef} className="ws-form" onSubmit={submit} noValidate>
         <div className="ws-grid ws-grid--2 ws-grid--tight">
           <TextField label={t('field.email')} type="email" value={email} onChange={(e) => setEmail(e.target.value)} error={errors.email} maxLength={254} required autoComplete="off" />
           <TextField label={t('field.name')} value={name} onChange={(e) => setName(e.target.value)} error={errors.name} maxLength={200} required autoComplete="off" />
@@ -181,13 +207,19 @@ function EditDialog({ user, onClose, departments, onSaved }: {
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const [name, setName] = useState(user.name);
-  const [role, setRole] = useState<Role>(user.role);
-  const [deptIds, setDeptIds] = useState<number[]>(user.department_ids);
+  const userId = useUser().id;
+  const draftKey = `user.${user.id}`;
+  const restored = useRestoredDraft<EditDraft>(userId, draftKey);
+  const [name, setName] = useState(draftText(restored?.name, user.name));
+  const [role, setRole] = useState<Role>(draftRole(restored?.role, user.role));
+  const [deptIds, setDeptIds] = useState<number[]>(() => (restored ? knownIds(draftIds(restored.deptIds, user.department_ids), departments) : user.department_ids));
   const [errors, setErrors] = useState<{ name?: string; departments?: string }>({});
+  const formRef = useInvalidFocus(errors);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const close = onClose;
+  const pristine = name === user.name && role === user.role && sameIds(deptIds, user.department_ids);
+  const clearDraft = useDraftMirror<EditDraft>(userId, draftKey, { name, role, deptIds }, pristine);
+  const close = () => { clearDraft(); onClose(); };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -200,6 +232,7 @@ function EditDialog({ user, onClose, departments, onSaved }: {
     setBusy(true);
     try {
       await updateUser(user.id, { name: name.trim(), role, department_ids: deptIds });
+      clearDraft();
       toast.success(t('users.edit.saved'));
       onSaved();
       close();
@@ -220,8 +253,9 @@ function EditDialog({ user, onClose, departments, onSaved }: {
         </>
       )}
     >
+      {restored && <Notice tone="accent">{t('draft.restored')}</Notice>}
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
-      <form id="ws-edit-user-form" className="ws-form" onSubmit={submit} noValidate>
+      <form id="ws-edit-user-form" ref={formRef} className="ws-form" onSubmit={submit} noValidate>
         <TextField label={t('field.name')} value={name} onChange={(e) => setName(e.target.value)} error={errors.name} maxLength={200} required />
         <RoleSelect value={role} onChange={setRole} />
         {role !== user.role && <Notice tone="warning">{t('users.edit.roleChange')}</Notice>}
@@ -362,12 +396,12 @@ export function UsersSection() {
       render: (u) => (
         <span className="ws-cell-stack">
           <Badge tone={STATUS_TONE[u.status]} dot>{t(STATUS_LABEL[u.status])}</Badge>
-          {u.status === 'invited' && pendingInviteText(u, fmt, t) && <span className="ws-muted ws-small">{pendingInviteText(u, fmt, t)}</span>}
+          {u.status === 'invited' && pendingInviteText(u, fmt, t) && <span className="ws-muted ws-small ws-nowrap">{pendingInviteText(u, fmt, t)}</span>}
         </span>
       ),
     },
     {
-      key: 'login', header: t('users.col.lastLogin'), secondary: true,
+      key: 'login', header: t('users.col.lastLogin'), secondary: true, nowrap: true,
       render: (u) => (u.last_login_at ? <span title={fmt.dateTime(u.last_login_at)}>{fmt.relative(u.last_login_at)}</span> : <span className="ws-muted">{t('users.never')}</span>),
     },
     {
@@ -400,6 +434,7 @@ export function UsersSection() {
           <Button variant="primary" icon="userPlus" onClick={() => setInviting(true)} disabled={!departments.data}>{t('users.invite.open')}</Button>
         </div>
       </div>
+      <GettingStarted users={users.data} departments={departments.data} smtp={smtp.data} onInvite={departments.data ? () => setInviting(true) : undefined} />
       {smtp.data && !smtpReady && <Notice tone="accent">{t('users.smtpNotice')}</Notice>}
       {loadError ? (
         <Notice tone="danger" live="assertive" action={<Button size="sm" icon="refresh" onClick={() => { void users.reload(); void departments.reload(); }}>{t('common.retry')}</Button>}>

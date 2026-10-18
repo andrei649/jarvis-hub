@@ -371,6 +371,21 @@ def test_cancel_superseded_withdraws_only_pending_requests(conn, cast, effect):
                                       "'approval.cancelled'").fetchone()[0])
     assert details == {"kind": DEPT_KIND, "reason": "superseded"}
     assert effect.closed == [(done["id"], "rejected")]
+    # The withdrawn request says why (the UI words it); the rejected one is untouched.
+    rows = dict(conn.execute("SELECT id, error_code FROM approvals WHERE id IN (?, ?)",
+                             (pending["id"], done["id"])).fetchall())
+    assert rows == {pending["id"]: "superseded", done["id"]: None}
+
+
+def test_a_request_the_requester_cancels_carries_no_withdrawal_reason(conn, cast, effect):
+    """The UI tells "you cancelled it" from "a change withdrew it" by error_code."""
+    item = _request(conn, cast.member_a, cast.dept_a, label="own")
+    cancelled = approvals.cancel(conn, cast.member_a, item["id"])
+    assert (cancelled["status"], cancelled["error_code"]) == ("cancelled", None)
+    other = _request(conn, cast.member_a, cast.dept_a, label="moved")
+    approvals.cancel_superseded(conn, [other["id"]], actor=cast.admin, reason="report_deleted")
+    shown = approvals.detail_json(conn, cast.member_a, other["id"])
+    assert (shown["status"], shown["error_code"]) == ("cancelled", "report_deleted")
 
 
 # ── listing ──────────────────────────────────────────────────────────────────────────

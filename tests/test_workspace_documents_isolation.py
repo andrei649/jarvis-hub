@@ -188,11 +188,26 @@ def test_an_approver_manages_any_document_of_their_departments_only(cast):
 
 def test_admins_manage_everything(cast):
     admin, csrf = cast["admin"]
+    conn = cast["conn"]
     for doc in (cast["doc_a"], cast["doc_b"], cast["doc_company"]):
-        assert admin.post(f"/api/workspace/documents/{doc}/reindex",
-                          headers=authed(admin, csrf)).status_code == 200
+        reindexed = admin.post(f"/api/workspace/documents/{doc}/reindex",
+                               headers=authed(admin, csrf))
+        assert reindexed.status_code == 200
+        assert (reindexed.json()["status"], reindexed.json()["chunk_count"] > 0) == ("ready", True)
+        assert documents.file_path(doc).exists()
         assert admin.delete(f"/api/workspace/documents/{doc}",
                             headers=authed(admin, csrf)).status_code == 204
+        # The effect, not just the status: the row, its chunks and its stored file are gone.
+        assert conn.execute("SELECT COUNT(*) FROM documents WHERE id = ?", (doc,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM chunks WHERE document_id = ?",
+                            (doc,)).fetchone()[0] == 0
+        assert not documents.file_path(doc).exists()
+        assert admin.get(f"/api/workspace/documents/{doc}").status_code == 404
+    actions = [row[0] for row in conn.execute(
+        "SELECT action FROM audit WHERE action IN ('document.reindexed', 'document.deleted') "
+        "AND actor_user_id = ? ORDER BY id", (cast["company"].admin.id,))]
+    assert actions == ["document.reindexed", "document.deleted"] * 3
+    assert list(conn.execute("SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH 'concediu'")) == []
 
 
 def test_a_member_cannot_upload_into_another_department(cast):

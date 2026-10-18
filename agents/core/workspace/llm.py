@@ -20,7 +20,10 @@ The algorithm (Appendix A, followed step by step in :class:`HubEngine`):
 6. the stream runs inside the physical-request scope (every HTTP request the backend
    makes is re-checked) under a hard deadline;
 7. backends never raise on failure — they answer fixed degraded strings — so those
-   strings, and an empty answer, are turned into ``model_unavailable`` here;
+   strings, and an empty answer, are turned into ``model_unavailable`` here: a server
+   that cannot be reached at all (down, or the connection dropped mid-answer — what the
+   backend noted for the call says which) is ``model_unreachable``, a server that
+   answered with an error ``model_error``;
 8. model text is made valid Unicode (:func:`clean_text`) before any of it is streamed
    or returned: a lone surrogate could be neither stored nor sent as UTF-8.
 
@@ -30,6 +33,12 @@ failure string is never shown to a user as if it were an answer) and the failure
 check to whichever engine is installed — the real :class:`HubEngine`, or a test
 double installed with :func:`set_engine_for_tests`. Prompts and answers are never
 logged.
+
+Liveness. The hub re-probes its local model servers only every five minutes, so the
+router alone would keep reporting a server that just died as available. The posture
+of a local route therefore also asks the server itself (``GET /v1/models`` or
+``/api/tags``, 2 s, the answer cached 30 s), and every real call refreshes that cache:
+a call that could not reach the server marks it down at once, an answer marks it up.
 """
 
 from __future__ import annotations
@@ -46,10 +55,18 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import httpx
+
 from agents.core import app_state
-from agents.core.llm.base import THINKING_EXHAUSTED_REPLY, is_backend_failure_reply
+from agents.core.llm.base import (
+    THINKING_EXHAUSTED_REPLY,
+    LMStudioBackend,
+    OllamaBackend,
+    is_backend_failure_reply,
+)
 from agents.core.llm.data_handling import DataHandlingRefused, physical_request_scope
 from agents.core.llm.hybrid_router import ModelNotApprovedError
+from agents.core.llm.provider_errors import provider_failure_scope
 from agents.core.security.guardrails import SecurityBlockError, bind_guardrails
 from agents.core.web_helpers import BackendTimeout, bounded
 from agents.core.workspace import config
@@ -70,6 +87,13 @@ HOLD_BACK_CHARS = 64
 #: How long a call waits for a free model slot before answering ``model_busy``.
 ACQUIRE_TIMEOUT_SECONDS = 30.0
 BUSY_RETRY_AFTER_SECONDS = 10
+#: The posture's own check that a local model server answers at all.
+LIVENESS_TIMEOUT_SECONDS = 2.0
+LIVENESS_TTL_SECONDS = 30.0
+#: The reason of a model server that cannot be reached (down, or gone mid-answer).
+UNREACHABLE = "model_unreachable"
+#: The degraded reply a local backend gives when it cannot connect (``base.py``).
+_UNREACHABLE_REPLY_PREFIX = "⚠️ I can't reach the local "
 
 TokenSink = Callable[[str], Awaitable[None] | None]
 
@@ -95,21 +119,28 @@ def clean_text(text: str) -> str:
 
 @dataclass
 class LLMResult:
-    """One finished answer. ``locality`` is ``local``, ``cloud`` or ``unknown``."""
+    """One finished answer. ``locality`` is ``local``, ``cloud`` or ``unknown``.
+
+    ``failure_kind`` is what the backend noted for a failed call (``unreachable`` …);
+    ``''`` when nothing was noted. It only qualifies a degraded reply.
+    """
 
     text: str
     model: str
     route: str
     locality: str
     latency_ms: int
+    failure_kind: str = ""
 
 
 class LLMUnavailable(WorkspaceError):
     """No model could answer (``503 model_unavailable`` with a machine ``reason``).
 
     Reasons: ``hub_not_ready``, ``no_local_model``, ``no_model`` (``allow_cloud`` and
-    nothing selectable), ``model_not_approved``, ``backend_error``, ``model_error`` (a
-    backend's degraded reply), ``thinking_exhausted`` and ``empty_answer``.
+    nothing selectable), ``model_not_approved``, ``backend_error``, ``model_unreachable``
+    (the model server cannot be reached: down, or the connection dropped mid-answer),
+    ``model_error`` (the server answered with an error), ``thinking_exhausted`` and
+    ``empty_answer``.
     """
 
     def __init__(self, reason: str = "model_error", message: str = "", **extra: Any) -> None:
@@ -246,6 +277,72 @@ def _posture(available: bool, *, policy: str, reason: str = "", backend: str = "
             "guardrails_mode": guardrails_mode}
 
 
+# ── liveness of a local model server ─────────────────────────────────────────────────
+
+#: probe URL → (monotonic time of the observation, the server answered)
+_liveness: dict[str, tuple[float, bool]] = {}
+_liveness_lock = threading.Lock()
+
+
+def _probe_target(backend: Any) -> tuple[str, str] | None:
+    """``(provider id, URL to GET)`` for a local backend the posture can ask, else ``None``."""
+    base = str(getattr(backend, "base_url", "") or "").rstrip("/")
+    if not base:
+        return None
+    if isinstance(backend, LMStudioBackend):
+        return "lm-studio", f"{base}/v1/models"
+    if isinstance(backend, OllamaBackend):
+        return "ollama", f"{base}/api/tags"
+    return None
+
+
+def note_liveness(backend: Any, alive: bool) -> None:
+    """Record what a real call just learned about *backend*'s server."""
+    target = _probe_target(backend)
+    if target is not None:
+        with _liveness_lock:
+            _liveness[target[1]] = (time.monotonic(), alive)
+
+
+async def _server_answers(backend: Any) -> bool | None:
+    """Whether *backend*'s server answers HTTP now (cached); ``None`` = cannot ask.
+
+    Any HTTP answer counts: the question is whether the server is there at all — a
+    server that answers with an error is reported by the call itself (``model_error``).
+    Like the router's own health checks, the probe carries no prompt, so it is not an
+    egress-ledger row.
+    """
+    target = _probe_target(backend)
+    if target is None:
+        return None
+    provider, url = target
+    with _liveness_lock:
+        seen = _liveness.get(url)
+        if seen is not None and time.monotonic() - seen[0] < LIVENESS_TTL_SECONDS:
+            return seen[1]
+        # One probe at a time: readers arriving meanwhile get the last answer (or "up").
+        _liveness[url] = (time.monotonic(), seen[1] if seen is not None else True)
+    from agents.core.tls_trust import verify_for
+
+    # TLS only matters for https; verify_for also announces an insecure target each time.
+    verify = verify_for(provider, url) if url.startswith("https:") else True
+    try:
+        async with httpx.AsyncClient(timeout=LIVENESS_TIMEOUT_SECONDS, verify=verify) as client:
+            await client.get(url)
+        alive = True
+    except (httpx.HTTPError, OSError):
+        alive = False
+    with _liveness_lock:
+        _liveness[url] = (time.monotonic(), alive)
+    if not alive:
+        logger.info("workspace posture: the %s model server does not answer", provider)
+    return alive
+
+
+def _is_unreachable(text: str, failure_kind: str) -> bool:
+    return failure_kind == "unreachable" or text.startswith(_UNREACHABLE_REPLY_PREFIX)
+
+
 class HubEngine:
     """The real engine: the hub's router, guardrails and data-handling gate."""
 
@@ -260,13 +357,21 @@ class HubEngine:
         locality = route_locality(handling.get("policy"), route)
         guarded = bind_guardrails(getattr(orch, "security", None), backend)
         started = time.monotonic()
-        text = await self._generate(router, guarded, backend, model, system=system,
-                                    prompt=prompt, max_tokens=max_tokens,
-                                    temperature=temperature, on_token=on_token,
-                                    timeout_seconds=timeout_seconds)
+        with provider_failure_scope() as failures:
+            text = await self._generate(router, guarded, backend, model, system=system,
+                                        prompt=prompt, max_tokens=max_tokens,
+                                        temperature=temperature, on_token=on_token,
+                                        timeout_seconds=timeout_seconds)
         latency_ms = int((time.monotonic() - started) * 1000)
+        failure_kind = next((note.kind for note in failures if note.kind == "unreachable"),
+                            failures[-1].kind if failures else "")
+        if isinstance(text, str) and is_backend_failure_reply(text.lstrip()):
+            if _is_unreachable(text.lstrip(), failure_kind):
+                note_liveness(backend, False)
+        elif isinstance(text, str) and text.strip():
+            note_liveness(backend, True)
         return LLMResult(text=text, model=model, route=route, locality=locality,
-                         latency_ms=latency_ms)
+                         latency_ms=latency_ms, failure_kind=failure_kind)
 
     @staticmethod
     async def _generate(router: Any, guarded: Any, backend: Any, model: str, *, system: str,
@@ -319,10 +424,13 @@ class HubEngine:
             return _posture(False, policy=policy, reason=str(exc.extra.get("reason", exc.code)),
                             model=model, route=route, locality=route_locality(None, route),
                             guardrails_mode=mode)
-        return _posture(True, policy=policy, backend=str(handling.get("provider") or ""),
-                        model=model, route=route,
-                        locality=route_locality(handling.get("policy"), route),
-                        guardrails_mode=mode)
+        provider = str(handling.get("provider") or "")
+        locality = route_locality(handling.get("policy"), route)
+        if route.startswith(LOCAL_ROUTE_PREFIXES) and await _server_answers(backend) is False:
+            return _posture(False, policy=policy, reason=UNREACHABLE, backend=provider,
+                            model=model, route=route, locality=locality, guardrails_mode=mode)
+        return _posture(True, policy=policy, backend=provider, model=model, route=route,
+                        locality=locality, guardrails_mode=mode)
 
 
 _HUB_ENGINE = HubEngine()
@@ -461,6 +569,8 @@ def _check_reply(result: LLMResult) -> None:
         raise LLMUnavailable("thinking_exhausted",
                              "the model used its whole budget thinking", **meta)
     if is_backend_failure_reply(text.lstrip()):
+        if _is_unreachable(text.lstrip(), getattr(result, "failure_kind", "") or ""):
+            raise LLMUnavailable(UNREACHABLE, "the model server cannot be reached", **meta)
         raise LLMUnavailable("model_error", "the model server answered with an error", **meta)
     if not text.strip():
         raise LLMUnavailable("empty_answer", "the model returned an empty answer", **meta)

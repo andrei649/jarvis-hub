@@ -10,6 +10,7 @@ import { useI18n } from '../../i18n';
 import { Link, useDocumentTitle } from '../../router';
 import { Button, EmptyState, Notice, PageHeader, Table, type Column } from '../../ui';
 import { runReportName, RunView } from '../reports/RunView';
+import { LocalityChip } from '../shared/LocalityChip';
 import { routeId } from '../shared/routeId';
 import type { PageProps } from '../types';
 import '../../features.css';
@@ -36,15 +37,15 @@ function SharedList() {
     },
     { key: 'department', header: t('shared.col.department'), secondary: true, render: (run) => deptName(run) },
     {
-      key: 'finished', header: t('shared.col.finished'),
+      key: 'finished', header: t('shared.col.finished'), nowrap: true,
       render: (run) => {
         const when = run.finished_at ?? run.created_at;
         return <span title={fmt.dateTime(when)}>{fmt.date(when)}</span>;
       },
     },
     {
-      key: 'model', header: t('run.field.model'), secondary: true,
-      render: (run) => (run.locality ? <span className={`ws-locality ws-locality--${run.locality}`}>{t(`locality.${run.locality}`)}</span> : <span className="ws-muted">—</span>),
+      key: 'model', header: t('run.field.where'), secondary: true,
+      render: (run) => (run.locality ? <LocalityChip locality={run.locality} /> : <span className="ws-muted">—</span>),
     },
   ];
 

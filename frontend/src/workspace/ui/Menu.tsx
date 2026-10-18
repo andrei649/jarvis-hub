@@ -28,7 +28,8 @@ export interface MenuAction {
   onSelect: () => void;
 }
 
-export interface MenuRadio { kind: 'radio'; id: string; label: string; checked: boolean; onSelect: () => void }
+/** `lang` marks a label written in another language (a language's own name, WCAG 3.1.2). */
+export interface MenuRadio { kind: 'radio'; id: string; label: string; checked: boolean; onSelect: () => void; lang?: string }
 export interface MenuGroup { kind: 'group'; id: string; label: string; items: MenuRadio[] }
 export interface MenuSeparator { kind: 'separator'; id: string }
 export type MenuEntry = MenuAction | MenuGroup | MenuSeparator;
@@ -107,7 +108,7 @@ export function Menu({ label, trigger, items, align = 'end', className }: MenuPr
           {entry.items.map((radio) => (
             <button
               key={radio.id} type="button" role="menuitemradio" aria-checked={radio.checked} tabIndex={-1}
-              className="ws-menu__item" onClick={() => choose(radio.onSelect)}
+              className="ws-menu__item" onClick={() => choose(radio.onSelect)} lang={radio.lang}
             >
               <span className="ws-menu__check" aria-hidden="true">{radio.checked && <Icon name="check" size={16} />}</span>
               <span>{radio.label}</span>

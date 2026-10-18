@@ -236,6 +236,23 @@ def test_the_size_cap_is_enforced_from_the_header_and_while_streaming(env, monke
     assert conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 1
 
 
+def test_a_declared_oversize_body_is_refused_before_it_is_read(env, monkeypatch):
+    """The early 413 comes from Content-Length alone (review T8): the body is 10 bytes."""
+    conn, company, client = env
+    monkeypatch.setenv("NERVA_WORKSPACE_MAX_UPLOAD_MB", "1")
+    csrf = _as(client, company.member_a)
+
+    def tiny():
+        yield b"x" * 10
+
+    response = client.post(upload_url(company.dept_a, "declarat.txt"), content=tiny(),
+                           headers={**authed(client, csrf), "Content-Length": str(1024 * 1024 + 1),
+                                    "Content-Type": "text/plain"})
+    assert (response.status_code, response.json()["error"]) == (413, "file_too_large")
+    assert response.json()["max_bytes"] == 1024 * 1024
+    assert conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 0
+
+
 @pytest.mark.parametrize(("query", "field", "reason"), [
     ({"filename": "n.txt"}, "department_id", "required"),
     ({"department_id": "", "filename": "n.txt"}, "department_id", "required"),
@@ -422,7 +439,8 @@ def test_the_download_is_the_original_bytes_as_a_sandboxed_attachment(env):
         "attachment; filename=\"Situatie vanzari.xlsx\"; "
         "filename*=UTF-8''Situa%C8%9Bie%20v%C3%A2nz%C4%83ri.xlsx")
     assert response.headers["X-Content-Type-Options"] == "nosniff"
-    assert response.headers["Content-Security-Policy"] == workspace_documents.DOWNLOAD_CSP
+    assert response.headers["Content-Security-Policy"] == (   # spec §6, not the code's constant
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox")
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Content-Length"] == str(len(data))
 

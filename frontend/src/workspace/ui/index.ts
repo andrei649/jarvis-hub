@@ -8,4 +8,4 @@ export { Table, type Column } from './Table';
 export { ToastProvider, useToast } from './toast';
 export { Avatar, Badge, Card, CountBadge, EmptyState, LoadingBlock, Notice, PageHeader, Skeleton, Spinner, type Tone } from './display';
 export { BrandMark, Icon, type IconName } from './icons';
-export { focusableWithin, focusFirstInvalid } from './focus';
+export { focusableWithin, focusFirstInvalid, useInvalidFocus } from './focus';

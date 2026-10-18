@@ -52,7 +52,8 @@ export interface Formatters {
   dateTimeIn(ts: EpochSeconds, timeZone: string): string;
   time(ts: EpochSeconds): string;
   relative(ts: EpochSeconds, now?: number): string;
-  /** A calendar day `YYYY-MM-DD` (server UTC dates) as a short label, e.g. „17 oct.". */
+  /** A calendar day `YYYY-MM-DD` (a date the server counted, already in the asked zone) as a
+      short label, e.g. „17 oct."; formatted in UTC so the label is that date and no other. */
   day(isoDate: string): string;
   bytes(size: number): string;
   durationMs(ms: number): string;

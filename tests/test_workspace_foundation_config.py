@@ -172,3 +172,31 @@ def test_create_private_file_without_hard_links_falls_back_to_o_excl(tmp_path, m
     assert config.create_private_file(target, b"abc") == b"abc"
     assert config.create_private_file(target, b"xyz") == b"abc"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["key"]
+
+
+# ── spec §6 numbers, pinned as literals (review T4) ──────────────────────────────────
+# The behaviour tests loop over the module constants, so a changed constant would move the
+# test with it; these pins make a change to a documented limit fail until the spec (and
+# PILOT_GUIDE §12) say the same.
+
+def test_the_spec_limits_are_the_documented_numbers():
+    from agents.core.routers import workspace_chat, workspace_documents
+    from agents.core.workspace import auth, documents, extract, reports
+
+    assert (auth.LOGIN_EMAIL_LIMIT, auth.LOGIN_IP_LIMIT, auth.LOGIN_WINDOW_SECONDS) == (5, 20, 900)
+    assert (auth.SETUP_IP_LIMIT, auth.SETUP_GLOBAL_LIMIT, auth.SETUP_WINDOW_SECONDS) == (10, 50, 3600)
+    assert (auth.INVITE_IP_LIMIT, auth.INVITE_WINDOW_SECONDS) == (30, 3600)
+    assert auth.INVITE_TTL_SECONDS == 72 * 3600
+    assert workspace_chat.CHAT_RATE_LIMIT == 30
+    assert reports.RUNS_PER_HOUR == 10
+    assert (documents.UPLOADS_PER_HOUR, documents.PARALLEL_UPLOADS_PER_USER,
+            documents.PARALLEL_RETRY_SECONDS) == (60, 3, 5)
+    assert documents.STALE_PROCESSING_SECONDS == 600
+    assert (extract.MAX_XML_NODES, extract.MAX_XML_DEPTH) == (500_000, 256)
+    assert workspace_documents.DOWNLOAD_CSP == SPEC_ATTACHMENT_CSP
+    assert reports.EXPORT_CSP == SPEC_ATTACHMENT_CSP
+
+
+#: spec §6 "Headers": HTML report export and file downloads.
+SPEC_ATTACHMENT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+

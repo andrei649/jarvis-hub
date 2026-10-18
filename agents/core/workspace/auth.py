@@ -345,7 +345,14 @@ _IP_FAILURES_SQL = (
 
 def _email_failure_times(conn: sqlite3.Connection, email: str, stamp: float, *,
                          up_to: int = _LAST_ROW_ID) -> list[float]:
-    """Failures for *email* in the window since its last success (newest first)."""
+    """Failures for *email* in the window since its last success (newest first).
+
+    ``''`` — what a login that was not an email address is recorded as — has no
+    per-email bucket: no account can match it, so there is nothing to lock out, and one
+    shared bucket would let garbage from anyone lock the next mistyped login out.
+    """
+    if not email:
+        return []
     return _times(conn, _EMAIL_FAILURES_SQL, (email, stamp - LOGIN_WINDOW_SECONDS, up_to, email,
                                               up_to, LOGIN_EMAIL_LIMIT))
 
@@ -406,7 +413,7 @@ def settle_login_success(conn: sqlite3.Connection, attempt_id: int) -> None:
 def _limit_reached_by(conn: sqlite3.Connection, attempt_id: int, *, email: str, ip: str) -> str:
     """``'email'``/``'ip'`` when the failures up to *attempt_id* hit a limit exactly, else ''."""
     stamp = db.now()
-    if len(_email_failure_times(conn, email, stamp, up_to=attempt_id)) == LOGIN_EMAIL_LIMIT:
+    if email and len(_email_failure_times(conn, email, stamp, up_to=attempt_id)) == LOGIN_EMAIL_LIMIT:
         return "email"
     if len(_ip_failure_times(conn, ip, stamp, up_to=attempt_id)) == LOGIN_IP_LIMIT:
         return "ip"

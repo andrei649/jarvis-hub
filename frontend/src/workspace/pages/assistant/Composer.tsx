@@ -1,7 +1,9 @@
 /* The question box. Enter sends and Shift+Enter starts a new line (an IME composition is never
    cut short); while an answer streams the send button becomes Stop. The 8 000-character cap is
-   the server's (spec §7), counted here before the request is made. */
-import React, { useId } from 'react';
+   the server's (spec §7), counted here before the request is made. On a phone the placeholder is
+   the short form, so it is not cut off mid-word. The textarea is reachable through `inputRef`:
+   the chat moves focus back to it when the button the person pressed goes away. */
+import React, { useEffect, useId, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { Button, Icon } from '../../ui';
 
@@ -16,10 +18,28 @@ export interface ComposerProps {
   phase: 'idle' | 'creating' | 'streaming';
   error: string | null;
   placeholder: string;
+  /** Used below 600 px instead of `placeholder`. */
+  shortPlaceholder?: string;
+  inputRef?: React.Ref<HTMLTextAreaElement>;
 }
 
-export function Composer({ value, onChange, onSubmit, onStop, phase, error, placeholder }: ComposerProps) {
+const NARROW = '(max-width: 599px)';
+
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia(NARROW);
+    const onChange = () => setNarrow(query.matches);
+    query.addEventListener?.('change', onChange);
+    return () => query.removeEventListener?.('change', onChange);
+  }, []);
+  return narrow;
+}
+
+export function Composer({ value, onChange, onSubmit, onStop, phase, error, placeholder, shortPlaceholder, inputRef }: ComposerProps) {
   const { t } = useI18n();
+  const narrow = useNarrow();
   const id = `c${useId().replace(/:/g, '')}`;
   const over = value.length > MAX_QUESTION;
   const describedBy = [error ? `${id}-error` : null, `${id}-hint`].filter(Boolean).join(' ');
@@ -37,7 +57,8 @@ export function Composer({ value, onChange, onSubmit, onStop, phase, error, plac
       <div className="ws-composer__box">
         <label htmlFor={id} className="ws-sr-only">{t('chat.composer.label')}</label>
         <textarea
-          id={id} className="ws-composer__input" rows={2} value={value} placeholder={placeholder}
+          ref={inputRef} id={id} className="ws-composer__input" rows={2} value={value}
+          placeholder={narrow && shortPlaceholder ? shortPlaceholder : placeholder}
           aria-invalid={Boolean(error) || over || undefined} aria-describedby={describedBy}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {

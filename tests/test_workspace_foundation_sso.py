@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -139,3 +141,52 @@ def test_sso_follows_the_public_origin_rule(sso):
     headers = [*_vouch(sso.member_a.email), ("Origin", "https://evil.example")]
     r = _post(_proxy(), headers)
     assert r.status_code == 403 and r.json()["error"] == "csrf_failed"
+
+
+# ── CR/LF in the email header (review T9) ────────────────────────────────────────────
+# httpx refuses such header values, so the request is a raw ASGI scope, as a proxy that
+# forwards one would produce it.
+
+async def _raw_sso(headers: list[tuple[bytes, bytes]], peer: str = "127.0.0.1") -> tuple[int, dict]:
+    sent = False
+
+    async def receive() -> dict:
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": b"{}", "more_body": False}
+
+    messages: list[dict] = []
+
+    async def send(message: dict) -> None:
+        messages.append(message)
+
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+             "scheme": "http", "path": SSO, "raw_path": SSO.encode(), "root_path": "",
+             "query_string": b"", "client": (peer, 50000), "server": ("testserver", 80),
+             "headers": [(b"host", b"testserver"), (b"content-type", b"application/json"),
+                         (b"x-nerva-proxy-secret", KEY.encode()), *headers]}
+    await make_app(workspace_auth.router)(scope, receive, send)
+    status = next(m["status"] for m in messages if m["type"] == "http.response.start")
+    body = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")
+    return status, json.loads(body)
+
+
+@pytest.mark.parametrize("value", ["{email}\r\n", "{email}\n", "\r\n{email}", "{email}\r"])
+async def test_an_email_header_with_cr_or_lf_is_no_identity(sso, value):
+    """Stripping the CR/LF instead of refusing would sign the vouched user in."""
+    raw = value.format(email=sso.member_a.email).encode()
+    status, body = await _raw_sso([(HEADER.lower().encode(), raw)])
+    assert (status, body["error"]) == (401, "sso_no_identity")
+    conn = db()
+    assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+    reasons = [row[0] for row in conn.execute(
+        "SELECT json_extract(details_json, '$.reason') FROM audit WHERE action = 'auth.login_failed'")]
+    assert reasons == ["no_identity"]
+
+
+async def test_the_raw_scope_signs_a_clean_header_in(sso):
+    """Control: the same raw request without CR/LF is a normal SSO login."""
+    status, body = await _raw_sso([(HEADER.lower().encode(), sso.member_a.email.encode())])
+    assert status == 200 and body["user"]["id"] == sso.member_a.id

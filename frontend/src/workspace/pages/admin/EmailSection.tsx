@@ -4,21 +4,37 @@
    types a new one or explicitly clears it (PUT `password: null` keeps, `""` clears). Saving
    without a host turns outgoing email off (the server's rule), so a sender is required only
    with a host. The test sends a real message through the saved settings and shows the
-   server's verdict in plain words. */
+   server's verdict in plain words. Unsaved changes are kept as a draft in this tab
+   (app/drafts.ts) so a session that ends under the admin does not lose them — every field but
+   the password, which is never written to browser storage. */
 import React, { useState } from 'react';
 import { getSmtp, saveSmtp, smtpConfigured as isConfigured, testSmtp } from '../../api/admin';
 import type { SmtpSecurity, SmtpSettings, SmtpTestResult } from '../../api/types';
+import { draftText, useDraftMirror, useRestoredDraft } from '../../app/drafts';
 import { describeCode, describeError, errorField } from '../../app/errors';
 import { useAsync } from '../../app/hooks';
 import { useUser } from '../../app/session';
 import { useI18n } from '../../i18n';
-import { Badge, Button, Card, Checkbox, LoadingBlock, Notice, PasswordField, Select, TextArea, TextField, useToast } from '../../ui';
+import { Badge, Button, Card, Checkbox, LoadingBlock, Notice, PasswordField, Select, TextArea, TextField, useInvalidFocus, useToast } from '../../ui';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DOMAIN_PATTERN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 const DEFAULT_PORT: Record<SmtpSecurity, number> = { starttls: 587, ssl: 465, none: 25 };
 
 type Field = 'host' | 'port' | 'from_address' | 'from_name' | 'allowed_domains' | 'username' | 'password';
+
+/** What the form keeps as a draft: everything typed except the password. */
+interface SmtpDraft { host: string; port: string; security: SmtpSecurity; username: string; fromAddress: string; fromName: string; domains: string }
+
+const SECURITIES: readonly SmtpSecurity[] = ['starttls', 'ssl', 'none'];
+
+function initialDraft(settings: SmtpSettings): SmtpDraft {
+  const security = settings.security || 'starttls';
+  return {
+    host: settings.host, port: String(settings.port || DEFAULT_PORT[security]), security, username: settings.username,
+    fromAddress: settings.from_address, fromName: settings.from_name, domains: settings.allowed_domains.join('\n'),
+  };
+}
 
 export function parseDomains(text: string): string[] {
   return [...new Set(text.split(/[\s,;]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean))];
@@ -28,18 +44,38 @@ function SmtpForm({ settings, onSaved }: { settings: SmtpSettings; onSaved: (s: 
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const [host, setHost] = useState(settings.host);
-  const [port, setPort] = useState(String(settings.port || DEFAULT_PORT[settings.security || 'starttls']));
-  const [security, setSecurity] = useState<SmtpSecurity>(settings.security || 'starttls');
-  const [username, setUsername] = useState(settings.username);
+  const userId = useUser().id;
+  const initial = initialDraft(settings);
+  const restored = useRestoredDraft<SmtpDraft>(userId, 'smtp');
+  const [host, setHost] = useState(draftText(restored?.host, initial.host));
+  const [port, setPort] = useState(draftText(restored?.port, initial.port));
+  const [security, setSecurity] = useState<SmtpSecurity>(SECURITIES.includes(restored?.security as SmtpSecurity) ? (restored?.security as SmtpSecurity) : initial.security);
+  const [username, setUsername] = useState(draftText(restored?.username, initial.username));
   const [password, setPassword] = useState('');
   const [clearPassword, setClearPassword] = useState(false);
-  const [fromAddress, setFromAddress] = useState(settings.from_address);
-  const [fromName, setFromName] = useState(settings.from_name);
-  const [domains, setDomains] = useState(settings.allowed_domains.join('\n'));
+  const [fromAddress, setFromAddress] = useState(draftText(restored?.fromAddress, initial.fromAddress));
+  const [fromName, setFromName] = useState(draftText(restored?.fromName, initial.fromName));
+  const [domains, setDomains] = useState(draftText(restored?.domains, initial.domains));
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  const formRef = useInvalidFocus(errors);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showRestored, setShowRestored] = useState(restored !== null);
+  const draft: SmtpDraft = { host, port, security, username, fromAddress, fromName, domains };
+  const pristine = (Object.keys(initial) as (keyof SmtpDraft)[]).every((key) => draft[key] === initial[key]);
+  const clearDraft = useDraftMirror<SmtpDraft>(userId, 'smtp', draft, pristine);
+  const discard = () => {
+    clearDraft();
+    setHost(initial.host);
+    setPort(initial.port);
+    setSecurity(initial.security);
+    setUsername(initial.username);
+    setFromAddress(initial.fromAddress);
+    setFromName(initial.fromName);
+    setDomains(initial.domains);
+    setErrors({});
+    setShowRestored(false);
+  };
 
   const changeSecurity = (next: SmtpSecurity) => {
     if (Number(port) === DEFAULT_PORT[security]) setPort(String(DEFAULT_PORT[next]));
@@ -69,6 +105,7 @@ function SmtpForm({ settings, onSaved }: { settings: SmtpSettings; onSaved: (s: 
         password: password ? password : clearPassword ? '' : null,
         from_address: fromAddress.trim(), from_name: fromName.trim(), allowed_domains: parseDomains(domains),
       });
+      clearDraft();
       setPassword('');
       setClearPassword(false);
       onSaved(saved);
@@ -92,8 +129,11 @@ function SmtpForm({ settings, onSaved }: { settings: SmtpSettings; onSaved: (s: 
       title={t('smtp.card')} description={t('smtp.cardDesc')}
       actions={isConfigured(settings) ? <Badge tone="success" dot>{t('smtp.configured')}</Badge> : <Badge tone="warning" dot>{t('smtp.notConfigured')}</Badge>}
     >
+      {showRestored && !pristine && (
+        <Notice tone="accent" action={<Button size="sm" onClick={discard}>{t('draft.discard')}</Button>}>{t('draft.restoredSmtp')}</Notice>
+      )}
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
-      <form className="ws-form" onSubmit={submit} noValidate>
+      <form ref={formRef} className="ws-form" onSubmit={submit} noValidate>
         <div className="ws-grid ws-grid--3 ws-grid--tight">
           <TextField className="ws-span-2" label={t('field.host')} value={host} onChange={(e) => setHost(e.target.value)} error={errors.host} hint={t('smtp.hostHint')} placeholder="smtp.example.com" autoComplete="off" spellCheck={false} />
           <TextField label={t('field.port')} type="number" inputMode="numeric" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} error={errors.port} required />
@@ -138,6 +178,8 @@ function TestCard({ configured }: { configured: boolean }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SmtpTestResult | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const testFormRef = useInvalidFocus(error);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -145,12 +187,17 @@ function TestCard({ configured }: { configured: boolean }) {
     setError(null);
     setResult(null);
     setFailure(null);
+    setAnnouncement('');
     setBusy(true);
     try {
-      setResult(await testSmtp(to.trim()));
+      const outcome = await testSmtp(to.trim());
+      setResult(outcome);
+      // Announced from a region that exists before the result (a notice inserted with its
+      // text already inside is not reliably read out).
+      setAnnouncement(outcome.ok ? t('smtp.testOk', { email: to.trim() }) : `${t('smtp.testFailed')}. ${describeCode(i18n, outcome.error, outcome.reason)}`);
     } catch (err) {
       if (errorField(err) === 'to') setError(describeError(i18n, err));
-      else setFailure(describeError(i18n, err));
+      else { setFailure(describeError(i18n, err)); setAnnouncement(describeError(i18n, err)); }
     } finally {
       setBusy(false);
     }
@@ -159,17 +206,18 @@ function TestCard({ configured }: { configured: boolean }) {
   return (
     <Card title={t('smtp.test')} description={t('smtp.testDesc')}>
       {!configured && <Notice tone="accent">{t('smtp.testNeedsConfig')}</Notice>}
-      <form className="ws-form ws-form--inline" onSubmit={submit} noValidate>
+      <form ref={testFormRef} className="ws-form ws-form--inline" onSubmit={submit} noValidate>
         <TextField label={t('smtp.testTo')} type="email" value={to} onChange={(e) => setTo(e.target.value)} error={error} disabled={!configured} />
         <Button type="submit" icon="send" busy={busy} disabled={!configured}>{t('smtp.testSend')}</Button>
       </form>
-      {result?.ok && <Notice tone="success" live="polite">{t('smtp.testOk', { email: to.trim() })}</Notice>}
+      <p className="ws-sr-only" role="status" aria-live="polite">{announcement}</p>
+      {result?.ok && <Notice tone="success">{t('smtp.testOk', { email: to.trim() })}</Notice>}
       {result && !result.ok && (
-        <Notice tone="danger" live="assertive" title={t('smtp.testFailed')}>
+        <Notice tone="danger" title={t('smtp.testFailed')}>
           <p>{describeCode(i18n, result.error, result.reason)}</p>
         </Notice>
       )}
-      {failure && <Notice tone="danger" live="assertive">{failure}</Notice>}
+      {failure && <Notice tone="danger">{failure}</Notice>}
     </Card>
   );
 }

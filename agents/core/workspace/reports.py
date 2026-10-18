@@ -259,6 +259,22 @@ def _local_datetime(stamp: float, timezone: str) -> str:
     return datetime.fromtimestamp(stamp, _zone_or_utc(timezone)).strftime("%Y-%m-%d %H:%M")
 
 
+# The short month names the UI's own date format uses (Intl "medium": ro-RO, en-GB), so a
+# date the server writes into a sentence reads exactly like every date the UI shows.
+_MONTHS = {
+    "ro": ("ian.", "feb.", "mar.", "apr.", "mai", "iun.", "iul.", "aug.", "sept.", "oct.",
+           "nov.", "dec."),
+    "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"),
+}
+
+
+def human_date(stamp: float, timezone: str, locale: str) -> str:
+    """*stamp*'s day in *timezone*, as people read it: ``18 oct. 2026`` / ``18 Oct 2026``."""
+    day = datetime.fromtimestamp(stamp, _zone_or_utc(timezone)).date()
+    months = _MONTHS.get(locale, _MONTHS["ro"])
+    return f"{day.day} {months[day.month - 1]} {day.year}"
+
+
 # ── reading reports ──────────────────────────────────────────────────────────────────
 
 _REPORTS_SQL = (
@@ -722,13 +738,32 @@ def _citations_for(conn: sqlite3.Connection, user: WorkspaceUser, raw: str | Non
     return citations
 
 
+_SHARE_PENDING_SQL = (
+    "SELECT 1 FROM approvals WHERE kind = 'report.share_company' "
+    "AND status IN ('pending', 'executing') AND json_valid(payload_json) "
+    "AND json_extract(payload_json, '$.run_id') = ? LIMIT 1"
+)
+
+
+def _share_pending(conn: sqlite3.Connection, run_id: int) -> bool:
+    """True while a request to share this run company-wide waits for (or is in) its decision."""
+    return conn.execute(_SHARE_PENDING_SQL, (run_id,)).fetchone() is not None
+
+
 def run_detail_json(conn: sqlite3.Connection, row: sqlite3.Row, user: WorkspaceUser) -> dict:
-    """A run with content, citations and what the caller may do with it."""
+    """A run with content, citations and what the caller may do with it.
+
+    ``share_pending`` mirrors a document's ``publish_pending``: while a share request for the
+    run is open, ``can_share`` is false (a second request would only answer 409
+    ``already_requested``) and the UI says the share is waiting instead.
+    """
     data = run_json(row, user)
     succeeded = row["status"] == "succeeded" and bool(row["content_md"])
+    pending = not row["shared_company"] and _share_pending(conn, int(row["id"]))
     data.update({"content_md": row["content_md"],
                  "citations": _citations_for(conn, user, row["citations_json"]),
-                 "can_share": _can_share(user, row) and succeeded, "can_email": succeeded})
+                 "can_share": _can_share(user, row) and succeeded and not pending,
+                 "share_pending": pending, "can_email": succeeded})
     return data
 
 
@@ -866,11 +901,47 @@ def claim_due_reports(conn: sqlite3.Connection, now: float) -> list[int]:
 # ── runs: finishing ──────────────────────────────────────────────────────────────────
 
 def _notify_run(conn: sqlite3.Connection, row: Mapping[str, Any], *, kind: str,
-                titles: Mapping[str, str], body: str = "") -> None:
+                titles: Mapping[str, str], bodies: Mapping[str, str] | None = None) -> None:
     """Tell the report's owner and whoever triggered the run."""
     approvals.notify_localized(conn, [row["owner_id"], row["triggered_by"]], kind=kind,
-                               titles=titles, body=body,
+                               titles=titles, bodies=bodies,
                                link=f"/workspace/report-runs/{int(row['id'])}")
+
+
+#: Why a finished report did not reach its recipients, in the reader's words (a notification is
+#: read as is: it never shows the mail error code). Rows of (error code, ro, en); "" is the
+#: sentence for a code without its own.
+_DELIVERY_FAILURE_TEXTS: tuple[tuple[str, str, str], ...] = (
+    ("smtp_failed",
+     "Raportul este gata, dar serverul de email a refuzat mesajul sau nu a putut fi contactat, "
+     "așa că destinatarii nu l-au primit.",
+     "The report is ready, but the email server refused the message or could not be reached, "
+     "so the recipients did not get it."),
+    ("smtp_not_configured",
+     "Raportul este gata, dar trimiterea de emailuri nu este configurată, așa că destinatarii "
+     "nu l-au primit.",
+     "The report is ready, but email sending is not configured, so the recipients did not get it."),
+    ("recipient_not_allowed",
+     "Raportul este gata, dar o adresă de destinatar nu face parte dintr-un domeniu permis, așa "
+     "că emailul nu a fost trimis.",
+     "The report is ready, but a recipient's address is not in an allowed domain, so the email "
+     "was not sent."),
+    ("smtp_password_unreadable",
+     "Raportul este gata, dar parola salvată a serverului de email nu mai poate fi citită, așa "
+     "că destinatarii nu l-au primit.",
+     "The report is ready, but the stored email server password can no longer be read, so the "
+     "recipients did not get it."),
+    ("",
+     "Raportul este gata, dar emailul către destinatari nu a putut fi trimis.",
+     "The report is ready, but the email to its recipients could not be sent."),
+)
+
+
+def _delivery_failure_bodies(error_code: str) -> dict[str, str]:
+    """The notification body for a failed delivery, per language."""
+    rows = {code: (ro, en) for code, ro, en in _DELIVERY_FAILURE_TEXTS}
+    ro, en = rows.get(error_code, rows[""])
+    return {"ro": ro, "en": en}
 
 
 def _mark_failed(conn: sqlite3.Connection, run_id: int, code: str, *,
@@ -1188,7 +1259,7 @@ def _record_delivery(job: _Job, accepted: list[str], error_code: str | None, att
             _notify_run(conn, row, kind="report.delivery_failed",
                         titles={"ro": f"Livrarea pe email a raportului „{job.report_name}” a eșuat",
                                 "en": f"Emailing report “{job.report_name}” failed"},
-                        body=error_code)
+                        bodies=_delivery_failure_bodies(error_code))
     finally:
         conn.close()
 
@@ -1677,7 +1748,8 @@ def _validate_share(conn: sqlite3.Connection, requester: WorkspaceUser,
         raise WorkspaceError("already_shared", "this run is already shared company-wide", 409)
     if row["status"] != "succeeded" or not row["content_md"]:
         raise _run_not_ready()
-    when = _local_date(row["finished_at"] or row["created_at"], row["timezone"])
+    when = human_date(row["finished_at"] or row["created_at"], row["timezone"],
+                      requester.locale)
     summary = (f"Partajare în toată compania: raportul „{row['report_name']}” din {when}"
                if requester.locale == "ro"
                else f"Share company-wide: report “{row['report_name']}” of {when}")

@@ -1,20 +1,24 @@
 /* One report (/reports/:reportId): its definition, its email delivery state and recipients,
    and the history of its runs. The history refreshes itself while a run is still going, so a
-   scheduled run that starts while the page is open shows up and finishes in place. */
-import React, { useMemo, useState } from 'react';
+   scheduled run that starts while the page is open shows up and finishes in place — and when
+   it finishes, the report itself is re-read too, so "last run" and "next run" move on with it.
+   A run whose email delivery failed is flagged in the history. */
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { listDocuments } from '../../api/documents';
 import { deleteReport, getReport, listRuns } from '../../api/reports';
 import type { Report, ReportRun } from '../../api/types';
 import { describeError, errorCode } from '../../app/errors';
 import { useAsync, usePolling } from '../../app/hooks';
+import { useUser } from '../../app/session';
 import { useWorkspace } from '../../app/workspace';
 import { useI18n } from '../../i18n';
 import { Link, navigate, useDocumentTitle } from '../../router';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, IconButton, LoadingBlock, Menu, Notice, PageHeader, Table, useToast, type Column } from '../../ui';
 import { ButtonLink } from '../shared/ButtonLink';
 import { DELIVERY_STATUS, RUN_STATUS } from '../shared/labels';
+import { LocalityChip } from '../shared/LocalityChip';
 import { ReportForm } from './ReportForm';
-import { isRunActive, runDurationMs, scheduleSummary } from './schedule';
+import { browserTimeZone, isRunActive, runDurationMs, scheduleSummary } from './schedule';
 import { startRun } from './startRun';
 
 const HISTORY_POLL_MS = 4000;
@@ -36,6 +40,7 @@ export function ReportDetail({ reportId }: { reportId: number }) {
   const i18n = useI18n();
   const { t, fmt } = i18n;
   const toast = useToast();
+  const isAdmin = useUser().role === 'admin';
   const { departments } = useWorkspace();
   const report = useAsync(() => getReport(reportId), [reportId]);
   const runs = useAsync(() => listRuns(reportId), [reportId]);
@@ -48,6 +53,12 @@ export function ReportDetail({ reportId }: { reportId: number }) {
   const sortedRuns = useMemo(() => [...(runs.data ?? [])].sort((a, b) => b.created_at - a.created_at), [runs.data]);
   const live = sortedRuns.some((r) => isRunActive(r));
   usePolling(async () => { await runs.reload(); }, HISTORY_POLL_MS, live);
+  // A run that was going has finished: its report's last/next run times changed with it.
+  const wasLive = useRef(live);
+  useEffect(() => {
+    if (wasLive.current && !live) void report.reload();
+    wasLive.current = live;
+  }, [live]);
 
   const runNow = async () => {
     setStarting(true);
@@ -79,17 +90,29 @@ export function ReportDetail({ reportId }: { reportId: number }) {
   const columns: Column<ReportRun>[] = [
     {
       key: 'when', header: t('run.field.started'),
-      render: (r) => <Link to={`/report-runs/${r.id}`}>{fmt.dateTime(r.started_at ?? r.created_at)}</Link>,
+      nowrap: true,
+      render: (r) => <Link to={`/report-runs/${r.id}`} className="ws-table-link">{fmt.dateTime(r.started_at ?? r.created_at)}</Link>,
     },
-    { key: 'status', header: t('run.field.status'), render: (r) => <Badge tone={RUN_STATUS[r.status].tone} dot>{t(RUN_STATUS[r.status].label)}</Badge> },
+    {
+      key: 'status', header: t('run.field.status'),
+      render: (r) => (
+        <span className="ws-badge-row">
+          <Badge tone={RUN_STATUS[r.status].tone} dot>{t(RUN_STATUS[r.status].label)}</Badge>
+          {r.status === 'succeeded' && r.error === 'delivery_failed' && <Badge tone="warning">{t('run.history.deliveryFailed')}</Badge>}
+        </span>
+      ),
+    },
     { key: 'trigger', header: t('run.field.trigger'), secondary: true, render: (r) => t(r.trigger === 'schedule' ? 'run.trigger.schedule' : 'run.trigger.manual') },
     {
       key: 'duration', header: t('run.field.duration'), secondary: true, align: 'end',
       render: (r) => { const ms = runDurationMs(r); return ms === null ? <span className="ws-muted">—</span> : <span className="ws-num">{fmt.durationMs(ms)}</span>; },
     },
     {
-      key: 'model', header: t('run.field.model'), secondary: true,
-      render: (r) => (r.model ? <span className="ws-cell-stack"><span className="ws-mono ws-small">{r.model}</span>{r.locality && <span className={`ws-locality ws-locality--${r.locality}`}>{t(`locality.${r.locality}`)}</span>}</span> : <span className="ws-muted">—</span>),
+      // Where the run was produced, in words; the model id is technical, for admins only (UX-13).
+      key: 'model', header: t(isAdmin ? 'run.field.model' : 'run.field.where'), secondary: true,
+      render: (r) => (r.locality || (isAdmin && r.model)
+        ? <span className="ws-cell-stack">{isAdmin && r.model && <span className="ws-mono ws-small">{r.model}</span>}<LocalityChip locality={r.locality} /></span>
+        : <span className="ws-muted">—</span>),
     },
     { key: 'shared', header: t('run.field.visibility'), secondary: true, render: (r) => (r.shared_company ? <Badge tone="accent">{t('run.shared')}</Badge> : <span className="ws-muted">—</span>) },
   ];
@@ -123,7 +146,11 @@ export function ReportDetail({ reportId }: { reportId: number }) {
         <Card title={t('reports.detail.about')}>
           <dl className="ws-dl">
             <dt>{t('reports.detail.schedule')}</dt>
-            <dd>{scheduleSummary(i18n, data)}{data.schedule_kind !== 'manual' && <span className="ws-muted ws-small"> · {data.timezone}</span>}</dd>
+            <dd>
+              <span className="ws-nowrap">{scheduleSummary(i18n, data)}</span>
+              {/* The zone only when it is not the reader's own (a report scheduled from abroad). */}
+              {data.schedule_kind !== 'manual' && data.timezone !== browserTimeZone() && <span className="ws-muted ws-small ws-nowrap">{data.timezone}</span>}
+            </dd>
             <dt>{t('reports.detail.nextRun')}</dt><dd>{data.next_run_at ? fmt.dateTimeIn(data.next_run_at, data.timezone) : t('reports.manualOnly')}</dd>
             <dt>{t('reports.detail.lastRun')}</dt><dd>{data.last_run_at ? fmt.dateTime(data.last_run_at) : t('reports.never')}</dd>
             <dt>{t('reports.detail.documents')}</dt><dd><DocumentNames report={data} /></dd>

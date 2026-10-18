@@ -77,14 +77,16 @@ export function Card({ title, description, actions, children, className, as = 's
 
 /** The page's single h1. It takes focus after navigation (see router.tsx) so screen readers
     announce the new page; the outline is suppressed for that programmatic focus only. */
-export function PageHeader({ title, description, actions, eyebrow }: {
+export function PageHeader({ title, description, actions, eyebrow, compact = false }: {
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
   eyebrow?: React.ReactNode;
+  /** Below 768 px the description is dropped (a page whose content needs the height, the chat). */
+  compact?: boolean;
 }) {
   return (
-    <header className="ws-page-header">
+    <header className={['ws-page-header', compact && 'ws-page-header--compact'].filter(Boolean).join(' ')}>
       <div className="ws-page-header__text">
         {eyebrow && <p className="ws-page-header__eyebrow">{eyebrow}</p>}
         <h1 className="ws-page-header__title" tabIndex={-1} data-page-heading="true">{title}</h1>

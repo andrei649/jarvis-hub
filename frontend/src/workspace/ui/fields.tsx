@@ -98,7 +98,8 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
   );
 });
 
-export interface SelectOption { value: string; label: string; disabled?: boolean }
+/** `lang` marks an option written in another language (a language's own name, WCAG 3.1.2). */
+export interface SelectOption { value: string; label: string; disabled?: boolean; lang?: string }
 
 export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'className'>, FieldChrome {
   options: SelectOption[];
@@ -120,7 +121,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
             aria-describedby={ids.describedBy}
             {...select}
           >
-            {options.map((o) => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}
+            {options.map((o) => <option key={o.value} value={o.value} disabled={o.disabled} lang={o.lang}>{o.label}</option>)}
           </select>
           <Icon name="chevronDown" size={16} className="ws-select__chevron" />
         </div>
@@ -257,7 +258,7 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(fu
             type="button"
             className="ws-password__toggle"
             aria-pressed={visible}
-            aria-label={visible ? t('password.hide') : t('password.show')}
+            aria-label={t('password.show')}
             title={visible ? t('password.hide') : t('password.show')}
             onClick={() => setVisible((v) => !v)}
           >

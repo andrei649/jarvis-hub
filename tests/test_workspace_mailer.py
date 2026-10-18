@@ -15,6 +15,7 @@ import pytest
 from agents.core.secrets import SecretStoreError
 from agents.core.workspace import audit, mailer
 from agents.core.workspace.errors import WorkspaceError
+from tests.support.ports import closed_port
 from tests.support.smtp_sink import SmtpSink
 from tests.support.workspace_fixtures import (  # noqa: F401  (ws is a fixture)
     db,
@@ -39,11 +40,7 @@ def conn(ws):
 
 
 def _closed_port() -> int:
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    port = probe.getsockname()[1]
-    probe.close()
-    return port
+    return closed_port()
 
 
 # ── settings ─────────────────────────────────────────────────────────────────────────

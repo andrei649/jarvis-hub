@@ -8,7 +8,7 @@ import { login, loginSso } from '../../api/account';
 import { describeError } from '../../app/errors';
 import { useSession } from '../../app/session';
 import { useI18n } from '../../i18n';
-import { Button, Notice, PasswordField, TextField } from '../../ui';
+import { Button, Notice, PasswordField, TextField, useInvalidFocus } from '../../ui';
 import { AuthLayout } from './AuthLayout';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -20,6 +20,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const formRef = useInvalidFocus(errors);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'password' | 'sso' | null>(null);
 
@@ -57,7 +58,7 @@ export function LoginPage() {
       {expired && <Notice tone="warning" live="polite">{t('auth.login.expired')}</Notice>}
       {ssoError && !formError && <Notice tone="warning" live="polite">{describeError(i18n, ssoError)}</Notice>}
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
-      <form className="ws-form" onSubmit={submit} noValidate>
+      <form ref={formRef} className="ws-form" onSubmit={submit} noValidate>
         <TextField
           label={t('field.email')} type="email" autoComplete="username" inputMode="email" autoFocus
           value={email} onChange={(e) => setEmail(e.target.value)} error={errors.email} maxLength={254} required

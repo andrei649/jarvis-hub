@@ -30,6 +30,7 @@ from typing import Annotated
 
 from fastapi import Depends
 
+from agents.core.paths import data_path
 from agents.core.workspace import config
 from agents.core.workspace.errors import WorkspaceError
 
@@ -200,6 +201,27 @@ def schema_version() -> int:
 def db_path() -> Path:
     """``<data>/business/workspace.db`` (resolved at call time; see ``config.DATA_DIRNAME``)."""
     return config.workspace_dir() / DB_FILE
+
+
+def existing_db_path() -> Path:
+    """Where :func:`db_path` points, without creating the directory (it may not exist)."""
+    return data_path(config.DATA_DIRNAME, DB_FILE)
+
+
+def connect_read_only(path: Path) -> sqlite3.Connection:
+    """Open an existing database read-only: no migration, no write, no new file.
+
+    Without a ``-wal`` file (no live writer: the service is stopped and checkpointed) it is
+    opened ``immutable``, so not even ``-wal``/``-shm`` files are created — which a command
+    run as another user (root) would leave behind, unwritable for the service. With one
+    (the hub is running), it reads through the live WAL as any reader does.
+    """
+    wal = path.with_name(f"{path.name}-wal")
+    mode = "mode=ro" if wal.exists() else "mode=ro&immutable=1"
+    conn = sqlite3.connect(f"{path.resolve().as_uri()}?{mode}", uri=True, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 5000")
+    return conn
 
 
 def _user_version(conn: sqlite3.Connection) -> int:

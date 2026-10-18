@@ -22,6 +22,8 @@ from typing import Any
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
+from starlette.types import Receive, Scope, Send
 
 from agents.core.workspace.errors import WorkspaceError
 
@@ -318,3 +320,36 @@ def require_email_list(d: Mapping[str, Any], key: str, *, max_items: int = MAX_E
         if email not in emails:
             emails.append(email)
     return emails
+
+
+# ── CORS: the hub's, never the workspace's (spec §6 "CSRF") ───────────────────────────
+
+#: The workspace app and API, as logical paths (the root path stripped).
+WORKSPACE_PATH_PREFIXES = ("/api/workspace", "/workspace")
+
+
+def is_workspace_scope(scope: Scope) -> bool:
+    """True for an HTTP scope addressed to ``/api/workspace*`` or ``/workspace*``."""
+    path = str(scope.get("path") or "")
+    root = str(scope.get("root_path") or "")
+    if root and path.startswith(root):
+        path = path[len(root):]
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in WORKSPACE_PATH_PREFIXES)
+
+
+class WorkspaceExemptCORSMiddleware(CORSMiddleware):
+    """The hub's ``CORSMiddleware`` (``JARVIS_CORS_ORIGINS``), skipped for the workspace.
+
+    The workspace never sends CORS headers: its session cookie is ``SameSite=Lax``, so a
+    page on a listed origin of the same site would otherwise read a signed-in user's
+    ``/session`` (CSRF token included), documents and conversations with credentialed
+    CORS. A workspace request — preflights included — passes straight to the app, which
+    answers it without any ``Access-Control-*`` header.
+    """
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and is_workspace_scope(scope):
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+

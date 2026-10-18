@@ -80,4 +80,6 @@ export const auditExportUrl = (filters: AuditFilters) =>
   appUrl(`/api/workspace/admin/audit/export${auditQuery({ ...filters, limit: undefined, before_id: undefined })}`);
 export const verifyAudit = () => api.get<AuditVerifyResult>(appUrl('/api/workspace/admin/audit/verify'));
 
-export const getUsage = (days: number) => api.get<UsageStats>(appUrl(`/api/workspace/admin/stats${query({ days })}`));
+/** Usage for the last *days*, counted by calendar day in *tz* (the reader's IANA zone; the
+    server's default, Europe/Bucharest, when the browser does not name one). */
+export const getUsage = (days: number, tz?: string) => api.get<UsageStats>(appUrl(`/api/workspace/admin/stats${query({ days, tz: tz || undefined })}`));

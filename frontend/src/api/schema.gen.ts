@@ -11458,6 +11458,12 @@ export interface paths {
         /**
          * Login
          * @description Email + password sign-in; one generic 401 for every kind of failure.
+         *
+         *     What was typed in the email field is kept (attempt row, audit) only when it is an
+         *     email address: anything else — a password typed into the wrong field, say — is
+         *     recorded as ``''`` with reason ``invalid_identifier``, so it never lands in the
+         *     append-only audit. No account can match it, so it has no per-email lockout of its
+         *     own; the per-IP limit still counts it.
          */
         post: operations["login_api_workspace_login_post"];
         delete?: never;
@@ -11920,12 +11926,14 @@ export interface paths {
          * Usage Stats
          * @description Usage KPIs: current totals, window activity per department, and a daily series.
          *
-         *     The window is the last *days* UTC calendar days (today included): ``questions``,
-         *     ``report_runs`` and feedback count inside it, so the daily series sums to the
-         *     totals. Questions and runs come from the audit trail (see ``ACTIVITY_ACTIONS``), so
-         *     deleting a conversation or a report does not rewrite past usage; feedback is the
-         *     current rating of the answers still stored. The other totals are current counts;
-         *     ``active_users_7d`` counts users seen in the last seven days.
+         *     The window is the last *days* calendar days (today included) in ``timezone`` — the
+         *     ``tz`` asked for (an IANA name, e.g. the admin's browser zone), else
+         *     :data:`STATS_TIMEZONE`: ``questions``, ``report_runs`` and feedback count inside it,
+         *     so the daily series sums to the totals. Questions and runs come from the audit
+         *     trail (see ``ACTIVITY_ACTIONS``), so deleting a conversation or a report does not
+         *     rewrite past usage; feedback is the current rating of the answers still stored. The
+         *     other totals are current counts; ``active_users_7d`` counts users seen in the last
+         *     seven days.
          */
         get: operations["usage_stats_api_workspace_admin_stats_get"];
         put?: never;
@@ -32602,6 +32610,7 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
+                tz?: string | null;
             };
             header?: never;
             path?: never;

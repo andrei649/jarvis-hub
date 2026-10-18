@@ -11,6 +11,7 @@ import { setCsrfToken, setSessionHooks, WorkspaceApiError } from '../api/client'
 import type { AuthResult, Locale, Org, SessionInfo, WorkspaceUser } from '../api/types';
 import { useI18n } from '../i18n';
 import { toAppPath } from '../router';
+import { clearAllDrafts } from './drafts';
 import { cachedLocale, cachedTheme, readSessionFlag, writePref, writeSessionFlag } from './storage';
 import { applyTheme } from './theme';
 
@@ -104,6 +105,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (!(err instanceof WorkspaceApiError && err.status === 401)) throw err;
     }
     writeSessionFlag(LOGGED_OUT_FLAG, true);
+    clearAllDrafts();
     setExpired(false);
     setCsrfToken(null);
     await refresh();

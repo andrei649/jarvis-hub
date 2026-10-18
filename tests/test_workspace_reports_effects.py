@@ -10,7 +10,6 @@ goes through a real SMTP conversation with the local sink.
 from __future__ import annotations
 
 import json
-import socket
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -18,6 +17,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from agents.core.workspace import approvals, db, effects_api, reports
+from tests.support.ports import closed_port
 from tests.support.workspace_fixtures import (  # noqa: F401  (ws is a fixture)
     freeze_clock,
     make_user,
@@ -193,7 +193,8 @@ def test_sharing_a_run_needs_an_admin(conn, cast):
                             json={"kind": "report.share_company", "payload": {"run_id": run_id}})
     assert requested.status_code == 201
     item = requested.json()
-    assert item["summary"] == "Partajare în toată compania: raportul „Vânzări Nord” din 2026-10-17"
+    # The date reads like every other date in the UI (review fix UX-16), not 2026-10-17.
+    assert item["summary"] == "Partajare în toată compania: raportul „Vânzări Nord” din 17 oct. 2026"
     approver, approver_headers = signed_in(cast.approver_a)
     assert approver.get(f"/api/workspace/approvals/{item['id']}").status_code == 404
     assert _decide(approver, approver_headers, item["id"]).status_code == 404
@@ -208,6 +209,69 @@ def test_sharing_a_run_needs_an_admin(conn, cast):
     shared_again = client.post("/api/workspace/approvals", headers=headers,
                                json={"kind": "report.share_company", "payload": {"run_id": run_id}})
     assert (shared_again.status_code, shared_again.json()["error"]) == (409, "already_shared")
+
+
+def test_a_run_with_an_open_share_request_offers_no_second_one(conn, cast):
+    """Like a document's publish_pending: while the share waits, the run says so and the share
+    action is withdrawn (a second request would only answer 409 already_requested)."""
+    report_id = _report(conn, cast.member_a, cast.dept_a)
+    run_id = _finished_run(conn, cast, report_id)
+    client, headers = signed_in(cast.member_a)
+    before = client.get(f"/api/workspace/report-runs/{run_id}").json()
+    assert (before["can_share"], before["share_pending"]) == (True, False)
+    requested = client.post("/api/workspace/approvals", headers=headers,
+                            json={"kind": "report.share_company", "payload": {"run_id": run_id}})
+    assert requested.status_code == 201
+    waiting = client.get(f"/api/workspace/report-runs/{run_id}").json()
+    assert (waiting["can_share"], waiting["share_pending"]) == (False, True)
+    cancelled = client.post(f"/api/workspace/approvals/{requested.json()['id']}/cancel",
+                            headers=headers)
+    assert cancelled.status_code == 200
+    after = client.get(f"/api/workspace/report-runs/{run_id}").json()
+    assert (after["can_share"], after["share_pending"]) == (True, False)
+    admin, admin_headers = signed_in(cast.admin)
+    shared = admin.post("/api/workspace/approvals", headers=admin_headers,
+                        json={"kind": "report.share_company", "payload": {"run_id": run_id}})
+    assert shared.json()["status"] == "approved"
+    done = client.get(f"/api/workspace/report-runs/{run_id}").json()
+    assert (done["shared_company"], done["can_share"], done["share_pending"]) == (True, False, False)
+
+
+# What Intl.DateTimeFormat(…, {dateStyle: "medium"}) prints for the 18th of each month:
+# the UI's own fmt.date (ro-RO, en-GB), which server-written dates must match (UX-16).
+INTL_MEDIUM = {
+    "ro": ["18 ian. 2026", "18 feb. 2026", "18 mar. 2026", "18 apr. 2026", "18 mai 2026",
+           "18 iun. 2026", "18 iul. 2026", "18 aug. 2026", "18 sept. 2026", "18 oct. 2026",
+           "18 nov. 2026", "18 dec. 2026"],
+    "en": ["18 Jan 2026", "18 Feb 2026", "18 Mar 2026", "18 Apr 2026", "18 May 2026",
+           "18 Jun 2026", "18 Jul 2026", "18 Aug 2026", "18 Sept 2026", "18 Oct 2026",
+           "18 Nov 2026", "18 Dec 2026"],
+}
+
+
+@pytest.mark.parametrize("locale", ["ro", "en"])
+def test_server_written_dates_match_the_uis_date_format(locale):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    zone = ZoneInfo("Europe/Bucharest")
+    got = [reports.human_date(datetime(2026, month, 18, 12, tzinfo=zone).timestamp(),
+                              "Europe/Bucharest", locale) for month in range(1, 13)]
+    assert got == INTL_MEDIUM[locale]
+    late = datetime(2026, 10, 17, 22, 30, tzinfo=ZoneInfo("UTC")).timestamp()
+    assert reports.human_date(late, "Europe/Bucharest", locale) == INTL_MEDIUM[locale][9], \
+        "the report's zone decides the day"
+
+
+def test_an_english_requester_reads_an_english_date(conn, cast):
+    report_id = _report(conn, cast.member_a, cast.dept_a)
+    run_id = _finished_run(conn, cast, report_id)
+    with db.tx(conn):
+        conn.execute("UPDATE users SET locale = 'en' WHERE id = ?", (cast.member_a.id,))
+    client, headers = signed_in(cast.member_a)
+    item = client.post("/api/workspace/approvals", headers=headers,
+                       json={"kind": "report.share_company", "payload": {"run_id": run_id}}).json()
+    assert item["summary"] == "Share company-wide: report “Vânzări Nord” of 17 Oct 2026"
 
 
 def test_an_admin_shares_at_once_and_bad_requests_are_refused(conn, cast):
@@ -310,10 +374,7 @@ def test_email_requests_are_validated(conn, cast, sink):
 
 
 def test_a_mail_failure_fails_the_approval_and_is_audited(conn, cast):
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    configure_smtp(conn, probe.getsockname()[1])
-    probe.close()
+    configure_smtp(conn, closed_port())
     message_id = _message(conn, cast.member_a, cast.dept_a)
     client, headers = signed_in(cast.member_a)
     item = client.post("/api/workspace/approvals", headers=headers,

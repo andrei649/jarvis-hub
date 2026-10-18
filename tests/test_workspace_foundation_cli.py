@@ -182,3 +182,103 @@ def test_issued_links_are_valid_for_72_hours(ws):
                      "--base-url", "https://x.example"]) == 0
     row = conn.execute("SELECT expires_at - created_at, created_by FROM invites").fetchone()
     assert row[0] == pytest.approx(auth.INVITE_TTL_SECONDS) and row[1] is None
+
+
+# ── review fixes OPS-01/02/03: the CLI must act on the service's data, with its key ───
+
+@pytest.mark.parametrize("base_url", [
+    "https://nerva.example.com/workspace/", "https://nerva.example.com/workspace",
+    "https://nerva.example.com", "https://nerva.example.com/",
+])
+def test_the_address_people_open_gives_a_working_link(ws, capsys, base_url):
+    conn = db()
+    company = seed_company(conn)
+    assert cli.main(["reset-link", "--email", company.member_a.email, "--base-url", base_url]) == 0
+    url = capsys.readouterr().out.strip()
+    assert url.startswith("https://nerva.example.com/workspace/invite#t="), url
+
+
+def test_a_root_path_is_kept_and_the_workspace_suffix_dropped(ws, capsys):
+    conn = db()
+    company = seed_company(conn)
+    assert cli.main(["reset-link", "--email", company.member_a.email,
+                     "--base-url", "https://firma.example/nerva/workspace/"]) == 0
+    assert capsys.readouterr().out.startswith("https://firma.example/nerva/workspace/invite#t=")
+
+
+@pytest.mark.parametrize("base_url", ["https://x.example/workspace/invite",
+                                      "https://x.example/workspace/admin/users"])
+def test_a_page_below_workspace_is_refused_and_no_link_is_revoked(ws, capsys, base_url):
+    conn = db()
+    company = seed_company(conn)
+    assert cli.main(["reset-link", "--email", company.member_a.email,
+                     "--base-url", "https://x.example"]) == 0
+    capsys.readouterr()
+    before = conn.execute("SELECT token_hash FROM invites").fetchall()
+    assert cli.main(["reset-link", "--email", company.member_a.email,
+                     "--base-url", base_url]) == cli.EXIT_FAILED
+    assert "not the /workspace/ page" in capsys.readouterr().err
+    assert conn.execute("SELECT token_hash FROM invites").fetchall() == before
+
+
+def test_disabled_message_points_at_the_service_environment(ws, monkeypatch, capsys):
+    monkeypatch.setenv("NERVA_WORKSPACE", "0")
+    assert cli.main(["setup-code"]) == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "nerva-run" in err and "set NERVA_WORKSPACE=1" not in err
+
+
+@pytest.mark.parametrize("command", [["setup-code"],
+                                     ["reset-link", "--email", "a@acme.test", "--base-url", "https://x.example"],
+                                     ["promote", "--email", "a@acme.test"]])
+def test_an_unchosen_data_root_inside_the_checkout_is_refused(ws, monkeypatch, capsys, tmp_path,
+                                                              command):
+    checkout = tmp_path / "checkout"
+    monkeypatch.delenv("JARVIS_HOME")
+    monkeypatch.delenv("JARVIS_MEMORY_DIR", raising=False)
+    monkeypatch.delenv("JARVIS_USER_HOME", raising=False)
+    monkeypatch.setattr(cli.paths, "data_root", lambda environ=None: checkout / "memory_logs")
+    monkeypatch.setattr(cli.paths, "app_root", lambda: checkout)
+    assert cli.main(command) == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "JARVIS_HOME is not set" in err and "nerva-run" in err
+    assert not (checkout / "memory_logs").exists(), "nothing was created"
+
+
+@pytest.mark.parametrize("command", [["reset-link", "--email", "a@acme.test", "--base-url", "https://x.example"],
+                                     ["promote", "--email", "a@acme.test"]])
+def test_a_missing_database_is_refused_not_created(ws, capsys, command):
+    database = ws.data_dir / config.DATA_DIRNAME / "workspace.db"
+    assert not database.exists()
+    assert cli.main(command) == cli.EXIT_REFUSED
+    assert "no Nerva Workspace database" in capsys.readouterr().err
+    assert not database.exists()
+
+
+def test_a_cli_without_the_services_audit_key_changes_nothing(ws, capsys):
+    """Reproduces OPS-02: a bare shell would have minted a key and broken the chain for good."""
+    from agents.core.workspace import audit
+
+    conn = db()
+    company = seed_company(conn)
+    login(TestClient(make_app(workspace_auth.router)), company.admin.email)   # one audit row
+    key_file = ws.key_dir / audit.KEY_FILE
+    original = key_file.read_bytes()
+    key_file.unlink()                                  # the shell has another JARVIS_KEY_DIR
+    rows = conn.execute("SELECT COUNT(*) FROM audit").fetchone()[0]
+    for command in (["reset-link", "--email", company.member_a.email, "--base-url", "https://x.example"],
+                    ["promote", "--email", company.member_a.email]):
+        assert cli.main(command) == cli.EXIT_REFUSED
+        err = capsys.readouterr().err
+        assert "no audit key" in err and "nothing was changed" in err and "nerva-run" in err
+    assert not key_file.exists(), "no key was minted"
+    assert conn.execute("SELECT COUNT(*) FROM audit").fetchone()[0] == rows
+    assert conn.execute("SELECT COUNT(*) FROM invites").fetchone()[0] == 0
+    assert conn.execute("SELECT role FROM users WHERE id = ?",
+                        (company.member_a.id,)).fetchone()[0] == "member"
+    key_file.write_bytes(b"0" * 64)                    # a key, but not the trail's
+    assert cli.main(["promote", "--email", company.member_a.email]) == cli.EXIT_REFUSED
+    assert "differs" in capsys.readouterr().err
+    key_file.write_bytes(original)
+    assert cli.main(["promote", "--email", company.member_a.email]) == cli.EXIT_OK
+    assert audit.verify_chain(conn)["ok"] is True

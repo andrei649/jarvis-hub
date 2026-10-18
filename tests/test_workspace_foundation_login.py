@@ -245,3 +245,42 @@ def test_consecutive_count_survives_a_frozen_clock(ws, monkeypatch):
     for _ in range(auth.LOGIN_EMAIL_LIMIT - 1):
         assert _attempt(client, company.member_a.email).status_code == 401
     assert _attempt(client, company.member_a.email, DEFAULT_PASSWORD).status_code == 200
+
+
+# ── a login that is not an email address (review fix SEC-1) ──────────────────────────
+
+def test_a_non_email_login_identifier_never_reaches_audit_or_attempts(ws):
+    """A password typed into the email field must not persist in the append-only audit."""
+    conn = db()
+    company = seed_company(conn)
+    client = _client()
+    typed = "Parola-Mea-Secreta-2026!"
+    garbage = _attempt(client, typed, DEFAULT_PASSWORD)
+    unknown = _attempt(client, "nobody@acme.test", DEFAULT_PASSWORD)
+    assert garbage.status_code == 401 and garbage.content == unknown.content
+    failed = conn.execute("SELECT actor_email, details_json FROM audit "
+                          "WHERE action = 'auth.login_failed' ORDER BY id").fetchall()
+    assert [(row[0], json.loads(row[1])) for row in failed] == [
+        ("", {"reason": "invalid_identifier"}), ("nobody@acme.test", {"reason": "unknown_user"})]
+    attempts = [tuple(row) for row in conn.execute(
+        "SELECT email, ok, kind FROM login_attempts ORDER BY id")]
+    assert attempts == [("", 0, "login"), ("nobody@acme.test", 0, "login")]
+    dump = "\n".join(conn.iterdump()).lower()
+    assert typed.lower() not in dump
+    assert _attempt(client, company.member_a.email, DEFAULT_PASSWORD).status_code == 200
+
+
+def test_non_email_logins_count_per_ip_but_share_no_email_lockout(ws):
+    conn = db()
+    company = seed_company(conn)
+    client = _client("203.0.113.77")
+    codes = [_attempt(client, f"nu-e-email-{n}").status_code for n in range(auth.LOGIN_EMAIL_LIMIT + 1)]
+    assert codes == [401] * (auth.LOGIN_EMAIL_LIMIT + 1), "no shared bucket for non-emails"
+    assert _attempt(_client("198.51.100.8"), "inca-unul").status_code == 401
+    for n in range(20 - auth.LOGIN_EMAIL_LIMIT - 1):
+        assert _attempt(client, f"altceva-{n}").status_code == 401
+    assert _attempt(client, company.member_a.email, DEFAULT_PASSWORD).status_code == 429, \
+        "the per-IP limit still counts them"
+    throttled = conn.execute("SELECT actor_email, details_json FROM audit "
+                             "WHERE action = 'auth.throttled'").fetchall()
+    assert [(row[0], json.loads(row[1])["scope"]) for row in throttled] == [("", "ip")]

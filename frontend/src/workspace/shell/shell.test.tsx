@@ -50,7 +50,7 @@ describe('Shell', () => {
     const chip = await screen.findByRole('button', { name: 'Modelul AI: Indisponibil' });
     fireEvent.click(chip);
     const panel = await screen.findByRole('dialog', { name: 'Modelul AI' });
-    expect(within(panel).getByText('Hubul încă pornește. Încearcă din nou peste un minut.')).toBeTruthy();
+    expect(within(panel).getByText('Serverul Nerva încă pornește. Încearcă din nou peste un minut.')).toBeTruthy();
     expect(within(panel).queryByRole('link', { name: 'Setările modelului' })).toBeNull();
   });
 

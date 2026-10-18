@@ -384,6 +384,17 @@ def test_a_degraded_reply_from_the_model_is_never_stored_as_an_answer(cast):
     response = ask(cast.client, cast.csrf, _conversation(cast), "Întrebare")
     body = response.json()
     assert (response.status_code, body["error"], body["reason"]) == (
+        503, "model_unavailable", "model_unreachable")
+    assert body["assistant_message"]["content"] == ""
+    assert body["assistant_message"]["error_code"] == "model_unavailable"
+
+
+def test_a_server_that_answered_with_an_error_is_model_error(cast):
+    cast.ws.use_engine(FakeEngine(reply="⚠️ The local LM Studio model hit an error and "
+                                        "couldn't answer. Check the LM Studio server and try again."))
+    response = ask(cast.client, cast.csrf, _conversation(cast), "Întrebare")
+    body = response.json()
+    assert (response.status_code, body["error"], body["reason"]) == (
         503, "model_unavailable", "model_error")
     assert body["assistant_message"]["content"] == ""
 
@@ -480,8 +491,9 @@ def test_the_default_limit_is_thirty_a_minute_counted_in_the_audit(cast, monkeyp
     freeze_clock(monkeypatch)
     conversation_id = _conversation(cast)
     with workspace_db.tx(cast.conn):
-        for _ in range(workspace_chat.CHAT_RATE_LIMIT):
+        for _ in range(29):                      # spec §6: 30 a minute — the 30th still passes
             audit.record(cast.conn, actor=cast.company.member_a, action="chat.asked")
+    assert ask(cast.client, cast.csrf, conversation_id, "A treizecea").status_code == 201
     response = ask(cast.client, cast.csrf, conversation_id, "Una în plus")
     assert (response.status_code, response.json()["retry_after_seconds"]) == (429, 60)
 

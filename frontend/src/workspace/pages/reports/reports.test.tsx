@@ -330,12 +330,14 @@ describe('Shared reports', () => {
       ],
     });
     boot('/workspace/shared-reports/40', { 'GET /api/workspace/report-runs/40': foreign }, 'member');
-    const article = (await screen.findByRole('heading', { level: 1, name: 'Raport' })).closest('article') as HTMLElement;
+    // The page's h1 is the report's name; the report's own "# Raport" sits under it, as an h2.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Raport lunar contracte' })).toBeTruthy();
+    const article = (await screen.findByRole('heading', { level: 2, name: 'Raport' })).closest('article') as HTMLElement;
     fireEvent.click(within(article).getByRole('button', { name: 'Sursa 1: Contract cadru' }));
     let drawer = await screen.findByRole('dialog', { name: 'Sursa [1]' });
     expect(within(drawer).getByText('Plata în 30 de zile.')).toBeTruthy();
     expect(within(drawer).getByText(/Documentul sursă nu îți este accesibil/)).toBeTruthy();
-    expect(within(drawer).getByText('Este textul exact pe care modelul l-a primit ca sursă pentru raport.')).toBeTruthy();
+    expect(within(drawer).getByText('Este textul pe care modelul l-a primit ca sursă pentru raport, formatat pentru citire.')).toBeTruthy();
     expect(within(drawer).queryByRole('link', { name: 'Descarcă originalul' })).toBeNull();
     expect(within(drawer).queryByRole('link', { name: 'Deschide documentul' })).toBeNull();
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);

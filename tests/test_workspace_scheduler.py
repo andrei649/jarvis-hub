@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from agents.core.workspace import approvals, config, db, reports, scheduler
+from agents.core.workspace import approvals, config, db, documents, reports, scheduler
 from tests.support.workspace_fixtures import (  # noqa: F401  (ws is a fixture)
     freeze_clock,
     ws,
@@ -195,6 +195,54 @@ async def test_stale_approvals_runs_and_messages_are_closed(conn, cast, clock, s
     assert expired["approvals_expired"] == 1
     assert sorted(r[0] for r in conn.execute("SELECT status FROM approvals")) == ["expired",
                                                                                   "failed"]
+
+
+def _processing_document(conn, cast, title: str, claimed_at: float) -> int:
+    document_id = seed_document(conn, department_id=cast.dept_a, uploader_id=cast.member_a.id,
+                                title=title, chunks=["parțial"], status="processing")
+    with db.tx(conn):
+        conn.execute("UPDATE documents SET updated_at = ? WHERE id = ?", (claimed_at, document_id))
+    return document_id
+
+
+def _document(conn, document_id):
+    return conn.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
+
+
+async def test_a_document_left_processing_by_a_dead_extraction_is_failed(conn, cast, clock,
+                                                                         spawned):
+    """Review fix OPS-15: a restart mid-extraction left the row ``processing`` for ever."""
+    stale = _processing_document(conn, cast, "Vechi", START - documents.STALE_PROCESSING_SECONDS)
+    fresh = _processing_document(conn, cast, "În lucru", START - 30)
+    ready = seed_document(conn, department_id=cast.dept_a, uploader_id=cast.member_a.id,
+                          title="Gata", chunks=["text"])
+    summary = await _tick(START, clock)
+    assert summary["documents_interrupted"] == 1
+    row = _document(conn, stale)
+    assert (row["status"], row["error"], row["chunk_count"]) == ("failed", "interrupted", 0)
+    assert conn.execute("SELECT COUNT(*) FROM chunks WHERE document_id = ?",
+                        (stale,)).fetchone()[0] == 0
+    assert not documents._busy(row), "Reindex is offered at once"
+    assert _document(conn, fresh)["status"] == "processing", "a live extraction is left alone"
+    assert _document(conn, ready)["status"] == "ready"
+    assert (await _tick(START + 1, clock))["documents_interrupted"] == 0
+
+
+async def test_a_claim_from_before_this_hub_started_is_failed_at_once(conn, cast, clock, spawned):
+    before_restart = _processing_document(conn, cast, "Întrerupt", START - 5)
+    after_start = _processing_document(conn, cast, "Nou", START)
+    summary = await scheduler.WorkspaceScheduler(started_at=START).tick(now=START + 1)
+    assert summary["documents_interrupted"] == 1
+    assert _document(conn, before_restart)["error"] == "interrupted"
+    assert _document(conn, after_start)["status"] == "processing"
+
+
+def test_the_hub_scheduler_knows_when_it_started(ws, monkeypatch):
+    freeze_clock(monkeypatch, START)
+    monkeypatch.setattr(scheduler.WorkspaceScheduler, "start", lambda self: None)
+    monkeypatch.setattr(scheduler, "_scheduler", None)
+    scheduler.start_background()
+    assert scheduler._scheduler is not None and scheduler._scheduler.started_at == START
 
 
 async def test_housekeeping_deletes_only_what_is_past_retention(conn, cast, clock, spawned):

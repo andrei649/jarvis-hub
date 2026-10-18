@@ -47,10 +47,10 @@ Center-ul proprietarului (`/v2`) și restul API-ului hub-ului rămân accesibile
 
 | Ce | Minim pentru pilot |
 |---|---|
-| Sistem | Linux cu systemd (exemplele folosesc Ubuntu 24.04 / Debian 12). Windows și macOS rulează hub-ul, dar acest ghid acoperă doar Linux. |
-| Python | 3.12 sau mai nou (`python3 --version`). Instalatorul refuză versiunile mai vechi cu un motiv explicit. |
+| Sistem | Linux cu systemd. Exemplele folosesc **Ubuntu 24.04 LTS**, al cărui Python 3.12 este versiunea pe care rulează testele proiectului. Debian 12 are Python 3.11, pe care instalatorul îl refuză, iar Debian 13 are Python 3.13, acceptat de instalator dar netestat: pe Debian instalați întâi un Python 3.12 separat (§2, *Debian*). Windows și macOS rulează hub-ul, dar acest ghid acoperă doar Linux. |
+| Python | 3.12 sau mai nou (`python3 --version`). Instalatorul refuză versiunile mai vechi cu un motiv explicit (pe Debian 12: `python_too_old:3.11<3.12`). |
 | Disc | Codul + mediul Python: câțiva GB. Datele: documentele încărcate (originalele se păstrează) plus 7 copii de siguranță zilnice. Modelul AI: de la ~2 GB (model mic, CPU) la zeci de GB. |
-| Memorie | Depinde aproape exclusiv de model (§3). Hub-ul în sine este un proces Python. |
+| Memorie | În primul rând modelul (§3). Hub-ul în sine este un proces Python, dar fiecare încărcare în curs este ținută întreagă în memorie — până la de două ori mărimea fișierului cât timp e primită —, cel mult 3 simultan per utilizator și fără o limită comună pe proces: 10 persoane care încarcă simultan câte 3 fișiere de 25 MiB înseamnă până la ~1,5 GiB în plus. |
 | Rețea | Un nume DNS dedicat (ex. `nerva.firma.ro`) care indică serverul; portul 443 (și 80 pentru Let's Encrypt) deschis pentru utilizatori; ieșire HTTPS pentru instalare. |
 | Email | Opțional: un cont SMTP al companiei pentru invitații, rapoarte și emailuri aprobate (§9). |
 | Node.js | **Nu** este necesar: interfața este deja compilată în `agents/web/workspace/`. |
@@ -62,21 +62,62 @@ Exemplele presupun codul în `/opt/jarvis-hub`, datele în `/var/lib/jarvis-hub`
 schimbați-le peste tot (inclusiv în unitatea systemd).
 
 ```bash
-# 1. utilizator de serviciu fără login și directoarele lui
-sudo useradd --system --home /var/lib/jarvis-hub --create-home --shell /usr/sbin/nologin jarvis
+# 1. utilizator de serviciu fără login; home-ul lui (/var/lib/jarvis) NU este directorul de date
+sudo useradd --system --home-dir /var/lib/jarvis --create-home --shell /usr/sbin/nologin jarvis
 sudo install -d -o jarvis -g jarvis -m 0700 /var/lib/jarvis-hub /var/lib/jarvis-keys
 
-# 2. codul (sau copiați checkout-ul primit de la Digitaholic în /opt/jarvis-hub)
-sudo git clone https://github.com/andrei649/jarvis-hub.git /opt/jarvis-hub
+# 2. codul, la versiunea numită a pilotului (sau din pachetul git primit de la Digitaholic, mai jos)
+sudo git clone --branch <eticheta-pilotului> https://github.com/andrei649/jarvis-hub.git /opt/jarvis-hub
 sudo chown -R jarvis:jarvis /opt/jarvis-hub
 
 # 3. mediul Python cu dependențele fixate prin hash + testul de pornire (fără a porni serverul)
 sudo -u jarvis bash -c 'cd /opt/jarvis-hub && ./install.sh --no-start'
 ```
 
+**Versiunea.** `<eticheta-pilotului>` este eticheta de versiune (git tag) pe care v-o comunică
+Digitaholic. Nu instalați ramura implicită: un pilot rulează o versiune numită, nu ultimul commit, iar
+upgrade-ul (§15) trece de la o etichetă la alta. La data acestui ghid, singura etichetă publicată
+(`v1.0.0`) și ramura implicită sunt mai vechi decât spațiul de lucru: până apare eticheta pilotului,
+folosiți checkout-ul primit de la Digitaholic. Acesta trebuie să fie un depozit git complet, cu
+directorul `.git` — de exemplu un pachet `git bundle`, clonat cu `sudo git clone --branch
+<eticheta-pilotului> /cale/nerva-pilot.bundle /opt/jarvis-hub` —, nu o simplă copie a fișierelor:
+upgrade-ul și revenirea (§15) folosesc `git describe`, `git fetch --tags` și `git checkout`.
+
+**Home-ul separat.** `sudo -u jarvis` setează `HOME` la home-ul utilizatorului, iar instalarea scrie
+acolo cache-ul pip (~45 MB pentru `requirements-beta.lock`) și `~/.config/jarvis/`. Copia de
+siguranță nocturnă (§14) arhivează tot directorul de date, deci un home egal cu
+`/var/lib/jarvis-hub` ar pune aceste fișiere în fiecare arhivă.
+
 `install.sh` creează `.venv`, instalează `requirements-beta.lock` cu `--require-hashes` și rulează
 un test real de pornire. Un eșec se termină cu un motiv numit (tabelul din
-[`../INSTALL.md`](../INSTALL.md) → *Troubleshooting by reason*).
+[`../INSTALL.md`](../INSTALL.md) → *Troubleshooting by reason*). Ultimele rânduri ale instalării
+(„Start it: ./start.sh” / „Then open: http://127.0.0.1:8080/v2”) sunt pentru un hub personal:
+**ignorați-le** — serviciul pornește prin systemd (mai jos și §4), iar angajații folosesc
+`/workspace/`. Testul de pornire își lasă datele de probă în `/opt/jarvis-hub/memory_logs/`;
+serviciul nu le folosește (are `JARVIS_HOME=/var/lib/jarvis-hub`).
+
+**Ubuntu cu mai multe versiuni de Python.** `install.sh` caută întâi `python3.13`, apoi
+`python3.12`: dacă pe server există și un `python3.13` (de exemplu din PPA-ul deadsnakes), îl alege
+pe acela — acceptat, dar netestat. Pentru versiunea testată rulați pasul 3 cu interpretorul numit:
+`sudo -u jarvis bash -c 'cd /opt/jarvis-hub && python3.12 scripts/bootstrap.py'` (la upgrade, §15,
+la fel).
+
+**Debian (12 sau 13).** Instalați un Python 3.12 separat, în afara `/home` și `/root` — unitatea
+systemd are `ProtectHome=yes`, deci un interpretor de acolo nu ar fi accesibil serviciului — și
+rulați pasul 3 direct cu el. `uv` (de la Astral) aduce doar interpretorul:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+sudo env UV_PYTHON_INSTALL_DIR=/opt/python UV_PYTHON_BIN_DIR=/usr/local/bin uv python install 3.12
+/usr/local/bin/python3.12 --version
+# pasul 3, în locul lui ./install.sh --no-start:
+sudo -u jarvis bash -c 'cd /opt/jarvis-hub && /usr/local/bin/python3.12 scripts/bootstrap.py'
+```
+
+`scripts/bootstrap.py` este exact ce rulează `install.sh` (mediul, dependențele, testul de pornire),
+fără să pornească serverul; apelat direct, folosește interpretorul cu care îl porniți (`install.sh`
+l-ar alege pe primul găsit, iar pe Debian 13 acela este `python3.13`). `.venv` rămâne legat de
+interpretorul din `/opt/python`: nu îl ștergeți. La upgrade (§15) folosiți aceeași comandă la pasul 3.
 
 **Serviciul systemd.** Folosiți unitatea din repo; ea pornește `serve.py` pe `127.0.0.1:8080`,
 cu `JARVIS_HOME=/var/lib/jarvis-hub` și protecțiile systemd (`ProtectSystem=strict`,
@@ -87,27 +128,36 @@ sudo cp /opt/jarvis-hub/deploy/systemd/jarvis-hub.service /etc/systemd/system/
 sudo install -d -m 0700 /etc/jarvis-hub
 sudo install -m 0600 /dev/null /etc/jarvis-hub/jarvis.env      # se completează în §4
 
-# directorul de chei trebuie să fie inscriptibil pentru serviciu (ProtectSystem=strict)
+# directorul de chei trebuie să fie inscriptibil pentru serviciu (ProtectSystem=strict), iar tot
+# ce scrie serviciul (baza de date, copiile de siguranță) se creează doar pentru jarvis (UMask)
 sudo install -d /etc/systemd/system/jarvis-hub.service.d
-printf '[Service]\nReadWritePaths=/var/lib/jarvis-keys\n' \
-  | sudo tee /etc/systemd/system/jarvis-hub.service.d/keys.conf
+printf '[Service]\nReadWritePaths=/var/lib/jarvis-keys\nUMask=0077\n' \
+  | sudo tee /etc/systemd/system/jarvis-hub.service.d/pilot.conf
 sudo systemctl daemon-reload
 ```
+
+`UMask=0077`: fără el, serviciul ar crea fișierele cu umask-ul implicit `0022` — de exemplu
+`business/workspace.db` cu mod `0644` și `backups/` cu `0755` —, iar singura protecție ar rămâne
+directorul de date, `0700` (pasul 1); o copie care păstrează modurile (`rsync -a`, §14) le-ar
+duce așa mai departe. Cu el, fișierele noi sunt `0600`, iar directoarele `0700`.
 
 Nu porniți încă serviciul: întâi modelul (§3) și configurarea (§4). Detalii despre unitate:
 [`../../deploy/systemd/README.md`](../../deploy/systemd/README.md).
 
 **Comanda de operare.** Comenzile de recuperare și de backup trebuie să ruleze cu **exact
-același mediu** ca serviciul: același `JARVIS_HOME` (altfel deschid altă bază de date), același
-`JARVIS_KEY_DIR` (altfel semnează rândurile de audit cu altă cheie, iar verificarea lanțului
-raportează `key_mismatch`) și același `NERVA_WORKSPACE`. Cel mai sigur este să le rulați ca o
-unitate systemd temporară care citește același fișier de mediu:
+același mediu** ca serviciul: același `JARVIS_HOME` (altfel deschid alt director de date), aceeași
+cheie de audit (`JARVIS_AUDIT_KEY`, altfel fișierul din același `JARVIS_KEY_DIR`), aceeași
+`JARVIS_BACKUP_KEY` și același `NERVA_WORKSPACE`. Comenzile spațiului de lucru (§6, §16) verifică
+asta: rulate altfel, refuză cu codul de ieșire 2 și nu schimbă nimic, iar mesajul numește
+`nerva-run` (`check` doar raportează). Comenzile de backup nu verifică: cu alt `JARVIS_HOME` ar
+salva sau ar căuta arhivele altui director. Cel mai sigur este să le rulați ca o unitate systemd
+temporară care citește același fișier de mediu, cu același `UMask`:
 
 ```bash
 # adăugați în ~/.bashrc al administratorului serverului
 nerva-run() {
   sudo systemd-run --quiet --pipe --wait --collect \
-    -p User=jarvis -p Group=jarvis \
+    -p User=jarvis -p Group=jarvis -p UMask=0077 \
     -p EnvironmentFile=/etc/jarvis-hub/jarvis.env \
     -p WorkingDirectory=/opt/jarvis-hub \
     /opt/jarvis-hub/.venv/bin/python "$@"
@@ -203,10 +253,12 @@ confirmă explicit cum sunt tratate datele:
 2. Panoul **SECURITY POSTURE** → secțiunea de *data handling* → confirmați rândul furnizorului
    local (consimțământul se salvează în setarea `security.data_training_ack`).
 
-Sau, din linia de comandă pe server (cu `JARVIS_ADMIN_TOKEN` dacă l-ați setat; fără niciun token
-de admin configurat, hub-ul acceptă doar cereri directe de pe localhost):
+Sau, din linia de comandă pe server — varianta de folosit când `JARVIS_ADMIN_TOKEN` este setat
+(recomandat, §4), fiindcă rutele de administrare ale hub-ului cer atunci tokenul; fără niciun token
+de admin configurat, hub-ul acceptă doar cereri directe de pe localhost:
 
 ```bash
+JARVIS_ADMIN_TOKEN=$(sudo sed -n 's/^JARVIS_ADMIN_TOKEN=//p' /etc/jarvis-hub/jarvis.env)
 curl -s -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" http://127.0.0.1:8080/api/security/posture \
   | python3 -c 'import json,sys; [print(p) for p in json.load(sys.stdin)["data_handling"]["providers"]]'
 # copiați "provider" și "scope" din rândul cu policy "unknown", apoi:
@@ -228,6 +280,7 @@ renunța la privilegii). Generați cheile cu Python-ul din `.venv`:
 ```bash
 /opt/jarvis-hub/.venv/bin/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"   # de 2 ori: secret + backup
 /opt/jarvis-hub/.venv/bin/python -c "import secrets; print(secrets.token_hex(32))"                                    # cheia de audit
+/opt/jarvis-hub/.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(32))"                               # tokenul de admin al hub-ului
 ```
 
 ```ini
@@ -240,12 +293,18 @@ JARVIS_PORT=8080
 # iar copiile de siguranță nu sunt criptate (§13).
 JARVIS_SECRET_KEY=<cheie Fernet>
 JARVIS_BACKUP_KEY=<altă cheie Fernet>
-# Cheia lanțului de audit. Dacă lipsește, se generează o dată în $JARVIS_KEY_DIR/workspace_audit.key.
+# Cheia lanțului de audit. Dacă lipsește, se generează o dată în $JARVIS_KEY_DIR/workspace_audit.key,
+# cât timp jurnalul este gol. Nu o schimbați după primul start (§13).
 JARVIS_AUDIT_KEY=<64 de caractere hex>
+# Recomandat: fără el, orice proces de pe server care ajunge la 127.0.0.1:8080 este administratorul
+# hub-ului (ex. /api/admin/forget, /api/security/data-handling/ack); cu el, acele rute cer antetul
+# X-Admin-Token. Spațiul de lucru nu îl folosește.
+JARVIS_ADMIN_TOKEN=<token aleator>
 # În spatele Caddy pe aceeași mașină (§5):
 JARVIS_TRUSTED_PROXIES=127.0.0.1
 JARVIS_ALLOWED_HOSTS=nerva.firma.ro
-# JARVIS_CORS_ORIGINS — NU îl setați. Spațiul de lucru nu trimite niciodată antete CORS.
+# JARVIS_CORS_ORIGINS — nu este necesar. Chiar setat (pentru altă suprafață a hub-ului), nu se aplică
+# la /workspace* și /api/workspace/*: spațiul de lucru nu trimite niciodată antete CORS.
 
 # ── model (§3; una dintre ele) ────────────────────────────────────────────────────
 JARVIS_OLLAMA_URL=http://127.0.0.1:11434
@@ -280,7 +339,9 @@ secțiunea *Nerva Workspace*):
 | `NERVA_WORKSPACE_SCHEDULER` | pornit | Planificatorul intern (rapoarte programate, expirări, curățenie), la fiecare 30 s. |
 | `NERVA_WORKSPACE_SSO_HEADER` / `_SSO_SECRET` | nesetate | SSO prin proxy; ambele sunt necesare (§11). |
 
-Valorile numerice în afara intervalului sunt aduse la limită, nu refuzate. Variabilele se citesc
+Valorile numerice peste maxim sunt aduse la maxim; zero, valorile negative și cele nenumerice
+(inclusiv cu zecimale, ex. `2.5`) revin la valoarea implicită — nu la minim. Niciuna nu este
+refuzată și niciuna nu produce un avertisment în jurnal. Variabilele se citesc
 la fiecare utilizare, dar după o modificare a fișierului systemd trebuie oricum
 `sudo systemctl restart jarvis-hub` ca procesul să le vadă.
 
@@ -338,10 +399,17 @@ Ce asigură fișierul (varianta A, conturi locale):
 Verificare din afara serverului:
 
 ```bash
-curl -sI https://nerva.firma.ro/workspace/ | head -5          # 200 + Strict-Transport-Security
+curl -s -o /dev/null -D - https://nerva.firma.ro/workspace/ | grep -iE '^HTTP|^strict-transport-security'
+#   HTTP/2 200
+#   strict-transport-security: max-age=31536000
 curl -s  https://nerva.firma.ro/api/workspace/session          # {"enabled":true,…}
 curl -s -o /dev/null -w '%{http_code}\n' https://nerva.firma.ro/v2   # 404: Command Center-ul nu e public
 ```
+
+Folosiți `GET`, nu `HEAD` (`curl -I`): hub-ul răspunde la `HEAD` cu `405` (`allow: GET`), inclusiv pe
+`/workspace/`, `/api/workspace/session` și `/healthz`. Un monitor de disponibilitate setat implicit pe
+`HEAD` ar raporta pilotul căzut; configurați-l cu `GET https://nerva.firma.ro/api/workspace/session`
+(200 și JSON, fără autentificare, prin Caddy).
 
 ## 6. Primul start: codul de configurare și administratorul
 
@@ -354,8 +422,8 @@ nerva-run -m agents.core.workspace setup-code
 
 Comanda afișează codul (din `NERVA_WORKSPACE_SETUP_CODE`, sau îl generează în
 `<JARVIS_HOME>/business/setup-code.txt`). Codul nu apare niciodată în jurnale — jurnalul numește
-doar fișierul. Comanda refuză cu codul de ieșire 2 dacă `NERVA_WORKSPACE` este oprit, și cu 1 după
-ce configurarea a fost făcută.
+doar fișierul. Comanda refuză cu codul de ieșire 2 dacă `NERVA_WORKSPACE` este oprit sau dacă nu
+rulează cu mediul serviciului (§16), și cu 1 după ce configurarea a fost făcută.
 
 Apoi, în browser, `https://nerva.firma.ro/workspace/` afișează ecranul de configurare:
 
@@ -412,8 +480,16 @@ celelalte sesiuni ale utilizatorului.
 
 ## 8. Modelul AI și politica de date
 
-Administrare → Organizație arată starea modelului (cipul **Local / Cloud / Indisponibil**) și
-butonul **Testează modelul** (un apel scurt, cu limită de 60 s, auditat ca `model.tested`).
+Administrare → Organizație arată starea modelului și butonul **Testează modelul** (un apel scurt,
+cu limită de 60 s, auditat ca `model.tested`). Starea are patru valori, aceleași în cipul din bara
+de sus (vizibil tuturor utilizatorilor) și în Administrare → Organizație:
+
+| Cip | Când |
+|---|---|
+| **Local** | Ruta este un server de model pe loopback (§3): datele nu părăsesc mașina. |
+| **Local, neverificat** | Un server de model din rețeaua locală, confirmat de proprietarul hub-ului (§3.3): hub-ul nu poate dovedi unde ajung datele, iar furnizorul nu își declară politica. |
+| **Cloud** | O rută cloud, permisă de politica `allow_cloud`. |
+| **Indisponibil** | Niciun model utilizabil acum; fereastra cipului arată motivul (§17). |
 
 | Politică | Ce permite |
 |---|---|
@@ -504,8 +580,8 @@ NERVA_WORKSPACE_SSO_SECRET=<valoare lungă aleatoare, aceeași și în mediul Ca
 ```
 
 Hub-ul acceptă o autentificare SSO doar dacă **toate** sunt adevărate: ambele variabile sunt
-setate; cererea vine de la o adresă din `JARVIS_TRUSTED_PROXIES` (o listă invalidă dezactivează SSO:
-`404 sso_disabled`); antetul de email apare exact o dată și conține un email valid; antetul
+setate; cererea vine de la o adresă din `JARVIS_TRUSTED_PROXIES` (o listă invalidă oprește pornirea
+hub-ului, cu motivul în jurnal — §17); antetul de email apare exact o dată și conține un email valid; antetul
 `X-Nerva-Proxy-Secret` apare o dată și este egal cu secretul (comparație în timp constant); emailul
 aparține unui utilizator activ. Altfel: `404 sso_disabled` (SSO neconfigurat), `401 sso_no_identity`
 (proxy-ul nu a garantat o identitate) sau `401 invalid_credentials` (nu există utilizator activ).
@@ -539,17 +615,19 @@ adaptată a Caddy (vizibilă prin API-ul lui de administrare).
 | Aprobări | expiră după 7 zile; execuție blocată > 10 min | `expired` / `failed` (`interrupted`) |
 | Sesiuni | inactivitate 12 h (1–168), durată maximă 7 zile (1–90); activitatea se înregistrează cel mult o dată pe minut | reautentificare |
 | Invitații | link de 72 h, o singură folosire; un link nou îl anulează pe cel vechi | `404 invite_invalid` |
-| Autentificare | 5 eșecuri consecutive pentru un email în 15 min, sau 20 de eșecuri de la o adresă în 15 min | `429 too_many_attempts` cu `retry_after_seconds` |
+| Autentificare | 5 eșecuri consecutive pentru un email în 15 min, sau 20 de eșecuri de la o adresă în 15 min. Un text care nu este o adresă de email (de exemplu o parolă scrisă în câmpul de email) nu se păstrează: încercarea se înregistrează fără identificator, cu motivul `invalid_identifier`, și contează doar la limita adresei de la care vine | `429 too_many_attempts` cu `retry_after_seconds` |
 | Configurare / invitații | 10 coduri de configurare greșite / oră / adresă și 50 / oră în total; 30 de încercări cu linkuri de invitație sau resetare (deschidere ori acceptare, reușite sau nu) / oră / adresă | `429 too_many_attempts` |
 | Audit | export CSV ≤ 50 000 de rânduri (cele mai noi); o pagină ≤ 200 | — |
 
 Limita de cereri pe IP a hub-ului (`JARVIS_RATE_LIMIT`) nu se aplică la `/workspace*` și
 `/api/workspace/*`: spațiul de lucru are limitele proprii de mai sus, pe utilizator.
 
-Curățenia planificatorului (la fiecare 30 s): mesajele asistentului rămase `pending` > 10 min devin
-`error` / `interrupted`; se șterg încercările de autentificare mai vechi de 24 h, invitațiile expirate
-de peste 7 zile, sesiunile revocate, expirate sau inactive de peste 7 zile și notificările citite de
-peste 90 de zile.
+Curățenia planificatorului (la fiecare 30 s, cât timp `NERVA_WORKSPACE_SCHEDULER` este pornit):
+mesajele asistentului rămase `pending` > 10 min devin `error` / `interrupted`; documentele rămase
+`processing` de peste 10 minute, sau începute înainte de pornirea hub-ului (o extracție oprită de
+o repornire), devin `failed` / `interrupted` — **Reindexează** le reia imediat; se șterg
+încercările de autentificare mai vechi de 24 h, invitațiile expirate de peste 7 zile, sesiunile
+revocate, expirate sau inactive de peste 7 zile și notificările citite de peste 90 de zile.
 
 ## 13. Postura de securitate
 
@@ -559,7 +637,9 @@ peste 90 de zile.
 - **Sesiuni:** token aleator de 32 de octeți în cookie-ul `nerva_ws_session` (`HttpOnly`,
   `SameSite=Lax`, `Path=/api/workspace`, `Secure` cu `NERVA_WORKSPACE_COOKIE_SECURE=1`); baza de date
   păstrează doar SHA-256 al tokenului. Fiecare autentificare creează o sesiune nouă.
-- **CSRF:** fiecare cerere care modifică ceva trimite tokenul sesiunii în `X-CSRF-Token`; în plus,
+- **CSRF:** fiecare cerere care modifică ceva trimite în `X-CSRF-Token` tokenul CSRF al sesiunii —
+  o valoare aleatoare separată de cookie, primită în răspunsul autentificării (tokenul sesiunii
+  rămâne doar în cookie-ul `HttpOnly`, inaccesibil scripturilor); în plus,
   o cerere marcată de browser ca venind de pe alt site este refuzată (`403 csrf_failed`), iar rutele
   publice cer `Content-Type: application/json`.
 - **Izolarea departamentelor** se aplică în fiecare interogare SQL, pe server, inclusiv în
@@ -567,15 +647,28 @@ peste 90 de zile.
 - **Antete:** răspunsurile JSON au `Cache-Control: no-store`; pagina aplicației are un CSP strict
   (`default-src 'self'`, scripturi doar cu hash, `frame-ancestors 'none'`); descărcările și exportul
   HTML au `Content-Disposition: attachment`, `nosniff` și un CSP cu `sandbox`. Exportul CSV al
-  auditului neutralizează celulele care încep cu `= + - @`.
+  auditului neutralizează (prefixează cu `'`) celulele care încep cu `= + - @`, tab sau CR.
 - **Auditul este un lanț HMAC-SHA256:** fiecare rând include hash-ul celui anterior, deci editarea,
   ștergerea sau reordonarea unui rând rupe verificarea (Administrare → Audit → **Verifică lanțul**).
-  Cheia este `JARVIS_AUDIT_KEY`, altfel fișierul `$JARVIS_KEY_DIR/workspace_audit.key` (implicit
-  `~/.config/jarvis/`), **în afara directorului de date**, ca o copie de siguranță sau un director
-  de date scurs să nu conțină cheia. **Faceți-i backup separat:** fără ea, lanțul existent nu mai
-  poate fi verificat, iar verificarea raportează `key_mismatch`. Limita cunoscută: lipsa celor mai
-  noi rânduri (trunchierea la coadă) nu este detectabilă fără o ancoră externă. Detaliile de audit
-  nu conțin parole, tokenuri, prompturi, răspunsuri sau text din documente.
+  Cheia este `JARVIS_AUDIT_KEY`, altfel fișierul `$JARVIS_KEY_DIR/workspace_audit.key`, **în afara
+  directorului de date**, ca o copie de siguranță sau un director de date scurs să nu conțină
+  cheia. Fără `JARVIS_KEY_DIR`, directorul este `~/.config/jarvis/` al utilizatorului de serviciu —
+  de aceea, în acest ghid, `JARVIS_KEY_DIR=/var/lib/jarvis-keys` este obligatoriu, iar home-ul
+  utilizatorului `jarvis` (`/var/lib/jarvis`) nu este directorul de date (§2). **Faceți-i backup
+  separat.** Fișierul cheii se generează o singură dată, cât timp jurnalul este gol. Odată ce
+  jurnalul are rânduri, hub-ul scrie doar cu cheia cu care a fost semnat cel mai nou rând: fără
+  nicio cheie (nici `JARVIS_AUDIT_KEY`, nici fișierul) răspunde `503 audit_key_missing`, cu altă
+  cheie `503 audit_key_mismatch`, la orice acțiune care scrie în jurnal — deci nimeni nu se mai
+  poate autentifica și nu se salvează nicio modificare (citirile funcționează în continuare) până
+  când cheia serviciului este pusă la loc. Hub-ul nu generează și nu adoptă niciodată singur o
+  cheie nouă (ar rupe lanțul definitiv); o spune în jurnal încă de la pornire, iar
+  `nerva-run -m agents.core.workspace check` arată starea cheii fără să schimbe nimic (§16, §17).
+  Nu schimbați `JARVIS_AUDIT_KEY` pe o instalare în uz. Doar pentru o cheie **pierdută cu
+  adevărat** există `audit-rekey` (§16), auditat: rândurile semnate cu cheia veche nu mai pot fi
+  verificate niciodată, dar rămân fixate, deci o modificare ulterioară a lor tot se vede. Limita
+  cunoscută: lipsa celor mai noi rânduri (trunchierea la coadă) nu este detectabilă fără o ancoră
+  externă. Detaliile de audit nu conțin parole, tokenuri, prompturi, răspunsuri sau text din
+  documente.
 - **Secrete:** parola SMTP stă în `<JARVIS_HOME>/business/secrets.enc`. **`JARVIS_SECRET_KEY` și
   `JARVIS_BACKUP_KEY` sunt obligatorii pe un pilot:** fără `JARVIS_SECRET_KEY`, cheia secretelor este
   generată în `secrets.enc.key`, chiar lângă ele, în directorul de date; fără `JARVIS_BACKUP_KEY`,
@@ -595,8 +688,20 @@ peste 90 de zile.
   `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS`, **nu** le îndreptați spre directorul de date
   (`<JARVIS_HOME>`) sau spre `<JARVIS_HOME>/business`: asistentul personal ar putea citi atunci baza
   de date și documentele companiei.
-- **Ce rămâne în responsabilitatea operatorului:** firewall (doar 80/443 publice), actualizările
-  sistemului de operare, accesul SSH, copiile off-site (§14), cheile (§4).
+- **Ce rămâne în responsabilitatea operatorului:** firewall (doar 80/443 publice, plus SSH),
+  actualizările sistemului de operare, accesul SSH, copiile off-site (§14), cheile (§4). Cu `ufw`
+  (inclus în Ubuntu; pe Debian `sudo apt install ufw`), permiteți SSH **înainte** de activare, ca
+  să nu vă blocați accesul:
+
+  ```bash
+  sudo ufw allow OpenSSH
+  sudo ufw allow 80,443/tcp
+  sudo ufw enable
+  sudo ufw status verbose     # permise: doar OpenSSH și 80,443/tcp
+  ```
+
+  În configurația din acest ghid, hub-ul, serverul de model și oauth2-proxy ascultă oricum doar pe
+  loopback; firewall-ul acoperă tot ce altceva ar asculta pe server.
 
 ## 14. Backup și restaurare
 
@@ -609,13 +714,35 @@ peste 90 de zile.
 **Ce NU se salvează și trebuie păstrat separat, off-site:** `/etc/jarvis-hub/jarvis.env` (toate
 cheile) și `/var/lib/jarvis-keys/` (fișierul cheii de audit când `JARVIS_AUDIT_KEY` nu e setată și
 materialul cheii de backup când `JARVIS_BACKUP_KEY` este o frază, nu o cheie Fernet). Fără ele, o
-arhivă criptată nu poate fi deschisă, iar auditul nu poate fi verificat.
+arhivă criptată nu poate fi deschisă (`JARVIS_BACKUP_KEY`); pe o copie restaurată nimeni nu se poate
+autentifica (fără cheia de audit, hub-ul răspunde `503 audit_key_missing`, §13); iar parola SMTP nu
+mai poate fi citită (`JARVIS_SECRET_KEY`, §4) și trebuie reintrodusă.
 
-**Copiați arhivele în afara serverului** — ele stau pe același disc ca datele:
+**Copiați arhivele în afara serverului, automat** — ele stau pe același disc ca datele. O dată, de
+mână (verifică și cheia SSH a root-ului, care trebuie autorizată pe destinație), apoi în fiecare
+noapte, după copia de la 03:20:
 
 ```bash
 sudo rsync -a /var/lib/jarvis-hub/backups/ backup@nas.firma.ro:/backups/nerva/
+echo '40 3 * * * root rsync -a /var/lib/jarvis-hub/backups/ backup@nas.firma.ro:/backups/nerva/' \
+  | sudo tee /etc/cron.d/nerva-offsite
 ```
+
+Fără `--delete`, destinația păstrează și copiile pe care hub-ul le-a curățat local; ștergeți-le
+acolo după politica de retenție a companiei.
+
+**Verificați săptămânal că rulează.** Copia nocturnă scrie în jurnal un rând la fiecare rulare:
+
+```bash
+journalctl -u jarvis-hub --since "8 days ago" | grep 'nightly backup'
+#   … INFO  jarvis.orchestrator  nightly backup: [REDACTED:high_entropy_secret].tar.gz.enc (61440 bytes), pruned 1
+#   … WARNING  jarvis.orchestrator  nightly backup failed     ← motivul urmează în traceback
+nerva-run -m agents.core.backup list               # arhiva cea mai nouă trebuie să fie de azi-noapte
+```
+
+Numele arhivei apare mascat (`[REDACTED:high_entropy_secret]`): filtrul de secrete al jurnalului
+maschează orice șir lung care pare aleator (§17); `backup list` îl arată întreg. Un rând cu
+`.tar.gz` în loc de `.tar.gz.enc` înseamnă că `JARVIS_BACKUP_KEY` lipsește din mediul serviciului.
 
 Comenzi manuale:
 
@@ -625,44 +752,116 @@ nerva-run -m agents.core.backup list               # cele existente, cele mai no
 nerva-run -m agents.core.backup verify <nume>      # restaurare de probă + PRAGMA integrity_check
 ```
 
+`<nume>` este **numele fișierului**, așa cum îl arată `list` (de exemplu
+`jarvis-backup-20261018T032000_…Z_….tar.gz.enc`), adică ultima parte a căii din câmpul `"archive"`
+afișat de `create`. Calea întreagă nu este acceptată (`no such backup`, codul 2): `verify` și
+`restore` caută arhiva doar în `<JARVIS_HOME>/backups/`.
+
 **Restaurare** (cu serviciul oprit, într-un director nou, apoi schimbarea directoarelor — nu peste
 directorul în uz, unde fișierele `-wal`/`-shm` rămase ar putea strica baza restaurată):
 
 ```bash
 sudo systemctl stop jarvis-hub
-# o arhivă adusă din afară se pune întâi în /var/lib/jarvis-hub/backups/
+# o arhivă adusă din afară (de pe NAS, de pe alt server) se pune întâi în backups/, deținută de jarvis:
+#   sudo install -d -o jarvis -g jarvis -m 0700 /var/lib/jarvis-hub/backups
+#   sudo install -o jarvis -g jarvis -m 0600 <arhiva> /var/lib/jarvis-hub/backups/
 sudo install -d -o jarvis -g jarvis -m 0700 /var/lib/jarvis-hub.restored
 nerva-run -m agents.core.backup restore <nume> /var/lib/jarvis-hub.restored   # verificați "ok": true
 sudo mv /var/lib/jarvis-hub /var/lib/jarvis-hub.old
 sudo mv /var/lib/jarvis-hub.restored /var/lib/jarvis-hub
+sudo mv /var/lib/jarvis-hub.old/backups /var/lib/jarvis-hub/   # arhivele nu sunt în arhivă: aduceți-le înapoi
+sudo chmod -R go-rwx /var/lib/jarvis-hub                       # cu UMask=0077 (§2) e deja 0700/0600; fără el, restaurarea scrie 0755/0644
+nerva-run -m agents.core.workspace check                        # verificarea mediului: ultimul rând trebuie să fie „ready”
 sudo systemctl start jarvis-hub
 ```
 
-Apoi, în Administrare → Audit, **Verifică lanțul** trebuie să răspundă `ok`. Un `key_mismatch`
-înseamnă că serverul nu folosește aceeași cheie de audit ca înainte: restaurați
-`JARVIS_AUDIT_KEY` / `/var/lib/jarvis-keys/`.
+Verificarea mediului (`check`) doar citește: baza de date este deschisă numai pentru citire și nu
+se creează nicio cheie. Cu datele restaurate, aceeași cheie de audit și același `JARVIS_HOME`, se
+termină cu `ready` (codul 0). Altfel rândul greșit spune ce lipsește și se termină cu `NOT ready`
+(codul 1) — de obicei `audit key: missing` (puneți la loc `JARVIS_AUDIT_KEY` în
+`/etc/jarvis-hub/jarvis.env` sau `/var/lib/jarvis-keys/workspace_audit.key` din copia off-site) sau
+`audit key: mismatch` (cheia din mediu nu este cea cu care a fost scris jurnalul; rândul arată ambele
+amprente). Porniți serviciul abia după `ready`: fără cheia potrivită, hub-ul pornește, dar refuză
+orice autentificare (§13, §17).
+
+Apoi, în Administrare → Audit, **Verifică lanțul** trebuie să răspundă `ok` (pentru `key_mismatch`,
+§17). După ce lanțul e `ok` și o autentificare de probă reușește, ștergeți copia veche — conține
+toate datele companiei, necriptate:
+
+```bash
+sudo rm -rf /var/lib/jarvis-hub.old
+```
+
+**Restaurare pe un server nou** (serverul vechi a căzut, sau mutați pilotul):
+
+1. Faceți §2 și §3 ca la o instalare nouă, cu codul la versiunea de pe care provine arhiva (sau
+   una mai nouă: baza de date migrează doar înainte, §15).
+2. **Nu generați chei noi la §4.** Aduceți din copia off-site `/etc/jarvis-hub/jarvis.env` (root,
+   `0600`) și conținutul lui `/var/lib/jarvis-keys/` (deținut de `jarvis`, `0700` / `0600`): ele
+   conțin `JARVIS_BACKUP_KEY` (fără ea arhiva nu se deschide), cheia de audit (fără ea nimeni nu se
+   autentifică) și `JARVIS_SECRET_KEY` (fără ea parola SMTP trebuie reintrodusă). Schimbați doar ce
+   ține de noul server (de exemplu `JARVIS_ALLOWED_HOSTS`, dacă se schimbă numele).
+3. Puneți arhiva în `/var/lib/jarvis-hub/backups/` (comenzile `install` din blocul de mai sus) și
+   rulați restaurarea de mai sus, de la `install -d … jarvis-hub.restored` până la verificarea
+   mediului inclusiv. Pe un server nou, `systemctl stop` nu are ce opri.
+4. Abia apoi `sudo systemctl enable --now jarvis-hub`, Caddy (§5) și verificarea lanțului.
 
 ## 15. Upgrade
 
 ```bash
-nerva-run -m agents.core.backup create --encrypt          # 1. o copie înainte
-sudo -u jarvis git -C /opt/jarvis-hub pull --ff-only      # 2. codul nou (include interfața compilată)
-sudo -u jarvis bash -c 'cd /opt/jarvis-hub && ./install.sh --no-start'   # 3. doar dependențele schimbate + testul de pornire
-sudo systemctl restart jarvis-hub                         # 4. repornire (oprire grațioasă)
+sudo -u jarvis git -C /opt/jarvis-hub describe --tags --always   # 0. notați versiunea curentă
+nerva-run -m agents.core.backup create --encrypt                 # 1. o copie înainte (notați numele fișierului, §14)
+sudo -u jarvis git -C /opt/jarvis-hub fetch --tags               # 2. codul nou, la eticheta comunicată
+sudo -u jarvis git -C /opt/jarvis-hub checkout <eticheta-nouă>   #    (include interfața compilată)
+sudo -u jarvis bash -c 'cd /opt/jarvis-hub && ./install.sh --no-start'   # 3. dependențele schimbate + testul de pornire
+nerva-run -m agents.core.workspace check                         #    „ready” (o schemă mai veche migrează la pornire)
+sudo systemctl restart jarvis-hub                                # 4. repornire (oprire grațioasă)
 ```
+
+La pasul 1, numele de notat este ultima parte a căii din `"archive"` (cel pe care îl arată
+`backup list`). Cu un pachet `git bundle` primit în locul accesului la GitHub (§2), pasul 2 este
+`sudo -u jarvis git -C /opt/jarvis-hub fetch --tags /cale/nerva-pilot-nou.bundle` (pachetul trebuie
+să poată fi citit de utilizatorul `jarvis`). Pe Debian, pasul 3 este comanda cu
+`/usr/local/bin/python3.12 scripts/bootstrap.py` din §2 (pe Ubuntu cu `python3.13` instalat,
+`python3.12 scripts/bootstrap.py`). Ca la instalare, ignorați rândurile finale „Start it … / Then
+open …”.
 
 Schema bazei de date a spațiului de lucru migrează automat la prima conectare (`PRAGMA
 user_version`), doar înainte. O repornire întrerupe ce era în lucru: rulările de raport active
 devin `failed` / `interrupted`, iar un răspuns în flux al asistentului se termină cu eroare —
-faceți upgrade-ul în afara programului. **Revenire:** restaurați copia de dinainte (§14) și
-reveniți la versiunea anterioară a codului; un cod mai vechi decât baza de date doar avertizează în
-jurnal („workspace database is at schema N, newer than this code”), deci nu rulați un cod vechi pe
-o bază nouă.
+faceți upgrade-ul în afara programului.
+
+**Revenire.** Un cod mai vechi decât baza de date doar avertizează în jurnal („workspace database is
+at schema N, newer than this code”; `check` spune atunci `NOT ready`), deci nu rulați un cod vechi pe
+o bază nouă: reveniți la codul de la pasul 0 **și** la datele de la pasul 1, împreună.
+
+```bash
+sudo systemctl stop jarvis-hub
+sudo -u jarvis git -C /opt/jarvis-hub checkout <versiunea-de-la-pasul-0>
+sudo -u jarvis bash -c 'cd /opt/jarvis-hub && ./install.sh --no-start'
+# apoi restaurarea din §14 cu arhiva de la pasul 1, de la „install -d … jarvis-hub.restored”
+# până la „systemctl start jarvis-hub”, plus verificarea lanțului de audit
+```
 
 ## 16. Recuperare din linia de comandă
 
-Toate rulează cu `nerva-run` (§2), deci cu același mediu ca serviciul. Refuză cu codul de ieșire 2
-cât timp `NERVA_WORKSPACE` este oprit. Linkurile și promovările sunt auditate cu
+Toate rulează cu `nerva-run` (§2), deci cu același mediu ca serviciul. În afară de `check` (care
+doar raportează), înainte să schimbe ceva refuză cu **codul de ieșire 2** — fără nicio modificare,
+cu un mesaj care numește `nerva-run` — când își dau seama că nu rulează cu mediul serviciului:
+
+- `NERVA_WORKSPACE` este oprit („Nerva Workspace is disabled in this environment”);
+- `JARVIS_HOME` nu este setat, deci datele ar fi în `memory_logs/` din checkout, pe care serviciul
+  nu îl folosește („JARVIS_HOME is not set, so the data root would be …”);
+- baza de date lipsește, la `reset-link`, `promote` și `audit-rekey` („no Nerva Workspace database
+  at …”; `setup-code` o creează, fiindcă la prima instalare încă nu există);
+- jurnalul de audit are rânduri, iar cheia de audit lipsește („this environment has no audit key
+  …”), nu poate fi citită sau diferă de cea cu care a fost scris jurnalul („the audit key differs
+  …”): un rând semnat cu altă cheie ar rupe lanțul definitiv. Singura excepție este `audit-rekey`,
+  a cărui treabă este tocmai o cheie diferită.
+
+**Codul 1:** utilizator inexistent, cont dezactivat (la `reset-link`), configurare deja făcută (la
+`setup-code`), `--base-url` invalid, mediu care nu este gata (la `check`), lanț de audit rupt din
+alt motiv decât cheia (la `audit-rekey`). Linkurile, promovările și înlocuirea cheii de audit sunt auditate cu
 `actor_email='cli'`: cineva cu acces la server a acționat, iar jurnalul o spune.
 
 | Comandă | Când |
@@ -670,13 +869,21 @@ cât timp `NERVA_WORKSPACE` este oprit. Linkurile și promovările sunt auditate
 | `nerva-run -m agents.core.workspace setup-code` | Afișează codul de configurare inițială (doar înainte de configurare). |
 | `nerva-run -m agents.core.workspace reset-link --email ana@firma.ro --base-url https://nerva.firma.ro` | Un link nou: de invitație pentru un cont `invited`, de resetare a parolei pentru unul `active` (72 h, o singură folosire). Linkul se afișează pe ecran; dați-l persoanei pe un canal sigur. Un cont dezactivat trebuie întâi reactivat sau promovat. |
 | `nerva-run -m agents.core.workspace promote --email ana@firma.ro` | Face contul administrator (și îl reactivează dacă era dezactivat; fără parolă rămâne `invited` — emiteți apoi `reset-link`). Îi închide sesiunile. Pentru situația în care niciun administrator nu se mai poate autentifica. |
+| `nerva-run -m agents.core.workspace check` | Verificarea mediului, doar citire (baza de date deschisă numai pentru citire, nicio cheie creată), oricând — și cu serviciul oprit: dacă spațiul de lucru este pornit, directorul de date, baza de date și versiunea schemei, starea cheii de audit (`ok`, `missing`, `unreadable`, `mismatch`, cu amprentele cheilor, niciodată cheia). Se termină cu `ready` (codul 0) sau `NOT ready` (codul 1), cu remediul sub rândul greșit. De rulat după o restaurare sau o mutare (§14) și înainte de un upgrade. |
+| `nerva-run -m agents.core.workspace audit-rekey` · `… audit-rekey --confirm` | **Doar pentru o cheie de audit pierdută cu adevărat** (nicio copie, nicăieri): dacă cheia serviciului mai există, puneți-o la loc. Fără `--confirm` arată ce ar face — câte rânduri au fost semnate cu altă cheie — și se termină cu codul 2, fără nicio modificare. Cu `--confirm` scrie un rând `audit.rekeyed` (actor `cli`), semnat cu cheia din mediu, care fixează toate rândurile anterioare; de acum hub-ul semnează cu ea. Rândurile semnate cu cheia veche nu mai pot fi verificate niciodată, dar o modificare sau o ștergere ulterioară a lor tot se vede. Refuză (fără nicio modificare) un lanț rupt din alt motiv decât cheia (restaurați o copie, §14) și un mediu fără nicio cheie (nu creează una). |
 
-`--base-url` este adresa pe care o deschid utilizatorii (`https://…`, fără query sau fragment).
+`--base-url` este adresa hub-ului, așa cum o folosesc utilizatorii: schema și numele
+(`https://nerva.firma.ro`), plus calea rădăcină dacă hub-ul este servit sub una, fără query sau
+fragment. Adresa paginii (`https://nerva.firma.ro/workspace/`) este acceptată și ea — `/workspace`
+de la final se elimină, ca linkul să nu devină `…/workspace/workspace/invite` —, iar orice altă cale
+de sub `/workspace` (de exemplu `…/workspace/invite`) este refuzată cu codul 1.
 
 ## 17. Depanare
 
-**Modelul (`model_unavailable` — 503, cu `reason`).** Cipul modelului și `GET /api/workspace/model`
-arată același motiv.
+**Modelul (`model_unavailable` — 503, cu `reason`).** Fereastra cipului modelului și rezultatul
+**Testează modelul** explică motivul în cuvinte; codul exact este câmpul `reason` din răspunsurile
+`GET /api/workspace/model` și `POST /api/workspace/admin/model/test` (în browser: instrumentele de
+dezvoltare, fila Network).
 
 | `reason` | Cauza și remediul |
 |---|---|
@@ -685,7 +892,8 @@ arată același motiv.
 | `no_model` | Politica `allow_cloud` și nicio rută disponibilă (nici local, nici o cheie cloud). |
 | `model_not_approved` | Routerul a ales un model care nu e în lista de modele aprobate a hub-ului pentru agentul `workspace`. Aprobați modelul în setările hub-ului sau serviți altul. |
 | `backend_error` | Verificarea de tratare a datelor nu a putut decide (de ex. depozitul de consimțământ nu poate fi citit) sau backend-ul a eșuat neașteptat. Citiți jurnalul hub-ului (numește doar tipul erorii). |
-| `model_error` | Serverul de model a răspuns cu o eroare (ex. modelul nu e încărcat). Verificați serverul de model și jurnalul lui. |
+| `model_unreachable` | Serverul de model nu poate fi contactat deloc (serviciu oprit, port închis, adresă greșită) sau conexiunea s-a rupt în timpul răspunsului. `systemctl status ollama` (sau serviciul vLLM), apoi `curl http://127.0.0.1:11434/api/tags` / `curl http://127.0.0.1:8000/v1/models`. Cipul îl arată fără să aștepte sondarea de 5 minute a hub-ului: imediat după un apel eșuat, altfel în cel mult ~1,5 minute (cipul se reîmprospătează o dată pe minut, iar verificarea serverului este reținută 30 s). |
+| `model_error` | Serverul de model a răspuns, dar cu o eroare HTTP (ex. modelul nu e încărcat; la vLLM, un prompt mai lung decât `--max-model-len`). Verificați serverul de model și jurnalul lui; mesajul serverului apare în jurnalul hub-ului (mai jos). |
 | `thinking_exhausted` | Modelul și-a consumat tot bugetul de tokeni raționând (§3.2). Folosiți un model instruct sau reduceți raționamentul. |
 | `empty_answer` | Modelul a returnat un răspuns gol. Verificați modelul și fereastra de context (§3.1). |
 
@@ -696,6 +904,21 @@ ocupate 30 s — ridicați `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` doar dacă serve
 multe cereri simultane); `504 model_timeout`; `422 content_blocked` (garda de securitate a hub-ului a blocat
 conținutul). Când garda hub-ului rulează în modul REDACT sau BLOCK, răspunsurile sosesc dintr-o
 bucată, nu în flux — interfața spune asta.
+
+**Cum citiți jurnalul hub-ului la o eroare de model** (`journalctl -u jarvis-hub`, nivelul implicit
+`info`). Slotul OpenAI-compatible se numește „LM Studio” în jurnal și pentru vLLM:
+
+| Rând | Ce înseamnă |
+|---|---|
+| `INFO httpx HTTP Request: POST http://127.0.0.1:8000/v1/chat/completions "HTTP/1.1 500 Internal Server Error"` | Adresa exactă apelată și codul HTTP primit de la serverul de model (rândul vine chiar înaintea celui de mai jos). |
+| `ERROR jarvis.llm.base LM Studio request failed — serving a degraded reply: [REDACTED:high_entropy_secret] \| server said: {…}` | Serverul a răspuns cu o eroare (`model_error`). După `server said:` este textul serverului de model. Partea mascată este mesajul bibliotecii HTTP (cod, adresă și un link spre documentația codului HTTP): linkul seamănă cu un secret, iar filtrul jurnalului maschează tot mesajul — adresa și codul sunt în rândul `httpx` de deasupra. |
+| `WARNING jarvis.llm.base LM Studio unreachable — serving a degraded reply: All connection attempts failed` | Serverul nu poate fi contactat (`model_unreachable`). |
+| `INFO nerva.workspace.llm workspace posture: the lm-studio model server does not answer` | Verificarea cipului nu a primit niciun răspuns de la server. |
+
+`[REDACTED:high_entropy_secret]` apare și în alte rânduri: filtrul de secrete al jurnalului maschează
+orice șir lung de litere, cifre, `/`, `-` și `_` care pare aleator (chei, identificatori, căi cu cifre
+precum numele arhivelor de backup sau `business/files/12.bin`). Este intenționat; nu îl opriți pe un
+pilot (`JARVIS_LOG_REDACTION=0` ar lăsa secretele în jurnal).
 
 **Email (`502 smtp_failed`, cu `reason`).**
 
@@ -730,13 +953,34 @@ smtp_password_unreadable` (parola nu mai poate fi decriptată, de obicei după s
 | `404 workspace_disabled` | `NERVA_WORKSPACE` nu e activ în mediul serviciului. |
 | `404 invite_invalid` | Link folosit, expirat (72 h) sau înlocuit de unul mai nou. Emiteți altul. |
 | Niciun administrator nu se mai poate autentifica | `promote` + `reset-link` (§16). |
-| Verificarea auditului: `key_mismatch` | Serverul nu are cheia de audit cu care au fost scrise rândurile (altă `JARVIS_AUDIT_KEY`, alt `JARVIS_KEY_DIR`, sau o comandă CLI rulată fără același mediu). Restaurați cheia. |
+| SSO: `401 sso_no_identity` la „Continuă cu contul companiei”, iar în Administrare → Audit un rând `auth.login_failed` cu `via=sso · reason=bad_proxy_secret` | Caddy nu trimite secretul sau trimite altul. `sudo systemctl show caddy -p EnvironmentFiles` trebuie să numească `/etc/caddy/nerva-sso.env`, iar valoarea de acolo să fie aceeași cu `NERVA_WORKSPACE_SSO_SECRET` din `/etc/jarvis-hub/jarvis.env`. Apoi `sudo systemctl restart caddy` (un `reload` nu recitește fișierul de mediu). |
+| SSO: același `401`, cu `reason=no_identity` | Secretul e corect, dar emailul lipsește sau apare de mai multe ori: verificați `--set-xauthrequest=true` la oauth2-proxy și `copy_headers X-Auth-Request-Email>X-Forwarded-Email` în Caddyfile (varianta B). |
+| SSO: același `401`, fără niciun rând de audit | Cererea nu vine de la o adresă din `JARVIS_TRUSTED_PROXIES` (lipsește sau nu conține `127.0.0.1`). |
+| SSO: `401 invalid_credentials`, cu `reason=unknown_user` sau `user_invited` / `user_disabled` | Emailul garantat de proxy nu are un cont activ: invitați persoana (§7) — SSO nu creează conturi. |
+| Hub-ul nu pornește; jurnalul spune „Refusing to start: JARVIS_TRUSTED_PROXIES: …” | Lista nu poate fi citită (ex. un nume în loc de IP). Corectați-o (pe acest server: `127.0.0.1`); până atunci systemd repornește serviciul la fiecare 5 s, fără succes. |
+| `503 audit_key_missing` la orice autentificare și modificare (interfața: „Jurnalul de audit nu poate fi scris…”), în timp ce `/readyz` și `GET /api/workspace/session` răspund 200 | Procesul nu are cheia de audit — `JARVIS_AUDIT_KEY` lipsește din mediul serviciului și `$JARVIS_KEY_DIR/workspace_audit.key` nu există —, deși jurnalul are rânduri (tipic după o restaurare sau o mutare fără chei, §14). În `journalctl -u jarvis-hub`, la pornire: „Nerva Workspace cannot sign its audit trail: the audit key is missing …”, iar la fiecare refuz „workspace audit key missing: … refusing to create a new key”. Nu s-a scris nimic. Puneți la loc cheia din copia off-site, verificați cu `nerva-run -m agents.core.workspace check` (`ready`) și reporniți; **nu** generați una nouă. |
+| `503 audit_key_mismatch` la orice autentificare și modificare | Procesul are o cheie de audit, dar alta decât cea cu care a fost semnat cel mai nou rând (altă `JARVIS_AUDIT_KEY` — de exemplu chei generate din nou la §4 pe un server refăcut —, alt `JARVIS_KEY_DIR` cu alt fișier). În jurnal: „workspace audit key mismatch: the key from … (fingerprint …) is not the one the newest audit row was signed with (fingerprint …)”. Nu s-a scris nimic, deci lanțul este încă intact. Puneți la loc cheia serviciului (`check` arată amprenta cheii din mediu și pe cea a jurnalului: trebuie să coincidă) și reporniți. Doar dacă acea cheie s-a pierdut cu adevărat: `audit-rekey` (§16). |
+| Verificarea auditului: „Cheia de audit nu corespunde” (`key_mismatch`) | Rânduri semnate cu altă cheie decât cea de acum. Cu cheia greșită în mediu (`check` spune `mismatch`; pagina se vede doar dintr-o sesiune deschisă înainte de schimbarea cheii, fiindcă o autentificare nouă este refuzată): puneți la loc cheia serviciului. Cu cheia corectă (`check` spune `ok`): rândul `broken_at` din răspunsul `GET /api/workspace/admin/audit/verify` (fila Network) și cele scrise după el cu aceeași altă cheie provin de la o versiune anterioară acestei protecții, care semna cu orice cheie avea; ruptura nu se mai repară — exportați CSV-ul ca dovadă, iar un lanț intact se obține doar restaurând arhiva de dinaintea incidentului (§14), cu pierderea datelor de după ea. |
+| Verificarea auditului: „Lanțul este rupt la intrarea #N”, fără `key_mismatch` | Un rând a fost modificat, șters sau mutat după ce a fost scris (cheia este cea bună). Păstrați o copie a bazei de date (`nerva-run -m agents.core.backup create --encrypt`) și anunțați responsabilul de securitate. |
+| Verificarea auditului răspunde `ok` după un `audit-rekey` | Normal: rândurile semnate cu cheia pierdută nu se mai pot verifica, dar sunt fixate de rândul `audit.rekeyed`. Răspunsul API le numără în `unverified`, iar `rekeyed_at` este rândul re-cheierii; pagina arată doar câte rânduri au fost verificate. |
 
 **Documente.** Un document `failed` are un cod stabil: `invalid_file` (fișier corupt sau structură
 nevalidă), `encrypted_pdf`, `too_many_pages`, `no_text` (PDF scanat — faceți OCR înainte),
-`timeout`, `too_much_text`. `404 file_missing` la descărcare sau reindexare: originalul lipsește de
-pe disc (restaurați din backup). `409 document_busy`: documentul încă se procesează. `507
-storage_failed`: discul nu poate fi scris (spațiu, permisiuni).
+`timeout`, `too_much_text`, `interrupted` (extracția a fost oprită de o repornire sau de o cădere a
+hub-ului; curățenia planificatorului, §12, marchează astfel documentele rămase `processing` —
+**Reindexează** o reia). `404 file_missing` la descărcare sau reindexare: originalul lipsește de
+pe disc (restaurați din backup). `409 document_busy`: documentul încă se procesează (o reindexare
+este permisă oricum după 10 minute). `507 storage_failed`: discul nu poate fi scris (spațiu,
+permisiuni).
+
+**Backup** (`nerva-run -m agents.core.backup …`).
+
+| Mesaj | Cauza și remediul |
+|---|---|
+| `no such backup: <…>` (codul 2) | `verify` / `restore` primesc **numele fișierului** din `backup list`, nu o cale: o cale întreagă — chiar cea din `"archive"` — nu este acceptată. O arhivă adusă din afară se pune întâi în `<JARVIS_HOME>/backups/` (§14). Dacă numele e corect, comanda nu rulează cu același `JARVIS_HOME` ca serviciul: folosiți `nerva-run`. |
+| Traceback care se termină cu `SecretStoreError: cannot decrypt (wrong key or corrupted)` | `JARVIS_BACKUP_KEY` din mediu nu este cheia cu care a fost făcută arhiva (sau arhiva e deteriorată). Nu s-a restaurat nimic. Folosiți cheia din copia off-site a `/etc/jarvis-hub/jarvis.env`; pentru o cheie-frază, și `/var/lib/jarvis-keys/` (§14). |
+| Traceback care se termină cu `FileExistsError: target … is not empty — pass force=True to overwrite` | Directorul țintă al `restore` nu este gol. Folosiți un director nou și gol, ca în §14 (opțiunea în linia de comandă este `--force`, dar nu restaurați peste directorul în uz). |
+| `archive rejected, nothing restored: …` / `archive rejected partway through …` | Arhiva nu trece verificările de siguranță la dezarhivare. În al doilea caz ținta conține o restaurare parțială: ștergeți-o și încercați altă arhivă. |
 
 ## 18. Limitele cunoscute ale pilotului
 
@@ -755,17 +999,26 @@ storage_failed`: discul nu poate fi scris (spațiu, permisiuni).
   fi oprit este o lucrare ulterioară.
 - **Un singur proces:** o instanță a hub-ului per director de date; SQLite cu WAL. Potrivit pentru
   un pilot (sute de utilizatori numiți), nu pentru mii.
-- **Interfața** este un singur pachet JavaScript (~160 kB comprimat), fără încărcare pe bucăți;
-  câmpurile native de dată/oră urmează limba browserului, nu a aplicației.
+- **Interfața** este un singur pachet JavaScript (~600 kB necomprimat, ~170–180 kB cu gzip, cât
+  trimite Caddy), fără încărcare pe bucăți; câmpurile native de dată/oră urmează limba browserului,
+  nu a aplicației.
 - **Lista de documente** nu are paginare; trimiterea unui email nu are o limită totală de timp (doar
   15 s per operație SMTP).
+- **O cheie de audit pierdută nu se recuperează:** fără ea hub-ul refuză orice scriere (§13), iar
+  `audit-rekey` (§16) permite continuarea doar cu prețul ei — rândurile semnate cu cheia pierdută
+  rămân fixate, dar nu mai pot fi verificate. Copia off-site a cheilor (§14) este singura apărare.
+- **Rădăcinile explicite ale instrumentelor de fișiere nu sunt verificate de hub:** cu
+  `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` setate explicit spre `<JARVIS_HOME>` sau
+  `<JARVIS_HOME>/business`, asistentul personal al proprietarului ar putea citi datele companiei.
+  Rădăcinile implicite nu le ating; controlul este configurarea (§13 și lista din §19).
 
 ## 19. Lista de verificare înainte de primul utilizator
 
 - [ ] `JARVIS_SECRET_KEY`, `JARVIS_BACKUP_KEY` și cheia de audit sunt setate, iar
       `/etc/jarvis-hub/jarvis.env` și `/var/lib/jarvis-keys/` sunt copiate off-site.
-- [ ] `curl -s http://127.0.0.1:8080/readyz` răspunde 200; cipul modelului arată **Local**;
-      **Testează modelul** reușește.
+- [ ] `JARVIS_ADMIN_TOKEN` este setat (§4); firewall-ul permite doar SSH și 80/443 (§13).
+- [ ] `curl -s http://127.0.0.1:8080/readyz` răspunde 200; cipul modelului arată **Local** (sau
+      **Local, neverificat** pentru un server din LAN confirmat la §3.3); **Testează modelul** reușește.
 - [ ] `https://nerva.firma.ro/v2` răspunde 404, `https://nerva.firma.ro/workspace/` se deschide cu
       certificat valid și HSTS.
 - [ ] Un link de invitație începe cu `https://nerva.firma.ro/workspace/invite#t=`.
@@ -773,7 +1026,45 @@ storage_failed`: discul nu poate fi scris (spațiu, permisiuni).
 - [ ] Fiecare departament are cel puțin un approver în afară de administratori, altfel cererile de
       email ale membrilor merg doar la administratori.
 - [ ] `nerva-run -m agents.core.backup verify <ultima copie>` răspunde `"ok": true`, iar copiile
-      ajung pe alt sistem.
-- [ ] Administrare → Audit → **Verifică lanțul** răspunde `ok`.
+      ajung pe alt sistem în fiecare noapte (`/etc/cron.d/nerva-offsite`, §14).
+- [ ] Administrare → Audit → **Verifică lanțul** răspunde `ok`, iar
+      `nerva-run -m agents.core.workspace check` se termină cu `ready`.
+- [ ] `sudo stat -c '%a %n' /var/lib/jarvis-hub/business/workspace.db` arată `600` (`UMask=0077`
+      din §2 este activ).
 - [ ] `JARVIS_FILE_TOOLS` și `JARVIS_TERMINAL_LOCAL_HOST` sunt oprite, sau rădăcinile lor explicite
       nu cuprind `<JARVIS_HOME>` ori `<JARVIS_HOME>/business` (§13).
+
+## 20. Sfârșitul pilotului: predarea și ștergerea datelor
+
+Când pilotul se încheie fără continuare, datele companiei se predau (dacă le cere) și se șterg de
+pe server și de pe copiile off-site. Hotărâți împreună cu compania, în scris, ce primește și până
+când se păstrează ceva.
+
+```bash
+# 1. copia finală, verificată (serviciul încă rulează); dacă se cere, exportați și auditul ca CSV
+#    din Administrare → Audit (cele mai noi 50 000 de rânduri) înainte de pasul 3
+nerva-run -m agents.core.backup create --encrypt            # notați numele fișierului (ultima parte din "archive")
+nerva-run -m agents.core.backup verify <nume>               # "ok": true
+# 2. copiați arhiva de pe server și predați-o; pe canale separate predați și JARVIS_BACKUP_KEY,
+#    cheia de audit (JARVIS_AUDIT_KEY sau fișierul /var/lib/jarvis-keys/workspace_audit.key) și
+#    JARVIS_SECRET_KEY: fără cheia de audit nimeni nu se mai poate autentifica pe copia restaurată,
+#    fără cheia secretelor parola SMTP trebuie reintrodusă
+# 3. opriți tot ce a servit pilotul
+sudo systemctl disable --now jarvis-hub
+sudo rm -f /etc/cron.d/nerva-offsite
+# 4. ștergeți datele, cheile și configurația de pe server
+sudo rm -rf /var/lib/jarvis-hub /var/lib/jarvis-hub.old /var/lib/jarvis-hub.restored \
+            /var/lib/jarvis-keys /etc/jarvis-hub /var/lib/jarvis /opt/jarvis-hub \
+            /etc/systemd/system/jarvis-hub.service /etc/systemd/system/jarvis-hub.service.d
+sudo systemctl daemon-reload
+sudo userdel jarvis
+```
+
+Apoi ștergeți copiile de pe destinația off-site (`backup@nas.firma.ro:/backups/nerva/`) și, dacă nu
+mai servesc altui scop, configurația Caddy a pilotului (`/etc/caddy/Caddyfile`,
+`/etc/caddy/nerva-sso.env`), oauth2-proxy și modelul descărcat (`ollama rm <model>`). Arhiva
+predată se deschide pe o instalare Nerva care are aceleași chei (`JARVIS_BACKUP_KEY`, cheia de
+audit, `JARVIS_SECRET_KEY`): urmați *Restaurare pe un server nou* din §14 — arhiva se pune în
+`<JARVIS_HOME>/backups/`, apoi `nerva-run -m agents.core.backup restore <nume> <director-gol>` și
+verificarea mediului. `rm` șterge fișierele, dar nu suprascrie discul: dacă politica companiei cere
+ștergere sigură, folosiți ștergerea la nivel de disc sau un disc criptat a cărui cheie se distruge.

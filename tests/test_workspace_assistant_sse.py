@@ -168,7 +168,7 @@ def test_a_degraded_reply_is_never_streamed(cast):
     assert "event: token" not in body and "⚠️" not in body
     assert events[-1] == ("error", events[-1][1])
     assert (events[-1][1]["error"], events[-1][1]["reason"]) == ("model_unavailable",
-                                                                 "model_error")
+                                                                 "model_unreachable")
 
 
 def test_a_model_timeout_inside_the_stream(cast, monkeypatch):

@@ -269,6 +269,67 @@ def test_workspace_paths_are_recognised_exactly(path, expected):
     assert web._is_workspace_path(path) is expected
 
 
+# ── CORS: JARVIS_CORS_ORIGINS never reaches the workspace (review fix OPS-04) ──────────
+
+LISTED_ORIGIN = "https://intranet.acme.test"
+
+
+def _hub_with_cors():
+    """The hub app behind the CORS middleware web.py installs for JARVIS_CORS_ORIGINS."""
+    from agents.core.workspace.http import WorkspaceExemptCORSMiddleware
+
+    return WorkspaceExemptCORSMiddleware(web.app, allow_origins=[LISTED_ORIGIN],
+                                         allow_credentials=True, allow_methods=["*"],
+                                         allow_headers=["*"])
+
+
+def _cors_headers(response) -> list[str]:
+    return [name for name in response.headers if name.lower().startswith("access-control-")]
+
+
+def test_a_listed_cors_origin_cannot_read_a_signed_in_users_workspace(ws):
+    conn = db()
+    company = seed_company(conn)
+    client = TestClient(_hub_with_cors())
+    login(client, company.member_a.email)
+    session = client.get("/api/workspace/session", headers={"Origin": LISTED_ORIGIN})
+    assert session.status_code == 200 and session.json()["authenticated"] is True
+    assert _cors_headers(session) == [], "a credentialed CORS read would expose the csrf_token"
+    preflight = client.options("/api/workspace/documents", headers={
+        "Origin": LISTED_ORIGIN, "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "x-csrf-token"})
+    assert _cors_headers(preflight) == [] and preflight.status_code != 200
+    assert _cors_headers(client.get("/workspace/", headers={"Origin": LISTED_ORIGIN})) == []
+    hub = client.get("/healthz", headers={"Origin": LISTED_ORIGIN})
+    assert hub.headers.get("access-control-allow-origin") == LISTED_ORIGIN, \
+        "the hub's own CORS keeps working"
+
+
+@pytest.mark.parametrize("scope,expected", [
+    ({"path": "/api/workspace/session", "root_path": ""}, True),
+    ({"path": "/nerva/api/workspace/session", "root_path": "/nerva"}, True),
+    ({"path": "/nerva/workspace/", "root_path": "/nerva"}, True),
+    ({"path": "/workspace", "root_path": ""}, True),
+    ({"path": "/api/workspaces", "root_path": ""}, False),
+    ({"path": "/nerva/healthz", "root_path": "/nerva"}, False),
+])
+def test_the_cors_exemption_matches_workspace_paths_root_path_aware(scope, expected):
+    from agents.core.workspace.http import is_workspace_scope
+
+    assert is_workspace_scope({"type": "http", **scope}) is expected
+
+
+def test_the_hub_installs_only_the_workspace_exempt_cors_middleware():
+    import ast
+
+    tree = ast.parse((REPO / "agents" / "web.py").read_text(encoding="utf-8"))
+    installed = [node.args[0].id for node in ast.walk(tree)
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                 and node.func.attr == "add_middleware" and node.args
+                 and isinstance(node.args[0], ast.Name) and "CORS" in node.args[0].id]
+    assert installed == ["WorkspaceExemptCORSMiddleware"]
+
+
 def test_the_hub_limiter_never_counts_workspace_traffic(client, monkeypatch):
     monkeypatch.setattr(web, "RATE_LIMIT_PER_MIN", 2)
     monkeypatch.setattr(web, "USER_TOKEN", "")

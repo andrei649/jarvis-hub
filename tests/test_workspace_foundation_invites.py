@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -212,3 +214,68 @@ def test_lookup_and_accept_share_a_per_ip_budget(admin_session):
     assert r.status_code == 429 and r.json()["error"] == "too_many_attempts"
     other = TestClient(make_app(workspace_auth.router), client=("198.51.100.40", 50000))
     assert other.post("/api/workspace/invites/lookup", json={"token": token}).status_code == 200
+
+
+# ── single use under a race, and a used reset link (review T2, T6) ────────────────────
+
+def _reset_token(admin: TestClient, csrf: str, user_id: int) -> str:
+    r = admin.post(f"/api/workspace/admin/users/{user_id}/invite", headers=authed(admin, csrf),
+                   json={})
+    assert r.status_code == 200, r.text
+    return _token(r.json()["invite_url"])
+
+
+async def _parallel_accepts(token: str, passwords: list[str]) -> list[httpx.Response]:
+    """Every accept at once: each passes ``find_invite`` before any hash finishes."""
+    transport = httpx.ASGITransport(app=make_app(workspace_auth.router), client=("198.51.100.9", 1))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        return list(await asyncio.gather(*(
+            client.post("/api/workspace/invites/accept", json={"token": token, "password": pw})
+            for pw in passwords)))
+
+
+def _sessions_of(conn, user_id: int) -> int:
+    return conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ? AND revoked_at IS NULL",
+                        (user_id,)).fetchone()[0]
+
+
+async def test_two_parallel_accepts_of_one_reset_link_admit_exactly_one(admin_session):
+    """For a reset link the user stays active, so only the claim's compare-and-set
+    (``used_at IS NULL``) stops the second accept."""
+    company, admin, csrf = admin_session
+    token = _reset_token(admin, csrf, company.member_a.id)
+    passwords = ["Parola-Noua-Sigura-0", "Parola-Noua-Sigura-1"]
+    answers = await _parallel_accepts(token, passwords)
+    assert sorted(a.status_code for a in answers) == [200, 404]
+    loser = next(a for a in answers if a.status_code == 404)
+    assert loser.json()["error"] == "invite_invalid"
+    conn = db()
+    assert _sessions_of(conn, company.member_a.id) == 1
+    winner = passwords[[a.status_code for a in answers].index(200)]
+    login(_client(), company.member_a.email, winner)
+    actions = [row[0] for row in conn.execute("SELECT action FROM audit")]
+    assert actions.count("auth.password_changed") == 1
+
+
+async def test_two_parallel_accepts_of_one_invite_admit_exactly_one(admin_session):
+    company, admin, csrf = admin_session
+    user_id, url = _invite(admin, csrf, company.dept_a, email="dublu@acme.test")
+    answers = await _parallel_accepts(_token(url), ["Parola-Noua-Sigura-0", "Parola-Noua-Sigura-1"])
+    assert sorted(a.status_code for a in answers) == [200, 404]
+    conn = db()
+    assert _sessions_of(conn, user_id) == 1
+    actions = [row[0] for row in conn.execute("SELECT action FROM audit")]
+    assert actions.count("auth.invite_accepted") == 1
+
+
+def test_a_used_reset_link_is_invalid_on_lookup_and_accept(admin_session):
+    company, admin, csrf = admin_session
+    token = _reset_token(admin, csrf, company.member_a.id)
+    guest = _client()
+    assert guest.post("/api/workspace/invites/accept",
+                      json={"token": token, "password": NEW_PASSWORD}).status_code == 200
+    for path, body in (("/api/workspace/invites/lookup", {"token": token}),
+                       ("/api/workspace/invites/accept", {"token": token, "password": "Alta-Parola-Buna-9"})):
+        r = guest.post(path, json=body)
+        assert (r.status_code, r.json()["error"]) == (404, "invite_invalid"), path
+    login(_client(), company.member_a.email, NEW_PASSWORD)

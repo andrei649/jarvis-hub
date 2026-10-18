@@ -2,7 +2,10 @@
 
    After every in-app navigation the new page's h1 takes focus and the window scrolls to the
    top, so keyboard and screen-reader users land on the new content instead of the link they
-   clicked; the first render leaves focus alone. */
+   clicked; the first render leaves focus alone. A page that first shows a loading heading and
+   then its real one (a report, a run) would drop that focus to <body> when the heading is
+   swapped, so for a few seconds after a navigation a heading that replaces the focused one
+   takes focus in its place — until the person moves on themselves. */
 import React, { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { consumeQuietNavigation, useLocation } from '../router';
@@ -13,6 +16,8 @@ import { Sidebar } from './Sidebar';
 import { UserMenu } from './UserMenu';
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
+/** How long after a navigation a replaced page heading inherits focus. */
+const HEADING_HANDOVER_MS = 8000;
 
 function useCloseOnDesktop(open: boolean, close: () => void): void {
   useEffect(() => {
@@ -40,8 +45,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // A page that only rewrote its own URL keeps focus and scroll where the user is.
     if (consumeQuietNavigation(location.path)) return;
     document.documentElement.scrollTop = 0;
-    const heading = mainRef.current?.querySelector<HTMLElement>('[data-page-heading]');
-    (heading ?? mainRef.current)?.focus({ preventScroll: true });
+    const main = mainRef.current;
+    const heading = main?.querySelector<HTMLElement>('[data-page-heading]');
+    (heading ?? main)?.focus({ preventScroll: true });
+    if (!main || typeof MutationObserver === 'undefined') return undefined;
+    // Hand focus over to the page's final heading if the one that took it is replaced.
+    const until = Date.now() + HEADING_HANDOVER_MS;
+    const observer = new MutationObserver(() => {
+      if (Date.now() > until) { observer.disconnect(); return; }
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== main) return;
+      const next = main.querySelector<HTMLElement>('[data-page-heading]');
+      if (next) next.focus({ preventScroll: true });
+    });
+    observer.observe(main, { childList: true, subtree: true });
+    const stop = () => observer.disconnect();
+    window.addEventListener('keydown', stop, { once: true, capture: true });
+    window.addEventListener('pointerdown', stop, { once: true, capture: true });
+    const timer = window.setTimeout(stop, HEADING_HANDOVER_MS);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', stop, { capture: true });
+      window.removeEventListener('pointerdown', stop, { capture: true });
+    };
   }, [location.path]);
 
   return (

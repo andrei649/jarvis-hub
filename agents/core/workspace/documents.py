@@ -381,6 +381,43 @@ def _busy(row: sqlite3.Row) -> bool:
             and row["updated_at"] > db.now() - STALE_PROCESSING_SECONDS)
 
 
+#: ``documents.error`` of an extraction that died with its process (a restart, a crash).
+INTERRUPTED = "interrupted"
+
+
+def fail_interrupted(conn: sqlite3.Connection, now: float, *,
+                     claimed_before: float | None = None) -> int:
+    """``processing`` documents whose extraction cannot still be running → ``failed``.
+
+    Extraction runs inside the upload or re-index request and is bounded at 60 s, so a
+    claim older than :data:`STALE_PROCESSING_SECONDS` — or one made before this process
+    started (*claimed_before*: one hub per data root) — belongs to a request that died
+    with its process. Such a document would otherwise read as ``processing`` for ever;
+    it becomes ``failed`` / ``interrupted``, and Reindex works on it at once. Partial
+    chunks go, as for any failed extraction. Returns how many documents were failed.
+    """
+    cutoff = now - STALE_PROCESSING_SECONDS
+    if claimed_before is not None:
+        cutoff = max(cutoff, claimed_before - 1e-6)
+    with db.tx(conn):
+        ids = [int(row[0]) for row in conn.execute(
+            "SELECT id FROM documents WHERE status = 'processing' AND updated_at <= ?",
+            (cutoff,)).fetchall()]
+        if not ids:
+            return 0
+        listed = json.dumps(ids)
+        conn.execute("DELETE FROM chunks WHERE document_id IN (SELECT value FROM json_each(?))",
+                     (listed,))
+        conn.execute(
+            "UPDATE documents SET status = 'failed', error = ?, chunk_count = 0, char_count = 0, "
+            "updated_at = ? WHERE status = 'processing' AND id IN (SELECT value FROM json_each(?))",
+            (INTERRUPTED, now, listed),
+        )
+    logger.info("%d document(s) left processing by an interrupted extraction marked failed",
+                len(ids))
+    return len(ids)
+
+
 def document_json(row: sqlite3.Row, user: WorkspaceUser, *,
                   publish_pending: bool = False) -> dict:
     """A document as the API shows it, with what *user* may do to it."""

@@ -187,16 +187,18 @@ def _approver_departments(user: WorkspaceUser) -> list[int]:
 
 
 def notify_localized(conn: sqlite3.Connection, user_ids: Iterable[int], *, kind: str,
-                     titles: Mapping[str, str], body: str = "", link: str = "") -> None:
-    """One notification per active user, titled in that user's language."""
+                     titles: Mapping[str, str], body: str = "", link: str = "",
+                     bodies: Mapping[str, str] | None = None) -> None:
+    """One notification per active user, titled (and, with *bodies*, worded) in that user's language."""
     ids = sorted({int(uid) for uid in user_ids if uid is not None})
     if not ids:
         return
     rows = conn.execute(_USERS_BY_ID_SQL, (json.dumps(ids),)).fetchall()
     for locale in identity.LOCALES:
         recipients = [int(row["id"]) for row in rows if (row["locale"] or "ro") == locale]
+        text = bodies.get(locale, bodies.get("ro", body)) if bodies else body
         notifications.notify(conn, recipients, kind=kind, title=titles.get(locale, titles["ro"]),
-                             body=body, link=link)
+                             body=text, link=link)
 
 
 def _link(approval_id: int) -> str:
@@ -555,15 +557,17 @@ def cancel_superseded(conn: sqlite3.Connection, approval_ids: Iterable[int], *,
     """Cancel pending requests a domain change made pointless; returns the ids cancelled.
 
     Joins the caller's transaction. No hook runs: the caller is the one changing the
-    domain state and sets it itself.
+    domain state and sets it itself. *reason* (``superseded``, ``recipients_removed``,
+    ``report_deleted`` …) is kept in ``error_code``, so a withdrawn request says why it was
+    withdrawn; one the requester cancelled keeps ``error_code`` null.
     """
     cancelled: list[int] = []
     stamp = db.now()
     with db.tx(conn):
         for approval_id in sorted({int(a) for a in approval_ids}):
             cursor = conn.execute(
-                "UPDATE approvals SET status = 'cancelled', decided_at = ? "
-                "WHERE id = ? AND status = 'pending'", (stamp, approval_id))
+                "UPDATE approvals SET status = 'cancelled', decided_at = ?, error_code = ? "
+                "WHERE id = ? AND status = 'pending'", (stamp, reason, approval_id))
             if cursor.rowcount != 1:
                 continue
             row = conn.execute("SELECT kind, department_id FROM approvals WHERE id = ?",

@@ -673,6 +673,13 @@ async def lifespan(application: FastAPI):
     # restart) and mark this run as not yet cleanly stopped.
     from agents.core import resource_pressure
     resource_pressure.monitor().start()
+    # Nerva Workspace: say now, not at the first sign-in, when this hub's audit key is not
+    # the trail's (it then refuses every write with 503; reads the database read-only).
+    from agents.core.workspace import audit as workspace_audit
+    try:
+        workspace_audit.startup_key_check()
+    except Exception:  # a diagnostic must never keep the hub from starting
+        logger.exception("Nerva Workspace audit key check failed")
     # Nerva Workspace: scheduled reports + housekeeping (a no-op tick while the workspace
     # is off; NERVA_WORKSPACE_SCHEDULER=0 keeps it from starting at all).
     from agents.core.workspace import scheduler as workspace_scheduler
@@ -739,9 +746,11 @@ if _cors_configured and not _cors_origins:
         "Origins must look like https://host[:port] with no path or trailing slash."
     )
 if _cors_origins:
-    from fastapi.middleware.cors import CORSMiddleware
+    # Path-scoped: /api/workspace* and /workspace* never get CORS headers (Nerva Workspace
+    # spec §6) — its cookie is SameSite=Lax, so a listed same-site origin could read it.
+    from agents.core.workspace.http import WorkspaceExemptCORSMiddleware
     app.add_middleware(
-        CORSMiddleware,
+        WorkspaceExemptCORSMiddleware,
         allow_origins=_cors_origins,
         allow_credentials=True,
         allow_methods=["*"],

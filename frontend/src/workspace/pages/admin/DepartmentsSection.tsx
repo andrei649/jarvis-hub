@@ -3,20 +3,22 @@
 
    Deleting is allowed only for an empty department (no members, documents, reports or
    conversations); the server refuses otherwise with `department_not_empty`, and the dialog
-   explains that archiving is the way to retire a department that has history. */
+   explains that archiving is the way to retire a department that has history. The drawer keeps
+   what was typed as a draft in this tab (app/drafts.ts) until it is saved or cancelled. */
 import React, { useMemo, useState } from 'react';
 import { createDepartment, deleteDepartment, listAdminDepartments, updateDepartment } from '../../api/admin';
 import type { AdminDepartment } from '../../api/types';
+import { draftText, useDraftMirror, useRestoredDraft } from '../../app/drafts';
 import { describeError, errorField } from '../../app/errors';
+import { useUser } from '../../app/session';
 import { useAsync } from '../../app/hooks';
 import { useWorkspace } from '../../app/workspace';
 import { useI18n } from '../../i18n';
-import {
-  Badge, Button, ConfirmDialog, Drawer, EmptyState, IconButton, Menu, Notice, Switch, Table, TextArea, TextField,
-  useToast, type Column, type MenuEntry,
-} from '../../ui';
+import { Badge, Button, type Column, ConfirmDialog, Drawer, EmptyState, IconButton, Menu, type MenuEntry, Notice, Switch, Table, TextArea, TextField, useInvalidFocus, useToast } from '../../ui';
 
 const LIMITS = { name: 200, description: 4000, instructions: 4000 } as const;
+
+interface DepartmentDraft { name: string; description: string; instructions: string }
 
 function isArchived(d: AdminDepartment): boolean {
   return Boolean(d.archived);
@@ -33,12 +35,20 @@ function DepartmentDrawer({ department, onClose, onSaved }: { department: AdminD
   const i18n = useI18n();
   const { t } = i18n;
   const toast = useToast();
-  const [name, setName] = useState(department?.name ?? '');
-  const [description, setDescription] = useState(department?.description ?? '');
-  const [instructions, setInstructions] = useState(department?.assistant_instructions ?? '');
+  const userId = useUser().id;
+  const draftKey = `department.${department?.id ?? 'new'}`;
+  const initial: DepartmentDraft = { name: department?.name ?? '', description: department?.description ?? '', instructions: department?.assistant_instructions ?? '' };
+  const restored = useRestoredDraft<DepartmentDraft>(userId, draftKey);
+  const [name, setName] = useState(draftText(restored?.name, initial.name));
+  const [description, setDescription] = useState(draftText(restored?.description, initial.description));
+  const [instructions, setInstructions] = useState(draftText(restored?.instructions, initial.instructions));
   const [errors, setErrors] = useState<{ name?: string; description?: string; assistant_instructions?: string }>({});
+  const formRef = useInvalidFocus(errors);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const pristine = name === initial.name && description === initial.description && instructions === initial.instructions;
+  const clearDraft = useDraftMirror<DepartmentDraft>(userId, draftKey, { name, description, instructions }, pristine);
+  const cancel = () => { clearDraft(); onClose(); };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -54,6 +64,7 @@ function DepartmentDrawer({ department, onClose, onSaved }: { department: AdminD
     try {
       if (department) await updateDepartment(department.id, body);
       else await createDepartment(body);
+      clearDraft();
       toast.success(department ? t('departments.saved') : t('departments.created', { name: body.name }));
       onSaved();
       onClose();
@@ -68,17 +79,18 @@ function DepartmentDrawer({ department, onClose, onSaved }: { department: AdminD
 
   return (
     <Drawer
-      open onClose={onClose} busy={busy} size="lg"
+      open onClose={cancel} busy={busy} size="lg"
       title={department ? t('departments.editTitle', { name: department.name }) : t('departments.createTitle')}
       footer={(
         <>
-          <Button onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
+          <Button onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form="ws-dept-form" busy={busy}>{department ? t('common.save') : t('departments.create')}</Button>
         </>
       )}
     >
+      {restored && <Notice tone="accent">{t('draft.restored')}</Notice>}
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
-      <form id="ws-dept-form" className="ws-form" onSubmit={submit} noValidate>
+      <form id="ws-dept-form" ref={formRef} className="ws-form" onSubmit={submit} noValidate>
         <TextField label={t('field.name')} value={name} onChange={(e) => setName(e.target.value)} error={errors.name} maxLength={LIMITS.name} required
           hint={department ? t('departments.slugHint', { slug: department.slug }) : t('departments.slugNew')} />
         <TextArea
@@ -137,7 +149,15 @@ export function DepartmentsSection() {
       render: (d) => (d.assistant_instructions ? <Badge tone="accent">{t('departments.custom')}</Badge> : <span className="ws-muted">{t('departments.default')}</span>),
     },
     { key: 'members', header: t('departments.col.members'), align: 'end', render: (d) => count(d.member_count) },
-    { key: 'documents', header: t('departments.col.documents'), align: 'end', render: (d) => count(d.document_count), secondary: true },
+    {
+      // Documents the assistant can use; failed or still-processing uploads are counted apart.
+      key: 'documents', header: t('departments.col.documents'), align: 'end', secondary: true,
+      render: (d) => {
+        const ready = d.ready_document_count ?? d.document_count ?? 0;
+        const total = d.document_count ?? 0;
+        return ready === total ? count(total) : <span className="ws-num" title={t('departments.readyOfTotal', { ready, total })}>{t('departments.readyOfTotal', { ready, total })}</span>;
+      },
+    },
     { key: 'reports', header: t('departments.col.reports'), align: 'end', render: (d) => count(d.report_count), secondary: true },
     {
       key: 'actions', header: '', srHeader: t('common.actions'), align: 'end', width: '56px',
@@ -151,7 +171,8 @@ export function DepartmentsSection() {
   return (
     <>
       <div className="ws-toolbar">
-        <Switch checked={showArchived} onChange={setShowArchived} label={t('departments.showArchived', { count: archivedCount })} />
+        {/* Offered only when there is something archived to show. */}
+        {(archivedCount > 0 || showArchived) && <Switch checked={showArchived} onChange={setShowArchived} label={t('departments.showArchived', { count: archivedCount })} />}
         <div className="ws-toolbar__end">
           <Button variant="primary" icon="plus" onClick={() => setDrawer({ department: null })}>{t('departments.new')}</Button>
         </div>

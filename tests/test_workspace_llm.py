@@ -32,6 +32,8 @@ from tests.support.workspace_fixtures import FakeEngine, ws  # noqa: F401  (ws i
 UNREACHABLE = ("⚠️ I can't reach the local LM Studio model right now. Start LM Studio "
                "(http://127.0.0.1:1234) and try again — Jarvis runs local-first, so it needs "
                "a local model server running.")
+SERVER_ERROR = ("⚠️ The local LM Studio model hit an error and couldn't answer. "
+                "Check the LM Studio server and try again.")
 LONG_ANSWER = ("Concediul de odihnă anual este de 21 de zile lucrătoare, conform politicii "
                "interne [1]. Cererea se depune cu cel puțin 10 zile înainte.")
 LOCAL = {"provider": "lm-studio", "policy": "local", "warning": ""}
@@ -389,14 +391,40 @@ async def test_backend_exceptions_are_model_unavailable(hub, error, reason):
 
 # ── steps 7–8: failure replies and the hold-back ─────────────────────────────────────
 
-async def test_a_degraded_reply_is_model_error_and_is_never_streamed(hub):
+async def test_an_unreachable_server_is_model_unreachable_and_is_never_streamed(hub):
     hub(StubRouter(backend=StubBackend(UNREACHABLE)))
     tokens, on_token = _collector()
     with pytest.raises(llm.LLMUnavailable) as caught:
         await _complete(on_token=on_token)
-    assert caught.value.extra["reason"] == "model_error"
+    assert caught.value.extra["reason"] == "model_unreachable"
     assert caught.value.extra["model"] == "local-model"
     assert tokens == []
+
+
+async def test_a_server_that_answered_with_an_error_is_model_error(hub):
+    hub(StubRouter(backend=StubBackend(SERVER_ERROR)))
+    tokens, on_token = _collector()
+    with pytest.raises(llm.LLMUnavailable) as caught:
+        await _complete(on_token=on_token)
+    assert caught.value.extra["reason"] == "model_error"
+    assert tokens == []
+
+
+async def test_an_error_reply_the_backend_noted_as_unreachable_is_model_unreachable(hub):
+    """A stream cut mid-answer ("peer closed connection"): the reply reads "hit an error",
+    the note the backend made for the call says the server went away."""
+    from agents.core.llm.provider_errors import note_provider_failure
+
+    class Dropped(StubBackend):
+        async def generate_stream(self, *args: Any, **kwargs: Any) -> str:
+            note_provider_failure("lm-studio", "local-model",
+                                  httpx.RemoteProtocolError("peer closed connection"))
+            return await super().generate_stream(*args, **kwargs)
+
+    hub(StubRouter(backend=Dropped(SERVER_ERROR)))
+    with pytest.raises(llm.LLMUnavailable) as caught:
+        await _complete()
+    assert caught.value.extra["reason"] == "model_unreachable"
 
 
 async def test_a_degraded_reply_sent_in_one_piece_is_not_streamed_either(hub):

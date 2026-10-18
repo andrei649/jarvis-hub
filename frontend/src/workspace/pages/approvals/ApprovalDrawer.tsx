@@ -8,7 +8,7 @@ import type { Approval } from '../../api/types';
 import { describeCode, describeError, errorCode } from '../../app/errors';
 import { useAsync } from '../../app/hooks';
 import { useUser } from '../../app/session';
-import { useI18n } from '../../i18n';
+import { useI18n, type MessageKey } from '../../i18n';
 import { Avatar, Badge, Button, ConfirmDialog, Dialog, Drawer, EmptyState, LoadingBlock, Notice, TextArea, useToast } from '../../ui';
 import { approvalKindLabel, APPROVAL_STATUS } from '../shared/labels';
 import { approvedRecipients, PayloadPreview, sentTo } from './PayloadPreview';
@@ -94,10 +94,25 @@ function Outcome({ approval }: { approval: Approval }) {
   if (approval.status === 'failed') return <Notice tone="danger" title={t('approvals.result.failedTitle')}>{describeCode(i18n, approval.error_code)}</Notice>;
   if (approval.status === 'rejected') return <Notice tone="danger">{t('approvals.result.rejected')}</Notice>;
   if (approval.status === 'expired') return <Notice tone="warning">{t('approvals.result.expired')}</Notice>;
-  if (approval.status === 'cancelled') return <Notice tone="accent">{t('approvals.result.cancelled')}</Notice>;
+  if (approval.status === 'cancelled') {
+    // The requester's own cancel leaves no code; a change that withdrew the request (the report's
+    // recipients changed, the report was deleted) names its reason in error_code.
+    const code = approval.error_code;
+    const reasonKey = `approvals.result.withdrawn.${code ?? ''}`;
+    const text = !code ? t('approvals.result.cancelled') : i18n.has(reasonKey) ? t(reasonKey) : t('approvals.result.withdrawn');
+    return <Notice tone="accent">{text}</Notice>;
+  }
   if (approval.status === 'executing') return <Notice tone="accent">{t('approvals.result.executing')}</Notice>;
   if (approval.can_decide) return null;
   return <p className="ws-muted">{approval.requester?.id === user.id ? t('approvals.own') : t('approvals.waiting')}</p>;
+}
+
+/** The preview's heading: what approving will do while the request waits, what was asked once
+    it was approved, and what approving would have done once it can no longer be (review UX-20). */
+export function previewHeading(status: Approval['status']): MessageKey {
+  if (status === 'pending') return 'approvals.preview';
+  if (status === 'approved' || status === 'executing' || status === 'failed') return 'approvals.preview.done';
+  return 'approvals.preview.closed';
 }
 
 export interface ApprovalDrawerProps {
@@ -138,7 +153,7 @@ export function ApprovalDrawer({ id, departmentName, onClose, onChanged }: Appro
           <span className="ws-footer-spacer" />
           {approval.can_decide && (
             <>
-              <Button variant="danger" icon="xCircle" onClick={() => setDeciding('reject')}>{t('approvals.reject')}</Button>
+              <Button variant="danger-ghost" icon="xCircle" onClick={() => setDeciding('reject')}>{t('approvals.reject')}</Button>
               <Button variant="primary" icon="check" onClick={() => setDeciding('approve')}>{t('approvals.approve')}</Button>
             </>
           )}
@@ -176,7 +191,7 @@ export function ApprovalDrawer({ id, departmentName, onClose, onChanged }: Appro
           </dl>
           <Outcome approval={approval} />
           <section className="ws-stack" aria-labelledby="ws-approval-preview">
-            <h3 id="ws-approval-preview" className="ws-subtitle">{t('approvals.preview')}</h3>
+            <h3 id="ws-approval-preview" className="ws-subtitle">{t(previewHeading(approval.status))}</h3>
             <PayloadPreview approval={approval} />
           </section>
         </>

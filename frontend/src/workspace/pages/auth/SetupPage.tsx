@@ -10,7 +10,7 @@ import { describeError, errorCode, errorField } from '../../app/errors';
 import { useSession } from '../../app/session';
 import { useI18n } from '../../i18n';
 import { navigate } from '../../router';
-import { Button, Notice, PasswordField, Select, TextField } from '../../ui';
+import { Button, Notice, PasswordField, Select, TextField, useInvalidFocus } from '../../ui';
 import { AuthLayout } from './AuthLayout';
 import { PasswordPolicy, passwordProblemText } from './PasswordPolicy';
 
@@ -27,6 +27,7 @@ export function SetupPage() {
   const [values, setValues] = useState({ setup_code: '', org_name: '', name: '', email: '', password: '', confirm: '' });
   const [language, setLanguage] = useState<Locale>(locale);
   const [errors, setErrors] = useState<Errors>({});
+  const formRef = useInvalidFocus(errors);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -40,7 +41,8 @@ export function SetupPage() {
     if (!EMAIL_PATTERN.test(values.email.trim())) next.email = t('auth.error.email');
     const weak = passwordProblemText(t, values.password, values.email);
     if (weak) next.password = weak;
-    if (values.confirm !== values.password) next.confirm = t('password.mismatch');
+    if (!values.confirm) next.confirm = t('password.confirmRequired');
+    else if (values.confirm !== values.password) next.confirm = t('password.mismatch');
     return next;
   };
 
@@ -74,7 +76,7 @@ export function SetupPage() {
   return (
     <AuthLayout title={t('setup.title')} description={t('setup.desc')} wide>
       {formError && <Notice tone="danger" live="assertive">{formError}</Notice>}
-      <form className="ws-form" onSubmit={submit} noValidate>
+      <form ref={formRef} className="ws-form" onSubmit={submit} noValidate>
         <TextField
           label={t('field.setup_code')} hint={t('setup.codeHint')} value={values.setup_code} onChange={set('setup_code')}
           error={errors.setup_code} autoComplete="one-time-code" spellCheck={false} autoFocus required

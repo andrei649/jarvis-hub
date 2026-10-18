@@ -10,7 +10,7 @@ gate, the guardrails binding, the physical-request scope and the deadline.
 
 from __future__ import annotations
 
-import socket
+import asyncio
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
@@ -25,6 +25,7 @@ from agents.core.security.types import RedactionMode
 from agents.core.workspace import llm
 from tests.support import fake_openai_server
 from tests.support.fake_openai_server import FakeOpenAIServer
+from tests.support.ports import closed_port
 from tests.support.workspace_fixtures import (  # noqa: F401  (ws is a fixture)
     db,
     make_user,
@@ -43,9 +44,7 @@ _CLOUD_ENV = ("GEMINI_API_KEY", "GEMINI_API_KEYS", "ANTHROPIC_API_KEY", "ANTHROP
 
 
 def _closed_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
+    return closed_port()
 
 
 def _point_hub_at(monkeypatch: pytest.MonkeyPatch, lm_studio_url: str) -> None:
@@ -131,8 +130,51 @@ async def test_a_server_that_went_down_is_model_unavailable_and_nothing_is_strea
         await llm.complete(system="s", prompt=QUESTION_RO, policy="local_only",
                            on_token=on_token)
     assert caught.value.code == "model_unavailable"
-    assert caught.value.extra["reason"] == "model_error"
+    assert caught.value.extra["reason"] == "model_unreachable"
     assert tokens == []
+    posture = await llm.posture("local_only")
+    assert (posture["available"], posture["reason"]) == (False, "model_unreachable"), \
+        "the failed call marks the server down at once, not at the hub's next re-probe"
+
+
+async def test_the_posture_asks_the_server_and_reports_one_that_died(model_server,
+                                                                      monkeypatch):
+    """Review fix UX-02: the hub re-probes its servers only every 5 minutes; the chip must
+    not stay green over a dead server for that long."""
+    server, router = model_server
+    assert (await llm.posture("local_only"))["available"] is True
+    server.stop()
+    assert router.local_backend_name == "lm-studio", "the router has not noticed yet"
+    monkeypatch.setattr(llm, "LIVENESS_TTL_SECONDS", 0.0)
+    posture = await llm.posture("local_only")
+    assert posture["available"] is False and posture["reason"] == "model_unreachable"
+    assert (posture["backend"], posture["route"], posture["locality"]) == (
+        "lm-studio", "local", "local")
+    assert [r for r in server.requests if r["path"] == "/v1/chat/completions"] == [], \
+        "a posture read sends no prompt"
+
+
+async def test_a_stream_cut_mid_answer_is_model_unreachable(ws, monkeypatch):
+    """Review fix F2: the server dying mid-stream ("peer closed connection") is not an
+    error the server answered with."""
+    with FakeOpenAIServer(token_delay=0.05) as server:
+        _point_hub_at(monkeypatch, server.url)
+        router = await _install_router(monkeypatch)
+        try:
+            call = asyncio.ensure_future(llm.complete(system="s", prompt=QUESTION_RO,
+                                                      policy="local_only"))
+            for _ in range(200):
+                if _completions(server):
+                    break
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.15)
+            server.stop()
+            with pytest.raises(llm.LLMUnavailable) as caught:
+                await call
+            assert caught.value.extra["reason"] == "model_unreachable"
+            assert (await llm.posture("local_only"))["reason"] == "model_unreachable"
+        finally:
+            await router.aclose()
 
 
 async def test_a_server_error_is_model_unavailable(model_server):
@@ -240,3 +282,114 @@ async def test_the_chat_route_streams_a_cited_answer_from_the_real_model(model_s
     prompt = _completions(server)[-1]["messages"][-1]["content"]
     assert '<source id="1" title="Politica de concedii">' in prompt
     conn.close()
+
+
+# ── the owner's personal pipeline is never touched (spec §1 non-goal; review T10) ─────
+
+#: What the owner's assistant is made of: the workspace must reach none of it.
+PERSONAL_PARTS = frozenset({"handle_input", "process", "memory", "memory_store",
+                            "living_memory", "agents", "skills", "channels", "conversation"})
+
+
+#: The attribute names that only the owner's pipeline has (``conversation`` and the like are
+#: workspace words too, so the static check looks for these alone).
+PIPELINE_ENTRY_POINTS = frozenset({"handle_input", "process", "memory", "memory_store",
+                                   "living_memory"})
+
+
+class _OwnersHub:
+    """An orchestrator offering the router and the guardrails; any other attribute read is
+    recorded (and answered with AttributeError, so hub code's ``getattr(…, default)`` keeps
+    working) and its personal parts would raise if called."""
+
+    def __init__(self, router: HybridRouter) -> None:
+        self.llm_router = router
+        self.security = GuardrailsEngine(mode=RedactionMode.WARN)
+        self.touched: list[str] = []
+
+    def __getattr__(self, name: str):
+        self.__dict__.setdefault("touched", []).append(name)
+        if name in PERSONAL_PARTS:
+            def refuse(*_args, **_kwargs):
+                raise AssertionError(f"the workspace called the owner's orch.{name}")
+            return refuse
+        raise AttributeError(name)
+
+
+async def test_a_chat_answer_and_a_report_run_never_reach_the_personal_pipeline(model_server,
+                                                                              monkeypatch):
+    from agents.core.workspace import reports
+    from tests.test_workspace_reports_support import seed_document as seed_report_document
+
+    _, router = model_server
+    owners = _OwnersHub(router)
+    monkeypatch.setattr(web, "orch", owners)
+    conn = db()
+    company = seed_company(conn)
+    seed_doc(conn, department_id=company.dept_a, title="Politica de concedii",
+             text="Concediul anual este de 21 de zile lucrătoare. Cererea se depune din timp.")
+    transport = httpx.ASGITransport(app=chat_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        origin = {"Origin": "http://testserver"}
+        login = await client.post("/api/workspace/login", headers=origin, json={
+            "email": company.member_a.email, "password": "Parola-Buna-2026!"})
+        headers = {**origin, "X-CSRF-Token": login.json()["csrf_token"]}
+        conversation = (await client.post("/api/workspace/conversations", headers=headers,
+                                          json={"department_id": company.dept_a})).json()["id"]
+        answer = await client.post(f"/api/workspace/conversations/{conversation}/messages",
+                                   headers={**headers, **SSE_ACCEPT},
+                                   json={"content": "Câte zile de concediu avem?"})
+    assert parse_sse(answer.text)[-1][0] == "done"
+    seed_report_document(conn, department_id=company.dept_a, uploader_id=company.member_a.id,
+                         title="Vânzări Nord", chunks=["Vânzările din Nord au crescut cu 12%."])
+    report_id = reports.create_report(conn, company.member_a, {
+        "department_id": company.dept_a, "name": "Nord", "instructions": "Rezumă vânzările."})
+    run_id = reports.start_manual_run(conn, company.member_a, report_id)
+    await reports.execute_run(run_id)
+    status = conn.execute("SELECT status FROM report_runs WHERE id = ?", (run_id,)).fetchone()[0]
+    assert status == "succeeded"
+    assert not PERSONAL_PARTS & set(owners.touched), owners.touched
+    conn.close()
+
+
+def test_no_workspace_module_names_the_personal_pipeline():
+    """The static half: no workspace source reads ``.handle_input``, ``.process`` or the
+    owner's memory, and none imports the orchestrator or the memory package."""
+    import ast
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parent.parent
+    sources = [*sorted((repo / "agents" / "core" / "workspace").rglob("*.py")),
+               *sorted((repo / "agents" / "core" / "routers").glob("workspace_*.py"))]
+    assert len(sources) > 20
+    offenders = []
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in PIPELINE_ENTRY_POINTS:
+                offenders.append(f"{path.name}:{node.lineno} .{node.attr}")
+            modules = ([node.module or ""] if isinstance(node, ast.ImportFrom)
+                       else [alias.name for alias in node.names] if isinstance(node, ast.Import)
+                       else [])
+            for module in modules:
+                if module.startswith(("agents.core.memory", "agents.core.orchestrator",
+                                      "agents.orchestrator")):
+                    offenders.append(f"{path.name}:{node.lineno} import {module}")
+    assert offenders == []
+
+
+async def test_parallel_posture_reads_share_one_liveness_probe(model_server, monkeypatch):
+    server, _ = model_server
+    monkeypatch.setattr(llm, "LIVENESS_TTL_SECONDS", 30.0)
+    llm._liveness.clear()
+    probes: list[str] = []
+    real_get = httpx.AsyncClient.get
+
+    async def counting_get(self, url, *args, **kwargs):
+        probes.append(str(url))
+        return await real_get(self, url, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", counting_get)
+    postures = await asyncio.gather(*(llm.posture("local_only") for _ in range(5)))
+    assert all(p["available"] for p in postures)
+    assert probes == [f"{server.url}/v1/models"]

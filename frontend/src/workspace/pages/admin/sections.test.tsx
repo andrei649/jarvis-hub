@@ -66,16 +66,25 @@ describe('Admin → Organisation', () => {
       'PATCH /api/workspace/admin/org': { ...ORG, model_policy: 'allow_cloud' },
       'POST /api/workspace/admin/model/test': { ok: true, latency_ms: 1530, model: 'qwen', locality: 'local', route: 'local' },
     });
-    const cloud = await screen.findByLabelText(/^Permite cloud fără antrenare/);
+    const cloud = await screen.findByLabelText(/^Permite și cloud, fără antrenare pe date/);
     fireEvent.click(cloud);
     expect(screen.getByText('Politica nouă se aplică imediat tuturor întrebărilor și rapoartelor.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Salvează' }));
     expect(await screen.findByText('Setările organizației au fost salvate.')).toBeTruthy();
     expect(mock.find('PATCH', '/api/workspace/admin/org')[0].body).toEqual({ name: 'Acme', default_locale: 'ro', model_policy: 'allow_cloud' });
 
+    const posture = mock.find('GET', '/api/workspace/model').length;
+    // The result is announced from a status region that exists before it (A11Y-09)…
+    const region = screen.getAllByRole('status').find((el) => el.classList.contains('ws-sr-only') && el.textContent === '') as HTMLElement;
     fireEvent.click(screen.getByRole('button', { name: 'Testează modelul' }));
-    expect(await screen.findByText(/Modelul a răspuns în/)).toBeTruthy();
+    await waitFor(() => expect(region.textContent).toMatch(/^Modelul a răspuns în .+\. qwen · Pe serverul companiei$/));
+    // …shown in a notice that is not itself a live region, with route and locality said once.
+    const notice = screen.getAllByText(/Modelul a răspuns în/).map((el) => el.closest('.ws-notice')).find(Boolean) as HTMLElement;
+    expect(notice.getAttribute('role')).toBeNull();
+    expect(within(notice).getByText('qwen · Pe serverul companiei')).toBeTruthy();
     expect(mock.find('POST', '/api/workspace/admin/model/test')).toHaveLength(1);
+    // A test re-reads the shared model posture, so the chip agrees with the result (F2).
+    await waitFor(() => expect(mock.find('GET', '/api/workspace/model').length).toBeGreaterThan(posture));
   });
 
   it('shows an unavailable model with its reason and a failed test in plain words', async () => {
@@ -84,11 +93,12 @@ describe('Admin → Organisation', () => {
       'GET /api/workspace/model': { available: false, backend: null, model: null, route: null, locality: null, policy: 'local_only', reason: 'no_local_model', guardrails_mode: null },
       'POST /api/workspace/admin/model/test': { ok: false, latency_ms: 12, model: 'qwen', locality: 'local', route: 'local', error: 'model_unavailable', reason: 'backend_error', message: 'the model is not available (backend_error)' },
     });
-    expect((await screen.findAllByText('Niciun model local nu este configurat sau pornit pe serverul hubului.')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Niciun model local nu este configurat sau pornit pe serverul Nerva.')).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Testează modelul' }));
     expect(await screen.findByText('Modelul nu a răspuns')).toBeTruthy();
     expect(screen.getByText('Modelul AI nu este disponibil acum. Serverul modelului a întâmpinat o eroare.')).toBeTruthy();
-    expect(screen.getByText('qwen · local')).toBeTruthy();
+    // Route and locality say the same thing: it is said once, in words.
+    expect(screen.getByText('qwen · Pe serverul companiei')).toBeTruthy();
     expect(screen.queryByText(/backend_error/)).toBeNull();
   });
 });
@@ -212,6 +222,8 @@ describe('Admin → Usage', () => {
     expect(within(table).queryByText('Răspunsuri utile')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Perioada'), { target: { value: '90' } });
-    await waitFor(() => expect(mock.find('GET', '/api/workspace/admin/stats').slice(-1)[0]?.search).toBe('?days=90'));
+    // Days are the reader's calendar days: the browser's zone goes along as tz.
+    const zone = encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    await waitFor(() => expect(mock.find('GET', '/api/workspace/admin/stats').slice(-1)[0]?.search).toBe(`?days=90&tz=${zone}`));
   });
 });

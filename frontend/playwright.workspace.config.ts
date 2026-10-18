@@ -17,7 +17,8 @@
 
    Browser: the pre-installed Chromium only (PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers); this
    lane never downloads one. Screenshots of every main page land in
-   e2e/.results/workspace-screens/ (gitignored with the rest of e2e/.results/).
+   e2e/.results/workspace-screens/ (gitignored with the rest of e2e/.results/), or under
+   WS_E2E_RESULTS_DIR when that is set.
 
    Run: `npx playwright test -c playwright.workspace.config.ts` from frontend/. */
 import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
@@ -63,7 +64,8 @@ Object.assign(process.env, {
 export default defineConfig({
   testDir: './e2e',
   testMatch: /workspace.*\.spec\.ts$/,
-  outputDir: './e2e/.results/workspace',
+  // WS_E2E_RESULTS_DIR keeps a run's traces and screenshots apart from the shared e2e/.results/.
+  outputDir: process.env.WS_E2E_RESULTS_DIR ? path.join(process.env.WS_E2E_RESULTS_DIR, 'workspace') : './e2e/.results/workspace',
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
@@ -72,6 +74,9 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     ...devices['Desktop Chrome'],
+    // A stuck click or fill fails in seconds with its own message, instead of silently using up
+    // the whole 120 s test budget (test-depth T1).
+    actionTimeout: 15_000,
     baseURL: BASE,
     viewport: { width: 1280, height: 800 },
     headless: true,

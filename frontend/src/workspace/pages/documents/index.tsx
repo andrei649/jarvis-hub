@@ -138,8 +138,8 @@ export function DocumentsPage({ params }: PageProps) {
       key: 'title', header: t('documents.col.document'),
       render: (doc) => (
         <span className="ws-cell-stack">
-          <button type="button" className="ws-linklike ws-strong" onClick={() => openDrawer(doc)}>{doc.title}</button>
-          <span className="ws-muted ws-small"><span className="ws-mono">{doc.filename}</span> · {fmt.bytes(doc.size_bytes)}</span>
+          <button type="button" className="ws-linklike ws-strong ws-clamp" title={doc.title} onClick={() => openDrawer(doc)}>{doc.title}</button>
+          <span className="ws-muted ws-small ws-truncate" title={doc.filename}><span className="ws-mono">{doc.filename}</span> · <span className="ws-nowrap">{fmt.bytes(doc.size_bytes)}</span></span>
         </span>
       ),
     },
@@ -165,8 +165,8 @@ export function DocumentsPage({ params }: PageProps) {
       key: 'uploaded', header: t('documents.col.uploaded'), secondary: true,
       render: (doc) => (
         <span className="ws-cell-stack">
-          <span title={fmt.dateTime(doc.created_at)}>{fmt.relative(doc.created_at)}</span>
-          {doc.uploader && <span className="ws-muted ws-small">{t('documents.by', { name: doc.uploader.name })}</span>}
+          <span className="ws-nowrap" title={fmt.dateTime(doc.created_at)}>{fmt.relative(doc.created_at)}</span>
+          {doc.uploader && <span className="ws-muted ws-small ws-truncate" title={doc.uploader.name}>{t('documents.by', { name: doc.uploader.name })}</span>}
         </span>
       ),
     },
@@ -196,7 +196,9 @@ export function DocumentsPage({ params }: PageProps) {
   return (
     <>
       <PageHeader eyebrow={targetName} title={t('nav.documents')} description={t('documents.description')} />
-      <UploadPanel queue={queue} target={target} targetName={targetName} allowed={scope === 'department' || isAdmin} />
+      {scope === 'department' || isAdmin
+        ? <UploadPanel queue={queue} target={target} targetName={targetName} compact={(documents.data?.length ?? 0) > 0} />
+        : <Notice tone="accent">{t('documents.upload.companyAdminOnly')}</Notice>}
       <p className="ws-sr-only" role="status" aria-live="polite">{announcement}</p>
       <div className="ws-toolbar">
         <TextField

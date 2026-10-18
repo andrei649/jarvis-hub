@@ -8,16 +8,21 @@
 
    Both check first who could decide the request and explain, before anything is sent, when
    nobody can — a request nobody can approve would only sit there until it expires. Both are
-   mounted only while open, so every opening starts from the prefilled values. */
+   mounted only while open, so every opening starts from the prefilled values — except that the
+   email request keeps what was typed as a draft for its source (app/drafts.ts): a session that
+   ends under the person does not lose the recipients and the edited text, and reopening
+   „Trimite pe email" on the same answer or run brings them back until sent or cancelled. */
 import React, { useEffect, useRef, useState } from 'react';
 import { requestApproval, type ApprovalKind } from '../../api/approvals';
 import { WorkspaceApiError } from '../../api/client';
 import type { Approval } from '../../api/types';
+import { draftText, useDraftMirror, useRestoredDraft } from '../../app/drafts';
 import { describeCode, describeError, errorCode, errorField } from '../../app/errors';
 import { useUser } from '../../app/session';
 import { useI18n } from '../../i18n';
 import { Button, Dialog, focusFirstInvalid, LoadingBlock, Notice, TextArea, TextField, useToast } from '../../ui';
 import { ButtonLink } from './ButtonLink';
+import { CitedMarkdown } from './CitedMarkdown';
 import { MAX_RECIPIENTS, parseRecipients } from './recipients';
 import { useApprovalReadiness, type ApprovalReadiness } from './useApprovalReadiness';
 
@@ -70,21 +75,36 @@ export interface EmailRequestDialogProps {
 }
 
 type EmailErrors = { to?: string; subject?: string; body?: string };
+interface EmailDraft { to: string; subject: string; body: string }
 
 export function EmailRequestDialog({ onClose, departmentId, departmentName, source, defaultSubject, defaultBody }: EmailRequestDialogProps) {
   const i18n = useI18n();
   const { t } = i18n;
   const readiness = useApprovalReadiness('email.send', departmentId);
-  const [to, setTo] = useState('');
-  const [subject, setSubject] = useState(defaultSubject.slice(0, SUBJECT_MAX));
-  const [body, setBody] = useState(defaultBody);
+  const userId = useUser().id;
+  const prefilledSubject = defaultSubject.slice(0, SUBJECT_MAX);
+  const draftKey = `email.${source.type}.${source.id}`;
+  const restored = useRestoredDraft<EmailDraft>(userId, draftKey);
+  const [to, setTo] = useState(draftText(restored?.to, ''));
+  const [subject, setSubject] = useState(draftText(restored?.subject, prefilledSubject).slice(0, SUBJECT_MAX));
+  const [body, setBody] = useState(draftText(restored?.body, defaultBody));
   const [errors, setErrors] = useState<EmailErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [existingId, setExistingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<{ approval: Approval; emails: string[] } | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
-  useEffect(() => { if (Object.keys(errors).length) focusFirstInvalid(formRef.current); }, [errors]);
+  const pristine = !to.trim() && subject === prefilledSubject && body === defaultBody;
+  const clearDraft = useDraftMirror<EmailDraft>(userId, draftKey, { to, subject, body }, pristine);
+  /** Cancel, Escape or the close button: the person gave up on the request, so is its draft. */
+  const cancel = () => { clearDraft(); onClose(); };
+  useEffect(() => {
+    if (!Object.keys(errors).length) return;
+    // A body error must be seen in the editor, not behind the preview.
+    if (errors.body) setPreviewing(false);
+    focusFirstInvalid(formRef.current);
+  }, [errors]);
 
   const validate = (): { found: EmailErrors; emails: string[] } => {
     const found: EmailErrors = {};
@@ -111,6 +131,7 @@ export function EmailRequestDialog({ onClose, departmentId, departmentName, sour
         kind: 'email.send',
         payload: { to: emails, subject: subject.trim(), body_markdown: body, source },
       });
+      clearDraft();
       setSent({ approval, emails });
     } catch (err) {
       const field = errorField(err);
@@ -144,14 +165,15 @@ export function EmailRequestDialog({ onClose, departmentId, departmentName, sour
 
   return (
     <Dialog
-      open onClose={onClose} title={t('emailRequest.title')} description={t('emailRequest.desc')} busy={busy} size="lg"
+      open onClose={cancel} title={t('emailRequest.title')} description={t('emailRequest.desc')} busy={busy} size="lg"
       footer={(
         <>
-          <Button onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
+          <Button onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form="ws-email-request" icon="send" busy={busy} disabled={!canSubmit(readiness)}>{t('emailRequest.submit')}</Button>
         </>
       )}
     >
+      {restored && <Notice tone="accent">{t('draft.restoredSend')}</Notice>}
       <ReadinessNotice
         readiness={readiness}
         noApprover={departmentId === null ? t('request.noApprover.admin') : t('request.noApprover.department', { department: departmentName })}
@@ -159,21 +181,37 @@ export function EmailRequestDialog({ onClose, departmentId, departmentName, sour
       {formError && (
         <Notice
           tone="danger" live="assertive"
-          action={existingId !== null ? <ButtonLink to={`/approvals/${existingId}`} size="sm" onClick={onClose}>{t('request.viewRequest')}</ButtonLink> : undefined}
+          action={existingId !== null ? <ButtonLink to={`/approvals/${existingId}`} size="sm" onClick={cancel}>{t('request.viewRequest')}</ButtonLink> : undefined}
         >
           {formError}
         </Notice>
       )}
       <form id="ws-email-request" ref={formRef} className="ws-form" onSubmit={submit} noValidate>
-        <TextArea
-          label={t('emailRequest.to')} hint={t('emailRequest.toHint')} value={to} rows={2} error={errors.to}
+        <TextField
+          label={t('emailRequest.to')} hint={t('emailRequest.toHint')} value={to} error={errors.to} inputMode="email"
           onChange={(e) => setTo(e.target.value)} autoComplete="off" spellCheck={false} data-autofocus="true"
         />
         <TextField label={t('emailRequest.subject')} value={subject} maxLength={SUBJECT_MAX} error={errors.subject} onChange={(e) => setSubject(e.target.value)} />
-        <TextArea
-          label={t('emailRequest.body')} hint={t('emailRequest.bodyHint')} value={body} rows={10} error={errors.body}
-          onChange={(e) => setBody(e.target.value)}
-        />
+        <div className="ws-stack">
+          {previewing ? (
+            <section className="ws-email-preview" aria-labelledby="ws-email-preview-title">
+              <p className="ws-email-preview__head ws-strong" id="ws-email-preview-title">{t('emailRequest.previewTitle')}</p>
+              <div className="ws-email-preview__body">
+                <CitedMarkdown text={body} citations={[]} onCite={() => undefined} headingOffset={2} />
+              </div>
+            </section>
+          ) : (
+            <TextArea
+              label={t('emailRequest.body')} hint={t('emailRequest.bodyHint')} value={body} rows={10} error={errors.body}
+              onChange={(e) => setBody(e.target.value)}
+            />
+          )}
+          <div>
+            <Button size="sm" variant="ghost" icon={previewing ? 'edit' : 'eye'} aria-pressed={previewing} onClick={() => setPreviewing((on) => !on)}>
+              {t('emailRequest.preview')}
+            </Button>
+          </div>
+        </div>
       </form>
     </Dialog>
   );

@@ -7,7 +7,9 @@ One :meth:`WorkspaceScheduler.tick` every 30 s does, in order:
 2. expires pending approvals older than 7 days, and fails ``executing`` approvals
    older than 10 minutes (``interrupted`` — the process died mid-effect);
 3. fails report runs ``running`` for over 15 minutes or ``queued`` for over 30
-   (``interrupted``), and assistant messages ``pending`` for over 10 minutes;
+   (``interrupted``), assistant messages ``pending`` for over 10 minutes, and documents
+   left ``processing`` by an extraction that died — claimed over 10 minutes ago, or
+   before this hub started (``interrupted``);
 4. deletes what nobody needs any more: login attempts older than a day, invites
    expired a week ago, sessions revoked or expired a week ago, notifications read 90
    days ago.
@@ -42,7 +44,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
-from agents.core.workspace import approvals, config, db, reports
+from agents.core.workspace import approvals, config, db, documents, reports
 
 logger = logging.getLogger("nerva.workspace.scheduler")
 
@@ -86,8 +88,12 @@ def housekeeping(conn: sqlite3.Connection, now: float) -> dict[str, int]:
 class WorkspaceScheduler:
     """Runs :meth:`tick` every *interval_seconds* while started, once per event loop."""
 
-    def __init__(self, interval_seconds: float = DEFAULT_INTERVAL_SECONDS) -> None:
+    def __init__(self, interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
+                 started_at: float | None = None) -> None:
         self.interval_seconds = interval_seconds
+        #: When this hub process started (``db.now()``): a document claimed before it can
+        #: have no extraction running any more. ``None``: only the age rule applies.
+        self.started_at = started_at
         #: The loop task of each event loop this scheduler was started on (its owning loop).
         self._tasks: dict[asyncio.AbstractEventLoop, asyncio.Task] = {}
 
@@ -143,6 +149,7 @@ class WorkspaceScheduler:
                 ("approvals_interrupted", approvals.fail_stale_executing),
                 ("runs_interrupted", reports.fail_stuck_runs),
                 ("messages_interrupted", interrupt_pending_messages),
+                ("documents_interrupted", self._fail_interrupted_documents),
                 ("deleted", housekeeping),
             ]
             for name, step in steps:
@@ -154,6 +161,9 @@ class WorkspaceScheduler:
             return summary
         finally:
             conn.close()
+
+    def _fail_interrupted_documents(self, conn: sqlite3.Connection, now: float) -> int:
+        return documents.fail_interrupted(conn, now, claimed_before=self.started_at)
 
     def start(self) -> None:
         """Start the loop on the running event loop (idempotent per loop).
@@ -199,7 +209,7 @@ def start_background() -> None:
         logger.info("workspace scheduler disabled (%s is off)", config.ENV_SCHEDULER)
         return
     if _scheduler is None:
-        _scheduler = WorkspaceScheduler()
+        _scheduler = WorkspaceScheduler(started_at=db.now())
     _scheduler.start()
 
 

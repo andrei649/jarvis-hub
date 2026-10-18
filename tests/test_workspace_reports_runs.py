@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import socket
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -19,6 +18,7 @@ import pytest
 
 from agents.core.workspace import db, reports
 from agents.core.workspace.errors import WorkspaceError
+from tests.support.ports import closed_port
 from tests.support.workspace_fixtures import (  # noqa: F401  (ws is a fixture)
     FakeEngine,
     freeze_clock,
@@ -408,7 +408,8 @@ def test_markdown_export_is_an_attachment_with_metadata(conn, cast):
         "attachment; filename=\"vanzari-nord-2026-10-17.md\"; "
         "filename*=UTF-8''vanzari-nord-2026-10-17.md")
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["content-security-policy"] == reports.EXPORT_CSP
+    assert response.headers["content-security-policy"] == (   # spec §6, not the constant
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox")
     assert response.headers["cache-control"] == "no-store"
     text = response.text
     assert text.startswith("Conform documentelor companiei:")
@@ -489,11 +490,7 @@ def test_no_mail_unless_the_delivery_is_approved(conn, cast, sink):
 
 def test_a_failed_delivery_keeps_the_report_and_says_why(conn, cast):
     _north(conn, cast)
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    closed = probe.getsockname()[1]
-    probe.close()
-    configure_smtp(conn, closed)
+    configure_smtp(conn, closed_port())
     report_id = _approved_delivery(conn, cast, ["sef@client.ro"])
     run_id = _queue(conn, report_id, cast.member_a)
     run_now(run_id)
@@ -508,3 +505,27 @@ def test_a_failed_delivery_keeps_the_report_and_says_why(conn, cast):
     kinds = [r[0] for r in conn.execute("SELECT kind FROM notifications WHERE user_id = ? "
                                         "ORDER BY id", (cast.member_a.id,))]
     assert kinds == ["report.run_succeeded", "report.delivery_failed"]
+
+
+def test_a_failed_delivery_is_explained_in_the_readers_words_not_as_a_code(conn, cast):
+    """The notification is read as is: an English reader gets an English sentence that names the
+    cause (a Romanian one the Romanian sentence), and nobody reads "smtp_failed"."""
+    _north(conn, cast)
+    configure_smtp(conn, closed_port())
+    conn.execute("UPDATE users SET locale = 'en' WHERE id = ?", (cast.member_a.id,))
+    report_id = _approved_delivery(conn, cast, ["sef@client.ro"])
+    run_id = _queue(conn, report_id, cast.member_a)
+    run_now(run_id)
+    body = conn.execute("SELECT body FROM notifications WHERE user_id = ? AND kind = "
+                        "'report.delivery_failed'", (cast.member_a.id,)).fetchone()[0]
+    assert body.startswith("The report is ready, but the email server refused the message")
+    assert "smtp_failed" not in body
+    assert reports._delivery_failure_bodies("smtp_failed")["ro"].startswith(
+        "Raportul este gata, dar serverul de email a refuzat mesajul")
+    assert reports._delivery_failure_bodies("smtp_not_configured")["ro"] == (
+        "Raportul este gata, dar trimiterea de emailuri nu este configurată, așa că destinatarii "
+        "nu l-au primit.")
+    # A code without its own sentence still reads as a sentence.
+    assert reports._delivery_failure_bodies("something_new") == {
+        "ro": "Raportul este gata, dar emailul către destinatari nu a putut fi trimis.",
+        "en": "The report is ready, but the email to its recipients could not be sent."}

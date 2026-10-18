@@ -1,6 +1,8 @@
 /* The document preview drawer: what the file is, who added it and where it is visible, how it
    was indexed, the first characters of its extracted text, and the actions the caller is
-   allowed (the server says which: can_delete, can_reindex, can_publish). */
+   allowed (the server says which: can_delete, can_reindex, can_publish). The extracted text is
+   Markdown (the extractor writes tables, sheets and headings that way), so the preview renders
+   it through the shared safe renderer instead of showing pipes and "---" rows. */
 import React from 'react';
 import { documentFileUrl, getDocument } from '../../api/documents';
 import type { DocumentDetail, WorkspaceDocument } from '../../api/types';
@@ -9,6 +11,7 @@ import { useAsync } from '../../app/hooks';
 import { useI18n } from '../../i18n';
 import { Badge, Button, Drawer, EmptyState, LoadingBlock, Notice } from '../../ui';
 import { DownloadLink } from '../shared/ButtonLink';
+import { CitedMarkdown } from '../shared/CitedMarkdown';
 import { DOCUMENT_STATUS } from '../shared/labels';
 import { documentErrorText } from './errors';
 
@@ -79,7 +82,12 @@ export function DocumentDrawer({ id, version, departmentName, onClose, onReindex
           <section className="ws-doc-preview" aria-labelledby="ws-doc-preview-title">
             <h3 id="ws-doc-preview-title" className="ws-doc-preview__title">{t('documents.drawer.preview')}</h3>
             {doc.preview
-              ? <pre className="ws-doc-preview__text" tabIndex={0} aria-labelledby="ws-doc-preview-title">{doc.preview}</pre>
+              ? (
+                <div className="ws-doc-preview__text" tabIndex={0} role="group" aria-labelledby="ws-doc-preview-title">
+                  {/* Under the drawer's h2 and this section's h3, the text's own headings start at h4. */}
+                  <CitedMarkdown text={doc.preview} citations={[]} onCite={() => undefined} headingOffset={3} />
+                </div>
+              )
               : <p className="ws-muted">{t('documents.drawer.noPreview')}</p>}
             {doc.preview && <p className="ws-muted ws-small">{t('documents.drawer.previewNote')}</p>}
           </section>

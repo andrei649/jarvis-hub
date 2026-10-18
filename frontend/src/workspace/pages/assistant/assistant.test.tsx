@@ -63,7 +63,10 @@ describe('Assistant → streaming chat', () => {
     channel.close();
     expect(await screen.findByText('30 de zile')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Trimite' })).toBeTruthy();
-    expect(screen.getByText('local')).toBeTruthy();
+    // Where it was produced, in words; the model id is technical and this user is a member (UX-13).
+    expect(screen.getByText('Pe serverul companiei')).toBeTruthy();
+    expect(screen.queryByText('local')).toBeNull();
+    expect(screen.queryByText('qwen2.5')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Sursa 1: Contract cadru.pdf' }));
     const drawer = await screen.findByRole('dialog', { name: 'Sursa [1]' });
@@ -109,7 +112,7 @@ describe('Assistant → streaming chat', () => {
     channel.send('start', { user_message: QUESTION, assistant_message_id: 12 });
     channel.send('error', { error: 'model_unavailable', reason: 'no_local_model', message: 'no local model', assistant_message: null });
     channel.close();
-    expect(await screen.findByText('Modelul AI nu este disponibil acum. Niciun model local nu este configurat sau pornit pe serverul hubului.')).toBeTruthy();
+    expect(await screen.findByText('Modelul AI nu este disponibil acum. Niciun model local nu este configurat sau pornit pe serverul Nerva.')).toBeTruthy();
   });
 
   it('stops a streaming answer: the request is aborted and the stop is explained', async () => {
@@ -180,7 +183,7 @@ describe('Assistant → streaming chat', () => {
     boot('/workspace/assistant', {
       'GET /api/workspace/model': { available: false, backend: null, model: null, route: null, locality: null, policy: 'local_only', reason: 'no_local_model', guardrails_mode: 'redact' },
     });
-    expect(await screen.findByText('Modelul AI nu este disponibil acum: Niciun model local nu este configurat sau pornit pe serverul hubului.')).toBeTruthy();
+    expect(await screen.findByText('Modelul AI nu este disponibil acum: Niciun model local nu este configurat sau pornit pe serverul Nerva.')).toBeTruthy();
   });
 
   it('says answers arrive in one piece when guardrails run in BLOCK mode', async () => {

@@ -1,10 +1,16 @@
 /* Upload: drop files on the zone or pick them with the button (the keyboard path), then
    follow each file — bytes sent, then "extracting and indexing" while the server works, then
-   ready (with how many passages were indexed) or failed with the reason and what to do. */
-import React, { useRef, useState } from 'react';
+   ready (with how many passages were indexed) or failed with the reason and what to do.
+
+   Once a collection has documents the drop zone shrinks to one line (the list is what a
+   returning person came for), and once every upload has finished the ready ones fold into a
+   one-line summary — the same files are now rows of the table — while failed ones stay listed
+   with their reason. Where the person may not upload (the company-wide collection, for
+   non-admins) the page shows a short note instead of this card. */
+import React, { useEffect, useRef, useState } from 'react';
 import { ACCEPTED_EXTENSIONS, type UploadTarget } from '../../api/documents';
 import { useI18n } from '../../i18n';
-import { Button, Card, Icon, IconButton, Notice } from '../../ui';
+import { Button, Card, Icon, IconButton } from '../../ui';
 import { documentErrorText } from './errors';
 import type { UploadItem, UploadQueue } from './useUploadQueue';
 
@@ -38,16 +44,22 @@ export interface UploadPanelProps {
   queue: UploadQueue;
   target: UploadTarget | null;
   targetName: string;
-  /** False in the company-wide collection for non-admins (only admins upload there). */
-  allowed: boolean;
+  /** True when the collection already lists documents: the drop zone shows as one compact line. */
+  compact?: boolean;
 }
 
-export function UploadPanel({ queue, target, targetName, allowed }: UploadPanelProps) {
-  const { t } = useI18n();
+export function UploadPanel({ queue, target, targetName, compact = false }: UploadPanelProps) {
+  const { t, tn } = useI18n();
   const input = useRef<HTMLInputElement>(null);
   const depth = useRef(0);
   const [dragging, setDragging] = useState(false);
+  const [showDone, setShowDone] = useState(false);
   const finished = queue.items.filter((item) => item.state === 'ready' || item.state === 'failed').length;
+  const allFinished = queue.items.length > 0 && finished === queue.items.length;
+  const ready = queue.items.filter((item) => item.state === 'ready');
+  // A new batch starts folded-out again.
+  useEffect(() => { if (!allFinished) setShowDone(false); }, [allFinished]);
+  const listed = allFinished && !showDone ? queue.items.filter((item) => item.state !== 'ready') : queue.items;
 
   const take = (list: FileList | null) => {
     const files = list ? Array.from(list) : [];
@@ -63,10 +75,10 @@ export function UploadPanel({ queue, target, targetName, allowed }: UploadPanelP
   };
 
   return (
-    <Card title={t('documents.upload.title')} description={t('documents.upload.target', { target: targetName })} className="ws-print-hide">
-      {!allowed ? <Notice tone="accent">{t('documents.upload.companyAdminOnly')}</Notice> : (
+    <Card title={t('documents.upload.title')} description={t('documents.upload.target', { target: targetName })} className="ws-print-hide ws-upload-card">
+      {(
         <div
-          className={['ws-dropzone', dragging && 'is-dragging'].filter(Boolean).join(' ')}
+          className={['ws-dropzone', compact && 'ws-dropzone--compact', dragging && 'is-dragging'].filter(Boolean).join(' ')}
           onDragEnter={(e) => onDrag(e, 'enter')} onDragOver={(e) => onDrag(e, 'over')} onDragLeave={(e) => onDrag(e, 'leave')}
           onDrop={(event) => {
             event.preventDefault();
@@ -75,15 +87,15 @@ export function UploadPanel({ queue, target, targetName, allowed }: UploadPanelP
             take(event.dataTransfer?.files ?? null);
           }}
         >
-          <span className="ws-dropzone__icon"><Icon name="upload" size={22} /></span>
+          <span className="ws-dropzone__icon"><Icon name="upload" size={compact ? 18 : 22} /></span>
           <p className="ws-dropzone__title">{t('documents.upload.drop')}</p>
-          <p className="ws-muted ws-small">{t('documents.upload.or')}</p>
-          <Button icon="folder" onClick={() => input.current?.click()} disabled={target === null}>{t('documents.upload.choose')}</Button>
+          <p className="ws-muted ws-small ws-dropzone__or">{t('documents.upload.or')}</p>
+          <Button icon="folder" size={compact ? 'sm' : 'md'} onClick={() => input.current?.click()} disabled={target === null}>{t('documents.upload.choose')}</Button>
           <input
             ref={input} type="file" multiple hidden accept={ACCEPTED_EXTENSIONS.join(',')} aria-label={t('documents.upload.choose')}
             onChange={(event) => { take(event.target.files); event.target.value = ''; }}
           />
-          <p className="ws-muted ws-small">{t('documents.upload.formats')}</p>
+          <p className="ws-muted ws-small ws-dropzone__formats">{t('documents.upload.formats')}</p>
         </div>
       )}
       {queue.items.length > 0 && (
@@ -92,8 +104,16 @@ export function UploadPanel({ queue, target, targetName, allowed }: UploadPanelP
             <p className="ws-strong">{t('documents.upload.queue')}</p>
             <Button size="sm" variant="ghost" onClick={queue.clearFinished} disabled={finished === 0}>{t('documents.upload.clear')}</Button>
           </div>
-          <ul className="ws-upload__list">
-            {queue.items.map((item) => (
+          {allFinished && ready.length > 0 && (
+            <p className="ws-upload__summary">
+              <span className="ws-upload__ok"><Icon name="checkCircle" size={16} /> {tn('documents.upload.doneSummary', ready.length)}</span>
+              <Button size="sm" variant="ghost" aria-expanded={showDone} onClick={() => setShowDone((on) => !on)}>
+                {t(showDone ? 'documents.upload.hideDone' : 'documents.upload.showDone')}
+              </Button>
+            </p>
+          )}
+          {listed.length > 0 && <ul className="ws-upload__list">
+            {listed.map((item) => (
               <li key={item.key} className={`ws-upload__item is-${item.state}`}>
                 <Icon name="file" size={18} />
                 <span className="ws-upload__name">
@@ -105,7 +125,7 @@ export function UploadPanel({ queue, target, targetName, allowed }: UploadPanelP
                 )}
               </li>
             ))}
-          </ul>
+          </ul>}
         </div>
       )}
     </Card>
