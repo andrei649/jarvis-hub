@@ -313,14 +313,44 @@ def _private_mode(mode: int) -> int | None:
     return permissions & ~_OPEN_BITS if permissions & _OPEN_BITS else None
 
 
+def _storage_root(directory: Path) -> Path | None:
+    """The folder :func:`secure_storage` walks for *directory*, or ``None`` for none.
+
+    ``<data>/business`` may be a symlink to a folder elsewhere (another disk): the
+    workspace's files live there, so that folder is the one walked — resolved once, like the
+    hub's root guard resolves it (review REV-POLISH-02); below it no symlink is followed. A
+    link to a folder that holds *directory*'s own parent — ``/``, the data root or a folder
+    above it — would reach far more than the workspace's files, so it is not walked and one
+    WARNING says so; a link that leads to no folder is not walked either.
+    """
+    if not directory.is_symlink():
+        return directory if directory.is_dir() else None
+    try:
+        real = directory.resolve(strict=True)
+        parent = directory.parent.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if not real.is_dir():
+        return None
+    if parent.is_relative_to(real):
+        logger.warning(
+            "Nerva Workspace: %s is a link to %s, which holds the hub's data directory, so the "
+            "modes under it are not checked — link business/ to a folder of its own "
+            "(PILOT_GUIDE §13)", directory, real)
+        return None
+    return real
+
+
 def secure_storage(directory: Path) -> list[Path]:
     """Remove group/other access from *directory* and everything under it; returns what changed.
 
     *directory* is the workspace's own (``<data>/business``: the database and its
     ``-wal``/``-shm``, ``files/`` and the stored documents, ``secrets.enc`` with its key and
-    salt, ``setup-code.txt``), so nothing else is touched. Symlinks are never followed nor
-    changed. A change is logged once, as a WARNING; a chmod the system refuses (files owned
-    by another user — a command run as root) is logged once too, and never fails the caller.
+    salt, ``setup-code.txt``), so nothing else is touched. When *directory* itself is a link
+    to a folder, that folder is walked (:func:`_storage_root`); below it symlinks are never
+    followed nor changed. A change is logged once, as a WARNING; a chmod the system refuses
+    (files owned by another user — a command run as root) is logged once too, and never
+    fails the caller.
     """
     changed: list[Path] = []
     refused: list[tuple[Path, str]] = []
@@ -342,25 +372,27 @@ def secure_storage(directory: Path) -> list[Path]:
             return
         changed.append(path)
 
-    if not directory.is_dir() or directory.is_symlink():
+    root = _storage_root(directory)
+    if root is None:
         return changed
-    tighten(directory)
-    for parent, dirnames, filenames in os.walk(directory, followlinks=False):
+    tighten(root)
+    for parent, dirnames, filenames in os.walk(root, followlinks=False):
         base = Path(parent)
         for name in [*dirnames, *filenames]:
             tighten(base / name)
+    where = directory if root == directory else f"{directory} → {root}"
     if changed:
         logger.warning(
             "Nerva Workspace: %d file(s) or folder(s) under %s could be read by other users "
             "(a restore or a copy made with a permissive umask); they are private now — "
-            "files 0600, folders 0700", len(changed), directory)
+            "files 0600, folders 0700", len(changed), where)
     if refused:
         path, reason = refused[0]
         logger.warning(
             "Nerva Workspace: %d file(s) or folder(s) under %s can be read by other users and "
             "this process may not change that (%s on %s): make the service's user their owner "
             "and remove the access of others — chown -R jarvis:jarvis and chmod -R go-rwx "
-            "(PILOT_GUIDE §14, §19)", len(refused), directory, reason, path)
+            "(PILOT_GUIDE §14, §19)", len(refused), where, reason, path)
     return changed
 
 

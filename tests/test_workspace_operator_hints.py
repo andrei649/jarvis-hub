@@ -55,6 +55,28 @@ def test_the_cli_usage_and_help_name_nerva_run(capsys):
     assert GUIDE_FORM in out and BARE_FORM not in out and "PILOT_GUIDE §2" in out
 
 
+@pytest.fixture(autouse=True)
+def every_log_level(caplog):
+    """Capture every level, as once the hub's ``setup_logging`` ran earlier in the process.
+
+    Importing ``agents.web`` sets the root logger to INFO, so whether the database's INFO
+    lines reach ``caplog.records`` used to depend on which test ran first (REV-POLISH-01);
+    starting every test here from the most verbose state makes the result order-free.
+    """
+    caplog.set_level(logging.DEBUG)
+
+
+def _errors(caplog) -> list[str]:
+    """The audit module's ERROR lines only (review REV-POLISH-01).
+
+    ``caplog.records`` holds every record of the test at the root logger's level, so once
+    an earlier test in the process has run the hub's ``setup_logging`` (root at INFO) it
+    also holds the database's ``migrated to schema 1`` INFO line logged by ``db()``.
+    """
+    return [record.getMessage() for record in caplog.records
+            if record.name == "nerva.workspace.audit" and record.levelno >= logging.ERROR]
+
+
 def _write(conn) -> None:
     with workspace_db.tx(conn):
         audit.record(conn, actor=None, actor_email="cli", action="department.created",
@@ -70,7 +92,7 @@ def test_the_key_log_lines_name_the_guides_commands(ws, monkeypatch, caplog):
             assert audit.startup_key_check() == "mismatch"
             with pytest.raises(audit.AuditKeyMismatch):
                 _write(conn)
-        start, refusal = [record.getMessage() for record in caplog.records]
+        start, refusal = _errors(caplog)
         assert f"{GUIDE_FORM} check" in start and "PILOT_GUIDE §17" in start
         assert f"{GUIDE_FORM} check" in refusal and f"{GUIDE_FORM} audit-rekey" in refusal
         caplog.clear()

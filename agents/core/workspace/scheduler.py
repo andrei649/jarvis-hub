@@ -16,7 +16,10 @@ One :meth:`WorkspaceScheduler.tick` every 30 s does, in order:
 
 Each step runs in its own short transactions and one failing step never stops the
 others. The database work runs in a worker thread; only spawning the claimed runs
-happens on the event loop.
+happens on the event loop. ``tick(now=…)`` takes an explicit clock, which is how the
+tests drive it without sleeping. One hub per data root (the hub lock) means one
+scheduler per database, so no cross-process coordination is needed beyond the
+compare-and-set claims.
 
 An audit key that is not the trail's (review OPS2-08). Steps 1–3 for reports and approvals
 sign an audit row for every change they make, and no row may be signed with another key
@@ -28,10 +31,7 @@ a WARNING, when it begins (and again only if the key's state changes), and its e
 an INFO line; the tick summary says ``paused`` and ``audit_key``. Due reports and expired
 approvals are caught up by the first tick after the service's key is back. A step that
 still meets the key error (a key swapped between the check and the step) pauses the rest
-of that tick the same way, without a traceback. ``tick(now=…)`` takes an explicit clock, which is how the
-tests drive it without sleeping. One hub per data root (the hub lock) means one
-scheduler per database, so no cross-process coordination is needed beyond the
-compare-and-set claims.
+of that tick the same way, without a traceback.
 
 The loop starts with the hub (``start_background``) unless ``NERVA_WORKSPACE_SCHEDULER``
 is off, and each tick is a no-op while ``NERVA_WORKSPACE`` itself is off, so enabling the

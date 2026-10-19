@@ -40,6 +40,7 @@ def live(tmp_path, monkeypatch):
     monkeypatch.setattr(bk, "data_root", lambda: root)
     monkeypatch.setenv("JARVIS_KEY_DIR", str(tmp_path / "keys"))
     monkeypatch.delenv("JARVIS_BACKUP_KEY", raising=False)
+    monkeypatch.delenv("JARVIS_SECRET_KEY", raising=False)   # SecretStore's own fallback key
     return root
 
 
@@ -91,7 +92,8 @@ def test_a_backups_dir_that_is_a_symlink_is_followed(tmp_path, monkeypatch, caps
     capsys.readouterr()
 
 
-@pytest.mark.parametrize("where", ["copy elsewhere", "dotdot out", "link out", "link in dir"])
+@pytest.mark.parametrize("where", ["copy elsewhere", "dotdot out", "link out", "link in dir",
+                                   "renamed link in dir"])
 def test_an_archive_outside_the_backups_dir_names_no_backup(live, tmp_path, capsys, where):
     archive = _archive(live)
     elsewhere = tmp_path / "elsewhere"
@@ -102,6 +104,14 @@ def test_an_archive_outside_the_backups_dir_names_no_backup(live, tmp_path, caps
         argument = str(copy)
     elif where == "dotdot out":
         argument = f"{live / 'backups'}/../../elsewhere/{archive.name}"
+    elif where == "renamed link in dir":
+        # An entry that links to ANOTHER archive of the same directory under another name
+        # (REV-POLISH-05): plain or encrypted is decided from the entry's name, so this
+        # `.tar.gz` would be read as plaintext and end in a misleading "archive rejected".
+        encrypted = _archive(live, encrypt=True, key=_KEY)
+        link = live / "backups" / "jarvis-backup-20990101T000000_000000Z_abcdef.tar.gz"
+        link.symlink_to(encrypted)
+        argument = link.name
     else:
         link = live / "backups" / "jarvis-backup-20990101T000000_000000Z_abcdef.tar.gz"
         link.symlink_to(copy)
@@ -130,7 +140,8 @@ def test_a_wrong_backup_key_is_one_line_and_restores_nothing(live, tmp_path, mon
     monkeypatch.setenv("JARVIS_BACKUP_KEY", _OTHER)
     assert bk._main(["verify", archive.name]) == 1
     line = _one_line(capsys)
-    assert line.startswith(f"cannot decrypt {archive.name}") and "JARVIS_BACKUP_KEY" in line
+    assert line.startswith(f"cannot decrypt {archive.name}: JARVIS_BACKUP_KEY in this "
+                           f"environment is not the key the archive was made with")
     target = tmp_path / "restored"
     assert bk._main(["restore", archive.name, str(target)]) == 1
     assert "nothing was restored" in _one_line(capsys)
@@ -170,3 +181,78 @@ def test_a_target_that_is_a_file_is_one_line(live, tmp_path, capsys):
     target.write_text("x", encoding="utf-8")
     assert bk._main(["restore", archive.name, str(target)]) == 1
     assert _one_line(capsys).startswith("restore failed:")
+
+
+
+# ── the key a failed decryption names is the key it used (REV-POLISH-04) ─────────────
+
+def test_a_key_dir_without_the_key_file_says_so_and_makes_no_key(live, tmp_path, monkeypatch,
+                                                                  capsys):
+    """`create --encrypt` without JARVIS_BACKUP_KEY keeps the key in $JARVIS_KEY_DIR.
+
+    Verified with another $JARVIS_KEY_DIR, the line used to blame a JARVIS_BACKUP_KEY that
+    is not set — and the verify generated a new, useless key file there.
+    """
+    archive = _archive(live, encrypt=True)          # key generated in <tmp>/keys
+    other = tmp_path / "keys2"
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(other))
+    assert bk._main(["verify", archive.name]) == 1
+    line = _one_line(capsys)
+    assert line == (f"cannot decrypt {archive.name}: JARVIS_BACKUP_KEY is not set (run with the "
+                    f"service's environment: nerva-run, PILOT_GUIDE §2) and there is no key "
+                    f"file {other / 'backup.cipher.key'} — no key was made; nothing was checked")
+    target = tmp_path / "restored"
+    assert bk._main(["restore", archive.name, str(target)]) == 1
+    assert _one_line(capsys).endswith("— no key was made; nothing was restored")
+    assert not other.exists(), "a read mints no key material"
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(tmp_path / "keys"))    # the key it was made with
+    assert bk._main(["verify", archive.name]) == 0
+    capsys.readouterr()
+
+
+def test_another_key_file_is_named_as_the_key_that_was_tried(live, tmp_path, monkeypatch,
+                                                             capsys):
+    archive = _archive(live, encrypt=True)
+    other = tmp_path / "keys2"
+    other.mkdir()
+    (other / "backup.cipher.key").write_text(_OTHER, encoding="utf-8")
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(other))
+    assert bk._main(["verify", archive.name]) == 1
+    line = _one_line(capsys)
+    assert line.startswith(f"cannot decrypt {archive.name}: the key file "
+                           f"{other / 'backup.cipher.key'} (JARVIS_BACKUP_KEY is not set: run "
+                           f"with the service's environment: nerva-run, PILOT_GUIDE §2) is not "
+                           f"the key the archive was made with")
+    assert "JARVIS_BACKUP_KEY in this environment" not in line
+
+
+def test_the_secret_key_fallback_is_named_when_it_is_the_key_used(live, monkeypatch, capsys):
+    """Without JARVIS_BACKUP_KEY the cipher falls back to JARVIS_SECRET_KEY (SecretStore)."""
+    archive = _archive(live, encrypt=True, key=_KEY)
+    monkeypatch.setenv("JARVIS_SECRET_KEY", _OTHER)
+    assert bk._main(["verify", archive.name]) == 1
+    line = _one_line(capsys)
+    assert line.startswith(f"cannot decrypt {archive.name}: JARVIS_SECRET_KEY in this "
+                           f"environment (JARVIS_BACKUP_KEY is not set: ")
+    monkeypatch.setenv("JARVIS_SECRET_KEY", _KEY)   # the line named the key really used
+    assert bk._main(["verify", archive.name]) == 0
+    capsys.readouterr()
+
+
+def test_a_passphrase_without_its_salt_names_the_salt_and_makes_none(live, tmp_path,
+                                                                     monkeypatch, capsys):
+    """A restore on a new server without /var/lib/jarvis-keys/ (PILOT_GUIDE §14)."""
+    monkeypatch.setenv("JARVIS_BACKUP_KEY", "o fraza lunga pentru copiile de siguranta")
+    archive = _archive(live, encrypt=True)          # salt in <tmp>/keys/backup.cipher.salt
+    new_server = tmp_path / "keys-new-server"
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(new_server))
+    assert bk._main(["verify", archive.name]) == 1
+    salt = new_server / "backup.cipher.salt"
+    assert _one_line(capsys) == (
+        f"cannot decrypt {archive.name}: JARVIS_BACKUP_KEY in this environment is a passphrase "
+        f"and its salt {salt} does not exist (the key directory is kept off-site, "
+        f"PILOT_GUIDE §14) — no key was made; nothing was checked")
+    assert not salt.exists(), "a new salt could not open the archive and would stay behind"
+    shutil.copytree(tmp_path / "keys", new_server)  # the key directory brought back
+    assert bk._main(["verify", archive.name]) == 0
+    capsys.readouterr()

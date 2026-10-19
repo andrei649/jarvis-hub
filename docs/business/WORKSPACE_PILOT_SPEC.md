@@ -12,7 +12,14 @@
 > `invalid_identifier` sign-ins, `/admin/stats?tz=`, `ready_document_count`, `share_pending`, the
 > withdrawal reason kept on superseded approvals, the localized delivery-failure notice,
 > `LLMResult.failure_kind` and the model-server liveness probe, the interrupted-document sweep
-> and the frontend behaviours in §10**). Operator documentation: [`PILOT_GUIDE.md`](PILOT_GUIDE.md).
+> and the frontend behaviours in §10**); **v3.3, 2026-10-19, after the second assessment round
+> and the polish pass: the round-2 frontend behaviours in §10 (drafts on every form, locality in
+> words, translated audit values, status-dependent preview headings, lead citation chips, the
+> verify sentence after a re-key, the export caption on phones), the scheduler pausing its
+> audited steps while the audit key is not the trail's (§5, §9), private workspace files whatever
+> the umask and the hub-side guard on explicit file / terminal roots (§3), operator hints naming
+> `nerva-run` (§5), the backup CLI's paths and one-line errors (Appendix A), and the e2e lane's
+> SMTP off switch and results directory (§13)**). Operator documentation: [`PILOT_GUIDE.md`](PILOT_GUIDE.md).
 > Owner directive (2026-10-17): *„avansează, pregătește interfața B2B pentru un pilot … produsul să fie
 > de nota 9/10 chiar și pentru pilot, toate funcțiile trebuie să funcționeze"*. This file is the single
 > shared contract every builder, reviewer and integrator follows. When code and this file disagree,
@@ -111,9 +118,44 @@ personal assistant, and keeping `workspace` in `KEEP_DIRS` kept the owner's spil
 through a forget. No other hub module uses `business`; `tests/test_workspace_integration_purge.py`
 proves the directory is disjoint from all three default roots, that no other module under `agents/`
 names it, and that a forget empties the spill directory while the workspace survives. The pilot was
-never released from `workspace/`, so there is no migration. An operator who sets explicit
-`JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` must not point them at the data root or at
-`<data>/business` (pilot guide §13).
+never released from `workspace/`, so there is no migration.
+
+**Explicit hub roots (v3.3, `BACKLOG.md` NWS-17).** `config.hub_roots_without_workspace(setting,
+roots)` drops every configured root whose real location (`~`, `..` and symlinks resolved) is,
+contains or lies inside `data_path("business")` — `<data>/business` itself, the data root, `/`, a
+home folder holding the data root, `business/files` — and logs one WARNING per (setting, root) per
+process on `nerva.workspace.config`, which says what the drop keeps outside company data and no
+more: the file tools, for `JARVIS_FILE_ROOTS`; the terminal's working directory, for
+`JARVIS_TERMINAL_LOCAL_ROOTS`, with the limit below (review REV-POLISH-03); every other entry is kept unchanged and in order (blank,
+relative or unresolvable ones included). `FileScope.from_env()` (`agents/core/file_tools.py`,
+`JARVIS_FILE_ROOTS`) and `local_transport.default_roots()` / `LocalHostTransport.from_env()`
+(`agents/core/environments/local_transport.py`, `JARVIS_TERMINAL_LOCAL_ROOTS`) apply it and fall
+back to the default `data_path("workspace")` when no root is left; they import the workspace config
+lazily, only when roots are configured, so the literal `business` still appears only in the
+workspace package. Limits: nothing is dropped while the workspace is off and `<data>/business` does
+not exist (no company data), or when the data root cannot be determined; roots passed in code (the
+`FileScope([...])` and `LocalHostTransport(roots)` constructors, `from_env(roots=...)`) are not
+filtered; and for the terminal the roots constrain only the working directory — an absolute path
+inside an approved argv is governed by the terminal's own contract and approval, not by roots.
+
+**File modes (v3.3, review OPS2-05).** `db.connect()` creates `workspace.db` itself, empty, with
+`O_CREAT | O_EXCL | O_NOFOLLOW` at 0600 plus an explicit chmod, whatever the umask (`sqlite3` alone
+would make it `0644 & ~umask`); SQLite gives `-wal` / `-shm` the database's mode. `files/` (0700),
+`files/<id>.bin`, `secrets.enc` with its `.key` / salt, and `setup-code.txt` (0600) were already
+private at creation. The first `connect()` of each process for a workspace directory
+(`db.secure_storage`, once per process — the scheduler's first tick at hub start, else the first
+request or CLI command) walks `<data>/business` without following symlinks and removes the
+group/other permission bits of every file and directory, so a tree a restore or a copy left
+`0644` / `0755` becomes `0600` / `0700` (owner bits kept). A `business/` that is itself a symlink
+to a folder (data on another disk) is resolved once and that folder is walked — below it no
+symlink is followed; the WARNING then names `<data>/business → <folder>` (review REV-POLISH-02).
+A `business/` link to a folder that holds the data root itself (`/`, `<data>`, a folder above
+it) is not walked: one WARNING says the modes were not checked. It logs one WARNING on
+`nerva.workspace.db` when it changed something, one naming `chown -R` / `chmod -R go-rwx` when the
+system refuses a chmod (files owned by another user), and never fails the connect.
+`db.connect_read_only` (`check`, the start check) changes no mode. This covers `<data>/business`
+only: the rest of the data root (`backups/`, `settings.db`, …) still follows the service's umask,
+hence `UMask=0077` in the pilot guide's §2.
 
 ## 4. Data model (`db.py` owns the whole schema; migrations through `PRAGMA user_version`)
 
@@ -251,13 +293,22 @@ def cookie_secure_mode() -> str          # 'auto' | 'on' | 'off'
 def session_idle_seconds() -> int; def session_max_seconds() -> int; def max_concurrent_llm() -> int
 def sso_header() -> str; def sso_secret() -> str; def sso_configured() -> bool; def scheduler_enabled() -> bool
 def workspace_dir() -> Path               # data_path(DATA_DIRNAME) = <data>/business, created 0700 on demand
+def hub_roots_without_workspace(setting: str, roots: Sequence[str]) -> list[str]
+    # v3.3 (NWS-17, §3): roots minus any that is, contains or lies inside <data>/business
 
 # db.py
 def db_path() -> Path
 def connect() -> sqlite3.Connection
+    # v3.3: creates the file 0600 when missing; the first connect of a process runs
+    # secure_storage(<data>/business) once (§3 File modes)
     # sqlite3.connect(path, check_same_thread=False, isolation_level=None)  ← autocommit
     # PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000; row_factory=sqlite3.Row
     # schema ensured on every connect (one cheap PRAGMA user_version read; migrations by user_version)
+def connect_read_only(path: Path) -> sqlite3.Connection   # no migration, no write, no new file, no chmod
+def secure_storage(directory: Path) -> list[Path]   # v3.3: group/other bits off under directory, no
+    # symlink followed below it (directory itself a link → its folder, unless that folder holds
+    # directory's parent: not walked, one WARNING); returns what changed;
+    # PRIVATE_FILE_MODE = 0o600, PRIVATE_DIR_MODE = 0o700
 @contextmanager
 def tx(conn)        # BEGIN IMMEDIATE … COMMIT, ROLLBACK on exception; a no-op when conn.in_transaction
 def get_db()        # FastAPI generator dependency: 404 workspace_disabled BEFORE connecting while off;
@@ -344,7 +395,13 @@ def key_check(conn) -> str                 # 'ok' (empty trail, or the newest ro
     # 'missing' | 'unreadable' | 'mismatch'; reads only, never creates a key
 def startup_key_check() -> str | None      # the hub lifespan: workspace on and a database present →
     # opened read-only (db.connect_read_only), key_check, an ERROR log line when not 'ok'
-    # ("Nerva Workspace cannot sign its audit trail: …"); never blocks the start
+    # ("Nerva Workspace cannot sign its audit trail: … check with: <CHECK_COMMAND> — the causes and
+    # remedies are in PILOT_GUIDE §17."); never blocks the start
+CHECK_COMMAND = "nerva-run -m agents.core.workspace check (PILOT_GUIDE §2; the service's environment)"
+REKEY_COMMAND = "nerva-run -m agents.core.workspace audit-rekey (PILOT_GUIDE §16)"
+    # v3.3 (review OPS2-07): the operator commands every log hint names — the missing-key and
+    # mismatch refusals, the start check and the scheduler's pause line; no string outside a
+    # docstring in agents/core/workspace names the bare `python -m agents.core.workspace` form
 REKEY_ACTION = "audit.rekeyed"
 def rekey_plan(conn) -> dict               # read-only: {state, rows, unverified, broken_at,
     # from_key_fp, to_key_fp, through_id, digest}
@@ -352,8 +409,9 @@ def rekey(conn, *, actor_email: str) -> int   # a key that is truly lost: one au
     # signed with the new key, records both fingerprints and pins every earlier row (SHA-256 over
     # all their columns); RekeyRefused('not_needed' | 'no_key' | 'broken') writes nothing
 
-# cli.py (v3.2) — `python -m agents.core.workspace <command>`, run through the pilot guide's
-# `nerva-run`: setup-code · reset-link --email E --base-url U · promote --email E · check ·
+# cli.py (v3.2) — `nerva-run -m agents.core.workspace <command>` (v3.3: PROG, the name usage and
+# --help print; nerva-run is the pilot guide's §2 `python -m` with the service's environment, and
+# --help says to run the commands that way): setup-code · reset-link --email E --base-url U · promote --email E · check ·
 # audit-rekey [--confirm]. Preflight before anything is opened or created, exit 2 with a message
 # naming nerva-run: NERVA_WORKSPACE off; no JARVIS_HOME / JARVIS_MEMORY_DIR and the data root
 # inside the checkout; no database (reset-link, promote, audit-rekey; setup-code creates it);
@@ -466,8 +524,12 @@ class WorkspaceScheduler:
         # started_at (v3.2): db.now() when start_background() builds the process-wide scheduler;
         # None (tests) = only the 600 s age rule of documents.fail_interrupted applies
     async def tick(self, now: float | None = None) -> dict   # the testable unit; {now, errors,
-        # runs_started, approvals_expired, approvals_interrupted, runs_interrupted,
-        # messages_interrupted, documents_interrupted (v3.2), deleted} — or {skipped} while off
+        # paused, audit_key (v3.3), runs_started, approvals_expired, approvals_interrupted,
+        # runs_interrupted, messages_interrupted, documents_interrupted (v3.2), deleted} — or
+        # {skipped} while off. v3.3: `paused` lists the steps skipped this tick, `audit_key` is
+        # 'ok' | 'mismatch' | 'missing' | 'unreadable' (§9 Under a wrong audit key)
+AUDITED_STEPS = ("runs_started", "approvals_expired", "approvals_interrupted", "runs_interrupted")
+    # v3.3: the steps that sign audit rows; they pause while audit.key_check(conn) is not 'ok'
     def start(self) -> None              # idempotent per loop: records the owning loop of each loop task
     async def stop(self) -> None         # stops only the running loop's task
 def start_background() -> None; async def stop_background() -> None   # S6 calls from the hub lifespan
@@ -643,7 +705,8 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   `503 audit_key_missing`; another key → `503 audit_key_mismatch`; the action's transaction rolls
   back, so every sign-in and every change answers that 503 (reads such as `GET /session` still
   answer) until the service's key is back. The refusal is logged with the key's source and both
-  fingerprints, never the key, and the hub says so once at start (`audit.startup_key_check`). A
+  fingerprints, never the key, and the hub says so once at start (`audit.startup_key_check`); the
+  scheduler pauses the steps that would sign rows, without a traceback (v3.3, §9). A
   successful password check refused this way settles its reserved attempt as a success, so people
   retrying during the incident are not locked out after it. A key that is truly lost is replaced
   on purpose with the CLI's `audit-rekey --confirm` (§5): one `audit.rekeyed` row, signed with the
@@ -890,6 +953,25 @@ worker left); delete `login_attempts` > 24 h, invites expired > 7 d, sessions re
 expired or idle-dead > 7 d, read notifications > 90 d. The tick is a no-op while `NERVA_WORKSPACE` is
 off; each step runs in its own short transactions and one failing step never stops the others.
 
+**Under a wrong audit key (v3.3, review OPS2-08).** Each tick first asks `audit.key_check(conn)`
+(`WorkspaceScheduler._key_gate`). While the answer is not `ok`, the four steps that sign audit rows
+(`AUDITED_STEPS`: `runs_started`, `approvals_expired`, `approvals_interrupted`, `runs_interrupted`)
+are skipped and listed in the summary's `paused`: no report is claimed, no approval expires or
+fails, no run is failed, nothing is written for them. `messages_interrupted`,
+`documents_interrupted` and the housekeeping deletes sign nothing and keep running. The pause is
+logged only when the key's state changes, on `nerva.workspace.scheduler`: one WARNING when it
+starts or its state changes — `workspace scheduler paused: <reason>, so scheduled reports, approval
+expiry and the failing of stuck runs and approvals wait — nothing is changed or written for them
+until the service's JARVIS_AUDIT_KEY / JARVIS_KEY_DIR are back; check with: <CHECK_COMMAND>`, the
+reason worded for `mismatch`, `missing` and `unreadable` — and one INFO when the key matches again
+(`workspace scheduler resumed: …`; a restarted process starts in the `ok` state, so after a restart
+with the right key there is no resume line). A step that still raises `audit.AuditKeyError` (the
+key changed between the check and the step) is caught before the generic handler: no traceback,
+the step is listed in `paused`, and the remaining audited steps of that tick are skipped. The first tick after the key is back catches up: a due report
+runs once (its `next_run_at` is recomputed from that tick), overdue approvals expire, stuck runs
+and approvals fail. A database the check cannot read (`sqlite3.Error`) is treated as `ok`, so the
+steps meet and log that error themselves.
+
 **Fixed during the build (v3).** A run is written in the report owner's locale (else the org default).
 When the instructions match nothing in scope, the opening passages of the documents in scope are used
 (up to 50 documents); `no_documents` means the scope holds no ready document. A manual run is refused
@@ -960,7 +1042,21 @@ lifespan in the same process on another loop never cancels the first one's.
     so a session ended under the user (a 401 after a revocation or an expiry) does not lose it: the
     same user's page restores it after signing in again. A draft is dropped when it is sent or
     saved, when the form is cancelled, and — every user's — on a deliberate sign-out; blocked
-    storage just keeps no draft.
+    storage just keeps no draft. v3.3 (round 2, F3): `app/drafts.ts` `useRestoredDraft` (read
+    once, when the form mounts; `draftText` / `draftIds` check the restored values) and
+    `useDraftMirror` give every other form the same behaviour, under these keys: the email
+    request `email.<source type>.<source id>`, the admin's invite dialog `invite.new` (departments
+    deleted since are dropped), the edit-user dialog `user.<id>`, the department drawer
+    `department.<id>` or `department.new`, the organisation form `org`, the SMTP form `smtp` —
+    every field except the password, which is never written to storage. These forms keep a draft
+    only while they differ from the values they were prefilled with (an unchanged form keeps
+    none), and after a send, a save or a cancel (Cancel, Escape or the close button) nothing is
+    written again until the value changes. A restored dialog says so (`draft.restored`;
+    `draft.restoredSend` for the email request); the two page forms (organisation, SMTP) say so
+    (`draft.restoredPage` / `draft.restoredSmtp`, which adds that the password is never kept) with
+    a „Renunță la modificări" (`draft.discard`) action that puts the saved values back. The
+    composer and the report form keep the v3.2 rule: they mirror what is typed (a new report with
+    nothing typed keeps no draft).
   - *„Primii pași" (getting started).* At the top of Admin → Users a card lists five steps, each
     checked from real data: email configured, a department besides General, a colleague invited,
     a `ready` document (`ready_document_count`), the newest `model.tested` audit row with
@@ -982,6 +1078,56 @@ lifespan in the same process on another loop never cancels the first one's.
     one reads as a generic withdrawal, and a request with no code was cancelled by its requester.
   - *Usage.* The admin usage page sends the browser's time zone as `tz` and names the zone the
     days were counted in.
+- **Behaviour added in the second assessment round and the polish pass (v3.3).**
+  - *Where an answer was made, in words (UX-13).* `pages/shared/LocalityChip.tsx` shows a
+    locality in the model popover's words — `locality.local` „Pe serverul companiei",
+    `locality.cloud` „La un furnizor cloud aprobat", `locality.unknown` „Locație neconfirmată"
+    (EN: On the company's server / With an approved cloud provider / Location unconfirmed) —
+    never the raw code. Model ids are technical and shown to admins only: in the chat meta (the
+    chip, plus the mono model id for admins), in the run view (a row „Unde a fost generat",
+    `run.field.where`, for everyone; the „Model" row for admins), in the run history (the column
+    is headed „Unde a fost generat" for non-admins and „Model" with the id for admins); the
+    shared-reports list shows the chip alone (column `run.field.where`).
+  - *Audit drawer (UX-13).* `detailValue` first looks a coded detail up as
+    `audit.value.<key>[<code>]` (the login-failure and cancellation reasons, `via`, the throttle
+    and session scopes, invite purposes, credential changes, visibility, the
+    `report_delivery` source, feedback values, the `admin action` note…), so it reads as words;
+    roles, account statuses and the model policy in a `from` / `to` pair read as their labels,
+    labelled „Înainte" / „După" (a lone `to` stays a recipient list); an email source reads as
+    „Mesajul #12"; the `scheduler` actor reads „Planificatorul automat". The raw action code
+    stays in the drawer's last row („Codul tehnic al acțiunii"), for support.
+  - *Approval preview (UX-20).* The preview's heading follows the status
+    (`ApprovalDrawer.previewHeading`): `pending` „Ce se întâmplă la aprobare"; `approved`,
+    `executing`, `failed` „Acțiunea cerută"; `rejected`, `cancelled`, `expired`
+    „Ce s-ar fi întâmplat la aprobare". The email preview's „Către" row is plain comma-separated
+    text, like the other rows of its grid.
+  - *Citation chips (A11Y-15).* `CitedMarkdown`'s tree walk marks a chip that starts its block
+    (a table cell, a list item, a paragraph — no text before it) as `ws-cite--lead`, a 24 × 24 px
+    target (min-width 24px, height 24px); a chip inside running text keeps the compact inline
+    size (WCAG 2.5.8's inline exception).
+  - *Audit verification after a re-key (OPS2-01 follow-up).* `AuditVerifyResult` reads the
+    optional `unverified` and `rekeyed_at`; an intact chain with `unverified > 0` adds the
+    plural-correct sentence `audit.verify.unverified` („… intrări de dinaintea schimbării cheii
+    de audit (intrarea #N) au fost semnate cu cheia pierdută și nu mai pot fi verificate; o
+    modificare ulterioară a lor tot s-ar observa.") to the notice and the status region;
+    `audit.rekeyed` has its action label; `error.audit_key_mismatch` is translated next to
+    `error.audit_key_missing`, and the `key_mismatch` notice points the server's administrator
+    to the `check` command and the old key.
+  - *Definition lists.* `.ws-dl`'s label column is `fit-content(45%)`, badges inside a `dd`
+    wrap, and `.ws-locality` grows in height rather than having a fixed one, so the longer chip
+    text fits at 320 px.
+  - *Run view export on phones (UX-21, polish pass).* The export group sits in `.ws-export` with
+    a caption „Exportă" (`run.exportGroup`; EN „Export") that names the segmented group through
+    `aria-labelledby`. From 480 px nothing changes: the caption is hidden and the buttons read
+    „Exportă Markdown | Exportă HTML | Tipărește". Below 480 px the caption shows above the
+    group, the buttons read „Markdown | HTML | Tipărește" (`run.export.mdShort` /
+    `run.export.htmlShort`, aria-hidden) and the full words stay their accessible names (kept
+    screen-reader-only), so none of the three equal buttons wraps its label onto a second line.
+  - *Known gap (BACKLOG NWS-20).* `reports._execute` stores `succeeded` before it awaits the email
+    delivery (up to 15 s per SMTP operation) and the run view stops polling once the run is no
+    longer `queued` / `running`, so a page watched live shows „Gata" and only after a reload
+    „Trimis pe email către" or the delivery-failed notice; the bell notification arrives either
+    way. Closing it needs a delivery state on the run that the view can keep polling on.
 - **Quality bar.** Every async action has loading, success and error states; empty states teach the next
   step; destructive actions confirm; forms validate inline and map server `error` codes to translated
   messages; dialogs and drawers trap and return focus; everything keyboard reachable with visible focus;
@@ -1045,6 +1191,26 @@ line, the `BACKLOG.md` section „Nerva Workspace — pilot B2B (2026-10-17)” 
 `WS_E2E_MODEL_PORT` / `WS_E2E_SMTP_PORT` / `WS_E2E_HUB_PORT`, default 18491–18493; a run directory
 from `WS_E2E_RUN_DIR`, else a fresh temporary one), and `.github/workflows/e2e.yml` runs it after the
 HUD lane with `E2E_PYTHON=python`, uploading `frontend/e2e/.results/workspace-screens/` on failure.
+**v3.3:** `WS_E2E_RESULTS_DIR` (optional) moves a run's traces (`<dir>/workspace`) and its
+screenshots and axe reports (`<dir>/workspace-screens`) out of the shared `frontend/e2e/.results/`;
+unset, nothing changes. The SMTP web server is `frontend/e2e/support/workspace_smtp.py --port
+<WS_E2E_SMTP_PORT> --out <run>/mail.jsonl --run-dir <run>`: the same `SmtpSink` class as
+`tests/support/smtp_sink.py`, with an off switch — while `<run>/smtp.down` exists the sink stops
+listening and the port refuses connections (the hub's SMTP settings are left alone), when the file
+is removed it listens again on the same port, `<run>/smtp.state` holds `up` or `down`, and a stale
+`smtp.down` from an interrupted run is removed at start. The spec helper `setSmtpSink('up' |
+'down')` (`frontend/e2e/support/workspace-helpers.ts`) flips it and waits until the state file and
+a real SMTP probe agree. The journey has 28 serial steps; the two added in this pass stop the sink:
+an approved `email.send` that cannot reach the mail server ends `failed` / `smtp_failed`, nothing
+sent, explained in Romanian to the approver and the requester (axe page `approval-failed`); an
+approved report delivery that cannot reach it leaves the run `succeeded` with
+`error='delivery_failed'`, the run view's warning and the history badge „Email netrimis" (axe page
+`run-view-delivery-failed`), and with the sink back the next run is delivered — the lane's first
+end-to-end coverage of scheduled-report delivery. Every `checkPage` also fails a segmented-group
+button whose visible label wraps onto more than one line, at 1280, 390 and 320 px. During an SMTP
+outage each failed send is one WARNING line on `nerva.workspace.mailer` (`sending email via
+<host>:<port> failed (connection_failed, ConnectionRefusedError)`), never a traceback, so the
+journey's final hub-log check stays strict.
 
 ---
 
@@ -1202,14 +1368,43 @@ HUD lane with `E2E_PYTHON=python`, uploading `frontend/e2e/.results/workspace-sc
   a user home is active (`JARVIS_USER_HOME`, or a frozen build's default), else
   `<checkout>/memory_logs` — the last fallback, inside `paths.app_root()`, is what the CLI
   preflight refuses (a shell without the service's environment would create a second, empty
-  workspace there). The backup CLI (`python -m agents.core.backup`, not workspace code) resolves
-  `verify` / `restore` names only against the file names in `<data root>/backups/`
-  (`resolve_backup`; a full path → `no such backup`, exit 2), and lets `SecretStoreError` (wrong
-  `JARVIS_BACKUP_KEY`) and `FileExistsError` (non-empty target) escape as tracebacks (exit 1); the
-  pilot guide §17 names all three. Files are created with the process umask: `sqlite3` makes
-  `workspace.db` 0644 and `mkdir` makes `backups/` 0755 under systemd's default 0022, and a restore
-  writes `0o666`/`0o777 & ~umask` (`archive_safe`) — hence `UMask=0077` in the pilot guide's §2
-  drop-in and `nerva-run`.
+  workspace there). The backup CLI (`python -m agents.core.backup`, not workspace code; v3.3,
+  `BACKLOG.md` NWS-18): `verify` / `restore` take the file name `list` shows or a path to an
+  archive directly inside `<data root>/backups/` — absolute (the `"archive"` value `create`
+  prints), relative to the working directory, or with `..` (`backup.resolve_backup_arg`).
+  Symlinks and `..` are resolved first and the archive's real location must be the backups
+  directory's real location (a symlinked `backups/` is followed): a copy elsewhere, a path that
+  leaves the directory, an entry that links to a file elsewhere, or a name whose entry links
+  to another archive of the directory (plain or encrypted is read from the entry's name;
+  review REV-POLISH-05 — a path to such a link resolves to the archive it links to) names
+  no backup, and the
+  answer is always an entry of the directory listing. The admin route keeps `resolve_backup`
+  (names only). Exit codes: 0 done; 1 the command ran and failed; 2 the argument names no backup.
+  Every failure is one line on stdout, never a traceback: ``no such backup: <arg> — verify and
+  restore take a file name from `list`, or a path to an archive inside <dir> (copy one from
+  elsewhere there first)`` (2); `cannot decrypt <name>: <source> is not the key the archive was
+  made with, or the archive is damaged; nothing was checked` (verify) / `…; nothing was restored`
+  (restore) for a `SecretStoreError` (1), where `<source>` names the key actually tried, resolved
+  as `SecretStore` resolves it (review REV-POLISH-04): `JARVIS_BACKUP_KEY in this environment`
+  (a passphrase adds `(a passphrase, with the salt <key dir>/backup.cipher.salt)`), else
+  `JARVIS_SECRET_KEY in this environment (JARVIS_BACKUP_KEY is not set: run with the service's
+  environment: nerva-run, PILOT_GUIDE §2)`, else `the key file <key dir>/backup.cipher.key
+  (JARVIS_BACKUP_KEY is not set: …)`. A read never mints key material: when that key file, or a
+  passphrase's salt, does not exist, `verify` / `restore` create nothing and raise
+  `backup.BackupKeyMissing` (a `SecretStoreError`) before the key directory is touched — `cannot
+  decrypt <name>: JARVIS_BACKUP_KEY is not set (…) and there is no key file <path> — no key was
+  made; nothing was checked`, or `… is a passphrase and its salt <path> does not exist (the key
+  directory is kept off-site, PILOT_GUIDE §14) — no key was made; …` (1); `target <dir> is not empty,
+  nothing restored — restore into a new, empty directory (--force overwrites, but never restore
+  over the data directory in use)` (1); `no such backup: <name> (it is no longer in <dir>)` for an
+  archive that vanished after it was resolved (1); `verify failed: <OSError>` / `restore failed:
+  <OSError>` (1); the `archive rejected …` messages are unchanged. Files outside
+  `<data>/business` are still created with the process umask: `mkdir` makes `backups/` 0755 and
+  `sqlite3` makes the hub's own databases (`settings.db`, …) 0644 under systemd's default 0022,
+  and a restore writes `0o666`/`0o777 & ~umask` (`archive_safe`) — hence `UMask=0077` in the pilot
+  guide's §2 drop-in and `nerva-run`. Inside `<data>/business` the workspace makes its files
+  private itself (§3 File modes); the repo's `deploy/systemd/jarvis-hub.service` still sets no
+  `UMask`.
 - Protected paths make a PR control-plane: `.github/workflows/**`, `agents/core/kernel/**`,
   `agents/core/security/**`, `agents/core/secret*`, `AGENTS.md`, `MOONSHOT.md`. The plan touches only
   `ci.yml` and (v3.1) `e2e.yml` among them.

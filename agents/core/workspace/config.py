@@ -80,6 +80,18 @@ def workspace_dir() -> Path:
 #: Explicit hub roots already warned about, as ``(setting, root)``: one warning each per process.
 _warned_hub_roots: set[tuple[str, str]] = set()
 
+#: What a dropped root keeps outside company data, per setting (review REV-POLISH-03): the
+#: file tools resolve every path inside their roots, while the terminal's roots bound only
+#: its working directory — a path inside an approved command is the approval's to judge.
+_DROPPED_ROOT_EFFECT = {
+    "JARVIS_FILE_ROOTS": "the file tools stay outside company data",
+    "JARVIS_TERMINAL_LOCAL_ROOTS": (
+        "the terminal's working directory stays outside company data — its roots bound only "
+        "the working directory; a path inside an approved command, absolute or ../, is "
+        "governed by the terminal's approval"),
+}
+_DROPPED_ROOT_DEFAULT = "the tools of this setting stay outside company data"
+
 
 def _relation(root: Path, data: Path) -> str | None:
     """How *root* overlaps *data*: ``is``, ``contains``, ``is inside`` — or ``None``."""
@@ -96,9 +108,11 @@ def hub_roots_without_workspace(setting: str, roots: Sequence[str]) -> list[str]
     """*roots* without every root that is, contains or lies inside the workspace directory.
 
     The hub's own tools — the owner's file tools (``JARVIS_FILE_ROOTS``) and the governed
-    terminal (``JARVIS_TERMINAL_LOCAL_ROOTS``) — must never reach company data, even when an
+    terminal (``JARVIS_TERMINAL_LOCAL_ROOTS``) — are never rooted in company data, even when an
     operator sets such a root by mistake (``<data>/business`` itself, the data root that
-    contains it, or a folder under it). Each root is compared by its real location
+    contains it, or a folder under it). For the terminal that bounds its working directory
+    only: a path inside an approved command is governed by the terminal's approval, which
+    the WARNING says (review REV-POLISH-03). Each root is compared by its real location
     (``~``, ``..`` and symlinks resolved); a dropped one is logged once per process, as a
     WARNING naming *setting*. Every other entry is returned unchanged and in order — blank,
     relative or unresolvable ones included, so the caller treats them exactly as before.
@@ -126,10 +140,10 @@ def hub_roots_without_workspace(setting: str, roots: Sequence[str]) -> list[str]
         if (setting, str(root)) not in _warned_hub_roots:
             _warned_hub_roots.add((setting, str(root)))
             logger.warning(
-                "%s lists %s, which %s the Nerva Workspace data directory %s: the hub's file "
-                "tools and terminal never reach company data, so this root is ignored (when no "
-                "other root is left, the default one is used; PILOT_GUIDE §13)",
-                setting, root, relation, data)
+                "%s lists %s, which %s the Nerva Workspace data directory %s, so this root is "
+                "ignored: %s (when no other root is left, the default one is used; "
+                "PILOT_GUIDE §13)", setting, root, relation, data,
+                _DROPPED_ROOT_EFFECT.get(setting, _DROPPED_ROOT_DEFAULT))
     return kept
 
 

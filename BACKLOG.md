@@ -16,7 +16,7 @@
 
 > **Directiva owner-ului, 2026-10-17:** *„avansează, pregătește interfața B2B pentru un pilot … produsul să
 > fie de nota 9/10 chiar și pentru pilot, toate funcțiile trebuie să funcționeze"*. Contractul:
-> [`docs/business/WORKSPACE_PILOT_SPEC.md`](docs/business/WORKSPACE_PILOT_SPEC.md) (v3.2) · instalare și operare:
+> [`docs/business/WORKSPACE_PILOT_SPEC.md`](docs/business/WORKSPACE_PILOT_SPEC.md) (v3.3) · instalare și operare:
 > [`docs/business/PILOT_GUIDE.md`](docs/business/PILOT_GUIDE.md) · întrebările de business, D1–D7 încă deschise:
 > [`docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md`](docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md).
 > Cinci felii construite și revizuite independent (fiecare cu propriul review adversarial și fix-urile lui),
@@ -124,7 +124,7 @@
   and offers no link) and the company data found only under `home/business/`; the run view's heading is
   pinned to „Raport: <name>". Gate run: 1,529 workspace backend tests, 2,341 vitest, the journey 21/21,
   status files regenerated (27,048 backend tests).
-- [x] ✅ **NWS-16 — the first assessment round (2026-10-18): findings fixed before the pilot.**
+- [x] ✅ **NWS-16 — the first two assessment rounds (2026-10-18): findings fixed before the pilot.**
   Backend: the audit key guard — a key file is minted only for an empty trail, and a process whose key
   is not the newest row's never writes (`503 audit_key_missing` / `audit_key_mismatch`, said once at hub
   start), with the read-only CLI `check` and the audited `audit-rekey` for a key that is truly lost; the
@@ -135,10 +135,49 @@
   liveness probe of the local model server; the sweep that fails documents an interrupted extraction left
   `processing`; no CORS headers on the workspace's paths. Frontend: unsent drafts in `sessionStorage`, the
   „Primii pași" card, table excerpts and previews rendered through `CitedMarkdown`, tables as cards below
-  768 px, the run view's h1 = the report's name. Docs: spec v3.2; pilot guide §2 (`UMask=0077`, a git
+  768 px, the run view's h1 = the report's name. Round 2 (frontend; written into spec §10 in v3.3,
+  DOC-03): drafts on every other form (`email.<type>.<id>`, `invite.new`, `user.<id>`,
+  `department.<id>|new`, `org`, `smtp` without the password), kept only while the form differs from
+  its prefilled values, with „Renunță la modificări" on the two page forms; `LocalityChip` (locality
+  in words, „Pe serverul companiei") and model ids for admins only; audit values translated through
+  `audit.value.<key>[<code>]`, `from`/`to` as „Înainte"/„După", the scheduler actor named; approval
+  preview headings by status („Acțiunea cerută", „Ce s-ar fi întâmplat la aprobare"); 24 × 24 lead
+  citation chips (`ws-cite--lead`); the verify sentence for rows a re-key left unverified;
+  `.ws-dl` labels at `fit-content(45%)`; `WS_E2E_RESULTS_DIR` for the e2e lane. Test support: the
+  fake model quotes each source's `gist()` (its first prose sentence, or a table's first data row
+  „Lună: Iulie — Județ: Sibiu …") instead of raw Markdown. Docs: spec v3.2; pilot guide §2 (`UMask=0077`, a git
   checkout or bundle, `python3.12` on Ubuntu with 3.13 present), §14 (the archive name, restore on a new
   server, the `check` step), §16 (refusals, `check`, `audit-rekey`), §17 (audit-key and backup rows), §18,
   §20 (every key in the handover); `docs/FLAGS.md` and `docs/ARCHITECTURE.md`.
+- [x] ✅ **NWS-17 — hub-side refusal of explicit file roots that reach the company data.** **Delivered
+  2026-10-19:** `workspace.config.hub_roots_without_workspace`, applied by `FileScope.from_env()` and
+  `local_transport.default_roots()` / `LocalHostTransport.from_env()`, drops a `JARVIS_FILE_ROOTS` /
+  `JARVIS_TERMINAL_LOCAL_ROOTS` entry whose real path is, contains or lies inside `<data root>/business`
+  (one warning, the default root when none is left; `tests/test_workspace_hub_root_guard.py`, 18
+  tests). Still outside it: roots passed in code, and absolute paths in an approved terminal argv —
+  which the warning itself now says for the terminal (REV-POLISH-03).
+- [x] ✅ **NWS-18 — backup CLI ergonomics.** **Delivered 2026-10-19:** `verify` / `restore` take the
+  name from `list` or a path whose real location is in `<data root>/backups/` (`resolve_backup_arg`),
+  and every failure is one line, exit 1 (wrong key, non-empty target, …) or 2 (names no backup), never
+  a traceback (`tests/test_backup_cli.py`, 17 tests); pilot guide §14 / §15 / §17 / §20 simplified.
+  A failed decryption names the key it actually tried (`JARVIS_BACKUP_KEY`, `JARVIS_SECRET_KEY` or
+  the key file) and `verify` / `restore` never make a key file or salt (REV-POLISH-04); a `list` name
+  that links to another archive of the directory names no backup (REV-POLISH-05).
+- [x] ✅ **NWS-19 — the polish pass (2026-10-19): the round-2 residual minors.** The scheduler pauses
+  its four audited steps while the audit key is not the trail's — one WARNING per state change, no
+  traceback, nothing written, catch-up on the first good tick (OPS2-08,
+  `tests/test_workspace_scheduler_audit_key.py`); `workspace.db` created 0600 whatever the umask and
+  `<data root>/business` made private at each process's first connect — a symlinked `business/` at
+  the folder it links to (OPS2-05, REV-POLISH-02, `tests/test_workspace_file_modes.py`; `deploy/systemd` still sets no `UMask`, the guide's drop-in
+  does); every operator hint names `nerva-run` (OPS2-07, `tests/test_workspace_operator_hints.py`);
+  NWS-17 and NWS-18 above; the run view's export group captioned „Exportă" with short labels below
+  480 px (UX-21); two journey steps with the SMTP sink stopped — an approved email that fails
+  honestly and an approved report delivery that cannot be sent, then delivered with the sink back
+  (T-GAP-1; `frontend/e2e/support/workspace_smtp.py`; the journey has 28 steps). Docs: spec v3.3
+  (DOC-03 and this pass), pilot guide §2 / §12–§20, `docs/FLAGS.md`, `docs/ARCHITECTURE.md`. Gate
+  run: 1,658 workspace backend tests (serial, alphabetical, and `-n 6`: no test depends on the
+  order or on `--log-level` any more, REV-POLISH-01), 239 vitest in `src/workspace`, the journey
+  28/28 twice.
 
 **Open follow-ups**
 
@@ -155,16 +194,16 @@
   Run extraction in a subprocess with `RLIMIT_AS` and a hard kill.
 - [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
   lazy-load the admin console and reports to cut the first load.
-- [ ] ⬜ **NWS-17 — hub-side refusal of explicit file roots that reach the company data.**
-  `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` set explicitly to `<data root>` or `<data
-  root>/business` would let the owner's personal assistant read the workspace database and documents;
-  only the pilot guide (§13, §18, §19) says not to. `FileScope.from_env()` (`agents/core/file_tools.py`) and
-  `local_transport.default_roots()` should drop such a root with a warning, with a test (file-tools owner).
-- [ ] ⬜ **NWS-18 — backup CLI ergonomics.** `python -m agents.core.backup verify|restore` accept only
-  the file name from `list` (the `"archive"` path `create` prints answers `no such backup`), and a wrong
-  `JARVIS_BACKUP_KEY` or a non-empty target prints a raw traceback (`SecretStoreError`,
-  `FileExistsError`). Accept a path inside `<data root>/backups/` and print one-line errors; pilot guide
-  §14 / §17 document the current behaviour.
+- [ ] ⬜ **NWS-20 — the run view learns the delivery outcome only after a reload.** `reports._execute`
+  stores `succeeded` first and then awaits the email delivery (up to 15 s per SMTP operation), and the
+  run view stops polling at `succeeded`, so a page watched live shows „Gata" but neither „Trimis pe
+  email către" nor the delivery-failed notice until it is reloaded (the bell notification does
+  arrive). Needs a backend delivery state on the run (e.g. `pending` / `sent` / `failed`) the view
+  can keep polling on; documented in pilot guide §18 (found in the polish pass, NEW-OBS-1).
+- [ ] ⬜ **NWS-21 — the pilot tag (owner).** No release tag holds the workspace yet (`v1.0.0` is older);
+  pilot guide §2 installs from `<eticheta-pilotului>` (§15 upgrades from tag to tag) and says the
+  owner cuts it after approving the pilot work, without naming it. Owner lane: merge, tag, and give
+  the tag's name to the installer; `docs/OWNER_TASKS.md` has no row for it yet.
 - [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
   `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
   contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.

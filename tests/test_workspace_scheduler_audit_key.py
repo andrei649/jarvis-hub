@@ -52,12 +52,45 @@ def spawned(monkeypatch):
     return calls
 
 
+class _Records(logging.Handler):
+    """Every record that reaches the root logger during the test, at every level.
+
+    ``caplog`` reads through one capture handler per test phase, made at ``--log-level``:
+    levels this fixture set on it held for the setup phase only, so ``pytest
+    --log-level=WARNING`` dropped the INFO lines the tests read and ``--log-level=ERROR``
+    the WARNING ones (REV-POLISH-01). A handler of the test's own captures the same
+    records however pytest was run, and whatever ran earlier in the process.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(logging.DEBUG)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+    def clear(self) -> None:
+        self.records.clear()
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.format(record) for record in self.records)
+
+
 @pytest.fixture
-def logs(caplog):
-    caplog.set_level(logging.DEBUG)
-    for name in LOGGERS:
-        caplog.set_level(logging.DEBUG, logger=name)
-    return caplog
+def logs():
+    handler = _Records()
+    loggers = [logging.getLogger(), *(logging.getLogger(name) for name in LOGGERS)]
+    levels = [logger.level for logger in loggers]
+    for logger in loggers:
+        logger.setLevel(logging.DEBUG)
+    loggers[0].addHandler(handler)
+    try:
+        yield handler
+    finally:
+        loggers[0].removeHandler(handler)
+        for logger, level in zip(loggers, levels, strict=True):
+            logger.setLevel(level)
 
 
 def _seed(conn, cast) -> dict:

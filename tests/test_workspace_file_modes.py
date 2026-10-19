@@ -39,6 +39,17 @@ def permissive_umask():
 
 
 @pytest.fixture(autouse=True)
+def every_log_level(caplog):
+    """Capture every level, as once the hub's ``setup_logging`` ran earlier in the process.
+
+    Importing ``agents.web`` sets the root logger to INFO, so whether the database's INFO
+    lines reach ``caplog.records`` used to depend on which test ran first (REV-POLISH-01);
+    starting every test here from the most verbose state makes the result order-free.
+    """
+    caplog.set_level(logging.DEBUG)
+
+
+@pytest.fixture(autouse=True)
 def fresh_process(monkeypatch):
     """Each test is a new hub process: no workspace directory secured yet."""
     _new_process(monkeypatch)
@@ -80,7 +91,7 @@ def test_every_file_the_workspace_writes_is_private_under_a_permissive_umask(
     csrf = login(client, company.member_a.email)
     response = upload(client, csrf, company.dept_a, "politica.txt", POLICY)
     assert response.status_code == 201, response.text
-    mailer.set_password("parola-smtp")         # secrets.enc (+ its .key without a secret key)
+    mailer.secret_store().set(mailer.CREDENTIAL_NAME, "parola-smtp")   # secrets.enc (+ .key)
     monkeypatch.delenv(config.ENV_SETUP_CODE, raising=False)
     config.setup_code()                         # setup-code.txt
 
@@ -105,6 +116,17 @@ def test_a_new_database_is_created_private_before_sqlite_opens_it(ws, permissive
             assert _mode(path.with_name(path.name + sidecar)) == 0o600, sidecar
     finally:
         conn.close()
+
+
+def _db_warnings(caplog) -> list[logging.LogRecord]:
+    """The database module's WARNING lines only (review REV-POLISH-01).
+
+    ``caplog.records`` holds every record at the root logger's level: after an earlier test
+    in the process ran the hub's ``setup_logging`` (root at INFO) — or under
+    ``--log-level=INFO`` — that includes the ``migrated to schema 1`` INFO line.
+    """
+    return [r for r in caplog.records
+            if r.name == "nerva.workspace.db" and r.levelno >= logging.WARNING]
 
 
 def _open_up(business: Path) -> None:
@@ -140,7 +162,7 @@ def test_open_modes_left_by_a_restore_are_closed_at_the_first_connect(ws, tmp_pa
         workspace_db.connect().close()          # once per process: the second says nothing
     assert _private(_modes(business), business) == {}, _modes(business)
     assert _mode(outside) == 0o644, "a symlink is never followed"
-    [warning] = [r for r in caplog.records if r.name == "nerva.workspace.db"]
+    [warning] = _db_warnings(caplog)
     assert "private now" in warning.getMessage() and str(business) in warning.getMessage()
 
 
@@ -161,10 +183,54 @@ def test_a_chmod_the_system_refuses_is_logged_once_and_never_fails(ws, tmp_path,
             assert conn.execute("PRAGMA user_version").fetchone()[0] == \
                 workspace_db.schema_version()
             conn.close()
-    records = [r for r in caplog.records if r.name == "nerva.workspace.db"]
+    records = _db_warnings(caplog)
     assert len(records) == 1, [r.getMessage() for r in records]
     assert "chmod -R go-rwx" in records[0].getMessage()
     assert "PermissionError" in records[0].getMessage()
+
+
+def test_a_business_folder_that_is_a_link_is_made_private_where_it_points(
+        ws, tmp_path, monkeypatch, caplog):
+    """``<data>/business`` → ``/disk2/business`` (review REV-POLISH-02).
+
+    The sweep used to return at once for a ``business/`` that is a symlink: a restore's
+    ``0644`` database and ``0755`` folders stayed readable by every local user, silently.
+    """
+    real = tmp_path / "disk2" / "business"
+    real.mkdir(parents=True)
+    business = ws.data_dir / config.DATA_DIRNAME
+    business.symlink_to(real, target_is_directory=True)
+    outside = tmp_path / "outside.txt"
+    _seed_store(business, outside)              # its connect already made `real` (0755) 0700
+    _open_up(real)
+    _new_process(monkeypatch)
+    caplog.clear()
+
+    with caplog.at_level(logging.WARNING, logger="nerva.workspace.db"):
+        workspace_db.connect().close()
+        workspace_db.connect().close()
+    assert _private(_modes(real), real) == {}, _modes(real)
+    assert _mode(outside) == 0o644, "below the folder a symlink is never followed"
+    [warning] = _db_warnings(caplog)
+    assert "private now" in warning.getMessage()
+    assert f"{business} → {real}" in warning.getMessage()
+
+
+def test_a_business_link_to_a_folder_holding_the_data_root_is_not_walked(ws, monkeypatch,
+                                                                          caplog):
+    """A link to ``/`` or to the data root would reach far more than the workspace's files."""
+    hub_file = ws.data_dir / "settings.db"
+    hub_file.write_bytes(b"the hub's own database")
+    hub_file.chmod(0o644)
+    (ws.data_dir / config.DATA_DIRNAME).symlink_to(ws.data_dir, target_is_directory=True)
+
+    with caplog.at_level(logging.WARNING, logger="nerva.workspace.db"):
+        workspace_db.connect().close()
+        workspace_db.connect().close()
+    assert _mode(hub_file) == 0o644, "nothing outside the workspace's own folder changes"
+    [warning] = _db_warnings(caplog)
+    assert "not checked" in warning.getMessage() and "PILOT_GUIDE §13" in warning.getMessage()
+    assert str(ws.data_dir) in warning.getMessage()
 
 
 def test_the_read_only_check_changes_no_mode(ws, monkeypatch):

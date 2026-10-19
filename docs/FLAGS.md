@@ -177,7 +177,11 @@ installed, and names the missing parser otherwise);
 touching the file, cross the kernel as `file.write`, and are reversible through
 `restore_snapshot(ref)`.
 `JARVIS_FILE_ROOTS` is a comma list of **absolute** roots; `JARVIS_FILE_MAX_BYTES`
-(minimum 1) caps both read and write.
+(minimum 1) caps both read and write. A configured root that is, contains or lies inside the
+Nerva Workspace's company data (`<data root>/business`, compared by real path: `~`, `..` and
+symlinks resolved) is dropped by `FileScope.from_env()` with one WARNING per root per process, and
+when no root is left the default applies (BACKLOG NWS-17). Nothing is dropped while
+`NERVA_WORKSPACE` is off and `business/` does not exist.
 **Cost:** the model loop can read and — after your approval — replace or delete files
 inside the roots you named. Snapshots have no retention/GC yet.
 **Revert:** unset + restart; the tools disappear from the allowlist.
@@ -189,7 +193,11 @@ inside the roots you named. Snapshots have no retention/GC yet.
 **OFF:** the `local-host` inventory row is absent and `LocalHostTransport` is not
 constructed — the refusal is the byte-identical `local_transport_not_implemented`.
 **ON:** the local host becomes a terminal target, argv-only, cwd-jailed to
-`JARVIS_TERMINAL_LOCAL_ROOTS`, output-capped, killed on timeout.
+`JARVIS_TERMINAL_LOCAL_ROOTS`, output-capped, killed on timeout. A configured root that is,
+contains or lies inside the Nerva Workspace's `<data root>/business` is dropped with one warning
+(`local_transport.default_roots()` / `LocalHostTransport.from_env()`, NWS-17), the default applying
+when none is left; the roots jail the working directory only, not absolute paths in an approved
+argv.
 **What stays gated anyway:** the static HARDLINE denylist is evaluated **before**
 authorize on every backend including docker (a hit leaves no audit entry and never
 spawns); then the target policy, then a **durable approved task**, then the
@@ -1244,8 +1252,13 @@ thing published (the pilot guide's Caddyfile publishes nothing else); it brings 
 per-user limits (the hub's per-IP limiter skips it) and its data lives in
 `<data root>/business/`, which the nightly backup archives and the hub's forget keeps. That is
 not the `<data root>/workspace/` default root of `JARVIS_FILE_ROOTS` /
-`JARVIS_TERMINAL_LOCAL_ROOTS` and the tool-result spills: with default roots the owner's tools
-never reach company data; do not point explicit roots at the data root or at `business/`.
+`JARVIS_TERMINAL_LOCAL_ROOTS` and the tool-result spills: with default roots the owner's file
+tools never reach company data and the terminal's working directory stays outside it (a path
+inside an approved terminal command is governed by that approval), and an explicit root that is,
+contains or lies inside `business/` is ignored with one warning (NWS-17). The workspace creates `workspace.db` 0600 whatever the umask and,
+at the first database connection of each process, removes group/other access from everything under
+`business/`; the rest of the data root still follows the service's umask (pilot guide §2
+`UMask=0077`).
 **Revert:** unset + restart; the data stays on disk, unreachable, and comes back as it was.
 
 ### `NERVA_WORKSPACE_SETUP_CODE`
@@ -1317,7 +1330,11 @@ time out (180 s chat, 300 s reports).
 answers (10 min) and documents left `processing` by an extraction that died (claimed over
 10 min ago, or before this hub started → `failed` / `interrupted`, re-indexable at once), plus
 retention deletes (login attempts 24 h; expired invites, dead sessions 7 days; read
-notifications 90 days). **OFF:** none of that happens — scheduled reports never run, pending
+notifications 90 days). While this process's audit key is not the one the audit trail was signed
+with, the four steps that sign audit rows (due reports, approval expiry, the `executing` sweep,
+stale runs) pause — one WARNING `workspace scheduler paused: …` when the pause starts, no traceback,
+nothing written — and the first tick after the key is back catches up; the other sweeps and the
+deletes keep running. **OFF:** none of that happens — scheduled reports never run, pending
 approvals never expire, and a document interrupted by a restart reads `processing` until a
 re-index after 10 min. **Revert:** unset + restart.
 
@@ -1331,8 +1348,8 @@ re-index after 10 min. **Revert:** unset + restart.
 | `JARVIS_TERMINAL_TARGETS` | off (checked in the `terminal_run` tool handler) | Arms the gated `terminal_run` ToolRPC tool: post-approval shell commands on named targets through the audit-chained policy plane, docker transport only (`environments/execution.py`) | Approved commands actually execute in the containment sandbox; **ssh** still refuses (`ssh_transport_not_implemented`), and the local host is available only with `JARVIS_TERMINAL_LOCAL_HOST` + `JARVIS_ACTION_KERNEL` + a durable approval (row below) | Unset + restart: the tool refuses `terminal_targets_disabled`; policy plane and audit chain stay inert |
 
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
-| `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
-| `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
+| `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore; a root reaching `<data root>/business` is dropped with a warning | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
+| `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout); a root reaching `<data root>/business` is dropped with a warning | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
 | `JARVIS_VOICE_COMMANDS` (+ `JARVIS_VOICE_COMMAND_TIMEOUT_S`) | off · `30`s TTS / `120`s STT (cap 600) (`voice/local_providers.py`) | The owner's approved TTS/STT command providers may run (argv-only, private run dir, capped, kill-on-timeout) | An approved program runs as the hub's user; the settings stay ROUTE_ONLY, a set waits for a human, every spawn re-checks the program's identity, off in safe mode | Unset + restart: command voices fall back to the default voice, STT to Whisper or `[STT unavailable]` |
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
 | `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |
@@ -1361,7 +1378,7 @@ re-index after 10 min. **Revert:** unset + restart.
 | `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 (MiB, capped 200) | Larger documents accepted (streamed, early `413 file_too_large`) | Each in-flight upload is held in memory (≤ 3 per user); the proxy body limit must follow | Unset: 25 MiB |
 | `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS` | 12 (1..168) · 7 (1..90) | Longer idle / absolute session lifetime | A stolen cookie stays useful longer | Unset + restart: 12 h idle on the next request; 7 days for sessions issued afterwards |
 | `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` | 2 (1..16) | More simultaneous model calls (chat + reports + model test share it) | Overcommits a model server that cannot run them in parallel → timeouts instead of `model_busy` | Unset + restart: 2 for new callers |
-| `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run, pending-answer and interrupted-extraction sweeps, retention deletes every 30 s | Off: scheduled reports never run, pending approvals never expire, interrupted documents stay `processing`, old rows are never deleted | Unset + restart: on again |
+| `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run, pending-answer and interrupted-extraction sweeps, retention deletes every 30 s (the audited steps pause, with one warning, while the audit key is not the trail's) | Off: scheduled reports never run, pending approvals never expire, interrupted documents stay `processing`, old rows are never deleted | Unset + restart: on again |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
 | `llm.execute_code_sessions` *(runtime setting)* | on when code enabled · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, requires a current Action Kernel GRANT after its interpreter lock, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Explicitly set `false` + restart: back to the K1 one-shot, kernels destroyed |
 | `llm.tool_result_thresholds` *(runtime setting)* | `{}` (`tool_result_store.py`) | Per-tool byte ceilings for what a result may put in the context window, as `{tool: bytes}`. Beats the tool's own declaration and the `mcp_` family default; loses to a pinned tool (`file_read` is pinned to no limit, because it is how a spilled result is read back) | Raising one lets that tool fill more of the window; lowering it sends more of its output to disk. Nothing is lost either way — over the ceiling the full result is spilled and the model gets a preview naming the file | Set `{}` (no restart): back to the window-scaled default |

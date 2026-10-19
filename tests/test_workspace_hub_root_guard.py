@@ -1,4 +1,4 @@
-"""The hub's own file tools and terminal never reach the workspace's company data (NWS-17).
+"""The hub's own file tools and terminal are never rooted in the workspace's company data (NWS-17).
 
 The default roots are disjoint from ``<data>/business`` (tests/test_workspace_integration_
 purge.py), but an operator could still set ``JARVIS_FILE_ROOTS`` or
@@ -86,6 +86,30 @@ def test_other_roots_are_kept_in_order_and_each_drop_is_logged_once(ws, tmp_path
         for _ in range(3):
             assert [r.resolve() for r in read(value)] == [first.resolve(), second.resolve()]
     assert len(_guard_warnings(caplog)) == 1
+
+
+@pytest.mark.parametrize("setting", [FILE_ROOTS, TERMINAL_ROOTS])
+def test_the_warning_says_what_the_dropped_root_keeps_out_and_claims_no_more(
+        ws, monkeypatch, caplog, setting):
+    """The line an operator reads states the terminal's limit (review REV-POLISH-03).
+
+    It used to say the hub's "file tools and terminal never reach company data" — but the
+    terminal's roots bound only its working directory: an approved ``cat ../business/…``
+    still runs (PILOT_GUIDE §13, §18).
+    """
+    config.workspace_dir()
+    with caplog.at_level(logging.WARNING):
+        _readers(monkeypatch)[setting](str(ws.data_dir))
+    [warning] = _guard_warnings(caplog)
+    assert "never" not in warning and "so this root is ignored" in warning
+    if setting == TERMINAL_ROOTS:
+        assert "the terminal's working directory stays outside company data" in warning
+        assert "a path inside an approved command" in warning
+        assert "governed by the terminal's approval" in warning
+    else:
+        assert "the file tools stay outside company data" in warning
+        assert "terminal" not in warning
+    assert "PILOT_GUIDE §13" in warning
 
 
 def test_an_unrelated_root_is_kept_unchanged(ws, tmp_path, monkeypatch, caplog):
