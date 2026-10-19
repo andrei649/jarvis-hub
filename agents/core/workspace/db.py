@@ -15,16 +15,25 @@ rows, failed approvals) commit in their own ``tx`` before the error is raised.
 
 Time is read through :func:`now` everywhere in the workspace so tests can move the
 clock with ``monkeypatch.setattr(db, "now", ...)`` instead of patching ``time.time``.
+
+Private files whatever the umask (review OPS2-05). ``sqlite3`` would create the database
+``0644 & ~umask`` — readable by every local user under the default ``0022`` — and its
+``-wal``/``-shm`` files copy the database's mode. :func:`connect` therefore creates the
+file itself, empty and ``0600`` (an empty file is an empty database to SQLite), and the
+first connect of each process makes everything already under ``<data>/business`` private
+(:func:`secure_storage`): a restore, a copy or an older build may have left it open.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
+import stat
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Annotated
 
@@ -187,6 +196,15 @@ MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_V1)]
 
 _migrate_lock = threading.Lock()
 
+#: Modes of the workspace's own files and directories (review OPS2-05).
+PRIVATE_FILE_MODE = 0o600
+PRIVATE_DIR_MODE = 0o700
+#: The group and other permission bits :func:`secure_storage` removes.
+_OPEN_BITS = 0o077
+#: Workspace directories this process already made private (one pass per process each).
+_secured: set[str] = set()
+_secured_lock = threading.Lock()
+
 
 def now() -> float:
     """UTC epoch seconds — the workspace's single clock (patched in tests)."""
@@ -272,13 +290,107 @@ def migrate(conn: sqlite3.Connection) -> int:
     return current
 
 
+def _create_private_db(path: Path) -> None:
+    """Create *path* empty with mode 0600 unless it exists (SQLite reads it as empty).
+
+    ``sqlite3.connect`` would create it ``0644 & ~umask``; SQLite then gives the ``-wal``
+    and ``-shm`` files the database's own mode, so they are private too.
+    """
+    flags = (os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_CLOEXEC", 0))
+    try:
+        fd = os.open(path, flags, PRIVATE_FILE_MODE)
+    except FileExistsError:
+        return
+    os.close(fd)
+    with suppress(OSError):   # the umask can only have narrowed 0600, never widened it
+        os.chmod(path, PRIVATE_FILE_MODE)
+
+
+def _private_mode(mode: int) -> int | None:
+    """*mode* without its group/other bits, or ``None`` when it has none."""
+    permissions = stat.S_IMODE(mode)
+    return permissions & ~_OPEN_BITS if permissions & _OPEN_BITS else None
+
+
+def secure_storage(directory: Path) -> list[Path]:
+    """Remove group/other access from *directory* and everything under it; returns what changed.
+
+    *directory* is the workspace's own (``<data>/business``: the database and its
+    ``-wal``/``-shm``, ``files/`` and the stored documents, ``secrets.enc`` with its key and
+    salt, ``setup-code.txt``), so nothing else is touched. Symlinks are never followed nor
+    changed. A change is logged once, as a WARNING; a chmod the system refuses (files owned
+    by another user — a command run as root) is logged once too, and never fails the caller.
+    """
+    changed: list[Path] = []
+    refused: list[tuple[Path, str]] = []
+
+    def tighten(path: Path) -> None:
+        try:
+            info = path.lstat()
+        except OSError:
+            return
+        if stat.S_ISLNK(info.st_mode):
+            return
+        mode = _private_mode(info.st_mode)
+        if mode is None:
+            return
+        try:
+            os.chmod(path, mode)
+        except OSError as exc:
+            refused.append((path, type(exc).__name__))
+            return
+        changed.append(path)
+
+    if not directory.is_dir() or directory.is_symlink():
+        return changed
+    tighten(directory)
+    for parent, dirnames, filenames in os.walk(directory, followlinks=False):
+        base = Path(parent)
+        for name in [*dirnames, *filenames]:
+            tighten(base / name)
+    if changed:
+        logger.warning(
+            "Nerva Workspace: %d file(s) or folder(s) under %s could be read by other users "
+            "(a restore or a copy made with a permissive umask); they are private now — "
+            "files 0600, folders 0700", len(changed), directory)
+    if refused:
+        path, reason = refused[0]
+        logger.warning(
+            "Nerva Workspace: %d file(s) or folder(s) under %s can be read by other users and "
+            "this process may not change that (%s on %s): make the service's user their owner "
+            "and remove the access of others — chown -R jarvis:jarvis and chmod -R go-rwx "
+            "(PILOT_GUIDE §14, §19)", len(refused), directory, reason, path)
+    return changed
+
+
+def _secure_once(directory: Path) -> None:
+    """:func:`secure_storage` the first time this process opens *directory*'s database."""
+    key = str(directory)
+    if key in _secured:
+        return
+    with _secured_lock:
+        if key in _secured:
+            return
+        try:
+            secure_storage(directory)
+        except OSError as exc:   # a walk that cannot read a folder must not stop the hub
+            logger.warning("Nerva Workspace: the modes under %s could not be checked (%s)",
+                           directory, type(exc).__name__)
+        _secured.add(key)
+
+
 def connect() -> sqlite3.Connection:
     """Open the workspace database (WAL, foreign keys, 5 s busy timeout, Row factory).
 
     The schema is ensured on every connect: one ``PRAGMA user_version`` read when the
-    database is current, a migration otherwise.
+    database is current, a migration otherwise. A new database is created ``0600`` and
+    the first connect of a process makes the workspace's files private (:func:`secure_storage`).
     """
-    conn = sqlite3.connect(str(db_path()), check_same_thread=False, isolation_level=None)
+    path = db_path()
+    _create_private_db(path)
+    _secure_once(path.parent)
+    conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
     try:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 5000")

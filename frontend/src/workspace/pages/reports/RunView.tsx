@@ -8,7 +8,7 @@
    says honestly when the report was made but its email delivery failed, and when a share
    request is still waiting. The h1 is the report's name; the report's own "# Title" renders one
    level down, under it. */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { getRun, runExportUrl } from '../../api/reports';
 import type { Citation, ReportRunDetail } from '../../api/types';
 import { describeCode, describeError, errorCode } from '../../app/errors';
@@ -63,6 +63,18 @@ function ReportPlaceholder() {
   );
 }
 
+/** An export button's label: the full words ("Exportă Markdown") are its accessible name at every
+    width; under 480 px they are read but not shown, and the short form ("Markdown") is shown under
+    the group's visible caption ("Exportă"), so no label wraps onto two lines on a phone (UX-21). */
+function ExportLabel({ full, short }: { full: string; short: string }) {
+  return (
+    <>
+      <span className="ws-export__full">{full}</span>
+      <span className="ws-export__short" aria-hidden="true">{short}</span>
+    </>
+  );
+}
+
 /** Codes whose next step is the same as in the chat (the model was out, busy or too slow). */
 const MODEL_HINTS: ReadonlySet<string> = new Set(['model_unavailable', 'model_policy_blocked', 'model_busy', 'model_timeout']);
 
@@ -81,6 +93,7 @@ export function RunView({ runId, shared = false }: { runId: number; shared?: boo
   const [rerunning, setRerunning] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const wasActive = useRef<boolean | null>(null);
+  const exportCaption = `ws-export-${useId().replace(/:/g, '')}`;
 
   usePolling(() => run.reload(), RUN_POLL_MS, active);
 
@@ -145,10 +158,13 @@ export function RunView({ runId, shared = false }: { runId: number; shared?: boo
         description={subtitle || undefined}
         actions={data?.status === 'succeeded' && (
           <div className="ws-run-actions ws-print-hide">
-            <div className="ws-btn-group" role="group" aria-label={t('run.exportGroup')}>
-              <DownloadLink href={runExportUrl(data.id, 'md')} icon="download" size="sm">{t('run.export.md')}</DownloadLink>
-              <DownloadLink href={runExportUrl(data.id, 'html')} icon="download" size="sm">{t('run.export.html')}</DownloadLink>
-              <Button size="sm" icon="printer" onClick={() => window.print()}>{t('run.print')}</Button>
+            <div className="ws-export">
+              <span className="ws-export__caption" id={exportCaption}>{t('run.exportGroup')}</span>
+              <div className="ws-btn-group" role="group" aria-labelledby={exportCaption}>
+                <DownloadLink href={runExportUrl(data.id, 'md')} icon="download" size="sm"><ExportLabel full={t('run.export.md')} short={t('run.export.mdShort')} /></DownloadLink>
+                <DownloadLink href={runExportUrl(data.id, 'html')} icon="download" size="sm"><ExportLabel full={t('run.export.html')} short={t('run.export.htmlShort')} /></DownloadLink>
+                <Button size="sm" icon="printer" onClick={() => window.print()}>{t('run.print')}</Button>
+              </div>
             </div>
             {data.can_share && !data.shared_company && <Button size="sm" icon="globe" onClick={() => setSharing(true)}>{t('run.share')}</Button>}
             {canEmail && email.smtpReady !== false && <Button size="sm" icon="mail" onClick={() => setEmailing(true)}>{t('run.email')}</Button>}

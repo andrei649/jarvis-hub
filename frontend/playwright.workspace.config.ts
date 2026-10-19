@@ -3,17 +3,20 @@
    Three servers, all on loopback, all started fresh for every run:
      1. tests/support/fake_openai_server.py — a deterministic OpenAI-compatible model server
         (the hub's lm-studio backend points at it), streaming word-sized tokens 20 ms apart;
-     2. tests/support/smtp_sink.py — a real SMTP conversation; every accepted message is one
-        JSON line in <run>/mail.jsonl, which the journey reads to prove delivery;
+     2. the SMTP sink (tests/support/smtp_sink.py) through e2e/support/workspace_smtp.py — a real
+        SMTP conversation; every accepted message is one JSON line in <run>/mail.jsonl, which the
+        journey reads to prove delivery. The launcher also lets the journey stop the sink and start
+        it again on the same port (the files <run>/smtp.down and <run>/smtp.state), to prove that
+        an approved email which cannot reach the mail server fails honestly;
      3. the hub itself (serve.py) through e2e/support/workspace_hub.py, which builds a hermetic
         environment: a fresh JARVIS_HOME and key folder under the run directory, the workspace
         on with a fixed setup code, no cloud keys and no .env (see that file).
 
    The run directory is created once, here, in the runner process, and handed to the workers
    through the environment (they inherit it, so the config's second evaluation in a worker sees
-   it set and does not make another). It holds home/, keys/, docs/, mail.jsonl and hub.log and is
-   kept after the run for a post-mortem; run directories older than 12 hours are removed when
-   the next run starts.
+   it set and does not make another). It holds home/, keys/, docs/, mail.jsonl, smtp.state and
+   hub.log and is kept after the run for a post-mortem; run directories older than 12 hours are
+   removed when the next run starts.
 
    Browser: the pre-installed Chromium only (PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers); this
    lane never downloads one. Screenshots of every main page land in
@@ -100,7 +103,7 @@ export default defineConfig({
     },
     {
       name: 'smtp',
-      command: `${PY} tests/support/smtp_sink.py --port ${SMTP_PORT} --out "${path.join(RUN_DIR, 'mail.jsonl')}"`,
+      command: `${PY} frontend/e2e/support/workspace_smtp.py --port ${SMTP_PORT} --out "${path.join(RUN_DIR, 'mail.jsonl')}" --run-dir "${RUN_DIR}"`,
       cwd: '..',
       wait: { stdout: /READY 127\.0\.0\.1:\d+/ },
       reuseExistingServer: false,

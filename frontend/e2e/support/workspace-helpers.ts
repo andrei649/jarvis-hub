@@ -12,12 +12,14 @@
                 outside its surface); and screenshots at the two main sizes.
    focus      — keyboard checks axe cannot make: the focused control keeps a solid outline in
                 forced-colours mode, and Shift+Tab never leaves focus under the sticky top bar.
-   mail       — the SMTP sink's JSON-lines file, polled until the expected message arrives.
+   mail       — the SMTP sink's JSON-lines file, polled until the expected message arrives, and
+                the sink's off switch (setSmtpSink, through support/workspace_smtp.py).
    documents  — the four Romanian sample files, written by workspace_docs.py. */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import path from 'node:path';
 
 export const RUN_DIR = process.env.WS_E2E_RUN_DIR || '';
@@ -194,6 +196,27 @@ async function layoutFaults(page: Page, name: string, size: string): Promise<str
       }
     }
     probe.remove();
+    // A segmented group's button whose label wraps onto a second line: the group's buttons share
+    // the width equally, so on a phone a long label ("Exportă Markdown") broke in two (UX-21).
+    // Text read but not shown (a 1 px screen-reader-only span) is not part of the look.
+    for (const button of Array.from(document.querySelectorAll<HTMLElement>('.ws-btn-group > .ws-btn'))) {
+      if (button.getBoundingClientRect().width === 0) continue;
+      const lines: DOMRect[] = [];
+      const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const holder = node.parentElement;
+        if (!holder || !(node.textContent || '').trim() || holder.getBoundingClientRect().width <= 1) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        lines.push(...Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0));
+      }
+      if (lines.length === 0) continue;
+      const height = Math.min(...lines.map((r) => r.height));
+      const tops = lines.map((r) => r.top);
+      if (Math.max(...tops) - Math.min(...tops) > height / 2) {
+        found.push(`the label of "${(button.getAttribute('aria-label') || button.textContent || '').trim()}" wraps onto more than one line (${Math.round(button.getBoundingClientRect().width)}px wide)`);
+      }
+    }
     // A dialog or drawer control outside its surface or off screen: a footer that spilled off
     // the left edge left Delete and Re-index unreachable on phones (UX-01 / A11Y-01).
     for (const surface of Array.from(document.querySelectorAll<HTMLElement>('.ws-surface'))) {
@@ -284,6 +307,46 @@ export function readMail(): SinkMail[] {
   const out = execFileSync(python(), [path.join(testDir(), 'support', 'workspace_mail.py'), path.join(RUN_DIR, 'mail.jsonl')],
     { cwd: repoRoot(), encoding: 'utf8' });
   return JSON.parse(out) as SinkMail[];
+}
+
+/** Whether something speaks SMTP on the sink's port right now: true once the server greets
+    (220), false when the port refuses the connection or stays silent. The probe says QUIT and
+    waits for the server to close, so the sink never writes to a socket that is already gone. */
+function smtpAnswers(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: '127.0.0.1', port: SMTP_PORT });
+    let greeted = false;
+    let settled = false;
+    const done = (answer: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(answer);
+    };
+    socket.setTimeout(2_000, () => done(greeted));
+    socket.on('error', () => done(greeted));
+    socket.on('close', () => done(greeted));
+    socket.on('data', (chunk) => {
+      if (greeted) return;
+      greeted = chunk.toString('utf8').startsWith('220');
+      if (greeted) socket.write('QUIT\r\n');
+      else done(false);
+    });
+  });
+}
+
+/** Takes the SMTP sink down (its port refuses connections, as when the mail relay is down) or
+    brings it back on the same port, through support/workspace_smtp.py's control file; returns
+    once the port itself agrees. The hub's email settings are not touched. */
+export async function setSmtpSink(state: 'up' | 'down'): Promise<void> {
+  const control = path.join(RUN_DIR, 'smtp.down');
+  if (state === 'down') writeFileSync(control, 'down\n');
+  else rmSync(control, { force: true });
+  const stateFile = path.join(RUN_DIR, 'smtp.state');
+  await expect.poll(() => (existsSync(stateFile) ? readFileSync(stateFile, 'utf8').trim() : ''),
+    { message: `the SMTP sink did not report "${state}" (support/workspace_smtp.py)`, timeout: 10_000 }).toBe(state);
+  await expect.poll(smtpAnswers, { message: `the SMTP port did not ${state === 'up' ? 'answer again' : 'stop answering'}`, timeout: 10_000 })
+    .toBe(state === 'up');
 }
 
 /** Polls the sink until a message matching *predicate* arrives; returns it. */

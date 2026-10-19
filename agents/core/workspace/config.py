@@ -8,7 +8,8 @@ than rejected: a typo must never take the workspace down.
 The setup code is the one secret this module manages. When the operator does not set
 ``NERVA_WORKSPACE_SETUP_CODE``, a code is generated on first need and written next to
 the database with mode 0600; only the file's path is ever logged, so the code never
-lands in a log aggregator. ``python -m agents.core.workspace setup-code`` prints it.
+lands in a log aggregator. ``nerva-run -m agents.core.workspace setup-code`` (PILOT_GUIDE §2)
+prints it.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import logging
 import os
 import secrets
 import tempfile
+from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 
@@ -73,6 +75,62 @@ def workspace_dir() -> Path:
     path = data_path(DATA_DIRNAME)
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
+
+
+#: Explicit hub roots already warned about, as ``(setting, root)``: one warning each per process.
+_warned_hub_roots: set[tuple[str, str]] = set()
+
+
+def _relation(root: Path, data: Path) -> str | None:
+    """How *root* overlaps *data*: ``is``, ``contains``, ``is inside`` — or ``None``."""
+    if root == data:
+        return "is"
+    if data.is_relative_to(root):
+        return "contains"
+    if root.is_relative_to(data):
+        return "is inside"
+    return None
+
+
+def hub_roots_without_workspace(setting: str, roots: Sequence[str]) -> list[str]:
+    """*roots* without every root that is, contains or lies inside the workspace directory.
+
+    The hub's own tools — the owner's file tools (``JARVIS_FILE_ROOTS``) and the governed
+    terminal (``JARVIS_TERMINAL_LOCAL_ROOTS``) — must never reach company data, even when an
+    operator sets such a root by mistake (``<data>/business`` itself, the data root that
+    contains it, or a folder under it). Each root is compared by its real location
+    (``~``, ``..`` and symlinks resolved); a dropped one is logged once per process, as a
+    WARNING naming *setting*. Every other entry is returned unchanged and in order — blank,
+    relative or unresolvable ones included, so the caller treats them exactly as before.
+    Nothing is dropped while there is no company data to protect — the workspace is off and
+    its directory does not exist — nor when the data root cannot be determined (the hub
+    does not start then either).
+    """
+    try:
+        data = data_path(DATA_DIRNAME).resolve()
+    except (OSError, RuntimeError):
+        return list(roots)
+    if not (enabled() or data.exists()):
+        return list(roots)
+    kept: list[str] = []
+    for raw in roots:
+        text = str(raw or "").strip()
+        try:
+            root = Path(text).expanduser().resolve() if text else None
+        except (OSError, RuntimeError, ValueError):
+            root = None
+        relation = _relation(root, data) if root is not None else None
+        if relation is None:
+            kept.append(raw)
+            continue
+        if (setting, str(root)) not in _warned_hub_roots:
+            _warned_hub_roots.add((setting, str(root)))
+            logger.warning(
+                "%s lists %s, which %s the Nerva Workspace data directory %s: the hub's file "
+                "tools and terminal never reach company data, so this root is ignored (when no "
+                "other root is left, the default one is used; PILOT_GUIDE §13)",
+                setting, root, relation, data)
+    return kept
 
 
 def setup_code_path() -> Path:

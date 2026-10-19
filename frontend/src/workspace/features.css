@@ -252,7 +252,13 @@
 }
 .ws-picker.has-error .ws-picker__list { border-color: var(--ws-danger); }
 .ws-run-actions { display: flex; flex-wrap: wrap; gap: var(--ws-s2); align-items: center; }
-/* The three ways to take the report out (Markdown, HTML, print) read as one control. */
+/* The three ways to take the report out (Markdown, HTML, print) read as one control, named by
+   the caption "Exportă". On wide screens each button says it in full and the caption is not
+   shown; under 480 px the caption shows and the buttons say only "Markdown" / "HTML", so none of
+   the three equal buttons wraps its label onto a second line (UX-21). The full words stay the
+   buttons' accessible names at every width (RunView.tsx → ExportLabel). */
+.ws-export { display: inline-flex; }
+.ws-export__caption, .ws-export__short { display: none; }
 .ws-btn-group { display: inline-flex; flex-wrap: nowrap; }
 .ws-btn-group > .ws-btn { border-radius: 0; box-shadow: none; }
 .ws-btn-group > .ws-btn + .ws-btn { margin-left: -1px; }
@@ -261,7 +267,15 @@
 .ws-btn-group > .ws-btn:focus-visible { position: relative; z-index: 1; }
 @media (max-width: 479px) {
   .ws-run-actions { width: 100%; }
+  .ws-export { display: flex; flex-direction: column; gap: var(--ws-s1); width: 100%; }
+  .ws-export__caption { display: block; font-size: 12.5px; font-weight: 600; color: var(--ws-text-muted); }
+  .ws-export__full {
+    position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .ws-export__short { display: inline; }
   .ws-btn-group { width: 100%; }
+  /* Wrapping stays allowed as a last resort for a longer translation: never text off the button. */
   .ws-btn-group > .ws-btn { flex: 1 1 0; min-width: 0; padding: 6px var(--ws-s2); white-space: normal; line-height: 1.25; text-align: center; }
   .ws-btn-group > .ws-btn .ws-icon { display: none; }
 }

@@ -60,7 +60,7 @@ from agents.core import archive_safe
 from agents.core.archive_safe import ArchiveLimits
 from agents.core.env_config import env_int
 from agents.core.paths import data_root
-from agents.core.secrets import SecretStore
+from agents.core.secrets import SecretStore, SecretStoreError
 
 logger = logging.getLogger("jarvis.backup")
 
@@ -574,6 +574,40 @@ def resolve_backup(name: str, out_dir: Optional[str] = None) -> Optional[Path]:
     return None
 
 
+def resolve_backup_arg(arg: str, out_dir: Optional[str] = None) -> Optional[Path]:
+    """The archive an operator's ``verify`` / ``restore`` argument names, or None (NWS-18).
+
+    Either the file name ``list`` shows or a path — absolute or relative to the working
+    directory, e.g. the ``"archive"`` value ``create`` printed — to an archive directly
+    inside the backups directory. Either way the archive's real location (symlinks and
+    ``..`` resolved) must be in the backups directory's real location: a path elsewhere,
+    or an entry that is a link to a file elsewhere, names no backup, so neither can point
+    the drill or a restore at an arbitrary file. The answer is always an entry of the
+    directory listing, never the caller's spelling of it.
+    """
+    out = Path(out_dir) if out_dir else default_backup_dir()
+    try:
+        real_out = out.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    found = resolve_backup(arg, out_dir)
+    if found is None:
+        try:
+            wanted = Path(arg).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            return None
+        found = next((p for p in _iter_archives(out) if p.name == wanted.name), None)
+        if found is None or wanted.parent != real_out:
+            return None
+    try:
+        real = found.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if real.parent != real_out or real.name != found.name:
+        return None
+    return found
+
+
 # ── safe extraction ───────────────────────────────────────────────
 # There is deliberately no backup-local extractor any more (H503): verify and restore
 # both call archive_safe.extract_tar, the same module the marketplace install uses.
@@ -676,6 +710,23 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
 
 
 # ── CLI (one-command) ─────────────────────────────────────────────
+# Exit codes: 0 done; 1 the command ran and failed (a failed drill, a rejected archive, a
+# wrong key, a non-empty target, …); 2 the argument names no backup. Every failure is one
+# line on stdout, never a traceback (NWS-18).
+
+def _no_such_backup(arg: str) -> int:
+    print(f"no such backup: {arg} — verify and restore take a file name from `list`, or a "
+          f"path to an archive inside {default_backup_dir()} (copy one from elsewhere there "
+          f"first)")
+    return 2
+
+
+def _decrypt_failed(name: str, outcome: str) -> int:
+    print(f"cannot decrypt {name}: JARVIS_BACKUP_KEY in this environment is not the key the "
+          f"archive was made with, or the archive is damaged; {outcome}")
+    return 1
+
+
 def _main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m agents.core.backup",
                                  description="Jarvis local backup / restore")
@@ -685,9 +736,9 @@ def _main(argv=None) -> int:
                     help="encrypt the archive at rest (uses $JARVIS_BACKUP_KEY, else a generated key in $JARVIS_KEY_DIR)")
     sub.add_parser("list", help="list existing backups")
     pv = sub.add_parser("verify", help="restore-drill a backup (integrity-check its DBs)")
-    pv.add_argument("name", help="backup file name (see `list`)")
+    pv.add_argument("name", help="backup file name (see `list`), or a path to one in the backups dir")
     pr = sub.add_parser("restore", help="restore a backup into a target dir")
-    pr.add_argument("name", help="backup file name (see `list`)")
+    pr.add_argument("name", help="backup file name (see `list`), or a path to one in the backups dir")
     pr.add_argument("target", help="destination directory")
     pr.add_argument("--force", action="store_true", help="overwrite a non-empty target")
     args = ap.parse_args(argv)
@@ -697,19 +748,25 @@ def _main(argv=None) -> int:
     elif args.cmd == "list":
         print(json.dumps(list_backups(), indent=2))
     elif args.cmd == "verify":
-        path = resolve_backup(args.name)
+        path = resolve_backup_arg(args.name)
         if not path:
-            print(f"no such backup: {args.name}"); return 2
+            return _no_such_backup(args.name)
         try:
             rep = verify_backup(str(path))
         except archive_safe.ArchiveRejected as e:
             print(f"archive rejected: {e}"); return 1
+        except SecretStoreError:
+            return _decrypt_failed(path.name, "nothing was checked")
+        except FileNotFoundError:
+            print(f"no such backup: {path.name} (it is no longer in {path.parent})"); return 1
+        except OSError as e:
+            print(f"verify failed: {e}"); return 1
         print(json.dumps(rep, indent=2))
         return 0 if rep["ok"] else 1
     elif args.cmd == "restore":
-        path = resolve_backup(args.name)
+        path = resolve_backup_arg(args.name)
         if not path:
-            print(f"no such backup: {args.name}"); return 2
+            return _no_such_backup(args.name)
         try:
             result = restore_backup(str(path), args.target, force=args.force)
         except archive_safe.ArchiveRejected as e:
@@ -720,6 +777,17 @@ def _main(argv=None) -> int:
                 return 1
             # Refused in the pre-scan, before the first write: nothing was restored.
             print(f"archive rejected, nothing restored: {e}"); return 1
+        except SecretStoreError:
+            return _decrypt_failed(path.name, "nothing was restored")
+        except FileExistsError:
+            print(f"target {args.target} is not empty, nothing restored — restore into a new, "
+                  f"empty directory (--force overwrites, but never restore over the data "
+                  f"directory in use)")
+            return 1
+        except FileNotFoundError:
+            print(f"no such backup: {path.name} (it is no longer in {path.parent})"); return 1
+        except OSError as e:
+            print(f"restore failed: {e}"); return 1
         print(json.dumps(result, indent=2))
         return 0 if result["ok"] else 1
     return 0

@@ -8,5 +8,6 @@ owner's personal pipeline, memory or agents.
 
 The contract every module here follows is ``docs/business/WORKSPACE_PILOT_SPEC.md``.
 This package is deliberately import-light: importing it pulls in nothing, so the CLI
-(``python -m agents.core.workspace``) and the routers load only what they use.
+(``nerva-run -m agents.core.workspace``, PILOT_GUIDE §2) and the routers load only what
+they use.
 """

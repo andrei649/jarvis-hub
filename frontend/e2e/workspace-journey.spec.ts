@@ -12,8 +12,8 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  assertNoPageProblems, buildDocuments, checkPage, controlsUnderTopBar, focusRing, guard, guardFor, hubLog, pageGet, readMail,
-  RUN_DIR, SETUP_CODE, SMTP_PORT, waitForMail, type SampleDoc, type SampleKey,
+  assertNoPageProblems, buildDocuments, checkPage, controlsUnderTopBar, DESKTOP, focusRing, guard, guardFor, hubLog, pageGet, PHONE, readMail,
+  RUN_DIR, setSmtpSink, SETUP_CODE, SMTP_PORT, waitForMail, type SampleDoc, type SampleKey,
 } from './support/workspace-helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -45,6 +45,7 @@ const state: {
   docs?: Record<SampleKey, SampleDoc>;
   documentIds: Partial<Record<SampleKey, number>>;
   conversationId?: number;
+  reportId?: number;
   runId?: number;
 } = { contexts: [], invites: {}, departments: {}, documentIds: {} };
 
@@ -613,6 +614,7 @@ test('the member creates a daily report and runs it now: it succeeds as Markdown
   await expect(toast(page, `Raportul „${REPORT_NAME}” a fost creat.`)).toBeVisible();
   await expect(page).toHaveURL(/\/workspace\/reports\/\d+$/);
   const reportId = Number(/\/reports\/(\d+)$/.exec(page.url())?.[1]);
+  state.reportId = reportId;
   await expect(page.getByRole('heading', { level: 1, name: REPORT_NAME })).toBeVisible();
   await expect(page.getByText('Zilnic, la 08:15')).toBeVisible();
 
@@ -669,6 +671,18 @@ test('the member creates a daily report and runs it now: it succeeds as Markdown
   expect(htmlText).toContain('Surse');
   expect(htmlText.toLowerCase()).not.toContain('<script');
   await checkPage(page, 'run-view');
+  // The three ways out are one group named by its caption; on a phone the caption shows over the
+  // short labels („Markdown", „HTML"), and each download keeps its full name (UX-21; that no label
+  // wraps at 390 or 320 px is checkPage's layout check).
+  const exportGroup = page.getByRole('group', { name: 'Exportă' });
+  await expect(page.locator('.ws-export__caption')).toBeHidden();
+  await page.setViewportSize(PHONE);
+  await expect(page.locator('.ws-export__caption')).toHaveText('Exportă');
+  await expect(page.locator('.ws-export__caption')).toBeVisible();
+  await expect(exportGroup.getByText('Markdown', { exact: true })).toBeVisible();
+  for (const name of ['Exportă Markdown', 'Exportă HTML']) await expect(exportGroup.getByRole('link', { name, exact: true })).toBeVisible();
+  await expect(exportGroup.getByRole('button', { name: 'Tipărește', exact: true })).toBeVisible();
+  await page.setViewportSize(DESKTOP);
 
   await page.getByRole('link', { name: 'Înapoi la raport' }).click();
   await page.getByRole('link', { name: 'Toate rapoartele' }).click();
@@ -1172,6 +1186,133 @@ test('a rejected email request reaches its requester with the approver\'s note, 
   expect(stored.body).toMatchObject({ status: 'rejected', decision_note: 'Cifrele nu sunt încă finale; revino după închiderea lunii.', decider: { name: SALES_APPROVER.name } });
   expect(readMail().some((m) => m.subject === subject), 'a rejected request sends nothing').toBe(false);
   await checkPage(member, 'approval-rejected');
+});
+
+/** The mail failure in words (error.smtp_failed); never the code or the socket error behind it. */
+const SMTP_DOWN_REASON = 'Serverul de email a refuzat mesajul sau nu a putut fi contactat.';
+const RAW_MAIL_ERROR = /smtp_failed|connection_failed|delivery_failed|Connection ?Refused|Errno|Traceback/;
+
+test('with the mail server down, an approved email fails honestly: the approver and the requester read why in Romanian, and nothing is sent', async () => {
+  const member = need(state.member, 'member page');
+  const approver = need(state.approver, 'approver page');
+  const runId = need(state.runId, 'run id');
+  const subject = 'Situația vânzărilor — pentru conducere';
+  const recipient = 'conducere@acme.ro';
+  // The member asks while mail works, from the report run.
+  await member.goto(`/workspace/report-runs/${runId}`);
+  await member.getByRole('button', { name: 'Trimite pe email' }).click();
+  const dialog = member.getByRole('dialog', { name: 'Trimite pe email' });
+  await dialog.getByLabel('Destinatari').fill(recipient);
+  await dialog.getByLabel('Subiect').fill(subject);
+  await dialog.getByRole('button', { name: 'Cere aprobarea' }).click();
+  await member.getByRole('dialog', { name: 'Cererea a fost trimisă' }).getByRole('link', { name: 'Vezi cererea' }).click();
+  await expect(member).toHaveURL(/\/workspace\/approvals\/\d+$/);
+  const approvalId = Number(/\/approvals\/(\d+)$/.exec(member.url())?.[1]);
+
+  // Then the mail server goes away for real (its port refuses connections; the settings stay as
+  // the admin saved them), and the approver approves.
+  await setSmtpSink('down');
+  try {
+    await approver.goto(`/workspace/approvals/${approvalId}`);
+    const drawer = approver.getByRole('dialog', { name: `Cererea #${approvalId}` });
+    await expect(drawer).toContainText(recipient);
+    await drawer.getByRole('button', { name: 'Aprobă' }).click();
+    await approver.getByRole('alertdialog', { name: 'Aprobi cererea?' }).getByRole('button', { name: 'Aprobă' }).click();
+    await expect(toast(approver, `Cererea a fost aprobată, dar execuția nu a reușit: ${SMTP_DOWN_REASON}`, 'alert')).toBeVisible();
+    await expect(drawer.getByText('Eșuată', { exact: true })).toBeVisible();
+    await expect(drawer.locator('.ws-notice').filter({ hasText: 'Aprobată, dar execuția nu a reușit' })).toContainText(SMTP_DOWN_REASON);
+    await expect(drawer.getByRole('heading', { name: 'Acțiunea cerută' })).toBeVisible();
+    await expect(approver.getByText(RAW_MAIL_ERROR)).toHaveCount(0);
+    await checkPage(approver, 'approval-failed');
+    const stored = await pageGet<{ status: string; error_code: string | null; result: unknown; decider: { name: string } }>(approver, `/api/workspace/approvals/${approvalId}`);
+    expect(stored.body).toMatchObject({ status: 'failed', error_code: 'smtp_failed', result: null, decider: { name: SALES_APPROVER.name } });
+
+    // The requester is told by the bell, and their drawer says the same, in the same words.
+    await member.goto('/workspace/assistant');
+    await member.getByRole('button', { name: /^Notificări — \d+ necitit/ }).click();
+    await member.getByRole('dialog', { name: 'Notificări' }).getByRole('button', { name: /Cerere aprobată, dar neexecutată/ }).first().click();
+    await expect(member).toHaveURL(new RegExp(`/workspace/approvals/${approvalId}$`));
+    const mine = member.getByRole('dialog', { name: `Cererea #${approvalId}` });
+    await expect(mine.getByText('Eșuată', { exact: true })).toBeVisible();
+    await expect(mine.locator('.ws-notice').filter({ hasText: 'Aprobată, dar execuția nu a reușit' })).toContainText(SMTP_DOWN_REASON);
+    await expect(member.getByText(RAW_MAIL_ERROR)).toHaveCount(0);
+  } finally {
+    await setSmtpSink('up');
+  }
+  // Mail is back; the failed request is not sent behind anyone's back.
+  expect(readMail().some((m) => m.subject === subject), 'a failed request sends nothing').toBe(false);
+});
+
+test('an approved report delivery that cannot reach the mail server: the run is ready and says its email was not sent; with mail back, the next run arrives', async () => {
+  const member = need(state.member, 'member page');
+  const approver = need(state.approver, 'approver page');
+  const reportId = need(state.reportId, 'report id');
+  const recipient = 'directiune@acme.ro';
+  type RunDelivery = ApiRun & { error_code: string | null; delivered_to: string[] };
+  const readRun = async (id: number) => (await pageGet<RunDelivery>(member, `/api/workspace/report-runs/${id}`)).body;
+
+  // Delivery to a recipient needs a department approver's yes (spec §9), given while mail works.
+  await member.goto(`/workspace/reports/${reportId}`);
+  await member.getByRole('button', { name: `Acțiuni pentru „${REPORT_NAME}”` }).click();
+  await member.getByRole('menuitem', { name: 'Editează' }).click();
+  const form = member.getByRole('dialog', { name: 'Editează raportul' });
+  await form.getByLabel(/^Trimite rezultatul pe email/).fill(recipient);
+  await expect(form.getByText('Destinatarii modificați au nevoie de o nouă aprobare înainte de livrare.')).toBeVisible();
+  await form.getByRole('button', { name: 'Salvează' }).click();
+  await expect(toast(member, 'Raportul a fost salvat.')).toBeVisible();
+  await expect(member.getByText(/^Livrarea așteaptă aprobarea unui aprobator din departament/)).toBeVisible();
+  const pending = await pageGet<{ delivery_status: string; delivery_approval_id: number }>(member, `/api/workspace/reports/${reportId}`);
+  expect(pending.body.delivery_status).toBe('pending');
+  const deliveryApproval = pending.body.delivery_approval_id;
+  await approver.goto(`/workspace/approvals/${deliveryApproval}`);
+  const drawer = approver.getByRole('dialog', { name: `Cererea #${deliveryApproval}` });
+  await expect(drawer).toContainText(recipient);
+  await drawer.getByRole('button', { name: 'Aprobă' }).click();
+  await approver.getByRole('alertdialog', { name: 'Aprobi cererea?' }).getByRole('button', { name: 'Aprobă' }).click();
+  await expect(toast(approver, 'Cererea a fost aprobată și executată.')).toBeVisible();
+  const approved = await pageGet<{ delivery_status: string; delivery_approved: string[] }>(member, `/api/workspace/reports/${reportId}`);
+  expect(approved.body).toMatchObject({ delivery_status: 'approved', delivery_approved: [recipient] });
+
+  // The mail server is down when the report runs: the report is made, its email is not.
+  await setSmtpSink('down');
+  try {
+    await member.reload();
+    await member.getByRole('button', { name: 'Rulează acum' }).click();
+    await expect(member).toHaveURL(/\/workspace\/report-runs\/\d+$/);
+    const failedRun = Number(/\/report-runs\/(\d+)$/.exec(member.url())?.[1]);
+    // The email goes out after the run is stored, so its outcome is read once the server has it.
+    await expect.poll(async () => (await readRun(failedRun)).error, { message: 'the delivery failure is recorded', timeout: 60_000 }).toBe('delivery_failed');
+    expect(await readRun(failedRun)).toMatchObject({ status: 'succeeded', error_code: 'smtp_failed', delivered_to: [] });
+    await member.reload();
+    await expect(member.locator('.ws-run-meta').getByText('Gata', { exact: true })).toBeVisible();
+    await expect(member.locator('article.ws-report').getByRole('heading', { name: 'Surse' })).toBeVisible();
+    const notice = member.locator('.ws-notice').filter({ hasText: 'Raportul este gata, dar emailul nu a fost trimis' });
+    await expect(notice).toContainText(SMTP_DOWN_REASON);
+    await expect(notice).toContainText('Destinatarii nu au primit această rulare.');
+    await expect(member.getByText(RAW_MAIL_ERROR)).toHaveCount(0);
+    await checkPage(member, 'run-view-delivery-failed');
+  } finally {
+    await setSmtpSink('up');
+  }
+  // The report's history flags that run.
+  await member.getByRole('link', { name: 'Înapoi la raport' }).click();
+  const history = member.getByRole('table', { name: 'Istoricul rulărilor' });
+  await expect(history.getByRole('row').filter({ hasText: 'Email netrimis' })).toHaveCount(1);
+
+  // Mail is back: the next run reaches the recipient, and its page says to whom it went.
+  await member.getByRole('button', { name: 'Rulează acum' }).click();
+  await expect(member).toHaveURL(/\/workspace\/report-runs\/\d+$/);
+  const deliveredRun = Number(/\/report-runs\/(\d+)$/.exec(member.url())?.[1]);
+  const mail = await waitForMail((m) => m.rcpt_tos.includes(recipient), 'the delivered report');
+  expect(mail.subject.startsWith(`${REPORT_NAME} — `), mail.subject).toBe(true);
+  expect(mail.text).toContain(`# Raport: ${REPORT_NAME}`);
+  await expect.poll(async () => (await readRun(deliveredRun)).delivered_to, { message: 'the delivery is recorded' }).toEqual([recipient]);
+  expect(await readRun(deliveredRun)).toMatchObject({ status: 'succeeded', error: null, error_code: null });
+  await member.reload();
+  const meta = member.locator('.ws-run-meta');
+  await expect(meta.getByText('Trimis pe email către', { exact: true })).toBeVisible();
+  await expect(meta.getByText(recipient, { exact: true })).toBeVisible();
+  await expect(member.locator('.ws-notice').filter({ hasText: 'emailul nu a fost trimis' })).toHaveCount(0);
 });
 
 test('the model\'s failures are honest: an error and an empty answer are explained, stored as errors, and Retry keeps the keyboard in place', async () => {

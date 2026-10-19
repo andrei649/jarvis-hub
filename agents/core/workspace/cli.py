@@ -1,4 +1,7 @@
-"""Operator recovery commands: ``python -m agents.core.workspace <command>``.
+"""Operator recovery commands: ``nerva-run -m agents.core.workspace <command>``.
+
+``nerva-run`` (PILOT_GUIDE §2) is ``python -m`` with the service's environment; every hint
+these commands and the workspace's log lines print names that form.
 
 ``setup-code``                       print the first-run setup code
 ``reset-link --email E --base-url U`` print a fresh invite/reset link for a user
@@ -156,10 +159,17 @@ def _promote(email: str) -> int:
     return EXIT_OK
 
 
+#: The name ``--help`` and usage lines show: the form the pilot guide runs (§2, ``nerva-run``
+#: with the service's environment), not a bare ``python -m`` that would miss it.
+PROG = "nerva-run -m agents.core.workspace"
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """The ``python -m agents.core.workspace`` argument parser."""
-    parser = argparse.ArgumentParser(prog="python -m agents.core.workspace",
-                                     description="Nerva Workspace operator commands")
+    """The operator commands' argument parser (shown as :data:`PROG`)."""
+    parser = argparse.ArgumentParser(
+        prog=PROG,
+        description="Nerva Workspace operator commands. Run them with the service's "
+                    "environment (PILOT_GUIDE §2: nerva-run), never from a bare shell.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup-code", help="print the first-run setup code")
     reset = commands.add_parser("reset-link", help="print a fresh invite or password-reset link")

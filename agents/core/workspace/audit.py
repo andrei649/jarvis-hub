@@ -40,6 +40,12 @@ ENV_AUDIT_KEY = "JARVIS_AUDIT_KEY"
 ENV_KEY_DIR = "JARVIS_KEY_DIR"
 KEY_FILE = "workspace_audit.key"
 GENESIS_HASH = "0" * 64
+#: The operator commands the log lines name, in the form the pilot guide uses (§2: the
+#: ``nerva-run`` wrapper runs them with the service's environment — a bare shell would
+#: not have its JARVIS_AUDIT_KEY / JARVIS_KEY_DIR).
+CHECK_COMMAND = ("nerva-run -m agents.core.workspace check (PILOT_GUIDE §2; the service's "
+                 "environment)")
+REKEY_COMMAND = "nerva-run -m agents.core.workspace audit-rekey (PILOT_GUIDE §16)"
 _DOMAIN = b"nerva-ws-audit-v1"
 
 #: Detail keys that would carry secrets or content; they never reach the audit table.
@@ -141,8 +147,8 @@ def audit_key(conn: sqlite3.Connection | None = None) -> bytes:
         logger.error(
             "workspace audit key missing: %s is not set and %s does not exist, but the audit "
             "trail already has rows — refusing to create a new key (it would break the chain). "
-            "Run with the service's environment (JARVIS_AUDIT_KEY / JARVIS_KEY_DIR).",
-            ENV_AUDIT_KEY, path)
+            "Run with the service's environment (JARVIS_AUDIT_KEY / JARVIS_KEY_DIR): %s.",
+            ENV_AUDIT_KEY, path, CHECK_COMMAND)
         raise AuditKeyMissing(path)
     return config.create_private_file(path, secrets.token_hex(32).encode("ascii")).strip()
 
@@ -218,8 +224,8 @@ def startup_key_check() -> str | None:
     logger.error(
         "Nerva Workspace cannot sign its audit trail: %s. Every sign-in and every change will be "
         "refused (503 %s) and nothing will be written until the service's %s / %s are "
-        "restored; check with: python -m agents.core.workspace check (PILOT_GUIDE §17).",
-        detail, code, ENV_AUDIT_KEY, ENV_KEY_DIR)
+        "restored; check with: %s — the causes and remedies are in PILOT_GUIDE §17.",
+        detail, code, ENV_AUDIT_KEY, ENV_KEY_DIR, CHECK_COMMAND)
     return state
 
 
@@ -332,9 +338,9 @@ def record(conn: sqlite3.Connection, *, actor: WorkspaceUser | None, action: str
             "workspace audit key mismatch: the key from %s (fingerprint %s) is not the one the "
             "newest audit row was signed with (fingerprint %s) — refusing to write %s: one row "
             "under this key would break the chain for good. Restore the service's %s / %s "
-            "(check with: python -m agents.core.workspace check); a key that is truly lost is "
-            "replaced with: python -m agents.core.workspace audit-rekey.",
-            source, fingerprint, newest["key_fp"], action, ENV_AUDIT_KEY, ENV_KEY_DIR)
+            "(check with: %s); a key that is truly lost is replaced with: %s.",
+            source, fingerprint, newest["key_fp"], action, ENV_AUDIT_KEY, ENV_KEY_DIR,
+            CHECK_COMMAND, REKEY_COMMAND)
         raise AuditKeyMismatch(source, fingerprint, newest["key_fp"])
     _append(conn, key, newest, _fields(
         actor=actor, action=action, target_type=target_type, target_id=target_id,

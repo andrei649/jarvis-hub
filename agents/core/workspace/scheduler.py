@@ -16,7 +16,19 @@ One :meth:`WorkspaceScheduler.tick` every 30 s does, in order:
 
 Each step runs in its own short transactions and one failing step never stops the
 others. The database work runs in a worker thread; only spawning the claimed runs
-happens on the event loop. ``tick(now=…)`` takes an explicit clock, which is how the
+happens on the event loop.
+
+An audit key that is not the trail's (review OPS2-08). Steps 1–3 for reports and approvals
+sign an audit row for every change they make, and no row may be signed with another key
+than the trail's (``audit.AuditKeyMismatch``). Each tick therefore asks
+:func:`audit.key_check` first: while it is not ``ok`` those steps pause — no run is claimed,
+no approval expires or fails, nothing is half-written — and the steps that sign nothing
+(pending messages, interrupted documents, housekeeping) go on. The pause is logged once, as
+a WARNING, when it begins (and again only if the key's state changes), and its end once, as
+an INFO line; the tick summary says ``paused`` and ``audit_key``. Due reports and expired
+approvals are caught up by the first tick after the service's key is back. A step that
+still meets the key error (a key swapped between the check and the step) pauses the rest
+of that tick the same way, without a traceback. ``tick(now=…)`` takes an explicit clock, which is how the
 tests drive it without sleeping. One hub per data root (the hub lock) means one
 scheduler per database, so no cross-process coordination is needed beyond the
 compare-and-set claims.
@@ -44,7 +56,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
-from agents.core.workspace import approvals, config, db, documents, reports
+from agents.core.workspace import approvals, audit, config, db, documents, reports
 
 logger = logging.getLogger("nerva.workspace.scheduler")
 
@@ -54,6 +66,17 @@ LOGIN_ATTEMPT_RETENTION_SECONDS = 86400
 INVITE_RETENTION_SECONDS = 7 * 86400
 SESSION_RETENTION_SECONDS = 7 * 86400
 NOTIFICATION_RETENTION_SECONDS = 90 * 86400
+
+#: The steps that sign audit rows: they pause while this process's audit key is not the
+#: trail's (OPS2-08); every other step runs as usual.
+AUDITED_STEPS = ("runs_started", "approvals_expired", "approvals_interrupted", "runs_interrupted")
+KEY_OK = "ok"
+_KEY_STATES = {
+    "mismatch": "the audit key of this process is not the one the audit trail was written with",
+    "missing": "this process has no audit key for the audit trail (JARVIS_AUDIT_KEY is unset "
+               "and the key file does not exist)",
+    "unreadable": "the audit key file of this process cannot be read",
+}
 
 
 def interrupt_pending_messages(conn: sqlite3.Connection, now: float) -> int:
@@ -96,6 +119,8 @@ class WorkspaceScheduler:
         self.started_at = started_at
         #: The loop task of each event loop this scheduler was started on (its owning loop).
         self._tasks: dict[asyncio.AbstractEventLoop, asyncio.Task] = {}
+        #: :func:`audit.key_check`'s answer at the last tick: the pause is logged on a change.
+        self._key_state = KEY_OK
 
     def _prune(self) -> None:
         """Forget finished tasks and the tasks of closed loops (nothing can stop those)."""
@@ -142,7 +167,9 @@ class WorkspaceScheduler:
     def _sweep(self, now: float) -> dict:
         conn = db.connect()
         try:
-            summary: dict[str, Any] = {"now": now, "errors": []}
+            summary: dict[str, Any] = {"now": now, "errors": [], "paused": []}
+            key_state = self._key_gate(conn)
+            summary["audit_key"] = key_state
             steps: list[tuple[str, Callable[[sqlite3.Connection, float], Any]]] = [
                 ("runs_started", reports.claim_due_reports),
                 ("approvals_expired", approvals.expire_due),
@@ -153,14 +180,47 @@ class WorkspaceScheduler:
                 ("deleted", housekeeping),
             ]
             for name, step in steps:
+                if name in AUDITED_STEPS and key_state != KEY_OK:
+                    summary["paused"].append(name)
+                    continue
                 try:
                     summary[name] = step(conn, now)
+                except audit.AuditKeyError as exc:  # the key changed since the check
+                    key_state = self._key_changed(exc.code)
+                    summary["audit_key"] = key_state
+                    summary["paused"].append(name)
                 except Exception:  # one broken step must not stop the others
                     logger.exception("workspace scheduler step %s failed", name)
                     summary["errors"].append(name)
             return summary
         finally:
             conn.close()
+
+    def _key_gate(self, conn: sqlite3.Connection) -> str:
+        """:func:`audit.key_check` for this tick, logging the pause when its state changes."""
+        try:
+            state = audit.key_check(conn)
+        except sqlite3.Error:   # an unreadable trail: let the steps meet (and log) it
+            state = KEY_OK
+        return self._key_changed(state)
+
+    def _key_changed(self, state: str) -> str:
+        """Record *state* (``ok`` or not); one log line when it differs from the last tick's."""
+        state = {"audit_key_mismatch": "mismatch", "audit_key_missing": "missing"}.get(state, state)
+        previous, self._key_state = self._key_state, state
+        if state == previous:
+            return state
+        if state == KEY_OK:
+            logger.info("workspace scheduler resumed: the audit key matches the audit trail "
+                        "again; scheduled reports and approval expiry catch up from this tick")
+        else:
+            logger.warning(
+                "workspace scheduler paused: %s, so scheduled reports, approval expiry and the "
+                "failing of stuck runs and approvals wait — nothing is changed or written for "
+                "them until the service's %s / %s are back; check with: %s",
+                _KEY_STATES.get(state, f"the audit key is {state}"), audit.ENV_AUDIT_KEY,
+                audit.ENV_KEY_DIR, audit.CHECK_COMMAND)
+        return state
 
     def _fail_interrupted_documents(self, conn: sqlite3.Connection, now: float) -> int:
         return documents.fail_interrupted(conn, now, claimed_before=self.started_at)

@@ -260,6 +260,24 @@ describe('Reports → runs', () => {
     });
   });
 
+  it('names the export group by its visible caption, and keeps each button\'s full name behind the short phone label (UX-21)', async () => {
+    boot('/workspace/report-runs/40', { 'GET /api/workspace/report-runs/40': run() });
+    const group = await screen.findByRole('group', { name: 'Exportă' });
+    // The name comes from a caption on the page (shown under 480 px), not from a hidden aria-label.
+    const caption = window.document.getElementById(group.getAttribute('aria-labelledby') ?? '');
+    expect(caption?.textContent).toBe('Exportă');
+    expect(group.hasAttribute('aria-label')).toBe(false);
+    // Each download keeps its full name; the short label a phone shows is not read twice.
+    for (const [name, short] of [['Exportă Markdown', 'Markdown'], ['Exportă HTML', 'HTML']]) {
+      const link = within(group).getByRole('link', { name });
+      const shown = link.querySelector('.ws-export__short');
+      expect(shown?.textContent).toBe(short);
+      expect(shown?.getAttribute('aria-hidden')).toBe('true');
+      expect(link.querySelector('.ws-export__full')?.textContent).toBe(name);
+    }
+    expect(within(group).getByRole('button', { name: 'Tipărește' })).toBeTruthy();
+  });
+
   it('shows the run history of a report with live refresh for a run in progress', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let reads = 0;
