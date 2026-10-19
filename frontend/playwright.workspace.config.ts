@@ -1,22 +1,27 @@
 /* Nerva Workspace · the end-to-end lane against the REAL hub (spec §1 definition of done 3).
 
    Three servers, all on loopback, all started fresh for every run:
-     1. tests/support/fake_openai_server.py — a deterministic OpenAI-compatible model server
-        (the hub's lm-studio backend points at it), streaming word-sized tokens 20 ms apart;
+     1. tests/support/fake_openai_server.py through e2e/support/workspace_model.py — a
+        deterministic OpenAI-compatible model server (the hub's lm-studio backend points at it),
+        streaming word-sized tokens 20 ms apart. The launcher lets the journey stop it and start
+        it again on the same port (<run>/model.down and <run>/model.state), to prove that a model
+        server which goes away is explained honestly and recovered from;
      2. the SMTP sink (tests/support/smtp_sink.py) through e2e/support/workspace_smtp.py — a real
         SMTP conversation; every accepted message is one JSON line in <run>/mail.jsonl, which the
         journey reads to prove delivery. The launcher also lets the journey stop the sink and start
         it again on the same port (the files <run>/smtp.down and <run>/smtp.state), to prove that
-        an approved email which cannot reach the mail server fails honestly;
+        an approved email which cannot reach the mail server fails honestly, and hold its greeting
+        (<run>/smtp.hold, <run>/smtp.hold.state), to prove a run page shows its email's outcome
+        live while the delivery is still under way;
      3. the hub itself (serve.py) through e2e/support/workspace_hub.py, which builds a hermetic
         environment: a fresh JARVIS_HOME and key folder under the run directory, the workspace
         on with a fixed setup code, no cloud keys and no .env (see that file).
 
    The run directory is created once, here, in the runner process, and handed to the workers
    through the environment (they inherit it, so the config's second evaluation in a worker sees
-   it set and does not make another). It holds home/, keys/, docs/, mail.jsonl, smtp.state and
-   hub.log and is kept after the run for a post-mortem; run directories older than 12 hours are
-   removed when the next run starts.
+   it set and does not make another). It holds home/, keys/, docs/, mail.jsonl, the switches'
+   control and state files, and hub.log, and is kept after the run for a post-mortem; run
+   directories older than 12 hours are removed when the next run starts.
 
    Browser: the pre-installed Chromium only (PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers); this
    lane never downloads one. Screenshots of every main page land in
@@ -93,7 +98,7 @@ export default defineConfig({
   webServer: [
     {
       name: 'model',
-      command: `${PY} tests/support/fake_openai_server.py --port ${MODEL_PORT} --token-delay 0.02`,
+      command: `${PY} frontend/e2e/support/workspace_model.py --port ${MODEL_PORT} --token-delay 0.02 --run-dir "${RUN_DIR}"`,
       cwd: '..',
       url: `http://127.0.0.1:${MODEL_PORT}/health`,
       wait: { stdout: /READY/ },

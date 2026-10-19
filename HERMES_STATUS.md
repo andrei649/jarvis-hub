@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**115 / 697 = 16.5% echivalente complet în evaluarea documentată.**
+**116 / 697 = 16.6% echivalente complet în evaluarea documentată.**
 
-Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,15 +10,15 @@ Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 115 | 16.5% |
+| Echivalent | 116 | 16.6% |
 | Parțial | 222 | 31.9% |
 | Lipsă | 56 | 8.0% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 304 | 43.6% |
+| De reverificat | 303 | 43.5% |
 
-**Ținta acceptată în produs:** 697 rânduri; progres 115/697 = **16.5%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 697 rânduri; progres 116/697 = **16.6%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 37/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 38/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -40,7 +40,7 @@ Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păst
 | agent-core | 36 | 7 | 7 | 7 | 0 | 15 |
 | memory | 27 | 8 | 7 | 0 | 0 | 12 |
 | automation | 32 | 1 | 14 | 2 | 0 | 15 |
-| security | 34 | 7 | 8 | 1 | 0 | 18 |
+| security | 34 | 8 | 8 | 1 | 0 | 17 |
 | media | 27 | 5 | 12 | 2 | 0 | 8 |
 | acp-mcp-dev | 33 | 3 | 12 | 11 | 0 | 7 |
 | docs-features | 48 | 8 | 17 | 3 | 0 | 20 |
@@ -49,7 +49,7 @@ Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păst
 
 ## Actualizare
 
-Evaluare: `2026-10-08T13:38:58.177807Z`. Cod inspectat: `36b54419225132b3eb73fec18ad1f2fe3ccdbdc8`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-10-19T12:58:55Z`. Cod inspectat: `5eea8471648a654d68c2d737b7f4c96b28c70b02`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 

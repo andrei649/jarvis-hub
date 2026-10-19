@@ -25,13 +25,24 @@
 .ws-section-title { font-family: var(--ws-font-display); font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
 .ws-subtitle { font-family: var(--ws-font-display); font-weight: 600; font-size: 15px; }
 
-/* Where an answer or a run was produced, in words („Pe serverul companiei"): it may wrap on a
-   narrow card, so it grows in height instead of having a fixed one. */
+/* Where an answer or a run was produced, in words („Pe serverul companiei"). A chip never wraps
+   (UX-22): the places that hold it give it a line of its own (the run's side card) or use the
+   short label (table cells, LocalityChip `short`); were a translation ever longer than the room,
+   it ends in an ellipsis on one line and keeps its full words as its name and tooltip. */
 .ws-locality {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 20px; max-width: 100%; padding: 2px 8px; border-radius: 10px;
-  font-size: 11.5px; font-weight: 600; line-height: 16px; background: var(--ws-surface-2); color: var(--ws-text-muted);
+  position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 20px; max-width: 100%; padding: 2px 8px; border-radius: 10px;
+  font-size: 11.5px; font-weight: 600; line-height: 16px; white-space: nowrap; background: var(--ws-surface-2); color: var(--ws-text-muted);
 }
 .ws-locality::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ws-locality__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The short form's full words: read (and the tooltip) in a table row; shown on a stacked card. */
+.ws-locality__full {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+@media (max-width: 767px) {
+  .ws-table--stack .ws-locality__full { position: static; width: auto; height: auto; margin: 0; clip: auto; min-width: 0; text-overflow: ellipsis; }
+  .ws-table--stack .ws-locality__short { display: none; }
+}
 .ws-locality--local { background: var(--ws-success-soft); color: var(--ws-success); }
 .ws-locality--cloud { background: var(--ws-accent-soft); color: var(--ws-accent-text); }
 .ws-locality--unknown { background: var(--ws-warning-soft); color: var(--ws-warning); }
@@ -79,13 +90,16 @@
 .ws-sources { display: flex; flex-direction: column; gap: var(--ws-s2); }
 .ws-sources__title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ws-text-subtle); }
 .ws-sources__list { display: flex; flex-wrap: wrap; gap: var(--ws-s2); }
+/* A list item may shrink to its card's width, so a long title ends in an ellipsis inside the
+   card instead of the pill sticking out of it (the run's side card between 1100 and 1200 px). */
+.ws-sources__list > li { min-width: 0; max-width: 100%; }
 .ws-source {
   display: inline-flex; align-items: center; gap: var(--ws-s2); max-width: 100%; min-height: 32px; padding: 4px 10px 4px 6px;
   border: 1px solid var(--ws-border); border-radius: 8px; background: var(--ws-surface); color: var(--ws-text);
   font-size: 13px; cursor: pointer; text-align: left;
 }
 .ws-source:hover { border-color: var(--ws-border-strong); background: var(--ws-surface-hover); }
-.ws-source__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 32ch; }
+.ws-source__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 32ch; }
 .ws-source__page { color: var(--ws-text-subtle); font-size: 12px; white-space: nowrap; }
 .ws-source-doc { display: flex; align-items: center; gap: var(--ws-s2); }
 .ws-quote { margin: 0; display: flex; flex-direction: column; gap: var(--ws-s2); }
@@ -280,6 +294,15 @@
   .ws-btn-group > .ws-btn .ws-icon { display: none; }
 }
 .ws-run-live { display: inline-flex; align-items: center; gap: var(--ws-s2); }
+.ws-run-fix { margin-top: var(--ws-s2); }
+.ws-run-fix .ws-btn { margin-left: calc(-1 * var(--ws-s3)); }
+/* Where the details card is narrow — the side column from 1100 px, and a phone under 480 px —
+   "where it was produced" takes a row of its own, so its words sit on one line beside nothing
+   (UX-22); in between the card is full width and the pair fits side by side. */
+@media (max-width: 479px), (min-width: 1100px) {
+  .ws-run-meta > .ws-run-meta__wide { grid-column: 1 / -1; }
+  .ws-run-meta > dd.ws-run-meta__wide { margin-top: -2px; }
+}
 .ws-run { margin-top: var(--ws-s2); }
 .ws-card.ws-run__doc { padding: var(--ws-s6); }
 @media (min-width: 720px) { .ws-card.ws-run__doc { padding: var(--ws-s8) var(--ws-s10); } }

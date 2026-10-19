@@ -15,6 +15,7 @@ really under way, over the HTTP API, without sleeping for a fixed time.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import sqlite3
@@ -191,6 +192,47 @@ def test_the_state_is_pending_already_when_the_success_is_committed(conn, cast, 
     assert _row(conn, run_id)["delivery_state"] == "sent"
 
 
+def test_no_commit_ever_shows_the_run_succeeded_without_its_pending_delivery(conn, cast, sink,
+                                                                             monkeypatch):
+    """Review R4-03: the run's state is read right after every COMMIT of ``_store_success``.
+
+    Looking only once the function returned cannot tell one statement from two transactions
+    (``succeeded`` committed first, ``pending`` a moment later): a poll in between would
+    stop a live run page at "succeeded" again (NWS-20). Here each commit is observed on its
+    own, from a second connection, before anything else runs.
+    """
+    configure_smtp(conn, sink.port)
+    run_id = reports.start_manual_run(conn, cast.member_a, _report(conn, cast, emails=RECIPIENTS))
+    after_each_commit: list[tuple[str, str | None, int | None]] = []
+    real_tx, real_store = db.tx, reports._store_success
+
+    def committed_state():
+        side = sqlite3.connect(str(db.db_path()))
+        try:
+            return side.execute("SELECT status, delivery_state, delivery_attempted "
+                                "FROM report_runs WHERE id = ?", (run_id,)).fetchone()
+        finally:
+            side.close()
+
+    @contextlib.contextmanager
+    def observed_tx(connection):
+        outermost = not connection.in_transaction
+        with real_tx(connection) as inner:
+            yield inner
+        if outermost:                           # this block's COMMIT has just run
+            after_each_commit.append(committed_state())
+
+    def store_observed(job, result, text, citations):
+        with monkeypatch.context() as patch:
+            patch.setattr(db, "tx", observed_tx)
+            return real_store(job, result, text, citations)
+
+    monkeypatch.setattr(reports, "_store_success", store_observed)
+    run_now(run_id)
+    assert after_each_commit == [("succeeded", "pending", 2)]
+    assert _row(conn, run_id)["delivery_state"] == "sent"
+
+
 # ── failed ───────────────────────────────────────────────────────────────────────────
 
 def test_a_mail_server_that_cannot_be_reached_ends_the_delivery_failed(conn, cast):
@@ -203,6 +245,52 @@ def test_a_mail_server_that_cannot_be_reached_ends_the_delivery_failed(conn, cas
     assert (run["error_code"], run["error_reason"], run["error"]) == (
         "smtp_failed", "connection_failed", "delivery_failed")
     assert run["content_md"]
+
+
+def test_a_viewer_outside_the_department_learns_nothing_of_a_shared_runs_delivery(
+        conn, cast, sink):
+    """Review R4-02: the delivery is the report's configuration, hidden outside its department.
+
+    ``delivered_to`` and ``delivery_state`` already read ``[]`` / ``null`` there, but a failed
+    delivery's ``error``, ``error_code`` and ``error_reason`` still told every reader of a
+    company-shared run that the report is mailed, that the email failed and the mail server's
+    cause. Now the whole delivery is hidden outside, as the run detail and the shared feed
+    both show it; inside the department nothing changes.
+    """
+    report_id = _report(conn, cast, emails=RECIPIENTS)
+    configure_smtp(conn, sink.port)
+    sent = reports.start_manual_run(conn, cast.member_a, report_id)
+    run_now(sent)
+    configure_smtp(conn, closed_port())
+    failed = reports.start_manual_run(conn, cast.member_a, report_id)
+    run_now(failed)
+    conn.execute("UPDATE report_runs SET shared_company = 1 WHERE id IN (?, ?)", (sent, failed))
+    delivery = ("delivery_state", "delivered_to", "error", "error_code", "error_reason")
+
+    def fields(run):
+        return tuple(run[name] for name in delivery)
+
+    inside = {run_id: reports.get_run(conn, cast.member_a, run_id) for run_id in (sent, failed)}
+    assert fields(inside[failed]) == ("failed", [], "delivery_failed", "smtp_failed",
+                                      "connection_failed")
+    assert inside[sent]["delivery_state"] == "sent"
+    assert sorted(inside[sent]["delivered_to"]) == sorted(RECIPIENTS)
+    outsider, _ = signed_in(cast.member_b)       # another department: the shared run only
+    with outsider:
+        detail = {run_id: outsider.get(f"/api/workspace/report-runs/{run_id}")
+                  for run_id in (sent, failed)}
+        feed = outsider.get("/api/workspace/shared-reports")
+    assert {run_id: answer.status_code for run_id, answer in detail.items()} == {
+        sent: 200, failed: 200}
+    assert feed.status_code == 200
+    listed = {run["id"]: run for run in feed.json()["runs"]}
+    assert sorted(listed) == sorted((sent, failed))
+    hidden = (None, [], None, None, None)
+    for run_id in (sent, failed):
+        assert fields(detail[run_id].json()) == hidden, run_id
+        assert fields(listed[run_id]) == hidden, run_id
+        assert detail[run_id].json()["content_md"], "the shared report itself stays readable"
+        assert listed[run_id]["status"] == "succeeded"
 
 
 def test_a_greeting_that_never_comes_ends_the_delivery_failed_with_the_timeout_reason(
@@ -256,6 +344,48 @@ async def test_a_shutdown_while_sending_resolves_the_delivery_as_interrupted(
     assert bodies == [reports._delivery_failure_bodies(reports.DELIVERY_INTERRUPTED)["ro"]]
     assert "nu se știe dacă destinatarii l-au primit" in bodies[0]
     gated_sink.greeting_gate.set()              # let the orphaned SMTP thread finish now
+
+
+async def test_a_shutdown_whose_interrupted_delivery_cannot_be_written_still_cancels_the_run(
+        conn, cast, gated_sink, monkeypatch, caplog):
+    """Review R4-04: a database error while recording ``delivery_interrupted`` at shutdown.
+
+    It must not replace the cancellation: ``execute_run`` would then log the run as crashed
+    and the shutdown's cancellation would be swallowed. One WARNING, the cancellation goes
+    on, the delivery stays ``pending`` and the next start's sweep resolves it.
+    """
+    configure_smtp(conn, gated_sink.port)
+    run_id = reports.start_manual_run(conn, cast.member_a, _report(conn, cast, emails=RECIPIENTS))
+    real = reports._record_delivery
+    tried: list[str | None] = []
+
+    def disk_gone(job, accepted, error_code, attempted, reason=None):
+        tried.append(error_code)
+        if error_code == reports.DELIVERY_INTERRUPTED:
+            raise sqlite3.OperationalError("disk I/O error")
+        return real(job, accepted, error_code, attempted, reason)
+
+    monkeypatch.setattr(reports, "_record_delivery", disk_gone)
+    reports.spawn_run(run_id)
+    [task] = [t for t in reports._TASKS if t.get_name() == f"workspace-report-run-{run_id}"]
+    await asyncio.to_thread(gated_sink.wait_for_connections, 1)
+    with caplog.at_level(logging.WARNING, logger="nerva.workspace.reports"):
+        await reports.cancel_runs()             # the hub's shutdown
+    try:
+        assert tried == [reports.DELIVERY_INTERRUPTED]
+        assert task.cancelled(), "the shutdown's cancellation went on"
+        assert f"report run {run_id}: the interrupted delivery could not be recorded" in caplog.text
+        assert "crashed" not in caplog.text
+        row = _row(conn, run_id)
+        assert (row["status"], row["delivery_state"], row["error_code"]) == (
+            "succeeded", "pending", None)
+        # The next start resolves it, as it resolves a delivery of a hub that was killed.
+        assert reports.fail_stuck_deliveries(conn, NOW, stored_before=NOW + 1) == 1
+        row = _row(conn, run_id)
+        assert (row["delivery_state"], row["error_code"], row["error"]) == (
+            "failed", reports.DELIVERY_INTERRUPTED, "delivery_failed")
+    finally:
+        gated_sink.greeting_gate.set()          # let the orphaned SMTP thread finish now
 
 
 def _left_pending(conn, cast, monkeypatch) -> int:
@@ -321,6 +451,69 @@ def test_an_outcome_after_the_sweep_does_not_settle_the_delivery_twice(conn, cas
     assert "after the delivery was resolved" in caplog.text
 
 
+def _job(conn, run_id) -> reports._Job:
+    """The sender's view of a run, to deliver an outcome the way ``_deliver`` does."""
+    return reports._Job(run_id=run_id, report_id=int(_row(conn, run_id)["report_id"]),
+                        report_name="Vânzări Nord", department_name="Vânzări", org_name="Acme",
+                        locale="ro", timezone="Europe/Bucharest", policy="local_only",
+                        system="", prompt="", citations=[])
+
+
+def test_a_late_failure_after_the_sweep_does_not_settle_the_delivery_twice(conn, cast,
+                                                                          monkeypatch, caplog):
+    """Review R4-05: the failed branch's compare-and-set on ``pending``, as the sent one's.
+
+    A sender the sweep already resolved as ``delivery_interrupted`` that finally fails
+    (``smtp_failed`` / ``timeout``) must not overwrite the code and reason, audit a second
+    ``email.failed`` nor notify a second time.
+    """
+    run_id = _left_pending(conn, cast, monkeypatch)
+    assert reports.fail_stuck_deliveries(conn, NOW, stored_before=NOW + 1) == 1
+    with caplog.at_level(logging.WARNING, logger="nerva.workspace.reports"):
+        reports._record_delivery(_job(conn, run_id), [], "smtp_failed", 2, "timeout")
+    row = _row(conn, run_id)
+    assert (row["delivery_state"], row["error_code"], row["error_reason"], row["error"]) == (
+        "failed", reports.DELIVERY_INTERRUPTED, None, "delivery_failed")
+    assert conn.execute("SELECT COUNT(*) FROM audit WHERE action IN ('report.delivered', "
+                        "'email.failed')").fetchone()[0] == 1
+    notified = conn.execute("SELECT user_id, COUNT(*), MIN(body) FROM notifications "
+                            "WHERE kind = 'report.delivery_failed' GROUP BY user_id").fetchall()
+    assert [tuple(r) for r in notified] == [(
+        cast.member_a.id, 1,
+        reports._delivery_failure_bodies(reports.DELIVERY_INTERRUPTED)["ro"])]
+    assert "after the delivery was resolved (failed); it is not recorded again" in caplog.text
+
+
+def test_the_sweep_audits_the_recipients_the_delivery_was_addressed_to(conn, cast, monkeypatch):
+    """Review R4-07: ``recipient_count`` is what was attempted, not the report's list now.
+
+    The count is stored with the pending state; the owner removing the recipients after the
+    hub died (the approved list is then ``[]``) no longer makes the stranded email audit as
+    addressed to nobody — the sender's own ``email.failed`` counts what it attempted too.
+    """
+    run_id = _left_pending(conn, cast, monkeypatch)
+    report_id = int(_row(conn, run_id)["report_id"])
+    assert _row(conn, run_id)["delivery_attempted"] == 2
+    reports.update_report(conn, cast.member_a, report_id, {"delivery_emails": []})
+    report = conn.execute("SELECT delivery_status, delivery_approved_json FROM reports "
+                          "WHERE id = ?", (report_id,)).fetchone()
+    assert tuple(report) == ("none", "[]")
+    assert reports.fail_stuck_deliveries(conn, NOW, stored_before=NOW + 1) == 1
+    failed = json.loads(conn.execute("SELECT details_json FROM audit WHERE action = "
+                                     "'email.failed'").fetchone()[0])
+    assert failed == {"source": "report_delivery", "report_id": report_id,
+                      "error_code": reports.DELIVERY_INTERRUPTED, "recipient_count": 2}
+
+
+def test_a_run_with_no_delivery_records_no_attempt(conn, cast, sink):
+    configure_smtp(conn, sink.port)
+    run_id = reports.start_manual_run(conn, cast.member_a, _report(conn, cast))
+    run_now(run_id)
+    row = _row(conn, run_id)
+    assert (row["status"], row["delivery_state"], row["delivery_attempted"]) == (
+        "succeeded", None, None)
+
+
 def test_the_delivery_sweep_pauses_under_a_wrong_audit_key(conn, cast, monkeypatch):
     run_id = _left_pending(conn, cast, monkeypatch)
     monkeypatch.setattr(scheduler.audit, "key_check", lambda _conn: "mismatch")
@@ -349,11 +542,51 @@ def test_a_database_at_schema_1_gains_the_columns_and_keeps_its_runs(ws, monkeyp
         old.close()
     conn = db.connect()
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.schema_version() == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.schema_version() == 3
         row = _row(conn, run)
         assert (row["delivery_state"], row["error_reason"], row["delivered_to_json"]) == (
             None, None, '["a@b.ro"]')
+        assert row["delivery_attempted"] is None
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute("UPDATE report_runs SET delivery_state = 'maybe' WHERE id = ?", (run,))
+    finally:
+        conn.close()
+
+
+def test_a_delivery_left_pending_at_schema_2_is_audited_with_the_reports_list(ws, monkeypatch):
+    """A pending delivery stored before schema 3 has no attempted count (review R4-07).
+
+    The migration keeps it (``delivery_attempted`` reads ``NULL``) and the sweep then counts
+    the report's approved list, as it did before the count was stored.
+    """
+    freeze_clock(monkeypatch, NOW)
+    approved = json.dumps(RECIPIENTS)
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", db.MIGRATIONS[:2])
+        old = db.connect()
+        assert old.execute("PRAGMA user_version").fetchone()[0] == 2
+        with db.tx(old):
+            dept = old.execute("INSERT INTO departments (slug, name, created_at) "
+                               "VALUES ('v', 'Vânzări', 1)").lastrowid
+            report = old.execute(
+                "INSERT INTO reports (department_id, name, instructions, delivery_emails_json, "
+                "delivery_status, delivery_approved_json, created_at, updated_at) "
+                "VALUES (?, 'R', 'i', ?, 'approved', ?, 1, 1)", (dept, approved, approved)).lastrowid
+            run = old.execute(
+                "INSERT INTO report_runs (report_id, status, trigger, created_at, finished_at, "
+                "content_md, delivery_state) VALUES (?, 'succeeded', 'manual', ?, ?, 'Raport', "
+                "'pending')", (report, NOW - 5, NOW - 5)).lastrowid
+        old.close()
+    conn = db.connect()
+    try:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+        row = _row(conn, run)
+        assert (row["delivery_state"], row["delivery_attempted"]) == ("pending", None)
+        assert reports.fail_stuck_deliveries(conn, NOW, stored_before=NOW) == 1
+        failed = json.loads(conn.execute("SELECT details_json FROM audit WHERE action = "
+                                         "'email.failed'").fetchone()[0])
+        assert failed == {"source": "report_delivery", "report_id": report,
+                          "error_code": reports.DELIVERY_INTERRUPTED,
+                          "recipient_count": len(RECIPIENTS)}
     finally:
         conn.close()

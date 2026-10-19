@@ -45,7 +45,7 @@ function SharedList() {
     },
     {
       key: 'model', header: t('run.field.where'), secondary: true,
-      render: (run) => (run.locality ? <LocalityChip locality={run.locality} /> : <span className="ws-muted">—</span>),
+      render: (run) => (run.locality ? <LocalityChip locality={run.locality} short /> : <span className="ws-muted">—</span>),
     },
   ];
 

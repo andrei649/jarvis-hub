@@ -62,6 +62,12 @@ export function isRunActive(run: Pick<ReportRun, 'status'> | null | undefined): 
   return run?.status === 'queued' || run?.status === 'running';
 }
 
+/** The report is ready and its approved email is still on the way: the server stores the run
+    `succeeded` first and only then talks to the mail server, which can take seconds (NWS-20). */
+export function isDeliveryPending(run: Pick<ReportRun, 'status' | 'delivery_state'> | null | undefined): boolean {
+  return run?.status === 'succeeded' && run.delivery_state === 'pending';
+}
+
 /** The reader's own IANA zone ('' when the browser does not say). */
 export function browserTimeZone(): string {
   try {

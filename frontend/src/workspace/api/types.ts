@@ -457,6 +457,9 @@ export interface ChatStreamEvents {
 export type ScheduleKind = 'manual' | 'daily' | 'weekly';
 export type DeliveryStatus = 'none' | 'pending' | 'approved' | 'rejected';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+/** What became of a run's approved email delivery: `pending` from the moment the run is stored
+    `succeeded` until the mail server answered, then `sent` or `failed` (spec §9). */
+export type DeliveryState = 'pending' | 'sent' | 'failed';
 
 export interface ReportSchedule {
   kind: ScheduleKind;
@@ -508,9 +511,15 @@ export interface ReportRun {
   route: string | null;
   locality: Locality | null;
   error_code: string | null;
+  /** Qualifies `error_code` as an error body's `reason` does — the chat's model reasons
+      (`model_unreachable` …) or the mail server's (`connection_failed` …); null when unknown. */
+  error_reason?: string | null;
   error: string | null;
   shared_company: boolean | 0 | 1;
   delivered_to: string[];
+  /** Null when the run has no approved delivery, is not succeeded, predates delivery states, or
+      the viewer is outside the report's department (like `delivered_to` → []). */
+  delivery_state?: DeliveryState | null;
   started_at: EpochSeconds | null;
   finished_at: EpochSeconds | null;
   created_at: EpochSeconds;

@@ -1,8 +1,13 @@
 /* One report (/reports/:reportId): its definition, its email delivery state and recipients,
-   and the history of its runs. The history refreshes itself while a run is still going, so a
-   scheduled run that starts while the page is open shows up and finishes in place — and when
-   it finishes, the report itself is re-read too, so "last run" and "next run" move on with it.
-   A run whose email delivery failed is flagged in the history. */
+   and the history of its runs. The history refreshes itself while a run is still going or its
+   email is still on the way, so a scheduled run that starts while the page is open shows up and
+   finishes in place — and when it finishes, the report itself is re-read too, so "last run" and
+   "next run" move on with it. A report that answers 404 — to its own read or to its history's: it
+   was deleted, or the reader lost access, while the page was open — stops the polling and shows
+   the not-found state, never the last copy read (R4-01). A run whose email is being sent, was not
+   sent or may not have arrived is flagged in the history. Four columns, so the history fits a
+   1024 px screen without sideways scrolling (UX-22): what started a run sits under its date, and
+   "shared with the company" is a badge next to its status. */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { listDocuments } from '../../api/documents';
 import { deleteReport, getReport, listRuns } from '../../api/reports';
@@ -18,10 +23,18 @@ import { ButtonLink } from '../shared/ButtonLink';
 import { DELIVERY_STATUS, RUN_STATUS } from '../shared/labels';
 import { LocalityChip } from '../shared/LocalityChip';
 import { ReportForm } from './ReportForm';
-import { browserTimeZone, isRunActive, runDurationMs, scheduleSummary } from './schedule';
+import { browserTimeZone, isDeliveryPending, isRunActive, runDurationMs, scheduleSummary } from './schedule';
 import { startRun } from './startRun';
 
 const HISTORY_POLL_MS = 4000;
+
+/** The flag a run's email outcome adds next to its status, if any. */
+function DeliveryBadge({ run }: { run: ReportRun }) {
+  const { t } = useI18n();
+  if (isDeliveryPending(run)) return <Badge tone="accent">{t('run.history.deliverySending')}</Badge>;
+  if (run.status !== 'succeeded' || run.error !== 'delivery_failed') return null;
+  return <Badge tone="warning">{t(run.error_code === 'delivery_interrupted' ? 'run.history.deliveryUnknown' : 'run.history.deliveryFailed')}</Badge>;
+}
 
 function DocumentNames({ report }: { report: Report }) {
   const { t } = useI18n();
@@ -47,12 +60,15 @@ export function ReportDetail({ reportId }: { reportId: number }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [starting, setStarting] = useState(false);
-  const data = report.data && report.data.id === reportId ? report.data : null;
+  // A failed reload keeps the last copy it read; a 404 means the report is gone (R4-01).
+  const gone = errorCode(report.error) === 'not_found' || errorCode(runs.error) === 'not_found';
+  const data = !gone && report.data && report.data.id === reportId ? report.data : null;
   useDocumentTitle(data ? `${data.name} · ${t('nav.reports')}` : t('nav.reports'));
 
   const sortedRuns = useMemo(() => [...(runs.data ?? [])].sort((a, b) => b.created_at - a.created_at), [runs.data]);
   const live = sortedRuns.some((r) => isRunActive(r));
-  usePolling(async () => { await runs.reload(); }, HISTORY_POLL_MS, live);
+  const delivering = sortedRuns.some((r) => isDeliveryPending(r));
+  usePolling(async () => { await runs.reload(); }, HISTORY_POLL_MS, (live || delivering) && !gone);
   // A run that was going has finished: its report's last/next run times changed with it.
   const wasLive = useRef(live);
   useEffect(() => {
@@ -76,11 +92,11 @@ export function ReportDetail({ reportId }: { reportId: number }) {
     return (
       <>
         <PageHeader title={t('nav.reports')} />
-        {report.error
-          ? (errorCode(report.error) === 'not_found'
-            ? <EmptyState icon="chart" title={t('error.not_found')} action={<ButtonLink to="/reports" variant="primary">{t('reports.back')}</ButtonLink>} />
-            : <Notice tone="danger" live="assertive" action={<Button size="sm" icon="refresh" onClick={() => void report.reload()}>{t('common.retry')}</Button>}>{describeError(i18n, report.error)}</Notice>)
-          : <LoadingBlock label={t('common.loading')} lines={6} />}
+        {gone
+          ? <EmptyState icon="chart" title={t('error.not_found')} action={<ButtonLink to="/reports" variant="primary">{t('reports.back')}</ButtonLink>} />
+          : report.error
+            ? <Notice tone="danger" live="assertive" action={<Button size="sm" icon="refresh" onClick={() => void report.reload()}>{t('common.retry')}</Button>}>{describeError(i18n, report.error)}</Notice>
+            : <LoadingBlock label={t('common.loading')} lines={6} />}
       </>
     );
   }
@@ -91,18 +107,23 @@ export function ReportDetail({ reportId }: { reportId: number }) {
     {
       key: 'when', header: t('run.field.started'),
       nowrap: true,
-      render: (r) => <Link to={`/report-runs/${r.id}`} className="ws-table-link">{fmt.dateTime(r.started_at ?? r.created_at)}</Link>,
+      render: (r) => (
+        <span className="ws-cell-stack">
+          <Link to={`/report-runs/${r.id}`} className="ws-table-link">{fmt.dateTime(r.started_at ?? r.created_at)}</Link>
+          <span className="ws-muted ws-small">{t(r.trigger === 'schedule' ? 'run.trigger.schedule' : 'run.trigger.manual')}</span>
+        </span>
+      ),
     },
     {
       key: 'status', header: t('run.field.status'),
       render: (r) => (
         <span className="ws-badge-row">
           <Badge tone={RUN_STATUS[r.status].tone} dot>{t(RUN_STATUS[r.status].label)}</Badge>
-          {r.status === 'succeeded' && r.error === 'delivery_failed' && <Badge tone="warning">{t('run.history.deliveryFailed')}</Badge>}
+          <DeliveryBadge run={r} />
+          {r.shared_company ? <Badge tone="accent">{t('run.shared')}</Badge> : null}
         </span>
       ),
     },
-    { key: 'trigger', header: t('run.field.trigger'), secondary: true, render: (r) => t(r.trigger === 'schedule' ? 'run.trigger.schedule' : 'run.trigger.manual') },
     {
       key: 'duration', header: t('run.field.duration'), secondary: true, align: 'end',
       render: (r) => { const ms = runDurationMs(r); return ms === null ? <span className="ws-muted">—</span> : <span className="ws-num">{fmt.durationMs(ms)}</span>; },
@@ -111,10 +132,9 @@ export function ReportDetail({ reportId }: { reportId: number }) {
       // Where the run was produced, in words; the model id is technical, for admins only (UX-13).
       key: 'model', header: t(isAdmin ? 'run.field.model' : 'run.field.where'), secondary: true,
       render: (r) => (r.locality || (isAdmin && r.model)
-        ? <span className="ws-cell-stack">{isAdmin && r.model && <span className="ws-mono ws-small">{r.model}</span>}<LocalityChip locality={r.locality} /></span>
+        ? <span className="ws-cell-stack">{isAdmin && r.model && <span className="ws-mono ws-small">{r.model}</span>}<LocalityChip locality={r.locality} short /></span>
         : <span className="ws-muted">—</span>),
     },
-    { key: 'shared', header: t('run.field.visibility'), secondary: true, render: (r) => (r.shared_company ? <Badge tone="accent">{t('run.shared')}</Badge> : <span className="ws-muted">—</span>) },
   ];
 
   return (

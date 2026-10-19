@@ -109,6 +109,9 @@ export const common = defineMessages({
     'locality.local': 'Pe serverul companiei',
     'locality.cloud': 'La un furnizor cloud aprobat',
     'locality.unknown': 'Locație neconfirmată',
+    'locality.short.local': 'Local',
+    'locality.short.cloud': 'Cloud',
+    'locality.short.unknown': 'Neconfirmat',
 
     'role.admin': 'Administrator',
     'role.admin.desc': 'Gestionează utilizatorii, departamentele, setările și jurnalul de audit; vede toate departamentele.',
@@ -281,6 +284,9 @@ export const common = defineMessages({
     'locality.local': 'On the company’s server',
     'locality.cloud': 'With an approved cloud provider',
     'locality.unknown': 'Location unconfirmed',
+    'locality.short.local': 'Local',
+    'locality.short.cloud': 'Cloud',
+    'locality.short.unknown': 'Unconfirmed',
 
     'role.admin': 'Administrator',
     'role.admin.desc': 'Manages users, departments, settings and the audit log; sees every department.',

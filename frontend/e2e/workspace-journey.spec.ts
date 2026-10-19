@@ -12,8 +12,8 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  assertNoPageProblems, buildDocuments, checkPage, controlsUnderTopBar, DESKTOP, focusRing, guard, guardFor, hubLog, pageGet, PHONE, readMail,
-  RUN_DIR, setSmtpSink, SETUP_CODE, SMTP_PORT, waitForMail, type SampleDoc, type SampleKey,
+  assertNoPageProblems, buildDocuments, checkPage, controlsUnderTopBar, DESKTOP, focusRing, guard, guardFor, holdSmtpGreeting, hubLog, pageGet, PHONE, readMail,
+  RUN_DIR, screenDir, setModelServer, setSmtpSink, SETUP_CODE, SMTP_PORT, tableScrollsSideways, waitForMail, waitForSmtpConnection, type SampleDoc, type SampleKey,
 } from './support/workspace-helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -1243,12 +1243,15 @@ test('with the mail server down, an approved email fails honestly: the approver 
   expect(readMail().some((m) => m.subject === subject), 'a failed request sends nothing').toBe(false);
 });
 
+/** The report's approved delivery address, from the step that approves it on. */
+const DELIVERY_RECIPIENT = 'directiune@acme.ro';
+type RunDelivery = ApiRun & { error_code: string | null; error_reason: string | null; delivered_to: string[]; delivery_state: string | null };
+
 test('an approved report delivery that cannot reach the mail server: the run is ready and says its email was not sent; with mail back, the next run arrives', async () => {
   const member = need(state.member, 'member page');
   const approver = need(state.approver, 'approver page');
   const reportId = need(state.reportId, 'report id');
-  const recipient = 'directiune@acme.ro';
-  type RunDelivery = ApiRun & { error_code: string | null; delivered_to: string[] };
+  const recipient = DELIVERY_RECIPIENT;
   const readRun = async (id: number) => (await pageGet<RunDelivery>(member, `/api/workspace/report-runs/${id}`)).body;
 
   // Delivery to a recipient needs a department approver's yes (spec §9), given while mail works.
@@ -1282,7 +1285,10 @@ test('an approved report delivery that cannot reach the mail server: the run is 
     const failedRun = Number(/\/report-runs\/(\d+)$/.exec(member.url())?.[1]);
     // The email goes out after the run is stored, so its outcome is read once the server has it.
     await expect.poll(async () => (await readRun(failedRun)).error, { message: 'the delivery failure is recorded', timeout: 60_000 }).toBe('delivery_failed');
-    expect(await readRun(failedRun)).toMatchObject({ status: 'succeeded', error_code: 'smtp_failed', delivered_to: [] });
+    expect(await readRun(failedRun)).toMatchObject({ status: 'succeeded', error_code: 'smtp_failed', error_reason: 'connection_failed', delivery_state: 'failed', delivered_to: [] });
+    // The live page, never reloaded, already says so: it kept polling while the email was on its
+    // way, instead of stopping at "ready" (NWS-20).
+    await expect(member.locator('.ws-notice').filter({ hasText: 'Raportul este gata, dar emailul nu a fost trimis' })).toContainText(SMTP_DOWN_REASON);
     await member.reload();
     await expect(member.locator('.ws-run-meta').getByText('Gata', { exact: true })).toBeVisible();
     await expect(member.locator('article.ws-report').getByRole('heading', { name: 'Surse' })).toBeVisible();
@@ -1307,12 +1313,94 @@ test('an approved report delivery that cannot reach the mail server: the run is 
   expect(mail.subject.startsWith(`${REPORT_NAME} — `), mail.subject).toBe(true);
   expect(mail.text).toContain(`# Raport: ${REPORT_NAME}`);
   await expect.poll(async () => (await readRun(deliveredRun)).delivered_to, { message: 'the delivery is recorded' }).toEqual([recipient]);
-  expect(await readRun(deliveredRun)).toMatchObject({ status: 'succeeded', error: null, error_code: null });
+  expect(await readRun(deliveredRun)).toMatchObject({ status: 'succeeded', error: null, error_code: null, delivery_state: 'sent' });
+  // Shown live first (NWS-20), then again after a reload.
+  await expect(member.locator('.ws-run-meta').getByText(recipient, { exact: true })).toBeVisible();
   await member.reload();
   const meta = member.locator('.ws-run-meta');
   await expect(meta.getByText('Trimis pe email către', { exact: true })).toBeVisible();
   await expect(meta.getByText(recipient, { exact: true })).toBeVisible();
   await expect(member.locator('.ws-notice').filter({ hasText: 'emailul nu a fost trimis' })).toHaveCount(0);
+});
+
+/** The run page's own status region, holding *text* (it is always on the page; each change is said once). */
+function runStatus(page: Page, text: string) {
+  return page.locator('p.ws-sr-only[role="status"]').filter({ hasText: text });
+}
+
+test('while a run\'s email is still on its way the live page says so, then shows to whom it went — with no reload (NWS-20)', async () => {
+  const member = need(state.member, 'member page');
+  const reportId = need(state.reportId, 'report id');
+  const recipient = DELIVERY_RECIPIENT;
+  const readRun = async (id: number) => (await pageGet<RunDelivery>(member, `/api/workspace/report-runs/${id}`)).body;
+  const mailsBefore = readMail().filter((m) => m.rcpt_tos.includes(recipient)).length;
+  await member.goto(`/workspace/reports/${reportId}`);
+
+  // A slow mail relay: every greeting waits until the journey lets it go (the hub stores the run
+  // "ready" first and only then talks to the mail server; each SMTP step may take up to 15 s).
+  const connections = await holdSmtpGreeting(true);
+  let runId = 0;
+  try {
+    await member.getByRole('button', { name: 'Rulează acum' }).click();
+    await expect(member).toHaveURL(/\/workspace\/report-runs\/\d+$/);
+    runId = Number(/\/report-runs\/(\d+)$/.exec(member.url())?.[1]);
+    // Wiped out by any reload: proves the outcome below arrives on this very page.
+    await member.evaluate(() => { (window as unknown as { __sameDocument?: boolean }).__sameDocument = true; });
+    await waitForSmtpConnection(connections);
+    // The hub is waiting for the mail server: the run is stored ready, its email still pending.
+    expect(await readRun(runId)).toMatchObject({ status: 'succeeded', delivery_state: 'pending', delivered_to: [], error: null });
+    await expect(member.locator('.ws-notice').filter({ hasText: 'Raportul se trimite pe email…' })).toBeVisible();
+    await expect(member.locator('.ws-run-meta').getByText('Gata', { exact: true })).toBeVisible();
+    await expect(member.locator('article.ws-report').getByRole('heading', { name: 'Surse' })).toBeVisible();
+    await expect(runStatus(member, 'Raportul este gata și se trimite pe email…')).toHaveCount(1);
+    await expect(member.locator('.ws-run-meta').getByText('Trimis pe email către', { exact: true })).toHaveCount(0);
+  } finally {
+    await holdSmtpGreeting(false);
+  }
+
+  // The mail server answers: the same page shows to whom the report went, and says it once.
+  const meta = member.locator('.ws-run-meta');
+  await expect(meta.getByText('Trimis pe email către', { exact: true })).toBeVisible();
+  await expect(meta.getByText(recipient, { exact: true })).toBeVisible();
+  await expect(member.locator('.ws-notice').filter({ hasText: 'Raportul se trimite pe email…' })).toHaveCount(0);
+  await expect(runStatus(member, `Raportul a fost trimis pe email către ${recipient}.`)).toHaveCount(1);
+  expect(await member.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument), 'the page was never reloaded').toBe(true);
+  expect(await readRun(runId)).toMatchObject({ status: 'succeeded', delivery_state: 'sent', delivered_to: [recipient], error: null, error_code: null });
+  await expect.poll(() => readMail().filter((m) => m.rcpt_tos.includes(recipient)).length, { message: 'the report reached the sink' }).toBe(mailsBefore + 1);
+});
+
+test('the run history fits a 1024 px screen without sideways scrolling, and no locality chip wraps (UX-22)', async () => {
+  const member = need(state.member, 'member page');
+  const reportId = need(state.reportId, 'report id');
+  await member.goto(`/workspace/reports/${reportId}`);
+  const history = member.getByRole('table', { name: 'Istoricul rulărilor' });
+  // Every kind of row by now: shared with the company, an email not sent, emails sent.
+  await expect(history.getByRole('row').filter({ hasText: 'Partajat în companie' })).toHaveCount(1);
+  await expect(history.getByRole('row').filter({ hasText: 'Email netrimis' })).toHaveCount(1);
+  for (const viewport of [{ width: 1024, height: 768 }, { width: 1100, height: 800 }, { width: 800, height: 900 }, DESKTOP]) {
+    await member.setViewportSize(viewport);
+    expect(await tableScrollsSideways(member, 'Istoricul rulărilor'), `the run history scrolls sideways at ${viewport.width} px`).toBe(0);
+  }
+  await member.setViewportSize({ width: 1024, height: 768 });
+  await member.evaluate(() => window.scrollTo(0, 0));
+  await member.screenshot({ path: path.join(screenDir(), 'report-detail-history-1024x768.png'), fullPage: true });
+  await member.setViewportSize(DESKTOP);
+  // The axe scan and the layout faults (chips that wrap included) at every size, 1024 among them.
+  await checkPage(member, 'report-detail-history');
+  // The run page's side card: the words „Pe serverul companiei" on one line beside nothing.
+  await history.getByRole('link').first().click();
+  await expect(member.locator('.ws-run-meta')).toContainText('Pe serverul companiei');
+  for (const viewport of [{ width: 1100, height: 800 }, { width: 1180, height: 800 }]) {
+    await member.setViewportSize(viewport);
+    const lines = await member.locator('.ws-run-meta .ws-locality').evaluate((chip) => Math.round(chip.getBoundingClientRect().height));
+    expect(lines, `the locality chip is one line at ${viewport.width} px`).toBeLessThanOrEqual(22);
+    // …and the source pills under it stay inside their card (a long title ends in an ellipsis).
+    const outside = await member.locator('.ws-sources .ws-source').evaluateAll((pills) => pills
+      .filter((pill) => pill.getBoundingClientRect().right > (pill.closest('.ws-card')?.getBoundingClientRect().right ?? Infinity) + 1)
+      .map((pill) => (pill.textContent || '').trim()));
+    expect(outside, `source pills outside their card at ${viewport.width} px`).toEqual([]);
+  }
+  await member.setViewportSize(DESKTOP);
 });
 
 test('the model\'s failures are honest: an error and an empty answer are explained, stored as errors, and Retry keeps the keyboard in place', async () => {
@@ -1338,6 +1426,73 @@ test('the model\'s failures are honest: an error and an empty answer are explain
     await expect(page.locator('.ws-msg--assistant').last().getByText('Răspunsul nu a putut fi generat')).toBeVisible({ timeout: 30_000 });
     if (marker === 'nerva-fake-empty') await checkPage(page, 'assistant-failed-answer');
   }
+});
+
+/** A stopped model server in the chat's words (error.model_unavailable + model.reason.model_unreachable),
+    and the chat's next step for it (chat.hint.model_unavailable): a report run says the same. */
+const MODEL_DOWN = 'Modelul AI nu este disponibil acum. Serverul modelului nu poate fi contactat (este oprit sau conexiunea s-a întrerupt).';
+const MODEL_DOWN_HINT = 'Încearcă din nou peste câteva minute. Dacă problema continuă, anunță un administrator.';
+const RAW_MODEL_ERROR = /model_unreachable|model_unavailable|ConnectError|Connection ?refused|Errno|Traceback/i;
+
+test('with the model server stopped, the chat and a report run say why in Romanian and the chip reads "Indisponibil"; started again, the next question answers and the chip recovers (T-GAP-2)', async () => {
+  const page = need(state.member, 'member page');
+  const reportId = need(state.reportId, 'report id');
+  const question = 'Cât este comisionul agenților de vânzări?';
+  await page.goto('/workspace/assistant');
+  await expect(page.getByRole('button', { name: 'Modelul AI: Local' })).toBeVisible();
+
+  await setModelServer('down');
+  try {
+    // The chat: the reason in words, the next step, the chip and the notice above the composer.
+    await page.getByLabel('Întrebarea ta').fill(question);
+    await page.getByRole('button', { name: 'Trimite', exact: true }).click();
+    const failed = page.locator('.ws-msg--assistant').last();
+    await expect(failed.getByText('Răspunsul nu a putut fi generat')).toBeVisible({ timeout: 30_000 });
+    await expect(failed.getByText(MODEL_DOWN)).toBeVisible();
+    await expect(failed.getByText(MODEL_DOWN_HINT)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Modelul AI: Indisponibil' })).toBeVisible();
+    await expect(page.locator('.ws-chat__foot .ws-notice')).toContainText('Serverul modelului nu poate fi contactat');
+    await expect(page.getByText(RAW_MODEL_ERROR)).toHaveCount(0);
+    await expect(page).toHaveURL(/\/workspace\/assistant\/\d+$/);
+    const conversationId = Number(/\/assistant\/(\d+)$/.exec(page.url())?.[1]);
+    const detail = await pageGet<{ messages: (ApiMessage & { error_code: string | null })[] }>(page, `/api/workspace/conversations/${conversationId}`);
+    expect(detail.body.messages.map((m) => [m.role, m.status, m.error_code])).toEqual([['user', 'complete', null], ['assistant', 'error', 'model_unavailable']]);
+    await checkPage(page, 'assistant-model-down');
+
+    // A report run: it fails with the same reason and the same next step, live on its page.
+    await page.goto(`/workspace/reports/${reportId}`);
+    await page.getByRole('button', { name: 'Rulează acum' }).click();
+    await expect(page).toHaveURL(/\/workspace\/report-runs\/\d+$/);
+    const runId = Number(/\/report-runs\/(\d+)$/.exec(page.url())?.[1]);
+    const notice = page.locator('.ws-notice').filter({ hasText: 'Raportul nu a putut fi generat' });
+    await expect(notice).toContainText(MODEL_DOWN, { timeout: 60_000 });
+    await expect(notice).toContainText(MODEL_DOWN_HINT);
+    await expect(notice.getByRole('button', { name: 'Rulează din nou' })).toBeVisible();
+    await expect(page.locator('.ws-run-meta').getByText('Eșuat', { exact: true })).toBeVisible();
+    // (No status-region check here: with the server down the run fails within milliseconds, so the
+    // page usually opens on it already failed, and a page opened on a finished run announces
+    // nothing — the notice is the page. The live announcement is reports-round4.test.tsx's.)
+    await expect(page.getByRole('button', { name: 'Modelul AI: Indisponibil' })).toBeVisible();
+    await expect(page.getByText(RAW_MODEL_ERROR)).toHaveCount(0);
+    const run = await pageGet<RunDelivery>(page, `/api/workspace/report-runs/${runId}`);
+    expect(run.body).toMatchObject({ status: 'failed', error_code: 'model_unavailable', error_reason: 'model_unreachable', content_md: null, delivery_state: null });
+    await checkPage(page, 'run-view-model-down');
+  } finally {
+    await setModelServer('up');
+  }
+
+  // Started again: the next question answers, and the chip and the composer's notice recover
+  // with that answer (the server marked the model up again), without a reload.
+  await page.goto('/workspace/assistant');
+  await page.evaluate(() => { (window as unknown as { __sameDocument?: boolean }).__sameDocument = true; });
+  await page.getByLabel('Întrebarea ta').fill(question);
+  await page.getByRole('button', { name: 'Trimite', exact: true }).click();
+  await expect(page.locator('.ws-msg--assistant').last()).toContainText('Comisionul agenților de vânzări este de 3%', { timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Modelul AI: Local' })).toBeVisible();
+  await expect(page.locator('.ws-chat__foot .ws-notice')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument), 'the page was never reloaded').toBe(true);
+  const posture = await pageGet<{ available: boolean }>(page, '/api/workspace/model');
+  expect(posture.body.available, 'the server reports the model available again').toBe(true);
 });
 
 test('an archived department takes no uploads, and the toggle that shows it appears only then', async () => {
@@ -1426,6 +1581,8 @@ test('the hub log holds no traceback or error from the whole journey', async () 
   // have happened, and it is the only error allowed.
   const SIMULATED = /LM Studio request failed .*simulated model failure/;
   expect(lines.filter((line) => SIMULATED.test(line)).length, 'the simulated model failure was logged').toBeGreaterThan(0);
+  // The stopped model server (T-GAP-2) was noticed by the hub — as a warning, not an error.
+  expect(lines.filter((line) => /\bWARNING\b.*LM Studio unreachable/.test(line)).length, 'the stopped model server was noticed').toBeGreaterThan(0);
   const bad = lines.filter((line) => /Traceback \(most recent call last\)|\bERROR\b|\bCRITICAL\b/.test(line) && !SIMULATED.test(line));
   expect(bad, `the hub logged:\n${bad.join('\n')}`).toEqual([]);
 });

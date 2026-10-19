@@ -164,7 +164,7 @@
   the key file) and `verify` / `restore` never make a key file or salt (REV-POLISH-04); a `list` name
   that links to another archive of the directory names no backup (REV-POLISH-05).
 - [x] ✅ **NWS-19 — the polish pass (2026-10-19): the round-2 residual minors.** The scheduler pauses
-  its four audited steps while the audit key is not the trail's — one WARNING per state change, no
+  its four audited steps (five since NWS-22) while the audit key is not the trail's — one WARNING per state change, no
   traceback, nothing written, catch-up on the first good tick (OPS2-08,
   `tests/test_workspace_scheduler_audit_key.py`); `workspace.db` created 0600 whatever the umask and
   `<data root>/business` made private at each process's first connect — a symlinked `business/` at
@@ -178,6 +178,42 @@
   run: 1,658 workspace backend tests (serial, alphabetical, and `-n 6`: no test depends on the
   order or on `--log-level` any more, REV-POLISH-01), 239 vitest in `src/workspace`, the journey
   28/28 twice.
+- [x] ✅ **NWS-20 — the run view learns the delivery outcome without a reload.** **Delivered
+  2026-10-19:** schema v2 adds `report_runs.delivery_state` (`pending` → `sent` | `failed`, set with
+  `succeeded` in one statement), the run API returns it, and `RunView` / the report history keep
+  polling while it is `pending`, then show „Trimis pe email către …" or why it was not sent; a
+  shutdown mid-send ends `delivery_interrupted`, and the scheduler resolves a delivery a stopped hub
+  left `pending` at the first tick after a restart (`tests/test_workspace_reports_delivery_state.py`,
+  13 tests; `reports-round4.test.tsx`; journey step 24). Pilot guide §18 no longer lists it.
+- [x] ✅ **NWS-22 — the third assessment round (2026-10-19): last functional gaps.** One line each:
+  - NWS-20 above (backend and frontend halves).
+  - UX-23 — a failed run says why in the chat's own sentence and next step: `error_reason`
+    (`model_unreachable` …) stored next to `error_code`, `describeCode` + the shared `hintKey`
+    (`tests/test_workspace_reports_model_reason.py`, 20 tests).
+  - T-GAP-2 — journey step 27 stops the model server (`frontend/e2e/support/workspace_model.py`):
+    the chat and a report run explain it, the chip reads „Indisponibil", and both recover with the
+    first answer once it is back (`ChatPane` / `RunView` re-read the posture).
+  - UX-22 — locality chips never wrap (short „Local" / „Cloud" in tables), the run history has four
+    columns and fits 1024 px, long source pills stay in their card (journey step 25; `checkPage`
+    layout pass at 1024 px).
+  - SEC-EDGE-1 — a `business/` linked to a folder shared with other data gets only the workspace's
+    own entries made private (`db.own_entry`), with one warning (`tests/test_workspace_file_modes.py`).
+  - OPS3-01 — `nerva-run -m agents.core.backup --help` names `nerva-run` and the service's
+    environment (`backup.PROG`, `tests/test_backup_cli.py`).
+  - DOC-04 — `config.workspace_dir`'s docstring states the rule `secure_storage` applies.
+  - Round-4 review fixes R4-01 … R4-08: a run or report that answers 404 while its page follows
+    it stops polling and shows the not-found state (`RunView`, `ReportDetail`;
+    `reports-gone.test.tsx`, 5 tests); outside its department a shared run's failed delivery
+    hides `error` / `error_code` / `error_reason` with `delivery_state` and `delivered_to`; schema
+    v3 `report_runs.delivery_attempted`, so the restart sweep audits the count the email was
+    addressed to; the shared-folder WARNING's verb agrees with its count; tests that pin the
+    one-commit `succeeded` + `pending`, the shutdown guard, the failed branch's compare-and-set
+    and the `files/` symlink guard (`tests/test_workspace_reports_delivery_state.py` +7,
+    `tests/test_workspace_file_modes.py` +4; each killed its mutation).
+  - Docs: spec v3.4, pilot guide §10 / §12 / §13 / §15 / §17 / §18, `docs/FLAGS.md`,
+    `docs/ARCHITECTURE.md`, `docs/OWNER_TASKS.md` (NWS-21).
+  - Gate run: 1,696 workspace backend tests (+38) and 87 backup tests (1,783 together, `-n 4`), 253
+    vitest in `src/workspace` (23 files), the journey 31/31 twice.
 
 **Open follow-ups**
 
@@ -194,16 +230,28 @@
   Run extraction in a subprocess with `RLIMIT_AS` and a hard kill.
 - [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
   lazy-load the admin console and reports to cut the first load.
-- [ ] ⬜ **NWS-20 — the run view learns the delivery outcome only after a reload.** `reports._execute`
-  stores `succeeded` first and then awaits the email delivery (up to 15 s per SMTP operation), and the
-  run view stops polling at `succeeded`, so a page watched live shows „Gata" but neither „Trimis pe
-  email către" nor the delivery-failed notice until it is reloaded (the bell notification does
-  arrive). Needs a backend delivery state on the run (e.g. `pending` / `sent` / `failed`) the view
-  can keep polling on; documented in pilot guide §18 (found in the polish pass, NEW-OBS-1).
 - [ ] ⬜ **NWS-21 — the pilot tag (owner).** No release tag holds the workspace yet (`v1.0.0` is older);
   pilot guide §2 installs from `<eticheta-pilotului>` (§15 upgrades from tag to tag) and says the
-  owner cuts it after approving the pilot work, without naming it. Owner lane: merge, tag, and give
-  the tag's name to the installer; `docs/OWNER_TASKS.md` has no row for it yet.
+  owner cuts it after approving the pilot work, without naming it. Owner lane: merge PR #1256, tag,
+  and give the tag's name to the installer — the row „NWS-21 — merge the Nerva Workspace pilot PR
+  (#1256) and cut the pilot tag" in `docs/OWNER_TASKS.md` (owner gates).
+- [ ] ⬜ **NWS-23 — round-3 residual minors (found while fixing NWS-22, not yet fixed).** One line each:
+  - The reports list („Rapoarte", `ReportsList.tsx`) scrolls sideways inside its frame between 768
+    and 1180 px (at 1024 „Următoarea rulare" and „Livrare pe email" sit behind the scroll; the sticky
+    actions column keeps the row menu reachable). Needs a small design call (icon-only run button,
+    or merged columns in that range).
+  - At 320 px the run view's „Vizibilitate" badge „Partajat în companie" wraps inside its pill (the
+    `ws-run-meta__wide` row treatment would fix it).
+  - A run page opened on a run that has already failed announces nothing to a screen reader (the
+    notice is the page); with the model server down a run fails in milliseconds, so after „Rulează
+    acum" the outcome is usually not spoken. Announce it when the page was reached from „Rulează
+    acum" / „Rulează din nou".
+  - `backup restore <archive> <target>` with a dangling-symlink target says `target … is not empty`
+    (`mkdir` → `FileExistsError` → that line); nothing is restored, only the wording is wrong
+    (documented in pilot guide §17; any `agents/core/backup.py` edit re-opens Hermes H503's review).
+  - In a shared `business/` target, a foreign file whose name starts with `workspace.db-` or
+    `secrets.enc.` matches `db.own_entry` and is tightened to 0600 (narrow the sibling patterns to
+    the exact `-wal`/`-shm`/`-journal` and the secret store's own temp names).
 - [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
   `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
   contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.

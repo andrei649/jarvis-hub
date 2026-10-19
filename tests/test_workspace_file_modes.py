@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import stat
 from pathlib import Path
 
@@ -338,6 +339,57 @@ def test_a_files_folder_of_its_own_in_a_shared_folder_is_made_private(ws, tmp_pa
     workspace_db.connect().close()
     assert _mode(shared / "files") == 0o700 and _mode(shared / "files" / "3.bin") == 0o600
     assert _modes_of(shared, foreign) == foreign and _mode(shared) == 0o755
+
+
+@pytest.mark.parametrize("others_there", [False, True], ids=["only-stored-files", "with-others"])
+def test_a_files_link_in_a_shared_folder_is_never_followed(ws, tmp_path, monkeypatch,
+                                                           others_there):
+    """Review R4-06: ``files`` in a shared link target is itself a link to a folder elsewhere.
+
+    That folder is not the workspace's: walking it (or tightening the stored-looking files in
+    it) would make private whatever another user keeps there. The link is left as it is, and
+    so is everything behind it — whether it holds only ``<id>.bin`` names or other files too.
+    """
+    shared, foreign = _shared_folder(tmp_path)
+    shutil.rmtree(shared / "files")
+    del foreign["files/readme.txt"]
+    elsewhere = tmp_path / "foreign"
+    elsewhere.mkdir()
+    (elsewhere / "9.bin").write_bytes(b"someone else's")
+    behind = {"9.bin": 0o644}
+    if others_there:
+        (elsewhere / "readme.txt").write_text("someone else's", encoding="utf-8")
+        behind["readme.txt"] = 0o644
+    for name, mode in behind.items():
+        (elsewhere / name).chmod(mode)
+    elsewhere.chmod(0o755)
+    (shared / "files").symlink_to(elsewhere, target_is_directory=True)
+    (ws.data_dir / config.DATA_DIRNAME).symlink_to(shared, target_is_directory=True)
+
+    workspace_db.connect().close()
+    assert (shared / "files").is_symlink()
+    assert _modes_of(elsewhere, behind) == behind and _mode(elsewhere) == 0o755
+    assert _modes_of(shared, foreign) == foreign and _mode(shared) == 0o755
+    assert _mode(shared / "workspace.db") == 0o600, "the workspace's own files are private"
+
+
+@pytest.mark.parametrize(("others", "phrase"), [
+    (("notes.txt",), "holds 1 entry that is not the workspace's (notes.txt)"),
+    (("notes.txt", "photos"), "holds 2 entries that are not the workspace's (notes.txt, photos)"),
+], ids=["one", "two"])
+def test_the_shared_folder_warning_counts_its_other_entries_in_words(ws, tmp_path, caplog,
+                                                                     others, phrase):
+    """Review R4-08: "1 entry that are not" read wrong; the verb now agrees with the count."""
+    shared = tmp_path / "mnt"
+    shared.mkdir()
+    for name in others:
+        (shared / name).write_text("someone else's", encoding="utf-8")
+    (ws.data_dir / config.DATA_DIRNAME).symlink_to(shared, target_is_directory=True)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="nerva.workspace.db"):
+        workspace_db.connect().close()
+    [line] = [r.getMessage() for r in _db_warnings(caplog) if "not the workspace's" in r.getMessage()]
+    assert phrase in line, line
 
 
 def test_a_refused_chmod_in_a_shared_folder_names_only_the_workspaces_entries(

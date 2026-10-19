@@ -1257,8 +1257,9 @@ tools never reach company data and the terminal's working directory stays outsid
 inside an approved terminal command is governed by that approval), and an explicit root that is,
 contains or lies inside `business/` is ignored with one warning (NWS-17). The workspace creates `workspace.db` 0600 whatever the umask and,
 at the first database connection of each process, removes group/other access from everything under
-`business/`; the rest of the data root still follows the service's umask (pilot guide §2
-`UMask=0077`).
+`business/` — when `business/` is a link to a folder that also holds other data, from the
+workspace's own entries there only, with one warning (SEC-EDGE-1); the rest of the data root still
+follows the service's umask (pilot guide §2 `UMask=0077`).
 **Revert:** unset + restart; the data stays on disk, unreachable, and comes back as it was.
 
 ### `NERVA_WORKSPACE_SETUP_CODE`
@@ -1327,16 +1328,19 @@ time out (180 s chat, 300 s reports).
 **Default: ON** (`env_flag(..., True)`; checked when the hub starts the loop). One tick every
 30 s: due scheduled reports (compare-and-set claims), approval expiry (7 days) and the
 10-minute `executing` sweep, stale report runs (15 min running / 30 min queued), pending
-answers (10 min) and documents left `processing` by an extraction that died (claimed over
-10 min ago, or before this hub started → `failed` / `interrupted`, re-indexable at once), plus
-retention deletes (login attempts 24 h; expired invites, dead sessions 7 days; read
-notifications 90 days). While this process's audit key is not the one the audit trail was signed
-with, the four steps that sign audit rows (due reports, approval expiry, the `executing` sweep,
-stale runs) pause — one WARNING `workspace scheduler paused: …` when the pause starts, no traceback,
+answers (10 min), documents left `processing` by an extraction that died (claimed over
+10 min ago, or before this hub started → `failed` / `interrupted`, re-indexable at once), report
+emails left `pending` by a hub that stopped mid-send (the run stored before this hub started, or
+15 min ago or more → `delivery_state` `failed` / `delivery_interrupted`, `email.failed` audited,
+the owner and the trigger user notified), plus retention deletes (login attempts 24 h; expired
+invites, dead sessions 7 days; read notifications 90 days). While this process's audit key is not
+the one the audit trail was signed with, the five steps that sign audit rows (due reports,
+approval expiry, the `executing` sweep, stale runs, interrupted deliveries) pause — one WARNING `workspace scheduler paused: …` when the pause starts, no traceback,
 nothing written — and the first tick after the key is back catches up; the other sweeps and the
 deletes keep running. **OFF:** none of that happens — scheduled reports never run, pending
-approvals never expire, and a document interrupted by a restart reads `processing` until a
-re-index after 10 min. **Revert:** unset + restart.
+approvals never expire, a document interrupted by a restart reads `processing` until a
+re-index after 10 min, and a report email the hub was sending when it crashed stays `pending` (a
+graceful shutdown still records `delivery_interrupted` itself). **Revert:** unset + restart.
 
 ## Decision table
 
@@ -1378,7 +1382,7 @@ re-index after 10 min. **Revert:** unset + restart.
 | `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 (MiB, capped 200) | Larger documents accepted (streamed, early `413 file_too_large`) | Each in-flight upload is held in memory (≤ 3 per user); the proxy body limit must follow | Unset: 25 MiB |
 | `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS` | 12 (1..168) · 7 (1..90) | Longer idle / absolute session lifetime | A stolen cookie stays useful longer | Unset + restart: 12 h idle on the next request; 7 days for sessions issued afterwards |
 | `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` | 2 (1..16) | More simultaneous model calls (chat + reports + model test share it) | Overcommits a model server that cannot run them in parallel → timeouts instead of `model_busy` | Unset + restart: 2 for new callers |
-| `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run, pending-answer and interrupted-extraction sweeps, retention deletes every 30 s (the audited steps pause, with one warning, while the audit key is not the trail's) | Off: scheduled reports never run, pending approvals never expire, interrupted documents stay `processing`, old rows are never deleted | Unset + restart: on again |
+| `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run, interrupted-delivery, pending-answer and interrupted-extraction sweeps, retention deletes every 30 s (the audited steps pause, with one warning, while the audit key is not the trail's) | Off: scheduled reports never run, pending approvals never expire, interrupted documents stay `processing`, a delivery a crash left `pending` stays so, old rows are never deleted | Unset + restart: on again |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
 | `llm.execute_code_sessions` *(runtime setting)* | on when code enabled · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, requires a current Action Kernel GRANT after its interpreter lock, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Explicitly set `false` + restart: back to the K1 one-shot, kernels destroyed |
 | `llm.tool_result_thresholds` *(runtime setting)* | `{}` (`tool_result_store.py`) | Per-tool byte ceilings for what a result may put in the context window, as `{tool: bytes}`. Beats the tool's own declaration and the `mcp_` family default; loses to a pinned tool (`file_read` is pinned to no limit, because it is how a spilled result is read back) | Raising one lets that tool fill more of the window; lowering it sends more of its output to disk. Nothing is lost either way — over the ceiling the full result is spilled and the model gets a preview naming the file | Set `{}` (no restart): back to the window-scaled default |

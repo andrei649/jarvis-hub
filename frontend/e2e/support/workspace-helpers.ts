@@ -7,13 +7,17 @@
                 a failure, and an undeclared one is exactly what this guard exists to catch.
    checkPage  — the per-page quality bar: an axe scan (WCAG 2.0/2.1 A + AA, failing on serious or
                 critical) in the light theme at 1280×800 and 390×844 and in the dark theme at
-                1280×800; layout faults at those sizes and at 320×640 (a page wider than the
-                screen, a badge out of its card, a split table header, a dialog or drawer control
-                outside its surface); and screenshots at the two main sizes.
+                1280×800; layout faults at those sizes and at 320×640 and 1024×768 (a page wider
+                than the screen, a badge out of its card, a locality chip that wraps or is cut
+                short, a split table header, a dialog or drawer control outside its surface); and
+                screenshots at the two main sizes. `tableScrollsSideways` measures a table's own
+                sideways scroll (the run history must fit 1024 px, UX-22).
    focus      — keyboard checks axe cannot make: the focused control keeps a solid outline in
                 forced-colours mode, and Shift+Tab never leaves focus under the sticky top bar.
-   mail       — the SMTP sink's JSON-lines file, polled until the expected message arrives, and
-                the sink's off switch (setSmtpSink, through support/workspace_smtp.py).
+   mail       — the SMTP sink's JSON-lines file, polled until the expected message arrives, the
+                sink's off switch (setSmtpSink) and its greeting hold (holdSmtpGreeting,
+                waitForSmtpConnection), through support/workspace_smtp.py.
+   model      — the model server's off switch (setModelServer, through support/workspace_model.py).
    documents  — the four Romanian sample files, written by workspace_docs.py. */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
@@ -24,6 +28,7 @@ import path from 'node:path';
 
 export const RUN_DIR = process.env.WS_E2E_RUN_DIR || '';
 export const SMTP_PORT = Number(process.env.WS_E2E_SMTP_PORT || 0);
+export const MODEL_PORT = Number(process.env.WS_E2E_MODEL_PORT || 0);
 export const SETUP_CODE = process.env.WS_E2E_SETUP_CODE || '';
 
 export const DESKTOP = { width: 1280, height: 800 } as const;
@@ -180,6 +185,33 @@ async function layoutFaults(page: Page, name: string, size: string): Promise<str
         found.push(`badge "${(badge.textContent || '').trim()}" overflows its ${box.className.split(' ')[0]}`);
       }
     }
+    // A locality chip („Pe serverul companiei") on two lines, or cut short with an ellipsis: it
+    // never wraps (UX-22), and the places that hold it give it the room or use the short form.
+    for (const chip of Array.from(document.querySelectorAll<HTMLElement>('.ws-locality'))) {
+      if (chip.getBoundingClientRect().width === 0) continue;
+      // Every line box of the text it shows, whatever its markup (text read but not shown — a
+      // 1 px visually hidden span — is not part of the look).
+      const tops: number[] = [];
+      let height = Infinity;
+      const walker = document.createTreeWalker(chip, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const holder = node.parentElement;
+        if (!holder || !(node.textContent || '').trim() || holder.getBoundingClientRect().width <= 1) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const r of Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0)) {
+          tops.push(r.top);
+          height = Math.min(height, r.height);
+        }
+      }
+      for (const part of Array.from(chip.querySelectorAll<HTMLElement>('.ws-locality__text, .ws-locality__full'))) {
+        if (part.getBoundingClientRect().width <= 1) continue;
+        if (part.scrollWidth > part.clientWidth + 1) found.push(`locality chip "${(part.textContent || '').trim()}" is cut short (${part.clientWidth}px of ${part.scrollWidth}px)`);
+      }
+      if (tops.length > 0 && Math.max(...tops) - Math.min(...tops) > height / 2) {
+        found.push(`locality chip "${chip.getAttribute('title') || (chip.textContent || '').trim()}" wraps onto more than one line (${Math.round(chip.getBoundingClientRect().width)}px wide)`);
+      }
+    }
     // A table header split inside a word ("Docum" + "ent"): the cell is narrower than its
     // longest word, which a table in a sideways-scrolling frame never needs to be.
     const probe = document.createElement('span');
@@ -238,6 +270,8 @@ async function layoutFaults(page: Page, name: string, size: string): Promise<str
 }
 
 export const NARROW = { width: 320, height: 640 } as const;
+/** A small laptop: the sidebar shows and the main column is at its narrowest (UX-22). */
+export const LAPTOP = { width: 1024, height: 768 } as const;
 
 /** The light-themed page's axe scan once more in the dark theme (the tokens differ). */
 async function axeScanDark(page: Page, name: string): Promise<string[]> {
@@ -274,14 +308,28 @@ export async function checkPage(page: Page, name: string): Promise<void> {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: path.join(screenDir(), `${name}-${size}.png`), fullPage: true });
   }
-  // The narrowest phones and a 1280 px desktop zoomed to 400 %: layout only.
-  await page.setViewportSize(NARROW);
-  await settle(page);
-  layout.push(...await layoutFaults(page, name, '320x640'));
+  // The narrowest phones and a 1280 px desktop zoomed to 400 %, and a small laptop: layout only.
+  for (const [size, viewport] of [['320x640', NARROW], ['1024x768', LAPTOP]] as const) {
+    await page.setViewportSize(viewport);
+    await settle(page);
+    layout.push(...await layoutFaults(page, name, size));
+  }
   await page.setViewportSize(original);
   await settle(page);
   expect(blocking, `axe found serious/critical violations:\n${blocking.join('\n')}`).toEqual([]);
   expect(layout, `layout faults:\n${layout.join('\n')}`).toEqual([]);
+}
+
+/** Whether the table named *caption* scrolls sideways inside its frame at the current size
+    (the page itself never does; the frame does when a table is wider than the room — UX-22).
+    Returns the overflow in px (0 = it fits). */
+export async function tableScrollsSideways(page: Page, caption: string): Promise<number> {
+  const table = page.getByRole('table', { name: caption });
+  await table.waitFor();
+  return table.evaluate((node) => {
+    const frame = node.closest<HTMLElement>('.ws-table-scroll');
+    return frame ? Math.max(0, frame.scrollWidth - frame.clientWidth) : 0;
+  });
 }
 
 // ── the SMTP sink ───────────────────────────────────────────────────────────────────
@@ -346,6 +394,56 @@ export async function setSmtpSink(state: 'up' | 'down'): Promise<void> {
   await expect.poll(() => (existsSync(stateFile) ? readFileSync(stateFile, 'utf8').trim() : ''),
     { message: `the SMTP sink did not report "${state}" (support/workspace_smtp.py)`, timeout: 10_000 }).toBe(state);
   await expect.poll(smtpAnswers, { message: `the SMTP port did not ${state === 'up' ? 'answer again' : 'stop answering'}`, timeout: 10_000 })
+    .toBe(state === 'up');
+}
+
+function holdState(): { held: boolean; connections: number } | null {
+  const file = path.join(RUN_DIR, 'smtp.hold.state');
+  if (!existsSync(file)) return null;
+  const [word, count] = readFileSync(file, 'utf8').trim().split(/\s+/);
+  return { held: word === 'held', connections: Number(count) };
+}
+
+/** Holds every new SMTP connection before its greeting (a slow relay; at most 30 s, see
+    tests/support/smtp_sink.py → GATE_TIMEOUT) or releases them, through workspace_smtp.py's
+    control file; returns how many connections the sink had accepted once it agrees. */
+export async function holdSmtpGreeting(held: boolean): Promise<number> {
+  const control = path.join(RUN_DIR, 'smtp.hold');
+  if (held) writeFileSync(control, 'hold\n');
+  else rmSync(control, { force: true });
+  await expect.poll(() => holdState()?.held, { message: `the SMTP sink did not report its greeting ${held ? 'held' : 'released'}`, timeout: 10_000 })
+    .toBe(held);
+  return holdState()?.connections ?? 0;
+}
+
+/** Waits until the sink has accepted more than *seen* connections (the hub started a delivery). */
+export async function waitForSmtpConnection(seen: number, timeout = 60_000): Promise<void> {
+  await expect.poll(() => holdState()?.connections ?? 0, { message: 'nobody connected to the SMTP sink', timeout }).toBeGreaterThan(seen);
+}
+
+// ── the model server ────────────────────────────────────────────────────────────────
+
+/** Whether the model server answers HTTP on its port right now. */
+async function modelAnswers(): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${MODEL_PORT}/health`, { signal: AbortSignal.timeout(2_000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Stops the model server (its port refuses connections, as when LM Studio is stopped) or starts
+    it again on the same port, through support/workspace_model.py's control file; returns once
+    the port itself agrees. The hub's settings are not touched. */
+export async function setModelServer(state: 'up' | 'down'): Promise<void> {
+  const control = path.join(RUN_DIR, 'model.down');
+  if (state === 'down') writeFileSync(control, 'down\n');
+  else rmSync(control, { force: true });
+  const stateFile = path.join(RUN_DIR, 'model.state');
+  await expect.poll(() => (existsSync(stateFile) ? readFileSync(stateFile, 'utf8').trim() : ''),
+    { message: `the model server did not report "${state}" (support/workspace_model.py)`, timeout: 10_000 }).toBe(state);
+  await expect.poll(modelAnswers, { message: `the model port did not ${state === 'up' ? 'answer again' : 'stop answering'}`, timeout: 10_000 })
     .toBe(state === 'up');
 }
 

@@ -111,6 +111,8 @@ DELIVERY_FAILED = "failed"
 #: The delivery's sender stopped before the mail server answered (a hub restart or shutdown
 #: mid-send): whether the message arrived is not known.
 DELIVERY_INTERRUPTED = "delivery_interrupted"
+#: ``report_runs.error`` of a succeeded run whose email delivery failed.
+DELIVERY_ERROR = "delivery_failed"
 EXPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
 
 _TIME = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
@@ -708,19 +710,26 @@ def run_json(row: sqlite3.Row, user: WorkspaceUser) -> dict:
 
     ``delivered_to`` names the report's recipients, part of the report's configuration:
     a viewer outside the report's department (a company-shared run) gets ``[]``, just as
-    the report itself answers them ``404`` — and ``delivery_state`` ``null`` for the same
-    reason. ``delivery_state`` is ``null`` for a run with no approved delivery, ``pending``
-    from the moment the run is ``succeeded`` until the mail server answered (a live page
-    keeps polling), then ``sent`` or ``failed``. ``error_reason`` qualifies ``error_code``
-    as an error body's ``reason`` does (``model_unreachable`` …), ``null`` when unknown.
+    the report itself answers them ``404`` — and the rest of the delivery with it (review
+    R4-02): ``delivery_state`` ``null``, and for a delivery that failed ``error``,
+    ``error_code`` and ``error_reason`` ``null`` too, so an outsider learns neither that the
+    report is mailed, nor that its email failed, nor the mail server's cause. A shared run
+    is a succeeded one, whose only error is its delivery's. ``delivery_state`` is ``null``
+    for a run with no approved delivery, ``pending`` from the moment the run is
+    ``succeeded`` until the mail server answered (a live page keeps polling), then ``sent``
+    or ``failed``. ``error_reason`` qualifies ``error_code`` as an error body's ``reason``
+    does (``model_unreachable`` …), ``null`` when unknown.
     """
     in_department = user.can_access_department(int(row["department_id"]))
+    delivery_hidden = not in_department and row["error"] == DELIVERY_ERROR
     return {
         "id": int(row["id"]), "report_id": int(row["report_id"]), "status": row["status"],
         "trigger": row["trigger"], "triggered_by": row["triggered_by"],
         "triggered_by_name": row["triggered_by_name"], "model": row["model"], "route": row["route"],
-        "locality": row["locality"], "error_code": row["error_code"],
-        "error_reason": row["error_reason"], "error": row["error"],
+        "locality": row["locality"],
+        "error_code": None if delivery_hidden else row["error_code"],
+        "error_reason": None if delivery_hidden else row["error_reason"],
+        "error": None if delivery_hidden else row["error"],
         "shared_company": bool(row["shared_company"]),
         "delivered_to": _loads(row["delivered_to_json"], []) if in_department else [],
         "delivery_state": row["delivery_state"] if in_department else None,
@@ -1033,6 +1042,15 @@ def fail_stuck_runs(conn: sqlite3.Connection, now: float) -> int:
                for row in rows)
 
 
+def _attempted_count(conn: sqlite3.Connection, row: sqlite3.Row) -> int:
+    """How many recipients a pending delivery was addressed to (see :func:`fail_stuck_deliveries`)."""
+    if row["delivery_attempted"] is not None:
+        return int(row["delivery_attempted"])
+    report = conn.execute("SELECT delivery_approved_json FROM reports WHERE id = ?",
+                          (row["report_id"],)).fetchone()
+    return len(_loads(report["delivery_approved_json"], [])) if report else 0
+
+
 def fail_stuck_deliveries(conn: sqlite3.Connection, now: float, *,
                           stored_before: float | None = None) -> int:
     """Deliveries still ``pending`` with no sender left → ``failed`` / ``delivery_interrupted``.
@@ -1041,7 +1059,11 @@ def fail_stuck_deliveries(conn: sqlite3.Connection, now: float, *,
     mail server answered. The sender is the process that stored it, so a delivery stored over
     :data:`DELIVERY_TIMEOUT_SECONDS` ago — or before this process started (*stored_before*:
     one hub per data root) — has none: the hub stopped mid-send. It is resolved as every other
-    failed delivery is: ``email.failed`` audited, the owner and the trigger user told.
+    failed delivery is: ``email.failed`` audited, the owner and the trigger user told. Its
+    ``recipient_count`` is what the delivery was addressed to (``delivery_attempted``, stored
+    with the pending state), as the sender's own audit says — not the report's approved list
+    now, which a later edit may have emptied; only a delivery stored before schema 3, which has
+    no count, falls back to that list.
     """
     cutoff = now - DELIVERY_TIMEOUT_SECONDS
     if stored_before is not None:
@@ -1055,10 +1077,8 @@ def fail_stuck_deliveries(conn: sqlite3.Connection, now: float, *,
             row = _run_row(conn, int(found["id"]))
             if row is None:
                 continue
-            report = conn.execute("SELECT delivery_approved_json FROM reports WHERE id = ?",
-                                  (row["report_id"],)).fetchone()
-            attempted = len(_loads(report["delivery_approved_json"], [])) if report else 0
-            resolved += _resolve_delivery(conn, row, [], DELIVERY_INTERRUPTED, attempted)
+            resolved += _resolve_delivery(conn, row, [], DELIVERY_INTERRUPTED,
+                                          _attempted_count(conn, row))
     if resolved:
         logger.warning("%d report delivery(ies) left pending by a stopped hub marked failed "
                        "(%s)", resolved, DELIVERY_INTERRUPTED)
@@ -1265,7 +1285,9 @@ def _store_success(job: _Job, result: Any, text: str, citations: list[dict]) -> 
 
     The run becomes ``succeeded`` and, when it will be mailed, its delivery ``pending`` in
     the same statement: no reader ever sees a finished run with no delivery state while a
-    delivery is still to come (a live run page polls for as long as it is pending).
+    delivery is still to come (a live run page polls for as long as it is pending). The same
+    statement records how many recipients the delivery is addressed to (``delivery_attempted``),
+    which the restart sweep audits for a delivery whose sender stopped (review R4-07).
     """
     conn = db.connect()
     try:
@@ -1274,11 +1296,11 @@ def _store_success(job: _Job, result: Any, text: str, citations: list[dict]) -> 
             recipients = _approved_recipients(conn, job.report_id)
             cursor = conn.execute(
                 "UPDATE report_runs SET status = 'succeeded', content_md = ?, citations_json = ?, "
-                "model = ?, route = ?, locality = ?, finished_at = ?, delivery_state = ? "
-                "WHERE id = ? AND status = 'running'",
+                "model = ?, route = ?, locality = ?, finished_at = ?, delivery_state = ?, "
+                "delivery_attempted = ? WHERE id = ? AND status = 'running'",
                 (text, json.dumps(citations, ensure_ascii=False), result.model, result.route,
                  result.locality, db.now(), DELIVERY_PENDING if recipients else None,
-                 job.run_id),
+                 len(recipients) if recipients else None, job.run_id),
             )
             if row is None or cursor.rowcount != 1:
                 return None
@@ -1327,7 +1349,11 @@ async def _deliver(job: _Job, text: str, recipients: list[str]) -> None:
                                 failure_reason(exc))
         return
     except asyncio.CancelledError:
-        _record_delivery(job, [], DELIVERY_INTERRUPTED, attempted)
+        try:
+            _record_delivery(job, [], DELIVERY_INTERRUPTED, attempted)
+        except (sqlite3.Error, OSError):   # the next start's sweep resolves it
+            logger.warning("report run %s: the interrupted delivery could not be recorded",
+                           job.run_id)
         raise
     except Exception:  # a crash must resolve the delivery, never leave it pending
         logger.exception("report run %s: delivery crashed", job.run_id)
@@ -1378,8 +1404,8 @@ def _resolve_delivery(conn: sqlite3.Connection, row: sqlite3.Row, accepted: list
         return True
     cursor = conn.execute(
         "UPDATE report_runs SET delivery_state = ?, error_code = ?, error_reason = ?, "
-        "error = 'delivery_failed' WHERE id = ? AND delivery_state = ?",
-        (DELIVERY_FAILED, error_code, reason, run_id, DELIVERY_PENDING))
+        "error = ? WHERE id = ? AND delivery_state = ?",
+        (DELIVERY_FAILED, error_code, reason, DELIVERY_ERROR, run_id, DELIVERY_PENDING))
     if cursor.rowcount != 1:
         return False
     audit.record(conn, actor=None, actor_email=SCHEDULER_ACTOR, action="email.failed",

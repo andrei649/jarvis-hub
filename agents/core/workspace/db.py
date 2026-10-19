@@ -206,8 +206,17 @@ ALTER TABLE report_runs ADD COLUMN error_reason TEXT;
 CREATE INDEX idx_report_runs_delivery_pending ON report_runs(delivery_state, finished_at);
 """
 
+# v3 (review R4-07): how many approved recipients a run's delivery was addressed to, written
+# with ``delivery_state='pending'`` in the statement that stores the run. A delivery its
+# sender never settled (a hub killed mid-send) is audited by the restart sweep with the count
+# it was really sent to, not with whatever the report's approved list holds by then. NULL for
+# a run with no delivery and for every run stored before schema 3.
+_SCHEMA_V3 = """
+ALTER TABLE report_runs ADD COLUMN delivery_attempted INTEGER;
+"""
+
 #: Ordered (version, script) pairs; a database at user_version N runs every script > N.
-MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_V1), (2, _SCHEMA_V2)]
+MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3)]
 
 _migrate_lock = threading.Lock()
 
@@ -438,11 +447,11 @@ def secure_storage(directory: Path) -> list[Path]:
         tighten_tree(root)
     else:
         logger.warning(
-            "Nerva Workspace: %s is a link to %s, which also holds %d entr%s that are not the "
+            "Nerva Workspace: %s is a link to %s, which also holds %d %s not the "
             "workspace's (%s), so only the workspace's own files there are made private and "
             "nothing else in that folder is changed — link business/ to a folder of its own "
             "(PILOT_GUIDE §13)", directory, root, len(foreign),
-            "y" if len(foreign) == 1 else "ies",
+            "entry that is" if len(foreign) == 1 else "entries that are",
             ", ".join(foreign[:_FOREIGN_SHOWN]) + (", …" if len(foreign) > _FOREIGN_SHOWN else ""))
         _tighten_own_entries(root, tighten, tighten_tree)
     where = directory if root == directory else f"{directory} → {root}"

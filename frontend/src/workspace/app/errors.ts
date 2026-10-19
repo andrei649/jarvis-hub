@@ -43,6 +43,20 @@ export function describeCode(i18n: I18n, code: string | null | undefined, reason
   return base;
 }
 
+/** Model codes whose fix is on the admin's side (the model settings): admins get a direct link. */
+export const ADMIN_FIXABLE_CODES: ReadonlySet<string> = new Set(['model_unavailable', 'model_policy_blocked']);
+
+/**
+ * The most precise next-step key the dictionary has under *base* (`chat.hint`,
+ * `chat.hint.admin`): per code and reason, then per code; null when there is neither. The chat
+ * and a failed report run share these keys, so both say the same thing for the same failure.
+ */
+export function hintKey(i18n: Pick<I18n, 'has'>, base: string, code: string | null | undefined, reason?: string | null): MessageKey | null {
+  const keys = [reason ? `${base}.${code ?? ''}.${reason}` : null, `${base}.${code ?? ''}`];
+  for (const key of keys) if (key !== null && i18n.has(key)) return key;
+  return null;
+}
+
 export function describeError(i18n: I18n, err: unknown): string {
   if (isAbort(err)) return '';
   if (!(err instanceof WorkspaceApiError)) return i18n.t('error.unexpected');

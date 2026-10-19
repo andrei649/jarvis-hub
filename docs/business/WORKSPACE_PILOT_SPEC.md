@@ -19,7 +19,19 @@
 > audited steps while the audit key is not the trail's (§5, §9), private workspace files whatever
 > the umask and the hub-side guard on explicit file / terminal roots (§3), operator hints naming
 > `nerva-run` (§5), the backup CLI's paths and one-line errors (Appendix A), and the e2e lane's
-> SMTP off switch and results directory (§13)**). Operator documentation: [`PILOT_GUIDE.md`](PILOT_GUIDE.md).
+> SMTP off switch and results directory (§13)**; **v3.4, 2026-10-19, after the third assessment
+> round: schema v2 — a report run's `delivery_state` (`pending` → `sent` | `failed`, stored with
+> `succeeded` in one statement) and `error_reason` (§4, §5, §7), the `deliveries_interrupted` sweep
+> and the `delivery_interrupted` code for a hub that stopped mid-send (§5, §9), the run view that
+> follows its email live and words a failure in the chat's sentences (§10), the shared-folder
+> rule for a symlinked `business/` (§3), the e2e lane's model off switch, SMTP greeting hold and
+> 1024 px layout pass with 31 steps (§13), the backup CLI's `nerva-run` usage line (Appendix A)**;
+> **v3.4 review fixes (round 4, R4-01 … R4-08): schema v3 — `report_runs.delivery_attempted`, the
+> count a delivery was addressed to, stored with `pending` and audited by the restart sweep (§4, §9);
+> a company-shared run's failed delivery hidden outside its department with the rest of the delivery
+> (§7 *Run fields*); a run or report that answers 404 while its page follows it stops the polling
+> (§10); the shared-folder WARNING's verb agrees with its count (§3)**).
+> Operator documentation: [`PILOT_GUIDE.md`](PILOT_GUIDE.md).
 > Owner directive (2026-10-17): *„avansează, pregătește interfața B2B pentru un pilot … produsul să fie
 > de nota 9/10 chiar și pentru pilot, toate funcțiile trebuie să funcționeze"*. This file is the single
 > shared contract every builder, reviewer and integrator follows. When code and this file disagree,
@@ -146,13 +158,30 @@ private at creation. The first `connect()` of each process for a workspace direc
 (`db.secure_storage`, once per process — the scheduler's first tick at hub start, else the first
 request or CLI command) walks `<data>/business` without following symlinks and removes the
 group/other permission bits of every file and directory, so a tree a restore or a copy left
-`0644` / `0755` becomes `0600` / `0700` (owner bits kept). A `business/` that is itself a symlink
-to a folder (data on another disk) is resolved once and that folder is walked — below it no
-symlink is followed; the WARNING then names `<data>/business → <folder>` (review REV-POLISH-02).
-A `business/` link to a folder that holds the data root itself (`/`, `<data>`, a folder above
-it) is not walked: one WARNING says the modes were not checked. It logs one WARNING on
-`nerva.workspace.db` when it changed something, one naming `chown -R` / `chmod -R go-rwx` when the
-system refuses a chmod (files owned by another user), and never fails the connect.
+`0644` / `0755` becomes `0600` / `0700` (owner bits kept). A real `business/` directory is walked in
+full. A `business/` that is itself a symlink to a folder (data on another disk) is resolved once
+(review REV-POLISH-02) and below that folder no symlink is followed or changed; the change and
+refusal WARNINGs then name `<data>/business → <folder>`. **v3.4 (review SEC-EDGE-1): only the
+workspace's own entries there.** The folder is walked in full only while every entry directly in
+it is one of the workspace's own names (`db.own_entry`): `workspace.db` and `workspace.db-*`,
+`files` (`config.FILES_DIRNAME`), `secrets.enc` and `secrets.enc.*` (`config.SECRETS_FILE`: the
+store's key, salt and temporary siblings), `setup-code.txt` and `.setup-code.txt.*`
+(`config.SETUP_CODE_FILE`, written through a temporary sibling). A folder that holds anything else
+too (a mount root with other data) gets one WARNING — `<data>/business is a link to <folder>, which
+also holds N entries that are not the workspace's (a, b, c, …), so only the workspace's own files
+there are made private and nothing else in that folder is changed — link business/ to a folder of
+its own (PILOT_GUIDE §13)` (at most three names, then `…`; for a single one `1 entry that is not
+the workspace's`, review R4-08) — and only those own entries are
+tightened: `files/` in full while it holds nothing but what `documents` writes (`<id>.bin`,
+`.upload-*.tmp`, `.deleted-<id>.tmp`), else just those files in it. The folder's own mode and every
+foreign entry keep their modes. "The folder holds `workspace.db`" is deliberately not the test:
+the first `connect()` creates the database there before the walk runs, so every shared folder
+would pass it from the second start. A `business/` link to a folder that holds the data root
+itself (`/`, `<data>`, a folder above it) is not walked at all: one WARNING says the modes were not
+checked. It logs one WARNING on `nerva.workspace.db` when it changed something, one when the
+system refuses a chmod (files owned by another user) — naming `chown -R jarvis:jarvis` and
+`chmod -R go-rwx`, or in a shared folder `chown jarvis:jarvis` and `chmod go-rwx` on the
+workspace's own entries only, "not on the whole folder" — and never fails the connect.
 `db.connect_read_only` (`check`, the start check) changes no mode. This covers `<data>/business`
 only: the rest of the data root (`backups/`, `settings.db`, …) still follows the service's umask,
 hence `UMask=0077` in the pilot guide's §2.
@@ -233,6 +262,13 @@ CREATE TABLE report_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, report_id INTEGE
   content_md TEXT, citations_json TEXT NOT NULL DEFAULT '[]', model TEXT, route TEXT, locality TEXT,
   error_code TEXT, error TEXT, shared_company INTEGER NOT NULL DEFAULT 0,
   delivered_to_json TEXT NOT NULL DEFAULT '[]', started_at REAL, finished_at REAL, created_at REAL NOT NULL);
+-- schema v2 (v3.4, reviews NWS-20 / UX-23), db._SCHEMA_V2:
+ALTER TABLE report_runs ADD COLUMN delivery_state TEXT
+  CHECK (delivery_state IS NULL OR delivery_state IN ('pending','sent','failed'));
+ALTER TABLE report_runs ADD COLUMN error_reason TEXT;
+CREATE INDEX idx_report_runs_delivery_pending ON report_runs(delivery_state, finished_at);
+-- schema v3 (v3.4 review fix R4-07), db._SCHEMA_V3:
+ALTER TABLE report_runs ADD COLUMN delivery_attempted INTEGER;
 CREATE TABLE approvals (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, department_id INTEGER REFERENCES departments(id),
   requester_id INTEGER NOT NULL REFERENCES users(id), summary TEXT NOT NULL, payload_json TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('pending','executing','approved','rejected','cancelled','expired','failed')),
@@ -251,7 +287,20 @@ Indexes on every foreign key and on `login_attempts(email, ts)`, `login_attempts
 `notifications(user_id, read_at)`, `approvals(status, expires_at)`, `audit(ts)`,
 `report_runs(report_id, created_at)`, `messages(conversation_id, id)`, `reports(active, next_run_at)`
 (plus `login_attempts(ts)`, `chunks(document_id, ord)`, `conversations(user_id, updated_at)`,
-`audit(actor_user_id)` and `audit(action)`).
+`audit(actor_user_id)` and `audit(action)`; v2 `report_runs(delivery_state, finished_at)`, for the
+delivery sweep).
+**Schema versions.** `db.MIGRATIONS = [(1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3)]`;
+`db.schema_version()` is 3. A database at `user_version` N runs every script above N at the next
+`connect()`, each in one `BEGIN IMMEDIATE` together with its `user_version` bump (each logged once at
+INFO: `workspace database migrated to schema 2`, then `… schema 3`). v2 is the first forward
+migration: `ADD COLUMN` keeps every run, and a schema-1 run reads `NULL` in both new columns; v3 adds
+`delivery_attempted` the same way (`NULL` for every older run). On an un-migrated copy the CLI
+`check` prints `schema 1; this code migrates it to 3 at the first start` (or `schema 2; …`) and
+still counts it ready. `delivery_state` is `NULL` for a run with no approved delivery (§9 *Delivery
+state*); `error_reason` qualifies `error_code` as an error body's `reason` does (§9 *Failure
+reasons*); `delivery_attempted` is how many approved recipients the delivery was addressed to,
+written with `delivery_state='pending'` (`NULL` with no delivery), what the restart sweep audits for
+a delivery its sender never settled (§9).
 Department names are unique ignoring case with Unicode `casefold` (SQLite `NOCASE` folds ASCII
 only: „VÂNZĂRI" clashes with „Vânzări" → `409 department_exists`). Deleting an empty department
 sets `approvals.department_id` to NULL on the approvals that referenced it (that foreign key has no
@@ -292,9 +341,13 @@ def enabled() -> bool; def setup_code() -> str; def max_upload_bytes() -> int
 def cookie_secure_mode() -> str          # 'auto' | 'on' | 'off'
 def session_idle_seconds() -> int; def session_max_seconds() -> int; def max_concurrent_llm() -> int
 def sso_header() -> str; def sso_secret() -> str; def sso_configured() -> bool; def scheduler_enabled() -> bool
-def workspace_dir() -> Path               # data_path(DATA_DIRNAME) = <data>/business, created 0700 on demand
+def workspace_dir() -> Path               # data_path(DATA_DIRNAME) = <data>/business, created 0700 on demand;
+    # made private again at each process's first connect (db.secure_storage, §3 File modes)
 def hub_roots_without_workspace(setting: str, roots: Sequence[str]) -> list[str]
     # v3.3 (NWS-17, §3): roots minus any that is, contains or lies inside <data>/business
+SETUP_CODE_FILE = "setup-code.txt"; FILES_DIRNAME = "files"; SECRETS_FILE = "secrets.enc"
+    # v3.4: the workspace's own names under business/ (documents.FILES_DIR and mailer.STORE_FILE
+    # point at the last two); db.own_entry reads them
 
 # db.py
 def db_path() -> Path
@@ -305,10 +358,17 @@ def connect() -> sqlite3.Connection
     # PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000; row_factory=sqlite3.Row
     # schema ensured on every connect (one cheap PRAGMA user_version read; migrations by user_version)
 def connect_read_only(path: Path) -> sqlite3.Connection   # no migration, no write, no new file, no chmod
+MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3)]   # v3.4: v2, v3 (§4)
+def schema_version() -> int                # MIGRATIONS[-1][0] = 3
+def migrate(conn) -> int                   # every pending script in one BEGIN IMMEDIATE with its bump
 def secure_storage(directory: Path) -> list[Path]   # v3.3: group/other bits off under directory, no
     # symlink followed below it (directory itself a link → its folder, unless that folder holds
-    # directory's parent: not walked, one WARNING); returns what changed;
-    # PRIVATE_FILE_MODE = 0o600, PRIVATE_DIR_MODE = 0o700
+    # directory's parent: not walked, one WARNING); v3.4: a linked folder that also holds entries
+    # own_entry rejects → one WARNING, only the workspace's own entries tightened (§3); returns
+    # what changed; PRIVATE_FILE_MODE = 0o600, PRIVATE_DIR_MODE = 0o700
+def own_entry(name: str) -> bool           # v3.4: name, directly under business/, is the workspace's:
+    # workspace.db / workspace.db-*, files, secrets.enc / secrets.enc.*, setup-code.txt /
+    # .setup-code.txt.*
 @contextmanager
 def tx(conn)        # BEGIN IMMEDIATE … COMMIT, ROLLBACK on exception; a no-op when conn.in_transaction
 def get_db()        # FastAPI generator dependency: 404 workspace_disabled BEFORE connecting while off;
@@ -516,20 +576,37 @@ def create_run(conn, report_id: int, *, trigger: str, triggered_by: int | None, 
 async def execute_run(run_id: int) -> None          # own connections; Semaphore(2) per event loop (the hub has one)
 def spawn_run(run_id: int) -> None                  # task on the running loop, kept in a module-level set; exceptions logged
 async def cancel_runs() -> None                     # shutdown: the RUNNING loop's in-flight runs → failed / interrupted
+    # (a run already succeeded and sending its email ends its delivery failed / delivery_interrupted)
 def compute_next_run(report_row, now: float) -> float | None
+# v3.4 (reviews NWS-20, UX-23; §9 Delivery state, Failure reasons)
+DELIVERY_PENDING = "pending"; DELIVERY_SENT = "sent"; DELIVERY_FAILED = "failed"   # delivery_state
+DELIVERY_INTERRUPTED = "delivery_interrupted"     # the error_code of a delivery whose sender stopped
+DELIVERY_ERROR = "delivery_failed"                # report_runs.error of a succeeded run whose email failed
+DELIVERY_TIMEOUT_SECONDS = 15 * 60
+def failure_reason(error: WorkspaceError) -> str | None   # error.extra['reason'] when a non-empty str
+    # (llm's model_unreachable …, mailer's smtp_failed timeout …), else None
+def fail_stuck_deliveries(conn, now: float, *, stored_before: float | None = None) -> int
+    # the scheduler's deliveries step: runs whose delivery_state is still 'pending' and that were
+    # stored (finished_at) 900 s or more ago, or before stored_before (this hub's start: one
+    # hub per data root, so their sender is gone) → failed / delivery_interrupted, at most 500 a
+    # tick, each in its own tx through the same compare-and-set as the sender; returns how many
 
 # scheduler.py (S4)
 class WorkspaceScheduler:
     def __init__(self, interval_seconds: float = 30.0, started_at: float | None = None): ...
         # started_at (v3.2): db.now() when start_background() builds the process-wide scheduler;
-        # None (tests) = only the 600 s age rule of documents.fail_interrupted applies
+        # None (tests) = only the age rules apply (600 s for documents.fail_interrupted, v3.4
+        # 900 s for reports.fail_stuck_deliveries, which also takes it as stored_before)
     async def tick(self, now: float | None = None) -> dict   # the testable unit; {now, errors,
         # paused, audit_key (v3.3), runs_started, approvals_expired, approvals_interrupted,
-        # runs_interrupted, messages_interrupted, documents_interrupted (v3.2), deleted} — or
-        # {skipped} while off. v3.3: `paused` lists the steps skipped this tick, `audit_key` is
-        # 'ok' | 'mismatch' | 'missing' | 'unreadable' (§9 Under a wrong audit key)
-AUDITED_STEPS = ("runs_started", "approvals_expired", "approvals_interrupted", "runs_interrupted")
+        # runs_interrupted, deliveries_interrupted (v3.4), messages_interrupted,
+        # documents_interrupted (v3.2), deleted} — or {skipped} while off. v3.3: `paused` lists
+        # the steps skipped this tick, `audit_key` is 'ok' | 'mismatch' | 'missing' | 'unreadable'
+        # (§9 Under a wrong audit key)
+AUDITED_STEPS = ("runs_started", "approvals_expired", "approvals_interrupted", "runs_interrupted",
+                 "deliveries_interrupted")
     # v3.3: the steps that sign audit rows; they pause while audit.key_check(conn) is not 'ok'
+    # (v3.4 adds deliveries_interrupted, which audits email.failed)
     def start(self) -> None              # idempotent per loop: records the owning loop of each loop task
     async def stop(self) -> None         # stops only the running loop's task
 def start_background() -> None; async def stop_background() -> None   # S6 calls from the hub lifespan
@@ -837,10 +914,38 @@ immediate request). A document that changed since the request fails the approval
 | PATCH `/reports/{report_id}` | same fields → bare report; changing the recipients or moving the report re-opens the approval; saving recipients while delivery is `rejected` / `none` asks again; renaming alone does not |
 | DELETE `/reports/{report_id}` | → 204 |
 | POST `/reports/{report_id}/run` | → 202 `{run}` (queued; `create_run` → `spawn_run`); `409 run_in_progress {run_id}` while a run of this report is queued or running; `429 rate_limited`; `409 department_archived` |
-| GET `/reports/{report_id}/runs` | → `{runs:[…without content]}` (the newest 100) |
-| GET `/report-runs/{run_id}` | → bare run with `content_md`, `citations` (each with `can_open`: whether the reader may open its document now, `documents.visible_ids` at read time — `false` for another department's document in a company-shared run, or one deleted since), `can_share`, `share_pending` (v3.2: a `report.share_company` request for this run is `pending` or `executing`; `can_share` is then false — a second request would only answer `409 already_requested` — and the run view says the share is waiting), `can_email` (= succeeded; the UI combines it with `smtp_configured`), plus `report:{id, name, department_id}`, `report_name`, `department_id`, `department_name`; `delivered_to` is `[]` for a viewer outside the report's department (visible to the report's department; company-shared runs visible to everyone) |
+| GET `/reports/{report_id}/runs` | → `{runs:[…without content]}` (the newest 100; each with `delivery_state` and `error_reason`, v3.4, below) |
+| GET `/report-runs/{run_id}` | → bare run with `content_md`, `citations` (each with `can_open`: whether the reader may open its document now, `documents.visible_ids` at read time — `false` for another department's document in a company-shared run, or one deleted since), `can_share`, `share_pending` (v3.2: a `report.share_company` request for this run is `pending` or `executing`; `can_share` is then false — a second request would only answer `409 already_requested` — and the run view says the share is waiting), `can_email` (= succeeded; the UI combines it with `smtp_configured`), plus `report:{id, name, department_id}`, `report_name`, `department_id`, `department_name`; `delivered_to` is `[]` for a viewer outside the report's department (visible to the report's department; company-shared runs visible to everyone), and the rest of the delivery is hidden there too (`delivery_state` and a failed delivery's `error` / `error_code` / `error_reason` read `null`, *Run fields* below) |
 | GET `/report-runs/{run_id}/export` | `?format=md|html` → attachment; HTML is a standalone, print-ready page (inline CSS, no scripts); `409 run_not_ready` for a run without a finished report |
-| GET `/shared-reports` | → `{runs:[…]}`, company-shared succeeded runs visible to everyone (the newest 200), each in the run-list shape with `report:{id, name, department_id}`, `report_name`, `department_id` and **`department_name`** (the reader is mostly outside that department, so the UI cannot name it from its own department list); `delivered_to` is `[]` outside the report's department |
+| GET `/shared-reports` | → `{runs:[…]}`, company-shared succeeded runs visible to everyone (the newest 200), each in the run-list shape with `report:{id, name, department_id}`, `report_name`, `department_id` and **`department_name`** (the reader is mostly outside that department, so the UI cannot name it from its own department list); `delivered_to` is `[]` outside the report's department, and the delivery's state and failure read `null` there (*Run fields* below) |
+
+**Run fields (v3.4, reviews NWS-20 / UX-23; `reports.run_json`).** Every run object above — the
+run detail, each item of `/reports/{id}/runs` and of `/shared-reports` — also carries:
+- `delivery_state`: `null` | `pending` | `sent` | `failed` — what the run's approved email delivery
+  is doing (§9 *Delivery state*). `null` when the run has no approved delivery (`delivery_status`
+  not `approved`, or no approved recipient), for a run that did not succeed, for a run stored
+  before schema 2, and — like `delivered_to` — for a viewer outside the report's department.
+  *Outside the department the whole delivery is hidden* (review R4-02): a company-shared run whose
+  delivery failed reads `error`, `error_code` and `error_reason` `null` there as well, so a reader of
+  another department learns neither that the report is mailed, nor that its email failed, nor the
+  mail server's cause (a shared run is a succeeded one, whose only error is its delivery's), and the
+  shared run view shows no delivery notice. Inside the department nothing is hidden.
+  `pending` from the moment the run reads `succeeded` until the mail server answered (each SMTP
+  step is bounded at 15 s); never `null` while a delivery is still to come. `sent`: `delivered_to`
+  holds the addresses the server accepted (possibly fewer than approved). `failed`: the run stays
+  `succeeded` with its `content_md`, `error='delivery_failed'` and `error_code` the mail code
+  (`smtp_failed`, `smtp_not_configured`, `recipient_not_allowed`, `smtp_password_unreadable`,
+  `invalid_request`, `internal_error`, or `delivery_interrupted`: the hub stopped mid-send).
+- `error_reason`: `string | null`, qualifying `error_code` with the values an error body's `reason`
+  carries — with `model_unavailable`: `model_unreachable`, `model_error`, `empty_answer`,
+  `thinking_exhausted`, `no_local_model`, `hub_not_ready`, `no_model`, `model_not_approved`,
+  `backend_error`; with `model_policy_blocked`: `data_policy_unacknowledged`, `provider_may_train`;
+  with a delivery's `smtp_failed`: the mail server's cause (`auth_failed` … `insecure_transport`,
+  §5 `mailer.py`). `null` for `model_timeout`, `model_busy`, `content_blocked`, `no_documents`,
+  `interrupted`, `internal_error`, `timezone_unavailable` and whenever nothing more is known.
+  `error_code` itself is unchanged (the stable code family), so the codes, hints, audit and
+  notifications that read it keep working.
+
 Effects registered by S4: `report.delivery` `{report_id, emails}` (decider `department`; execute
 snapshots the approved list into `delivery_approved_json`, sets `approved`), `report.share_company`
 `{run_id}` (decider `admin`), `email.send` `{to[], subject, body_markdown, source:{type:'message'|
@@ -853,8 +958,9 @@ or failed → `rejected`; withdrawn (cancelled, also when superseded) → `none`
 `none`. A succeeded run whose email delivery fails stays `succeeded`, with `error='delivery_failed'` and
 `error_code` = the mail error code; the owner and the trigger user get a `report.delivery_failed`
 notification whose body (v3.2) is a sentence in their language for that code (`smtp_failed`,
-`smtp_not_configured`, `recipient_not_allowed`, `smtp_password_unreadable`, else a generic one), never
-the raw code. A pending request a domain change withdrew is `cancelled` with `error_code` (v3.2,
+`smtp_not_configured`, `recipient_not_allowed`, `smtp_password_unreadable`, v3.4
+`delivery_interrupted`, else a generic one), never the raw code. v3.4: the run's `delivery_state`
+says where the delivery stands (`pending` → `sent` | `failed`, above and §9). A pending request a domain change withdrew is `cancelled` with `error_code` (v3.2,
 `approvals.cancel_superseded`): `superseded` (the recipients changed, the report moved, a newer
 delivery request replaced it), `recipients_removed`, or `report_deleted` (its pending
 `report.delivery`, and the `report.share_company` / `email.send` requests about its runs); the UI
@@ -945,7 +1051,8 @@ trigger user, and delivers by email when delivery is `approved`. Schedules use t
 timezone (`zoneinfo`, validated on create/edit; a tick that cannot load a zone fails the run with
 `timezone_unavailable`). `next_run_at` is recomputed after each scheduled run and each schedule
 change (v3 details below); due reports are claimed with compare-and-set on `next_run_at`. At most 2 runs execute concurrently; the tick marks `running` >
-15 min and `queued` > 30 min as failed (`interrupted`). Housekeeping in the tick: pending messages > 10
+15 min and `queued` > 30 min as failed (`interrupted`), and (v3.4) resolves a delivery left
+`pending` by a hub that stopped mid-send (*Delivery state* below). Housekeeping in the tick: pending messages > 10
 min → `error interrupted`; documents left `processing` by an extraction that died — claimed over
 600 s ago, or before this hub started — → `failed` / `interrupted` (v3.2, `documents.fail_interrupted`;
 extraction runs inside the upload or re-index request under a 60 s bound, so such a claim has no
@@ -953,11 +1060,62 @@ worker left); delete `login_attempts` > 24 h, invites expired > 7 d, sessions re
 expired or idle-dead > 7 d, read notifications > 90 d. The tick is a no-op while `NERVA_WORKSPACE` is
 off; each step runs in its own short transactions and one failing step never stops the others.
 
+**Delivery state (v3.4, review NWS-20).** A run whose report has an approved delivery is mailed
+after it is stored, and `report_runs.delivery_state` follows that email:
+- *Stored.* `_store_success` reads the approved recipients and sets `status='succeeded'`,
+  `delivery_state='pending'` and `delivery_attempted` (how many recipients the email is addressed
+  to; schema v3) in the same `UPDATE` (`NULL` / `NULL` when nobody is to be mailed), so no reader
+  ever sees a succeeded run without a state while its email is still to come — no commit in between
+  either (review R4-03: the test reads the row after every `COMMIT` of `_store_success`).
+- *Sent.* `_deliver` → `mailer.send_mail` (a worker thread, 15 s per SMTP step, ≤ 20 recipients) →
+  `delivery_state='sent'`, `delivered_to_json` = the addresses the server accepted,
+  `report.delivered` audited (`details {report_id, to, refused}`).
+- *Failed.* Whatever happens the pending delivery is resolved: a mailer `WorkspaceError` →
+  `failed` with its code and `error_reason` = the mail server's reason (`failure_reason`); any
+  other exception → `failed` / `internal_error` (logged with its traceback, `report run N: delivery
+  crashed`); a cancellation — the hub shutting down mid-send, `cancel_runs` — → `failed` /
+  `delivery_interrupted`, recorded before the cancellation propagates (if even that write fails,
+  one WARNING and the restart sweep resolves it). Each failure keeps the report (`succeeded`,
+  `content_md`), sets `error='delivery_failed'`, audits `email.failed` (`details {source:
+  'report_delivery', report_id, error_code, recipient_count}`) and notifies the owner and the
+  trigger user (`report.delivery_failed`, worded per code, §7).
+- *Left pending by a stopped hub.* A process killed mid-send records nothing. The scheduler's
+  `deliveries_interrupted` step (`reports.fail_stuck_deliveries`, an audited step) resolves every
+  delivery still `pending` whose run was stored before this hub started (`stored_before =
+  started_at`: the first tick after a restart) or 15 min ago or more (`DELIVERY_TIMEOUT_SECONDS`,
+  in a live process, where a sender would have finished long before) to `failed` /
+  `delivery_interrupted`: `email.failed` audited by actor `scheduler` with `recipient_count` =
+  the run's `delivery_attempted` — what the delivery was addressed to, as the sender's own audit
+  counts it, even when the report's recipients were removed since (review R4-07); only a delivery
+  stored pending before schema 3 (no count) falls back to the report's approved list now —,
+  `report.delivery_failed` notified with its own body („Raportul
+  este gata, dar serverul Nerva s-a oprit în timp ce trimitea emailul, așa că nu se știe dacă
+  destinatarii l-au primit. …"), and one WARNING on `nerva.workspace.reports`: `<n> report
+  delivery(ies) left pending by a stopped hub marked failed (delivery_interrupted)`. It never
+  claims the recipients did not get it: whether the message arrived is not known.
+- *Exactly once.* The sender and the sweep settle a delivery through one compare-and-set on
+  `delivery_state='pending'` (`_resolve_delivery`, in both its `sent` and its `failed` branch); an
+  outcome that arrives after the delivery was resolved — a late `sent`, or a late `smtp_failed` /
+  timeout after the sweep's `delivery_interrupted` — is not recorded again: no second
+  `email.failed` / `report.delivered`, no second notification, `error_code` / `error_reason`
+  unchanged (one WARNING, `the delivery outcome came after the delivery was resolved (…); it is not
+  recorded again`).
+- *Again.* A delivery that failed is not retried by the hub: the next run is mailed as usual, and
+  this one can be sent with the run view's „Trimite pe email" (an `email.send` approval, §7).
+
+**Failure reasons (v3.4, review UX-23).** A model failure stores its machine reason in
+`report_runs.error_reason`, taken from the raised `WorkspaceError`'s `extra['reason']`
+(`reports.failure_reason`), so a run names exactly what the chat's SSE `error` event names for the
+same failure (`model_unavailable` + `model_unreachable` for a stopped model server, …; values in
+§7 *Run fields*). `error_code` stays the stable code family; the `report.run_failed` audit row adds
+`details.reason` when there is one. Delivery failures store the mail server's reason the same way.
+
 **Under a wrong audit key (v3.3, review OPS2-08).** Each tick first asks `audit.key_check(conn)`
-(`WorkspaceScheduler._key_gate`). While the answer is not `ok`, the four steps that sign audit rows
-(`AUDITED_STEPS`: `runs_started`, `approvals_expired`, `approvals_interrupted`, `runs_interrupted`)
-are skipped and listed in the summary's `paused`: no report is claimed, no approval expires or
-fails, no run is failed, nothing is written for them. `messages_interrupted`,
+(`WorkspaceScheduler._key_gate`). While the answer is not `ok`, the steps that sign audit rows
+(`AUDITED_STEPS`: `runs_started`, `approvals_expired`, `approvals_interrupted`, `runs_interrupted`,
+and since v3.4 `deliveries_interrupted`) are skipped and listed in the summary's `paused`: no report
+is claimed, no approval expires or fails, no run or delivery is failed, nothing is written for
+them. `messages_interrupted`,
 `documents_interrupted` and the housekeeping deletes sign nothing and keep running. The pause is
 logged only when the key's state changes, on `nerva.workspace.scheduler`: one WARNING when it
 starts or its state changes — `workspace scheduler paused: <reason>, so scheduled reports, approval
@@ -981,8 +1139,9 @@ while any run of the report is queued or running (`409 run_in_progress`) and doe
 that cannot load a zone fails that run with `timezone_unavailable` and retries in 24 h. Delivery
 follows the `delivery_status` transitions in §7. Report runs wait up to 30 s for one of the shared
 `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` model slots, then fail honestly with `model_busy`. On hub shutdown
-`scheduler.stop_background()` cancels in-flight runs, which end `failed` / `interrupted` — only the
-runs and the scheduler task of the loop that is shutting down (v3.1, loop-aware, §5): a second
+`scheduler.stop_background()` cancels in-flight runs, which end `failed` / `interrupted` (v3.4: a run
+already `succeeded` and sending its email stays `succeeded`; its delivery ends `failed` /
+`delivery_interrupted`) — only the runs and the scheduler task of the loop that is shutting down (v3.1, loop-aware, §5): a second
 lifespan in the same process on another loop never cancels the first one's.
 
 ## 10. Frontend (S5)
@@ -1113,9 +1272,9 @@ lifespan in the same process on another loop never cancels the first one's.
     `audit.rekeyed` has its action label; `error.audit_key_mismatch` is translated next to
     `error.audit_key_missing`, and the `key_mismatch` notice points the server's administrator
     to the `check` command and the old key.
-  - *Definition lists.* `.ws-dl`'s label column is `fit-content(45%)`, badges inside a `dd`
-    wrap, and `.ws-locality` grows in height rather than having a fixed one, so the longer chip
-    text fits at 320 px.
+  - *Definition lists.* `.ws-dl`'s label column is `fit-content(45%)` and badges inside a `dd`
+    wrap. (v3.3 let `.ws-locality` grow in height so its words could wrap at 320 px; v3.4, UX-22,
+    replaced that: the chip never wraps, below.)
   - *Run view export on phones (UX-21, polish pass).* The export group sits in `.ws-export` with
     a caption „Exportă" (`run.exportGroup`; EN „Export") that names the segmented group through
     `aria-labelledby`. From 480 px nothing changes: the caption is hidden and the buttons read
@@ -1123,11 +1282,72 @@ lifespan in the same process on another loop never cancels the first one's.
     group, the buttons read „Markdown | HTML | Tipărește" (`run.export.mdShort` /
     `run.export.htmlShort`, aria-hidden) and the full words stay their accessible names (kept
     screen-reader-only), so none of the three equal buttons wraps its label onto a second line.
-  - *Known gap (BACKLOG NWS-20).* `reports._execute` stores `succeeded` before it awaits the email
-    delivery (up to 15 s per SMTP operation) and the run view stops polling once the run is no
-    longer `queued` / `running`, so a page watched live shows „Gata" and only after a reload
-    „Trimis pe email către" or the delivery-failed notice; the bell notification arrives either
-    way. Closing it needs a delivery state on the run that the view can keep polling on.
+- **Behaviour added in the third assessment round (v3.4).**
+  - *The email outcome on the live run page (NWS-20; closes the v3.3 known gap).*
+    `pages/reports/schedule.ts` `isDeliveryPending(run)` = `status === 'succeeded' &&
+    delivery_state === 'pending'`. `RunView` tracks a phase — `active` (queued / running),
+    `delivering`, `settled` — and polls `GET /report-runs/{id}` every 2 s (`RUN_POLL_MS`) while it
+    is `active` or `delivering`; it stops once the run and its email are settled, and when the page
+    is left. While delivering, the report is readable and an accent notice says
+    „Raportul se trimite pe email…" (`run.delivery.sendingTitle`) with a spinner and
+    `run.delivery.sendingNote` („… Pagina arată rezultatul trimiterii imediat ce serverul de email
+    răspunde."). The outcome then appears without a reload: the meta row „Trimis pe email către
+    <list>", or the warning notice. The one always-mounted status region (`role="status"`) says
+    each change once: `run.live.sending` „Raportul este gata și se trimite pe email…", then
+    `run.live.sent` „Raportul a fost trimis pe email către X." | `run.live.deliveryFailed`
+    „Emailul cu raportul nu a fost trimis: <motiv>" | `run.live.deliveryUnknown` „Nu se știe dacă
+    emailul cu raportul a ajuns: <motiv>"; a run that fails live says `run.live.failed`
+    „Raportul nu a putut fi generat: <motiv>". A page opened on a run that has already settled
+    announces nothing (its notice is the page). A `delivery_interrupted` delivery has its own title
+    `run.delivery.interruptedTitle` („Raportul este gata, dar nu se știe dacă emailul a ajuns"),
+    body `error.delivery_interrupted` („Serverul Nerva s-a oprit în timp ce trimitea emailul; nu se
+    știe dacă destinatarii l-au primit.") and hint `run.delivery.interruptedHint` (check with the
+    recipients or send it again with „Trimite pe email"); it never says the recipients did not get
+    it. The reason of any other failed delivery depends on the role: admins read the mail server's
+    own cause (`describeCode(code, error_reason)` → `error.smtp_failed.<reason>`, e.g. „Serverul
+    de email nu a putut fi contactat. Verifică adresa și portul.") with
+    `run.delivery.failedHintAdmin`; members read the plain `error.smtp_failed` sentence with
+    `run.delivery.failedHint` („… Anunță un administrator …"), since the per-reason copy carries
+    admin-only instructions. The report page's history (`ReportDetail`) also polls (4 s) while any
+    run is active or its delivery pending, and flags a run „Se trimite pe email"
+    (`run.history.deliverySending`), „Email netrimis" (`run.history.deliveryFailed`) or „Email
+    neconfirmat" (`run.history.deliveryUnknown`, `delivery_interrupted`); its re-read of the
+    report's last / next run still follows active runs only.
+  - *A run or report deleted while its page follows it (review R4-01).* `useAsync` keeps the last
+    copy it read when a reload fails, so a 404 is read as "gone": `RunView` drops its copy as soon
+    as `GET /report-runs/{id}` answers `not_found` (the report was deleted, or the reader lost
+    access, mid-run or mid-send) — the polling stops, the „se trimite pe email…" / „se scrie"
+    notice goes, the not-found state (`error.not_found`, back to the reports list) shows, and the
+    status region says `error.not_found` once. `ReportDetail` does the same when its report or its
+    history answers `not_found` (no more 4 s polls, the not-found state instead of the stale page).
+    Any other failed read (a `503`, the network) keeps the last copy and the polling, so a transient
+    outage still ends on the real outcome.
+  - *A failed run in the chat's words (UX-23).* The run's failure notice reads
+    `describeCode(i18n, error_code, error_reason)` — `error.<code>` plus `model.reason.<reason>`,
+    the chat's own sentence („Modelul AI nu este disponibil acum. Serverul modelului nu poate fi
+    contactat (este oprit sau conexiunea s-a întrerupt).") — and, for the model codes
+    (`model_unavailable`, `model_policy_blocked`, `model_busy`, `model_timeout`), the chat's next
+    step through `app/errors.ts` `hintKey(i18n, 'chat.hint', code, reason)` (per code and reason,
+    then per code; extracted from `MessageItem`'s private `hintFor`, so both screens use one
+    lookup). Admins also get `chat.hint.admin.<code>[.<reason>]` and the „Setările modelului" link
+    for `ADMIN_FIXABLE_CODES` (`model_unavailable`, `model_policy_blocked`, shared with the chat).
+    No raw code is shown.
+  - *The model chip recovers with the first answer.* `ChatPane` re-reads `GET /model` when an
+    answer arrives while the posture says unavailable, and `RunView` does when a run it watched
+    fails with a model code or succeeds while the chip says unavailable, so the chip and the
+    composer's notice follow the model server at once instead of at the next 30 s poll
+    (`POSTURE_POLL_MS`).
+  - *Locality chips never wrap (UX-22).* `.ws-locality` is `white-space: nowrap`; its inner
+    `.ws-locality__text` ends in an ellipsis only as a last resort. `LocalityChip`'s `short` form
+    shows `locality.short.*` („Local" / „Cloud" / „Neconfirmat"; aria-hidden) with the full words
+    as its accessible name (a visually hidden span) and its `title` tooltip; the run history and
+    the shared-reports table use it, and a table stacked into cards below 768 px shows the full
+    words again. In the run's details card the „Unde a fost generat" pair takes a row of its own
+    where the card is narrow (the side column from 1100 px, and phones below 480 px). The report
+    page's run history has four columns — „Început" (the date, with the trigger under it), „Stare"
+    (status, the delivery badge and „Partajat în companie"), „Durată", „Unde a fost generat" /
+    „Model" — so it fits a 1024 px screen without scrolling sideways. A long source pill in the
+    run's side card ends in an ellipsis inside the card (`.ws-sources__list > li { min-width: 0 }`).
 - **Quality bar.** Every async action has loading, success and error states; empty states teach the next
   step; destructive actions confirm; forms validate inline and map server `error` codes to translated
   messages; dialogs and drawers trap and return focus; everything keyboard reachable with visible focus;
@@ -1200,7 +1420,7 @@ listening and the port refuses connections (the hub's SMTP settings are left alo
 is removed it listens again on the same port, `<run>/smtp.state` holds `up` or `down`, and a stale
 `smtp.down` from an interrupted run is removed at start. The spec helper `setSmtpSink('up' |
 'down')` (`frontend/e2e/support/workspace-helpers.ts`) flips it and waits until the state file and
-a real SMTP probe agree. The journey has 28 serial steps; the two added in this pass stop the sink:
+a real SMTP probe agree. That pass brought the journey to 28 serial steps; its two new ones stop the sink:
 an approved `email.send` that cannot reach the mail server ends `failed` / `smtp_failed`, nothing
 sent, explained in Romanian to the approver and the requester (axe page `approval-failed`); an
 approved report delivery that cannot reach it leaves the run `succeeded` with
@@ -1211,6 +1431,42 @@ button whose visible label wraps onto more than one line, at 1280, 390 and 320 p
 outage each failed send is one WARNING line on `nerva.workspace.mailer` (`sending email via
 <host>:<port> failed (connection_failed, ConnectionRefusedError)`), never a traceback, so the
 journey's final hub-log check stays strict.
+**v3.4:** the journey has **31 serial steps**. The model web server is now
+`frontend/e2e/support/workspace_model.py --port <WS_E2E_MODEL_PORT> --token-delay 0.02 --run-dir
+<run>` (same `/health` URL and `READY` line): `tests/support/fake_openai_server.py`'s
+`FakeOpenAIServer`, unchanged, with an off switch like the sink's — while `<run>/model.down` exists
+the port refuses connections and open ones are dropped, removing it listens again on the same
+port, `<run>/model.state` holds `up` / `down`, a stale `model.down` is removed at start; the
+helper `setModelServer('up' | 'down')` waits for the state file and an HTTP probe.
+`tests/support/smtp_sink.py`'s `SmtpSink` gained `greeting_delay` (seconds before every `220`,
+a plain attribute; CLI `--greeting-delay SECONDS`), `greeting_gate` (a `threading.Event` each new
+connection waits on, at most `GATE_TIMEOUT` = 30 s), `connections` and
+`wait_for_connections(n, timeout)`. `workspace_smtp.py` maps `<run>/smtp.hold` onto that gate
+(present → every new connection's greeting is held; removed → released) and writes
+`<run>/smtp.hold.state` as `held <n>` / `released <n>` (*n* = connections accepted so far);
+helpers `holdSmtpGreeting(held)` and `waitForSmtpConnection(seen)`. `checkPage` adds a layout-only
+pass at 1024×768 and fails a locality chip whose visible text spans more than one line or is cut
+short with an ellipsis; `tableScrollsSideways(page, caption)` measures a table frame's own
+sideways overflow. The three new steps: **24** — while a run's email is still on its way (the
+greeting held, the hub connected) the API reads `succeeded` / `delivery_state: 'pending'`, the
+page shows „Raportul se trimite pe email…" and its status line, and once the greeting is released
+the same page (a window marker proves no reload) shows „Trimis pe email către …", the API reads
+`sent`, and the mail reaches the sink (NWS-20); **25** — the report page's run history, with
+shared, failed-email and sent rows, does not scroll sideways at 1024, 1100, 800 and 1280 px
+(screenshot `report-detail-history-1024x768.png`, axe page `report-detail-history`), and the run
+view's chip is one line with its source pills inside their card at 1100 and 1180 px (UX-22);
+**27** — with the model server stopped the chat says „Răspunsul nu a putut fi generat" with the
+`model_unreachable` sentence and the chat's hint, the top bar reads „Modelul AI: Indisponibil",
+the stored answer is `error` / `model_unavailable` (axe page `assistant-model-down`), a report
+run fails live with the same sentence, hint and „Rulează din nou" and reads `failed` /
+`model_unavailable` / `error_reason: 'model_unreachable'` / `delivery_state: null` (axe page
+`run-view-model-down`); started again, the next question answers on the same page and the chip
+returns to „Local" (T-GAP-2). The existing delivery step also pins `error_reason:
+'connection_failed'`, `delivery_state` `failed` / `sent` and the live notices. The final hub-log
+step still allows only the simulated model 500 as an error, and now also requires the outage to
+have been noticed as a warning: a stopped model server logs `WARNING jarvis.llm.base LM Studio
+unreachable — serving a degraded reply: All connection attempts failed`, never an ERROR or a
+traceback.
 
 ---
 
@@ -1368,8 +1624,11 @@ journey's final hub-log check stays strict.
   a user home is active (`JARVIS_USER_HOME`, or a frozen build's default), else
   `<checkout>/memory_logs` — the last fallback, inside `paths.app_root()`, is what the CLI
   preflight refuses (a shell without the service's environment would create a second, empty
-  workspace there). The backup CLI (`python -m agents.core.backup`, not workspace code; v3.3,
-  `BACKLOG.md` NWS-18): `verify` / `restore` take the file name `list` shows or a path to an
+  workspace there). The backup CLI (`nerva-run -m agents.core.backup`, not workspace code; v3.3,
+  `BACKLOG.md` NWS-18; v3.4, review OPS3-01: `backup.PROG = "nerva-run -m agents.core.backup"` is
+  the name its usage lines and `--help` print, and the description says to run it with the
+  service's environment — PILOT_GUIDE §2, `nerva-run` — never from a bare shell, which would use
+  another data root and another backup key): `verify` / `restore` take the file name `list` shows or a path to an
   archive directly inside `<data root>/backups/` — absolute (the `"archive"` value `create`
   prints), relative to the working directory, or with `..` (`backup.resolve_backup_arg`).
   Symlinks and `..` are resolved first and the archive's real location must be the backups
@@ -1403,8 +1662,11 @@ journey's final hub-log check stays strict.
   `sqlite3` makes the hub's own databases (`settings.db`, …) 0644 under systemd's default 0022,
   and a restore writes `0o666`/`0o777 & ~umask` (`archive_safe`) — hence `UMask=0077` in the pilot
   guide's §2 drop-in and `nerva-run`. Inside `<data>/business` the workspace makes its files
-  private itself (§3 File modes); the repo's `deploy/systemd/jarvis-hub.service` still sets no
-  `UMask`.
+  private itself (§3 File modes; v3.4: only its own entries when `business/` links to a folder
+  shared with other data); the repo's `deploy/systemd/jarvis-hub.service` still sets no
+  `UMask`. A `restore` whose target is a symlink that leads nowhere is reported as `target … is
+  not empty, nothing restored` (exit 1): `mkdir` raises `FileExistsError` on the link, which the
+  CLI maps to that line; nothing is restored and the link's destination is not created.
 - Protected paths make a PR control-plane: `.github/workflows/**`, `agents/core/kernel/**`,
   `agents/core/security/**`, `agents/core/secret*`, `AGENTS.md`, `MOONSHOT.md`. The plan touches only
   `ci.yml` and (v3.1) `e2e.yml` among them.

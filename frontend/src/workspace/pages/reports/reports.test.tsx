@@ -149,7 +149,13 @@ describe('Reports → create and edit', () => {
 describe('Reports → runs', () => {
   it('runs a report now, follows it live until it finishes, renders it, and stops polling', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const sequence = [run({ status: 'queued', content_md: null, started_at: null, finished_at: null }), run({ status: 'running', content_md: null, finished_at: null }), run()];
+    // No approved delivery (delivery_state null): once the run is written there is nothing left
+    // to wait for, so the polling stops at "succeeded" (NWS-20 keeps it only for a pending email).
+    const sequence = [
+      run({ status: 'queued', content_md: null, started_at: null, finished_at: null }),
+      run({ status: 'running', content_md: null, finished_at: null }),
+      run({ delivery_state: null }),
+    ];
     let reads = 0;
     const mock = boot('/workspace/reports', {
       'POST /api/workspace/reports/3/run': json(202, { run: sequence[0] }),

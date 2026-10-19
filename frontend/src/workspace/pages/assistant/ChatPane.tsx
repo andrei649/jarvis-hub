@@ -18,7 +18,9 @@
    announces "writing…", then "the answer is ready" (or why it failed).
 
    A failed answer re-reads the model posture at once (the server has just marked a dead model
-   server down), so the chip and the notice above the composer agree with the failure. What is
+   server down), so the chip and the notice above the composer agree with the failure; an answer
+   that arrives while they still say the model is out re-reads it too (the server has just marked
+   it up again), so they recover with the answer instead of at the next 30 s poll. What is
    typed in the composer is mirrored into the tab's draft store per conversation, so a session
    that ends under the person does not lose a long question. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -263,6 +265,9 @@ export function ChatPane({ conversationId, department, posture, header, onCreate
           settled = true;
           patch(replyKey, { ...final, citations: final.citations ?? [], streaming: false });
           setAnnouncement(t('chat.answerReady'));
+          // An answer while the chip still says the model is out: the server has just marked it
+          // up again, so the chip and the notice above the composer catch up now, not in 30 s.
+          if (posture !== null && modelState(posture) === 'unavailable') void refreshPosture();
         } else if (event.event === 'error') {
           const failure = eventJson<ChatStreamEvents['error']>(event);
           fail(failure.error, failure.reason);

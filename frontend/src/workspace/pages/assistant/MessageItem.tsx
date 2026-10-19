@@ -12,9 +12,9 @@
    was produced in plain words; the model id is shown to admins only (review UX-13). */
 import React from 'react';
 import type { Citation, ChatMessage } from '../../api/types';
-import { describeCode } from '../../app/errors';
+import { ADMIN_FIXABLE_CODES, describeCode, hintKey } from '../../app/errors';
 import { useUser } from '../../app/session';
-import { useI18n, type MessageKey } from '../../i18n';
+import { useI18n } from '../../i18n';
 import { Avatar, Button, IconButton, Notice, Spinner } from '../../ui';
 import { ButtonLink } from '../shared/ButtonLink';
 import { CitedMarkdown, SourcesList } from '../shared/CitedMarkdown';
@@ -30,9 +30,6 @@ export interface LocalMessage extends ChatMessage {
   stopped_by_user?: boolean;
 }
 
-/** Codes whose fix is on the admin's side (model settings), so admins get a direct link. */
-const ADMIN_FIXABLE = new Set(['model_unavailable', 'model_policy_blocked']);
-
 export function UserMessage({ message }: { message: LocalMessage }) {
   const { t } = useI18n();
   const user = useUser();
@@ -45,30 +42,25 @@ export function UserMessage({ message }: { message: LocalMessage }) {
   );
 }
 
-/** The most precise hint the dictionary has: per code and reason, then per code, then generic. */
-function hintFor(has: (key: string) => key is MessageKey, base: string, code: string | null, reason?: string): MessageKey | null {
-  const keys = [reason ? `${base}.${code ?? ''}.${reason}` : null, `${base}.${code ?? ''}`];
-  for (const key of keys) if (key !== null && has(key)) return key;
-  return null;
-}
-
 function FailedAnswer({ code, reason, stoppedByUser, canRetry, onRetry }: { code: string | null; reason?: string; stoppedByUser: boolean; canRetry: boolean; onRetry: () => void }) {
   const i18n = useI18n();
   const { t, has } = i18n;
   const isAdmin = useUser().role === 'admin';
   const cancelled = code === 'cancelled';
-  const hintKey = cancelled && !stoppedByUser ? 'chat.hint.disconnected' : hintFor(has, 'chat.hint', code, reason);
-  const adminKey = hintFor(has, 'chat.hint.admin', code, reason);
+  // The most precise hint: per code and reason, then per code, then generic (shared with report runs).
+  const hint = cancelled && !stoppedByUser ? 'chat.hint.disconnected' : hintKey(i18n, 'chat.hint', code, reason);
+  const adminKey = hintKey(i18n, 'chat.hint.admin', code, reason);
+  const adminFixable = isAdmin && code !== null && ADMIN_FIXABLE_CODES.has(code);
   const title = cancelled ? t(stoppedByUser ? 'chat.stopped' : 'chat.interrupted') : t('chat.error.title');
   return (
     <Notice tone={cancelled ? 'accent' : 'danger'} title={title}>
       {!cancelled && <p>{describeCode(i18n, code, reason)}</p>}
-      <p className="ws-small">{hintKey && has(hintKey) ? t(hintKey) : t('chat.hint.generic')}</p>
-      {isAdmin && code && ADMIN_FIXABLE.has(code) && adminKey !== null && <p className="ws-small">{t(adminKey)}</p>}
-      {(canRetry || (isAdmin && code && ADMIN_FIXABLE.has(code))) && (
+      <p className="ws-small">{hint && has(hint) ? t(hint) : t('chat.hint.generic')}</p>
+      {adminFixable && adminKey !== null && <p className="ws-small">{t(adminKey)}</p>}
+      {(canRetry || adminFixable) && (
         <div className="ws-msg__fix">
           {canRetry && <Button size="sm" icon="refresh" onClick={onRetry}>{t('chat.retry')}</Button>}
-          {isAdmin && code && ADMIN_FIXABLE.has(code) && <ButtonLink to="/admin/organisation" variant="ghost" size="sm">{t('chat.adminLink')}</ButtonLink>}
+          {adminFixable && <ButtonLink to="/admin/organisation" variant="ghost" size="sm">{t('chat.adminLink')}</ButtonLink>}
         </div>
       )}
     </Notice>

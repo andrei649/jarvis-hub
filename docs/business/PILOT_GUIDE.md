@@ -562,6 +562,12 @@ Reguli impuse de server:
   destinatarilor aprobați. Respinsă, expirată sau eșuată → `rejected`; retrasă → `none`.
   Schimbarea destinatarilor sau mutarea raportului în alt departament redeschide aprobarea. O
   livrare eșuată nu face rularea eșuată: rularea rămâne `succeeded`, cu `error='delivery_failed'`.
+  Emailul pleacă după ce raportul este salvat, iar rularea spune unde a ajuns în `delivery_state`:
+  `pending` (pagina rulării arată „Raportul se trimite pe email…”, iar raportul se poate citi
+  deja), apoi `sent` („Trimis pe email către …”) sau `failed` (motivul) — pagina deschisă se
+  actualizează singură, fără reîncărcare (§17). O livrare eșuată nu se reia automat: rularea
+  următoare se trimite ca de obicei, iar aceasta se poate trimite cu „Trimite pe email” (o cerere
+  `email.send`).
 
 Fiecare pas (cerere, aprobare/respingere, execuție, eșec, email trimis/eșuat) este un rând de audit
 care numește persoana.
@@ -618,6 +624,7 @@ adaptată a Caddy (vizibilă prin API-ul lui de administrare).
 | Model | răspuns de chat ≤ 180 s; rulare de raport ≤ 300 s; testul din consolă ≤ 60 s | `504 model_timeout` |
 | Rapoarte | 10 rulări manuale pe oră per utilizator (din audit); o singură rulare în coadă/în lucru per raport; 2 rulări simultane în tot procesul | `429 rate_limited` / `409 run_in_progress` |
 | Rapoarte | o rulare `running` > 15 min sau `queued` > 30 min | `failed` / `interrupted` |
+| Rapoarte | un email de raport rămas „în curs” (`delivery_state` `pending`) pentru o rulare salvată înainte de pornirea hub-ului (o oprire în timpul trimiterii) sau acum 15 min ori mai mult | livrarea devine `failed` / `delivery_interrupted` (după o repornire, chiar la primul ciclu al planificatorului); rularea rămâne `succeeded` |
 | Rapoarte | ≤ 50 de documente alese; instrucțiuni ≤ 4 000 de caractere; email ≤ 20 de destinatari | `422 invalid_request` |
 | Aprobări | expiră după 7 zile; execuție blocată > 10 min | `expired` / `failed` (`interrupted`) |
 | Sesiuni | inactivitate 12 h (1–168), durată maximă 7 zile (1–90); activitatea se înregistrează cel mult o dată pe minut | reautentificare |
@@ -630,7 +637,12 @@ Limita de cereri pe IP a hub-ului (`JARVIS_RATE_LIMIT`) nu se aplică la `/works
 `/api/workspace/*`: spațiul de lucru are limitele proprii de mai sus, pe utilizator.
 
 Curățenia planificatorului (la fiecare 30 s, cât timp `NERVA_WORKSPACE_SCHEDULER` este pornit):
-mesajele asistentului rămase `pending` > 10 min devin `error` / `interrupted`; documentele rămase
+emailurile de raport rămase în curs de un hub oprit în timpul trimiterii devin `failed` /
+`delivery_interrupted` (rândul de mai sus; auditat `email.failed`, cu `recipient_count` = câți
+destinatari avea emailul când a pornit, chiar dacă destinatarii raportului au fost scoși între timp;
+proprietarul raportului și cel care a pornit rularea primesc o notificare, §17); mesajele
+asistentului rămase `pending` > 10 min
+devin `error` / `interrupted`; documentele rămase
 `processing` de peste 10 minute, sau începute înainte de pornirea hub-ului (o extracție oprită de
 o repornire), devin `failed` / `interrupted` — **Reindexează** le reia imediat; se șterg
 încercările de autentificare mai vechi de 24 h, invitațiile expirate de peste 7 zile, sesiunile
@@ -638,8 +650,8 @@ revocate, expirate sau inactive de peste 7 zile și notificările citite de pest
 
 Cât timp procesul nu are cheia cu care a fost scris jurnalul de audit (§13), planificatorul
 **își suspendă pașii care scriu în audit**: nu pornește rapoartele programate, nu expiră
-aprobările și nu marchează `failed` rulările sau aprobările blocate — nu schimbă și nu scrie nimic
-pentru ele. Curățenia de mai sus (mesaje, documente, ștergeri) continuă. Jurnalul hub-ului o spune
+aprobările și nu marchează `failed` rulările, aprobările sau emailurile de raport rămase blocate —
+nu schimbă și nu scrie nimic pentru ele. Curățenia de mai sus (mesaje, documente, ștergeri) continuă. Jurnalul hub-ului o spune
 o singură dată, la începutul pauzei (§17); primul ciclu după ce cheia serviciului este pusă la loc
 recuperează: un raport programat ratat rulează o dată, aprobările trecute de termen expiră.
 
@@ -701,12 +713,20 @@ recuperează: un raport programat ratat rulează o dată, aprobările trecute de
   parcurge `business/` fără să urmeze legăturile simbolice și scoate drepturile grupului și ale
   celorlalți de pe fiecare fișier și director (de exemplu `0644`/`0755` lăsate de o restaurare sau
   de o copie devin `0600`/`0700`), cu un singur avertisment în jurnal (§17). Dacă `business/` este
-  el însuși o legătură simbolică spre un director (datele pe alt disc), hub-ul parcurge directorul
-  spre care duce legătura, tot fără să urmeze legăturile din interiorul lui, iar avertismentul
-  numește `…/business → <director>`. O legătură `business/` spre un director care conține chiar
-  directorul de date (`/`, `<JARVIS_HOME>` sau un director de deasupra lui) nu este parcursă:
-  jurnalul spune o dată că modurile nu au fost verificate (§17) — legați `business/` de un director
-  doar al lui. Verificarea `check` doar citește și nu schimbă niciun mod. Restul directorului de date (`backups/`, `settings.db` și
+  el însuși o legătură simbolică spre un director (datele pe alt disc), hub-ul lucrează în
+  directorul spre care duce legătura, fără să urmeze legăturile din interiorul lui, iar
+  avertismentele numesc `…/business → <director>`. **Legați `business/` de un director doar al
+  lui** (de exemplu `/mnt/disc2/business`, deținut de `jarvis`, `0700`): numai atunci hub-ul îl
+  parcurge în întregime. Directorul este „al spațiului de lucru” cât timp conține doar numele
+  acestuia: `workspace.db` și `workspace.db-*`, `files/`, `secrets.enc` și `secrets.enc.*`,
+  `setup-code.txt` și `.setup-code.txt.*`. Dacă mai conține și altceva (de exemplu rădăcina unui
+  disc cu alte date), hub-ul face private **doar intrările spațiului de lucru** de acolo — din
+  `files/` doar fișierele pe care le scrie el, dacă acolo mai e și altceva —, nu schimbă modul
+  directorului și nici al celorlalte intrări, iar la fiecare pornire jurnalul numește primele trei
+  nume străine (§17). O legătură `business/` spre un director care conține chiar directorul de date (`/`,
+  `<JARVIS_HOME>` sau un director de deasupra lui) nu este parcursă deloc: jurnalul spune o dată
+  că modurile nu au fost verificate (§17). Verificarea `check` doar citește și nu schimbă niciun
+  mod. Restul directorului de date (`backups/`, `settings.db` și
   celelalte baze ale hub-ului) urmează umask-ul serviciului — de aceea `UMask=0077` (§2).
 - **„Uită-mă” al hub-ului nu atinge spațiul de lucru:** ștergerea datelor personale ale
   proprietarului hub-ului păstrează directorul `business` (datele companiei nu sunt datele lui) și
@@ -871,11 +891,20 @@ open …”.
 Schema bazei de date a spațiului de lucru migrează automat la prima conectare (`PRAGMA
 user_version`), doar înainte. O repornire întrerupe ce era în lucru: rulările de raport active
 devin `failed` / `interrupted`, iar un răspuns în flux al asistentului se termină cu eroare —
-faceți upgrade-ul în afara programului.
+faceți upgrade-ul în afara programului. Un email de raport aflat chiar atunci în trimitere se
+încheie `failed` / `delivery_interrupted` (nu se știe dacă a ajuns; §17).
+
+Schema actuală este **3** (față de 1: rulările de raport au în plus starea livrării pe email,
+motivul exact al unei erori și — de la schema 3 — câți destinatari avea emailul lor). Pe o bază încă
+la schema 1 (sau 2), `check` spune `schema 1; this code migrates it to 3 at the first start` și se
+termină tot cu `ready`; prima pornire face migrarea pe loc, scrie în jurnal câte un rând pentru
+fiecare pas (`workspace database migrated to schema 2`, apoi `… schema 3`) și păstrează toate
+datele (rulările vechi nu au stare de livrare).
 
 **Revenire.** Un cod mai vechi decât baza de date doar avertizează în jurnal („workspace database is
-at schema N, newer than this code”; `check` spune atunci `NOT ready`), deci nu rulați un cod vechi pe
-o bază nouă: reveniți la codul de la pasul 0 **și** la datele de la pasul 1, împreună.
+at schema N, newer than this code”; `check` spune atunci `NOT ready`) — de exemplu codul de dinainte
+de schema 3 pe o bază deja migrată —, deci nu rulați un cod vechi pe o bază nouă: reveniți la codul
+de la pasul 0 **și** la datele de la pasul 1, împreună.
 
 ```bash
 sudo systemctl stop jarvis-hub
@@ -937,7 +966,7 @@ dezvoltare, fila Network).
 | `no_model` | Politica `allow_cloud` și nicio rută disponibilă (nici local, nici o cheie cloud). |
 | `model_not_approved` | Routerul a ales un model care nu e în lista de modele aprobate a hub-ului pentru agentul `workspace`. Aprobați modelul în setările hub-ului sau serviți altul. |
 | `backend_error` | Verificarea de tratare a datelor nu a putut decide (de ex. depozitul de consimțământ nu poate fi citit) sau backend-ul a eșuat neașteptat. Citiți jurnalul hub-ului (numește doar tipul erorii). |
-| `model_unreachable` | Serverul de model nu poate fi contactat deloc (serviciu oprit, port închis, adresă greșită) sau conexiunea s-a rupt în timpul răspunsului. `systemctl status ollama` (sau serviciul vLLM), apoi `curl http://127.0.0.1:11434/api/tags` / `curl http://127.0.0.1:8000/v1/models`. Cipul îl arată fără să aștepte sondarea de 5 minute a hub-ului: imediat după un apel eșuat, altfel în cel mult ~1,5 minute (cipul se reîmprospătează o dată pe minut, iar verificarea serverului este reținută 30 s). |
+| `model_unreachable` | Serverul de model nu poate fi contactat deloc (serviciu oprit, port închis, adresă greșită) sau conexiunea s-a rupt în timpul răspunsului. `systemctl status ollama` (sau serviciul vLLM), apoi `curl http://127.0.0.1:11434/api/tags` / `curl http://127.0.0.1:8000/v1/models`. Cipul îl arată fără să aștepte sondarea de 5 minute a hub-ului: imediat după un apel eșuat (o întrebare sau o rulare de raport urmărită pe pagina ei), altfel în cel mult ~1 minut (cipul se reîmprospătează la 30 s, iar verificarea serverului este reținută 30 s). După ce serverul pornește din nou, cipul și avertismentul de sub caseta întrebării revin la primul răspuns reușit, fără reîncărcare. Pe un server oprit, jurnalul hub-ului are doar rândul `WARNING … LM Studio unreachable` (mai jos), niciun `ERROR`. |
 | `model_error` | Serverul de model a răspuns, dar cu o eroare HTTP (ex. modelul nu e încărcat; la vLLM, un prompt mai lung decât `--max-model-len`). Verificați serverul de model și jurnalul lui; mesajul serverului apare în jurnalul hub-ului (mai jos). |
 | `thinking_exhausted` | Modelul și-a consumat tot bugetul de tokeni raționând (§3.2). Folosiți un model instruct sau reduceți raționamentul. |
 | `empty_answer` | Modelul a returnat un răspuns gol. Verificați modelul și fereastra de context (§3.1). |
@@ -984,6 +1013,19 @@ Alte coduri: `409 smtp_not_configured` (lipsește serverul sau expeditorul), `40
 smtp_password_unreadable` (parola nu mai poate fi decriptată, de obicei după schimbarea
 `JARVIS_SECRET_KEY` — reintroduceți-o), `422 recipient_not_allowed` (domeniu în afara listei).
 
+**Rapoarte: de ce a eșuat o rulare și unde a ajuns emailul ei.** Pagina rulării spune motivul în
+cuvinte și se actualizează singură cât timp rularea se scrie sau emailul ei pleacă; codurile exacte
+sunt câmpurile `status`, `error_code`, `error_reason` și `delivery_state` din
+`GET /api/workspace/report-runs/<id>` (fila Network).
+
+| Ce vedeți | Cauza și remediul |
+|---|---|
+| Rularea `failed`: „Raportul nu a putut fi generat”, cu aceeași frază și același pas următor ca asistentul — de exemplu „Modelul AI nu este disponibil acum. Serverul modelului nu poate fi contactat (este oprit sau conexiunea s-a întrerupt).” (`error_code` `model_unavailable`, `error_reason` `model_unreachable`) | Modelul. `error_reason` are valorile coloanei `reason` din tabelul *Modelul* de mai sus, cu același remediu; la `model_policy_blocked` este `data_policy_unacknowledged` sau `provider_may_train`; `model_timeout` și `model_busy` nu au `error_reason`. Administratorii văd în plus linkul „Setările modelului”. După remediere: **Rulează din nou**. |
+| Rularea `failed` cu `no_documents`, `timezone_unavailable`, `interrupted` sau `internal_error` | `no_documents`: niciun document `ready` în departamentul raportului sau publicat în toată compania (ori, dacă raportul are documente alese, niciunul dintre ele). `timezone_unavailable`: fusul orar al raportului nu poate fi încărcat pe server; rularea programată se reîncearcă după 24 h. `interrupted`: o repornire a hub-ului sau o rulare blocată (§12). `internal_error`: o eroare neprevăzută, cu traceback în jurnal (`report run N crashed`) — raportați-o. |
+| „Raportul se trimite pe email…” (`status` `succeeded`, `delivery_state` `pending`) | Raportul e gata și se poate citi; hub-ul așteaptă serverul de email (fiecare pas SMTP are cel mult 15 s). Pagina arată rezultatul singură, fără reîncărcare. O livrare lăsată așa de o oprire a hub-ului se închide ca în ultimul rând al tabelului: la primul ciclu al planificatorului după repornire, iar într-un proces care rulează după 15 min (cu planificatorul pornit, §12). |
+| „Raportul este gata, dar emailul nu a fost trimis” (`delivery_state` `failed`, `error` `delivery_failed`); „Email netrimis” în istoricul raportului | `error_code` este codul emailului: `smtp_failed` (cu `error_reason` = motivul serverului din tabelul *Email*, de exemplu `connection_failed` sau `timeout`), `smtp_not_configured`, `recipient_not_allowed`, `smtp_password_unreadable`, `invalid_request`, sau `internal_error` (o eroare neprevăzută la trimitere, cu traceback în jurnal: `report run N: delivery crashed`). Administratorii văd în pagină motivul exact al serverului de email; membrii, o frază generală și îndemnul să anunțe un administrator. Remediați trimiterea (**Email de test**, §9): rulările următoare se trimit automat, iar aceasta se poate trimite cu „Trimite pe email” (o cerere `email.send`, §10). |
+| „Raportul este gata, dar nu se știe dacă emailul a ajuns” (`error_code` `delivery_interrupted`); „Email neconfirmat” în istoric | Hub-ul s-a oprit (repornire, upgrade, cădere) în timp ce trimitea emailul, deci nu se știe dacă destinatarii l-au primit. Întrebați-i sau trimiteți rularea din nou cu „Trimite pe email”. Auditul are `email.failed` (actor „Planificatorul automat”), proprietarul raportului și cel care a pornit rularea au primit o notificare, iar jurnalul are rândul `… left pending by a stopped hub …` (mai jos) când livrarea a fost închisă după o repornire. |
+
 **Autentificare și sesiuni.**
 
 | Simptom | Cauza și remediul |
@@ -1026,9 +1068,12 @@ permisiuni).
 | `WARNING nerva.workspace.scheduler workspace scheduler paused: <motiv>, so scheduled reports, approval expiry and the failing of stuck runs and approvals wait — nothing is changed or written for them until the service's JARVIS_AUDIT_KEY / JARVIS_KEY_DIR are back; check with: nerva-run -m agents.core.workspace check (…)` | Procesul nu are cheia jurnalului de audit; motivul spune care caz: `the audit key of this process is not the one the audit trail was written with` (altă cheie), `this process has no audit key …` (lipsește) sau `the audit key file of this process cannot be read`. Apare o singură dată, la începutul pauzei (și din nou doar dacă starea cheii se schimbă), lângă eroarea de la pornire și refuzurile `503` de mai sus. Rapoartele programate și expirările așteaptă (§12); nu s-a scris nimic pentru ele. Puneți la loc cheia serviciului, verificați cu `nerva-run -m agents.core.workspace check` (`ready`) și reporniți: primul ciclu recuperează ce a așteptat. Fără repornire, revenirea apare ca `INFO … workspace scheduler resumed: …` (invizibil la `JARVIS_LOG_LEVEL=warning`); după o repornire cu cheia bună nu există un asemenea rând. |
 | `WARNING nerva.workspace.db Nerva Workspace: N file(s) or folder(s) under …/business could be read by other users (a restore or a copy made with a permissive umask); they are private now — files 0600, folders 0700` (cu un `business/` care e o legătură: `under …/business → <director>`) | Informativ, de obicei la prima pornire după o restaurare sau o copiere fără `UMask=0077`: hub-ul a scos deja drepturile celorlalți de pe acele fișiere (§13). Nu e nimic de făcut pentru `business/`; restul directorului de date îl acoperă `chmod -R go-rwx` din §14. |
 | `WARNING nerva.workspace.db Nerva Workspace: …/business is a link to <director>, which holds the hub's data directory, so the modes under it are not checked — link business/ to a folder of its own (PILOT_GUIDE §13)` | `business/` este o legătură simbolică spre `/`, spre directorul de date sau spre un director de deasupra lui, deci hub-ul nu schimbă modurile acolo (ar atinge mult mai mult decât fișierele companiei). Opriți serviciul, mutați datele într-un director doar al lor (de exemplu `/mnt/disc2/business`, deținut de `jarvis`, `0700`), refaceți legătura spre el și porniți din nou (§13). |
-| `WARNING nerva.workspace.db Nerva Workspace: N file(s) or folder(s) under …/business can be read by other users and this process may not change that (PermissionError on …): make the service's user their owner and remove the access of others — chown -R jarvis:jarvis and chmod -R go-rwx (PILOT_GUIDE §14, §19)` | Fișierele aparțin altui utilizator (de exemplu o restaurare sau o copiere făcută ca root, fără `nerva-run`). Hub-ul pornește oricum. `sudo chown -R jarvis:jarvis /var/lib/jarvis-hub` și `sudo chmod -R go-rwx /var/lib/jarvis-hub`, apoi `sudo systemctl restart jarvis-hub`. |
+| `WARNING nerva.workspace.db Nerva Workspace: …/business is a link to <director>, which also holds N entries that are not the workspace's (a, b, c, …), so only the workspace's own files there are made private and nothing else in that folder is changed — link business/ to a folder of its own (PILOT_GUIDE §13)` (cu o singură intrare străină: `… holds 1 entry that is not the workspace's (…)`) | `business/` duce la un director în care stau și alte date (de exemplu rădăcina unui disc). Hub-ul a făcut private doar fișierele spațiului de lucru de acolo (§13) și nu a atins restul — nici modul directorului. Apare la fiecare pornire. Recomandat: opriți serviciul, mutați intrările spațiului de lucru (`workspace.db*`, `files/`, `secrets.enc*`, `setup-code.txt`) într-un director doar al lor (de exemplu `/mnt/disc2/business`, deținut de `jarvis`, `0700`), refaceți legătura spre el și porniți din nou. |
+| `WARNING nerva.workspace.db Nerva Workspace: N file(s) or folder(s) under …/business can be read by other users and this process may not change that (PermissionError on …): make the service's user their owner and remove the access of others — chown -R jarvis:jarvis and chmod -R go-rwx (PILOT_GUIDE §14, §19)` (cu un `business/` legat de un director comun: `… make the service's user the owner of the workspace's own entries there (workspace.db*, files/, secrets.enc*, setup-code.txt) and remove the access of others with chown jarvis:jarvis and chmod go-rwx on those entries only, not on the whole folder …`) | Fișierele aparțin altui utilizator (de exemplu o restaurare sau o copiere făcută ca root, fără `nerva-run`). Hub-ul pornește oricum. `sudo chown -R jarvis:jarvis /var/lib/jarvis-hub` și `sudo chmod -R go-rwx /var/lib/jarvis-hub`, apoi `sudo systemctl restart jarvis-hub`. Pentru varianta cu un director comun: `chown -R` nu intră în legătura `business/`, deci rulați `sudo chown -R jarvis:jarvis` și `sudo chmod -R go-rwx` doar pe intrările numite, în directorul spre care duce legătura (de exemplu `/mnt/disc2/workspace.db* /mnt/disc2/files /mnt/disc2/secrets.enc*`), nu pe tot directorul. |
 | `WARNING nerva.workspace.config JARVIS_FILE_ROOTS lists <cale>, which <relația> the Nerva Workspace data directory …/business, so this root is ignored: the file tools stay outside company data …` (pentru `JARVIS_TERMINAL_LOCAL_ROOTS`: `… so this root is ignored: the terminal's working directory stays outside company data — its roots bound only the working directory; a path inside an approved command, absolute or ../, is governed by the terminal's approval …`) | O rădăcină explicită care este (`is`), conține (`contains`) sau se află în (`is inside`) directorul datelor companiei, deci hub-ul o ignoră (§13), o dată per proces; celelalte rămân, iar fără nicio rădăcină rămasă se folosește cea implicită. Pentru terminal, rădăcinile limitează doar directorul de lucru: o comandă aprobată care numește o cale absolută sau `../business/…` tot ajunge acolo — de aceea aprobarea fiecărei comenzi rămâne a proprietarului (§13, §18). Scoateți rădăcina din `/etc/jarvis-hub/jarvis.env` (pe serverul pilot cele două instrumente rămân oprite, §19). |
-| `WARNING nerva.workspace.mailer sending email via <gazdă>:<port> failed (<motiv>, <tipul erorii>)` | Un email nu a putut fi trimis (motivul este unul din tabelul *Email* de mai sus, de exemplu `connection_failed` cu serverul SMTP oprit). O cerere `email.send` aprobată se termină `failed` cu `smtp_failed` (aprobatorul și solicitantul citesc motivul în română), iar o livrare de raport lasă rularea `succeeded`, cu „Raportul este gata, dar emailul nu a fost trimis” în pagina rulării (după o reîncărcare, §18) și „Email netrimis” în istoric; jurnalul de audit are `email.failed`. Verificați serverul SMTP, apoi **Email de test** (§9). |
+| `WARNING nerva.workspace.mailer sending email via <gazdă>:<port> failed (<motiv>, <tipul erorii>)` | Un email nu a putut fi trimis (motivul este unul din tabelul *Email* de mai sus, de exemplu `connection_failed` cu serverul SMTP oprit). O cerere `email.send` aprobată se termină `failed` cu `smtp_failed` (aprobatorul și solicitantul citesc motivul în română), iar o livrare de raport lasă rularea `succeeded`, cu „Raportul este gata, dar emailul nu a fost trimis” în pagina rulării (și pe pagina deja deschisă, fără reîncărcare) și „Email netrimis” în istoric; jurnalul de audit are `email.failed`. Verificați serverul SMTP, apoi **Email de test** (§9). |
+| `WARNING nerva.workspace.reports <n> report delivery(ies) left pending by a stopped hub marked failed (delivery_interrupted)` | Hub-ul s-a oprit (de obicei fără o oprire grațioasă: o cădere, `kill -9`, o pană de curent) în timp ce trimitea emailul unor rulări; primul ciclu al planificatorului după repornire le-a închis `failed` / `delivery_interrupted` (*Rapoarte*, mai sus). La o oprire grațioasă (`systemctl stop` / `restart`) livrarea se închide la fel, înainte de oprire, fără acest rând. Nu se știe dacă destinatarii au primit emailul: întrebați-i sau trimiteți rularea din nou. |
+| `WARNING nerva.workspace.reports report run <id>: the delivery outcome came after the delivery was resolved (<stare>); it is not recorded again` | Răspunsul serverului de email a sosit după ce livrarea fusese deja închisă; rularea păstrează prima stare înregistrată, deci nu există două rezultate pentru același email. Informativ. |
 
 **Backup** (`nerva-run -m agents.core.backup …`). `verify` și `restore` primesc numele din
 `backup list` sau calea arhivei din `<JARVIS_HOME>/backups/` (§14); orice eșec este un singur rând,
@@ -1039,7 +1084,7 @@ fără traceback.
 | ``no such backup: <…> — verify and restore take a file name from `list`, or a path to an archive inside <…>/backups (copy one from elsewhere there first)`` (codul 2) | Argumentul nu numește o arhivă din `backups/`: un nume greșit, o copie aflată în alt director sau o cale care iese din `backups/`. Directorul din mesaj arată ce `JARVIS_HOME` are comanda: dacă nu este `/var/lib/jarvis-hub/backups`, nu rulează cu mediul serviciului — folosiți `nerva-run`. O arhivă adusă din afară se pune întâi în `<JARVIS_HOME>/backups/` (§14). |
 | `cannot decrypt <nume>: JARVIS_BACKUP_KEY in this environment is not the key the archive was made with, or the archive is damaged; nothing was checked` (la `restore`: `…; nothing was restored`) (codul 1). Linia numește cheia încercată de fapt: `JARVIS_BACKUP_KEY in this environment (a passphrase, with the salt …/backup.cipher.salt)` pentru o cheie-frază; fără `JARVIS_BACKUP_KEY`, `JARVIS_SECRET_KEY in this environment (JARVIS_BACKUP_KEY is not set: run with the service's environment: nerva-run, PILOT_GUIDE §2)` sau `the key file <JARVIS_KEY_DIR>/backup.cipher.key (JARVIS_BACKUP_KEY is not set: …)` | Cheia numită nu este cea cu care a fost făcută arhiva (sau arhiva e deteriorată). Nu s-a verificat sau restaurat nimic. Dacă linia spune `JARVIS_BACKUP_KEY is not set`, comanda a rulat fără mediul serviciului: rulați-o cu `nerva-run` (§2). Altfel folosiți cheia din copia off-site a `/etc/jarvis-hub/jarvis.env`; pentru o cheie-frază, și `/var/lib/jarvis-keys/` (§14). |
 | `cannot decrypt <nume>: JARVIS_BACKUP_KEY is not set (run with the service's environment: nerva-run, PILOT_GUIDE §2) and there is no key file …/backup.cipher.key — no key was made; nothing was checked` sau `cannot decrypt <nume>: JARVIS_BACKUP_KEY in this environment is a passphrase and its salt …/backup.cipher.salt does not exist (the key directory is kept off-site, PILOT_GUIDE §14) — no key was made; …` (codul 1) | Lipsește materialul cheii: comanda a rulat fără mediul serviciului (fără `nerva-run`), cu alt `JARVIS_KEY_DIR`, sau, pe un server nou, fără `/var/lib/jarvis-keys/` adus din copia off-site. `verify` și `restore` nu creează nicio cheie și nicio sare (una nouă n-ar deschide arhiva și ar rămâne pentru copiile următoare). Rulați cu `nerva-run` (§2) sau aduceți înapoi directorul cheilor (§14), apoi repetați comanda. |
-| `target <director> is not empty, nothing restored — restore into a new, empty directory (--force overwrites, but never restore over the data directory in use)` (codul 1) | Directorul țintă al `restore` nu este gol. Folosiți un director nou și gol, ca în §14. |
+| `target <director> is not empty, nothing restored — restore into a new, empty directory (--force overwrites, but never restore over the data directory in use)` (codul 1) | Directorul țintă al `restore` nu este gol — sau ținta este o legătură simbolică ce nu duce nicăieri (mesajul spune tot „is not empty”; nu se restaurează nimic și destinația legăturii nu se creează). Folosiți un director nou și gol, ca în §14. |
 | `no such backup: <nume> (it is no longer in <director>)` (codul 1) | Arhiva a dispărut între căutare și citire (de exemplu curățată de copia nocturnă, care păstrează doar ultimele 7). Rulați din nou `backup list`. |
 | `verify failed: …` / `restore failed: …` (codul 1) | O eroare de sistem, numită în rând: de exemplu o țintă care este un fișier (`Not a directory`) sau lipsa unui drept de scriere. |
 | `archive rejected, nothing restored: …` / `archive rejected partway through …` | Arhiva nu trece verificările de siguranță la dezarhivare. În al doilea caz ținta conține o restaurare parțială: ștergeți-o și încercați altă arhivă. |
@@ -1080,12 +1125,15 @@ fără traceback.
   instrumente rămân oprite (§19).
 - **Modurile fișierelor din afara `business/`:** spațiul de lucru își face private doar propriile
   fișiere (§13); restul directorului de date urmează umask-ul serviciului, iar unitatea systemd din
-  repo nu setează `UMask` — fișierul `pilot.conf` din §2 îl adaugă.
-- **Pagina unei rulări urmărite în direct nu așteaptă rezultatul livrării pe email:** rularea
-  devine `succeeded` înainte ca emailul către destinatarii aprobați să fie trimis (până la 15 s per
-  operație SMTP), iar pagina se oprește din reîmprospătat la `succeeded`. Mențiunea „Trimis pe email
-  către” sau avertismentul „Raportul este gata, dar emailul nu a fost trimis” apar după o
-  reîncărcare a paginii; notificarea din clopoțel sosește oricum.
+  repo nu setează `UMask` — fișierul `pilot.conf` din §2 îl adaugă. Când `business/` duce la un
+  director în care stau și alte date, nici modul acelui director, nici al celorlalte intrări din el
+  nu se schimbă (§13).
+- **Emailul unui raport nu se retrimite automat:** o livrare eșuată rămâne eșuată (rulările
+  următoare se trimit ca de obicei), iar una întreruptă de oprirea hub-ului este marcată
+  `delivery_interrupted` — nu se poate ști dacă serverul de email a apucat să o primească. Se
+  trimite din nou, la cerere, cu „Trimite pe email” (§17). Cu `NERVA_WORKSPACE_SCHEDULER=0`, o
+  livrare lăsată în curs de o cădere a hub-ului (fără oprire grațioasă) rămâne „se trimite pe
+  email…”: doar planificatorul o închide.
 
 ## 19. Lista de verificare înainte de primul utilizator
 
