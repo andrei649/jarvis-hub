@@ -157,7 +157,10 @@ describe('Reports → runs', () => {
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Rulează acum „Raport lunar contracte”' }));
     await waitFor(() => expect(window.location.pathname).toBe('/workspace/report-runs/40'));
-    expect(await screen.findByText(/Raportul (așteaptă să înceapă|se scrie din documente)/)).toBeTruthy();
+    // The visible notice follows the run (queued, then running); the status region announced the
+    // state the page opened on, so on a slow runner both may hold one of the two texts at once.
+    expect(await screen.findByText(/Raportul (așteaptă să înceapă|se scrie din documente)/, { selector: '.ws-notice__title' })).toBeTruthy();
+    await waitFor(() => expect(window.document.querySelector('p.ws-sr-only[role="status"]')?.textContent).toMatch(/Raportul (așteaptă să înceapă|se scrie din documente)/));
 
     await tick(RUN_POLL_MS);
     await tick(RUN_POLL_MS);
@@ -203,7 +206,7 @@ describe('Reports → runs', () => {
   it('stops polling a running report when the page is left', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const mock = boot('/workspace/report-runs/40', { 'GET /api/workspace/report-runs/40': run({ status: 'running', content_md: null, finished_at: null }) });
-    expect(await screen.findByText('Raportul se scrie din documente. Poate dura câteva minute.')).toBeTruthy();
+    expect(await screen.findByText('Raportul se scrie din documente. Poate dura câteva minute.', { selector: '.ws-notice__title' })).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: 'Înapoi la raport' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Raport lunar contracte' })).toBeTruthy();
     const before = mock.find('GET', '/api/workspace/report-runs/40').length;
