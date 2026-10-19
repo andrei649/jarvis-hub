@@ -95,11 +95,22 @@ RUNS_PER_HOUR = 10
 RUN_WINDOW_SECONDS = 3600
 RUNNING_TIMEOUT_SECONDS = 15 * 60
 QUEUED_TIMEOUT_SECONDS = 30 * 60
+#: A delivery still ``pending`` this long after its run was stored has no sender left: every
+#: SMTP step is bounded at 15 s and a message has at most 20 recipients (a few minutes at
+#: worst), so the sweep resolves it to ``failed`` / ``delivery_interrupted``.
+DELIVERY_TIMEOUT_SECONDS = 15 * 60
 TIMEZONE_RETRY_SECONDS = 86400
 DUE_BATCH = 50
 RUN_LIST_LIMIT = 100
 SHARED_LIMIT = 200
 SCHEDULER_ACTOR = "scheduler"
+#: ``report_runs.delivery_state`` (NULL: the run has no approved delivery).
+DELIVERY_PENDING = "pending"
+DELIVERY_SENT = "sent"
+DELIVERY_FAILED = "failed"
+#: The delivery's sender stopped before the mail server answered (a hub restart or shutdown
+#: mid-send): whether the message arrived is not known.
+DELIVERY_INTERRUPTED = "delivery_interrupted"
 EXPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
 
 _TIME = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
@@ -669,8 +680,9 @@ _RUN_DETAIL_SQL = (
 )
 _RUN_LIST_SQL = (
     "SELECT rr.id, rr.report_id, rr.status, rr.trigger, rr.triggered_by, rr.model, rr.route, "
-    "rr.locality, rr.error_code, rr.error, rr.shared_company, rr.delivered_to_json, "
-    "rr.started_at, rr.finished_at, rr.created_at, r.name AS report_name, r.department_id, "
+    "rr.locality, rr.error_code, rr.error, rr.error_reason, rr.shared_company, "
+    "rr.delivered_to_json, rr.delivery_state, rr.started_at, rr.finished_at, rr.created_at, "
+    "r.name AS report_name, r.department_id, "
     "d.name AS department_name, t.name AS triggered_by_name "
     "FROM report_runs rr JOIN reports r ON r.id = rr.report_id "
     "JOIN departments d ON d.id = r.department_id LEFT JOIN users t ON t.id = rr.triggered_by "
@@ -696,16 +708,22 @@ def run_json(row: sqlite3.Row, user: WorkspaceUser) -> dict:
 
     ``delivered_to`` names the report's recipients, part of the report's configuration:
     a viewer outside the report's department (a company-shared run) gets ``[]``, just as
-    the report itself answers them ``404``.
+    the report itself answers them ``404`` — and ``delivery_state`` ``null`` for the same
+    reason. ``delivery_state`` is ``null`` for a run with no approved delivery, ``pending``
+    from the moment the run is ``succeeded`` until the mail server answered (a live page
+    keeps polling), then ``sent`` or ``failed``. ``error_reason`` qualifies ``error_code``
+    as an error body's ``reason`` does (``model_unreachable`` …), ``null`` when unknown.
     """
     in_department = user.can_access_department(int(row["department_id"]))
     return {
         "id": int(row["id"]), "report_id": int(row["report_id"]), "status": row["status"],
         "trigger": row["trigger"], "triggered_by": row["triggered_by"],
         "triggered_by_name": row["triggered_by_name"], "model": row["model"], "route": row["route"],
-        "locality": row["locality"], "error_code": row["error_code"], "error": row["error"],
+        "locality": row["locality"], "error_code": row["error_code"],
+        "error_reason": row["error_reason"], "error": row["error"],
         "shared_company": bool(row["shared_company"]),
         "delivered_to": _loads(row["delivered_to_json"], []) if in_department else [],
+        "delivery_state": row["delivery_state"] if in_department else None,
         "started_at": row["started_at"], "finished_at": row["finished_at"],
         "created_at": row["created_at"],
         "report": {"id": int(row["report_id"]), "name": row["report_name"],
@@ -931,6 +949,13 @@ _DELIVERY_FAILURE_TEXTS: tuple[tuple[str, str, str], ...] = (
      "că destinatarii nu l-au primit.",
      "The report is ready, but the stored email server password can no longer be read, so the "
      "recipients did not get it."),
+    (DELIVERY_INTERRUPTED,
+     "Raportul este gata, dar serverul Nerva s-a oprit în timp ce trimitea emailul, așa că nu "
+     "se știe dacă destinatarii l-au primit. Trimiteți-l din nou din pagina raportului dacă "
+     "este nevoie.",
+     "The report is ready, but the Nerva server stopped while it was sending the email, so it "
+     "is not known whether the recipients got it. Send it again from the report's page if "
+     "needed."),
     ("",
      "Raportul este gata, dar emailul către destinatari nu a putut fi trimis.",
      "The report is ready, but the email to its recipients could not be sent."),
@@ -945,24 +970,29 @@ def _delivery_failure_bodies(error_code: str) -> dict[str, str]:
 
 
 def _mark_failed(conn: sqlite3.Connection, run_id: int, code: str, *,
-                 expected: str | None = None) -> bool:
-    """Fail a queued/running run (compare-and-set), audit it, notify; True when it changed."""
+                 expected: str | None = None, reason: str | None = None) -> bool:
+    """Fail a queued/running run (compare-and-set), audit it, notify; True when it changed.
+
+    *reason* is the failure's machine ``reason`` when it has one (:func:`failure_reason`).
+    """
     stamp = db.now()
     with db.tx(conn):
         row = _run_row(conn, run_id)
         statuses = [expected] if expected else ["queued", "running"]
         cursor = conn.execute(
-            "UPDATE report_runs SET status = 'failed', error_code = ?, error = ?, finished_at = ? "
-            "WHERE id = ? AND status IN (SELECT value FROM json_each(?))",
-            (code, _RUN_ERRORS.get(code, code), stamp, run_id, json.dumps(statuses)),
+            "UPDATE report_runs SET status = 'failed', error_code = ?, error_reason = ?, "
+            "error = ?, finished_at = ? WHERE id = ? AND status IN (SELECT value FROM json_each(?))",
+            (code, reason, _RUN_ERRORS.get(code, code), stamp, run_id, json.dumps(statuses)),
         )
         if row is None or cursor.rowcount != 1:
             return False
         actor, actor_email = _actor(conn, row["triggered_by"])
+        details: dict[str, Any] = {"report_id": int(row["report_id"]), "error_code": code}
+        if reason:
+            details["reason"] = reason
         audit.record(conn, actor=actor, actor_email=actor_email, action="report.run_failed",
                      target_type="report_run", target_id=run_id,
-                     department_id=int(row["department_id"]),
-                     details={"report_id": int(row["report_id"]), "error_code": code})
+                     department_id=int(row["department_id"]), details=details)
         name = row["report_name"]
         _notify_run(conn, row, kind="report.run_failed",
                     titles={"ro": f"Raportul „{name}” nu a putut fi generat",
@@ -970,12 +1000,26 @@ def _mark_failed(conn: sqlite3.Connection, run_id: int, code: str, *,
     return True
 
 
-def _fail_run(run_id: int, code: str) -> None:
+def _fail_run(run_id: int, code: str, reason: str | None = None) -> None:
     conn = db.connect()
     try:
-        _mark_failed(conn, run_id, code)
+        _mark_failed(conn, run_id, code, reason=reason)
     finally:
         conn.close()
+
+
+def failure_reason(error: WorkspaceError) -> str | None:
+    """The machine ``reason`` a failure carries, as its error body would show it.
+
+    The model's failures name why (:class:`llm.LLMUnavailable`: ``model_unreachable``,
+    ``model_error``, ``empty_answer`` …; :class:`llm.ModelPolicyBlocked`:
+    ``data_policy_unacknowledged`` …), the mailer's ``smtp_failed`` names the mail server's
+    cause (``timeout``, ``auth_failed`` …) — the same values the chat's ``error`` events and
+    the admin tests carry, so the run page words them as the chat does. ``None`` when the
+    failure has none (``model_timeout``, ``model_busy`` …).
+    """
+    reason = error.extra.get("reason")
+    return reason if isinstance(reason, str) and reason else None
 
 
 def fail_stuck_runs(conn: sqlite3.Connection, now: float) -> int:
@@ -987,6 +1031,38 @@ def fail_stuck_runs(conn: sqlite3.Connection, now: float) -> int:
     ).fetchall()
     return sum(_mark_failed(conn, int(row["id"]), "interrupted", expected=row["status"])
                for row in rows)
+
+
+def fail_stuck_deliveries(conn: sqlite3.Connection, now: float, *,
+                          stored_before: float | None = None) -> int:
+    """Deliveries still ``pending`` with no sender left → ``failed`` / ``delivery_interrupted``.
+
+    A run's delivery is ``pending`` from the moment the run is stored as succeeded until the
+    mail server answered. The sender is the process that stored it, so a delivery stored over
+    :data:`DELIVERY_TIMEOUT_SECONDS` ago — or before this process started (*stored_before*:
+    one hub per data root) — has none: the hub stopped mid-send. It is resolved as every other
+    failed delivery is: ``email.failed`` audited, the owner and the trigger user told.
+    """
+    cutoff = now - DELIVERY_TIMEOUT_SECONDS
+    if stored_before is not None:
+        cutoff = max(cutoff, stored_before - 1e-6)
+    rows = conn.execute(
+        "SELECT id FROM report_runs WHERE delivery_state = ? AND finished_at <= ? "
+        "ORDER BY id LIMIT 500", (DELIVERY_PENDING, cutoff)).fetchall()
+    resolved = 0
+    for found in rows:
+        with db.tx(conn):
+            row = _run_row(conn, int(found["id"]))
+            if row is None:
+                continue
+            report = conn.execute("SELECT delivery_approved_json FROM reports WHERE id = ?",
+                                  (row["report_id"],)).fetchone()
+            attempted = len(_loads(report["delivery_approved_json"], [])) if report else 0
+            resolved += _resolve_delivery(conn, row, [], DELIVERY_INTERRUPTED, attempted)
+    if resolved:
+        logger.warning("%d report delivery(ies) left pending by a stopped hub marked failed "
+                       "(%s)", resolved, DELIVERY_INTERRUPTED)
+    return resolved
 
 
 # ── runs: the prompt ─────────────────────────────────────────────────────────────────
@@ -1174,23 +1250,38 @@ def _start(run_id: int) -> _Job | None:
         conn.close()
 
 
+def _approved_recipients(conn: sqlite3.Connection, report_id: int) -> list[str]:
+    """Whom a finished run of the report is mailed to: the approved list, else nobody."""
+    report = conn.execute("SELECT delivery_status, delivery_approved_json FROM reports "
+                          "WHERE id = ?", (report_id,)).fetchone()
+    if report is None or report["delivery_status"] != "approved":
+        return []
+    return [email for email in _loads(report["delivery_approved_json"], [])
+            if isinstance(email, str)]
+
+
 def _store_success(job: _Job, result: Any, text: str, citations: list[dict]) -> list[str] | None:
-    """Write the finished report; returns the approved recipients (``None``: run was lost)."""
+    """Write the finished report; returns the approved recipients (``None``: run was lost).
+
+    The run becomes ``succeeded`` and, when it will be mailed, its delivery ``pending`` in
+    the same statement: no reader ever sees a finished run with no delivery state while a
+    delivery is still to come (a live run page polls for as long as it is pending).
+    """
     conn = db.connect()
     try:
         with db.tx(conn):
             row = _run_row(conn, job.run_id)
+            recipients = _approved_recipients(conn, job.report_id)
             cursor = conn.execute(
                 "UPDATE report_runs SET status = 'succeeded', content_md = ?, citations_json = ?, "
-                "model = ?, route = ?, locality = ?, finished_at = ? "
+                "model = ?, route = ?, locality = ?, finished_at = ?, delivery_state = ? "
                 "WHERE id = ? AND status = 'running'",
                 (text, json.dumps(citations, ensure_ascii=False), result.model, result.route,
-                 result.locality, db.now(), job.run_id),
+                 result.locality, db.now(), DELIVERY_PENDING if recipients else None,
+                 job.run_id),
             )
             if row is None or cursor.rowcount != 1:
                 return None
-            report = conn.execute("SELECT delivery_status, delivery_approved_json FROM reports "
-                                  "WHERE id = ?", (job.report_id,)).fetchone()
             actor, actor_email = _actor(conn, row["triggered_by"])
             audit.record(conn, actor=actor, actor_email=actor_email,
                          action="report.run_succeeded", target_type="report_run",
@@ -1202,9 +1293,7 @@ def _store_success(job: _Job, result: Any, text: str, citations: list[dict]) -> 
             _notify_run(conn, row, kind="report.run_succeeded",
                         titles={"ro": f"Raport gata: {job.report_name}",
                                 "en": f"Report ready: {job.report_name}"})
-        if report is None or report["delivery_status"] != "approved":
-            return []
-        return list(_loads(report["delivery_approved_json"], []))
+        return recipients
     finally:
         conn.close()
 
@@ -1216,52 +1305,93 @@ _DELIVERY_FOOTERS = {
 
 
 async def _deliver(job: _Job, text: str, recipients: list[str]) -> None:
-    """Email a finished run to its approved recipients and record the outcome."""
-    language = job.locale if job.locale in _DELIVERY_FOOTERS else "ro"
-    footer = _DELIVERY_FOOTERS[language].format(org=job.org_name, department=job.department_name)
-    subject = f"{job.report_name} — {_local_date(db.now(), job.timezone)}"
-    page = html_page(title=subject, lang=language,
-                     header=f"<p class=\"brand\">Nerva Workspace · {_escape(job.org_name)}</p>",
-                     body=render_markdown(text), footer=f"<p>{_escape(footer)}</p>")
+    """Email a finished run to its approved recipients and record the outcome.
+
+    Whatever happens the ``pending`` delivery is resolved: a mail failure as its code (and
+    the mail server's reason), an unforeseen fault as ``internal_error``, a cancellation (hub
+    shutdown mid-send) as ``delivery_interrupted`` before it propagates.
+    """
+    attempted = len(recipients)
     try:
+        language = job.locale if job.locale in _DELIVERY_FOOTERS else "ro"
+        footer = _DELIVERY_FOOTERS[language].format(org=job.org_name,
+                                                    department=job.department_name)
+        subject = f"{job.report_name} — {_local_date(db.now(), job.timezone)}"
+        page = html_page(title=subject, lang=language,
+                         header=f"<p class=\"brand\">Nerva Workspace · {_escape(job.org_name)}</p>",
+                         body=render_markdown(text), footer=f"<p>{_escape(footer)}</p>")
         accepted = await mailer.send_mail(to=recipients, subject=subject,
                                           text=f"{text}\n\n---\n{footer}\n", html=page)
     except WorkspaceError as exc:
-        await asyncio.to_thread(_record_delivery, job, [], exc.code, len(recipients))
+        await asyncio.to_thread(_record_delivery, job, [], exc.code, attempted,
+                                failure_reason(exc))
         return
-    await asyncio.to_thread(_record_delivery, job, accepted, None, len(recipients))
+    except asyncio.CancelledError:
+        _record_delivery(job, [], DELIVERY_INTERRUPTED, attempted)
+        raise
+    except Exception:  # a crash must resolve the delivery, never leave it pending
+        logger.exception("report run %s: delivery crashed", job.run_id)
+        await asyncio.to_thread(_record_delivery, job, [], "internal_error", attempted)
+        return
+    await asyncio.to_thread(_record_delivery, job, accepted, None, attempted)
 
 
-def _record_delivery(job: _Job, accepted: list[str], error_code: str | None, attempted: int) -> None:
+def _record_delivery(job: _Job, accepted: list[str], error_code: str | None, attempted: int,
+                     reason: str | None = None) -> None:
     conn = db.connect()
     try:
         with db.tx(conn):
             row = _run_row(conn, job.run_id)
             if row is None:
                 return
-            department_id = int(row["department_id"])
-            if error_code is None:
-                conn.execute("UPDATE report_runs SET delivered_to_json = ? WHERE id = ?",
-                             (json.dumps(accepted), job.run_id))
-                audit.record(conn, actor=None, actor_email=SCHEDULER_ACTOR,
-                             action="report.delivered", target_type="report_run",
-                             target_id=job.run_id, department_id=department_id,
-                             details={"report_id": job.report_id, "to": accepted,
-                                      "refused": attempted - len(accepted)})
-                return
-            conn.execute("UPDATE report_runs SET error_code = ?, error = 'delivery_failed' "
-                         "WHERE id = ?", (error_code, job.run_id))
-            audit.record(conn, actor=None, actor_email=SCHEDULER_ACTOR, action="email.failed",
-                         target_type="report_run", target_id=job.run_id,
-                         department_id=department_id,
-                         details={"source": "report_delivery", "report_id": job.report_id,
-                                  "error_code": error_code, "recipient_count": attempted})
-            _notify_run(conn, row, kind="report.delivery_failed",
-                        titles={"ro": f"Livrarea pe email a raportului „{job.report_name}” a eșuat",
-                                "en": f"Emailing report “{job.report_name}” failed"},
-                        bodies=_delivery_failure_bodies(error_code))
+            if not _resolve_delivery(conn, row, accepted, error_code, attempted, reason):
+                logger.warning("report run %s: the delivery outcome came after the delivery "
+                               "was resolved (%s); it is not recorded again", job.run_id,
+                               row["delivery_state"])
     finally:
         conn.close()
+
+
+def _resolve_delivery(conn: sqlite3.Connection, row: sqlite3.Row, accepted: list[str],
+                      error_code: str | None, attempted: int, reason: str | None = None) -> bool:
+    """Settle a ``pending`` delivery (inside the caller's tx): ``sent`` or ``failed``.
+
+    A compare-and-set on ``pending``: the sender and the sweep never both settle one. A sent
+    delivery records whom the server accepted (``report.delivered``); a failed one keeps the
+    report and says why — ``error_code`` (+ ``error_reason``), ``error='delivery_failed'``,
+    ``email.failed`` audited, the owner and the trigger user notified. True when it changed.
+    """
+    run_id, report_id = int(row["id"]), int(row["report_id"])
+    department_id = int(row["department_id"])
+    if error_code is None:
+        cursor = conn.execute(
+            "UPDATE report_runs SET delivered_to_json = ?, delivery_state = ? "
+            "WHERE id = ? AND delivery_state = ?",
+            (json.dumps(accepted), DELIVERY_SENT, run_id, DELIVERY_PENDING))
+        if cursor.rowcount != 1:
+            return False
+        audit.record(conn, actor=None, actor_email=SCHEDULER_ACTOR,
+                     action="report.delivered", target_type="report_run",
+                     target_id=run_id, department_id=department_id,
+                     details={"report_id": report_id, "to": accepted,
+                              "refused": attempted - len(accepted)})
+        return True
+    cursor = conn.execute(
+        "UPDATE report_runs SET delivery_state = ?, error_code = ?, error_reason = ?, "
+        "error = 'delivery_failed' WHERE id = ? AND delivery_state = ?",
+        (DELIVERY_FAILED, error_code, reason, run_id, DELIVERY_PENDING))
+    if cursor.rowcount != 1:
+        return False
+    audit.record(conn, actor=None, actor_email=SCHEDULER_ACTOR, action="email.failed",
+                 target_type="report_run", target_id=run_id, department_id=department_id,
+                 details={"source": "report_delivery", "report_id": report_id,
+                          "error_code": error_code, "recipient_count": attempted})
+    name = row["report_name"]
+    _notify_run(conn, row, kind="report.delivery_failed",
+                titles={"ro": f"Livrarea pe email a raportului „{name}” a eșuat",
+                        "en": f"Emailing report “{name}” failed"},
+                bodies=_delivery_failure_bodies(error_code))
+    return True
 
 
 async def _execute(run_id: int) -> None:
@@ -1273,7 +1403,7 @@ async def _execute(run_id: int) -> None:
                                     max_tokens=REPORT_MAX_TOKENS, temperature=0.2,
                                     timeout_seconds=REPORT_TIMEOUT_SECONDS)
     except WorkspaceError as exc:
-        await asyncio.to_thread(_fail_run, run_id, exc.code)
+        await asyncio.to_thread(_fail_run, run_id, exc.code, failure_reason(exc))
         return
     # llm.complete never returns an empty or failure answer (it raises instead).
     text = result.text.strip()

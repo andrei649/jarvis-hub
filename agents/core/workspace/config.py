@@ -39,6 +39,11 @@ ENV_MAX_CONCURRENT_LLM = "NERVA_WORKSPACE_MAX_CONCURRENT_LLM"
 ENV_SCHEDULER = "NERVA_WORKSPACE_SCHEDULER"
 
 SETUP_CODE_FILE = "setup-code.txt"
+#: The folder of the stored originals under ``business/`` (``documents.files_dir``: ``<id>.bin``).
+FILES_DIRNAME = "files"
+#: The workspace secret store under ``business/`` (``mailer.secret_store``); ``SecretStore``
+#: keeps its ``.salt``, ``.key`` and ``.<random>.tmp`` siblings next to it.
+SECRETS_FILE = "secrets.enc"
 
 #: The workspace's own directory under the data root. It is NOT ``workspace``: that name is
 #: the hub's default root for the owner's file tools (``JARVIS_FILE_ROOTS``), for
@@ -69,8 +74,12 @@ def enabled() -> bool:
 def workspace_dir() -> Path:
     """``data_path(DATA_DIRNAME)`` (``<data>/business``), created with mode 0700 on demand.
 
-    The directory holds the database, uploaded files and the setup code, so it is
-    created private; an existing directory keeps whatever mode the operator chose.
+    The directory holds the database, uploaded files, the secret store and the setup code,
+    so it is created private (0700), and each process's first connect makes it private again
+    (``db.secure_storage``: group/other bits removed from it and everything under it, files
+    0600 and folders 0700) — an existing directory does not keep a more open mode an operator,
+    a restore or a copy gave it. A ``business/`` that is a link to a folder holding other
+    things too has only the workspace's own entries there made private.
     """
     path = data_path(DATA_DIRNAME)
     path.mkdir(mode=0o700, parents=True, exist_ok=True)

@@ -59,7 +59,7 @@ logger = logging.getLogger("nerva.workspace.mailer")
 SETTINGS_KEY = "smtp"
 #: Name of the SMTP credential inside the workspace secret store.
 CREDENTIAL_NAME = "smtp.password"
-STORE_FILE = "secrets.enc"
+STORE_FILE = config.SECRETS_FILE
 SECURITIES = ("starttls", "ssl", "none")
 DEFAULT_PORTS = {"starttls": 587, "ssl": 465, "none": 25}
 SMTP_TIMEOUT_SECONDS = 15.0

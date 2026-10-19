@@ -256,3 +256,28 @@ def test_a_passphrase_without_its_salt_names_the_salt_and_makes_none(live, tmp_p
     shutil.copytree(tmp_path / "keys", new_server)  # the key directory brought back
     assert bk._main(["verify", archive.name]) == 0
     capsys.readouterr()
+
+
+# ── the name usage and --help print (review OPS3-01) ──────────────────────────────────
+
+def test_usage_and_help_name_nerva_run_and_the_services_environment(capsys):
+    """The guide runs ``nerva-run -m agents.core.backup`` (PILOT_GUIDE §2, §14); the CLI's own
+    usage line used to say ``python -m agents.core.backup``, a bare shell's form that backs up
+    another data root with another key."""
+    with pytest.raises(SystemExit) as shown:
+        bk._main(["--help"])
+    assert shown.value.code == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"usage: {bk.PROG} ") and bk.PROG == "nerva-run -m agents.core.backup"
+    assert "service's" in out and "environment" in out and "nerva-run" in out
+    assert "python -m" not in out
+    with pytest.raises(SystemExit) as refused:
+        bk._main([])                             # no command: argparse's usage error
+    assert refused.value.code == 2
+    err = capsys.readouterr().err
+    assert err.startswith(f"usage: {bk.PROG} ") and "python -m" not in err
+    with pytest.raises(SystemExit):
+        bk._main(["verify", "--help"])
+    assert capsys.readouterr().out.startswith(f"usage: {bk.PROG} verify ")
+    assert "nerva-run -m agents.core.backup" in (bk.__doc__ or "")
+    assert "python -m agents.core.backup" not in (bk.__doc__ or "")

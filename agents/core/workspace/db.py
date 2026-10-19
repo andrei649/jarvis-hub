@@ -28,11 +28,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sqlite3
 import stat
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Annotated
@@ -191,8 +192,22 @@ CREATE INDEX idx_audit_actor ON audit(actor_user_id);
 CREATE INDEX idx_audit_action ON audit(action);
 """
 
+# v2 (review NWS-20, UX-23): what a report run's email delivery is doing, and the machine
+# reason of its error_code. ``delivery_state`` is NULL for a run with no approved delivery,
+# 'pending' from the moment the run is stored as succeeded until the mail server answered,
+# then 'sent' or 'failed' — a live run page polls while it is 'pending'. ``error_reason``
+# qualifies ``error_code`` the way an API error body's ``reason`` does (``model_unreachable``
+# for ``model_unavailable``, ``timeout`` for ``smtp_failed`` …); NULL when nothing more is
+# known. ADD COLUMN keeps every existing row (both read NULL) and is a constant-time change.
+_SCHEMA_V2 = """
+ALTER TABLE report_runs ADD COLUMN delivery_state TEXT
+  CHECK (delivery_state IS NULL OR delivery_state IN ('pending','sent','failed'));
+ALTER TABLE report_runs ADD COLUMN error_reason TEXT;
+CREATE INDEX idx_report_runs_delivery_pending ON report_runs(delivery_state, finished_at);
+"""
+
 #: Ordered (version, script) pairs; a database at user_version N runs every script > N.
-MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_V1)]
+MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_V1), (2, _SCHEMA_V2)]
 
 _migrate_lock = threading.Lock()
 
@@ -204,6 +219,11 @@ _OPEN_BITS = 0o077
 #: Workspace directories this process already made private (one pass per process each).
 _secured: set[str] = set()
 _secured_lock = threading.Lock()
+#: How many names of other entries a "not the workspace's own folder" warning shows.
+_FOREIGN_SHOWN = 3
+#: What ``documents`` writes inside ``files/``: ``<id>.bin`` (``file_path``), ``.upload-….tmp``
+#: (``_write_temp``) and ``.deleted-<id>.tmp`` (``_detach_file``).
+_OWN_STORED_FILE = re.compile(r"\d+\.bin|\.upload-[^/]+\.tmp|\.deleted-\d+\.tmp")
 
 
 def now() -> float:
@@ -341,16 +361,47 @@ def _storage_root(directory: Path) -> Path | None:
     return real
 
 
+def own_entry(name: str) -> bool:
+    """Whether *name*, directly under ``business/``, is one of the workspace's own entries.
+
+    The database and its ``-wal``/``-shm``/``-journal`` files, ``files/`` (the stored
+    originals), ``secrets.enc`` with its ``.salt``/``.key``/``.<random>.tmp`` siblings, and
+    ``setup-code.txt`` with the ``.setup-code.txt.<random>`` file it is written through
+    (``config.create_private_file``) — the names the modules that write them use.
+    """
+    return (name in (DB_FILE, config.FILES_DIRNAME, config.SECRETS_FILE, config.SETUP_CODE_FILE)
+            or name.startswith((f"{DB_FILE}-", f"{config.SECRETS_FILE}.",
+                                f".{config.SETUP_CODE_FILE}.")))
+
+
+def _own_stored_file(name: str) -> bool:
+    """Whether *name*, directly under ``files/``, is a file ``documents`` writes there."""
+    return _OWN_STORED_FILE.fullmatch(name) is not None
+
+
+def _foreign_names(folder: Path, own: Callable[[str], bool]) -> list[str]:
+    """The entries of *folder* that are not the workspace's (*own* judges each name)."""
+    return sorted(name for name in os.listdir(folder) if not own(name))
+
+
 def secure_storage(directory: Path) -> list[Path]:
     """Remove group/other access from *directory* and everything under it; returns what changed.
 
     *directory* is the workspace's own (``<data>/business``: the database and its
     ``-wal``/``-shm``, ``files/`` and the stored documents, ``secrets.enc`` with its key and
     salt, ``setup-code.txt``), so nothing else is touched. When *directory* itself is a link
-    to a folder, that folder is walked (:func:`_storage_root`); below it symlinks are never
-    followed nor changed. A change is logged once, as a WARNING; a chmod the system refuses
-    (files owned by another user — a command run as root) is logged once too, and never
-    fails the caller.
+    to a folder, that folder is walked (:func:`_storage_root`) only while it is the
+    workspace's own — every entry in it is one of :func:`own_entry`'s names. A link to a
+    folder that holds other things as well (``business`` → ``/mnt/disc2``, a mount root
+    with other data) gets one WARNING naming that folder, and only the workspace's own
+    entries there are made private (in ``files/`` only the files the workspace writes, when
+    it holds others too); the folder itself and every other entry keep their modes. Below
+    the folder symlinks are never followed nor changed. A change is logged once, as a
+    WARNING; a chmod the system refuses (files owned by another user — a command run as
+    root) is logged once too, and never fails the caller.
+
+    Why not "the folder holds ``workspace.db``": the first connect creates the database in
+    the folder before this runs, so after one start every shared folder would hold it.
     """
     changed: list[Path] = []
     refused: list[tuple[Path, str]] = []
@@ -372,14 +423,28 @@ def secure_storage(directory: Path) -> list[Path]:
             return
         changed.append(path)
 
+    def tighten_tree(top: Path) -> None:
+        tighten(top)
+        for parent, dirnames, filenames in os.walk(top, followlinks=False):
+            base = Path(parent)
+            for name in [*dirnames, *filenames]:
+                tighten(base / name)
+
     root = _storage_root(directory)
     if root is None:
         return changed
-    tighten(root)
-    for parent, dirnames, filenames in os.walk(root, followlinks=False):
-        base = Path(parent)
-        for name in [*dirnames, *filenames]:
-            tighten(base / name)
+    foreign = [] if root == directory else _foreign_names(root, own_entry)
+    if not foreign:
+        tighten_tree(root)
+    else:
+        logger.warning(
+            "Nerva Workspace: %s is a link to %s, which also holds %d entr%s that are not the "
+            "workspace's (%s), so only the workspace's own files there are made private and "
+            "nothing else in that folder is changed — link business/ to a folder of its own "
+            "(PILOT_GUIDE §13)", directory, root, len(foreign),
+            "y" if len(foreign) == 1 else "ies",
+            ", ".join(foreign[:_FOREIGN_SHOWN]) + (", …" if len(foreign) > _FOREIGN_SHOWN else ""))
+        _tighten_own_entries(root, tighten, tighten_tree)
     where = directory if root == directory else f"{directory} → {root}"
     if changed:
         logger.warning(
@@ -388,12 +453,39 @@ def secure_storage(directory: Path) -> list[Path]:
             "files 0600, folders 0700", len(changed), where)
     if refused:
         path, reason = refused[0]
+        fix = ("make the service's user their owner and remove the access of others — "
+               "chown -R jarvis:jarvis and chmod -R go-rwx" if not foreign else
+               "make the service's user the owner of the workspace's own entries there "
+               "(workspace.db*, files/, secrets.enc*, setup-code.txt) and remove the access of "
+               "others with chown jarvis:jarvis and chmod go-rwx on those entries only, not on "
+               "the whole folder")
         logger.warning(
             "Nerva Workspace: %d file(s) or folder(s) under %s can be read by other users and "
-            "this process may not change that (%s on %s): make the service's user their owner "
-            "and remove the access of others — chown -R jarvis:jarvis and chmod -R go-rwx "
-            "(PILOT_GUIDE §14, §19)", len(refused), where, reason, path)
+            "this process may not change that (%s on %s): %s (PILOT_GUIDE §14, §19)",
+            len(refused), where, reason, path, fix)
     return changed
+
+
+def _tighten_own_entries(root: Path, tighten: Callable[[Path], None],
+                         tighten_tree: Callable[[Path], None]) -> None:
+    """In a folder shared with other data: only the workspace's own entries, never the rest.
+
+    ``files/`` is walked in full while it holds only what ``documents`` writes; otherwise
+    just those files in it are tightened and the folder itself is left as it is.
+    """
+    for name in sorted(os.listdir(root)):
+        if not own_entry(name):
+            continue
+        path = root / name
+        if name == config.FILES_DIRNAME and path.is_dir() and not path.is_symlink():
+            if not _foreign_names(path, _own_stored_file):
+                tighten_tree(path)
+                continue
+            for stored in sorted(os.listdir(path)):
+                if _own_stored_file(stored):
+                    tighten(path / stored)
+            continue
+        tighten(path)
 
 
 def _secure_once(directory: Path) -> None:

@@ -65,7 +65,7 @@ from agents.core.workspace.identity import COMPANY, WorkspaceUser
 
 logger = logging.getLogger("nerva.workspace.documents")
 
-FILES_DIR = "files"
+FILES_DIR = config.FILES_DIRNAME
 PUBLISH_KIND = "document.company_publish"
 MAX_FILENAME = 255
 MAX_TITLE = 200

@@ -32,9 +32,13 @@ backup needs:
   root unlinks a link or hardlinked name before writing the file, and credits the
   files it overwrites against the free-space clamp.
 
-CLI: ``python -m agents.core.backup create|list|verify|restore`` (the
-one-command story). Restore refuses to overwrite a non-empty target unless
-``--force``.
+CLI: ``nerva-run -m agents.core.backup create|list|verify|restore`` (the
+one-command story; :data:`PROG`). Run it with the service's environment — the pilot
+guide's ``nerva-run`` (PILOT_GUIDE §2) runs the venv's ``python`` as the service's user
+with the service's ``EnvironmentFile`` and ``UMask``, so the data root,
+``JARVIS_KEY_DIR`` and ``JARVIS_BACKUP_KEY`` are the hub's own — never from a bare
+shell, whose defaults would back up (or look for archives of) another data root with
+another key. Restore refuses to overwrite a non-empty target unless ``--force``.
 """
 
 from __future__ import annotations
@@ -791,9 +795,17 @@ def _decrypt_failed(name: str, outcome: str, error: SecretStoreError) -> int:
     return 1
 
 
+#: The name ``--help`` and usage lines show: the form the pilot guide runs (§2, ``nerva-run``
+#: with the service's environment), not a bare ``python -m`` that would miss it.
+PROG = "nerva-run -m agents.core.backup"
+
+
 def _main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m agents.core.backup",
-                                 description="Jarvis local backup / restore")
+    ap = argparse.ArgumentParser(
+        prog=PROG,
+        description="Local backup / restore of the hub's data root. Run it with the service's "
+                    "environment (PILOT_GUIDE §2: nerva-run), never from a bare shell — that "
+                    "would use another data root and another backup key.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     pc = sub.add_parser("create", help="snapshot the data root to a .tar.gz")
     pc.add_argument("--encrypt", action="store_true",

@@ -105,6 +105,41 @@ def test_every_file_the_workspace_writes_is_private_under_a_permissive_umask(
     conn.close()
 
 
+def test_every_name_the_workspace_writes_is_one_of_its_own_entries(ws, monkeypatch):
+    """The list a shared link target is judged by (review SEC-EDGE-1) is the code's own: every
+    name the workspace really writes under ``business/`` — and under ``files/`` — passes it,
+    and names the workspace never writes do not."""
+    conn = db()
+    company = seed_company(conn)
+    client = docs_client()
+    csrf = login(client, company.member_a.email)
+    kept = upload(client, csrf, company.dept_a, "politica.txt", POLICY)
+    gone = upload(client, csrf, company.dept_a, "vechi.txt", POLICY + b"Versiunea veche.\n")
+    assert kept.status_code == gone.status_code == 201
+    assert client.delete(f"/api/workspace/documents/{gone.json()['id']}",
+                         headers={"X-CSRF-Token": csrf}).status_code in (200, 204)
+    mailer.secret_store().set(mailer.CREDENTIAL_NAME, "parola-smtp")
+    monkeypatch.delenv(config.ENV_SETUP_CODE, raising=False)
+    config.setup_code()
+    business = config.workspace_dir()
+    names = sorted(path.name for path in business.iterdir())
+    assert {"workspace.db", "files", "secrets.enc", "setup-code.txt"} <= set(names), names
+    assert [name for name in names if not workspace_db.own_entry(name)] == [], names
+    stored = sorted(path.name for path in documents.files_dir().iterdir())
+    assert stored and [n for n in stored if not workspace_db._own_stored_file(n)] == [], stored
+    for name in ("workspace.db-wal", "workspace.db-journal", "secrets.enc.salt", "secrets.enc.key",
+                 "secrets.enc.a1b2.tmp", ".setup-code.txt.x9"):
+        assert workspace_db.own_entry(name), name
+    for name in ("photos", "notes.txt", "files.zip", "workspace.dbx", "secrets.encrypted",
+                 "lost+found", ".DS_Store", "setup-code.txt.bak"):
+        assert not workspace_db.own_entry(name), name
+    for name in ("12.bin", ".upload-k3j.tmp", ".deleted-12.tmp"):
+        assert workspace_db._own_stored_file(name), name
+    for name in ("readme.txt", "12.bin.bak", "x.bin", ".deleted-x.tmp"):
+        assert not workspace_db._own_stored_file(name), name
+    conn.close()
+
+
 def test_a_new_database_is_created_private_before_sqlite_opens_it(ws, permissive_umask):
     conn = workspace_db.connect()
     try:
@@ -189,19 +224,36 @@ def test_a_chmod_the_system_refuses_is_logged_once_and_never_fails(ws, tmp_path,
     assert "PermissionError" in records[0].getMessage()
 
 
+def _seed_own_store(business: Path, outside: Path) -> None:
+    """What a folder of the workspace's own holds: only the workspace's entries (§13)."""
+    conn = workspace_db.connect()
+    conn.close()
+    (business / "files").mkdir(exist_ok=True)
+    (business / "files" / "1.bin").write_bytes(b"original")
+    (business / "files" / ".upload-ab12.tmp").write_bytes(b"half")
+    (business / "secrets.enc").write_text("{}", encoding="utf-8")
+    (business / "secrets.enc.salt").write_bytes(b"salt")
+    (business / "setup-code.txt").write_text("cod", encoding="utf-8")
+    outside.write_text("not the workspace's", encoding="utf-8")
+    outside.chmod(0o644)
+    (business / "files" / "link-out").symlink_to(outside)
+
+
 def test_a_business_folder_that_is_a_link_is_made_private_where_it_points(
         ws, tmp_path, monkeypatch, caplog):
     """``<data>/business`` → ``/disk2/business`` (review REV-POLISH-02).
 
     The sweep used to return at once for a ``business/`` that is a symlink: a restore's
     ``0644`` database and ``0755`` folders stayed readable by every local user, silently.
+    The folder holds only the workspace's own entries (a folder of its own, PILOT_GUIDE §13),
+    so all of it is walked; a link into a shared folder is the next tests' case.
     """
     real = tmp_path / "disk2" / "business"
     real.mkdir(parents=True)
     business = ws.data_dir / config.DATA_DIRNAME
     business.symlink_to(real, target_is_directory=True)
     outside = tmp_path / "outside.txt"
-    _seed_store(business, outside)              # its connect already made `real` (0755) 0700
+    _seed_own_store(business, outside)          # its connect already made `real` (0755) 0700
     _open_up(real)
     _new_process(monkeypatch)
     caplog.clear()
@@ -214,6 +266,99 @@ def test_a_business_folder_that_is_a_link_is_made_private_where_it_points(
     [warning] = _db_warnings(caplog)
     assert "private now" in warning.getMessage()
     assert f"{business} → {real}" in warning.getMessage()
+
+
+def _shared_folder(tmp_path: Path) -> tuple[Path, dict[str, int]]:
+    """``/mnt/disc2``: a mount root holding other people's data, owned by the same user."""
+    shared = tmp_path / "mnt" / "disc2"
+    (shared / "photos" / "2026").mkdir(parents=True)
+    (shared / "photos" / "2026" / "a.jpg").write_bytes(b"jpeg")
+    (shared / "notes.txt").write_text("someone else's notes", encoding="utf-8")
+    (shared / "files").mkdir()                  # a folder named like the workspace's store
+    (shared / "files" / "readme.txt").write_text("someone else's", encoding="utf-8")
+    foreign = {"photos": 0o755, "photos/2026": 0o755, "photos/2026/a.jpg": 0o644,
+               "notes.txt": 0o664, "files/readme.txt": 0o644}
+    shared.chmod(0o755)
+    for name, mode in foreign.items():
+        (shared / name).chmod(mode)
+    return shared, foreign
+
+
+def _modes_of(root: Path, names) -> dict[str, int]:
+    return {name: _mode(root / name) for name in names}
+
+
+def test_a_business_link_to_a_shared_folder_changes_only_the_workspaces_own_entries(
+        ws, tmp_path, monkeypatch, caplog):
+    """``business`` → ``/mnt/disc2`` (review SEC-EDGE-1): only the workspace's entries there.
+
+    The whole target used to be walked, removing group/other access from every file the
+    service user owns in it — and a refused chmod advised ``chmod -R`` on all of it. Now the
+    folder, its other entries and the other files in a ``files/`` it shares keep their modes,
+    across restarts too (from the second start on the folder holds ``workspace.db``).
+    """
+    shared, foreign = _shared_folder(tmp_path)
+    business = ws.data_dir / config.DATA_DIRNAME
+    business.symlink_to(shared, target_is_directory=True)
+    for start in range(2):                      # the first start, then a restart
+        _new_process(monkeypatch)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="nerva.workspace.db"):
+            conn = workspace_db.connect()
+            conn.close()
+            workspace_db.connect().close()      # once per process
+        assert _modes_of(shared, foreign) == foreign, start
+        assert _mode(shared) == 0o755 and _mode(shared / "files") == 0o755, start
+        warnings = [r.getMessage() for r in _db_warnings(caplog)]
+        shared_lines = [m for m in warnings if "not the workspace's" in m]
+        assert len(shared_lines) == 1, warnings
+        assert str(shared) in shared_lines[0] and "PILOT_GUIDE §13" in shared_lines[0]
+        assert "files, notes.txt, photos" not in shared_lines[0], "files/ is the workspace's"
+        assert "notes.txt, photos" in shared_lines[0]
+        # What the workspace wrote there is private all the same.
+        (shared / "files" / "7.bin").write_bytes(b"document")
+        (shared / "secrets.enc").write_text("{}", encoding="utf-8")
+        for own in ("workspace.db", "files/7.bin", "secrets.enc"):
+            (shared / own).chmod(0o644)
+        _new_process(monkeypatch)
+        workspace_db.connect().close()
+        assert _modes_of(shared, ("workspace.db", "files/7.bin", "secrets.enc")) == {
+            "workspace.db": 0o600, "files/7.bin": 0o600, "secrets.enc": 0o600}, start
+        assert _modes_of(shared, foreign) == foreign, start
+
+
+def test_a_files_folder_of_its_own_in_a_shared_folder_is_made_private(ws, tmp_path,
+                                                                      monkeypatch):
+    shared, foreign = _shared_folder(tmp_path)
+    (shared / "files" / "readme.txt").unlink()
+    del foreign["files/readme.txt"]
+    (shared / "files" / "3.bin").write_bytes(b"document")
+    (shared / "files" / "3.bin").chmod(0o644)
+    (ws.data_dir / config.DATA_DIRNAME).symlink_to(shared, target_is_directory=True)
+    workspace_db.connect().close()
+    assert _mode(shared / "files") == 0o700 and _mode(shared / "files" / "3.bin") == 0o600
+    assert _modes_of(shared, foreign) == foreign and _mode(shared) == 0o755
+
+
+def test_a_refused_chmod_in_a_shared_folder_names_only_the_workspaces_entries(
+        ws, tmp_path, monkeypatch, caplog):
+    shared, _ = _shared_folder(tmp_path)
+    (ws.data_dir / config.DATA_DIRNAME).symlink_to(shared, target_is_directory=True)
+    workspace_db.connect().close()
+    (shared / "workspace.db").chmod(0o644)
+    _new_process(monkeypatch)
+
+    def refuse(path, mode, *args, **kwargs):
+        raise PermissionError(1, "Operation not permitted", str(path))
+
+    monkeypatch.setattr(workspace_db.os, "chmod", refuse)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="nerva.workspace.db"):
+        workspace_db.connect().close()
+    [advice] = [r.getMessage() for r in _db_warnings(caplog) if "may not change" in r.getMessage()]
+    assert "chmod -R" not in advice and "chown -R" not in advice
+    assert "workspace.db*, files/, secrets.enc*, setup-code.txt" in advice
+    assert "not on the whole folder" in advice
 
 
 def test_a_business_link_to_a_folder_holding_the_data_root_is_not_walked(ws, monkeypatch,
@@ -241,3 +386,16 @@ def test_the_read_only_check_changes_no_mode(ws, monkeypatch):
     _new_process(monkeypatch)
     workspace_db.connect_read_only(workspace_db.existing_db_path()).close()
     assert _mode(business / "workspace.db") == 0o644
+
+
+def test_the_workspace_dir_docstring_states_the_rule_the_code_applies(ws, monkeypatch):
+    """Review DOC-04: it said an existing directory keeps the operator's mode; it does not."""
+    doc = " ".join((config.workspace_dir.__doc__ or "").split())
+    assert "keeps whatever mode" not in doc
+    assert "created private (0700)" in doc and "first connect makes it private again" in doc
+    assert "db.secure_storage" in doc
+    business = config.workspace_dir()
+    business.chmod(0o755)                       # what an operator or a restore may leave
+    _new_process(monkeypatch)
+    workspace_db.connect().close()
+    assert _mode(business) == 0o700

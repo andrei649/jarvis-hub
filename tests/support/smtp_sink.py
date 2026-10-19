@@ -17,11 +17,16 @@ In a test::
 
 Options: ``refuse`` (addresses answered ``550`` at RCPT), ``require_auth=(user,
 password)`` (AUTH PLAIN/LOGIN required before MAIL, ``535`` on a wrong pair),
-``fail_data`` (``554`` after DATA), ``out`` (append each message to a JSON-lines file).
+``fail_data`` (``554`` after DATA), ``out`` (append each message to a JSON-lines file),
+``greeting_delay`` (seconds every connection waits before the ``220`` greeting — a slow
+relay; a plain attribute, so it can change while the sink runs) and ``greeting_gate`` (a
+``threading.Event``: each connection holds its greeting until the event is set, for at most
+:data:`GATE_TIMEOUT` seconds — what a test uses to look at a delivery while it is still
+under way). :meth:`SmtpSink.wait_for_connections` blocks until a client has connected.
 
 From the e2e journey (prints ``READY`` once listening, runs until killed)::
 
-    python tests/support/smtp_sink.py --port 2525 --out /tmp/mail.jsonl
+    python tests/support/smtp_sink.py --port 2525 --out /tmp/mail.jsonl [--greeting-delay 4]
 """
 
 from __future__ import annotations
@@ -43,6 +48,9 @@ from pathlib import Path
 
 MAX_LINE = 4096
 MAX_MESSAGE = 10 * 1024 * 1024
+#: The longest a held greeting waits for ``greeting_gate`` (a test that forgets to set it
+#: still ends: the client then gets its greeting late, as from a slow relay).
+GATE_TIMEOUT = 30.0
 _ADDRESS = re.compile(r"<([^<>]*)>")
 
 
@@ -126,6 +134,12 @@ class _Handler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         sink = self.server.sink
         session = _Session()
+        sink._connected()
+        gate = sink.greeting_gate
+        if gate is not None:
+            gate.wait(GATE_TIMEOUT)
+        elif sink.greeting_delay > 0:
+            time.sleep(sink.greeting_delay)
         self._reply("220 nerva-test-sink ESMTP ready")
         while True:
             line = self._line()
@@ -248,13 +262,18 @@ class SmtpSink:
 
     def __init__(self, host: str = "127.0.0.1", port: int = 0, *, refuse: Iterable[str] = (),
                  require_auth: tuple[str, str] | None = None, fail_data: bool = False,
-                 out: Path | None = None) -> None:
+                 out: Path | None = None, greeting_delay: float = 0.0,
+                 greeting_gate: threading.Event | None = None) -> None:
         self.host = host
         self.requested_port = port
         self.refuse = {address.lower() for address in refuse}
         self.require_auth = require_auth
         self.fail_data = fail_data
         self.out = out
+        self.greeting_delay = greeting_delay
+        self.greeting_gate = greeting_gate
+        #: How many SMTP connections were accepted so far.
+        self.connections = 0
         self.messages: list[ReceivedMail] = []
         self._changed = threading.Condition()
         self._server: _Server | None = None
@@ -297,6 +316,17 @@ class SmtpSink:
                     handle.write(json.dumps(mail.to_json(), ensure_ascii=False) + "\n")
             self._changed.notify_all()
 
+    def _connected(self) -> None:
+        with self._changed:
+            self.connections += 1
+            self._changed.notify_all()
+
+    def wait_for_connections(self, count: int, timeout: float = 5.0) -> None:
+        """Block until at least *count* clients connected (``AssertionError`` on timeout)."""
+        with self._changed:
+            if not self._changed.wait_for(lambda: self.connections >= count, timeout=timeout):
+                raise AssertionError(f"expected {count} connection(s), got {self.connections}")
+
     def wait_for(self, count: int, timeout: float = 5.0) -> list[ReceivedMail]:
         """Block until at least *count* messages arrived (``AssertionError`` on timeout)."""
         with self._changed:
@@ -310,8 +340,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=2525)
     parser.add_argument("--out", type=Path, default=None, help="append messages as JSON lines")
+    parser.add_argument("--greeting-delay", type=float, default=0.0, metavar="SECONDS",
+                        help="wait this long before greeting each connection (a slow relay)")
     args = parser.parse_args(argv)
-    sink = SmtpSink(args.host, args.port, out=args.out).start()
+    sink = SmtpSink(args.host, args.port, out=args.out,
+                    greeting_delay=max(0.0, args.greeting_delay)).start()
     print(f"READY {sink.host}:{sink.port}", flush=True)
     try:
         threading.Event().wait()

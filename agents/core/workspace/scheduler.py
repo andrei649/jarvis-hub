@@ -7,9 +7,11 @@ One :meth:`WorkspaceScheduler.tick` every 30 s does, in order:
 2. expires pending approvals older than 7 days, and fails ``executing`` approvals
    older than 10 minutes (``interrupted`` — the process died mid-effect);
 3. fails report runs ``running`` for over 15 minutes or ``queued`` for over 30
-   (``interrupted``), assistant messages ``pending`` for over 10 minutes, and documents
-   left ``processing`` by an extraction that died — claimed over 10 minutes ago, or
-   before this hub started (``interrupted``);
+   (``interrupted``), report deliveries left ``pending`` by a hub that stopped mid-send —
+   stored over 15 minutes ago, or before this hub started (``delivery_interrupted``),
+   assistant messages ``pending`` for over 10 minutes, and documents left ``processing``
+   by an extraction that died — claimed over 10 minutes ago, or before this hub started
+   (``interrupted``);
 4. deletes what nobody needs any more: login attempts older than a day, invites
    expired a week ago, sessions revoked or expired a week ago, notifications read 90
    days ago.
@@ -69,7 +71,8 @@ NOTIFICATION_RETENTION_SECONDS = 90 * 86400
 
 #: The steps that sign audit rows: they pause while this process's audit key is not the
 #: trail's (OPS2-08); every other step runs as usual.
-AUDITED_STEPS = ("runs_started", "approvals_expired", "approvals_interrupted", "runs_interrupted")
+AUDITED_STEPS = ("runs_started", "approvals_expired", "approvals_interrupted", "runs_interrupted",
+                 "deliveries_interrupted")
 KEY_OK = "ok"
 _KEY_STATES = {
     "mismatch": "the audit key of this process is not the one the audit trail was written with",
@@ -115,7 +118,8 @@ class WorkspaceScheduler:
                  started_at: float | None = None) -> None:
         self.interval_seconds = interval_seconds
         #: When this hub process started (``db.now()``): a document claimed before it can
-        #: have no extraction running any more. ``None``: only the age rule applies.
+        #: have no extraction running any more, a delivery stored before it no sender.
+        #: ``None``: only the age rules apply.
         self.started_at = started_at
         #: The loop task of each event loop this scheduler was started on (its owning loop).
         self._tasks: dict[asyncio.AbstractEventLoop, asyncio.Task] = {}
@@ -175,6 +179,7 @@ class WorkspaceScheduler:
                 ("approvals_expired", approvals.expire_due),
                 ("approvals_interrupted", approvals.fail_stale_executing),
                 ("runs_interrupted", reports.fail_stuck_runs),
+                ("deliveries_interrupted", self._fail_interrupted_deliveries),
                 ("messages_interrupted", interrupt_pending_messages),
                 ("documents_interrupted", self._fail_interrupted_documents),
                 ("deleted", housekeeping),
@@ -224,6 +229,9 @@ class WorkspaceScheduler:
 
     def _fail_interrupted_documents(self, conn: sqlite3.Connection, now: float) -> int:
         return documents.fail_interrupted(conn, now, claimed_before=self.started_at)
+
+    def _fail_interrupted_deliveries(self, conn: sqlite3.Connection, now: float) -> int:
+        return reports.fail_stuck_deliveries(conn, now, stored_before=self.started_at)
 
     def start(self) -> None:
         """Start the loop on the running event loop (idempotent per loop).
