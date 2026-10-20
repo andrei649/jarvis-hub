@@ -402,6 +402,41 @@ def _purge_everything_but_keep(root: Path) -> dict:
     return report
 
 
+#: H423 review — the core rings, each removed with its digest under the ring's own file
+#: lock (``<ring>.json.lock``), so a writer that holds it finishes its save first and
+#: never writes the forgotten facts back after the unlink.
+_CORE_RING_FILES: tuple[str, ...] = ("cognition/core_memory.json", "cognition/user_core.json")
+
+
+def _unlink_core_ring(root: Path, ring: str) -> list[str]:
+    """Remove *ring* and its ``.sha256`` digest under the ring's file lock. Returns the
+    names removed. When the lock stays held past ``CLEAR_LOCK_TIMEOUT_S`` the files are
+    removed anyway (a forget must erase them) and a warning says so."""
+    from agents.core.cognition.memory import CLEAR_LOCK_TIMEOUT_S, CoreMemoryLocked, _path_lock
+
+    path = root / ring
+    names = [ring, ring + ".sha256"]
+    if not any((root / name).exists() for name in names):
+        return []
+    lock = _path_lock(path.with_name(path.name + ".lock"))
+    try:
+        lock.acquire(CLEAR_LOCK_TIMEOUT_S)
+    except CoreMemoryLocked:
+        lock = None
+        logger.warning("data purge: %s stayed locked; removing it without the lock", path)
+    removed: list[str] = []
+    try:
+        for name in names:
+            p = root / name
+            if p.exists():
+                p.unlink()
+                removed.append(name)
+    finally:
+        if lock is not None:
+            lock.release()
+    return removed
+
+
 def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> dict:
     """Erase the memory subsystem's at-rest content under *root*.
 
@@ -415,10 +450,14 @@ def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> d
     report: dict = {"files": [], "dirs": [], "sessions": []}
 
     for name in PURGE_MEMORY_FILES:
+        if name.removesuffix(".sha256") in _CORE_RING_FILES:
+            continue                      # removed below, under the ring's lock
         p = root / name
         if p.exists():
             p.unlink()
             report["files"].append(name)
+    for ring in _CORE_RING_FILES:
+        report["files"].extend(_unlink_core_ring(root, ring))
 
     for name in PURGE_MEMORY_DIRS:
         d = root / name
@@ -588,6 +627,10 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
     if getattr(orch, "_core_block_cache", None) is not None:
         orch._core_block_cache = None
         cleared.append("core_block_cache")
+    # H423 review: the turn's pending ring reread (with its drift notes) predates the
+    # forget too; the next block rereads the rings afresh.
+    if getattr(orch, "_core_rings_reread", None) is not None:
+        orch._core_rings_reread = None
     try:
         from agents.core.ingestion.pipeline import clear_live_ingestion
         watcher = getattr(orch, "ingestion_watcher", None)

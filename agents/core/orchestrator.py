@@ -528,7 +528,8 @@ def _core_block_key(orch) -> tuple:
         session = orch.session_id or "default"
     except AttributeError:
         session = "default"
-    return (session, time.strftime("%Y-%m-%d"))
+    cache_key = (session, time.strftime("%Y-%m-%d"))
+    return cache_key
 
 
 class Orchestrator:

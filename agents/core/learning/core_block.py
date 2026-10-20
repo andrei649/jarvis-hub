@@ -90,7 +90,7 @@ def reread_core_rings(living) -> list[str]:
     """H423 review — reread each core ring of *living* from its file before a new
     session's block is rendered, so a hand edit or another Nerva process's write reaches
     the prompt. Returns one note per ring whose file cannot be read back (its last good
-    facts stay in the block). A ring that is not a file-backed CoreMemory is left as is.
+    facts stay in the block, or none when this process never read a good copy). A ring that is not a file-backed CoreMemory is left as is.
 
     Waits at most ``PROMPT_REREAD_LOCK_TIMEOUT_S`` per ring for its lock, so the caller
     runs it once per (session, day), off the event loop."""
@@ -107,8 +107,12 @@ def reread_core_rings(living) -> list[str]:
             logger.warning("core block: the %s ring could not be reread", attr, exc_info=True)
             continue
         if problem:
+            # H423 review: a process that started over the broken edit never held a good
+            # copy of this ring, so it shows none and says so instead of claiming one.
+            shown = ("the facts shown are the last good copy" if getattr(store, "has_good_copy", True)
+                     else "no facts from it are shown")
             notes.append(f"[memory note] The {label} file was edited outside Nerva and {problem}; "
-                         "the facts shown are the last good copy until the owner fixes the file.")
+                         f"{shown} until the owner fixes the file.")
     return notes
 
 

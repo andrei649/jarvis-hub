@@ -448,8 +448,13 @@ class CoreMemory(JsonStore):
 
     def __init__(self, cap: int = 20, path: str | Path | None = None) -> None:
         self.cap = cap
+        #: H423 review — False while this ring holds no copy of its file that read back
+        #: exactly (a process that started over a hand edit it cannot take): its facts are
+        #: then not a "last good copy" of anything, and a prompt note says so.
+        self.has_good_copy = True
         super().__init__(path)
         self._baseline()
+        self._strict_boot()
 
     def _serialize(self):
         return {"facts": self._facts[-self.cap:]}
@@ -558,6 +563,7 @@ class CoreMemory(JsonStore):
             data = path.read_bytes()
         except FileNotFoundError:
             self._facts = []             # no file: an empty ring
+            self.has_good_copy = True
             return None
         except OSError as exc:
             raise CoreMemoryDrift(path, None, f"it cannot be read ({exc.strerror})") from None
@@ -566,6 +572,7 @@ class CoreMemory(JsonStore):
         facts, problem = self._strict_facts(data)
         if recorded == digest and problem is None:
             self._facts = facts          # a Nerva save, maybe another process's
+            self.has_good_copy = True
             return None
         # No digest yet (a ring saved before H423) is taken as a baseline when the file
         # reads back exactly; anything else is a hand edit and is kept first.
@@ -573,6 +580,7 @@ class CoreMemory(JsonStore):
         if problem is not None:
             raise CoreMemoryDrift(path, bak, problem)
         self._facts = facts
+        self.has_good_copy = True
         try:
             self._write_digest(digest)
         except OSError:
@@ -604,32 +612,65 @@ class CoreMemory(JsonStore):
             self.sync_from_disk(timeout=wait)
             return None
         except CoreMemoryLocked:
-            return self._adopt_without_lock()
+            return self.adopt_without_lock()
         except CoreMemoryDrift as exc:
             problem = exc.problem or "it was edited outside Nerva"
             logger.warning("core memory: %s cannot be read back (%s); the prompt keeps its last good "
                            "facts%s", self.path, problem, f"; a copy is kept at {exc.bak}" if exc.bak else "")
             return problem
 
-    def _adopt_without_lock(self) -> "str | None":
-        """The ring as its file holds it, read without the lock (another writer holds it).
-        Taken only when it reads back exactly; no digest or copy is written here."""
+    def adopt_without_lock(self) -> "str | None":
+        """The ring as its file holds it, read without the file lock (another writer holds
+        it; saves are atomic renames). Taken only when it reads back exactly: never a
+        lenient parse, and no digest or copy is written here. Returns why it was not taken
+        (the in-memory ring, the last good one, is kept), else None.
+
+        H423 review: the read happens under ``self._lock``, which every writer of this
+        ring object holds for its whole reread, change and save, so a writer of this
+        process that holds the file lock has saved before the file is read, and its save
+        is never rolled back by an older read."""
+        with self._lock:
+            try:
+                data = self.path.read_bytes()
+            except FileNotFoundError:
+                data = None
+            except OSError as exc:
+                problem = f"it cannot be read ({exc.strerror})"
+                logger.warning("core memory: %s %s; its last good facts are kept", self.path, problem)
+                return problem
+            facts, problem = ([], None) if data is None else self._strict_facts(data)
+            if problem is not None:
+                logger.warning("core memory: %s cannot be read back (%s); its last good facts are kept",
+                               self.path, problem)
+                return problem
+            self._facts = facts
+            self.has_good_copy = True
+            return None
+
+    def _strict_boot(self) -> None:
+        """H423 review — :meth:`_load` parses leniently (invalid JSON reads as an empty
+        ring, an over-cap file keeps its newest facts, a repeated fact is dropped). A ring
+        built over a file that does not read back exactly therefore holds no facts, not
+        that parse, and :attr:`has_good_copy` is False until the file is fixed; every
+        write refuses over it (:class:`CoreMemoryDrift`) and keeps the file as it is."""
+        if self.path is None:
+            return
         try:
             data = self.path.read_bytes()
         except FileNotFoundError:
-            data = None
+            return
         except OSError as exc:
-            problem = f"it cannot be read ({exc.strerror})"
-            logger.warning("core memory: %s %s; the prompt keeps its last good facts", self.path, problem)
-            return problem
-        facts, problem = ([], None) if data is None else self._strict_facts(data)
-        if problem is not None:
-            logger.warning("core memory: %s cannot be read back (%s); the prompt keeps its last good "
-                           "facts", self.path, problem)
-            return problem
+            facts, problem = [], f"it cannot be read ({exc.strerror})"
+        else:
+            facts, problem = self._strict_facts(data)
         with self._lock:
-            self._facts = facts
-        return None
+            if problem is None:
+                self._facts = facts
+                return
+            self._facts = []
+            self.has_good_copy = False
+        logger.warning("core memory: %s cannot be read back (%s); no facts are taken from it until "
+                       "the owner fixes the file", self.path, problem)
 
     def _baseline(self) -> None:
         """A ring file saved before digests existed gets one on load, so a hand edit made
@@ -732,6 +773,7 @@ class CoreMemory(JsonStore):
             count = len(self._facts)
             self._facts = []
             self._save()
+            self.has_good_copy = True
             if self.path is not None:
                 for bak in self.path.parent.glob(f"{self.path.name}.*.bak"):
                     try:

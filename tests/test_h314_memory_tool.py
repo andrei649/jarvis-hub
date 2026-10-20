@@ -1392,3 +1392,136 @@ async def test_the_undo_listing_rereads_the_rings(rig, monkeypatch, tmp_path):
     (tmp_path / "core.json").write_text("{broken", encoding="utf-8")
     body = client.get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()
     assert body["undoable"] == [] and "not valid JSON" in body["drift"]
+
+
+# ── H423 review round 4: the "last good copy" is never a lenient parse or a rollback ──
+
+def test_an_in_process_writer_holding_the_lock_is_not_rolled_back(tmp_path):
+    import threading
+
+    living = _living_memory(tmp_path)
+    living.core.put("old fact")
+    ring = living.core
+    held, done = threading.Event(), threading.Event()
+
+    def writer():                                        # the memory tool in a worker thread
+        with ring.locked(), ring._lock:
+            held.set()
+            time.sleep(0.5)                              # a slow save (fsync on home hardware)
+            ring._facts.append("new fact")
+            ring._save()
+        done.set()
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    assert held.wait(5)
+    problem = ring.refresh_for_prompt(timeout=0.1)       # a new session's reread, lock held
+    thread.join(5)
+    assert done.is_set() and problem is None
+    assert ring.list() == ["old fact", "new fact"], "the reread rolled the writer's save back"
+
+
+@pytest.mark.parametrize("edit", ['{"facts": ["a",]}', json.dumps({"facts": [f"EDIT{i}" for i in range(25)]})])
+def test_a_read_with_the_lock_held_never_takes_a_lenient_parse(tmp_path, monkeypatch, edit):
+    monkeypatch.setattr(cognition_memory, "LOCK_TIMEOUT_S", 0.2)
+    living = _living(tmp_path, core=("a", "b"))
+    (tmp_path / "core.json").write_text(edit, encoding="utf-8")
+    fd = _hold(tmp_path / "core.json.lock")              # another process holds the ring lock
+    try:
+        with pytest.raises(MemoryToolError) as err:
+            memory_tool._read_rings(living)
+    finally:
+        _let_go(fd)
+    assert err.value.reason == "memory_drift_unreadable" and "(memory)" in err.value.detail
+    assert living.core.list() == ["a", "b"], "the last good ring was replaced by a lenient parse"
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == edit
+
+
+def test_the_undo_listing_reports_drift_while_the_lock_is_held(rig, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+
+    monkeypatch.setattr(cognition_memory, "LOCK_TIMEOUT_S", 0.2)
+    asyncio.run(_call(rig, {"operations": [_op("add", text="x")]}))
+    cognition = SimpleNamespace(sub_enabled=lambda name: True, module=lambda name: rig.living)
+    monkeypatch.setattr(web, "orch", SimpleNamespace(cognition=cognition, intent_log=rig.audit))
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "t")
+    monkeypatch.setattr(memory_tool, "UNDO", rig.store)
+    (tmp_path / "core.json").write_text("{broken", encoding="utf-8")
+    fd = _hold(tmp_path / "core.json.lock")
+    try:
+        body = TestClient(web.app).get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()
+    finally:
+        _let_go(fd)
+    assert "not valid JSON" in body.get("drift", "") and body["undoable"] == []
+    assert body["memory"] == ["x"]
+
+
+@pytest.mark.parametrize("edit", ['{"facts": ["good A",]}',
+                                  json.dumps({"facts": ["EDIT1", "EDIT2", "EDIT3", "EDIT4", "EDIT5"]})])
+def test_after_a_restart_an_unreadable_ring_shows_no_facts_as_last_good(tmp_path, edit):
+    from agents.core.cognition.memory import LivingMemory
+
+    writer = CoreMemory(cap=3, path=tmp_path / "core.json")
+    writer.put("good A")
+    writer.put("good B")
+    (tmp_path / "core.json").write_text(edit, encoding="utf-8")   # the owner's broken edit
+    restarted = CoreMemory(cap=3, path=tmp_path / "core.json")    # a new process
+    assert restarted.list() == [], "a lenient parse of the edit was taken as the ring"
+    living = LivingMemory(core_path=tmp_path / "core.json", tiers_path=tmp_path / "t.json",
+                          user_path=tmp_path / "user.json")
+    living.core = restarted
+    block = _session_block(living, "s1")
+    assert "EDIT" not in block and "good A" not in block
+    assert "[memory note]" in block and "last good copy" not in block
+    assert "no facts from it are shown" in block
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == edit
+    (tmp_path / "core.json").write_text('{"facts": ["fixed"]}', encoding="utf-8")
+    block = _session_block(living, "s2")
+    assert "- fixed" in block and "[memory note]" not in block
+
+
+def test_a_pre_digest_ring_over_its_cap_is_not_truncated_at_boot(tmp_path):
+    (tmp_path / "core.json").write_text(json.dumps({"facts": ["one", "two", "three", "four"]}),
+                                        encoding="utf-8")
+    ring = CoreMemory(cap=3, path=tmp_path / "core.json")
+    assert ring.list() == []
+    assert ring.has_good_copy is False
+    with pytest.raises(CoreMemoryDrift):
+        ring.put("five")
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["one", "two", "three", "four"]
+
+
+def test_a_forget_drops_the_turns_pending_reread():
+    from agents.core import data_purge
+
+    orch = SimpleNamespace(_core_block_cache=(("s", "d"), "block"),
+                           _core_rings_reread=(("s", "d"), ["[memory note] stale"]))
+    asyncio.run(data_purge.clear_live_memory(orch))
+    assert orch._core_block_cache is None and orch._core_rings_reread is None
+
+
+def test_the_at_rest_purge_waits_for_a_ring_writer(tmp_path):
+    import threading
+
+    from agents.core import data_purge
+
+    root, living = _purge_rig(tmp_path)
+    ring = living.user_core
+    held = threading.Event()
+
+    def writer():                                        # a writer mid-save when the forget runs
+        with ring.locked(), ring._lock:
+            held.set()
+            time.sleep(0.4)
+            ring._facts.append("written back")
+            ring._save()
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    assert held.wait(5)
+    data_purge._purge_memory_at_rest(root)
+    thread.join(5)
+    assert not (root / "cognition" / "user_core.json").exists(), "a writer saved after the unlink"
+    assert not (root / "cognition" / "user_core.json.sha256").exists()

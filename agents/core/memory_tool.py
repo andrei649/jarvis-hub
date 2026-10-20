@@ -387,7 +387,9 @@ def _read_rings(living: Any) -> None:
     """A read's reread (H423 review): each ring strictly, under its lock, so a hand edit
     that cannot be read back is reported (``memory_drift_unreadable``) instead of read as
     an empty ring; one that reads back exactly is taken, as a write would. A ring whose
-    lock stays held is reread leniently: a read writes nothing, and every save is atomic."""
+    lock stays held is read without it (every save is atomic) and just as strictly: a file
+    that does not read back exactly is reported the same way and the ring keeps its last
+    good facts, never a lenient parse (H423 review)."""
     from .cognition.memory import CoreMemoryDrift, CoreMemoryLocked
 
     unreadable: list[str] = []
@@ -402,7 +404,10 @@ def _read_rings(living: Any) -> None:
                 unreadable.append(f"{exc.path.name} ({target}) {exc.problem}{where}")
                 continue
             except CoreMemoryLocked:
-                pass
+                problem = ring.adopt_without_lock()
+                if problem:
+                    unreadable.append(f"{ring.path.name} ({target}) {problem}")
+                continue
         if callable(getattr(ring, "reload", None)):
             ring.reload()
     if unreadable:
