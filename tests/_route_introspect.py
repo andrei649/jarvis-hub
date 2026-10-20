@@ -45,15 +45,42 @@ def iter_websocket_routes(app: Any) -> Iterator[Any]:
     actually serves lives on `ctx.starlette_route`. Without this the auth matrix
     never saw `/api/kanban/events` or `/api/hermes/ws`, so a new unguarded upgrade
     endpoint passed CI.
+
+    A `Mount` whose app has its own routes (a mounted FastAPI/Starlette sub-app) is
+    descended into, and its upgrade routes are yielded under the mount prefix, so a
+    WebSocket endpoint on a sub-app is classified too. A mount with no route table
+    (StaticFiles, an opaque ASGI callable) cannot be introspected here — those are
+    pinned by `iter_mounts` + test_every_mount_is_pinned instead.
     """
-    from starlette.routing import WebSocketRoute
+    yield from _walk_websockets(app.routes, "")
+
+
+def _walk_websockets(routes: Any, prefix: str) -> Iterator[Any]:
+    from types import SimpleNamespace
+
+    from starlette.routing import Mount, WebSocketRoute
 
     try:
         from fastapi.routing import _iter_routes_with_context  # fastapi >= 0.137
     except ImportError:
-        yield from (r for r in app.routes if isinstance(r, WebSocketRoute))
-        return
-    for route, ctx in _iter_routes_with_context(app.routes):
-        served = ctx.starlette_route if ctx is not None and ctx.starlette_route is not None else route
+        pairs = ((r, None) for r in routes)
+    else:
+        pairs = _iter_routes_with_context(routes)
+    for route, ctx in pairs:
+        served = ctx.starlette_route if ctx is not None and getattr(ctx, "starlette_route", None) is not None else route
         if isinstance(served, WebSocketRoute):
-            yield served
+            if not prefix:
+                yield served
+            else:
+                yield SimpleNamespace(path=prefix + served.path,
+                                      dependant=getattr(served, "dependant", None))
+        elif isinstance(served, Mount):
+            yield from _walk_websockets(served.routes, prefix + served.path)
+
+
+def iter_mounts(app: Any) -> Iterator[Any]:
+    """Yield every top-level `Mount` (H511) — an ASGI sub-application the route
+    matrices cannot see inside unless it exposes a route table."""
+    from starlette.routing import Mount
+
+    yield from (r for r in app.routes if isinstance(r, Mount))

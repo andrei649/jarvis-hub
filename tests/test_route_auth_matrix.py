@@ -53,10 +53,11 @@ PENDING_GUARD = set()  # SEC-3 COMPLETE — every open mutator is now guarded or
 # reads had none, so a personal-content GET could ship open silently. From here
 # on every OPEN GET must be classified by the *substance of its handler* (what
 # the response body contains), never by its URL shape:
-#   INTENTIONALLY_OPEN_READS — verified to expose no personal content;
+#   INTENTIONALLY_OPEN_READS — PUBLIC_READS (verified to expose no personal
+#                              content) | the in-handler-credentialed GETs (H511);
 #   PENDING_READ_GUARD       — touches personal data, guard still owed (debt,
 #                              shrink-only, same contract as PENDING_GUARD).
-INTENTIONALLY_OPEN_READS = {
+PUBLIC_READS = {
     # App shell + static assets (serve markup/bytes, never user data).
     "GET /",
     "GET /v1",
@@ -74,8 +75,6 @@ INTENTIONALLY_OPEN_READS = {
     "GET /.well-known/agent-card",
     "GET /.well-known/oauth-protected-resource",
     "GET /api/mcp/server",               # status of a disabled-by-default surface
-    "GET /api/widget/{token}",           # widget capability token authenticates
-    "GET /api/widget/{token}/config",
     # Liveness / ops meters (aggregate counters, degradation flags).
     "GET /healthz",
     "GET /readyz",
@@ -141,6 +140,8 @@ INTENTIONALLY_OPEN_READS = {
     # WorldView liveness booleans; the overview (recon/alerts) is guarded.
     "GET /api/worldview/status",
 }
+# (The widget capability-token reads are open too, but their handler checks a
+# credential, so they are listed in IN_HANDLER_GUARDED below and folded in there.)
 
 # Personal-data reads still open — SEC-B6 debt. Shrink-only.
 PENDING_READ_GUARD = set()  # SEC-B6 COMPLETE — every personal-content read now carries user_guard.
@@ -162,6 +163,11 @@ IN_HANDLER_GUARDED = {
     "GET /api/widget/{token}/config": "widget capability token in the path",
 }
 
+# H511 review: the read half is partitioned exactly like the mutators — an open GET
+# is either public by design (PUBLIC_READS) or credentialed in its handler (and then
+# proved by a probe); there is no third, say-so-only bucket.
+INTENTIONALLY_OPEN_READS = PUBLIC_READS | {k for k in IN_HANDLER_GUARDED if k.startswith("GET ")}
+
 # Open mutators with no credential to check — public ingress by design.
 PUBLIC_BY_DESIGN = {
     "POST /api/channels/pairing/request",   # lands in owner approval, mints nothing
@@ -176,6 +182,39 @@ WS_GUARDED_IN_HANDLER = {
     "WS /api/kanban/events": "admin",
     "WS /api/hermes/ws": "admin",
 }
+
+# H511 review: a step-up — a route the dependant graph classifies as "user" whose
+# handler demands the admin credential for part of its input. The matrix records
+# these as "user"; each is proved by a probe in test_route_inhandler_guards.py
+# (user-tier caller refused, owner admitted).
+IN_HANDLER_STEP_UP = {
+    "POST /api/vlm/composer/prepare": "admin when selected_turn=true",
+    "POST /api/vlm/composer/describe-prepared": "admin when selected_turn=true",
+    "POST /api/vlm/composer/chat-prepared": "admin when selected_turn=true",
+}
+
+# H511 review: every function in agents/ that *calls* a guard in its body (not as a
+# Depends) — found by an AST scan, pinned here, and mapped to the routes whose
+# in-handler or step-up check it is. A new in-body guard call fails CI until it is
+# mapped to an entry that has a probe.
+IN_HANDLER_GUARD_SITES = {
+    "agents/core/routers/kanban.py:events": ("WS /api/kanban/events",),
+    "agents/core/routers/hermes_runtime.py:websocket_rpc": ("WS /api/hermes/ws",),
+    "agents/core/routers/hermes_runtime.py:_send_events": ("WS /api/hermes/ws",),
+    "agents/core/routers/composer_vision.py:_selected_owner_scope": tuple(sorted(IN_HANDLER_STEP_UP)),
+}
+_GUARD_CALLS = {"admin_guard", "user_guard", "_admin_guard", "_user_guard"}
+
+# H511 review: mounted ASGI sub-apps. A mount with a route table is descended into
+# by iter_websocket_routes; one without (StaticFiles, an opaque ASGI app) cannot be
+# introspected, so it must be listed here by type. StaticFiles serves GET/HEAD
+# bytes only and refuses WebSocket scopes.
+ALLOWED_MOUNTS = {
+    "/static": "StaticFiles",
+    "/v2/assets": "StaticFiles",
+}
+
+WS_SNAPSHOT = repo_root / "tests" / "_snapshots" / "ws_route_auth.json"
 
 
 def _guard_of(dep) -> str:
@@ -345,9 +384,110 @@ def test_open_allowlists_split_into_in_handler_and_public():
     if mutators & PUBLIC_BY_DESIGN:
         problems.append(f"both in-handler and public: {sorted(mutators & PUBLIC_BY_DESIGN)}")
     reads = {k for k in IN_HANDLER_GUARDED if k.startswith("GET ")}
-    if reads - INTENTIONALLY_OPEN_READS:
-        problems.append(f"in-handler reads missing from INTENTIONALLY_OPEN_READS: {sorted(reads - INTENTIONALLY_OPEN_READS)}")
+    if reads & PUBLIC_READS:
+        problems.append(f"both in-handler and public: {sorted(reads & PUBLIC_READS)}")
+    if PUBLIC_READS | reads != INTENTIONALLY_OPEN_READS:
+        problems.append("INTENTIONALLY_OPEN_READS must equal IN_HANDLER_GUARDED reads | PUBLIC_READS")
     not_open = sorted(k for k in IN_HANDLER_GUARDED if runtime.get(k) != "open")
     if not_open:
         problems.append(f"IN_HANDLER_GUARDED lists routes that are gone or dependency-guarded: {not_open}")
     assert not problems, "\n".join(problems)
+
+
+def test_websocket_guards_match_snapshot():
+    """H511 review: WebSocket tiers are pinned exactly like HTTP guards — a new
+    upgrade route, a removed one, or a tier change (admin -> user, a dependency
+    guard dropped) fails until tests/_snapshots/ws_route_auth.json is updated."""
+    runtime = _ws_guards()
+    snap = json.loads(WS_SNAPSHOT.read_text())
+    assert runtime == snap, (
+        "WebSocket route auth changed. If intended, update tests/_snapshots/ws_route_auth.json.\n"
+        f"runtime={runtime}\nsnapshot={snap}")
+
+
+def test_every_mount_is_pinned():
+    """H511 review: a mounted ASGI app is invisible to the route matrices unless it
+    has a route table, so every mount must be an allowlisted StaticFiles."""
+    from agents.web import app
+    from tests._route_introspect import iter_mounts
+
+    seen = {m.path: type(m.app).__name__ for m in iter_mounts(app)}
+    unexpected = {p: t for p, t in seen.items() if ALLOWED_MOUNTS.get(p) != t}
+    assert not unexpected, (
+        "Unclassified mounted sub-app(s) — guard it, or list it in ALLOWED_MOUNTS with "
+        f"the reason it serves nothing credentialed: {unexpected}")
+
+
+def test_mount_check_and_ws_walk_see_mounted_sub_apps():
+    """The synthetic case: a WebSocket route on a mounted sub-app is enumerated under
+    its mount prefix (so the WS pin catches it), and the mount itself is flagged."""
+    from fastapi import FastAPI, WebSocket
+
+    sub = FastAPI()
+
+    @sub.websocket("/sock")
+    async def _sock(ws: WebSocket):
+        await ws.close()
+
+    app = FastAPI()
+    app.mount("/sub", sub)
+    assert _ws_guards(app) == {"WS /sub/sock": "open"}
+
+    from tests._route_introspect import iter_mounts
+    assert [(m.path, type(m.app).__name__) for m in iter_mounts(app)] == [("/sub", "FastAPI")]
+    assert ALLOWED_MOUNTS.get("/sub") != "FastAPI"
+
+
+def _scan_in_body_guard_calls() -> set:
+    """AST-scan agents/ for every function whose body calls a guard directly."""
+    import ast
+
+    sites = set()
+
+    def visit(node, owner, rel):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                visit(child, child.name, rel)
+                continue
+            if isinstance(child, ast.Call) and owner is not None:
+                fn = child.func
+                name = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else ""
+                if name in _GUARD_CALLS:
+                    sites.add(f"{rel}:{owner}")
+            visit(child, owner, rel)
+
+    for path in sorted((repo_root / "agents").rglob("*.py")):
+        rel = path.relative_to(repo_root).as_posix()
+        if rel == "agents/core/routers/_deps.py":   # the lazy wrappers themselves
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        visit(tree, None, rel)
+    return sites
+
+
+def test_every_in_body_guard_call_is_pinned():
+    """H511 review: a credential check inside a handler (or a helper it calls) is
+    found by the AST scan, so it cannot hide behind a "user"/"open" classification:
+    each site must map to WS_GUARDED_IN_HANDLER / IN_HANDLER_STEP_UP entries, each of
+    which has a probe in test_route_inhandler_guards.py."""
+    found = _scan_in_body_guard_calls()
+    problems = []
+    if found != set(IN_HANDLER_GUARD_SITES):
+        problems.append(f"in-body guard call sites changed: new={sorted(found - set(IN_HANDLER_GUARD_SITES))} "
+                        f"gone={sorted(set(IN_HANDLER_GUARD_SITES) - found)}")
+    proved = set(WS_GUARDED_IN_HANDLER) | set(IN_HANDLER_STEP_UP)
+    unmapped = sorted(r for routes in IN_HANDLER_GUARD_SITES.values() for r in routes if r not in proved)
+    if unmapped:
+        problems.append(f"sites mapped to routes with no probe entry: {unmapped}")
+    assert not problems, "\n".join(problems)
+
+
+def test_step_up_routes_are_user_tier():
+    """A step-up entry must name a live route whose dependency tier is "user" — the
+    in-handler admin check is what the probe proves on top of it."""
+    runtime = _runtime_guards()
+    wrong = {k: runtime.get(k) for k in IN_HANDLER_STEP_UP if runtime.get(k) != "user"}
+    assert not wrong, f"IN_HANDLER_STEP_UP entries not user-tier routes: {wrong}"
