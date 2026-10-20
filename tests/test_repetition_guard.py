@@ -296,3 +296,297 @@ def test_ollama_stream_hides_repetition_loop_live():
         asyncio.run(backend.client.aclose())
     assert out == ""
     assert len("".join(shown)) < len(looping) // 4
+
+
+# ── H393 review round 1: every cloud backend, tool turns, late loops ──
+
+_TOOL_CALL = {"id": "c1", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}
+
+
+class _CapturedPost:
+    """Minimal async client: answers every POST with one fixed JSON body."""
+
+    def __init__(self, data):
+        self.data = data
+
+    async def post(self, url, json=None, headers=None):
+        data = self.data
+
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return data
+
+        return _Resp()
+
+    async def aclose(self):
+        pass
+
+
+def _openrouter(data):
+    from agents.core.llm.openrouter import OpenRouterBackend
+
+    return OpenRouterBackend(api_key="k", client=_CapturedPost(data))
+
+
+def test_openrouter_generate_drops_truncated_repetition_loop():
+    data = {"choices": [{"message": {"content": REPEATED_TEXT}, "finish_reason": "length"}]}
+    assert asyncio.run(_openrouter(data).generate("acme/m", "p")) == ""
+
+
+def test_openrouter_generate_keeps_complete_repetitive_answer():
+    data = {"choices": [{"message": {"content": REPEATED_TEXT}, "finish_reason": "stop"}]}
+    assert asyncio.run(_openrouter(data).generate("acme/m", "p")) == REPEATED_TEXT
+
+
+def test_openrouter_stream_fallback_never_paints_a_truncated_loop():
+    data = {"choices": [{"message": {"content": REPEATED_TEXT}, "finish_reason": "length"}]}
+    shown = []
+    out = asyncio.run(_openrouter(data).generate_stream("acme/m", "p", on_token=shown.append))
+    assert out == "" and shown == []
+
+
+def test_openrouter_tool_turn_drops_truncated_loop_but_keeps_calls():
+    data = {"choices": [{"message": {"content": REPEATED_TEXT, "tool_calls": [_TOOL_CALL]},
+                         "finish_reason": "length"}]}
+    turn = asyncio.run(_openrouter(data).generate_tool_turn(
+        "acme/m", [{"role": "user", "content": "hi"}], []))
+    assert turn.content == "" and len(turn.tool_calls) == 1 and turn.finish_reason == "length"
+
+
+_DI_BASE = "https://api.deepinfra.com/v1/openai"
+
+
+def _deepinfra_run(handler, call):
+    from agents.core.llm.deepinfra import DeepInfraBackend
+    from agents.core.llm.egress import llm_async_client
+
+    async def go():
+        client = llm_async_client("deepinfra", base_url=_DI_BASE, trust_env=False,
+                                  transport=httpx.MockTransport(handler))
+        backend = DeepInfraBackend("deepinfra-key", base_url=_DI_BASE, client=client)
+        try:
+            return await call(backend)
+        finally:
+            await backend.aclose()
+
+    return asyncio.run(go())
+
+
+def test_deepinfra_generate_drops_truncated_repetition_loop():
+    data = {"choices": [{"message": {"content": REPEATED_TEXT}, "finish_reason": "length"}]}
+    out = _deepinfra_run(lambda req: httpx.Response(200, json=data),
+                         lambda b: b.generate("vendor/m", "p"))
+    assert out == ""
+
+
+def test_deepinfra_generate_keeps_complete_repetitive_answer():
+    data = {"choices": [{"message": {"content": REPEATED_TEXT}, "finish_reason": "stop"}]}
+    out = _deepinfra_run(lambda req: httpx.Response(200, json=data),
+                         lambda b: b.generate("vendor/m", "p"))
+    assert out == REPEATED_TEXT
+
+
+def _deepinfra_sse(text: str, finish: str) -> bytes:
+    frames = [{"choices": [{"delta": {"content": text[i:i + 30]}}]} for i in range(0, len(text), 30)]
+    frames.append({"choices": [{"delta": {}, "finish_reason": finish}]})
+    return ("".join(f"data: {json.dumps(f)}\n\n" for f in frames) + "data: [DONE]\n\n").encode()
+
+
+def test_deepinfra_stream_drops_truncated_loop_and_hides_it_live():
+    looping = UNALIGNED_TEXT * 4
+    body = _deepinfra_sse(looping, "length")
+    shown = []
+    out = _deepinfra_run(
+        lambda req: httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body),
+        lambda b: b.generate_stream("vendor/m", "p", on_token=shown.append))
+    assert out == ""
+    assert len("".join(shown)) < len(looping) // 4
+
+
+def test_deepinfra_stream_shows_ordinary_answer_live():
+    text = "\n".join(f"Step {i}: a distinct instruction, part {i}." for i in range(60))
+    body = _deepinfra_sse(text, "length")
+    shown = []
+    out = _deepinfra_run(
+        lambda req: httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body),
+        lambda b: b.generate_stream("vendor/m", "p", on_token=shown.append))
+    assert out == text and "".join(shown) == text
+
+
+def test_deepinfra_tool_turn_drops_truncated_loop():
+    data = {"choices": [{"message": {"content": REPEATED_TEXT}, "finish_reason": "length"}]}
+    turn = _deepinfra_run(lambda req: httpx.Response(200, json=data),
+                          lambda b: b.generate_tool_turn("vendor/m", [{"role": "user", "content": "x"}], []))
+    assert turn.content == "" and turn.finish_reason == "length"
+
+
+def _claude_tool_turn(stop_reason):
+    def handler(request):
+        return httpx.Response(200, json={
+            "content": [{"type": "text", "text": REPEATED_TEXT}],
+            "stop_reason": stop_reason,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    backend = _claude_backend(handler)
+    try:
+        return asyncio.run(backend.generate_tool_turn(
+            "claude-x", [{"role": "user", "content": "hi"}], []))
+    finally:
+        asyncio.run(backend.client.aclose())
+
+
+def test_claude_tool_turn_drops_truncated_repetition_loop():
+    assert _claude_tool_turn("max_tokens").content == ""
+
+
+def test_claude_tool_turn_keeps_complete_answer():
+    assert _claude_tool_turn("end_turn").content == REPEATED_TEXT
+
+
+def test_gemini_tool_turn_drops_truncated_repetition_loop():
+    body = _gemini_frame(REPEATED_TEXT, "MAX_TOKENS")
+    turn = _gemini_run(lambda req: httpx.Response(200, json=body),
+                       lambda b: b.generate_tool_turn("gemini-x", [{"role": "user", "content": "hi"}], []))
+    assert turn.content == ""
+
+
+def test_gemini_tool_turn_keeps_complete_answer():
+    body = _gemini_frame(REPEATED_TEXT, "STOP")
+    turn = _gemini_run(lambda req: httpx.Response(200, json=body),
+                       lambda b: b.generate_tool_turn("gemini-x", [{"role": "user", "content": "hi"}], []))
+    assert turn.content == REPEATED_TEXT
+
+
+def _local_run(backend_cls, base, data, call):
+    backend = backend_cls(base)
+    backend.client = httpx.AsyncClient(base_url=base,
+                                       transport=httpx.MockTransport(lambda req: httpx.Response(200, json=data)))
+    try:
+        return asyncio.run(call(backend))
+    finally:
+        asyncio.run(backend.client.aclose())
+
+
+def test_lmstudio_tool_turn_with_calls_drops_truncated_loop():
+    from agents.core.llm.base import LMStudioBackend
+
+    data = {"choices": [{"message": {"content": REPEATED_TEXT, "tool_calls": [_TOOL_CALL]},
+                         "finish_reason": "length"}]}
+    turn = _local_run(LMStudioBackend, "http://lmstudio.invalid", data,
+                      lambda b: b.generate_tool_turn("m", [{"role": "user", "content": "x"}], []))
+    assert turn.content == "" and len(turn.tool_calls) == 1
+
+
+def test_ollama_tool_turn_drops_truncated_loop():
+    from agents.core.llm.base import OllamaBackend
+
+    data = {"message": {"content": REPEATED_TEXT, "thinking": "some reasoning"},
+            "done": True, "done_reason": "length"}
+    turn = _local_run(OllamaBackend, "http://ollama.invalid", data,
+                      lambda b: b.generate_tool_turn("m", [{"role": "user", "content": "x"}], []))
+    assert turn.content == ""
+
+
+def test_ollama_generate_drops_truncated_loop_without_exhaustion_reply():
+    from agents.core.llm.base import OllamaBackend
+
+    data = {"response": REPEATED_TEXT, "thinking": "some reasoning", "done": True, "done_reason": "length"}
+    out = _local_run(OllamaBackend, "http://ollama.invalid", data, lambda b: b.generate("m", "p"))
+    assert out == ""
+
+
+def test_ollama_generate_keeps_complete_repetitive_answer():
+    from agents.core.llm.base import OllamaBackend
+
+    data = {"response": REPEATED_TEXT, "done": True, "done_reason": "stop"}
+    out = _local_run(OllamaBackend, "http://ollama.invalid", data, lambda b: b.generate("m", "p"))
+    assert out == REPEATED_TEXT
+
+
+def test_responses_stream_hides_loop_live_but_delivers_complete_answer():
+    from agents.core.llm.responses import ResponsesBackend
+
+    looping = UNALIGNED_TEXT * 4
+    events = [{"type": "response.output_text.delta", "delta": looping[i:i + 30]}
+              for i in range(0, len(looping), 30)]
+    events.append({"type": "response.completed", "response": {
+        "status": "completed",
+        "output": [{"type": "message", "role": "assistant",
+                    "content": [{"type": "output_text", "text": looping}]}],
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+    }})
+    body = b"".join(("data: " + json.dumps(e) + "\n\n").encode() for e in events)
+
+    async def go():
+        backend = ResponsesBackend("fixture-only",
+                                   transport=httpx.MockTransport(lambda req: httpx.Response(200, content=body)))
+        shown = []
+        try:
+            out = await backend.generate_stream("gpt-4.1", "p", on_token=shown.append)
+        finally:
+            await backend.aclose()
+        return out, "".join(shown)
+
+    out, shown = asyncio.run(go())
+    assert out == looping.strip()              # complete (not truncated): delivered
+    assert len(shown) < len(looping) // 4      # but never painted live in full
+
+
+# A long, varied, legitimate answer that a loop can follow.
+_LEGIT = "\n".join(
+    f"Paragraph {i}: unique content about topic number {i} with details {i * 7}." for i in range(400)
+)
+
+
+def _late_loop_shown(prefix_len: int, unit: str, step: int = 8) -> int:
+    from agents.core.llm.repetition_guard import RepetitionStreamGuard
+
+    prefix = _LEGIT[:prefix_len]
+    text = prefix + unit * 80
+    guard = RepetitionStreamGuard()
+    out = "".join(guard.feed(text[i:i + step]) for i in range(0, len(text), step))
+    assert guard.tripped is True
+    assert out.startswith(prefix)
+    return len(out) - len(prefix)
+
+
+def test_stream_guard_cuts_a_late_loop_after_a_few_repeats():
+    unit = "the same sixty-plus character fragment keeps flowing without a break "
+    for prefix_len in (0, 1500, 3600, 6000):
+        # Was ~34 repeats (2.4 KB) once a long prefix filled the 4000-char tail.
+        assert _late_loop_shown(prefix_len, unit) <= 6 * len(unit)
+
+
+def test_stream_guard_catches_a_long_period_loop():
+    unit = "".join(f"Block {i}: a long-period loop body sentence number {i} of the cycle. " for i in range(8))
+    assert len(unit) > 500
+    # Was never caught live: a 520-char period never reached the tail's dominance ratio.
+    assert _late_loop_shown(3600, unit) <= 6 * len(unit)
+
+
+def test_stream_guard_lets_structured_but_varied_text_through():
+    from agents.core.llm.repetition_guard import RepetitionStreamGuard
+
+    table = "| Name | Value |\n|------|-------|\n" + "".join(f"| row {i} | {i * 3} |\n" for i in range(200))
+    code = "".join(f"    result.append(compute(item_{i}, factor={i}))\n" for i in range(80))
+    rule = "-" * 80 + "\n"
+    text = "Intro.\n" + table + rule + code + rule + "Done."
+    guard = RepetitionStreamGuard()
+    out = "".join(guard.feed(text[i:i + 5]) for i in range(0, len(text), 5))
+    assert out == text and guard.tripped is False
+
+
+def test_horizontal_rules_do_not_count_as_repetition():
+    # Two 80-dash markdown rules: the 60-char window recurs at 21 offsets inside
+    # each rule. Overlapping occurrences must not be scored as coverage.
+    body = "\n".join(f"Line {i}: varied prose about subject {i} and its outcome {i * 11}." for i in range(50))
+    text = body + "\n" + "-" * 80 + "\n" + body.upper() + "\n" + "-" * 80 + "\nEnd."
+    assert len(text) > 4000
+    assert is_repetition_dominated(text[-4000:]) is False
+    assert LLMBackend._finalize_cloud(text, "length", "m") == text.strip()

@@ -68,9 +68,19 @@ def is_repetition_dominated(text: str) -> bool:
     # A window must appear this many times for its occurrences to cover
     # >= DOMINANCE_RATIO of the fragment (and at least _MIN_REPEAT_COUNT).
     needed = max(_MIN_REPEAT_COUNT, math.ceil(n * _DOMINANCE_RATIO / window))
+    # Only NON-overlapping occurrences count: inside one long run of a single
+    # character (a markdown rule of 80 dashes) the same window recurs at every
+    # offset, and counting those overlaps would score two horizontal rules as
+    # "covering" 2.5 KB of text. Non-overlapping occurrences x window is the
+    # real coverage; a loop's period >= window is unaffected.
     counts: dict[str, int] = {}
+    last: dict[str, int] = {}
     for i in range(n - window + 1):
         key = text[i : i + window]
+        prev = last.get(key)
+        if prev is not None and i - prev < window:
+            continue
+        last[key] = i
         c = counts.get(key, 0) + 1
         if c >= needed:
             return True
@@ -94,7 +104,9 @@ def _line_repetition_dominated(text: str, n: int) -> bool:
 
 # Finish reasons that mean "the output budget ran out", across wire dialects:
 # OpenAI-compatible / Ollama ``length``, Anthropic ``max_tokens``, Gemini
-# ``MAX_TOKENS``, OpenAI Responses ``max_output_tokens``.
+# ``MAX_TOKENS``, OpenAI Responses ``max_output_tokens``. (The Responses backend
+# refuses ``incomplete`` responses before finalizing, so that last spelling is
+# kept for dialect completeness and never reaches a finalizer today.)
 TRUNCATED_FINISH_REASONS = frozenset({"length", "max_tokens", "MAX_TOKENS", "max_output_tokens"})
 
 
@@ -108,19 +120,55 @@ def is_truncated_finish(finish: object) -> bool:
 # and the cost of each check stays bounded however long the stream runs.
 _STREAM_TAIL = 4000
 
-# Re-check after this many new characters rather than on every token.
+# Re-run the whole-tail dominance check after this many new characters rather
+# than on every token.
 _STREAM_CHECK_EVERY = 200
+
+# The onset detector (``_loop_suffix``) trips once the stream ENDS in at least
+# ``_MIN_REPEAT_COUNT`` back-to-back copies of one period spanning at least this
+# many characters. Measured from the loop's onset rather than over the whole
+# tail, so a loop that starts late in a long answer is cut after ~5 repeats
+# instead of the ~35 the tail-wide dominance ratio would need.
+_STREAM_MIN_LOOP_SPAN = 300
+
+
+def _loop_suffix(tail: str) -> bool:
+    """True when ``tail`` ends in ``_MIN_REPEAT_COUNT``+ copies of one period.
+
+    Candidate periods come from earlier occurrences of the last
+    ``_REPEAT_WINDOW`` characters (nearest first), each verified by a single
+    slice comparison — so a check costs a few linear scans of the bounded tail.
+    """
+    n = len(tail)
+    if n < _STREAM_MIN_LOOP_SPAN:
+        return False
+    key = tail[-_REPEAT_WINDOW:]
+    start = n - _REPEAT_WINDOW
+    max_period = n // _MIN_REPEAT_COUNT
+    pos = tail.rfind(key, 0, n - 1)
+    while pos != -1:
+        period = start - pos
+        if period > max_period:
+            return False
+        span = max(_MIN_REPEAT_COUNT * period, _STREAM_MIN_LOOP_SPAN)
+        if span <= n and tail[n - span:n - period] == tail[n - span + period:]:
+            return True
+        pos = tail.rfind(key, 0, pos + _REPEAT_WINDOW - 1)
+    return False
 
 
 class RepetitionStreamGuard:
     """Incremental repetition-loop detector for a live token stream.
 
     ``feed(chunk)`` returns the text that is safe to show right now. Once the
-    stream's tail becomes repetition-dominated the guard trips and every later
-    chunk (including the one that tripped it) is withheld, so a degenerate loop
-    is never painted live into the chat bubble. The caller still accumulates
-    the full text itself — the final answer is decided by the finalizers, this
-    only governs what is displayed while the model is still generating.
+    stream's tail becomes repetition-dominated — or it ends in five or more
+    back-to-back copies of one fragment (``_loop_suffix``, checked on every
+    chunk) — the guard trips and every later chunk (including the one that
+    tripped it) is withheld, so a degenerate loop is never painted live into
+    the chat bubble beyond its first few repeats. Text shown before the trip is
+    not retracted. The caller still accumulates the full text itself — the
+    final answer is decided by the finalizers, this only governs what is
+    displayed while the model is still generating.
     """
 
     def __init__(self) -> None:
@@ -133,6 +181,9 @@ class RepetitionStreamGuard:
             return ""
         self._tail = (self._tail + chunk)[-_STREAM_TAIL:]
         self._since_check += len(chunk)
+        if _loop_suffix(self._tail):
+            self.tripped = True
+            return ""
         if self._since_check >= _STREAM_CHECK_EVERY and len(self._tail) >= MIN_FRAGMENT_LENGTH:
             self._since_check = 0
             if is_repetition_dominated(self._tail):

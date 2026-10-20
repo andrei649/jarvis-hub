@@ -206,7 +206,7 @@ class ClaudeBackend(LLMBackend):
             return ToolTurn(content=error)
         blocks = data.get("content") or []
         return ToolTurn(
-            content=self._finalize_cloud(anthropic_text(blocks)),
+            content=self._finalize_cloud(anthropic_text(blocks), data.get("stop_reason"), payload["model"]),
             tool_calls=parse_openai_tool_calls(anthropic_tool_calls(blocks)),
             finish_reason=normalize_finish_reason(ANTHROPIC_FINISH_REASONS, data.get("stop_reason")),
             usage=anthropic_usage(data),

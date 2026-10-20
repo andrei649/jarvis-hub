@@ -498,10 +498,20 @@ class LLMBackend(ABC):
         repetition-dominated, the model spent its budget in a loop; drop the
         fragment like ``_finalize_stream`` does instead of delivering the flood.
         """
-        answer = strip_thinking(text or "")
+        return LLMBackend._drop_truncated_loop(strip_thinking(text or ""), finish, model)
+
+    @staticmethod
+    def _drop_truncated_loop(answer: str, finish: object = None, model: str = "") -> str:
+        """H393: ``""`` when ``answer`` is a truncated repetition loop, else ``answer``.
+
+        Shared by ``_finalize_cloud`` and every backend's tool turn: a reply cut
+        at the output cap (``is_truncated_finish``) whose text is
+        repetition-dominated is the model's loop, not an answer. A complete reply
+        (any other finish, or none reported) is never touched.
+        """
         if answer and is_truncated_finish(finish) and is_repetition_dominated(answer):
             logger.warning(
-                "Cloud reply truncated at max_tokens with repetition-dominated "
+                "Reply truncated at max_tokens with repetition-dominated "
                 "output (model=%s); dropping the fragment instead of "
                 "delivering the flood",
                 model,
@@ -683,7 +693,9 @@ class LMStudioBackend(LLMBackend):
             finish = choice.get("finish_reason")
             tool_calls = parse_openai_tool_calls(message.get("tool_calls", []) or [])
             content = (
-                strip_thinking(message.get("content", "") or "")
+                self._drop_truncated_loop(
+                    strip_thinking(message.get("content", "") or ""), finish, model
+                )
                 if tool_calls
                 else _finalize_lmstudio_message(message, finish, model)
             )
@@ -961,8 +973,11 @@ class OllamaBackend(LLMBackend):
             resp = await self.client.post("/api/generate", json=payload)
             resp.raise_for_status()
             data = resp.json()
-            answer = strip_thinking(data.get("response", "") or "")
-            if not answer and data.get("done_reason") == "length":
+            raw_answer = strip_thinking(data.get("response", "") or "")
+            # H393: a truncated repetition loop degrades to no answer (like the
+            # stream finalizer), not to the "context exhausted" reply below.
+            answer = self._drop_truncated_loop(raw_answer, data.get("done_reason"), model)
+            if not raw_answer and data.get("done_reason") == "length":
                 logger.warning(
                     "Ollama truncated at num_predict before an answer (model=%s); "
                     "the model filled its context before answering — load a larger-context "
@@ -1011,9 +1026,10 @@ class OllamaBackend(LLMBackend):
             tool_calls = (
                 parse_openai_tool_calls(ollama_tool_calls(raw_calls)) if raw_calls else ()
             )
-            content = strip_thinking(message.get("content", "") or "")
             finish = data.get("done_reason")
-            if not content and not tool_calls and finish == "length":
+            raw_content = strip_thinking(message.get("content", "") or "")
+            content = self._drop_truncated_loop(raw_content, finish, model)   # H393
+            if not raw_content and not tool_calls and finish == "length":
                 logger.warning(
                     "Ollama truncated at num_predict before an answer (model=%s)", model
                 )

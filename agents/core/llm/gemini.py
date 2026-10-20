@@ -366,7 +366,7 @@ class GeminiBackend(LLMBackend):
             payload["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO"}}
         return self._fit_effort(payload, model or self.model)
 
-    def _tool_turn_from_response(self, data: Any) -> ToolTurn:
+    def _tool_turn_from_response(self, data: Any, model: str = "") -> ToolTurn:
         usage = gemini_usage(data)
         candidates = data.get("candidates") if isinstance(data, dict) else None
         if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict):
@@ -379,7 +379,7 @@ class GeminiBackend(LLMBackend):
         raw_calls, signatures = gemini_tool_calls(parts)
         remember_thought_signatures(self._thought_signatures, signatures)
         return ToolTurn(
-            content=self._finalize_cloud(gemini_text(parts)),
+            content=self._finalize_cloud(gemini_text(parts), candidate.get("finishReason"), model),
             usage=usage,
             tool_calls=parse_openai_tool_calls(raw_calls),
             finish_reason=normalize_finish_reason(
@@ -420,7 +420,7 @@ class GeminiBackend(LLMBackend):
                     json=payload,
                 )
                 response.raise_for_status()
-                turn = self._tool_turn_from_response(response.json())
+                turn = self._tool_turn_from_response(response.json(), actual_model)
                 self._report_success(binding)
                 return turn
             except ReasoningEffortRefused:
