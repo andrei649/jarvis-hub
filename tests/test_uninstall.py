@@ -170,7 +170,7 @@ def test_cli_purge_error_reported_cleanly(app_root, monkeypatch, capsys):
         raise PurgeError("pre-forget backup failed verification")
 
     monkeypatch.setattr("agents.core.data_purge.purge_data", raising_purge)
-    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_name()}",
+    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_path()}",
                    "--root", str(app_root)])
     assert rc == 1
     assert "uninstall aborted" in capsys.readouterr().out
@@ -197,6 +197,12 @@ def test_cli_confirm_runs_and_prints_json(app_root, capsys):
 def _data_name() -> str:
     from agents.core.paths import data_root
     return data_root().name
+
+
+def _data_path() -> str:
+    """--yes-purge takes the data root's full path (binds a script to one machine's root)."""
+    from agents.core.paths import data_root
+    return str(data_root())
 
 
 class _Tty(io.StringIO):
@@ -260,7 +266,7 @@ def test_cli_purge_needs_typed_name_when_not_a_terminal(app_root, monkeypatch):
     out = io.StringIO()
     rc = un._main(["--confirm", "--purge-data", "--root", str(app_root)], out=out, inp=io.StringIO(""))
     assert rc == 2
-    assert f"--yes-purge={_data_name()}" in out.getvalue()
+    assert f"--yes-purge={_data_path()}" in out.getvalue()
     assert calls == []
     assert (app_root / ".venv").exists()  # a refused purge removes no software either
 
@@ -280,7 +286,7 @@ def test_cli_purge_right_yes_purge_runs(app_root, monkeypatch):
     calls = []
     monkeypatch.setattr("agents.core.data_purge.purge_data", _fake_purge(calls))
     out = io.StringIO()
-    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_name()}",
+    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_path()}",
                    "--root", str(app_root)], out=out)
     assert rc == 0
     assert calls == [True]
@@ -351,8 +357,11 @@ def test_desktop_windows_nsis_uninstaller_and_msi_manual(app_root, tmp_path):
     ran = []
     report = un.run_uninstall(app_root, gui=True, desktop=desktop,
                               runner=lambda argv: ran.append(argv) or 0)
-    assert ran == [[str(nsis / "uninstall.exe"), "/S"]]
+    # `_?=<dir>` makes NSIS run in place and wait, instead of relaunching from %TEMP%
+    # and exiting 0 before anything is gone.
+    assert ran == [[str(nsis / "uninstall.exe"), "/S", f"_?={nsis}"]]
     assert str(nsis) in report["desktop"]["removed"]
+    assert not nsis.exists()  # the uninstall.exe `_?=` leaves behind is removed too
     assert not (local / "com.jarvis.hub").exists() and not lnk.exists()
     assert report["desktop"]["manual"] == [{
         "path": str(pf / "Jarvis Hub"),
@@ -427,7 +436,7 @@ def test_nerva_uninstall_verb_delegates(app_root, monkeypatch):
     rc = main(["uninstall", "--confirm", "--purge-data", "--root", str(app_root)],
               context=_ctx(io.StringIO()))
     assert rc == 2 and calls == []
-    rc = main(["uninstall", "--confirm", "--purge-data", "--yes-purge", _data_name(),
+    rc = main(["uninstall", "--confirm", "--purge-data", "--yes-purge", _data_path(),
                "--root", str(app_root)], context=_ctx(io.StringIO()))
     assert rc == 0 and calls == [True]
     assert not (app_root / ".venv").exists()
@@ -440,12 +449,21 @@ def test_uninstall_sh_dry_run_passes_through(tmp_path):
     bindir.mkdir()
     (bindir / "python3").symlink_to(sys.executable)
     before = (REPO_ROOT / ".venv").exists()
-    env = {**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}"}
+    home = tmp_path / "home"
+    home.mkdir()
+    # Host-independent: --gui probes the desktop paths under HOME/XDG, so point them at tmp.
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("XDG_") and k not in ("JARVIS_USER_HOME", "JARVIS_PROFILE")}
+    env.update({"PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}", "HOME": str(home),
+                "XDG_DATA_HOME": str(home / "d"), "XDG_CACHE_HOME": str(home / "c"),
+                "XDG_CONFIG_HOME": str(home / "f")})
     res = subprocess.run(["bash", str(REPO_ROOT / "uninstall.sh"), "--dry-run", "--purge-data", "--gui"],
                          capture_output=True, text=True, env=env, timeout=120, check=False)
     assert res.returncode == 0, res.stdout + res.stderr
     plan = json.loads(res.stdout[res.stdout.index("{"):res.stdout.rindex("}") + 1])
     assert plan["dry_run"] is True and plan["purge_data"] is True and "desktop" in plan
+    assert all(r["path"].startswith(str(home)) or r["path"].startswith("/usr/bin/")
+               for r in plan["desktop"])
     assert "nothing was removed" in res.stdout
     assert (REPO_ROOT / ".venv").exists() == before
 
@@ -458,4 +476,265 @@ def test_wrappers_forward_new_flags():
     assert '"/DRYRUN" set "DRYRUN=--dry-run"' in bat
     assert '"/GUI" set "GUI=--gui"' in bat
     assert "agents.core.uninstall --dry-run !GUI! !PURGEDATA!" in bat
-    assert "agents.core.uninstall --confirm !GUI! !PURGEDATA! !NOBACKUP!" in bat
+    assert "agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP!" in bat
+
+
+
+# ── review round 1 (H014 r1) ─────────────────────────────────────
+
+
+def _nsis(tmp_path):
+    local = tmp_path / "Local"
+    nsis = local / "Jarvis Hub"
+    nsis.mkdir(parents=True)
+    (nsis / "uninstall.exe").write_bytes(b"MZ")
+    (nsis / "jarvis-hub-desktop.exe").write_bytes(b"MZ")
+    return nsis, {"platform": "win32", "home": tmp_path, "environ": {"LOCALAPPDATA": str(local)}}
+
+
+def test_desktop_nsis_exit0_but_dir_left_is_not_removed(app_root, tmp_path, monkeypatch):
+    """An exit code of 0 is not proof: the path is re-checked before it is called removed."""
+    nsis, desktop = _nsis(tmp_path)
+    monkeypatch.setattr(un.shutil, "rmtree", lambda *a, **k: None)  # leftovers survive
+    report = un.run_uninstall(app_root, gui=True, desktop=desktop, runner=lambda argv: 0)
+    assert str(nsis) not in report["desktop"]["removed"]
+    assert str(nsis) in report["not_removed"]
+    assert report["ok"] is False
+
+
+def test_desktop_nsis_in_place_run_then_leftover_removed(app_root, tmp_path):
+    nsis, desktop = _nsis(tmp_path)
+
+    def nsis_like(argv):  # what `uninstall.exe /S _?=<dir>` does: everything but itself
+        assert argv[-1] == f"_?={nsis}"
+        (nsis / "jarvis-hub-desktop.exe").unlink()
+        return 0
+
+    report = un.run_uninstall(app_root, gui=True, desktop=desktop, runner=nsis_like)
+    assert report["ok"] is True and str(nsis) in report["desktop"]["removed"]
+    assert not nsis.exists()
+
+
+def test_default_runner_keeps_nsis_inplace_token_unquoted(monkeypatch):
+    """NSIS only honours `_?=` unquoted and last, even when the dir has a space."""
+    seen = []
+
+    class _R:
+        returncode = 0
+
+    import subprocess as _sp
+    monkeypatch.setattr(_sp, "run", lambda cmd, **kw: seen.append(cmd) or _R())
+    assert un._default_runner([r"C:\x\Jarvis Hub\uninstall.exe", "/S", r"_?=C:\x\Jarvis Hub"],
+                              windows=True) == 0
+    assert seen == [r'"C:\x\Jarvis Hub\uninstall.exe" /S _?=C:\x\Jarvis Hub']
+
+
+def test_default_runner_missing_tool_is_127():
+    assert un._default_runner(["/definitely/not/here-nerva-tool"], windows=False) == 127
+
+
+def test_desktop_macos_prefs_httpstorages_logs_listed_and_removed(app_root, tmp_path):
+    home = tmp_path / "home"
+    lib = home / "Library"
+    extra = [lib / "Preferences" / "com.jarvis.hub.plist", lib / "HTTPStorages" / "com.jarvis.hub",
+             lib / "Logs" / "com.jarvis.hub"]
+    extra[0].parent.mkdir(parents=True)
+    extra[0].write_text("plist")
+    extra[1].mkdir(parents=True)
+    extra[2].mkdir(parents=True)
+    desktop = {"platform": "darwin", "home": home, "environ": {}, "system_root": tmp_path / "sys"}
+    plan = un.plan_uninstall(app_root, gui=True, desktop=desktop)
+    assert {str(p) for p in extra} <= {r["path"] for r in plan["desktop"] if r["exists"]}
+    report = un.run_uninstall(app_root, gui=True, desktop=desktop)
+    assert report["ok"] is True
+    assert not any(p.exists() for p in extra)
+
+
+def test_desktop_linux_appimage_integration_and_menu_refresh(app_root, tmp_path):
+    home, data = tmp_path / "home", tmp_path / "xdgdata"
+    apps = data / "applications"
+    apps.mkdir(parents=True)
+    ours = apps / "appimagekit_0123abcd-jarvis-hub.desktop"
+    ours.write_text("[Desktop Entry]")
+    theirs = apps / "org.gnome.Terminal.desktop"
+    theirs.write_text("[Desktop Entry]")
+    icons = data / "icons" / "hicolor" / "128x128" / "apps"
+    icons.mkdir(parents=True)
+    icon = icons / "appimagekit_0123abcd_jarvis-hub.png"
+    icon.write_bytes(b"png")
+    other_icon = icons / "firefox.png"
+    other_icon.write_bytes(b"png")
+    desktop = {"platform": "linux", "home": home, "system_root": tmp_path / "sys",
+               "environ": {"XDG_DATA_HOME": str(data)}}
+    ran = []
+    report = un.run_uninstall(app_root, gui=True, desktop=desktop, runner=lambda a: ran.append(a) or 0)
+    assert not ours.exists() and not icon.exists()
+    assert theirs.exists() and other_icon.exists()
+    assert ran == [["update-desktop-database", str(apps)]]
+    assert report["desktop"]["menu_cache"] == "refreshed"
+    assert report["ok"] is True
+
+
+def test_desktop_menu_refresh_missing_tool_is_not_a_failure(app_root, tmp_path):
+    data = tmp_path / "xdgdata"
+    (data / "applications").mkdir(parents=True)
+    (data / "applications" / "jarvis-hub.desktop").write_text("[Desktop Entry]")
+    desktop = {"platform": "linux", "home": tmp_path / "home", "system_root": tmp_path / "sys",
+               "environ": {"XDG_DATA_HOME": str(data)}}
+    report = un.run_uninstall(app_root, gui=True, desktop=desktop, runner=lambda a: 127)
+    assert report["desktop"]["menu_cache"] == "skipped: update-desktop-database not found"
+    assert report["ok"] is True
+
+
+def test_gui_only_removes_desktop_and_keeps_engine(app_root, tmp_path, monkeypatch):
+    """Hermes' `uninstall --gui`: the desktop shell goes, the engine and data stay."""
+    calls = []
+    monkeypatch.setattr("agents.core.data_purge.purge_data", _fake_purge(calls))
+    home = tmp_path / "home"
+    (home / ".cache" / "com.jarvis.hub").mkdir(parents=True)
+    real = un.desktop_app_targets
+    monkeypatch.setattr(un, "desktop_app_targets", lambda **kw: real(
+        platform="linux", home=home, environ={}, system_root=tmp_path / "sys"))
+    out = io.StringIO()
+    assert un._main(["--confirm", "--gui-only", "--root", str(app_root)], out=out) == 0
+    report = json.loads(out.getvalue())
+    assert report["gui_only"] is True
+    assert str(home / ".cache" / "com.jarvis.hub") in report["desktop"]["removed"]
+    assert "removed" not in report  # no engine target was even considered
+    assert (app_root / ".venv").exists() and (app_root / "worldview" / "node_modules").exists()
+    assert not (home / ".cache" / "com.jarvis.hub").exists()
+    assert calls == []
+
+
+def test_gui_only_dry_run_plan_has_no_engine_targets(app_root):
+    out = io.StringIO()
+    assert un._main(["--dry-run", "--gui-only", "--root", str(app_root)], out=out) == 0
+    plan = json.loads(out.getvalue())
+    assert plan["gui_only"] is True and "desktop" in plan and "targets" not in plan
+
+
+def test_gui_only_refuses_purge_data(app_root):
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--gui-only", "--purge-data", "--root", str(app_root)], out=out)
+    assert rc == 2 and "--gui-only" in out.getvalue()
+    assert (app_root / ".venv").exists()
+
+
+def test_gui_summary_probe_needs_no_confirm(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    apps = home / "Applications"
+    apps.mkdir(parents=True)
+    img = apps / "jarvis-hub_1.0_amd64.AppImage"
+    img.write_text("img")
+    (home / ".config" / "com.jarvis.hub").mkdir(parents=True)
+    kw = {"platform": "linux", "home": home, "environ": {}, "system_root": tmp_path / "sys"}
+    summary = un.gui_summary(**kw)
+    assert summary["installed"] is True
+    assert summary["app_paths"] == [str(img)]
+    assert summary["userdata_paths"] == [str(home / ".config" / "com.jarvis.hub")]
+    assert summary["manual"] == []
+    img.unlink()
+    assert un.gui_summary(**kw)["installed"] is False
+
+    monkeypatch.setattr(un, "gui_summary", lambda **k: {"installed": False})
+    out = io.StringIO()
+    assert un._main(["--gui-summary"], out=out) == 0
+    assert json.loads(out.getvalue()) == {"installed": False}
+
+
+def test_partial_data_purge_makes_ok_false(app_root, monkeypatch):
+    def fake(*, source_root, backup_first, memory):
+        return {"ok": False, "not_erased": ["x.db"]}
+    monkeypatch.setattr("agents.core.data_purge.purge_data", fake)
+    report = un.run_uninstall(app_root, purge_data=True)
+    assert report["ok"] is False
+    assert "data_purge" in report["not_removed"]
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_path()}", "--root", str(app_root)],
+                  out=out)
+    assert rc == 1
+
+
+def test_dry_run_refused_profile_reports_instead_of_crashing(app_root, monkeypatch):
+    monkeypatch.setenv("JARVIS_PROFILE", "NOT A NAME!")
+    out = io.StringIO()
+    assert un._main(["--dry-run", "--purge-data", "--root", str(app_root)], out=out) == 0
+    plan = json.loads(out.getvalue())
+    assert "data_root" not in plan and "JARVIS_PROFILE" in plan["data_root_error"]
+
+
+def test_purge_refused_profile_exits_2(app_root, monkeypatch):
+    calls = []
+    monkeypatch.setattr("agents.core.data_purge.purge_data", _fake_purge(calls))
+    monkeypatch.setenv("JARVIS_PROFILE", "NOT A NAME!")
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--purge-data", "--yes-purge=x", "--root", str(app_root)], out=out)
+    assert rc == 2 and "JARVIS_PROFILE" in out.getvalue()
+    assert calls == [] and (app_root / ".venv").exists()
+
+
+def test_yes_purge_bare_folder_name_is_not_enough(app_root, monkeypatch):
+    """The folder name ('memory', 'memory_logs') is the same on every machine: a script
+    must name the actual data root it means to erase."""
+    calls = []
+    monkeypatch.setattr("agents.core.data_purge.purge_data", _fake_purge(calls))
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_name()}", "--root", str(app_root)],
+                  out=out)
+    assert rc == 2 and calls == []
+    assert "full path" in out.getvalue()
+
+
+def test_yes_purge_without_purge_data_is_refused(app_root):
+    out = io.StringIO()
+    rc = un._main(["--confirm", f"--yes-purge={_data_path()}", "--root", str(app_root)], out=out)
+    assert rc == 2 and "--purge-data" in out.getvalue()
+    assert (app_root / ".venv").exists()
+
+
+def test_purge_plan_and_prompt_name_what_survives(app_root, tmp_path, monkeypatch):
+    uh = tmp_path / "Nerva"
+    (uh / "skills").mkdir(parents=True)
+    (uh / "souls").mkdir()
+    (uh / ".env").write_text("OPENAI_API_KEY=x\n")
+    monkeypatch.setenv("JARVIS_USER_HOME", str(uh))
+    plan = un.plan_uninstall(app_root, purge_data=True)
+    assert plan["kept_after_purge"] == [str(uh / ".env"), str(uh / "skills"), str(uh / "souls")]
+    out = io.StringIO()
+    un._main(["--confirm", "--purge-data", "--root", str(app_root)], out=out, inp=_Tty("no\n"))
+    assert str(uh / ".env") in out.getvalue() and "NOT erased" in out.getvalue()
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+def test_uninstall_sh_unknown_option_refuses(tmp_path):
+    """A mistyped `--dryrun --confirm` must not fall through to a real uninstall."""
+    bash = shutil.which("bash")
+    bindir = tmp_path / "bin"  # dirname only, no python: if the check is missing, it fails safe
+    bindir.mkdir()
+    (bindir / "dirname").symlink_to(shutil.which("dirname"))
+    res = subprocess.run([bash, str(REPO_ROOT / "uninstall.sh"), "--dryrun", "--confirm"],
+                         capture_output=True, text=True, timeout=60, check=False,
+                         env={**os.environ, "PATH": str(bindir)})
+    assert res.returncode == 2, res.stdout + res.stderr
+    assert "unknown option: --dryrun" in res.stderr
+
+
+def test_wrappers_forward_round1_flags():
+    sh = (REPO_ROOT / "uninstall.sh").read_text(encoding="utf-8")
+    assert "ARGS+=(--gui-only)" in sh and "ARGS=(--gui-summary)" in sh
+    bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
+    assert '"/GUIONLY" set "GUI=--gui-only"' in bat
+    assert '"/GUISUMMARY" set "GUISUMMARY=1"' in bat
+    # batch for-loops split on '=', so the non-interactive confirmation comes from an env var
+    assert 'if defined NERVA_YES_PURGE if defined PURGEDATA set "YESPURGE="--yes-purge=!NERVA_YES_PURGE!""' in bat
+    assert "agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP!" in bat
+
+
+def test_nerva_uninstall_verb_forwards_gui_only_and_summary(monkeypatch):
+    from agents.cli.nerva import main
+
+    seen = []
+    monkeypatch.setattr(un, "_main", lambda argv, **kw: seen.append(argv) or 0)
+    assert main(["uninstall", "--gui-summary"], context=_ctx(io.StringIO())) == 0
+    assert main(["uninstall", "--confirm", "--gui-only"], context=_ctx(io.StringIO())) == 0
+    assert seen == [["--gui-summary"], ["--confirm", "--gui-only"]]

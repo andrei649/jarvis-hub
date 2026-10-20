@@ -11,7 +11,13 @@ REM  Usage:  UNINSTALL.bat            (asks for confirmation)
 REM          UNINSTALL.bat /DRYRUN    (print what WOULD be removed; nothing is)
 REM          UNINSTALL.bat /CONFIRM   (no prompt, for scripting)
 REM          UNINSTALL.bat /CONFIRM /GUI         (also remove the desktop app)
+REM          UNINSTALL.bat /CONFIRM /GUIONLY     (remove ONLY the desktop app)
+REM          UNINSTALL.bat /GUISUMMARY           (JSON probe of the desktop app)
 REM          UNINSTALL.bat /CONFIRM /PURGEDATA   (also erase data; typed confirmation)
+REM  Scripted purge: batch argument parsing splits on '=', so the
+REM  non-interactive confirmation comes from an environment variable:
+REM    set "NERVA_YES_PURGE=<full path of the data root>"
+REM    UNINSTALL.bat /CONFIRM /PURGEDATA
 REM ============================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -21,10 +27,14 @@ set "DOCONFIRM=0"
 set "PURGEDATA="
 set "DRYRUN="
 set "GUI="
+set "GUISUMMARY="
+set "YESPURGE="
 for %%A in (%*) do (
   if /I "%%~A"=="/CONFIRM" set "DOCONFIRM=1"
   if /I "%%~A"=="/DRYRUN" set "DRYRUN=--dry-run"
   if /I "%%~A"=="/GUI" set "GUI=--gui"
+  if /I "%%~A"=="/GUIONLY" set "GUI=--gui-only"
+  if /I "%%~A"=="/GUISUMMARY" set "GUISUMMARY=1"
   if /I "%%~A"=="/PURGEDATA" set "PURGEDATA=--purge-data"
   if /I "%%~A"=="/NOBACKUP" set "NOBACKUP=--no-backup"
 )
@@ -39,7 +49,9 @@ echo generated .env files. Your data (memory_logs\ or %%JARVIS_HOME%%)
 echo is NOT touched unless /PURGEDATA is also given.
 echo.
 
+if defined NERVA_YES_PURGE if defined PURGEDATA set "YESPURGE="--yes-purge=!NERVA_YES_PURGE!""
 if defined DRYRUN set "DOCONFIRM=1"
+if defined GUISUMMARY set "DOCONFIRM=1"
 if "!DOCONFIRM!"=="0" (
   set /p "ANSWER=Continue? [y/N] "
   if /I not "!ANSWER!"=="y" (
@@ -61,13 +73,17 @@ if %errorlevel%==0 (set "PY=py") else (
   )
 )
 
+if defined GUISUMMARY (
+  "!PY!" -m agents.core.uninstall --gui-summary
+  goto :end
+)
 if defined DRYRUN (
   "!PY!" -m agents.core.uninstall --dry-run !GUI! !PURGEDATA!
   echo.
   echo   Dry run - nothing was removed. Re-run with /CONFIRM to proceed.
   goto :end
 )
-"!PY!" -m agents.core.uninstall --confirm !GUI! !PURGEDATA! !NOBACKUP!
+"!PY!" -m agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP!
 set "RC=%errorlevel%"
 echo.
 if "!RC!"=="0" (

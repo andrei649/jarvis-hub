@@ -513,10 +513,14 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall.add_argument("--confirm", action="store_true", help="required to actually remove anything")
     uninstall.add_argument("--purge-data", action="store_true",
                            help="also erase the data root (backup-first; needs the folder name typed back)")
-    uninstall.add_argument("--yes-purge", metavar="NAME",
-                           help="the data root's folder name, for --purge-data without a prompt")
+    uninstall.add_argument("--yes-purge", metavar="PATH",
+                           help="the data root's full path, for --purge-data without a prompt")
     uninstall.add_argument("--no-backup", action="store_true", help="with --purge-data, skip the backup")
     uninstall.add_argument("--gui", action="store_true", help="also remove the desktop app")
+    uninstall.add_argument("--gui-only", action="store_true",
+                           help="remove only the desktop app; keep the engine and your data")
+    uninstall.add_argument("--gui-summary", action="store_true",
+                           help="JSON probe of the desktop app (installed, paths); removes nothing")
     uninstall.add_argument("--root", help="app root to uninstall from")
 
     security = verbs.add_parser(
@@ -3758,7 +3762,8 @@ def cmd_uninstall(ns: argparse.Namespace, ctx: Context) -> int:
 
     argv = [flag for flag, on in (("--dry-run", ns.dry_run), ("--confirm", ns.confirm),
                                   ("--purge-data", ns.purge_data), ("--no-backup", ns.no_backup),
-                                  ("--gui", ns.gui)) if on]
+                                  ("--gui", ns.gui), ("--gui-only", ns.gui_only),
+                                  ("--gui-summary", ns.gui_summary)) if on]
     if ns.yes_purge is not None:
         argv.append(f"--yes-purge={ns.yes_purge}")
     if ns.root:
