@@ -890,8 +890,10 @@ async def memory_core_undo(body: dict):
 
     orch = get_orch()
     try:
-        result = undo(str((body or {}).get("ref") or ""), living=_living_memory(),
-                      audit=getattr(orch, "intent_log", None) if orch else None)
+        # H423: undo waits for the ring files' cross-process lock; off the event loop.
+        result = await asyncio.to_thread(
+            undo, str((body or {}).get("ref") or ""), living=_living_memory(),
+            audit=getattr(orch, "intent_log", None) if orch else None)
     except MemoryToolError as exc:
         status = 404 if exc.reason == "memory_undo_unknown" else 409
         return nocache_json({"ok": False, "reason": exc.reason, "detail": exc.detail}, status_code=status)

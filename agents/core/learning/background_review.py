@@ -552,12 +552,19 @@ class BackgroundReviewer:
                 # Content comparison (not len) so ring-dedupe (list unchanged)
                 # is not miscounted as a write, while ring-full rotation is.
                 before = store.list() if hasattr(store, "list") else None
-                store.put(fact)
+                changed = store.put(fact)
+                if isinstance(changed, bool):
+                    # H423: put rereads the ring file first, so only its own answer says
+                    # whether this fact changed it.
+                    added += int(changed)
+                    continue
                 after = store.list() if hasattr(store, "list") else None
                 if before is None or after != before:
                     added += 1
             except Exception:
-                logger.debug("core fact write skipped", exc_info=True)
+                # H423: a ring held by another writer, or hand-edited past reading back,
+                # is not written over; the fact is not kept.
+                logger.warning("core fact write skipped", exc_info=True)
         if added:
             counts["facts"] += added
             actions.append(f"{label} updated (+{added})")

@@ -25,7 +25,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core import memory_tool  # noqa: E402
-from agents.core.cognition.memory import CoreMemory  # noqa: E402
+from agents.core.cognition.memory import CoreMemory, CoreMemoryDrift  # noqa: E402
 from agents.core.memory_tool import (  # noqa: E402
     MemoryToolError,
     UndoStore,
@@ -631,15 +631,14 @@ async def test_a_write_waits_for_another_process_holding_the_ring_lock(rig, tmp_
 
     held = tmp_path / "held"
     script = (
-        "import fcntl, os, sys, time\n"
+        "import sys, time\n"
         f"sys.path.insert(0, {str(repo_root)!r})\n"
         "from agents.core.cognition.memory import CoreMemory\n"
-        f"fd = os.open({str(tmp_path / 'core.json.lock')!r}, os.O_RDWR | os.O_CREAT, 0o600)\n"
-        "fcntl.flock(fd, fcntl.LOCK_EX)\n"
-        f"CoreMemory(cap=20, path={str(tmp_path / 'core.json')!r}).put('written under the lock')\n"
-        f"open({str(held)!r}, 'w').close()\n"
-        "time.sleep(0.6)\n"
-        "os.close(fd)\n"
+        f"ring = CoreMemory(cap=20, path={str(tmp_path / 'core.json')!r})\n"
+        "with ring.locked():\n"          # the ring's own lock, reentrant for its put
+        "    ring.put('written under the lock')\n"
+        f"    open({str(held)!r}, 'w').close()\n"
+        "    time.sleep(0.6)\n"
     )
     proc = subprocess.Popen([sys.executable, "-c", script])  # nosec B603 - the test's own interpreter
     try:
@@ -743,3 +742,235 @@ async def test_a_turn_that_keeps_hitting_a_full_ring_gets_a_terminal_refusal(tmp
         reset_tool_turn(token)
     for n in range(cap + 1):                               # a script's calls carry no turn
         assert (await call(_op("add", text=f"s{n}")))["reason"] == "memory_full"
+
+
+# ── H423 review fixes: every writer takes the lock, strict adoption, the loop stays free ──
+
+def _hold(path):
+    """An exclusive flock on *path* through a descriptor of its own: it conflicts like
+    another process's lock, even from this process."""
+    import fcntl
+    import os
+
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
+
+def test_a_review_put_over_a_hand_edit_keeps_the_edit_and_a_copy(tmp_path):
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    assert ring.put("one") is True
+    hand = '{"facts": ["one", "HAND"]}'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    assert ring.put("from-review") is True
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["one", "HAND", "from-review"]
+    baks = list(tmp_path.glob("core.json.*.bak"))
+    assert len(baks) == 1 and baks[0].read_text(encoding="utf-8") == hand
+    assert ring.put("HAND") is False                       # already there: no change reported
+
+
+@pytest.mark.asyncio
+async def test_a_stale_writer_in_the_same_process_never_loses_a_tool_write(rig, tmp_path):
+    stale = CoreMemory(cap=20, path=tmp_path / "core.json")   # loaded before the tool wrote
+    await _call(rig, {"operations": [_op("add", text="mine")]})
+    stale.put("theirs")
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["mine", "theirs"]
+    stale.clear()
+    rig.living.core.put("after")                           # a forget by another writer is not undone
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["after"]
+
+
+@pytest.mark.asyncio
+async def test_a_plain_put_from_another_process_never_loses_a_tool_write(rig, tmp_path):
+    import subprocess  # nosec B404 - the test runs its own interpreter
+
+    ready, go = tmp_path / "ready", tmp_path / "go"
+    script = (
+        "import os, sys, time\n"
+        f"sys.path.insert(0, {str(repo_root)!r})\n"
+        "from agents.core.cognition.memory import CoreMemory\n"
+        f"ring = CoreMemory(cap=20, path={str(tmp_path / 'core.json')!r})\n"
+        f"open({str(ready)!r}, 'w').close()\n"
+        f"while not os.path.exists({str(go)!r}):\n"
+        "    time.sleep(0.01)\n"
+        "ring.put('theirs')\n"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", script])  # nosec B603 - the test's own interpreter
+    try:
+        for _ in range(2000):
+            if ready.exists() or proc.poll() is not None:
+                break
+            await asyncio.sleep(0.01)
+        assert ready.exists(), "the other process never loaded the ring"
+        await _call(rig, {"operations": [_op("add", text="mine")]})
+        go.touch()
+    finally:
+        proc.wait(timeout=20)
+    assert proc.returncode == 0
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["mine", "theirs"]
+
+
+def test_the_review_counts_only_facts_its_put_kept(tmp_path):
+    from agents.core.learning.background_review import BackgroundReviewer
+
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    ring.put("a")
+    (tmp_path / "core.json").write_text('{"facts": ["a", "typed"]}', encoding="utf-8")
+    review = SimpleNamespace(_detect=lambda fact: False)
+    actions, counts = [], {"facts": 0, "blocked": 0}
+    BackgroundReviewer._put_facts(review, ["typed"], ring, "Core memory", actions, counts)
+    assert counts["facts"] == 0 and actions == [] and ring.list() == ["a", "typed"]
+    (tmp_path / "core.json").write_text("{broken", encoding="utf-8")
+    BackgroundReviewer._put_facts(review, ["new"], ring, "Core memory", actions, counts)
+    assert counts["facts"] == 0 and (tmp_path / "core.json").read_text(encoding="utf-8") == "{broken"
+
+
+def test_a_put_waits_for_the_ring_lock(tmp_path):
+    import os
+    import threading
+    import time
+
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    fd = _hold(tmp_path / "core.json.lock")
+    done = threading.Event()
+    worker = threading.Thread(target=lambda: (ring.put("x"), done.set()))
+    try:
+        worker.start()
+        time.sleep(0.3)
+        assert not done.is_set(), "put wrote without the ring lock"
+    finally:
+        os.close(fd)
+    worker.join(timeout=10)
+    assert done.is_set() and ring.list() == ["x"]
+
+
+def test_the_ring_and_its_digest_are_written_under_the_ring_lock(tmp_path, monkeypatch):
+    import fcntl
+    import os
+
+    from agents.core.persistence import json_store
+
+    seen = []
+    real = json_store.atomic_write_json
+
+    def spy(path, data, **kwargs):
+        if Path(path).name in ("core.json", "core.json.sha256"):
+            fd = os.open(tmp_path / "core.json.lock", os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                seen.append((Path(path).name, "unlocked"))
+            except OSError:
+                seen.append((Path(path).name, "locked"))
+            finally:
+                os.close(fd)
+        return real(path, data, **kwargs)
+
+    monkeypatch.setattr(json_store, "atomic_write_json", spy)
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    ring.put("a")
+    ring.compare_and_set(["a"], ["a", "b"])
+    ring.clear()
+    assert seen and all(state == "locked" for _, state in seen), seen
+    assert {name for name, _ in seen} == {"core.json", "core.json.sha256"}
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edit_that_is_not_valid_json_is_never_written_over(rig, tmp_path):
+    await _call(rig, {"operations": [_op("add", text="a")]})
+    hand = '{"facts": ["a", "owner note",]}'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    for _ in range(2):
+        reply = await _call(rig, {"operations": [_op("add", text="b")]})
+        assert reply["reason"] == "memory_drift_unreadable", reply
+        assert "not valid JSON" in reply["detail"]
+        assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand
+    baks = list(tmp_path.glob("core.json.*.bak"))
+    assert len(baks) == 1 and baks[0].read_text(encoding="utf-8") == hand and str(baks[0]) in reply["detail"]
+    with pytest.raises(CoreMemoryDrift):                   # the review's put does not write over it either
+        rig.living.core.put("from the review")
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand
+    (tmp_path / "core.json").write_text('{"facts": ["a", "owner note"]}', encoding="utf-8")   # the owner fixes it
+    assert (await _call(rig, {"operations": [_op("add", text="b")]}))["reason"] == "memory_drift"
+    assert (await _call(rig, {"operations": [_op("add", text="b")]}))["memory"] == ["a", "owner note", "b"]
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edit_over_the_cap_is_refused_not_cut(tmp_path):
+    living = _living(tmp_path, cap=3, core=("f0",))
+    server = ToolRPCServer()
+    register_memory_tool(server, living=lambda: living, audit=lambda: _Audit(),
+                         posture=lambda: "operator/owner", origin=lambda: "generated",
+                         store=UndoStore(tmp_path / "undo.json"))
+    hand = json.dumps({"facts": [f"f{n}" for n in range(5)]})
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    for _ in range(2):
+        reply = (await server.handle({"tool": "memory", "args": {"operations": [
+            _op("remove", old_text="f4")]}}))["result"]
+        assert reply["reason"] == "memory_drift_unreadable" and "5 facts, over its cap of 3" in reply["detail"]
+        assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edit_with_a_repeated_fact_is_refused_not_cut(rig, tmp_path):
+    await _call(rig, {"operations": [_op("add", text="a")]})
+    hand = '{"facts": ["a", "b", "a"]}'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    reply = await _call(rig, {"operations": [_op("add", text="c")]})
+    assert reply["reason"] == "memory_drift_unreadable" and "twice" in reply["detail"]
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand
+
+
+def test_a_ring_saved_before_digests_existed_gets_a_baseline_on_load(tmp_path):
+    (tmp_path / "core.json").write_text('{"facts": ["old"]}', encoding="utf-8")
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    assert (tmp_path / "core.json.sha256").exists()
+    hand = '{"facts": ["old", "edited before the first save"]}'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    ring.put("new")
+    assert ring.list() == ["old", "edited before the first save", "new"]
+    assert [b.read_text(encoding="utf-8") for b in tmp_path.glob("core.json.*.bak")] == [hand]
+
+
+def test_a_ring_with_no_digest_and_an_unreadable_file_is_kept_not_overwritten(tmp_path):
+    (tmp_path / "core.json").write_text("not json", encoding="utf-8")
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    with pytest.raises(CoreMemoryDrift) as caught:
+        ring.put("x")
+    assert caught.value.problem == "it is not valid JSON" and caught.value.bak is not None
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == "not json"
+    assert len(list(tmp_path.glob("core.json.*.bak"))) == 1
+
+
+def test_a_forget_removes_the_copies_of_hand_edits(tmp_path):
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    ring.put("a")
+    (tmp_path / "core.json").write_text('{"facts": ["a", "private"]}', encoding="utf-8")
+    ring.put("b")
+    assert list(tmp_path.glob("core.json.*.bak"))
+    assert ring.clear() == 3
+    assert not list(tmp_path.glob("core.json.*.bak")) and ring.list() == []
+
+
+@pytest.mark.asyncio
+async def test_waiting_for_a_ring_lock_does_not_block_the_event_loop(rig, tmp_path, monkeypatch):
+    import os
+
+    monkeypatch.setattr(memory_tool, "LOCK_TIMEOUT_S", 0.5)
+    fd = _hold(tmp_path / "core.json.lock")
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    task = asyncio.create_task(ticker())
+    try:
+        reply = (await rig.server.handle({"tool": "memory", "args": {"operations": [
+            _op("add", text="m")]}}, actor="jarvis"))["result"]
+    finally:
+        task.cancel()
+        os.close(fd)
+    assert reply["reason"] == "memory_locked"
+    assert ticks >= 10, f"the event loop ran only {ticks} times while the call waited"

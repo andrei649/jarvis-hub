@@ -20,12 +20,16 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   an add listed before the remove that makes room is kept (H423); a turn that keeps
   hitting a full ring gets a terminal refusal after :data:`FULL_ATTEMPTS_PER_TURN` tries,
   so it stops retrying;
-* a write holds a cross-process lock on each ring's file (``<ring>.json.lock``) and
-  rereads the rings from disk under it, so another Nerva process's write is planned
-  over, never written back over (H423). Every ring save records the sha256 of the bytes
-  it wrote beside the ring (``<ring>.json.sha256``); a file whose bytes no longer match
-  was edited by hand, and the call is refused: the file is copied to a named ``.bak``,
-  the edit is adopted as the ring's contents, and nothing is written over it;
+* a write holds each ring's cross-process file lock (``<ring>.json.lock``, taken by
+  ``CoreMemory`` itself, so the post-turn review, the reflection and a forget take it
+  too) and rereads the rings from disk under it, so another writer's save is planned
+  over, never written back over (H423). The wait runs off the event loop. Every ring
+  save records the sha256 of the bytes it wrote beside the ring (``<ring>.json.sha256``)
+  under that lock; a file whose bytes no longer match was edited by hand, and the call
+  is refused: the file is copied to a named ``.bak`` and, when it reads back exactly, the
+  edit becomes the ring's contents (``memory_drift``); an edit that would lose a fact
+  (invalid JSON, a repeated fact, over the cap) blocks writes to that ring until it is
+  fixed (``memory_drift_unreadable``);
 * only the owner's own turns at the operator surface write: the tool is offered to no
   other posture (``tool_profiles.OWNER_OPERATOR_TOOLS``), and a turn that has read
   untrusted content (an inbound message, web content, a tainted recall) is refused, so an
@@ -50,17 +54,17 @@ now are, so the model works from them at once.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
-import os
 import threading
 import time
 import unicodedata
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -232,10 +236,6 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _sha_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
 def _ring_sha(facts: list[str]) -> str:
     return _sha(json.dumps(facts, ensure_ascii=False))
 
@@ -323,95 +323,57 @@ _WRITE_LOCK = threading.Lock()
 
 # ── the files: a cross-process lock, a reread, and drift (H423) ──────────────
 
-def _ring_path(ring: Any) -> Path | None:
-    path = getattr(ring, "path", None)
-    return path if isinstance(path, Path) else None
-
-
-def _flock(path: Path) -> int:
-    """An exclusive lock on *path* (created owner-only), waited for up to
-    :data:`LOCK_TIMEOUT_S`. Returns the descriptor holding it."""
-    try:
-        import fcntl
-    except ImportError:          # no POSIX locks (Windows): one process writes
-        fcntl = None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    if fcntl is None:
-        return fd
-    deadline = time.monotonic() + LOCK_TIMEOUT_S
-    while True:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return fd
-        except OSError:
-            if time.monotonic() >= deadline:
-                os.close(fd)
-                raise MemoryToolError("memory_locked",
-                                      "another Nerva process is writing memory; try again in a moment") from None
-            time.sleep(0.02)
-
-
 @contextmanager
 def _ring_locks(living: Any) -> Iterator[None]:
-    """Hold the lock file of every ring kept in a file, in path order (two writers never
-    wait on each other crosswise); released whatever happens."""
-    paths = sorted({path.with_name(path.name + ".lock")
-                    for attr in TARGETS.values() if (path := _ring_path(getattr(living, attr))) is not None})
-    held: list[int] = []
-    try:
-        for path in paths:
-            held.append(_flock(path))
+    """Hold every ring's file lock (CoreMemory.locked, the lock every writer of the ring
+    takes: the review, the reflection and a forget too), in path order so two writers
+    never wait on each other crosswise; released whatever happens."""
+    from .cognition.memory import CoreMemoryLocked
+
+    rings = []
+    for attr in TARGETS.values():
+        ring = getattr(living, attr)
+        lock_path = ring.lock_path() if callable(getattr(ring, "lock_path", None)) else None
+        if lock_path is not None and callable(getattr(ring, "locked", None)):
+            rings.append((str(lock_path), ring))
+    with ExitStack() as stack:
+        try:
+            for _, ring in sorted(rings, key=lambda pair: pair[0]):
+                stack.enter_context(ring.locked(timeout=LOCK_TIMEOUT_S))
+        except CoreMemoryLocked:
+            raise MemoryToolError("memory_locked",
+                                  "another Nerva process is writing memory; try again in a moment") from None
         yield
-    finally:
-        for fd in reversed(held):
-            os.close(fd)        # closing the descriptor releases its lock
-
-
-def _drifted(ring: Any) -> Path | None:
-    """When *ring*'s file no longer holds the bytes a Nerva save recorded (it was edited
-    by hand), keep a copy of it, adopt it as the ring's recorded contents, and return the
-    copy's path. None while the file is as saved, or has no record to compare with."""
-    path = _ring_path(ring)
-    digest_path = ring.digest_path() if callable(getattr(ring, "digest_path", None)) else None
-    if path is None or digest_path is None or not path.exists() or not digest_path.exists():
-        return None
-    data = path.read_bytes()
-    digest = _sha_bytes(data)
-    try:
-        recorded = json.loads(digest_path.read_text(encoding="utf-8")).get("sha256")
-    except (OSError, ValueError, AttributeError):
-        recorded = None
-    if recorded == digest:
-        return None
-    from .persistence.json_store import atomic_write_json
-
-    bak = path.with_name(f"{path.name}.{time.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:6]}.bak")
-    try:
-        fd = os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as out:
-            out.write(data)
-        atomic_write_json(digest_path, {"sha256": digest})
-    except OSError:
-        logger.warning("memory: the hand-edited %s could not be kept", path, exc_info=True)
-        raise MemoryToolError("memory_drift",
-                              f"{path.name} was edited outside Nerva and a copy of it could not be kept; "
-                              "nothing was written") from None
-    logger.warning("memory: %s was edited outside Nerva; kept a copy at %s", path, bak)
-    return bak
 
 
 def _settle(living: Any) -> None:
-    """Under the ring locks: refuse over a hand-edited ring (keeping a ``.bak`` of it),
-    and reread every ring from its file, so a plan starts from what is on disk."""
+    """Under the ring locks: reread every ring from its file, so a plan starts from what
+    is on disk. A hand edit refuses the call: it is copied to a ``.bak`` and, when it
+    reads back exactly, taken as the ring (``memory_drift``); when it cannot be taken
+    without dropping a fact (invalid JSON, a repeated fact, over the cap) nothing is
+    written to that ring until the owner fixes the file (``memory_drift_unreadable``)."""
+    from .cognition.memory import CoreMemoryDrift
+
     drifted: list[str] = []
+    unreadable: list[str] = []
     for target, attr in TARGETS.items():
         ring = getattr(living, attr)
-        bak = _drifted(ring)
-        if bak is not None:
-            drifted.append(f"{bak} ({target})")
-        if callable(getattr(ring, "reload", None)):
+        if callable(getattr(ring, "sync_from_disk", None)):
+            try:
+                bak = ring.sync_from_disk()
+            except CoreMemoryDrift as exc:
+                where = f"; a copy is kept at {exc.bak}" if exc.bak else ""
+                unreadable.append(f"{exc.path.name} ({target}) {exc.problem}{where}")
+                continue
+            if bak is not None:
+                drifted.append(f"{bak} ({target})")
+        elif callable(getattr(ring, "reload", None)):
             ring.reload()
+    if unreadable:
+        raise MemoryToolError("memory_drift_unreadable",
+                              "a memory file was edited outside Nerva and cannot be read back without "
+                              f"dropping facts: {'; '.join(unreadable)}; nothing is written to it until "
+                              "the owner fixes the file, so tell the owner")
     if drifted:
         raise MemoryToolError("memory_drift",
                               "a memory file was edited outside Nerva, so nothing was written over it; "
@@ -443,6 +405,8 @@ def _record_put_back(audit: Any, actor: str, action: str, ref: str, targets: lis
 def _commit(living: Any, before: Mapping[str, list[str]], after: Mapping[str, list[str]]) -> None:
     """Write the changed rings by compare-and-set; restore the ones written when a later
     one fails, so the call is all or nothing."""
+    from .cognition.memory import CoreMemoryDrift
+
     written: list[str] = []
     for target in after:
         if after[target] == before[target]:
@@ -451,6 +415,11 @@ def _commit(living: Any, before: Mapping[str, list[str]], after: Mapping[str, li
         saved = True
         try:
             ok = ring.compare_and_set(before[target], after[target])
+        except CoreMemoryDrift as exc:
+            # Hand-edited after the reread (an editor takes no lock): nothing written over it.
+            _revert(living, {done: after[done] for done in reversed(written)}, before)
+            raise MemoryToolError("memory_drift",
+                                  f"{exc}; nothing was written over it; read memory again and retry") from None
         except Exception:
             logger.warning("memory: the %s ring could not be written", target, exc_info=True)
             ok = saved = False
@@ -634,7 +603,10 @@ def register_memory_tool(
         if _full_capped(turn):
             return _terminal()
         undo_store = UNDO if store is None else store
-        try:
+
+        def _write() -> tuple[dict, list[dict], list[str], str]:
+            # Runs in a worker thread: waiting for another writer's ring lock (up to
+            # LOCK_TIMEOUT_S) must not stall the event loop (H423).
             with _WRITE_LOCK, _ring_locks(mem):
                 _settle(mem)
                 before = {target: getattr(mem, attr).list() for target, attr in TARGETS.items()}
@@ -662,6 +634,10 @@ def register_memory_tool(
                             _record_put_back(sink, actor, "memory.write_reverted", ref, restored)
                         undo_store.drop(ref)
                         raise
+                return after, rows, changed, ref
+
+        try:
+            after, rows, changed, ref = await asyncio.to_thread(_write)
         except MemoryToolError as exc:
             if exc.reason == "memory_full" and _count_full(turn):
                 return _terminal()

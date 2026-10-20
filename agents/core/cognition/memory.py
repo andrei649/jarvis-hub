@@ -27,7 +27,11 @@ import hashlib
 import json
 import logging
 import math
+import os
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -275,12 +279,108 @@ async def reproject(records: "list[dict]", current_version: int, embedder: Calla
 
 # ── core (always-injected, bounded) ──────────────────────────────────────────
 
+#: H423 — how long a core-ring writer waits for another writer's lock on the ring file.
+LOCK_TIMEOUT_S = 5.0
+
+
+class CoreMemoryLocked(TimeoutError):
+    """Another writer held a core ring's file lock for longer than the wait allowed."""
+
+
+class CoreMemoryDrift(RuntimeError):
+    """A core ring's file was edited outside Nerva. ``bak`` is the owner-only copy kept of
+    it; ``problem`` says why the edit cannot be taken as the ring (None when it was
+    taken, and the caller should only learn that the ring moved)."""
+
+    def __init__(self, path: Path, bak: "Path | None", problem: "str | None") -> None:
+        self.path, self.bak, self.problem = path, bak, problem
+        super().__init__(f"{path.name} was edited outside Nerva"
+                         + (f" and {problem}" if problem else "")
+                         + (f"; a copy is kept at {bak}" if bak else ""))
+
+
+class _PathLock:
+    """One ring file's cross-process lock, shared by every CoreMemory of this process on
+    that file: a thread-reentrant lock in front of one ``flock`` descriptor, so a writer
+    that already holds it (the memory tool, then its compare-and-set) does not wait on
+    itself, and two threads of this process are serialised like two processes."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._rlock = threading.RLock()
+        self._fd: "int | None" = None
+        self._depth = 0
+
+    def acquire(self, timeout: float) -> None:
+        deadline = time.monotonic() + max(0.0, timeout)
+        if not self._rlock.acquire(timeout=max(0.0, timeout)):
+            raise CoreMemoryLocked(f"{self.path.name} is held by another writer")
+        try:
+            if self._depth == 0:
+                self._fd = _flock(self.path, deadline)
+            self._depth += 1
+        except BaseException:
+            self._rlock.release()
+            raise
+
+    def release(self) -> None:
+        self._depth -= 1
+        if self._depth == 0 and self._fd is not None:
+            os.close(self._fd)          # closing the descriptor releases the flock
+            self._fd = None
+        self._rlock.release()
+
+
+_PATH_LOCKS: "dict[str, _PathLock]" = {}
+_PATH_LOCKS_GUARD = threading.Lock()
+
+
+def _path_lock(path: Path) -> _PathLock:
+    key = os.path.abspath(path)
+    with _PATH_LOCKS_GUARD:
+        lock = _PATH_LOCKS.get(key)
+        if lock is None:
+            lock = _PATH_LOCKS[key] = _PathLock(Path(key))
+        return lock
+
+
+def _flock(path: Path, deadline: float) -> int:
+    """An exclusive ``flock`` on *path* (created owner-only), polled until *deadline*."""
+    try:
+        import fcntl
+    except ImportError:          # no POSIX locks (Windows): the in-process lock is all there is
+        fcntl = None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    if fcntl is None:
+        return fd
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except OSError:
+            if time.monotonic() >= deadline:
+                os.close(fd)
+                raise CoreMemoryLocked(f"{path.name} is held by another writer") from None
+            time.sleep(0.02)
+
+
 class CoreMemory(JsonStore):
-    """A small set of always-injected core facts (bounded ring)."""
+    """A small set of always-injected core facts (bounded ring).
+
+    H423: the file is shared by every Nerva writer (the model's ``memory`` tool, the
+    post-turn review, the daily reflection, a forget) and by the owner's editor. Every
+    mutation therefore runs under the ring file's lock (:meth:`locked`), rereads the file
+    first, and saves the ring and the sha256 of its bytes (``<ring>.json.sha256``) under
+    that same lock. A file whose bytes no longer match the recorded digest was edited by
+    hand: it is copied to an owner-only ``.bak`` and, when it reads back exactly (valid
+    JSON, distinct one-line facts, within the cap), taken as the ring; otherwise
+    :class:`CoreMemoryDrift` is raised and nothing is written over it until it is fixed."""
 
     def __init__(self, cap: int = 20, path: str | Path | None = None) -> None:
         self.cap = cap
         super().__init__(path)
+        self._baseline()
 
     def _serialize(self):
         return {"facts": self._facts[-self.cap:]}
@@ -290,19 +390,139 @@ class CoreMemory(JsonStore):
         writer can tell a file edited by hand from one a Nerva process saved."""
         return None if self.path is None else self.path.with_name(self.path.name + ".sha256")
 
+    def lock_path(self) -> "Path | None":
+        """H423 — the file every writer of this ring locks (``<ring>.json.lock``)."""
+        return None if self.path is None else self.path.with_name(self.path.name + ".lock")
+
+    @contextmanager
+    def locked(self, timeout: "float | None" = None) -> Iterator[None]:
+        """Hold this ring file's cross-process lock (reentrant in the holding thread).
+        Raises :class:`CoreMemoryLocked` after *timeout* seconds (:data:`LOCK_TIMEOUT_S`)."""
+        lock_path = self.lock_path()
+        if lock_path is None:
+            yield
+            return
+        lock = _path_lock(lock_path)
+        lock.acquire(LOCK_TIMEOUT_S if timeout is None else timeout)
+        try:
+            yield
+        finally:
+            lock.release()
+
     def _save(self) -> None:
+        # Called only under locked(): the ring and its digest never tear for a reader that
+        # holds the lock.
         super()._save()
         if self.path is None:
             return
-        from agents.core.persistence.json_store import atomic_write_json
-
         try:
-            digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
-            atomic_write_json(self.digest_path(), {"sha256": digest})
+            self._write_digest(hashlib.sha256(self.path.read_bytes()).hexdigest())
         except OSError:
-            # The ring is saved; a stale digest only makes the next tool write refuse
-            # and keep a copy, which is the safe side.
+            # The ring is saved; a stale digest only makes the next write keep a copy of
+            # it and take it as the ring, which is the safe side.
             logger.warning("core memory: the digest of %s could not be saved", self.path, exc_info=True)
+
+    def _write_digest(self, digest: str) -> None:
+        from agents.core.persistence import json_store
+
+        json_store.atomic_write_json(self.digest_path(), {"sha256": digest})
+
+    def _recorded_digest(self) -> "str | None":
+        try:
+            raw = json.loads(self.digest_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        value = raw.get("sha256") if isinstance(raw, dict) else None
+        return value if isinstance(value, str) else None
+
+    def _strict_facts(self, data: bytes) -> "tuple[list[str], str | None]":
+        """The facts in *data* exactly as written, or why they cannot be taken as the ring
+        without dropping one (the lenient :meth:`_deserialize` would)."""
+        try:
+            raw = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            return [], "it is not valid JSON"
+        facts = raw.get("facts") if isinstance(raw, dict) else raw
+        if not isinstance(facts, list) or not all(isinstance(f, str) for f in facts):
+            return [], 'it does not hold "facts" as a list of text lines'
+        cleaned = [f.strip() for f in facts]
+        if any(not f for f in cleaned):
+            return [], "it holds an empty fact"
+        seen: set = set()
+        for fact in cleaned:
+            if fact in seen:
+                return [], f"it holds the fact {fact[:60]!r} twice"
+            seen.add(fact)
+        if len(cleaned) > self.cap:
+            return [], f"it holds {len(cleaned)} facts, over its cap of {self.cap}"
+        return cleaned, None
+
+    def _keep_copy(self, data: bytes, digest: str) -> Path:
+        """An owner-only copy of a hand-edited file, one per distinct content."""
+        path = self.path
+        existing = sorted(path.parent.glob(f"{path.name}.*-{digest[:12]}.bak"))
+        if existing:
+            return existing[0]
+        bak = path.with_name(f"{path.name}.{time.strftime('%Y%m%dT%H%M%S')}-{digest[:12]}.bak")
+        try:
+            fd = os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as out:
+                out.write(data)
+        except OSError:
+            logger.warning("core memory: the hand-edited %s could not be copied", path, exc_info=True)
+            raise CoreMemoryDrift(path, None, "a copy of it could not be kept") from None
+        logger.warning("core memory: %s was edited outside Nerva; kept a copy at %s", path, bak)
+        return bak
+
+    def _sync_locked(self) -> "Path | None":
+        """Under :meth:`locked` and ``self._lock``: make the in-memory ring the file's.
+        Returns the ``.bak`` kept of a hand edit that was taken as the ring, else None.
+        Raises :class:`CoreMemoryDrift` (with ``problem``) over an edit that cannot be."""
+        path = self.path
+        if path is None:
+            return None
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError:
+            self._facts = []             # no file: an empty ring
+            return None
+        except OSError as exc:
+            raise CoreMemoryDrift(path, None, f"it cannot be read ({exc.strerror})") from None
+        digest = hashlib.sha256(data).hexdigest()
+        recorded = self._recorded_digest()
+        facts, problem = self._strict_facts(data)
+        if recorded == digest and problem is None:
+            self._facts = facts          # a Nerva save, maybe another process's
+            return None
+        # No digest yet (a ring saved before H423) is taken as a baseline when the file
+        # reads back exactly; anything else is a hand edit and is kept first.
+        bak = self._keep_copy(data, digest) if (recorded is not None or problem is not None) else None
+        if problem is not None:
+            raise CoreMemoryDrift(path, bak, problem)
+        self._facts = facts
+        try:
+            self._write_digest(digest)
+        except OSError:
+            logger.warning("core memory: the digest of %s could not be saved", path, exc_info=True)
+        return bak
+
+    def sync_from_disk(self) -> "Path | None":
+        """H423 — reread the ring from its file under its lock, taking a hand edit as the
+        ring when it reads back exactly. Returns the ``.bak`` kept of such an edit."""
+        with self.locked(), self._lock:
+            return self._sync_locked()
+
+    def _baseline(self) -> None:
+        """A ring file saved before digests existed gets one on load, so a hand edit made
+        after this process read it is told apart from it."""
+        if self.path is None or not self.path.exists() or self.digest_path().exists():
+            return
+        try:
+            with self.locked(), self._lock:
+                if not self.digest_path().exists():
+                    self._sync_locked()
+        except (CoreMemoryLocked, CoreMemoryDrift):
+            logger.warning("core memory: no baseline digest for %s yet", self.path, exc_info=True)
 
     def reload(self) -> None:
         """H423 — reread the ring from its file: another process may have written it."""
@@ -320,17 +540,24 @@ class CoreMemory(JsonStore):
                 self._facts.append(f)
         self._facts = self._facts[-self.cap:]
 
-    def put(self, fact: str) -> None:
+    def put(self, fact: str) -> bool:
+        """Add *fact* on top of the ring as it is on disk (the oldest rotates out at the
+        cap: this is the post-turn review's and the reflection's bounded ring; the model's
+        ``memory`` tool refuses at the cap instead). True when the ring changed. Raises
+        :class:`CoreMemoryLocked`, or :class:`CoreMemoryDrift` over a hand edit that
+        cannot be taken as the ring (nothing is written over it)."""
         f = (fact or "").strip()
         if not f:
-            return
-        with self._lock:
+            return False
+        with self.locked(), self._lock:
+            self._sync_locked()
             if f in self._facts:
-                return
+                return False
             self._facts.append(f)
             if len(self._facts) > self.cap:
                 self._facts.pop(0)
             self._save()
+            return True
 
     def list(self) -> "list[str]":
         with self._lock:
@@ -341,11 +568,18 @@ class CoreMemory(JsonStore):
 
         The model's ``memory`` tool computes a new ring from one it read; a forget (or
         another write) that ran in between must win, so a stale ring is never written
-        back over it. Returns False, and changes nothing, when the ring moved."""
+        back over it. Returns False, and changes nothing, when the ring moved.
+
+        H423: the ring is reread from its file under its lock first, so a move made by
+        another process counts too. A hand edit raises :class:`CoreMemoryDrift` (its
+        ``bak`` names the copy kept), and nothing is written over it."""
         cleaned = [str(f).strip() for f in facts if str(f or "").strip()]
         if len(cleaned) > self.cap or len(set(cleaned)) != len(cleaned):
             raise ValueError("a core ring holds at most `cap` distinct facts")
-        with self._lock:
+        with self.locked(), self._lock:
+            bak = self._sync_locked()
+            if bak is not None:
+                raise CoreMemoryDrift(self.path, bak, None)
             if self._facts != list(expected):
                 return False
             previous, self._facts = self._facts, cleaned
@@ -361,11 +595,30 @@ class CoreMemory(JsonStore):
         return "" if not facts else "[core memory]\n" + "\n".join(f"- {f}" for f in facts)
 
     def clear(self) -> int:
-        """Explicit user-forget path: remove all core facts and persist empty state."""
+        """Explicit user-forget path: remove all core facts and persist empty state.
+
+        H423: a forget wins over a hand edit (it is not kept) and deletes the ``.bak``
+        copies of earlier ones; it waits for the ring lock but does not give up on it."""
+        try:
+            with self.locked():
+                return self._clear()
+        except CoreMemoryLocked:
+            logger.warning("core memory: %s stayed locked; forgetting it anyway", self.path)
+            return self._clear()
+
+    def _clear(self) -> int:
         with self._lock:
+            with suppress(CoreMemoryDrift):   # a hand edit is forgotten below either way
+                self._sync_locked()
             count = len(self._facts)
             self._facts = []
             self._save()
+            if self.path is not None:
+                for bak in self.path.parent.glob(f"{self.path.name}.*.bak"):
+                    try:
+                        bak.unlink()
+                    except OSError:
+                        logger.warning("core memory: %s could not be deleted", bak, exc_info=True)
             return count
 
 
