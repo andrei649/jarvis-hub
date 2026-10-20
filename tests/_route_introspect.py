@@ -34,3 +34,26 @@ def iter_effective_routes(app: Any) -> Iterator[Any]:
         # Included routes -> ctx is an _EffectiveRouteContext exposing the merged
         # .path/.methods/.dependant; top-level routes -> ctx is None, use route.
         yield ctx if ctx is not None else route
+
+
+def iter_websocket_routes(app: Any) -> Iterator[Any]:
+    """Yield every WebSocket route with its effective `.path` / `.dependant` (H511).
+
+    `iter_effective_routes` callers filter on `.methods`, which a WebSocket route
+    has none of — and on fastapi >= 0.137 an included WebSocket route's context
+    carries an empty `.path` and no `.dependant`; the prefixed route fastapi
+    actually serves lives on `ctx.starlette_route`. Without this the auth matrix
+    never saw `/api/kanban/events` or `/api/hermes/ws`, so a new unguarded upgrade
+    endpoint passed CI.
+    """
+    from starlette.routing import WebSocketRoute
+
+    try:
+        from fastapi.routing import _iter_routes_with_context  # fastapi >= 0.137
+    except ImportError:
+        yield from (r for r in app.routes if isinstance(r, WebSocketRoute))
+        return
+    for route, ctx in _iter_routes_with_context(app.routes):
+        served = ctx.starlette_route if ctx is not None and ctx.starlette_route is not None else route
+        if isinstance(served, WebSocketRoute):
+            yield served

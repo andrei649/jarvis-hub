@@ -9,7 +9,12 @@ endpoint. This reads each route's *resolved dependency graph* from the live app
 2. fails if any OPEN *mutating* route isn't explicitly classified as either
    INTENTIONALLY_OPEN (self-authenticating / public by design) or PENDING_GUARD
    (SEC-3 backlog);
-3. keeps PENDING_GUARD honest — it may only list routes that are still open.
+3. keeps PENDING_GUARD honest — it may only list routes that are still open;
+4. (H511) enumerates every WebSocket upgrade route too and pins each one to a
+   dependency guard or a WS_GUARDED_IN_HANDLER entry, and splits the open
+   allowlists into IN_HANDLER_GUARDED (a credential checked in the handler body,
+   proved route by route in tests/test_route_inhandler_guards.py) and
+   PUBLIC_BY_DESIGN (no credential exists to check).
 
 The autouse user-guard override in conftest is irrelevant here: dependency
 overrides apply at request time and do not change route.dependant, which is what
@@ -141,6 +146,65 @@ INTENTIONALLY_OPEN_READS = {
 PENDING_READ_GUARD = set()  # SEC-B6 COMPLETE — every personal-content read now carries user_guard.
 
 
+# ── H511: credentials checked in the handler body ────────────────────────────
+# The dependant graph cannot see a check made inside a handler, so these routes
+# classify as "open". Each entry names the credential the handler demands, and
+# tests/test_route_inhandler_guards.py holds one probe per entry that calls the
+# route without it (asserting the refusal) and with it (asserting the refusal
+# came from that check) — a listed-but-unproved entry fails there.
+IN_HANDLER_GUARDED = {
+    "POST /api/webhooks/{hook_id}": "x-webhook-token, or HMAC x-signature-256 for a signed hook",
+    "POST /api/a2a/task": "allowlisted peer's HMAC x-signature-256",
+    "POST /api/mcp/server/rpc": "OAuth bearer, or the HF-1 user/admin token posture",
+    "POST /api/oauth/callback": "a state minted by this hub (verify_state)",
+    "POST /api/widget/{token}/message": "widget capability token in the path",
+    "GET /api/widget/{token}": "widget capability token in the path",
+    "GET /api/widget/{token}/config": "widget capability token in the path",
+}
+
+# Open mutators with no credential to check — public ingress by design.
+PUBLIC_BY_DESIGN = {
+    "POST /api/channels/pairing/request",   # lands in owner approval, mints nothing
+    "POST /api/analytics/event",            # bounded anonymous beacon
+}
+
+# WebSocket upgrades whose guard runs in the handler body (an upgrade has no
+# Request for a dependency to receive, so both build one and call admin_guard
+# before accept()). Value = the tier the in-handler check enforces; each is
+# connected to unauthenticated by tests/test_route_inhandler_guards.py.
+WS_GUARDED_IN_HANDLER = {
+    "WS /api/kanban/events": "admin",
+    "WS /api/hermes/ws": "admin",
+}
+
+
+def _guard_of(dep) -> str:
+    """Classify a resolved dependant graph as "open|user|admin"."""
+    names = set()
+    if dep:
+        stack = list(getattr(dep, "dependencies", []))
+        while stack:
+            d = stack.pop()
+            call = getattr(d, "call", None)
+            if call is not None:
+                names.add(getattr(call, "__name__", ""))
+            stack.extend(getattr(d, "dependencies", []))
+    if {"_admin_guard", "admin_guard"} & names:
+        return "admin"
+    if {"_user_guard", "user_guard"} & names:
+        return "user"
+    return "open"
+
+
+def _ws_guards(app=None):
+    """Map "WS /path" -> "open|user|admin" for every WebSocket route (H511)."""
+    from tests._route_introspect import iter_websocket_routes
+
+    if app is None:
+        from agents.web import app
+    return {f"WS {r.path}": _guard_of(getattr(r, "dependant", None)) for r in iter_websocket_routes(app)}
+
+
 def _runtime_guards():
     """Map "METHOD /path" -> "open|user|admin" from the live app's dependant graph."""
     from agents.web import app
@@ -153,22 +217,7 @@ def _runtime_guards():
     for r in iter_effective_routes(app):
         if not getattr(r, "methods", None):
             continue
-        names = set()
-        dep = getattr(r, "dependant", None)
-        if dep:
-            stack = list(getattr(dep, "dependencies", []))
-            while stack:
-                d = stack.pop()
-                call = getattr(d, "call", None)
-                if call is not None:
-                    names.add(getattr(call, "__name__", ""))
-                stack.extend(getattr(d, "dependencies", []))
-        if {"_admin_guard", "admin_guard"} & names:
-            guard = "admin"
-        elif {"_user_guard", "user_guard"} & names:
-            guard = "user"
-        else:
-            guard = "open"
+        guard = _guard_of(getattr(r, "dependant", None))
         for meth in sorted((r.methods or set()) - {"HEAD", "OPTIONS"}):
             out[f"{meth} {r.path}"] = guard
     return out
@@ -236,4 +285,69 @@ def test_read_classifications_are_honest():
         problems.append("PENDING_READ_GUARD lists non-open routes: " + ", ".join(stale_pending))
     if stale_allow:
         problems.append("INTENTIONALLY_OPEN_READS lists non-open routes: " + ", ".join(stale_allow))
+    assert not problems, "\n".join(problems)
+
+
+def test_every_websocket_route_is_pinned():
+    """H511: an upgrade route is a route — a new one, guarded or not, fails until classified."""
+    ws = _ws_guards()
+    assert ws, "no WebSocket routes enumerated — the introspection lost them"
+    unclassified = sorted(k for k, g in ws.items() if g == "open" and k not in WS_GUARDED_IN_HANDLER)
+    stale = sorted(k for k in WS_GUARDED_IN_HANDLER if ws.get(k) != "open")
+    problems = []
+    if unclassified:
+        problems.append("OPEN WebSocket route(s) with no classification — add a guard, or list under "
+                        "WS_GUARDED_IN_HANDLER and prove it in test_route_inhandler_guards.py: "
+                        + ", ".join(unclassified))
+    if stale:
+        problems.append("WS_GUARDED_IN_HANDLER lists routes that are gone or now dependency-guarded: "
+                        + ", ".join(stale))
+    assert not problems, "\n".join(problems)
+
+
+def test_websocket_classifier_sees_included_and_guarded_upgrades():
+    """The enumeration itself: an included router's upgrade route is found under its
+    real prefix, a dependency guard is read, and an unguarded one reads "open"."""
+    from fastapi import APIRouter, Depends, FastAPI, WebSocket
+
+    async def admin_guard():
+        return None
+
+    router = APIRouter(prefix="/x")
+
+    @router.websocket("/open")
+    async def _open(ws: WebSocket):
+        await ws.close()
+
+    @router.websocket("/guarded", dependencies=[Depends(admin_guard)])
+    async def _guarded(ws: WebSocket):
+        await ws.close()
+
+    app = FastAPI()
+    app.include_router(router)
+
+    @app.websocket("/top")
+    async def _top(ws: WebSocket):
+        await ws.close()
+
+    assert _ws_guards(app) == {"WS /x/open": "open", "WS /x/guarded": "admin", "WS /top": "open"}
+
+
+def test_open_allowlists_split_into_in_handler_and_public():
+    """H511: every open mutator is either credentialed in its handler (and proved) or
+    public by design; nothing sits in INTENTIONALLY_OPEN on say-so alone."""
+    runtime = _runtime_guards()
+    mutators = {k for k in IN_HANDLER_GUARDED if k.split()[0] in MUTATING}
+    problems = []
+    if mutators | PUBLIC_BY_DESIGN != INTENTIONALLY_OPEN:
+        problems.append("INTENTIONALLY_OPEN must equal IN_HANDLER_GUARDED mutators | PUBLIC_BY_DESIGN; "
+                        f"diff: {sorted(INTENTIONALLY_OPEN ^ (mutators | PUBLIC_BY_DESIGN))}")
+    if mutators & PUBLIC_BY_DESIGN:
+        problems.append(f"both in-handler and public: {sorted(mutators & PUBLIC_BY_DESIGN)}")
+    reads = {k for k in IN_HANDLER_GUARDED if k.startswith("GET ")}
+    if reads - INTENTIONALLY_OPEN_READS:
+        problems.append(f"in-handler reads missing from INTENTIONALLY_OPEN_READS: {sorted(reads - INTENTIONALLY_OPEN_READS)}")
+    not_open = sorted(k for k in IN_HANDLER_GUARDED if runtime.get(k) != "open")
+    if not_open:
+        problems.append(f"IN_HANDLER_GUARDED lists routes that are gone or dependency-guarded: {not_open}")
     assert not problems, "\n".join(problems)
