@@ -1578,6 +1578,9 @@ def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
             else:
                 note = f"applied at the next hub start; expires {staged.get('expires_at')}"
             ctx.say(f"staged restore: {staged['name']} ({note}) — `nerva backup cancel` withdraws it")
+            if staged.get("runtime_resumed_at"):
+                ctx.say(f"  not applied in time: jarvis-runtime resumed at {staged['runtime_resumed_at']} "
+                        f"and stops again when the hub applies it")
         if payload["last_restore"]:
             last = payload["last_restore"]
             ctx.say(f"last restore: {last.get('name')} {last.get('status')} at {last.get('applied_at')}")

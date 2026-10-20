@@ -267,10 +267,11 @@ def test_the_coordinator_waits_for_a_restore_in_progress(root):
 def test_the_coordinator_marks_itself_and_waits_before_it_opens_the_stores():
     text = (Path(__file__).resolve().parent.parent / "scripts" / "coordinator.py").read_text(encoding="utf-8")
     run = text[text.index("async def run()"):]
-    assert run.index("mark_runtime(") < run.index("restore_wanted(") < run.index("_run_marked(")
+    assert (run.index("mark_runtime(") < run.index("runtime_should_yield(")
+            < run.index("_run_marked("))
     assert "clear_runtime_mark(" in run
     marked = text[text.index("async def _run_marked("):]
-    assert marked.index("_build_orchestrator()") < marked.index("restore_wanted")
+    assert marked.index("_build_orchestrator()") < marked.index("runtime_should_yield")
 
 
 # ── audit trace outside the restored DBs ──────────────────────────────────────
@@ -304,7 +305,10 @@ def notes(monkeypatch):
     sent: list[str] = []
     monkeypatch.setattr(sd_notify, "enabled", lambda: True)
     monkeypatch.setattr(sd_notify, "notify", lambda message: sent.append(message) or True)
-    return sent
+    yield sent
+    # A requested restart starts the process-wide restart keepalive, which only the execv
+    # (or READY=1) ends; left running it would stand in for the next test's own pinger.
+    sd_notify.end_restart_keepalive()
 
 
 def test_a_requested_restart_is_announced_as_reloading_not_stopping(notes, monkeypatch):

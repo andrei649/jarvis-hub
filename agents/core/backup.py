@@ -43,8 +43,10 @@ backup needs:
   default 24) and can be cancelled; ``serve.py`` calls ``apply_pending_restore`` at the
   next boot, before ``agents.web`` is imported and the orchestrator built (so no store of
   the hub holds a DB open), and only while no other hub has the root open; the
-  jarvis-runtime coordinator sees the stage and gives the root up, and the restore waits
-  for it. The archive must still be the one drilled; a rollback snapshot covering what
+  jarvis-runtime coordinator sees the stage and gives the root up — its process exits
+  (``scripts/coordinator.py`` ``RESTORE_YIELD_EXIT``) and the supervisor's fresh one waits
+  without opening a store — and the restore waits for that. The archive must still be
+  the one drilled; a rollback snapshot covering what
   the restore overwrites (full before full, quick before quick) is taken first. A running
   hub reaches it only through the approval queue's irreversible tier (``backup.restore``,
   tier 3, ``apply_approved``) and then restarts itself (``agents.core.hub_restart``).
@@ -113,6 +115,8 @@ _SQLITE_MAGIC = b"SQLite format 3\x00"
 QUICK_KEEP_DEFAULT = 5   # automatic quick rollback points kept (JARVIS_BACKUP_QUICK_KEEP)
 STAGE_TTL_HOURS_DEFAULT = 24.0   # a staged restore expires (JARVIS_RESTORE_STAGE_TTL_HOURS)
 RUNTIME_WAIT_DEFAULT = 60.0      # seconds a restore waits for the coordinator to yield the root
+# seconds a stage nobody applies keeps the coordinator stopped (JARVIS_RUNTIME_RESTORE_GRACE_SECONDS)
+RUNTIME_RESTORE_GRACE_DEFAULT = 600.0
 
 # H503 bomb caps for unpacking a backup (verify drill + restore). Generous, because a
 # real data root holds audio, media and many small files and a false refusal on the
@@ -812,8 +816,14 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
 # before any store opens (serve.py), or at once by the offline `nerva backup restore`,
 # only when no other process has the root open: neither a hub (hub.lock) nor the
 # headless coordinator of jarvis-runtime (runtime.pid). The coordinator watches for a
-# stage (restore_wanted), stops its orchestrator and drops its mark, and the restore waits
-# for that; it reopens the root once the stage and the journal are gone. The marker is
+# stage (runtime_should_yield), stops its orchestrator and EXITS — a process that built an
+# orchestrator never drops its mark while alive, so the restore, which waits for the mark
+# to be gone (dead pid), never runs under a live SQLite handle of it (H010 review r3). The
+# supervisor respawns it at once; the fresh process waits without opening a store and
+# builds its orchestrator on the restored files once the stage and the journal are gone.
+# A stage nobody applies keeps the runtime stopped for JARVIS_RUNTIME_RESTORE_GRACE_SECONDS
+# at most; the coordinator then resumes (restore-history "runtime_resumed") and yields
+# again when an apply journals. The marker is
 # claimed (renamed) before the restore runs, so a restore that fails is reported once
 # (last-restore.json) and never retried every boot; a journal (restore-applying.json) is
 # kept while it runs, so one killed partway is reported at the next boot as interrupted,
@@ -917,7 +927,18 @@ def runtime_running_elsewhere(source_root=None) -> bool:
     pid = _pid_in(_root_of(source_root) / _RUNTIME_PID)
     if pid is None or pid == os.getpid():
         return False
-    return install_identity._pid_alive(pid)
+    return install_identity._pid_alive(pid) and not _zombie(pid)
+
+
+def _zombie(pid: int) -> bool:
+    """A coordinator that exited for a restore leaves its mark (H010 review r3): once it
+    is dead it holds nothing, even before its parent has reaped it (Linux state ``Z``)."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+    except OSError:
+        return False
+    fields = stat.rsplit(")", 1)[-1].split()
+    return bool(fields) and fields[0] in ("Z", "X")
 
 
 def _journal_live(journal: dict) -> bool:
@@ -983,14 +1004,70 @@ def stage_expired(staged: dict, *, now: Optional[float] = None) -> bool:
 
 
 def restore_wanted(source_root=None) -> bool:
-    """What the jarvis-runtime coordinator watches: a restore is staged (and not expired),
-    or another live process is applying one. While true the coordinator keeps its
-    orchestrator stopped and its mark cleared, so the restore can run (H010 review r2)."""
+    """A restore is staged (and not expired), or another live process is applying one.
+    The coordinator watches ``runtime_should_yield`` (this, bounded by a grace period for a
+    stage nobody applies) and uses this to tell that it resumed with a stage pending."""
     root = _root_of(source_root)
     staged = pending_restore(root)
     if staged is not None and not stage_expired(staged):
         return True
     return restore_in_progress(root)
+
+
+def runtime_restore_grace_seconds() -> float:
+    """How long a staged restore nobody applies keeps the coordinator stopped
+    (``JARVIS_RUNTIME_RESTORE_GRACE_SECONDS``, default 600; 0 = only while one is applied)."""
+    return env_float("JARVIS_RUNTIME_RESTORE_GRACE_SECONDS", RUNTIME_RESTORE_GRACE_DEFAULT,
+                     minimum=0.0)
+
+
+def _stage_past_grace(staged: dict, now: float) -> bool:
+    staged_at = _parse_iso(staged.get("staged_at"))
+    return staged_at is not None and now - staged_at >= runtime_restore_grace_seconds()
+
+
+def runtime_should_yield(source_root=None, *, now: Optional[float] = None) -> bool:
+    """What the jarvis-runtime coordinator watches (H010 review r3): another live process
+    is applying a restore (its journal), or a restore was staged less than
+    ``runtime_restore_grace_seconds`` ago. An approved restore asks for the hub's restart at
+    once, so the coordinator is usually already gone when the apply begins; a stage left
+    unapplied (the hub kept down, or started without serve.py) stops the runtime only for
+    the grace period — the coordinator then runs again and yields when an apply journals,
+    which the apply waits for (``wait_for_runtime_yield``)."""
+    root = _root_of(source_root)
+    if restore_in_progress(root):
+        return True
+    staged = pending_restore(root)
+    moment = time.time() if now is None else float(now)
+    if staged is None or stage_expired(staged, now=moment):
+        return False
+    return not _stage_past_grace(staged, moment)
+
+
+def note_runtime_resumed(source_root=None) -> bool:
+    """Record (once per stage) that the coordinator resumed with a restore still staged:
+    restore-history.jsonl gets a ``runtime_resumed`` line, which ``staged_restore_view``
+    reports as ``runtime_resumed_at``. True when a line was written."""
+    root = _root_of(source_root)
+    out = default_backup_dir(root)
+    staged = pending_restore(root)
+    if staged is None:
+        return False
+    if _runtime_resumed_at(out, staged) is not None:
+        return False
+    _append_history(out, "runtime_resumed", {**staged, "pid": os.getpid()})
+    return True
+
+
+def _runtime_resumed_at(out: Path, staged: dict) -> Optional[str]:
+    for row in reversed(_history_rows(out / _HISTORY, 200)):
+        if row.get("staged_at") != staged.get("staged_at"):
+            continue
+        if row.get("event") == "runtime_resumed":
+            return row.get("at")
+        if row.get("event") == "staged":
+            return None
+    return None
 
 
 def runtime_wait_seconds() -> float:
@@ -1001,7 +1078,8 @@ def runtime_wait_seconds() -> float:
 def wait_for_runtime_yield(source_root=None, *, timeout: float, poll: float = 0.25,
                            sleep=time.sleep) -> bool:
     """Block until no other live process holds the runtime mark; False if *timeout* ran out.
-    The coordinator drops its mark once it sees a staged restore (``restore_wanted``)."""
+    A coordinator that ran an orchestrator releases it by exiting (its pid is then dead or a
+    zombie); a fresh one that opened nothing drops it (``runtime_should_yield``)."""
     waited = 0.0
     while runtime_running_elsewhere(source_root):
         if waited >= timeout:
@@ -1029,6 +1107,10 @@ def staged_restore_view(source_root=None) -> Optional[dict]:
         view["deferred_at"] = last.get("applied_at")
     else:
         view["state"] = "waiting"
+    resumed = _runtime_resumed_at(default_backup_dir(root), staged)
+    if resumed is not None:
+        # Unapplied past the grace: jarvis-runtime runs again, and yields at the apply.
+        view["runtime_resumed_at"] = resumed
     return view
 
 
@@ -1192,8 +1274,9 @@ def apply_pending_restore(source_root=None, key: Optional[str] = None, *,
     None when nothing is staged. Otherwise ``{status: restored|failed|deferred|interrupted|
     cancelled, …}``. A stage past its ``expires_at`` is discarded (``failed``,
     ``stage_expired``) without touching the root. The jarvis-runtime coordinator gives the
-    root up once it sees the stage (``restore_wanted``): this waits up to *runtime_wait*
-    seconds (``JARVIS_RESTORE_RUNTIME_WAIT_SECONDS``, default 60) for its mark to clear,
+    root up once it sees the stage or this apply's journal (``runtime_should_yield``) — its
+    process exits — and this waits up to *runtime_wait* seconds
+    (``JARVIS_RESTORE_RUNTIME_WAIT_SECONDS``, default 60) for its mark to be released,
     and defers only if it does not. Every deferral is recorded (``_defer``). The archive
     must still be the one that was drilled (bytes and mtime); a rollback snapshot of what
     the restore overwrites is taken first (``rollback``: a full snapshot before a full
@@ -1258,7 +1341,7 @@ def _apply_locked(root: Path, out: Path, key: Optional[str], runtime_wait: float
         marker.unlink(missing_ok=True)
         return _expired(out, staged)
     # Journal first, then look for other openers: a coordinator that marks the root at the
-    # same moment then sees this journal (restore_wanted) and gives the root up again.
+    # same moment then sees this journal (runtime_should_yield) and gives the root up again.
     _write_json(journal_path, {**_base(staged), "phase": "checking", "pid": os.getpid()})
     reason = None
     if install_identity.hub_lock_held_elsewhere(root):

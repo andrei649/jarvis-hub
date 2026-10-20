@@ -4,7 +4,8 @@ Each test pins one finding from the second adversarial review:
 
 * the jarvis-runtime coordinator gives the data root up when a restore is staged, so the
   approved restore completes at the hub's restart with the runtime unit still running
-  (a real coordinator process, its pid live, yields and then rebuilds);
+  (a real coordinator process, its pid live, yields; since review r3 it exits and a
+  fresh process rebuilds — tests/test_backup_h010_review3.py runs the real orchestrator);
 * every deferral is recorded (last-restore.json, restore-history.jsonl once per process
   and reason) and ``nerva backup list`` / ``GET /api/admin/backup`` say "deferred";
 * a staged restore expires and can be cancelled (CLI and admin route), and neither an
@@ -142,15 +143,32 @@ def test_a_running_coordinator_yields_and_the_staged_restore_completes(root, tmp
         assert result["status"] == "restored" and result["ok"] is True, result
         assert _rows(root / "settings.db") == 1
         assert "stop" in builds.read_text()
-        # The coordinator reopens the root and rebuilds once the restore is over.
-        _wait_for(lambda: builds.read_text().count("start") == 2
-                  and mark.exists() and mark.read_text().strip() == str(child.pid))
         assert _events(root)[-2:] == ["staged", "restored"]
+        # H010 review r3: it never rebuilds in the same process (its stores' handles would
+        # point at the replaced files); it exited for the supervisor to start a fresh one.
+        assert child.wait(timeout=30) == coordinator_exit_code()
+        assert builds.read_text().count("start") == 1
     finally:
-        child.send_signal(signal.SIGTERM)
-        child.wait(timeout=30)
-    assert child.returncode == 0
+        if child.poll() is None:
+            child.send_signal(signal.SIGTERM)
+            child.wait(timeout=30)
+    # A fresh process (what the supervisor spawns) builds once on the restored root.
+    fresh = subprocess.Popen([sys.executable, str(script)], env=env, cwd=str(tmp_path))  # nosec B603
+    try:
+        _wait_for(lambda: builds.read_text().count("start") == 2
+                  and mark.exists() and mark.read_text().strip() == str(fresh.pid))
+    finally:
+        fresh.send_signal(signal.SIGTERM)
+        fresh.wait(timeout=30)
+    assert fresh.returncode == 0
     assert not mark.exists()
+
+
+def coordinator_exit_code() -> int:
+    sys.path.insert(0, str(REPO))
+    from scripts.coordinator import RESTORE_YIELD_EXIT
+
+    return RESTORE_YIELD_EXIT
 
 
 def test_the_coordinator_watches_for_a_live_stage_but_not_an_expired_one(root):

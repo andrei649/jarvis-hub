@@ -29,8 +29,14 @@ Env:
                                  sets it
   JARVIS_RUNTIME_RESTORE_POLL   seconds between looks for a staged restore (default 2):
                                  when one is staged the coordinator stops its
-                                 orchestrator and releases the data root until the
-                                 restore is applied, cancelled or expired (H010)
+                                 orchestrator and EXITS with RESTORE_YIELD_EXIT; the
+                                 supervisor starts a fresh process at once, which waits
+                                 without opening a store until the restore is applied,
+                                 cancelled or expired, then builds on the restored files
+                                 (H010)
+  JARVIS_RUNTIME_RESTORE_GRACE_SECONDS  how long a stage nobody applies keeps it waiting
+                                 (default 600); it then runs again and yields when the
+                                 hub begins the apply (agents.core.backup)
 """
 
 from __future__ import annotations
@@ -39,6 +45,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
 import signal
 import sys
 from pathlib import Path
@@ -128,41 +135,107 @@ async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:
         await asyncio.wait_for(stop.wait(), timeout=seconds)
 
 
+# The exit status of a coordinator that left so a restore can run (EX_TEMPFAIL). The
+# supervisor (scripts/runtime_supervisor.py) respawns it at once, without backoff; under a
+# bare `Restart=on-failure` it is a failure status, so systemd restarts it too.
+RESTORE_YIELD_EXIT = 75
+
+
+_DB_FILE = re.compile(r"\.(db|sqlite|sqlite3)(-wal|-shm|-journal)?( \(deleted\))?$")
+
+
+def _open_root_files() -> list[str] | None:
+    """The SQLite files (DBs and their -wal/-shm/-journal) under the data root this process
+    has open (Linux: ``/proc/self/fd``); None where that cannot be read. The orchestrator's
+    stores keep WAL connections that ``Orchestrator.aclose`` does not close (missions,
+    permissions, work_runs, jobs, analytics, ambient attention …), several of them
+    module-global. Other files (a log the operator pointed under the root) are not what a
+    restore corrupts and must not make a fresh process exit forever."""
+    from agents.core.paths import data_root
+
+    fd_dir = Path("/proc/self/fd")
+    if not fd_dir.is_dir():
+        return None
+    prefix = os.path.realpath(data_root()) + os.sep
+    held = []
+    for entry in os.listdir(fd_dir):
+        try:
+            target = os.readlink(fd_dir / entry)
+        except OSError:
+            continue                                  # closed meanwhile (the listdir fd)
+        if target.startswith(prefix) and _DB_FILE.search(target):
+            held.append(target)
+    return held
+
+
+def _exit_process(code: int) -> None:
+    """Leave now, without the interpreter's shutdown: threads the orchestrator started are
+    not joined, and every file it has open is closed by the kernel. The runtime mark is
+    left behind on purpose — its pid is dead once this returns, which is what releases
+    the root (``backup.runtime_running_elsewhere``)."""
+    for handler in logging.getLogger().handlers:
+        with contextlib.suppress(Exception):
+            handler.flush()
+    with contextlib.suppress(Exception):
+        sys.stdout.flush()
+        sys.stderr.flush()
+    os._exit(code)
+
+
 async def run() -> None:
     from agents.core.env_provenance import load_hub_env
 
     load_hub_env()                    # before the paths and knobs below are read
     from agents.core import backup
 
-    # H010: this process opens the hub's DBs too. It marks the root while its orchestrator
-    # runs, and gives the root up whenever a restore is staged or being applied
-    # (backup.restore_wanted): it stops the orchestrator, drops the mark, waits until the
-    # stage and the journal are gone, then marks again and rebuilds. The approved restore
-    # then completes at the hub's restart without the operator stopping jarvis-runtime
-    # (H010 review r2). Marking BEFORE the check: a restore that journals at the same
-    # moment either sees this mark (and waits for it to clear) or is seen here.
+    # H010: this process opens the hub's DBs too. It marks the root while it may open
+    # them, and gives the root up whenever a restore is staged or being applied
+    # (backup.runtime_should_yield). A process that has built an orchestrator never
+    # drops its mark and never builds a second one: its stores keep SQLite handles that
+    # aclose() leaves open, so it stops the channels and EXITS (RESTORE_YIELD_EXIT); the
+    # restore waits for its pid to be gone (H010 review r3). The supervisor's fresh process
+    # finds the stage before it opens anything, drops its mark (only with no file under
+    # the root open — otherwise it exits too), waits, and builds once on the restored
+    # files. Marking BEFORE the check: a restore that journals at the same moment either
+    # sees this mark (and waits for it to clear) or is seen here.
     stop = asyncio.Event()
     _install_stop_handlers(stop)
     poll = _restore_poll_seconds()
+    exiting = False
     try:
         while not stop.is_set():
             backup.mark_runtime()
-            if backup.restore_wanted():
+            if backup.runtime_should_yield():
+                held = _open_root_files()
+                if held:
+                    logger.warning("a restore is staged, and this process still holds %d file(s) "
+                                   "under the data root: it exits instead of releasing it",
+                                   len(held))
+                    exiting = True
+                    _exit_process(RESTORE_YIELD_EXIT)
                 backup.clear_runtime_mark()
                 logger.info("a restore is staged or being applied: the coordinator waits for it")
-                while not stop.is_set() and backup.restore_wanted():
+                while not stop.is_set() and backup.runtime_should_yield():
                     await _sleep_or_stop(stop, poll)
                 continue
+            if backup.restore_wanted() and backup.note_runtime_resumed():
+                logger.warning("a staged restore was not applied within %gs: the coordinator "
+                               "runs again and stops when the hub applies it",
+                               backup.runtime_restore_grace_seconds())
             if not await _run_marked(stop, backup, poll):
                 break
-            backup.clear_runtime_mark()
-            logger.info("coordinator released the data root for a staged restore")
+            logger.info("coordinator exits to release the data root for the restore; "
+                        "the supervisor starts a fresh one")
+            exiting = True
+            _exit_process(RESTORE_YIELD_EXIT)
     finally:
-        backup.clear_runtime_mark()
+        if not exiting:
+            backup.clear_runtime_mark()
 
 
 async def _run_marked(stop: asyncio.Event, backup, poll: float) -> bool:
-    """Run the orchestrator until *stop* (False) or until a restore is staged (True)."""
+    """Run the orchestrator until *stop* (False) or until a restore wants the root (True).
+    After True the caller must exit: this process's stores are not all closed."""
     from agents.core.observability.runtime_log import RuntimeRunLog, default_log_path
 
     log_path = default_log_path()
@@ -184,7 +257,7 @@ async def _run_marked(stop: asyncio.Event, backup, poll: float) -> bool:
     try:
         while not stop.is_set():
             await _sleep_or_stop(stop, poll)
-            if not stop.is_set() and await asyncio.to_thread(backup.restore_wanted):
+            if not stop.is_set() and await asyncio.to_thread(backup.runtime_should_yield):
                 logger.info("a restore is staged: the coordinator stops to release the data root")
                 yielded = True
                 break
