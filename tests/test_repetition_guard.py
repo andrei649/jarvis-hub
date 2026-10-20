@@ -531,11 +531,14 @@ def test_responses_stream_hides_loop_live_but_delivers_complete_answer():
             out = await backend.generate_stream("gpt-4.1", "p", on_token=shown.append)
         finally:
             await backend.aclose()
-        return out, "".join(shown)
+        return out, shown
 
     out, shown = asyncio.run(go())
-    assert out == looping.strip()              # complete (not truncated): delivered
-    assert len(shown) < len(looping) // 4      # but never painted live in full
+    assert out == looping.strip()                       # complete (not truncated): delivered
+    assert len("".join(shown[:-1])) < len(looping) // 4  # never painted live while generating
+    # Once the finalizer keeps the answer, the withheld rest is released so the
+    # bubble ends with the same text the answer carries.
+    assert "".join(shown) == looping
 
 
 # A long, varied, legitimate answer that a loop can follow.
@@ -590,3 +593,185 @@ def test_horizontal_rules_do_not_count_as_repetition():
     assert len(text) > 4000
     assert is_repetition_dominated(text[-4000:]) is False
     assert LLMBackend._finalize_cloud(text, "length", "m") == text.strip()
+
+
+# ── H393 review round 2: loops with a period shorter than the 60-char window ──
+
+# Varied prose with no 60-char repeat and no line breaks.
+_PROSE = " ".join(
+    f"Sentence {i} talks about item {i * 13} and its result {i * 7 + 3} in plain words." for i in range(400)
+)
+
+
+def _sentence_unit(period: int) -> str:
+    base = "Let me check the configuration file again to verify it all works out fine. "
+    return base[: period - 1] + " "
+
+
+def _prose_then_loop(n: int, period: int, share: float) -> str:
+    unit = _sentence_unit(period)
+    assert len(unit) == period and "\n" not in unit
+    loop_len = int(n * share)
+    loop = (unit * (loop_len // period + 1))[:loop_len]
+    return _PROSE[: n - loop_len] + loop
+
+
+def test_short_period_no_newline_loops_are_repetition_dominated():
+    # Round-1 regression: counting only NON-overlapping 60-char windows credited
+    # a loop of period 31..59 with ~60 chars per ~2 periods, so these returned
+    # False (base and Hermes both catch them).
+    for n in (4000, 6000):
+        for period in (25, 41, 45, 47, 53, 55, 59):
+            for share in (0.6, 0.75, 0.9):
+                text = _prose_then_loop(n, period, share)
+                assert is_repetition_dominated(text) is True, (n, period, share)
+
+
+def test_finalize_cloud_drops_truncated_short_period_loop():
+    for period in (41, 47, 53, 59):
+        text = _prose_then_loop(4000, period, 0.65)
+        assert LLMBackend._finalize_cloud(text, "length", "m") == "", period
+        # A complete answer is never touched.
+        assert LLMBackend._finalize_cloud(text, "stop", "m") == text.strip()
+
+
+def test_finalize_stream_drops_truncated_short_period_loop():
+    text = _prose_then_loop(6000, 55, 0.9)
+    assert LLMBackend._finalize_stream(text, "", "length", "m") == ""
+
+
+def test_deepinfra_generate_drops_truncated_short_period_loop():
+    text = _prose_then_loop(6000, 55, 0.75)
+    data = {"choices": [{"message": {"content": text}, "finish_reason": "length"}]}
+    out = _deepinfra_run(lambda req: httpx.Response(200, json=data),
+                         lambda b: b.generate("vendor/m", "p"))
+    assert out == ""
+
+
+def test_prose_minority_loop_is_not_dominated():
+    # Coverage is exact: a loop covering well under half the text is kept.
+    for period in (25, 45, 59):
+        assert is_repetition_dominated(_prose_then_loop(4000, period, 0.35)) is False
+
+
+# ── H393 review round 2: formatting runs must stream through in full ──
+
+_TAIL_PROSE = "\n\nThat is the whole layout. " + " ".join(
+    f"Note {i}: the field at offset {i * 4} holds value {i * 9 + 1}." for i in range(30)
+)
+_ZERO_MATRIX = "```python\nm = [\n" + "".join(
+    "    [" + ", ".join(["0"] * 16) + "],\n" for _ in range(16)) + "]\n```"
+_BYTE_ARRAY = "static const uint8_t buf[256] = {\n" + "".join(
+    "    " + ", ".join(["0x00"] * 12) + ",\n" for _ in range(12)) + "};"
+_UNDERLINE = "Results\n" + "=" * 320
+
+
+def _stream_through(text: str, step: int = 8):
+    from agents.core.llm.repetition_guard import RepetitionStreamGuard
+
+    guard = RepetitionStreamGuard()
+    live = "".join(guard.feed(text[i:i + step]) for i in range(0, len(text), step))
+    return guard, live
+
+
+def test_formatting_runs_followed_by_prose_stream_in_full():
+    for block in (_ZERO_MATRIX, _BYTE_ARRAY, _UNDERLINE):
+        text = "Here it is:\n" + block + _TAIL_PROSE
+        guard, live = _stream_through(text)
+        # Round 1 tripped on all three (the onset detector took a period-1..4
+        # run as a loop) and dropped every later chunk, prose included.
+        assert live + guard.release(text) == text, block[:20]
+        assert guard.tripped is False, block[:20]
+
+
+def test_lmstudio_stream_shows_zero_matrix_and_trailing_prose_in_full():
+    text = "Here it is:\n" + _ZERO_MATRIX + _TAIL_PROSE
+    out, shown = _lmstudio_stream(text, "stop")
+    assert out == text and shown == text
+
+
+def test_deepinfra_stream_shows_byte_array_and_trailing_prose_in_full():
+    text = "Here it is:\n" + _BYTE_ARRAY + _TAIL_PROSE
+    body = _deepinfra_sse(text, "stop")
+    shown = []
+    out = _deepinfra_run(
+        lambda req: httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body),
+        lambda b: b.generate_stream("vendor/m", "p", on_token=shown.append))
+    assert out == text and "".join(shown) == text
+
+
+def test_claude_stream_shows_underline_and_trailing_prose_in_full():
+    text = "Here it is:\n" + _UNDERLINE + _TAIL_PROSE
+    body = _claude_stream_body(text, "end_turn")
+    backend = _claude_backend(lambda req: httpx.Response(200, text=body))
+    shown = []
+    try:
+        out = asyncio.run(backend.generate_stream("claude-x", "p", on_token=shown.append))
+    finally:
+        asyncio.run(backend.client.aclose())
+    assert out == text and "".join(shown) == text
+
+
+def test_stream_guard_release_returns_withheld_text_only_when_kept():
+    from agents.core.llm.repetition_guard import RepetitionStreamGuard
+
+    text = _LEGIT[:1500] + UNALIGNED_TEXT * 3
+    guard, live = _stream_through(text)
+    assert guard.tripped is True and len(live) < len(text)
+    assert live + guard.release(text) == text      # kept: rest is released
+    assert guard.release(text) == ""               # released once
+
+    guard, live = _stream_through(text)
+    assert guard.release("") == ""                 # dropped: nothing more shown
+    assert guard.release(text) == ""
+
+
+def test_complete_loop_is_released_after_finalize_on_lmstudio():
+    # Hidden while generating, but a complete answer is delivered in full, so
+    # the live bubble must end with the same text (round-1 inconsistency).
+    looping = UNALIGNED_TEXT * 4
+    out, shown = _lmstudio_stream(looping, "stop")
+    assert out == looping.strip() and shown == looping
+
+
+def test_truncated_loop_withheld_text_is_never_released_on_ollama():
+    test_ollama_stream_hides_repetition_loop_live()
+
+
+def test_onset_detector_ignores_loops_inside_an_open_code_fence():
+    from agents.core.llm.repetition_guard import RepetitionStreamGuard
+
+    row = "    assert compute(value) == expected_value_for_this_row  # check\n"
+    intro = _LEGIT[:1200] + "\nTests:\n"
+    text = intro + "```python\n" + row * 6 + "```\nAll rows above are the same check."
+    guard = RepetitionStreamGuard()
+    live = "".join(guard.feed(text[i:i + 8]) for i in range(0, len(text), 8))
+    assert live == text and guard.tripped is False
+    # The same rows outside a fence are a loop onset.
+    guard = RepetitionStreamGuard()
+    plain = intro + row * 6
+    live = "".join(guard.feed(plain[i:i + 8]) for i in range(0, len(plain), 8))
+    assert guard.tripped is True
+
+
+def test_onset_detector_still_cuts_a_sentence_loop_with_period_under_60():
+    unit = _sentence_unit(41)
+    assert _late_loop_shown(3600, unit) <= 6 * len(unit) + 60
+
+
+def test_low_variety_flood_is_still_cut_live_once_it_fills_the_tail():
+    from agents.core.llm.repetition_guard import _STREAM_TAIL
+
+    text = _LEGIT[:800] + "0, " * 20000
+    guard, live = _stream_through(text, step=16)
+    assert guard.tripped is True
+    assert len(live) < 800 + _STREAM_TAIL + 400
+    assert guard.release("") == ""
+
+
+def test_min_distinct_only_relaxes_the_live_check():
+    flood = "Results:\n" + "=" * 3000
+    assert is_repetition_dominated(flood) is True                 # finalizers: unchanged
+    assert is_repetition_dominated(flood, min_distinct=8) is False
+    assert is_repetition_dominated(UNALIGNED_TEXT, min_distinct=8) is True
+    assert is_repetition_dominated(REPEATED_TEXT, min_distinct=8) is True

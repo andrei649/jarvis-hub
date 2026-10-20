@@ -519,7 +519,10 @@ class GeminiBackend(LLMBackend):
         # replaces eligibility; an earlier snapshot is never a final-count fallback.
         if exhausted and not invalid_usage and pending_usage is not None:
             report_text_usage(pending_usage)
-        return self._finalize_cloud(full, finish, model)
+        answer = self._finalize_cloud(full, finish, model)
+        if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
+            await _emit(on_token, rg.release(answer))
+        return answer
 
     async def generate_stream(
         self,

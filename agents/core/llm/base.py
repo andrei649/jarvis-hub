@@ -875,6 +875,8 @@ class LMStudioBackend(LLMBackend):
         # truncated <think> / reasoning_content trace would overwrite the clean
         # bubble and poison conversation memory.
         answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
+            await _emit(on_token, rg.release(answer))
         if (temperature_retried and completed and not usage_failed and not refused
                 and finish == "stop" and answer.strip() and not is_degraded_reply(answer)):
             remember_temperature_rejection(self, model)
@@ -1115,6 +1117,8 @@ class OllamaBackend(LLMBackend):
                 await _emit(on_token, rg.feed(remainder))
 
         answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
+            await _emit(on_token, rg.release(answer))
         if usage is not None and not usage_failed:
             report_text_usage(usage)
         return answer

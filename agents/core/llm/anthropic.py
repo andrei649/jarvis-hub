@@ -314,6 +314,8 @@ class ClaudeBackend(LLMBackend):
                 note_provider_failure("anthropic", model, e)
             break
         answer = self._finalize_cloud(full, stop_reason, model)
+        if on_token and completed:   # H393: withheld text reaches the bubble iff kept
+            await _emit(on_token, rg.release(answer))
         if started and completed and final_output and not usage_failed:
             report_text_usage(anthropic_usage({"usage": raw_usage}))
         return answer

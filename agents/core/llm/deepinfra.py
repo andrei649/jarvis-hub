@@ -259,7 +259,10 @@ class DeepInfraBackend(LLMBackend):
                     await _emit(on_token, rg.feed(remainder))
             if usage is not None:
                 report_text_usage(usage)
-            return self._finalize_cloud(emitted, finish, model)
+            answer = self._finalize_cloud(emitted, finish, model)
+            if on_token is not None:   # H393: withheld text reaches the bubble iff kept
+                await _emit(on_token, rg.release(answer))
+            return answer
         except Exception as exc:
             logger.warning("DeepInfra stream failed: %s", log_safe(exc, 200))
             note_provider_failure("deepinfra", model, exc)

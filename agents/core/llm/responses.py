@@ -215,7 +215,10 @@ class ResponsesBackend(LLMBackend):
         # Accept only a bounded, fully closed stream; contradictory trailers and
         # close failures cannot publish usage for a rejected attempt.
         report_text_usage(terminal.usage)
-        return self._finalize_cloud(full)
+        answer = self._finalize_cloud(full)
+        if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
+            await _emit(on_token, guard.release(answer))
+        return answer
 
     async def aclose(self):
         await self.client.aclose()
