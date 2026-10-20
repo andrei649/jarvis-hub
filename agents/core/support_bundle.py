@@ -43,7 +43,9 @@ _MODEL_KEYS = ("backend_type", "default_model", "gemini_model", "claude_model",
 
 #: Free-text rows that hold a model id: shown only when the value has a model id's shape.
 _MODEL_ID_ROWS = frozenset({("llm", "default_model"), ("llm", "claude_model"), ("llm", "compatible_model")})
-_MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}")
+#: No ``@``: a model id never needs one, and with it ``user:pw@host`` or an e-mail
+#: address would pass as an id (review-H009 round 2).
+_MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}")
 
 #: Tool, platform and hub credentials Nerva reads, beside the LLM provider keys
 #: (tests/test_support_bundle.py pins that each one is read somewhere under agents/).
@@ -76,7 +78,8 @@ def _shown_value(category: str, key: str, kind: str, opts, value) -> tuple[bool,
         return bool(opts) and value in opts, value
     if kind == "model-select" or (category, key) in _MODEL_ID_ROWS:
         ok = (value == "" or (isinstance(value, str) and bool(_MODEL_ID.fullmatch(value))
-                              and "://" not in value and not settings_db._looks_like_credential(value)))
+                              and "://" not in value and not value.startswith("eyJ")
+                              and not settings_db._looks_like_credential(value)))
         return ok, value
     return False, None
 
@@ -109,7 +112,18 @@ def _meta(now_iso: str) -> dict:
     return out
 
 
-def _posture() -> dict:
+def _flat_settings(orch) -> dict:
+    """The settings the posture reads: the live hub's runtime view, else the stored rows
+    (``--offline``) — never an empty dict, which would always read posture ``off``."""
+    flat = getattr(orch, "_runtime_settings", None) if orch is not None else None
+    if isinstance(flat, dict) and flat:
+        return flat
+    from agents.core import settings_db
+    return {f"{cat}.{row['key']}": row.get("value")
+            for cat, rows in settings_db.get_all().items() for row in rows}
+
+
+def _posture(orch=None) -> dict:
     out: dict = {}
     try:
         from agents.core.security import hardened
@@ -118,7 +132,7 @@ def _posture() -> dict:
         out["hardened"] = {"error": "unavailable"}
     try:
         from agents.core import product_posture
-        out["product_posture"] = product_posture.snapshot()
+        out["product_posture"] = product_posture.snapshot(_flat_settings(orch))
     except Exception:
         out["product_posture"] = {"error": "unavailable"}
     try:
@@ -259,7 +273,7 @@ def build_bundle(orch=None, *, now_iso: str = "", route_count: int | None = None
     """
     return {
         "meta": _meta(now_iso),
-        "posture": _posture(),
+        "posture": _posture(orch),
         "capabilities": _capabilities(orch),
         "egress": _egress(),
         "audit": _audit(orch),

@@ -318,3 +318,27 @@ def test_route_passes_log_lines_and_bounds_it(tmp_path, monkeypatch):
     body = client.get("/api/support/bundle?log_lines=5").json()
     assert body["logs"]["entries"] and "boom" in body["logs"]["entries"][0]
     assert client.get("/api/support/bundle?log_lines=501").status_code == 422
+
+
+@pytest.mark.parametrize("leak", ["admin:hunter22@10.0.0.5:8080/v1", "user:p4ssw0rd@proxy.example.com",
+                                  "owner@example.com", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln"])
+def test_model_rows_withhold_schemeless_userinfo_emails_and_jwts(temp_settings, leak):
+    """review-H009 round 2: a credential URL without a scheme passed the model-id shape."""
+    temp_settings.put_category("llm", {"compatible_model": leak})
+    bundle = support_bundle.build_bundle()
+    assert bundle["model"]["compatible_model"] == "(withheld)"
+    assert leak not in json.dumps(bundle) and leak not in support_bundle.render_text(bundle)
+
+
+def test_posture_reads_the_stored_or_runtime_settings(temp_settings):
+    """review-H009 round 2: snapshot() with no settings always said ``off``."""
+    temp_settings.put_category("product", {"posture": "design_partner"})
+    offline = support_bundle.build_bundle()
+    assert offline["posture"]["product_posture"]["name"] == "design_partner"
+    assert "product=design_partner" in support_bundle.render_text(offline)
+
+    class _Orch:
+        _runtime_settings = {"product.posture": "off"}
+        audit = None
+
+    assert support_bundle.build_bundle(_Orch())["posture"]["product_posture"]["name"] == "off"
