@@ -10,7 +10,7 @@ Three gaps closed on top of H23.8's backup/verify/restore:
 * an **in-place** restore the hub performs itself: an approved restore is *staged*
   (drilled, then a marker under ``backups/``), the hub is asked to restart, and
   ``serve.py`` applies the staged restore at the next boot — before ``agents.web`` is
-  imported, so no store has the live DBs open — after a quick rollback snapshot.
+  imported, so no store has the live DBs open — after a rollback snapshot.
 """
 from __future__ import annotations
 
@@ -133,7 +133,8 @@ def test_apply_pending_restore_restores_in_place_after_a_rollback_snapshot(root)
     assert _rows(root / "settings.db") == 3                # the archive's state
     assert bk.pending_restore(root) is None                # one attempt, never a boot loop
     rollback = result["rollback"]
-    assert rollback.startswith("jarvis-backup-quick-")
+    # A full restore gets a full rollback point (H010 review): it overwrites more than DBs.
+    assert rollback.startswith("jarvis-backup-") and not rollback.startswith("jarvis-backup-quick-")
     # The rollback point holds the pre-restore state and restores it back.
     path = bk.resolve_backup(rollback, out_dir=str(bk.default_backup_dir(root)))
     bk.restore_backup(str(path), str(root), force=True)

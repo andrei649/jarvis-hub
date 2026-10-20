@@ -104,6 +104,19 @@ async def run() -> None:
     from agents.core.env_provenance import load_hub_env
 
     load_hub_env()                    # before the paths and knobs below are read
+    from agents.core import backup
+
+    # H010 review: this process opens the hub's DBs too. Mark the root first (an in-place
+    # restore defers while the mark is live), then wait out a restore already running.
+    backup.mark_runtime()
+    try:
+        await asyncio.to_thread(backup.wait_while_restoring)
+        await _run_marked()
+    finally:
+        backup.clear_runtime_mark()
+
+
+async def _run_marked() -> None:
     from agents.core.observability.runtime_log import RuntimeRunLog, default_log_path
 
     log_path = default_log_path()

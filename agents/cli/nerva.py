@@ -1646,7 +1646,8 @@ def _backup_restore(ns: argparse.Namespace, ctx: Context, bk: Any, root: Path) -
                 f"rollback point {result.get('rollback')}"
                 + ("" if result.get("ok") else f"; the drill found a problem: {result.get('problem')}"))
     elif result.get("status") == "deferred":
-        ctx.say(f"staged {staged['name']}: {result['reason']} — it is applied when that hub next starts")
+        ctx.say(f"staged {staged['name']}: {result['reason']} — it is applied at the next hub start "
+                "(python serve.py) once no other process has the data root open")
     else:
         ctx.err.write(f"restore of {ns.name} failed ({result.get('reason')}): {result.get('detail', '')}\n")
     return EXIT_OK if result.get("status") in ("restored", "deferred") and result.get("ok", True) else EXIT_FAILED

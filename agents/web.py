@@ -491,6 +491,12 @@ async def lifespan(application: FastAPI):
     from core.paths import ensure_user_home
     scaffolded_home = ensure_user_home()
     setup_logging()
+    # H010: only serve.py applies a staged in-place restore (at boot, before this module
+    # is imported); a raw-uvicorn start, or one where it was deferred, says it still waits.
+    from agents.core import backup as _backup
+    restore_waiting = _backup.unapplied_restore_warning()
+    if restore_waiting:
+        logger.warning(restore_waiting)
     # H501: say once, in the log, when the host itself is set up dangerously (root,
     # sshd passwords, a container's data root not on a volume). Read-only, never blocks.
     from agents.core import host_posture

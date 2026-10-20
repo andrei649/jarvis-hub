@@ -56,17 +56,22 @@ if profile_error():
 
 def apply_staged_restore():
     """H010: apply an in-place restore staged by an approved ``backup.restore`` (or left
-    by an offline ``nerva backup restore`` another hub deferred), before ``agents.web`` is
-    imported — its stores open the DBs at import, and a restore under them would be
-    written over. Nothing staged: a no-op that loads nothing. Returns the outcome."""
+    by an offline ``nerva backup restore`` another process deferred), before ``agents.web``
+    is imported and its lifespan builds the orchestrator — the hub's stores would hold the
+    DBs open, and a restore under them would be written over. It defers while another hub
+    or the jarvis-runtime coordinator has the root open, and reports a restore an earlier
+    boot was killed in the middle of. Under systemd the watchdog and the timeout are fed
+    while it runs. Nothing staged: a no-op that loads nothing. Returns the outcome."""
     from agents.core import backup
 
-    if backup.pending_restore() is None:
+    if not backup.boot_restore_due():
         return None
     from agents.core.env_provenance import load_hub_env
+    from agents.core.sd_notify import keepalive
 
     load_hub_env()   # an encrypted archive's key may live in .env (main() loads it anyway)
-    result = backup.apply_pending_restore()
+    with keepalive("applying a staged restore"):
+        result = backup.apply_pending_restore()
     if result is None:
         return None
     if result["status"] == "restored":
@@ -75,6 +80,10 @@ def apply_staged_restore():
               + f" (rollback point: {result.get('rollback')})")
     elif result["status"] == "deferred":
         print(f"Staged restore of {result['name']} deferred: {result['reason']}")
+    elif result["status"] == "interrupted":
+        print(f"Staged restore of {result['name']} was INTERRUPTED partway at an earlier boot: "
+              f"the data root may be half-restored. Rollback point: {result.get('rollback')} "
+              f"(details in backups/last-restore.json)", file=sys.stderr)
     else:
         print(f"Staged restore of {result['name']} FAILED ({result.get('reason')}); details in "
               f"backups/last-restore.json"
@@ -312,13 +321,23 @@ def main():
     run_server(NotifyingServer(config, readiness_snapshot))
 
 
+#: os.execv replaces the process image in place (same pid) on POSIX only. On Windows it
+#: starts a new process and ends this one, which a service wrapper reads as an exit — so
+#: there the hub never offers to restart itself and an approved restore answers
+#: restart="manual" (the owner restarts the service; the boot applies the restore).
+_SAME_PID_REEXEC = os.name != "nt"
+
+
 def run_server(server) -> None:
     """Run *server*; when the hub asked to restart itself (H010: an approved restore was
     staged), re-exec this same command once it has drained, so the staged restore is
-    applied at boot before any store opens. Same pid, so a supervisor sees no exit."""
+    applied at boot before any store opens. POSIX only (``_SAME_PID_REEXEC``): the pid is
+    kept, and under systemd the shutdown says RELOADING=1, not STOPPING=1
+    (``agents.core.sd_notify``), so the unit is not stopped under the re-exec."""
     from agents.core import hub_restart, install_identity
 
-    hub_restart.install(lambda: setattr(server, "should_exit", True))
+    if _SAME_PID_REEXEC:
+        hub_restart.install(lambda: setattr(server, "should_exit", True))
     server.run()
     reason = hub_restart.requested()
     hub_restart.reset()

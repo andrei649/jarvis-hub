@@ -12,7 +12,12 @@ README said to cron a curl instead. Now, when systemd starts the hub under
 - ``WATCHDOG=1`` is sent every half ``WATCHDOG_USEC`` by a task on the event loop, so
   a loop that hangs stops the heartbeat and systemd restarts the hub
   (``Restart=on-failure``);
-- ``STOPPING=1`` is sent as the server begins to shut down, before it drains.
+- ``STOPPING=1`` is sent as the server begins to shut down, before it drains — unless the
+  hub asked to restart itself (H010, ``agents.core.hub_restart``: an approved restore was
+  staged). Then it is ``RELOADING=1``: STOPPING would move the unit to stop-sigterm and
+  arm ``TimeoutStopSec``, and systemd would SIGKILL the same-pid re-exec partway through
+  the restore. The re-exec'd process sends ``READY=1`` again once it serves, and while it
+  applies the restore at boot :func:`keepalive` feeds the watchdog and extends the timeout.
 
 Only the server knows those moments (uvicorn runs the app's lifespan before it binds),
 so ``serve.py`` runs :class:`NotifyingServer`; a raw ``uvicorn agents.web:app`` says
@@ -27,8 +32,10 @@ import errno
 import logging
 import os
 import socket
+import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 
 import uvicorn
 
@@ -140,10 +147,15 @@ class Notifier:
             self._task = asyncio.get_running_loop().create_task(_heartbeat(interval), name="sd_notify-watchdog")
         return self.ready_sent
 
-    async def stopping(self) -> None:
-        """``STOPPING=1``, and the heartbeat ends: a draining hub is not hung."""
+    async def stopping(self, restarting: str | None = None) -> None:
+        """``STOPPING=1``, and the heartbeat ends: a draining hub is not hung. A hub that
+        is restarting itself (*restarting* is the reason) says ``RELOADING=1`` instead."""
         if enabled():
-            notify("STOPPING=1\nSTATUS=draining")
+            if restarting:
+                notify(f"RELOADING=1\nMONOTONIC_USEC={time.monotonic_ns() // 1000}\n"
+                       f"STATUS=restarting: {restarting}")
+            else:
+                notify("STOPPING=1\nSTATUS=draining")
         task, self._task = self._task, None
         if task is not None:
             task.cancel()
@@ -176,5 +188,37 @@ class NotifyingServer(uvicorn.Server):
             NOTIFIER.ready(self._readiness())
 
     async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
-        await NOTIFIER.stopping()
+        from . import hub_restart
+
+        await NOTIFIER.stopping(restarting=hub_restart.requested())
         await super().shutdown(sockets=sockets)
+
+
+#: The keepalive beat when no watchdog is armed (only the timeout is extended then).
+KEEPALIVE_SECONDS = 10.0
+
+
+@contextmanager
+def keepalive(status: str, *, interval: float | None = None) -> Iterator[None]:
+    """While the block runs, ping ``WATCHDOG=1`` and extend the current state's timeout
+    (``EXTEND_TIMEOUT_USEC``) every beat: a long boot-time restore is busy, not hung.
+    A no-op with no service manager listening."""
+    if not enabled():
+        yield
+        return
+    beat = interval or watchdog_seconds() or KEEPALIVE_SECONDS
+    message = f"WATCHDOG=1\nEXTEND_TIMEOUT_USEC={int(beat * 3 * 1_000_000)}\nSTATUS={status}"
+    stop = threading.Event()
+
+    def _loop() -> None:
+        while not stop.wait(beat):
+            notify(message)
+
+    notify(message)
+    thread = threading.Thread(target=_loop, name="sd_notify-keepalive", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=SEND_TIMEOUT_SECONDS + beat)
