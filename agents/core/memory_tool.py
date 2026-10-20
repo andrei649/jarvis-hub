@@ -16,7 +16,16 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
 * every fact is one line of at most :data:`MAX_FACT_CHARS` characters (the core block's
   own cut), free of control and invisible characters, and scanned for injection with the
   normalised scanner; a full ring refuses an add instead of silently dropping the oldest
-  fact (replace or remove one first);
+  fact (replace or remove one first). The budget is checked on the batch's final state, so
+  an add listed before the remove that makes room is kept (H423); a turn that keeps
+  hitting a full ring gets a terminal refusal after :data:`FULL_ATTEMPTS_PER_TURN` tries,
+  so it stops retrying;
+* a write holds a cross-process lock on each ring's file (``<ring>.json.lock``) and
+  rereads the rings from disk under it, so another Nerva process's write is planned
+  over, never written back over (H423). Every ring save records the sha256 of the bytes
+  it wrote beside the ring (``<ring>.json.sha256``); a file whose bytes no longer match
+  was edited by hand, and the call is refused: the file is copied to a named ``.bak``,
+  the edit is adopted as the ring's contents, and nothing is written over it;
 * only the owner's own turns at the operator surface write: the tool is offered to no
   other posture (``tool_profiles.OWNER_OPERATOR_TOOLS``), and a turn that has read
   untrusted content (an inbound message, web content, a tainted recall) is refused, so an
@@ -44,11 +53,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import threading
 import time
 import unicodedata
 import uuid
-from collections.abc import Callable, Mapping
+from collections import OrderedDict
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +75,12 @@ MAX_OPERATIONS = 8
 MAX_FACT_CHARS = 300
 #: Undo refs kept; the oldest is dropped first.
 UNDO_KEEP = 50
+#: Failed at-capacity attempts one model turn may make before the tool refuses for good.
+FULL_ATTEMPTS_PER_TURN = 3
+#: Turns whose at-capacity failures are counted; the oldest is forgotten first.
+_FULL_TURNS_KEEP = 256
+#: How long a write waits for another process's lock on a ring file.
+LOCK_TIMEOUT_S = 5.0
 _ARG_FIELDS = frozenset({"operations"})
 _OP_FIELDS = frozenset({"action", "target", "text", "old_text"})
 
@@ -189,10 +207,6 @@ def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]
             if text in facts:
                 rows.append({"action": "unchanged", "target": target})
                 continue
-            if len(facts) >= cap[target]:
-                raise MemoryToolError("memory_full",
-                                      f"operation {index}: {target} holds its {cap[target]} facts; "
-                                      "replace or remove one first")
             facts.append(text)
         else:
             pos = _match(facts, old, index)
@@ -204,11 +218,22 @@ def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]
                 raise MemoryToolError("memory_duplicate", f"operation {index}: that fact is already saved")
             facts[pos] = text
         rows.append({"action": action, "target": target})
+    # H423: the budget holds for the batch's final state, so an add listed before the
+    # remove that makes room for it is not refused.
+    for target in sorted(after):
+        if len(after[target]) > cap[target]:
+            raise MemoryToolError("memory_full",
+                                  f"{target} would hold {len(after[target])} facts after this call, over its "
+                                  f"{cap[target]}; replace or remove one first (in this call or before it)")
     return after, rows
 
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _sha_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def _ring_sha(facts: list[str]) -> str:
@@ -296,6 +321,104 @@ UNDO = UndoStore()
 _WRITE_LOCK = threading.Lock()
 
 
+# ── the files: a cross-process lock, a reread, and drift (H423) ──────────────
+
+def _ring_path(ring: Any) -> Path | None:
+    path = getattr(ring, "path", None)
+    return path if isinstance(path, Path) else None
+
+
+def _flock(path: Path) -> int:
+    """An exclusive lock on *path* (created owner-only), waited for up to
+    :data:`LOCK_TIMEOUT_S`. Returns the descriptor holding it."""
+    try:
+        import fcntl
+    except ImportError:          # no POSIX locks (Windows): one process writes
+        fcntl = None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    if fcntl is None:
+        return fd
+    deadline = time.monotonic() + LOCK_TIMEOUT_S
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except OSError:
+            if time.monotonic() >= deadline:
+                os.close(fd)
+                raise MemoryToolError("memory_locked",
+                                      "another Nerva process is writing memory; try again in a moment") from None
+            time.sleep(0.02)
+
+
+@contextmanager
+def _ring_locks(living: Any) -> Iterator[None]:
+    """Hold the lock file of every ring kept in a file, in path order (two writers never
+    wait on each other crosswise); released whatever happens."""
+    paths = sorted({path.with_name(path.name + ".lock")
+                    for attr in TARGETS.values() if (path := _ring_path(getattr(living, attr))) is not None})
+    held: list[int] = []
+    try:
+        for path in paths:
+            held.append(_flock(path))
+        yield
+    finally:
+        for fd in reversed(held):
+            os.close(fd)        # closing the descriptor releases its lock
+
+
+def _drifted(ring: Any) -> Path | None:
+    """When *ring*'s file no longer holds the bytes a Nerva save recorded (it was edited
+    by hand), keep a copy of it, adopt it as the ring's recorded contents, and return the
+    copy's path. None while the file is as saved, or has no record to compare with."""
+    path = _ring_path(ring)
+    digest_path = ring.digest_path() if callable(getattr(ring, "digest_path", None)) else None
+    if path is None or digest_path is None or not path.exists() or not digest_path.exists():
+        return None
+    data = path.read_bytes()
+    digest = _sha_bytes(data)
+    try:
+        recorded = json.loads(digest_path.read_text(encoding="utf-8")).get("sha256")
+    except (OSError, ValueError, AttributeError):
+        recorded = None
+    if recorded == digest:
+        return None
+    from .persistence.json_store import atomic_write_json
+
+    bak = path.with_name(f"{path.name}.{time.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:6]}.bak")
+    try:
+        fd = os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as out:
+            out.write(data)
+        atomic_write_json(digest_path, {"sha256": digest})
+    except OSError:
+        logger.warning("memory: the hand-edited %s could not be kept", path, exc_info=True)
+        raise MemoryToolError("memory_drift",
+                              f"{path.name} was edited outside Nerva and a copy of it could not be kept; "
+                              "nothing was written") from None
+    logger.warning("memory: %s was edited outside Nerva; kept a copy at %s", path, bak)
+    return bak
+
+
+def _settle(living: Any) -> None:
+    """Under the ring locks: refuse over a hand-edited ring (keeping a ``.bak`` of it),
+    and reread every ring from its file, so a plan starts from what is on disk."""
+    drifted: list[str] = []
+    for target, attr in TARGETS.items():
+        ring = getattr(living, attr)
+        bak = _drifted(ring)
+        if bak is not None:
+            drifted.append(f"{bak} ({target})")
+        if callable(getattr(ring, "reload", None)):
+            ring.reload()
+    if drifted:
+        raise MemoryToolError("memory_drift",
+                              "a memory file was edited outside Nerva, so nothing was written over it; "
+                              f"the edit is kept as it is and copied to {'; '.join(drifted)}; "
+                              "read memory again and retry")
+
+
 def _record(audit: Any, actor: str, action: str, why: str, ref: str, metadata: dict) -> None:
     """One intent-log record, or raise: a write is never made unrecorded."""
     if audit is None or not callable(getattr(audit, "record", None)):
@@ -368,7 +491,8 @@ def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: Undo
         raise MemoryToolError("memory_undo_unknown", "no write with that ref is kept")
     if living is None:
         raise MemoryToolError("memory_disabled", "memory is switched off on this hub")
-    with _WRITE_LOCK:
+    with _WRITE_LOCK, _ring_locks(living):
+        _settle(living)
         now = {target: getattr(living, TARGETS[target]).list() for target in TARGETS}
         before = {t: list(entry["before"].get(t, now[t])) for t in TARGETS}
         moved = _moved(entry, now)
@@ -459,8 +583,36 @@ def register_memory_tool(
     def schema_overrides() -> dict:
         return {} if _living() is not None else {"description": OFF_DESCRIPTION}
 
+    # H423: failed at-capacity attempts per model turn; a turn that reaches the cap is
+    # refused for good, so a model that cannot make room stops retrying. A script's calls
+    # carry no turn and are not counted.
+    full_turns: OrderedDict[str, int] = OrderedDict()
+    full_lock = threading.Lock()
+
+    def _terminal() -> dict:
+        return {"ok": False, "reason": "memory_full_terminal", "terminal": True,
+                "detail": f"memory stayed full through {FULL_ATTEMPTS_PER_TURN} attempts this turn; stop "
+                          "writing memory now and tell the owner what you could not save"}
+
+    def _full_capped(turn: str | None) -> bool:
+        if not turn:
+            return False
+        with full_lock:
+            return full_turns.get(turn, 0) >= FULL_ATTEMPTS_PER_TURN
+
+    def _count_full(turn: str | None) -> bool:
+        """Count one at-capacity refusal; True when the turn has now reached the cap."""
+        if not turn:
+            return False
+        with full_lock:
+            full_turns[turn] = full_turns.get(turn, 0) + 1
+            full_turns.move_to_end(turn)
+            while len(full_turns) > _FULL_TURNS_KEEP:
+                full_turns.popitem(last=False)
+            return full_turns[turn] >= FULL_ATTEMPTS_PER_TURN
+
     async def _handle(args: dict) -> dict:
-        from .tool_rpc import current_tool_actor
+        from .tool_rpc import current_tool_actor, current_tool_turn
 
         unknown = sorted(str(key) for key in args if key not in _ARG_FIELDS)
         if unknown:
@@ -471,13 +623,20 @@ def register_memory_tool(
             return {"ok": False, "reason": "memory_disabled", "detail": "memory is switched off on this hub"}
         operations = args.get("operations")
         if not operations:
+            for attr in TARGETS.values():
+                if callable(getattr(getattr(mem, attr), "reload", None)):
+                    getattr(mem, attr).reload()      # another process may have written it
             return {"ok": True, "memory": mem.core.list(), "user": mem.user_core.list()}
         refusal = _refusal()
         if refusal is not None:
             return refusal
+        turn = current_tool_turn()
+        if _full_capped(turn):
+            return _terminal()
         undo_store = UNDO if store is None else store
         try:
-            with _WRITE_LOCK:
+            with _WRITE_LOCK, _ring_locks(mem):
+                _settle(mem)
                 before = {target: getattr(mem, attr).list() for target, attr in TARGETS.items()}
                 caps = {target: int(getattr(getattr(mem, attr), "cap", 20)) for target, attr in TARGETS.items()}
                 after, rows = plan(operations, before, caps)
@@ -504,6 +663,8 @@ def register_memory_tool(
                         undo_store.drop(ref)
                         raise
         except MemoryToolError as exc:
+            if exc.reason == "memory_full" and _count_full(turn):
+                return _terminal()
             return {"ok": False, "reason": exc.reason, "detail": exc.detail}
         except Exception:
             logger.warning("memory: the write failed", exc_info=True)
@@ -529,7 +690,8 @@ def register_memory_tool(
 
 
 __all__ = [
-    "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "INPUT_SCHEMA", "MAX_FACT_CHARS", "MAX_OPERATIONS",
+    "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LOCK_TIMEOUT_S",
+    "MAX_FACT_CHARS", "MAX_OPERATIONS",
     "MemoryToolError", "OFF_DESCRIPTION", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan",
     "register_memory_tool", "undo",
 ]

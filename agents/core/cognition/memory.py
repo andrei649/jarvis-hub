@@ -23,6 +23,7 @@ the live MemoryManager / recall fusion / DailyReflector is the integration seam.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -283,6 +284,30 @@ class CoreMemory(JsonStore):
 
     def _serialize(self):
         return {"facts": self._facts[-self.cap:]}
+
+    def digest_path(self) -> "Path | None":
+        """H423 — the sidecar holding the sha256 of the bytes this ring last wrote, so a
+        writer can tell a file edited by hand from one a Nerva process saved."""
+        return None if self.path is None else self.path.with_name(self.path.name + ".sha256")
+
+    def _save(self) -> None:
+        super()._save()
+        if self.path is None:
+            return
+        from agents.core.persistence.json_store import atomic_write_json
+
+        try:
+            digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
+            atomic_write_json(self.digest_path(), {"sha256": digest})
+        except OSError:
+            # The ring is saved; a stale digest only makes the next tool write refuse
+            # and keep a copy, which is the safe side.
+            logger.warning("core memory: the digest of %s could not be saved", self.path, exc_info=True)
+
+    def reload(self) -> None:
+        """H423 — reread the ring from its file: another process may have written it."""
+        with self._lock:
+            self._load()
 
     def _deserialize(self, raw) -> None:
         facts = raw.get("facts", []) if isinstance(raw, dict) else raw

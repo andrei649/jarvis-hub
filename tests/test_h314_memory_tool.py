@@ -589,3 +589,157 @@ def test_an_undo_whose_put_back_also_fails_claims_no_put_back(rig, tmp_path, cap
     assert "could not be put back" in caplog.text
     record(actor="owner", action="other", why="the next record")
     assert _chain(tmp_path) == ["memory.undo", "other"]
+
+
+# ── H423: the budget on the batch's final state, the file lock, drift, the turn cap ──
+
+def test_the_budget_holds_for_the_batch_final_state():
+    after, rows = plan([_op("add", text="c"), _op("remove", old_text="a")],
+                       {"memory": ["a", "b"], "user": []}, {"memory": 2, "user": 20})
+    assert after["memory"] == ["b", "c"] and [r["action"] for r in rows] == ["add", "remove"]
+    with pytest.raises(MemoryToolError) as caught:
+        plan([_op("add", text="c"), _op("add", text="d"), _op("remove", old_text="a")],
+             {"memory": ["a", "b"], "user": []}, {"memory": 2, "user": 20})
+    assert caught.value.reason == "memory_full" and "3 facts" in caught.value.detail
+
+
+@pytest.mark.asyncio
+async def test_an_add_before_the_remove_that_makes_room_is_written(tmp_path):
+    living = _living(tmp_path, cap=2, core=("a", "b"))
+    server = ToolRPCServer()
+    register_memory_tool(server, living=lambda: living, audit=lambda: _Audit(),
+                         posture=lambda: "operator/owner", origin=lambda: "generated",
+                         store=UndoStore(tmp_path / "undo.json"))
+    reply = (await server.handle({"tool": "memory", "args": {"operations": [
+        _op("add", text="c"), _op("remove", old_text="a")]}}))["result"]
+    assert reply["ok"] is True and living.core.list() == ["b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_a_write_rereads_what_another_process_saved(rig, tmp_path):
+    other = CoreMemory(cap=20, path=tmp_path / "core.json")      # another process's view of the ring
+    other.put("saved by another process")
+    reply = await _call(rig, {"operations": [_op("add", text="mine")]})
+    assert reply["memory"] == ["saved by another process", "mine"]
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["saved by another process", "mine"]
+    assert (await _call(rig, {}))["memory"] == ["saved by another process", "mine"]
+
+
+@pytest.mark.asyncio
+async def test_a_write_waits_for_another_process_holding_the_ring_lock(rig, tmp_path):
+    import subprocess  # nosec B404 - the test runs its own interpreter
+
+    held = tmp_path / "held"
+    script = (
+        "import fcntl, os, sys, time\n"
+        f"sys.path.insert(0, {str(repo_root)!r})\n"
+        "from agents.core.cognition.memory import CoreMemory\n"
+        f"fd = os.open({str(tmp_path / 'core.json.lock')!r}, os.O_RDWR | os.O_CREAT, 0o600)\n"
+        "fcntl.flock(fd, fcntl.LOCK_EX)\n"
+        f"CoreMemory(cap=20, path={str(tmp_path / 'core.json')!r}).put('written under the lock')\n"
+        f"open({str(held)!r}, 'w').close()\n"
+        "time.sleep(0.6)\n"
+        "os.close(fd)\n"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", script])  # nosec B603 - the test's own interpreter
+    try:
+        for _ in range(1000):
+            if held.exists() or proc.poll() is not None:
+                break
+            await asyncio.sleep(0.01)
+        assert held.exists(), "the other process never took the lock"
+        reply = await _call(rig, {"operations": [_op("add", text="mine")]})
+    finally:
+        proc.wait(timeout=20)
+    assert proc.returncode == 0
+    assert reply["memory"] == ["written under the lock", "mine"]
+
+
+@pytest.mark.asyncio
+async def test_a_ring_lock_held_too_long_refuses_and_writes_nothing(rig, tmp_path, monkeypatch):
+    import fcntl
+    import os
+
+    monkeypatch.setattr(memory_tool, "LOCK_TIMEOUT_S", 0.2)
+    fd = os.open(tmp_path / "user.json.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)        # its own open file: it conflicts like another process
+    try:
+        reply = await _call(rig, {"operations": [_op("add", text="m")]})
+    finally:
+        os.close(fd)
+    assert reply["reason"] == "memory_locked"
+    assert rig.living.core.list() == [] and rig.audit.rows == [] and rig.store.recent() == []
+    assert (await _call(rig, {"operations": [_op("add", text="m")]}))["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edited_ring_is_not_written_over_but_kept_and_named(rig, tmp_path):
+    first = await _call(rig, {"operations": [_op("add", text="a")]})
+    hand = '{"facts": ["a", "typed by the owner"]}\n'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    reply = await _call(rig, {"operations": [_op("add", text="b")]})
+    assert reply["reason"] == "memory_drift"
+    baks = sorted(tmp_path.glob("core.json.*.bak"))
+    assert len(baks) == 1 and baks[0].read_text(encoding="utf-8") == hand
+    assert str(baks[0]) in reply["detail"] and "(memory)" in reply["detail"]
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand        # nothing written over it
+    assert [row["action"] for row in rig.audit.rows] == ["memory.write"]
+    with pytest.raises(MemoryToolError) as caught:          # the hand edit moved the ring: no undo over it
+        undo(first["undo_ref"], living=rig.living, audit=rig.audit, store=rig.store)
+    assert caught.value.reason == "memory_changed_meanwhile"
+    # The edit is adopted: the model reads it and its next write builds on it.
+    assert (await _call(rig, {}))["memory"] == ["a", "typed by the owner"]
+    again = await _call(rig, {"operations": [_op("add", text="b")]})
+    assert again["memory"] == ["a", "typed by the owner", "b"]
+    assert len(list(tmp_path.glob("core.json.*.bak"))) == 1
+
+
+def test_an_undo_over_a_hand_edited_ring_refuses_and_keeps_it(rig, tmp_path):
+    reply = asyncio.run(_call(rig, {"operations": [_op("add", "user", text="u")]}))
+    (tmp_path / "user.json").write_text('{"facts": ["edited"]}', encoding="utf-8")
+    with pytest.raises(MemoryToolError) as caught:
+        undo(reply["undo_ref"], living=rig.living, audit=rig.audit, store=rig.store)
+    assert caught.value.reason == "memory_drift" and "user.json." in caught.value.detail
+    assert (tmp_path / "user.json").read_text(encoding="utf-8") == '{"facts": ["edited"]}'
+
+
+def test_every_ring_save_records_the_digest_of_its_bytes(tmp_path):
+    ring = CoreMemory(cap=3, path=tmp_path / "ring.json")
+    ring.put("a")
+    digest = json.loads((tmp_path / "ring.json.sha256").read_text())["sha256"]
+    assert digest == hashlib.sha256((tmp_path / "ring.json").read_bytes()).hexdigest()
+    ring.clear()
+    digest = json.loads((tmp_path / "ring.json.sha256").read_text())["sha256"]
+    assert digest == hashlib.sha256((tmp_path / "ring.json").read_bytes()).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_a_turn_that_keeps_hitting_a_full_ring_gets_a_terminal_refusal(tmp_path):
+    from agents.core.tool_rpc import bind_tool_turn, reset_tool_turn
+
+    living = _living(tmp_path, cap=1, core=("a",))
+    server = ToolRPCServer()
+    register_memory_tool(server, living=lambda: living, audit=lambda: _Audit(),
+                         posture=lambda: "operator/owner", origin=lambda: "generated",
+                         store=UndoStore(tmp_path / "undo.json"))
+
+    async def call(op):
+        return (await server.handle({"tool": "memory", "args": {"operations": [op]}}))["result"]
+
+    cap = memory_tool.FULL_ATTEMPTS_PER_TURN
+    token = bind_tool_turn("turn-1")
+    try:
+        reasons = [(await call(_op("add", text=f"f{n}")))["reason"] for n in range(cap)]
+        assert reasons == ["memory_full"] * (cap - 1) + ["memory_full_terminal"]
+        last = await call(_op("replace", old_text="a", text="b"))
+        assert last["reason"] == "memory_full_terminal" and last["terminal"] is True
+        assert "stop" in last["detail"] and living.core.list() == ["a"]
+    finally:
+        reset_tool_turn(token)
+    token = bind_tool_turn("turn-2")                       # a new turn starts afresh
+    try:
+        assert (await call(_op("add", text="g")))["reason"] == "memory_full"
+    finally:
+        reset_tool_turn(token)
+    for n in range(cap + 1):                               # a script's calls carry no turn
+        assert (await call(_op("add", text=f"s{n}")))["reason"] == "memory_full"
