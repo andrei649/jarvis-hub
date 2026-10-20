@@ -542,7 +542,10 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
             _note_failure("cognition_memory_lookup", exc)
     if living is not None and hasattr(living, "clear"):
         try:
-            living.clear()
+            # H423: the core rings' clear waits for their file lock (a forget never writes
+            # without it), so it runs off the event loop; a ring that stays locked raises
+            # and is reported here as not forgotten.
+            await asyncio.to_thread(living.clear)
             cleared.append("cognition_memory")
         except Exception as exc:
             _note_failure("cognition_memory", exc)

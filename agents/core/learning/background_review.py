@@ -473,12 +473,14 @@ class BackgroundReviewer:
             if found:
                 actions.append(f"{found} fact(s) found but not kept: living memory is off "
                                "(cognition.memory_enabled)")
-        self._put_facts(review["user_facts"][:max_facts],
-                        getattr(living, "user_core", None),
-                        "User profile", actions, counts)
-        self._put_facts(review["agent_facts"][:max_facts],
-                        getattr(living, "core", None),
-                        "Core memory", actions, counts)
+        # H423: a ring put waits for the ring file's lock (up to LOCK_TIMEOUT_S per fact),
+        # so the writes run in a worker thread and never stall the event loop.
+        await asyncio.to_thread(self._put_facts, review["user_facts"][:max_facts],
+                                getattr(living, "user_core", None),
+                                "User profile", actions, counts)
+        await asyncio.to_thread(self._put_facts, review["agent_facts"][:max_facts],
+                                getattr(living, "core", None),
+                                "Core memory", actions, counts)
 
         if not max_facts and on_demand:
             found = sum(1 for fact in review["user_facts"] + review["agent_facts"] if not self._detect(fact))

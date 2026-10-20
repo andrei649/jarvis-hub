@@ -8,6 +8,7 @@ Design:
 - LLM prompt returns clean JSON; falls back gracefully on parse failure.
 - Injectible memory + llm_call → fully offline-testable.
 """
+import asyncio
 import hashlib
 import json
 import logging
@@ -129,7 +130,9 @@ class DailyReflector:
 
         extracted = await self._reflect(context)
         promoted = await self._consolidate(extracted, today)
-        living_promoted = self._consolidate_living_memory(extracted, today)
+        # H423: a core-ring put waits for the ring file's lock, so the handoff runs in a
+        # worker thread and never stalls the event loop.
+        living_promoted = await asyncio.to_thread(self._consolidate_living_memory, extracted, today)
 
         self._last_run = today
         self._last_result = {
@@ -256,11 +259,23 @@ class DailyReflector:
                     encoded += 1
                 core_memory = getattr(living, "core", None)
                 if core_memory is not None and hasattr(core_memory, "put"):
-                    core_memory.put(f"{day}: {lesson[:300]}")
-                    core += 1
+                    core += self._put_core(core_memory, f"{day}: {lesson[:300]}")
         except Exception:
             logger.debug("LivingMemory reflection handoff skipped", exc_info=True)
         return {"available": True, "encoded": encoded, "core": core}
+
+    @staticmethod
+    def _put_core(core_memory, fact: str) -> int:
+        """1 when the lesson changed the core ring, else 0. H423: a ring held by another
+        writer (CoreMemoryLocked) or hand-edited past reading back (CoreMemoryDrift) refuses
+        this one lesson with a warning; the remaining lessons are still encoded."""
+        from ..cognition.memory import CoreMemoryDrift, CoreMemoryLocked
+
+        try:
+            return int(core_memory.put(fact) is True)
+        except (CoreMemoryLocked, CoreMemoryDrift) as exc:
+            logger.warning("reflection lesson not kept in core memory: %s", exc)
+            return 0
 
     def _resolve_living_memory(self):
         source = self._living_memory

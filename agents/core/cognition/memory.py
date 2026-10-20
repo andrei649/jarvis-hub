@@ -281,6 +281,9 @@ async def reproject(records: "list[dict]", current_version: int, embedder: Calla
 
 #: H423 — how long a core-ring writer waits for another writer's lock on the ring file.
 LOCK_TIMEOUT_S = 5.0
+#: H423 review — a forget must win, so it waits longer for the lock; it still never
+#: writes without it (CoreMemory.clear).
+CLEAR_LOCK_TIMEOUT_S = 30.0
 
 
 class CoreMemoryLocked(TimeoutError):
@@ -301,7 +304,8 @@ class CoreMemoryDrift(RuntimeError):
 
 class _PathLock:
     """One ring file's cross-process lock, shared by every CoreMemory of this process on
-    that file: a thread-reentrant lock in front of one ``flock`` descriptor, so a writer
+    that file: a thread-reentrant lock in front of one OS-locked descriptor (``flock`` on
+    POSIX, ``msvcrt.locking`` on Windows), so a writer
     that already holds it (the memory tool, then its compare-and-set) does not wait on
     itself, and two threads of this process are serialised like two processes."""
 
@@ -326,8 +330,8 @@ class _PathLock:
     def release(self) -> None:
         self._depth -= 1
         if self._depth == 0 and self._fd is not None:
-            os.close(self._fd)          # closing the descriptor releases the flock
-            self._fd = None
+            fd, self._fd = self._fd, None
+            _release_fd(fd)
         self._rlock.release()
 
 
@@ -344,25 +348,87 @@ def _path_lock(path: Path) -> _PathLock:
         return lock
 
 
-def _flock(path: Path, deadline: float) -> int:
-    """An exclusive ``flock`` on *path* (created owner-only), polled until *deadline*."""
+def _lock_kind() -> str:
+    """Which OS lock guards a ring file: ``fcntl`` (POSIX ``flock``), ``msvcrt``
+    (Windows byte-range lock over byte 0, like ``vault._file_lock``), or ``none``."""
+    if os.name == "nt":
+        try:
+            import msvcrt  # noqa: F401
+            return "msvcrt"
+        except ImportError:
+            return "none"
     try:
+        import fcntl  # noqa: F401
+        return "fcntl"
+    except ImportError:
+        return "none"
+
+
+_NO_OS_LOCK_WARNED = False
+
+
+def _try_lock_fd(fd: int) -> bool:
+    """One non-blocking attempt at the exclusive OS lock on *fd*. True when it is held.
+
+    H423 review: POSIX uses ``flock``; Windows locks byte 0 with ``msvcrt.locking``
+    (``LK_NBLCK``), which conflicts across processes and across descriptors of one
+    process, as ``flock`` does. A platform with neither is warned about, never silent."""
+    global _NO_OS_LOCK_WARNED
+    kind = _lock_kind()
+    if kind == "fcntl":
         import fcntl
-    except ImportError:          # no POSIX locks (Windows): the in-process lock is all there is
-        fcntl = None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    if fcntl is None:
-        return fd
-    while True:
+
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return fd
+            return True
         except OSError:
+            return False
+    if kind == "msvcrt":
+        import msvcrt
+
+        if os.fstat(fd).st_size == 0:      # a byte-range lock needs a byte to cover
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, b"0")
+        os.lseek(fd, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    if not _NO_OS_LOCK_WARNED:
+        _NO_OS_LOCK_WARNED = True
+        logger.warning("core memory: this platform has neither fcntl nor msvcrt; ring files are "
+                       "locked only within this process, so run one Nerva process at a time")
+    return True
+
+
+def _release_fd(fd: int) -> None:
+    """Release the OS lock :func:`_try_lock_fd` took on *fd* and close it."""
+    try:
+        if _lock_kind() == "msvcrt":
+            import msvcrt
+
+            os.lseek(fd, 0, os.SEEK_SET)
+            with suppress(OSError):
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    finally:
+        os.close(fd)                 # closing the descriptor also releases a flock
+
+
+def _flock(path: Path, deadline: float) -> int:
+    """An exclusive OS lock on *path* (created owner-only), polled until *deadline*.
+    Returns the descriptor that holds it; :func:`_release_fd` gives it up."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o600)
+    try:
+        while not _try_lock_fd(fd):
             if time.monotonic() >= deadline:
-                os.close(fd)
-                raise CoreMemoryLocked(f"{path.name} is held by another writer") from None
+                raise CoreMemoryLocked(f"{path.name} is held by another writer")
             time.sleep(0.02)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
 
 class CoreMemory(JsonStore):
@@ -598,12 +664,12 @@ class CoreMemory(JsonStore):
         """Explicit user-forget path: remove all core facts and persist empty state.
 
         H423: a forget wins over a hand edit (it is not kept) and deletes the ``.bak``
-        copies of earlier ones; it waits for the ring lock but does not give up on it."""
-        try:
-            with self.locked():
-                return self._clear()
-        except CoreMemoryLocked:
-            logger.warning("core memory: %s stayed locked; forgetting it anyway", self.path)
+        copies of earlier ones. It waits longer than a write for the ring lock
+        (:data:`CLEAR_LOCK_TIMEOUT_S`) but never writes without it: a writer that holds the
+        lock has already reread the ring and would save the forgotten facts back over an
+        unlocked clear. When the lock stays held, :class:`CoreMemoryLocked` is raised so the
+        caller reports the forget as incomplete."""
+        with self.locked(timeout=CLEAR_LOCK_TIMEOUT_S):
             return self._clear()
 
     def _clear(self) -> int:
@@ -710,9 +776,23 @@ class LivingMemory:
         return {"available": True, "checked": len(records), "updated": updated, **result}
 
     def clear(self) -> dict:
-        """Explicit user-forget path for live cognition memory."""
-        return {"core": self.core.clear(), "tiers": self.tiers.clear(),
-                "user_core": self.user_core.clear()}
+        """Explicit user-forget path for live cognition memory.
+
+        H423 review: every store is cleared even when a ring stays locked; the ring that
+        could not be cleared is then raised (:class:`CoreMemoryLocked`) so the forget is
+        reported incomplete rather than claimed."""
+        out: dict = {}
+        stuck: list[str] = []
+        for name, store in (("core", self.core), ("tiers", self.tiers), ("user_core", self.user_core)):
+            try:
+                out[name] = store.clear()
+            except CoreMemoryLocked:
+                logger.warning("living memory: the %s ring stayed locked; it was not forgotten", name)
+                stuck.append(name)
+        if stuck:
+            raise CoreMemoryLocked(f"{', '.join(stuck)} stayed locked by another writer and was not "
+                                   "forgotten; run the forget again")
+        return out
 
     def status(self) -> dict:
         return {"available": True, "tiers": self.tiers.by_tier(),

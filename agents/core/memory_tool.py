@@ -381,6 +381,34 @@ def _settle(living: Any) -> None:
                               "read memory again and retry")
 
 
+def _read_rings(living: Any) -> None:
+    """A read's reread (H423 review): each ring strictly, under its lock, so a hand edit
+    that cannot be read back is reported (``memory_drift_unreadable``) instead of read as
+    an empty ring; one that reads back exactly is taken, as a write would. A ring whose
+    lock stays held is reread leniently: a read writes nothing, and every save is atomic."""
+    from .cognition.memory import CoreMemoryDrift, CoreMemoryLocked
+
+    unreadable: list[str] = []
+    for target, attr in TARGETS.items():
+        ring = getattr(living, attr)
+        if callable(getattr(ring, "sync_from_disk", None)):
+            try:
+                ring.sync_from_disk()
+                continue
+            except CoreMemoryDrift as exc:
+                where = f"; a copy is kept at {exc.bak}" if exc.bak else ""
+                unreadable.append(f"{exc.path.name} ({target}) {exc.problem}{where}")
+                continue
+            except CoreMemoryLocked:
+                pass
+        if callable(getattr(ring, "reload", None)):
+            ring.reload()
+    if unreadable:
+        raise MemoryToolError("memory_drift_unreadable",
+                              "a memory file was edited outside Nerva and cannot be read back without "
+                              f"dropping facts: {'; '.join(unreadable)}; tell the owner to fix the file")
+
+
 def _record(audit: Any, actor: str, action: str, why: str, ref: str, metadata: dict) -> None:
     """One intent-log record, or raise: a write is never made unrecorded."""
     if audit is None or not callable(getattr(audit, "record", None)):
@@ -592,9 +620,12 @@ def register_memory_tool(
             return {"ok": False, "reason": "memory_disabled", "detail": "memory is switched off on this hub"}
         operations = args.get("operations")
         if not operations:
-            for attr in TARGETS.values():
-                if callable(getattr(getattr(mem, attr), "reload", None)):
-                    getattr(mem, attr).reload()      # another process may have written it
+            try:
+                # A read rereads the files too (another process may have written them), in a
+                # worker thread since that waits for the ring locks.
+                await asyncio.to_thread(_read_rings, mem)
+            except MemoryToolError as exc:
+                return {"ok": False, "reason": exc.reason, "detail": exc.detail}
             return {"ok": True, "memory": mem.core.list(), "user": mem.user_core.list()}
         refusal = _refusal()
         if refusal is not None:
