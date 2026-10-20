@@ -910,3 +910,135 @@ def test_claude_stream_error_after_trip_never_releases_held_text():
         asyncio.run(backend.client.aclose())
     assert out.startswith("[Claude API stream error")
     assert len("".join(shown)) < len(looping) // 2
+
+
+# ── H393 review round 4: the live guard agrees with the finalizer on short loops ──
+
+# Short-period / low-distinct loops the finalizers drop (Hermes count) but the
+# round-3 live guard never tripped on in a stream under the 4000-char tail.
+_R4_LIVE_UNITS = _R3_UNITS + ("ha ha ", "0, ")
+
+
+@pytest.mark.parametrize("unit", _R4_LIVE_UNITS)
+@pytest.mark.parametrize("share", (0.3, 0.45))
+@pytest.mark.parametrize("n", (2000, 3105))
+def test_short_period_truncated_loop_is_not_painted_live(unit, share, n):
+    from agents.core.llm.repetition_guard import _STREAM_MIN_LOOP_SPAN
+
+    text = _prose_then_unit_loop(n, unit, share)
+    prefix_len = n - int(n * share)
+    assert LLMBackend._finalize_stream(text, "", "length", "m") == ""
+    guard, live = _stream_through(text, step=5)
+    assert guard.withholding is True
+    assert text.startswith(live)
+    # Only the loop's first few hundred characters ever reach the bubble.
+    assert len(live) <= prefix_len + _STREAM_MIN_LOOP_SPAN + 5, (len(live), prefix_len)
+    assert guard.release("") == ""
+
+
+@pytest.mark.parametrize("unit", _R4_LIVE_UNITS)
+def test_short_period_loop_held_text_is_released_when_kept(unit):
+    text = _prose_then_unit_loop(3000, unit, 0.4)
+    guard, live = _stream_through(text, step=5)
+    assert len(live) < len(text)
+    assert live + guard.release(text) == text
+
+
+def _ollama_stream(text: str, done_reason: str):
+    from agents.core.llm.base import OllamaBackend
+
+    lines = [{"response": text[i:i + 6]} for i in range(0, len(text), 6)]
+    lines.append({"done": True, "done_reason": done_reason})
+    body = "\n".join(json.dumps(line) for line in lines) + "\n"
+    backend = OllamaBackend("http://ollama.invalid")
+    backend.client = httpx.AsyncClient(base_url="http://ollama.invalid",
+                                       transport=httpx.MockTransport(lambda req: httpx.Response(200, text=body)))
+    shown = []
+    try:
+        out = asyncio.run(backend.generate_stream("m", "p", on_token=shown.append))
+    finally:
+        asyncio.run(backend.client.aclose())
+    return out, "".join(shown)
+
+
+@pytest.mark.parametrize("unit", ("the ", "I'm sorry ", "ha ha "))
+def test_ollama_stream_short_period_truncated_loop_never_painted(unit):
+    text = _prose_then_unit_loop(3105, unit, 0.5)
+    out, shown = _ollama_stream(text, "length")
+    assert out == ""
+    loop = text[3105 - int(3105 * 0.5):]
+    assert loop not in shown and len(shown) < len(text) - 1000
+
+
+@pytest.mark.parametrize("unit", ("the ", "0, "))
+def test_lmstudio_stream_short_period_truncated_loop_never_painted(unit):
+    text = _prose_then_unit_loop(3000, unit, 0.35)
+    out, shown = _lmstudio_stream(text, "length")
+    assert out == ""
+    assert len(shown) < len(text) - 600
+
+
+def test_short_run_hold_resumes_and_flushes_when_prose_follows():
+    # A 600-char periodic run inside a normal answer is held only while it
+    # runs; once prose follows, it is flushed and streaming continues live.
+    text = _PROSE[:1500] + "\n" + "0, " * 200 + "\n" + _PROSE[1500:3500]
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+def _matrix_answer(run: str) -> str:
+    words = " ".join(f"word{i} item{i * 3} value{i * 7}" for i in range(600))
+    return words[:3000] + "\n" + run + "\n" + words[3000:6000]
+
+
+def test_small_zero_matrix_late_in_a_long_answer_streams_live_in_full():
+    # Round-3 regression: the full-tail check used the Hermes overlapping count,
+    # so a 240-char zero matrix past the first 4000 chars tripped the guard.
+    text = _matrix_answer("[" + ", ".join(["0"] * 80) + "]")
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False
+    assert live == text
+
+
+def test_table_separator_run_late_in_a_long_answer_streams_live_in_full():
+    text = _matrix_answer("| --- " * 50 + "|")
+    assert len("| --- " * 50) == 300
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False
+    assert live == text
+
+
+def test_live_full_tail_check_is_coverage_only():
+    tail = _matrix_answer("[" + ", ".join(["0"] * 80) + "]")[-4000:]
+    assert is_repetition_dominated(tail) is True                    # finalizers: Hermes count
+    assert is_repetition_dominated(tail, count_trigger=False) is False
+
+
+# Low-variety (<= 2 distinct chars) loops: the exemption covers rule-length
+# runs only (< 2 windows), so a real "hahaha" / newline / "0 0 0" flood
+# follows Hermes.
+_R4_LOW_VARIETY_UNITS = ("ha", "0 ", "!", "\n", "- ", "=")
+
+
+@pytest.mark.parametrize("unit", _R4_LOW_VARIETY_UNITS)
+@pytest.mark.parametrize("share", (0.1, 0.25, 0.45))
+@pytest.mark.parametrize("n", (1000, 4000))
+def test_low_variety_loops_follow_the_hermes_trigger(unit, share, n):
+    text = _prose_then_unit_loop(n, unit, share)
+    loop_len = int(n * share)
+    assert _hermes_dominated(text) is True
+    if loop_len >= 120:     # a run of two windows or more is a loop, not a rule
+        assert is_repetition_dominated(text) is True, (unit, share, n)
+        if unit.strip():   # a trailing newline flood is already stripped as whitespace
+            assert LLMBackend._finalize_cloud(text, "length", "m") == ""
+    else:                  # rule-length run (here: 100 chars) stays exempt
+        assert is_repetition_dominated(text) is False
+
+
+def test_rule_length_low_variety_runs_stay_exempt():
+    # Several 80-char rules: each run is shorter than two windows.
+    body = "\n".join(f"Line {i}: varied prose about subject {i} and its outcome {i * 11}." for i in range(12))
+    text = ("\n" + "=" * 80 + "\n").join([body, body.upper(), body.lower(), body.title()])
+    assert _hermes_dominated(text) is True
+    assert is_repetition_dominated(text) is False

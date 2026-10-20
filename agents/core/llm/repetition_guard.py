@@ -38,13 +38,17 @@ _MIN_REPEAT_COUNT = 5
 _DOMINANCE_RATIO = 0.5
 
 # A repeat window built from at most this many distinct characters (a dash or
-# ``=`` rule, a run of spaces) is exempt from the overlapping-occurrence count;
-# it still trips through real character coverage.  The only deviation from the
-# Hermes port, which counts two 80-dash markdown rules as a repetition loop.
+# ``=`` rule, a run of spaces) is exempt from the overlapping-occurrence count
+# while every contiguous run of it is shorter than ``_LOW_VARIETY_RULE_SPAN``
+# characters; it still trips through real character coverage.  The only
+# deviation from the Hermes port, which counts two 80-dash markdown rules as a
+# repetition loop.  A longer run ("hahaha…", a newline or ``0 0 0`` flood) is a
+# loop, so from then on the key counts exactly as in the port.
 _LOW_VARIETY_DISTINCT = 2
+_LOW_VARIETY_RULE_SPAN = 2 * 60
 
 
-def is_repetition_dominated(text: str, *, min_distinct: int = 0) -> bool:
+def is_repetition_dominated(text: str, *, min_distinct: int = 0, count_trigger: bool = True) -> bool:
     """True when ``text`` is dominated by verbatim repeated fragments.
 
     A truncated response is "repetition-dominated" when a single 60+ char
@@ -56,8 +60,14 @@ def is_repetition_dominated(text: str, *, min_distinct: int = 0) -> bool:
     Returns False for non-string / empty / short inputs (fail-open: never
     blocks an answer the guard cannot confidently judge).
 
-    Detection is a superset of the Hermes port on every input whose repeated
-    windows have more than ``_LOW_VARIETY_DISTINCT`` distinct characters.
+    Detection is a superset of the Hermes port except for low-variety windows
+    (at most ``_LOW_VARIETY_DISTINCT`` distinct characters) whose every
+    contiguous run is shorter than ``_LOW_VARIETY_RULE_SPAN`` — rule-length
+    dash / ``=`` lines.
+
+    ``count_trigger=False`` turns the Hermes overlapping-occurrence count off and
+    scores real character coverage only (the live stream guard's setting: a
+    short zero matrix late in a long answer is not a loop to stop painting).
 
     ``min_distinct`` (default 0: off — the finalizers' setting) ignores any
     repeated line or window built from fewer distinct characters; the live
@@ -85,8 +95,9 @@ def is_repetition_dominated(text: str, *, min_distinct: int = 0) -> bool:
     needed = max(_MIN_REPEAT_COUNT, math.ceil(n * _DOMINANCE_RATIO / window))
     # The one exemption from that count: a window of at most
     # ``_LOW_VARIETY_DISTINCT`` distinct characters (an 80-dash / ``====`` rule,
-    # a run of spaces). Inside such a run the same window recurs at EVERY
-    # offset, so two horizontal rules alone reach ``needed``.
+    # a run of spaces) while none of its contiguous runs has reached
+    # ``_LOW_VARIETY_RULE_SPAN``. Inside such a run the same window recurs at
+    # EVERY offset, so two horizontal rules alone reach ``needed``.
     #
     # Secondary trigger (OR): the characters a key's occurrences actually cover
     # (the union of [i, i + window)) reach half the fragment. Exempt keys still
@@ -96,6 +107,7 @@ def is_repetition_dominated(text: str, *, min_distinct: int = 0) -> bool:
     covered: dict[str, int] = {}
     covered_end: dict[str, int] = {}
     low_variety: set[str] = set()
+    run_start: dict[str, int] = {}
     for i in range(n - window + 1):
         key = text[i : i + window]
         end = covered_end.get(key)
@@ -105,14 +117,20 @@ def is_repetition_dominated(text: str, *, min_distinct: int = 0) -> bool:
                 continue   # never recorded, so re-checked (cheaply) on each occurrence
             if distinct <= _LOW_VARIETY_DISTINCT:
                 low_variety.add(key)
+                run_start[key] = i
             counts[key] = 1
             covered[key] = window
         else:
             counts[key] += 1
             covered[key] += min(window, i + window - end)
+            if key in low_variety:
+                if i > end:
+                    run_start[key] = i   # a new run starts (gap since the last one)
+                elif i + window - run_start[key] >= _LOW_VARIETY_RULE_SPAN:
+                    low_variety.discard(key)   # too long for a rule: a loop
         covered_end[key] = i + window
         c = counts[key]
-        if c >= needed and key not in low_variety:
+        if count_trigger and c >= needed and key not in low_variety:
             return True
         if covered[key] >= target and c >= _MIN_REPEAT_COUNT:
             return True
@@ -170,6 +188,14 @@ _STREAM_MIN_LOOP_SPAN = 300
 _STREAM_MIN_PERIOD = 20
 _STREAM_MIN_DISTINCT = 8
 
+# The short-loop HOLD (``_short_loop_period``) covers what the onset detector
+# skips: a stream whose last ``_STREAM_MIN_LOOP_SPAN`` characters repeat with a
+# period of at most this many characters ("the the the", "I'm sorry I'm
+# sorry", "ha ha ha", "0, 0, 0"). Such a run may be formatting (a zero matrix, a
+# rule), so the hold is recoverable: it is lifted — and the held text flushed —
+# the moment the stream stops repeating.
+_STREAM_SHORT_PERIOD_MAX = _REPEAT_WINDOW
+
 
 def _loop_suffix(tail: str) -> bool:
     """True when ``tail`` ends in ``_MIN_REPEAT_COUNT``+ copies of one period.
@@ -201,6 +227,23 @@ def _loop_suffix(tail: str) -> bool:
     return False
 
 
+def _short_loop_period(tail: str) -> int:
+    """The period (1..``_STREAM_SHORT_PERIOD_MAX``) ``tail`` ends repeating, else 0.
+
+    "Ends repeating" means the last ``_STREAM_MIN_LOOP_SPAN`` characters are
+    periodic with that period — at least five back-to-back copies of the unit.
+    """
+    span = _STREAM_MIN_LOOP_SPAN
+    if len(tail) < span:
+        return 0
+    seg = tail[-span:]
+    last = seg[-1]
+    for period in range(1, _STREAM_SHORT_PERIOD_MAX + 1):
+        if seg[-1 - period] == last and seg[:-period] == seg[period:]:
+            return period
+    return 0
+
+
 _FENCE = "```"
 
 
@@ -215,7 +258,17 @@ class RepetitionStreamGuard:
     degenerate loop is never painted live into the chat bubble beyond its first
     few repeats. Text shown before the trip is not retracted.
 
-    The trip is provisional: the finalizers decide the answer. After
+    Outside those trips, a stream that ends in a short-period run
+    (``_short_loop_period``: a unit of at most 60 characters repeated over the
+    last 300) is HELD rather than tripped: chunks are withheld while the run
+    continues, and the moment the stream stops repeating the held text is
+    returned with the chunk that broke the run, so a zero matrix or a rule in a
+    normal answer is only delayed. A degenerate short loop never stops before
+    the output cap, so it stays held to the end.
+
+    ``withholding`` is true while either a trip or a hold is withholding text.
+
+    The trip and the hold are provisional: the finalizers decide the answer. After
     finalizing, the backend calls ``release(answer)``: when the answer was kept
     (non-empty — not dropped as a truncated loop) it returns the withheld text
     so the caller emits it and the live bubble / streamed TTS ends with the
@@ -229,6 +282,12 @@ class RepetitionStreamGuard:
         self._held: list[str] = []
         self._fence_open = False
         self._fence_carry = ""
+        self._holding = False
+
+    @property
+    def withholding(self) -> bool:
+        """True while later text is being withheld (a trip or a short-loop hold)."""
+        return self.tripped or self._holding
 
     def _track_fences(self, chunk: str) -> None:
         # A fence marker may straddle a chunk boundary: scan with the previous
@@ -252,12 +311,27 @@ class RepetitionStreamGuard:
             return self._trip(chunk)
         if self._since_check >= _STREAM_CHECK_EVERY and len(self._tail) >= MIN_FRAGMENT_LENGTH:
             self._since_check = 0
-            # Low-variety runs (zero matrices, byte tables, rules) only count
-            # once they flood the whole tail — never a normal-sized block.
-            if is_repetition_dominated(self._tail, min_distinct=_STREAM_MIN_DISTINCT) or (
-                len(self._tail) >= _STREAM_TAIL and is_repetition_dominated(self._tail)
+            # Coverage only (no Hermes overlapping count), so a hard trip needs
+            # the loop to cover half the tail. Low-variety runs (zero matrices,
+            # byte tables, rules) only count once they flood the whole tail —
+            # never a normal-sized block; a short run is at most held below.
+            if is_repetition_dominated(
+                self._tail, min_distinct=_STREAM_MIN_DISTINCT, count_trigger=False
+            ) or (
+                len(self._tail) >= _STREAM_TAIL
+                and is_repetition_dominated(self._tail, count_trigger=False)
             ):
                 return self._trip(chunk)
+        if _short_loop_period(self._tail):
+            self._holding = True
+            self._held.append(chunk)
+            return ""
+        if self._holding:   # the run ended: flush what was held, resume live
+            self._holding = False
+            self._held.append(chunk)
+            out = "".join(self._held)
+            self._held = []
+            return out
         return chunk
 
     def _trip(self, chunk: str) -> str:
