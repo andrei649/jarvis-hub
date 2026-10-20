@@ -18,17 +18,20 @@ removal and data erasure stay two decisions, never one implicit action. It erase
 ``--dry-run`` prints :func:`plan_uninstall` — every target, whether it exists, the desktop
 app paths when ``--gui``/``--gui-only`` is given, and whether (and which) data root would be
 purged — and removes nothing. ``--purge-data`` is never a bare flag: interactively the data
-root's folder name must be typed back; non-interactively ``--yes-purge=<full data-root
-path>`` must name the exact root, so a script written for one machine cannot erase another
+root's folder name must be typed back; non-interactively ``--yes-purge=<absolute
+data-root path>`` must name the exact root, so a script written for one machine cannot erase another
 machine's data with a guessable constant. ``--yes-purge`` without ``--purge-data`` is refused.
 
 ``--gui`` also removes the Tauri desktop shell (``desktop/src-tauri``: productName ``Jarvis
 Hub``, identifier ``com.jarvis.hub``) from the per-OS places its bundles install to, plus the
-shell's own per-identifier webview/cache/preference/log dirs and launcher entries.
+shell's own per-identifier webview/cache/preference/log dirs and launcher entries — and a
+source-built shell's cargo output tree (``desktop/src-tauri/target``, the binary and any
+``bundle/``), which is how the desktop app is obtained today (no CI job ships a bundle).
 ``--gui-only`` is Hermes' ``uninstall --gui``: it removes *only* the desktop shell and leaves
 the engine (venvs, WorldView) and the data alone. ``--gui-summary`` is the read-only JSON probe
-(installed or not, app paths, userdata paths, package-managed copies) a desktop app can use to
-gate its own uninstall button. A copy owned by a system package manager (``.deb``/``.rpm``
+(installed or not — OS install or source build —, app paths, source-built artifacts, userdata
+paths, package-managed copies, ``engine_installed``, ``platform``, ``app_root``) a desktop app can
+use to gate its own uninstall choice. A copy owned by a system package manager (``.deb``/``.rpm``
 under ``/usr``, an MSI in Program Files) is reported with the command that removes it rather
 than deleted behind the package manager's back; an NSIS install is removed by running its own
 ``uninstall.exe /S _?=<dir>`` (in place, so the call waits for it) so its registry entries go
@@ -55,7 +58,8 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from agents.core.paths import app_root, data_root, user_home
+from agents.core import paths as _paths
+from agents.core.paths import data_root, user_home
 
 logger = logging.getLogger("jarvis.uninstall")
 
@@ -79,6 +83,14 @@ DESKTOP_IDENTIFIER = "com.jarvis.hub"
 DESKTOP_BINARY = "jarvis-hub-desktop"
 DESKTOP_PACKAGE = "jarvis-hub"
 
+# Where a source build of the shell lands (desktop/README.md "Host build": `cargo run` /
+# `cargo tauri build` in desktop/src-tauri). No CI job ships a bundle, so for most users
+# this tree — the binary plus target/*/bundle/* — *is* the desktop app.
+DESKTOP_SOURCE_TARGET = "desktop/src-tauri/target"
+
+# Signals that the engine (not just its source) is installed under the app root.
+ENGINE_MARKERS: tuple[str, ...] = (".venv", "worldview/node_modules")
+
 # What a packaged user home holds next to the data root, which --purge-data does NOT erase.
 USER_HOME_KEPT: tuple[str, ...] = (".env", "skills", "souls")
 
@@ -99,15 +111,18 @@ def _ours(name: str) -> bool:
 
 def desktop_app_targets(*, platform: str | None = None, home: Path | None = None,
                         environ: Mapping[str, str] | None = None,
-                        system_root: Path | None = None) -> list[dict]:
+                        system_root: Path | None = None,
+                        app_root: Path | None = None) -> list[dict]:
     """Where the desktop shell can live on this host, and how each copy is removed.
 
     ``action`` is ``remove`` (deleted by this module), ``uninstaller`` (an NSIS install,
     removed by running its own ``uninstall.exe /S _?=<dir>``) or ``manual`` (owned by a
     system package manager — ``hint`` names the command). ``role`` is ``app`` (the program
     itself), ``userdata`` (the shell's per-identifier state) or ``integration`` (launcher
-    entries, icons, shortcuts). Every argument is injectable so the per-OS layouts are
-    tested on any host; *system_root* prefixes absolute system paths.
+    entries, icons, shortcuts) or ``source_build`` (``<app_root>/desktop/src-tauri/target``,
+    the cargo output tree of a source-built shell). Every argument is injectable so the
+    per-OS layouts are tested on any host; *system_root* prefixes absolute system paths and
+    *app_root* (default: the detected app root) locates the source build.
     """
     plat = platform or sys.platform
     env = os.environ if environ is None else environ
@@ -168,6 +183,8 @@ def desktop_app_targets(*, platform: str | None = None, home: Path | None = None
         if hicolor.is_dir():
             cands += [(p, "remove", None, "integration") for p in sorted(hicolor.glob("*/apps/*"))
                       if _ours(p.name)]
+    src_root = Path(app_root) if app_root is not None else _paths.app_root()
+    cands.append((src_root / DESKTOP_SOURCE_TARGET, "remove", None, "source_build"))
     rows = []
     for p, action, hint, role in cands:
         kind = _kind(p)
@@ -178,14 +195,46 @@ def desktop_app_targets(*, platform: str | None = None, home: Path | None = None
     return rows
 
 
+def source_built_artifacts(app_root: Path | None = None, *, platform: str | None = None) -> list[str]:
+    """The runnable shell a source build produced: ``target/<profile>/jarvis-hub-desktop``
+    (``.exe`` on Windows) and any ``target/<profile>/bundle`` (also under a
+    ``target/<triple>/<profile>`` cross build). An empty ``target/`` (an aborted ``cargo
+    check``) has none — it is still listed by :func:`desktop_app_targets` for cleanup."""
+    root = Path(app_root) if app_root is not None else _paths.app_root()
+    target = root / DESKTOP_SOURCE_TARGET
+    if not target.is_dir():
+        return []
+    exe = DESKTOP_BINARY + (".exe" if (platform or sys.platform).startswith("win") else "")
+    found: list[Path] = []
+    for pattern in ("*", "*/*"):  # <profile>/... and <triple>/<profile>/...
+        for profile in sorted(target.glob(pattern)):
+            if not profile.is_dir():
+                continue
+            if (profile / exe).is_file():
+                found.append(profile / exe)
+            if (profile / "bundle").is_dir():
+                found.append(profile / "bundle")
+    return [str(p) for p in found]
+
+
 def gui_summary(**desktop) -> dict:
-    """Read-only probe of the desktop shell (Hermes' ``--gui-summary``): is it installed,
-    where, what userdata it left, and which copies a package manager owns."""
+    """Read-only probe of the desktop shell (Hermes' ``--gui-summary``): is it installed
+    (an OS install *or* a source build), where, what userdata it left, which copies a
+    package manager owns — and whether the engine is installed too, so the desktop app can
+    offer "remove the app only" vs "remove everything" from this probe alone."""
+    root = Path(desktop["app_root"]) if desktop.get("app_root") is not None else _paths.app_root()
+    desktop = {**desktop, "app_root": root}
+    plat = desktop.get("platform") or sys.platform
     rows = [r for r in desktop_app_targets(**desktop) if r["exists"]]
     app = [r["path"] for r in rows if r["role"] == "app"]
+    built = source_built_artifacts(root, platform=plat)
     return {
-        "installed": bool(app),
+        "installed": bool(app) or bool(built),
+        "engine_installed": any(_kind(root / rel) != "absent" for rel in ENGINE_MARKERS),
+        "platform": plat,
+        "app_root": str(root),
         "app_paths": app,
+        "source_built_paths": built,
         "userdata_paths": [r["path"] for r in rows if r["role"] == "userdata"],
         "integration_paths": [r["path"] for r in rows if r["role"] == "integration"],
         "manual": [{"path": r["path"], "hint": r.get("hint", "")} for r in rows
@@ -213,7 +262,7 @@ def plan_uninstall(root: Path | None = None, *, purge_data: bool = False, gui: b
     ``gui_only`` lists *only* those (*desktop* forwards :func:`desktop_app_targets`'
     injectable arguments).
     """
-    base = Path(root) if root is not None else app_root()
+    base = Path(root) if root is not None else _paths.app_root()
     plan: dict = {"root": str(base)}
     if gui_only:
         plan["gui_only"] = True
@@ -231,7 +280,7 @@ def plan_uninstall(root: Path | None = None, *, purge_data: bool = False, gui: b
             plan["data_root_error"] = str(e)
         plan["kept_after_purge"] = kept_after_purge()
     if gui or gui_only:
-        plan["desktop"] = desktop_app_targets(**(desktop or {}))
+        plan["desktop"] = desktop_app_targets(**{"app_root": base, **(desktop or {})})
     return plan
 
 
@@ -340,7 +389,7 @@ def run_uninstall(root: Path | None = None, *, purge_data: bool = False,
     """
     if gui_only and purge_data:
         raise ValueError("gui_only removes only the desktop app; it cannot purge data")
-    base = Path(root) if root is not None else app_root()
+    base = Path(root) if root is not None else _paths.app_root()
     report: dict = {"root": str(base)}
     not_removed: list[str] = []
 
@@ -381,7 +430,8 @@ def run_uninstall(root: Path | None = None, *, purge_data: bool = False,
             "already_absent": already_absent,
         })
     if gui or gui_only:
-        report["desktop"] = _remove_desktop(desktop_app_targets(**(desktop or {})), runner)
+        report["desktop"] = _remove_desktop(
+            desktop_app_targets(**{"app_root": base, **(desktop or {})}), runner)
         not_removed = not_removed + report["desktop"]["not_removed"]
     report["ok"] = not not_removed
     if not_removed:
@@ -391,8 +441,14 @@ def run_uninstall(root: Path | None = None, *, purge_data: bool = False,
 
 # ── CLI ───────────────────────────────────────────────────────────
 def _same_path(a: str, b: Path) -> bool:
+    """*a* names *b* — and *a* is absolute. A relative value (``memory_logs``,
+    ``./memory_logs``) would resolve against the wrappers' working directory, the repo root,
+    and so match the default data root on every machine: a constant, not a confirmation."""
     try:
-        return Path(a).expanduser().resolve() == b.resolve()
+        p = Path(a).expanduser()
+        if not p.is_absolute():
+            return False
+        return p.resolve() == b.resolve()
     except (OSError, RuntimeError, ValueError):
         return False
 
@@ -401,8 +457,9 @@ def _confirm_purge(args, out, inp) -> bool:
     """The typed confirmation --purge-data needs.
 
     Interactively: the data root's folder name, typed back. Non-interactively:
-    ``--yes-purge=<the data root's full path>`` — the folder name alone (``memory`` /
-    ``memory_logs``) is the same on every machine, so it would be a second bare flag.
+    ``--yes-purge=<the data root's absolute path>`` — the folder name alone (``memory`` /
+    ``memory_logs``), or any relative path, is the same on every machine, so it would be a
+    second bare flag.
     """
     try:
         root = data_root()
@@ -414,13 +471,13 @@ def _confirm_purge(args, out, inp) -> bool:
     if args.yes_purge is not None:
         if _same_path(args.yes_purge, root):
             return True
-        out.write(f"refusing to purge: --yes-purge={args.yes_purge!r} does not match the data "
-                  f"root's full path ({root})\n")
+        out.write(f"refusing to purge: --yes-purge={args.yes_purge!r} is not the data root's "
+                  f"absolute path ({root}); a relative path or bare folder name is refused\n")
         return False
     isatty = getattr(inp, "isatty", None)
     if not (callable(isatty) and isatty()):
         out.write(f"refusing to purge without a typed confirmation: re-run with "
-                  f"--yes-purge={root} (the data root's full path)\n")
+                  f"--yes-purge={root} (the data root's absolute path)\n")
         return False
     out.write(f"--purge-data ERASES your data at {root} (irreversible).\n")
     if kept:
@@ -453,10 +510,10 @@ def _main(argv=None, *, out=None, inp=None) -> int:
     ap.add_argument("--purge-data", action="store_true",
                     help="ALSO erase the user's data root via data_purge.purge_data "
                          "(backup-first by default; irreversible; needs the data root's "
-                         "folder name typed back, or --yes-purge=<full data-root path>)")
+                         "folder name typed back, or --yes-purge=<absolute data-root path>)")
     ap.add_argument("--yes-purge", default=None, metavar="PATH",
                     help="non-interactive typed confirmation for --purge-data: the data "
-                         "root's full path")
+                         "root's absolute path (relative paths are refused)")
     ap.add_argument("--no-backup", action="store_true",
                     help="with --purge-data, skip the pre-forget backup safety net — "
                          "NOT recommended")
@@ -473,7 +530,7 @@ def _main(argv=None, *, out=None, inp=None) -> int:
     root = Path(args.root) if args.root else None
 
     if args.gui_summary:
-        out.write(json.dumps(gui_summary(), indent=2) + "\n")
+        out.write(json.dumps(gui_summary(app_root=root), indent=2) + "\n")
         return 0
     if args.gui_only and args.purge_data:
         out.write("refusing: --gui-only removes only the desktop app; it cannot be combined "

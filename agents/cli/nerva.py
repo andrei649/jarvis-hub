@@ -514,7 +514,7 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall.add_argument("--purge-data", action="store_true",
                            help="also erase the data root (backup-first; needs the folder name typed back)")
     uninstall.add_argument("--yes-purge", metavar="PATH",
-                           help="the data root's full path, for --purge-data without a prompt")
+                           help="the data root's absolute path, for --purge-data without a prompt")
     uninstall.add_argument("--no-backup", action="store_true", help="with --purge-data, skip the backup")
     uninstall.add_argument("--gui", action="store_true", help="also remove the desktop app")
     uninstall.add_argument("--gui-only", action="store_true",

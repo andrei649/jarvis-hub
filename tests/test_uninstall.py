@@ -277,7 +277,7 @@ def test_cli_purge_wrong_yes_purge_is_refused(app_root, monkeypatch):
     out = io.StringIO()
     rc = un._main(["--confirm", "--purge-data", "--yes-purge=not-it", "--root", str(app_root)], out=out)
     assert rc == 2
-    assert "does not match" in out.getvalue()
+    assert "is not the data root's absolute path" in out.getvalue()
     assert calls == []
     assert (app_root / ".venv").exists()
 
@@ -463,7 +463,9 @@ def test_uninstall_sh_dry_run_passes_through(tmp_path):
     plan = json.loads(res.stdout[res.stdout.index("{"):res.stdout.rindex("}") + 1])
     assert plan["dry_run"] is True and plan["purge_data"] is True and "desktop" in plan
     assert all(r["path"].startswith(str(home)) or r["path"].startswith("/usr/bin/")
-               for r in plan["desktop"])
+               or r["role"] == "source_build" for r in plan["desktop"])
+    assert {r["path"] for r in plan["desktop"] if r["role"] == "source_build"} == {
+        str(REPO_ROOT / "desktop" / "src-tauri" / "target")}
     assert "nothing was removed" in res.stdout
     assert (REPO_ROOT / ".venv").exists() == before
 
@@ -473,8 +475,8 @@ def test_wrappers_forward_new_flags():
     assert "--yes-purge=*" in sh and '"--yes-purge=$YES_PURGE"' in sh
     assert "ARGS+=(--gui)" in sh and "ARGS=(--dry-run)" in sh
     bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
-    assert '"/DRYRUN" set "DRYRUN=--dry-run"' in bat
-    assert '"/GUI" set "GUI=--gui"' in bat
+    assert '"/DRYRUN" (set "DRYRUN=--dry-run" & set "KNOWN=1")' in bat
+    assert '"/GUI" (set "GUIFLAG=1" & set "KNOWN=1")' in bat
     assert "agents.core.uninstall --dry-run !GUI! !PURGEDATA!" in bat
     assert "agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP!" in bat
 
@@ -682,7 +684,7 @@ def test_yes_purge_bare_folder_name_is_not_enough(app_root, monkeypatch):
     rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_name()}", "--root", str(app_root)],
                   out=out)
     assert rc == 2 and calls == []
-    assert "full path" in out.getvalue()
+    assert "absolute path" in out.getvalue()
 
 
 def test_yes_purge_without_purge_data_is_refused(app_root):
@@ -723,8 +725,8 @@ def test_wrappers_forward_round1_flags():
     sh = (REPO_ROOT / "uninstall.sh").read_text(encoding="utf-8")
     assert "ARGS+=(--gui-only)" in sh and "ARGS=(--gui-summary)" in sh
     bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
-    assert '"/GUIONLY" set "GUI=--gui-only"' in bat
-    assert '"/GUISUMMARY" set "GUISUMMARY=1"' in bat
+    assert '"/GUIONLY" (set "GUIONLY=1" & set "KNOWN=1")' in bat
+    assert '"/GUISUMMARY" (set "GUISUMMARY=1" & set "KNOWN=1")' in bat
     # batch for-loops split on '=', so the non-interactive confirmation comes from an env var
     assert 'if defined NERVA_YES_PURGE if defined PURGEDATA set "YESPURGE="--yes-purge=!NERVA_YES_PURGE!""' in bat
     assert "agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP!" in bat
@@ -738,3 +740,154 @@ def test_nerva_uninstall_verb_forwards_gui_only_and_summary(monkeypatch):
     assert main(["uninstall", "--gui-summary"], context=_ctx(io.StringIO())) == 0
     assert main(["uninstall", "--confirm", "--gui-only"], context=_ctx(io.StringIO())) == 0
     assert seen == [["--gui-summary"], ["--confirm", "--gui-only"]]
+
+
+# ── round 2: source-built desktop app, BAT refusal/precedence, engine probe, absolute --yes-purge
+def _fake_source_build(root: Path, *, windows: bool = False) -> Path:
+    """What `cargo run` / `cargo tauri build` in desktop/src-tauri leave behind."""
+    target = root / "desktop" / "src-tauri" / "target"
+    rel = target / "release"
+    rel.mkdir(parents=True)
+    (rel / ("jarvis-hub-desktop.exe" if windows else "jarvis-hub-desktop")).write_text("ELF")
+    (rel / "bundle" / "deb").mkdir(parents=True)
+    (rel / "bundle" / "deb" / "jarvis-hub_0.9.2_amd64.deb").write_text("deb")
+    (target / "debug" / "deps").mkdir(parents=True)
+    return target
+
+
+def _linux_desktop(tmp_path):
+    return {"platform": "linux", "home": tmp_path / "home", "environ": {},
+            "system_root": tmp_path / "sys"}
+
+
+def test_source_built_target_listed_in_gui_only_dry_run(app_root, tmp_path, monkeypatch):
+    target = _fake_source_build(app_root)
+    real = un.desktop_app_targets
+    monkeypatch.setattr(un, "desktop_app_targets",
+                        lambda **kw: real(**{**kw, **_linux_desktop(tmp_path)}))
+    out = io.StringIO()
+    assert un._main(["--dry-run", "--gui-only", "--root", str(app_root)], out=out) == 0
+    rows = {r["path"]: r for r in json.loads(out.getvalue())["desktop"]}
+    assert rows[str(target)]["exists"] is True and rows[str(target)]["action"] == "remove"
+    assert rows[str(target)]["role"] == "source_build"
+    assert target.exists()
+
+
+def test_gui_only_removes_source_build_and_keeps_engine(app_root, tmp_path, monkeypatch):
+    target = _fake_source_build(app_root)
+    real = un.desktop_app_targets
+    monkeypatch.setattr(un, "desktop_app_targets",
+                        lambda **kw: real(**{**kw, **_linux_desktop(tmp_path)}))
+    out = io.StringIO()
+    assert un._main(["--confirm", "--gui-only", "--root", str(app_root)], out=out) == 0
+    report = json.loads(out.getvalue())
+    assert str(target) in report["desktop"]["removed"] and report["ok"] is True
+    assert not target.exists()
+    assert (app_root / "desktop" / "src-tauri").is_dir()  # the source itself stays
+    assert (app_root / ".venv").exists() and (app_root / "worldview" / "node_modules").exists()
+
+
+def test_full_gui_uninstall_also_removes_source_build(app_root, tmp_path):
+    target = _fake_source_build(app_root)
+    report = un.run_uninstall(app_root, gui=True, desktop=_linux_desktop(tmp_path))
+    assert str(target) in report["desktop"]["removed"] and not target.exists()
+
+
+def test_gui_summary_detects_source_build(app_root, tmp_path, monkeypatch):
+    target = _fake_source_build(app_root)
+    real = un.desktop_app_targets
+    monkeypatch.setattr(un, "desktop_app_targets",
+                        lambda **kw: real(**{**kw, **_linux_desktop(tmp_path)}))
+    out = io.StringIO()
+    assert un._main(["--gui-summary", "--root", str(app_root)], out=out) == 0
+    s = json.loads(out.getvalue())
+    assert s["installed"] is True and s["app_paths"] == []
+    assert str(target / "release" / "jarvis-hub-desktop") in s["source_built_paths"]
+    assert str(target / "release" / "bundle") in s["source_built_paths"]
+
+
+def test_gui_summary_windows_source_build_exe(app_root, tmp_path):
+    target = _fake_source_build(app_root, windows=True)
+    s = un.gui_summary(platform="win32", home=tmp_path / "home", environ={}, app_root=app_root)
+    assert s["installed"] is True
+    assert str(target / "release" / "jarvis-hub-desktop.exe") in s["source_built_paths"]
+
+
+def test_gui_summary_empty_target_is_not_installed(app_root, tmp_path):
+    (app_root / "desktop" / "src-tauri" / "target" / "debug" / "deps").mkdir(parents=True)
+    s = un.gui_summary(**_linux_desktop(tmp_path), app_root=app_root)
+    # an aborted `cargo check` leaves target/ but no app: listed for cleanup, not "installed"
+    assert s["installed"] is False and s["source_built_paths"] == []
+    rows = {r["path"]: r for r in un.desktop_app_targets(**_linux_desktop(tmp_path), app_root=app_root)}
+    assert rows[str(app_root / "desktop" / "src-tauri" / "target")]["exists"] is True
+
+
+def test_gui_summary_reports_engine_platform_and_root(app_root, tmp_path):
+    s = un.gui_summary(**_linux_desktop(tmp_path), app_root=app_root)
+    assert s["engine_installed"] is True and s["platform"] == "linux"
+    assert s["app_root"] == str(app_root)
+    shutil.rmtree(app_root / ".venv")
+    assert un.gui_summary(**_linux_desktop(tmp_path), app_root=app_root)["engine_installed"] is True
+    shutil.rmtree(app_root / "worldview" / "node_modules")
+    assert un.gui_summary(**_linux_desktop(tmp_path), app_root=app_root)["engine_installed"] is False
+
+
+@pytest.mark.parametrize("value", ["memory_logs", "./memory_logs", "memory_logs/"])
+def test_yes_purge_relative_path_is_refused_even_when_it_resolves(tmp_path, monkeypatch, value):
+    """The wrappers cd into the repo root first, so a relative `memory_logs` resolves to the
+    real default data root — still a constant, so it must be refused."""
+    calls = []
+    monkeypatch.setattr("agents.core.data_purge.purge_data", _fake_purge(calls))
+    data = tmp_path / "memory_logs"
+    data.mkdir()
+    monkeypatch.setenv("JARVIS_HOME", str(data))
+    monkeypatch.delenv("JARVIS_PROFILE", raising=False)
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "app"
+    (root / ".venv").mkdir(parents=True)
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={value}", "--root", str(root)], out=out)
+    assert rc == 2 and calls == [], out.getvalue()
+    assert "absolute" in out.getvalue()
+    assert (root / ".venv").exists()
+    # the absolute path of the same root is accepted
+    out = io.StringIO()
+    assert un._main(["--confirm", "--purge-data", f"--yes-purge={data}", "--root", str(root)],
+                    out=out) == 0
+    assert calls == [True]
+
+
+def _bat_loop(bat: str) -> str:
+    start = bat.index("for %%A in (%*) do (")
+    return bat[start:bat.index("\n)\n", start)]
+
+
+def test_bat_refuses_unknown_options_before_any_prompt():
+    """`UNINSTALL.bat /DRYRN /CONFIRM` must not fall through to a real uninstall."""
+    bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
+    loop = _bat_loop(bat)
+    assert 'set "KNOWN=0"' in loop
+    switches = ["/CONFIRM", "/DRYRUN", "/GUI", "/GUIONLY", "/GUISUMMARY", "/PURGEDATA", "/NOBACKUP"]
+    for sw in switches:
+        line = next(ln for ln in loop.splitlines() if f'"{sw}"' in ln)
+        # the KNOWN marker must sit inside the if's parentheses, or `&` runs it unconditionally
+        assert line.strip().startswith(f'if /I "%%~A"=="{sw}" (') and 'set "KNOWN=1"' in line, line
+    assert 'if "!KNOWN!"=="0" (' in loop
+    assert "[ERROR] unknown option %%~A - nothing was removed" in loop
+    assert "exit /b 2" in loop
+    # the refusal happens inside the parse loop, i.e. before the Continue? prompt
+    assert bat.index("exit /b 2") < bat.index("Continue? [y/N]")
+
+
+def test_bat_guionly_takes_precedence_over_gui():
+    bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
+    loop = _bat_loop(bat)
+    assert 'set "GUIONLY=1"' in loop and 'set "GUIFLAG=1"' in loop
+    assert "GUI=--gui" not in loop  # order of switches can no longer decide the mode
+    assert 'if defined GUIONLY (set "GUI=--gui-only") else if defined GUIFLAG set "GUI=--gui"' in bat
+
+
+def test_bat_propagates_exit_code():
+    bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
+    assert 'set "RC=!errorlevel!"' in bat
+    assert bat.rstrip().endswith("endlocal & exit /b %RC%")

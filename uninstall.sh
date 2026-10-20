@@ -3,7 +3,7 @@
 # Mirrors install.sh's steps in reverse: removes .venv/ + WorldView's node_modules/ and
 # generated env files. Your DATA is never touched — memory_logs/ (or $JARVIS_HOME) is
 # untouched by default; pass --purge-data to also erase it (backup-first, irreversible,
-# and only after you type the data folder's name back — or pass --yes-purge=<full data-root path>).
+# and only after you type the data folder's name back — or pass --yes-purge=<absolute data-root path>).
 #
 # Usage:
 #   ./uninstall.sh --dry-run [--gui] [--purge-data]   # print what WOULD be removed; remove nothing
