@@ -235,7 +235,7 @@ class ClaudeBackend(LLMBackend):
             stop_reason = None
             rg = RepetitionStreamGuard()   # H393: never paint a loop live
             raw_usage = {}
-            started = completed = usage_failed = final_output = False
+            started = completed = usage_failed = final_output = errored = False
             stream_key = self._active_key()
             try:
                 async with self.client.stream(
@@ -297,12 +297,14 @@ class ClaudeBackend(LLMBackend):
                                 continue
             except ProviderRateLimited as e:
                 usage_failed = True
+                errored = True
                 full = f"[Claude API stream error: {e}]"
                 if self._fail_over_held(stream_key, e) and attempt + 1 < attempts:
                     continue
                 note_provider_failure("anthropic", model, e, kind="rate_limited", status=429)
             except httpx.HTTPStatusError as e:
                 usage_failed = True
+                errored = True
                 # Rotatable error → cool this key down so the next call fails over (H12.20).
                 if self.auth_pool is not None and is_rotatable_status(e.response.status_code):
                     self.auth_pool.report_failure(stream_key)
@@ -310,11 +312,16 @@ class ClaudeBackend(LLMBackend):
                 note_provider_failure("anthropic", model, e)
             except Exception as e:
                 usage_failed = True
+                errored = True
                 full = f"[Claude API stream error: {e}]"
                 note_provider_failure("anthropic", model, e)
             break
         answer = self._finalize_cloud(full, stop_reason, model)
-        if on_token and completed:   # H393: withheld text reaches the bubble iff kept
+        # H393: withheld text reaches the bubble iff the answer was kept. Any
+        # attempt that ended without an exception counts — a clean EOF without
+        # message_stop still returns ``full`` as the answer — while an error
+        # attempt returns a sentinel, never the withheld text.
+        if on_token and not errored:
             await _emit(on_token, rg.release(answer))
         if started and completed and final_output and not usage_failed:
             report_text_usage(anthropic_usage({"usage": raw_usage}))

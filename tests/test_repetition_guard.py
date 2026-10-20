@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import httpx
+import pytest
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
@@ -648,10 +649,14 @@ def test_deepinfra_generate_drops_truncated_short_period_loop():
     assert out == ""
 
 
-def test_prose_minority_loop_is_not_dominated():
-    # Coverage is exact: a loop covering well under half the text is kept.
+def test_prose_minority_loop_follows_the_hermes_trigger():
+    # Round-3 regression: round 2 scored union coverage only, so a period-25
+    # loop covering 35% was kept although base/Hermes (overlapping occurrence
+    # count >= ceil(n*0.5/60)) drops it.
     for period in (25, 45, 59):
-        assert is_repetition_dominated(_prose_then_loop(4000, period, 0.35)) is False
+        text = _prose_then_loop(4000, period, 0.35)
+        assert is_repetition_dominated(text) is _hermes_dominated(text), period
+    assert is_repetition_dominated(_prose_then_loop(4000, 25, 0.35)) is True
 
 
 # ── H393 review round 2: formatting runs must stream through in full ──
@@ -775,3 +780,133 @@ def test_min_distinct_only_relaxes_the_live_check():
     assert is_repetition_dominated(flood, min_distinct=8) is False
     assert is_repetition_dominated(UNALIGNED_TEXT, min_distinct=8) is True
     assert is_repetition_dominated(REPEATED_TEXT, min_distinct=8) is True
+
+
+# ── H393 review round 3: Hermes parity for short-period loops below 50% ──
+
+def _hermes_dominated(text: str) -> bool:
+    """The verbatim Hermes ``is_repetition_dominated`` (the merge-base port)."""
+    import math
+
+    from agents.core.llm.repetition_guard import _line_repetition_dominated
+
+    n = len(text)
+    if n < 400:
+        return False
+    if _line_repetition_dominated(text, n):
+        return True
+    needed = max(5, math.ceil(n * 0.5 / 60))
+    counts: dict[str, int] = {}
+    for i in range(n - 60 + 1):
+        key = text[i:i + 60]
+        c = counts.get(key, 0) + 1
+        if c >= needed:
+            return True
+        counts[key] = c
+    return False
+
+
+def _prose_then_unit_loop(n: int, unit: str, share: float) -> str:
+    loop_len = int(n * share)
+    loop = (unit * (loop_len // len(unit) + 1))[:loop_len]
+    return _PROSE[: n - loop_len] + loop
+
+
+_R3_UNITS = (
+    "I'm sorry ",                         # p=10
+    "the ",                               # p=4
+    "Let me check that file again. ",     # p=30
+    "Wait, let me rethink it. ",          # p=25
+)
+
+
+@pytest.mark.parametrize("unit", _R3_UNITS)
+@pytest.mark.parametrize("share", (0.3, 0.45))
+@pytest.mark.parametrize("n", (4000, 8000))
+def test_truncated_short_period_minority_loop_is_dropped(unit, share, n):
+    text = _prose_then_unit_loop(n, unit, share)
+    assert _hermes_dominated(text) is True          # what the port drops
+    assert LLMBackend._finalize_stream(text, "", "length", "m") == ""
+    assert LLMBackend._finalize_cloud(text, "length", "m") == ""
+    # A complete answer is never touched.
+    assert LLMBackend._finalize_cloud(text, "stop", "m") == text.strip()
+
+
+def _random_unit(period: int, seed: int) -> str:
+    import random
+
+    rng = random.Random(seed * 1000 + period)  # nosec B311
+    alphabet = "abcdefghijklmnopqrstuvwxyz ,.'"
+    return "".join(rng.choice(alphabet) for _ in range(period))
+
+
+def test_detector_is_a_superset_of_the_hermes_port():
+    misses = []
+    for n in (1000, 4000):
+        for period in range(5, 60, 3):
+            for share in (0.15, 0.25, 0.35, 0.45, 0.6, 0.75, 0.9):
+                for unit in (_random_unit(period, 1), _random_unit(period, 2), _sentence_unit(period)):
+                    if len(set(unit)) <= 2:
+                        continue   # low-variety rule inputs are the one sanctioned exemption
+                    text = _prose_then_unit_loop(n, unit, share)
+                    if _hermes_dominated(text) and not is_repetition_dominated(text):
+                        misses.append((n, period, share, unit))
+    assert misses == []
+
+
+def test_detector_matches_hermes_on_the_reviewer_grid():
+    for n in (2000, 4000, 6000):
+        for period in (10, 20, 25, 30, 40):
+            for share in (0.25, 0.35, 0.45):
+                text = _prose_then_loop(n, period, share)
+                if _hermes_dominated(text):
+                    assert is_repetition_dominated(text) is True, (n, period, share)
+                    assert LLMBackend._finalize_cloud(text, "length", "m") == ""
+
+
+def test_horizontal_rules_stay_exempt_while_hermes_trips_on_them():
+    body = "\n".join(f"Line {i}: varied prose about subject {i} and its outcome {i * 11}." for i in range(50))
+    text = (body + "\n" + "-" * 80 + "\n" + body.upper() + "\n" + "-" * 80 + "\nEnd.")[-4000:]
+    assert _hermes_dominated(text) is True          # the port's false positive
+    assert is_repetition_dominated(text) is False
+
+
+def _claude_stream_body_no_stop(text: str) -> str:
+    events = [{"type": "message_start", "message": {"usage": {"input_tokens": 1}}}]
+    events += [{"type": "content_block_delta", "delta": {"type": "text_delta", "text": text[i:i + 40]}}
+               for i in range(0, len(text), 40)]
+    return "".join(f"data: {json.dumps(e)}\n\n" for e in events)
+
+
+def test_claude_stream_clean_eof_without_message_stop_releases_held_text():
+    # The stream ends cleanly with no message_stop: the answer is the full text
+    # (no sentinel), so the live bubble must end with that same text.
+    looping = UNALIGNED_TEXT * 4
+    body = _claude_stream_body_no_stop(looping)
+    backend = _claude_backend(lambda req: httpx.Response(200, text=body))
+    shown = []
+    try:
+        out = asyncio.run(backend.generate_stream("claude-x", "p", on_token=shown.append))
+    finally:
+        asyncio.run(backend.client.aclose())
+    assert out == looping.strip()
+    assert "".join(shown) == looping
+
+
+def test_claude_stream_error_after_trip_never_releases_held_text():
+    looping = UNALIGNED_TEXT * 4
+    body = _claude_stream_body_no_stop(looping)
+
+    class Cut(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield body.encode()
+            raise httpx.ReadError("cut")
+
+    backend = _claude_backend(lambda req: httpx.Response(200, stream=Cut()))
+    shown = []
+    try:
+        out = asyncio.run(backend.generate_stream("claude-x", "p", on_token=shown.append))
+    finally:
+        asyncio.run(backend.client.aclose())
+    assert out.startswith("[Claude API stream error")
+    assert len("".join(shown)) < len(looping) // 2

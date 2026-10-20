@@ -18,6 +18,8 @@ v2026.8.27) — see LICENSES/hermes-agent-MIT.txt.
 
 from __future__ import annotations
 
+import math
+
 # A fragment must be at least this long before the repetition check runs at
 # all.  Short truncations (a sentence cut mid-word) can trivially contain
 # repeated tokens and are legitimately delivered.
@@ -35,6 +37,12 @@ _MIN_REPEAT_COUNT = 5
 # least this fraction of its characters.
 _DOMINANCE_RATIO = 0.5
 
+# A repeat window built from at most this many distinct characters (a dash or
+# ``=`` rule, a run of spaces) is exempt from the overlapping-occurrence count;
+# it still trips through real character coverage.  The only deviation from the
+# Hermes port, which counts two 80-dash markdown rules as a repetition loop.
+_LOW_VARIETY_DISTINCT = 2
+
 
 def is_repetition_dominated(text: str, *, min_distinct: int = 0) -> bool:
     """True when ``text`` is dominated by verbatim repeated fragments.
@@ -47,6 +55,9 @@ def is_repetition_dominated(text: str, *, min_distinct: int = 0) -> bool:
 
     Returns False for non-string / empty / short inputs (fail-open: never
     blocks an answer the guard cannot confidently judge).
+
+    Detection is a superset of the Hermes port on every input whose repeated
+    windows have more than ``_LOW_VARIETY_DISTINCT`` distinct characters.
 
     ``min_distinct`` (default 0: off — the finalizers' setting) ignores any
     repeated line or window built from fewer distinct characters; the live
@@ -67,31 +78,43 @@ def is_repetition_dominated(text: str, *, min_distinct: int = 0) -> bool:
     # General path: fixed-size exact-repeat windows, sliding one char at a
     # time.  Catches repetition loops that do not align to line boundaries.
     window = _REPEAT_WINDOW
-    # Score each window by the characters its occurrences actually COVER (the
-    # union of [i, i + window) over every occurrence), not by occurrences x
-    # window: inside one run of a single character (a markdown rule of 80
-    # dashes) the same window recurs at every offset, and crediting each
-    # overlap with a full window would score two horizontal rules as covering
-    # 2.5 KB of text.  The union credits that rule with its 80 real chars,
-    # while a loop of ANY period (shorter than the window too) earns its whole
-    # span.  A key also needs ``_MIN_REPEAT_COUNT`` occurrences.
+    # Primary trigger — the Hermes rule, unchanged: a window that occurs (with
+    # overlap) at least ``needed`` times. Overlapping occurrences make it more
+    # sensitive to short periods: a period-p loop trips once it covers roughly
+    # p/120 of the fragment (~8% at p=10, ~25% at p=30).
+    needed = max(_MIN_REPEAT_COUNT, math.ceil(n * _DOMINANCE_RATIO / window))
+    # The one exemption from that count: a window of at most
+    # ``_LOW_VARIETY_DISTINCT`` distinct characters (an 80-dash / ``====`` rule,
+    # a run of spaces). Inside such a run the same window recurs at EVERY
+    # offset, so two horizontal rules alone reach ``needed``.
+    #
+    # Secondary trigger (OR): the characters a key's occurrences actually cover
+    # (the union of [i, i + window)) reach half the fragment. Exempt keys still
+    # count here, so a genuine low-variety flood is caught by its real span.
     target = n * _DOMINANCE_RATIO
     counts: dict[str, int] = {}
     covered: dict[str, int] = {}
     covered_end: dict[str, int] = {}
+    low_variety: set[str] = set()
     for i in range(n - window + 1):
         key = text[i : i + window]
         end = covered_end.get(key)
         if end is None:
-            if min_distinct and len(set(key)) < min_distinct:
+            distinct = len(set(key))
+            if min_distinct and distinct < min_distinct:
                 continue   # never recorded, so re-checked (cheaply) on each occurrence
+            if distinct <= _LOW_VARIETY_DISTINCT:
+                low_variety.add(key)
             counts[key] = 1
             covered[key] = window
         else:
             counts[key] += 1
             covered[key] += min(window, i + window - end)
         covered_end[key] = i + window
-        if covered[key] >= target and counts[key] >= _MIN_REPEAT_COUNT:
+        c = counts[key]
+        if c >= needed and key not in low_variety:
+            return True
+        if covered[key] >= target and c >= _MIN_REPEAT_COUNT:
             return True
     return False
 
