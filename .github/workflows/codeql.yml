@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4
         with:
           languages: python
           # Suite + paths-ignore (test code excluded) live in the config file.
@@ -39,6 +39,6 @@ jobs:
         # required check is restore patch K (docs/restore/README.md), an owner
         # decision. It is deliberately no longer `continue-on-error`: a broken
         # analysis or a failed upload must go red on main, not be swallowed.
-        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4
         with:
           category: "/language:python"

@@ -101,11 +101,34 @@ export function BoardCanvas({ board, meta, profiles, orchestration, auxiliaryErr
     return (!q || [t.title, t.body, t.id].some(v => v?.toLowerCase().includes(q))) && (!assignee || t.assignee === assignee) && (!tenant || t.tenant === tenant);
   }) })) || [], [board, search, assignee, tenant]);
   const select = (id: string) => { const next = new Set(selected); if (!next.delete(id)) next.add(id); onSelect(next); };
-  useEffect(() => { if (!board) return; const alive = new Set(board.columns.flatMap(c => c.tasks.map(t => t.id))); if ([...selected].some(id => !alive.has(id))) onSelect(new Set([...selected].filter(id => alive.has(id)))); }, [board]);
+  useEffect(() => {
+    if (!board) return;
+    // Bolt Optimization: Single-pass Set population avoids intermediate array allocations from flatMap() and map()
+    const alive = new Set<string>();
+    for (let i = 0; i < board.columns.length; i++) {
+      const colTasks = board.columns[i].tasks;
+      for (let j = 0; j < colTasks.length; j++) alive.add(colTasks[j].id);
+    }
+    if ([...selected].some(id => !alive.has(id))) onSelect(new Set([...selected].filter(id => alive.has(id))));
+  }, [board]);
   useEffect(() => { const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && selected.size) onSelect(new Set()); }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [selected]);
   const toggleCollapse = (name: string) => { const next = { ...collapsed, [name]: !(collapsed[name] ?? (filtered.find(c => c.name === name)?.tasks.length === 0)) }; setCollapsed(next); try { localStorage.setItem('nerva.kanban.collapsed', JSON.stringify(next)); } catch { /* storage disabled */ } };
+  // Bolt Optimization: Single-pass task counts memoized on board to avoid multiple array scans on every render
+  const { totalTasks, runningTasksCount, readyTasksCount } = useMemo(() => {
+    let total = 0, running = 0, ready = 0;
+    if (board?.columns) {
+      for (let i = 0; i < board.columns.length; i++) {
+        const col = board.columns[i];
+        const count = col.tasks.length;
+        total += count;
+        if (col.name === 'running') running = count;
+        else if (col.name === 'ready') ready = count;
+      }
+    }
+    return { totalTasks: total, runningTasksCount: running, readyTasksCount: ready };
+  }, [board]);
   return <>
-    <div className="kb-toolbar"><span title={k.countTip(board?.columns.find(c => c.name === 'running')?.tasks.length || 0, board?.columns.find(c => c.name === 'ready')?.tasks.length || 0)}>{board?.columns.reduce((n, c) => n + c.tasks.length, 0) || 0} tasks</span>
+    <div className="kb-toolbar"><span title={k.countTip(runningTasksCount, readyTasksCount)}>{totalTasks} tasks</span>
       <input aria-label="Search tasks" placeholder={k.filterCards} value={search} onChange={e => setSearch(e.target.value)} />
       <button type="button" onClick={() => setShowFilters(v => !v)}>{k.filters}</button>
       <button type="button" onClick={() => setShowOrchestration(v => !v)}>Orchestration</button>
