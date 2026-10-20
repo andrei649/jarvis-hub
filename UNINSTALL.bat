@@ -79,31 +79,37 @@ if "!DOCONFIRM!"=="0" (
 
 REM --- Find Python (prefer system, same reasoning as uninstall.sh: the
 REM     uninstall module removes .venv\ itself) ----------------------
-where py >nul 2>&1
-if %errorlevel%==0 (set "PY=py") else (
-  where python >nul 2>&1
-  if %errorlevel%==0 (set "PY=python") else (
-    if exist ".venv\Scripts\python.exe" (set "PY=.venv\Scripts\python.exe") else (
-      echo [ERROR] no Python found - cannot run the uninstall module.
-      set "RC=1"
-      goto :end
-    )
-  )
+REM     Each probe is a flat line tested with && : inside one parenthesised
+REM     if/else block cmd expands the errorlevel variable once, at parse time, so a nested
+REM     second check would always see the first probe's failure. Running the
+REM     interpreter (not just "where") also skips the Microsoft Store python stub.
+py -3 -c "import sys" >nul 2>&1 && (set "PY=py -3" & goto :havepy)
+python -c "import sys" >nul 2>&1 && (set "PY=python" & goto :havepy)
+if exist ".venv\Scripts\python.exe" (
+  set "PY=.venv\Scripts\python.exe"
+  echo [WARNING] no system Python found - running from .venv\Scripts\python.exe.
+  echo           Windows locks a running interpreter, so .venv\ may be left behind
+  echo           ^(listed under not_removed^); delete it by hand afterwards.
+  goto :havepy
 )
+echo [ERROR] no Python found - cannot run the uninstall module.
+set "RC=1"
+goto :end
+:havepy
 
 if defined GUISUMMARY (
-  "!PY!" -m agents.core.uninstall --gui-summary
+  !PY! -m agents.core.uninstall --gui-summary
   set "RC=!errorlevel!"
   goto :end
 )
 if defined DRYRUN (
-  "!PY!" -m agents.core.uninstall --dry-run !GUI! !PURGEDATA!
+  !PY! -m agents.core.uninstall --dry-run !GUI! !PURGEDATA!
   set "RC=!errorlevel!"
   echo.
   echo   Dry run - nothing was removed. Re-run with /CONFIRM to proceed.
   goto :end
 )
-"!PY!" -m agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP!
+!PY! -m agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP!
 set "RC=!errorlevel!"
 echo.
 if "!RC!"=="0" (

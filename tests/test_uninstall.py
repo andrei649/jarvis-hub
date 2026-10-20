@@ -891,3 +891,41 @@ def test_bat_propagates_exit_code():
     bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
     assert 'set "RC=!errorlevel!"' in bat
     assert bat.rstrip().endswith("endlocal & exit /b %RC%")
+
+
+# ── round 3: BAT Python detection must not read a parse-time %errorlevel%
+
+
+def _bat_python_detection(bat: str) -> str:
+    start = bat.index("REM --- Find Python")
+    return bat[start:bat.index("\n:havepy\n", start)]
+
+
+def test_bat_python_detection_never_uses_parse_time_errorlevel():
+    """cmd expands %errorlevel% once for a whole parenthesised block, so a nested
+    `where python` check inside the `where py` else-branch always saw py's failure: hosts
+    with only `python` on PATH fell back to .venv's own interpreter (which then cannot
+    delete .venv) or reported "no Python found". Each probe must be tested on its own."""
+    bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
+    assert "%errorlevel%" not in bat.lower()
+    det = _bat_python_detection(bat)
+    # every probe decides on its own exit status (&&) and jumps out flat — no nesting
+    py_probe = 'py -3 -c "import sys" >nul 2>&1 && (set "PY=py -3" & goto :havepy)'
+    python_probe = 'python -c "import sys" >nul 2>&1 && (set "PY=python" & goto :havepy)'
+    assert py_probe in det
+    assert python_probe in det
+    assert det.index(py_probe) < det.index(python_probe) < det.index(r".venv\Scripts\python.exe")
+    assert "else (" not in det
+    # the PY value may hold a launcher argument ("py -3"), so it must not be quoted as one exe
+    assert '"!PY!"' not in bat
+    assert "!PY! -m agents.core.uninstall --confirm" in bat
+
+
+def test_bat_warns_when_only_the_venv_interpreter_is_available():
+    """Running from .venv\\Scripts\\python.exe locks it on Windows: the user must be told
+    that .venv may be left behind (the module then reports it in not_removed)."""
+    bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
+    det = _bat_python_detection(bat)
+    venv_at = det.index(r'set "PY=.venv\Scripts\python.exe"')
+    assert "[WARNING]" in det[venv_at:]
+    assert "no Python found" in det[venv_at:]
