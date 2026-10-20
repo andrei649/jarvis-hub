@@ -2436,7 +2436,8 @@ export interface paths {
         };
         /**
          * Support Bundle
-         * @description A non-sensitive diagnostic bundle for support triage (admin-only).
+         * @description A non-sensitive diagnostic bundle for support triage (admin-only). ``log_lines``
+         *     opts in to the newest redacted WARNING+ log records (H009).
          */
         get: operations["support_bundle_api_support_bundle_get"];
         put?: never;
@@ -18062,7 +18063,9 @@ export interface operations {
     };
     support_bundle_api_support_bundle_get: {
         parameters: {
-            query?: never;
+            query?: {
+                log_lines?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -18076,6 +18079,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -144,6 +144,8 @@ def build_parser() -> argparse.ArgumentParser:
     bundle.add_argument("--offline", action="store_true",
                         help="build it from the data root without the hub (no audit or route count)")
     bundle.add_argument("--out", metavar="FILE", help="also write it to FILE (owner-only permissions)")
+    bundle.add_argument("--logs", type=int, default=0, metavar="N",
+                        help="also include the newest N redacted warning/error log records (max 500)")
 
     prompt_size = verbs.add_parser(
         "prompt-size",
@@ -620,11 +622,16 @@ def cmd_support(ns: argparse.Namespace, ctx: Context) -> int:
 
     from agents.core import support_bundle
 
+    lines = ns.logs
+    if not 0 <= lines <= support_bundle.MAX_LOG_LINES:
+        ctx.err.write(f"--logs takes 0..{support_bundle.MAX_LOG_LINES}\n")
+        return EXIT_USAGE
     if ns.offline:
         bundle = support_bundle.build_bundle(now_iso=datetime.now(UTC).isoformat(),
-                                             environ=ctx.environ)
+                                             environ=ctx.environ, log_lines=lines)
     else:
-        bundle = ctx.client().get("/api/support/bundle")
+        query = f"?{urlencode({'log_lines': lines})}" if lines else ""
+        bundle = ctx.client().get(f"/api/support/bundle{query}")
         if not isinstance(bundle, dict):
             ctx.err.write("support bundle request returned a malformed response\n")
             return EXIT_FAILED
@@ -634,6 +641,7 @@ def cmd_support(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.out:
         path = Path(ns.out)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)          # the create mode does not narrow a file that exists
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
         ctx.err.write(f"written to {path}\n")

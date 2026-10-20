@@ -126,7 +126,7 @@ def test_credentials_list_names_only_never_a_value():
     creds = bundle["credentials"]
     assert "GEMINI_API_KEY" in creds["set"] and "ANTHROPIC_API_KEYS" in creds["set"]
     assert "OPENAI_API_KEY" in creds["unset"]          # blank is not set
-    assert set(creds) == {"set", "unset"}
+    assert set(creds) == {"set", "unset", "groups"}
     assert "SENTINEL" not in json.dumps(bundle) and "SENTINEL" not in support_bundle.render_text(bundle)
 
 
@@ -197,3 +197,124 @@ def test_nerva_support_bundle_offline_needs_no_hub(temp_settings):
     bundle = json.loads(out.getvalue())
     assert bundle["credentials"]["set"] == ["ANTHROPIC_API_KEY"]
     assert bundle["audit"] == {"error": "unavailable"} and bundle["routes"] is None
+
+
+def test_model_section_withholds_free_text_and_off_menu_values(temp_settings):
+    """review-H009: the kind a row declares is not trusted — a write does not check it."""
+    temp_settings.put_category("llm", {"claude_model": "http://u:pw@host/m",
+                                       "compatible_model": "my key is sk-ant-api03-" + "A" * 40,
+                                       "backend_type": "sk-LEAK-select"})
+    bundle = support_bundle.build_bundle()
+    model = bundle["model"]
+    assert model["claude_model"] == "(withheld)" and model["compatible_model"] == "(withheld)"
+    assert model["backend_type"] == "(withheld)"
+    over = {i["name"]: i for i in bundle["overrides"]["settings"]}
+    assert over["llm.backend_type"].get("withheld") is True and "value" not in over["llm.backend_type"]
+    blob = json.dumps(bundle) + support_bundle.render_text(bundle)
+    assert "pw@host" not in blob and "LEAK" not in blob and "A" * 40 not in blob
+
+
+def test_model_ids_with_a_model_ids_shape_are_shown(temp_settings):
+    temp_settings.put_category("llm", {"claude_model": "claude-sonnet-4-6", "compatible_model": "qwen/qwen3-32b",
+                                       "gemini_model": "gemini-2.5-pro"})
+    model = support_bundle.build_bundle()["model"]
+    assert model["claude_model"] == "claude-sonnet-4-6"
+    assert model["compatible_model"] == "qwen/qwen3-32b" and model["gemini_model"] == "gemini-2.5-pro"
+
+
+def test_credentials_cover_tool_platform_and_hub_keys_and_only_real_pools():
+    from pathlib import Path
+
+    from agents.core.llm.provider_probe import POOLED
+    from agents.core.llm.providers import list_profiles
+
+    creds = support_bundle.build_bundle(environ={"TELEGRAM_BOT_TOKEN": "t", "ELEVENLABS_API_KEY": "e"})["credentials"]
+    assert {"TELEGRAM_BOT_TOKEN", "ELEVENLABS_API_KEY"} <= set(creds["set"])
+    pools = {n for n in creds["groups"]["providers"] if n.endswith("_API_KEYS")}
+    assert pools == {f"{p.auth_env}S" for p in list_profiles() if p.id in POOLED and p.auth_env}
+    # every non-provider name is one Nerva actually reads
+    root = Path(__file__).resolve().parent.parent / "agents"
+    source = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in root.rglob("*.py"))
+    for group in ("tools", "platforms", "hub"):
+        for name in creds["groups"][group]:
+            assert f'"{name}"' in source, name
+
+
+def test_logs_are_opt_in_redacted_and_email_masked(tmp_path, monkeypatch):
+    log = tmp_path / "jarvis.log"
+    log.write_text(
+        "2026-10-20 10:00:00  INFO  jarvis.web  fine\n"
+        "2026-10-20 10:00:01  ERROR  jarvis.llm  call failed for owner@example.com "
+        "with api_key=sk-SENTINEL-abcdefghijklmnop\n", encoding="utf-8")
+    monkeypatch.setenv("JARVIS_LOG_FILE", str(log))
+    assert support_bundle.build_bundle()["logs"] == {"included": False}
+    logs = support_bundle.build_bundle(log_lines=50)["logs"]
+    assert logs["included"] is True and len(logs["entries"]) == 1   # WARNING+ only
+    text = logs["entries"][0]
+    assert "call failed" in text and "owner@example.com" not in text and "[email]" in text
+    assert "SENTINEL" not in text
+    rendered = support_bundle.render_text(support_bundle.build_bundle(log_lines=50))
+    assert "call failed" in rendered and "SENTINEL" not in rendered
+
+
+def test_meta_names_the_build_commit():
+    meta = support_bundle.build_bundle()["meta"]
+    assert meta["build"] is None or (len(meta["build"]) == 12 and int(meta["build"], 16) >= 0)
+
+
+def test_out_narrows_an_existing_wider_file(tmp_path):
+    import io
+    import stat
+
+    from agents.cli.nerva import EXIT_OK, EXIT_USAGE, Context, main
+
+    target = tmp_path / "bundle.txt"
+    target.write_text("old", encoding="utf-8")
+    target.chmod(0o644)
+
+    class _Hub:
+        def get(self, path):
+            return support_bundle.build_bundle(environ={})
+
+    ctx = Context(environ={}, out=io.StringIO(), err=io.StringIO(), client_factory=lambda env: _Hub())
+    assert main(["support", "bundle", "--out", str(target)], context=ctx) == EXIT_OK
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    ctx = Context(environ={}, out=io.StringIO(), err=io.StringIO(), client_factory=lambda env: _Hub())
+    assert main(["support", "bundle", "--logs", "501"], context=ctx) == EXIT_USAGE
+
+
+def test_cli_logs_flag_asks_the_route_for_log_lines():
+    import io
+
+    from agents.cli.nerva import EXIT_OK, Context, main
+
+    calls = []
+
+    class _Hub:
+        def get(self, path):
+            calls.append(path)
+            return support_bundle.build_bundle(environ={})
+
+    ctx = Context(environ={}, out=io.StringIO(), err=io.StringIO(), client_factory=lambda env: _Hub())
+    assert main(["support", "bundle", "--logs", "40"], context=ctx) == EXIT_OK
+    assert calls == ["/api/support/bundle?log_lines=40"]
+
+
+def test_route_passes_log_lines_and_bounds_it(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from agents.core.routers import _deps
+    from agents.core.routers import support as support_router
+
+    log = tmp_path / "jarvis.log"
+    log.write_text("2026-10-20 10:00:01  ERROR  jarvis.llm  boom\n", encoding="utf-8")
+    monkeypatch.setenv("JARVIS_LOG_FILE", str(log))
+    app = FastAPI()
+    app.include_router(support_router.router)
+    app.dependency_overrides[_deps.admin_guard] = lambda: None
+    client = TestClient(app)
+    assert client.get("/api/support/bundle").json()["logs"] == {"included": False}
+    body = client.get("/api/support/bundle?log_lines=5").json()
+    assert body["logs"]["entries"] and "boom" in body["logs"]["entries"][0]
+    assert client.get("/api/support/bundle?log_lines=501").status_code == 422
