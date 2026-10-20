@@ -27,11 +27,16 @@ Env:
                                  use, same pattern as scripts/install_smoke.py)
   JARVIS_SAFE_MODE              1 = safe mode (H275), as for the hub; ``--safe-mode``
                                  sets it
+  JARVIS_RUNTIME_RESTORE_POLL   seconds between looks for a staged restore (default 2):
+                                 when one is staged the coordinator stops its
+                                 orchestrator and releases the data root until the
+                                 restore is applied, cancelled or expired (H010)
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
@@ -100,35 +105,12 @@ async def _build_orchestrator():
     return orch
 
 
-async def run() -> None:
-    from agents.core.env_provenance import load_hub_env
-
-    load_hub_env()                    # before the paths and knobs below are read
-    from agents.core import backup
-
-    # H010 review: this process opens the hub's DBs too. Mark the root first (an in-place
-    # restore defers while the mark is live), then wait out a restore already running.
-    backup.mark_runtime()
-    try:
-        await asyncio.to_thread(backup.wait_while_restoring)
-        await _run_marked()
-    finally:
-        backup.clear_runtime_mark()
+def _restore_poll_seconds() -> float:
+    """How often the coordinator looks for a staged restore (``JARVIS_RUNTIME_RESTORE_POLL``)."""
+    return _env_float("JARVIS_RUNTIME_RESTORE_POLL", 2.0, minimum=0.05)
 
 
-async def _run_marked() -> None:
-    from agents.core.observability.runtime_log import RuntimeRunLog, default_log_path
-
-    log_path = default_log_path()
-    state_path = Path(os.environ.get("JARVIS_RUNTIME_STATE", "logs/runtime_state.json"))
-    cycle_seconds = _env_float("JARVIS_RUNTIME_CYCLE_SECONDS", 20.0, minimum=15.0)
-
-    orch = await _build_orchestrator()
-    orch.runtime_log = RuntimeRunLog(log_path=log_path, state_path=state_path)
-    orch._runtime_settings["system.autonomy_tick"] = cycle_seconds
-
-    stop = asyncio.Event()
-
+def _install_stop_handlers(stop: asyncio.Event) -> None:
     def _request_stop(*_args) -> None:
         logger.info("coordinator received shutdown signal")
         stop.set()
@@ -140,19 +122,77 @@ async def _run_marked() -> None:
         except (NotImplementedError, RuntimeError):
             signal.signal(sig, lambda *_a: _request_stop())
 
+
+async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(stop.wait(), timeout=seconds)
+
+
+async def run() -> None:
+    from agents.core.env_provenance import load_hub_env
+
+    load_hub_env()                    # before the paths and knobs below are read
+    from agents.core import backup
+
+    # H010: this process opens the hub's DBs too. It marks the root while its orchestrator
+    # runs, and gives the root up whenever a restore is staged or being applied
+    # (backup.restore_wanted): it stops the orchestrator, drops the mark, waits until the
+    # stage and the journal are gone, then marks again and rebuilds. The approved restore
+    # then completes at the hub's restart without the operator stopping jarvis-runtime
+    # (H010 review r2). Marking BEFORE the check: a restore that journals at the same
+    # moment either sees this mark (and waits for it to clear) or is seen here.
+    stop = asyncio.Event()
+    _install_stop_handlers(stop)
+    poll = _restore_poll_seconds()
+    try:
+        while not stop.is_set():
+            backup.mark_runtime()
+            if backup.restore_wanted():
+                backup.clear_runtime_mark()
+                logger.info("a restore is staged or being applied: the coordinator waits for it")
+                while not stop.is_set() and backup.restore_wanted():
+                    await _sleep_or_stop(stop, poll)
+                continue
+            if not await _run_marked(stop, backup, poll):
+                break
+            backup.clear_runtime_mark()
+            logger.info("coordinator released the data root for a staged restore")
+    finally:
+        backup.clear_runtime_mark()
+
+
+async def _run_marked(stop: asyncio.Event, backup, poll: float) -> bool:
+    """Run the orchestrator until *stop* (False) or until a restore is staged (True)."""
+    from agents.core.observability.runtime_log import RuntimeRunLog, default_log_path
+
+    log_path = default_log_path()
+    state_path = Path(os.environ.get("JARVIS_RUNTIME_STATE", "logs/runtime_state.json"))
+    cycle_seconds = _env_float("JARVIS_RUNTIME_CYCLE_SECONDS", 20.0, minimum=15.0)
+
+    orch = await _build_orchestrator()
+    orch.runtime_log = RuntimeRunLog(log_path=log_path, state_path=state_path)
+    orch._runtime_settings["system.autonomy_tick"] = cycle_seconds
+
     logger.info(
         "coordinator starting: cycle=%ss log=%s state=%s",
         cycle_seconds,
         log_path,
         state_path,
     )
+    yielded = False
     await orch.start_channels()
     try:
-        await stop.wait()
+        while not stop.is_set():
+            await _sleep_or_stop(stop, poll)
+            if not stop.is_set() and await asyncio.to_thread(backup.restore_wanted):
+                logger.info("a restore is staged: the coordinator stops to release the data root")
+                yielded = True
+                break
     finally:
         logger.info("coordinator stopping")
         await orch.stop_channels()
         await orch.aclose()
+    return yielded
 
 
 def configure_logging() -> None:

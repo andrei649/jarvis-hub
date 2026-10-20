@@ -1,5 +1,6 @@
 {
   "DELETE /api/a2a/peers/{peer_id}": "a2a_remove_peer_api_a2a_peers__peer_id__delete",
+  "DELETE /api/admin/backup/restore": "backup_restore_cancel_api_admin_backup_restore_delete",
   "DELETE /api/admin/mcp/{name}": "admin_mcp_remove_api_admin_mcp__name__delete",
   "DELETE /api/admin/widgets/{token}": "widgets_revoke_api_admin_widgets__token__delete",
   "DELETE /api/ambient/monitors/{monitor_id}": "ambient_monitor_delete_api_ambient_monitors__monitor_id__delete",

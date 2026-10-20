@@ -11046,7 +11046,10 @@ export interface paths {
         };
         /**
          * Backup List
-         * @description List local backup snapshots (newest first), a staged restore and the last one applied.
+         * @description List local backup snapshots (newest first), a staged restore and the last outcome.
+         *
+         *     ``pending_restore.state`` is ``waiting`` (applied at the next hub start), ``deferred``
+         *     (``deferred_reason`` says why the last attempt was put off) or ``expired``.
          */
         get: operations["backup_list_api_admin_backup_get"];
         put?: never;
@@ -11100,7 +11103,15 @@ export interface paths {
          *     — nothing is ever restored on this request alone.
          */
         post: operations["backup_restore_api_admin_backup_restore_post"];
-        delete?: never;
+        /**
+         * Backup Restore Cancel
+         * @description Withdraw a staged in-place restore before it is applied (H010 review r2).
+         *
+         *     200 ``{ok, cancelled}``; 404 when nothing is staged; 409 when the restore is being
+         *     applied right now (it can no longer be withdrawn). Logged as ``cancelled`` in
+         *     ``backups/restore-history.jsonl``.
+         */
+        delete: operations["backup_restore_cancel_api_admin_backup_restore_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -30769,6 +30780,26 @@ export interface operations {
         };
     };
     backup_restore_api_admin_backup_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    backup_restore_cancel_api_admin_backup_restore_delete: {
         parameters: {
             query?: never;
             header?: never;

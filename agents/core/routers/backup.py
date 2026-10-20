@@ -6,7 +6,8 @@ data). An in-place *restore* (H010) is never applied by a request: `POST
 /api/admin/backup/restore` only queues a `backup.restore` card at the approval
 queue's irreversible tier (tier 3, `agents/core/autonomy/irreversible.py`). A human's
 accept stages it and asks the hub to restart; serve.py applies it at the next boot
-before any store opens. A backup name is resolved by matching the trusted backups
+before any store opens. `DELETE /api/admin/backup/restore` withdraws a staged restore
+(a stage also expires on its own). A backup name is resolved by matching the trusted backups
 listing, so no request value reaches a path expression.
 
 Also hosts the destructive sibling `POST /api/admin/forget` (H23.9): a confirm-gated,
@@ -33,9 +34,12 @@ router = APIRouter(tags=["backup"])
 
 @router.get("/api/admin/backup", dependencies=[Depends(admin_guard)])
 async def backup_list():
-    """List local backup snapshots (newest first), a staged restore and the last one applied."""
+    """List local backup snapshots (newest first), a staged restore and the last outcome.
+
+    ``pending_restore.state`` is ``waiting`` (applied at the next hub start), ``deferred``
+    (``deferred_reason`` says why the last attempt was put off) or ``expired``."""
     return nocache_json({"backups": _backup.list_backups(),
-                         "pending_restore": _backup.pending_restore(),
+                         "pending_restore": _backup.staged_restore_view(),
                          "last_restore": _backup.last_restore()})
 
 
@@ -119,6 +123,22 @@ async def backup_restore(req: Request):
         return JSONResponse({"error": "restore needs the approval queue",
                              "reason": queued.get("refused")}, status_code=503)
     return nocache_json(queued, status_code=202)
+
+
+@router.delete("/api/admin/backup/restore", dependencies=[Depends(admin_guard)])
+async def backup_restore_cancel():
+    """Withdraw a staged in-place restore before it is applied (H010 review r2).
+
+    200 ``{ok, cancelled}``; 404 when nothing is staged; 409 when the restore is being
+    applied right now (it can no longer be withdrawn). Logged as ``cancelled`` in
+    ``backups/restore-history.jsonl``."""
+    result = await asyncio.to_thread(_backup.cancel_staged_restore, cancelled_by="api.admin")
+    if result["ok"]:
+        return nocache_json(result)
+    status = 409 if result.get("reason") == "applying" else 404
+    return JSONResponse({"error": "no staged restore to cancel" if status == 404
+                         else "the restore is being applied and can no longer be cancelled",
+                         **result}, status_code=status)
 
 
 @router.post("/api/admin/export", dependencies=[Depends(admin_guard)])

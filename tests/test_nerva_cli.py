@@ -90,8 +90,9 @@ def test_the_command_tree_is_discoverable_and_complete():
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
         "uninstall", "backup",
     }
-    # H010: backup create/list/verify read the data root; restore asks the hub's approval queue.
-    assert tree["backup"] == ["create", "list", "restore", "verify"]
+    # H010: backup create/list/verify read the data root; restore asks the hub's approval queue;
+    # cancel withdraws a staged restore before it is applied.
+    assert tree["backup"] == ["cancel", "create", "list", "restore", "verify"]
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
     assert tree["extensions"] == ["activate", "consent", "doctor", "list"]

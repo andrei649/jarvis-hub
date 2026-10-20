@@ -302,8 +302,10 @@ def test_a_human_accept_stages_the_restore_and_asks_the_hub_to_restart(env, clie
     assert bk.pending_restore(env.root) is None and stopped == []
     task = asyncio.run(env.worker.apply_decision(task_id, "accept", decided_by="admin"))
     result = asyncio.run(irreversible.execute(task, orch=env.orch))
-    assert result == {"status": "ok", "kind": "backup.restore", "staged": name, "restart": "requested"}
-    assert bk.pending_restore(env.root)["name"] == name
+    staged = bk.pending_restore(env.root)
+    assert result == {"status": "ok", "kind": "backup.restore", "staged": name, "restart": "requested",
+                      "expires_at": staged["expires_at"]}
+    assert staged["name"] == name
     assert stopped == [True]
 
 

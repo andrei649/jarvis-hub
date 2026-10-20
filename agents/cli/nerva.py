@@ -255,6 +255,9 @@ def build_parser() -> argparse.ArgumentParser:
     backup_restore.add_argument("--confirm", metavar="RESTORE", default="",
                                 help="with no hub running: type RESTORE to restore in place now")
     backup_restore.add_argument("--json", action="store_true")
+    backup_cancel = backup_verbs.add_parser(
+        "cancel", help="withdraw a staged restore before it is applied (offline, same data root)")
+    backup_cancel.add_argument("--json", action="store_true")
 
     kernel = verbs.add_parser("kernel", help="the Action Kernel")
     kernel_verbs = kernel.add_subparsers(dest="action", required=True, metavar="action")
@@ -1557,7 +1560,7 @@ def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
                     + (" (encrypted)" if made["encrypted"] else ""))
         return EXIT_OK
     if ns.action == "list":
-        payload = {"backups": bk.list_backups(str(out)), "pending_restore": bk.pending_restore(root),
+        payload = {"backups": bk.list_backups(str(out)), "pending_restore": bk.staged_restore_view(root),
                    "last_restore": bk.last_restore(root)}
         if ns.json:
             ctx.dump(payload)
@@ -1566,8 +1569,15 @@ def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say("no backup has ever been made — `nerva backup create`")
         for row in payload["backups"]:
             ctx.say(_backup_row(row))
-        if payload["pending_restore"]:
-            ctx.say(f"staged restore: {payload['pending_restore']['name']} (applied at the next hub start)")
+        staged = payload["pending_restore"]
+        if staged:
+            if staged.get("state") == "deferred":
+                note = f"deferred: {staged.get('deferred_reason')}"
+            elif staged.get("state") == "expired":
+                note = "expired: it is discarded, never applied — stage it again"
+            else:
+                note = f"applied at the next hub start; expires {staged.get('expires_at')}"
+            ctx.say(f"staged restore: {staged['name']} ({note}) — `nerva backup cancel` withdraws it")
         if payload["last_restore"]:
             last = payload["last_restore"]
             ctx.say(f"last restore: {last.get('name')} {last.get('status')} at {last.get('applied_at')}")
@@ -1596,6 +1606,17 @@ def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
                     + ", ".join(f"{db} {verdict}" for db, verdict in report["dbs"].items())
                     + (f"; {report['problem']}" if report["problem"] else ""))
         return EXIT_OK if report["ok"] else EXIT_FAILED
+    if ns.action == "cancel":
+        result = bk.cancel_staged_restore(root, cancelled_by="nerva-cli")
+        if ns.json:
+            ctx.dump(result)
+        elif result["ok"]:
+            ctx.say(f"cancelled the staged restore of {result['cancelled']}")
+        elif result.get("reason") == "applying":
+            ctx.err.write("the restore is being applied right now and can no longer be cancelled\n")
+        else:
+            ctx.err.write("no staged restore to cancel\n")
+        return EXIT_OK if result["ok"] else EXIT_FAILED
     return _backup_restore(ns, ctx, bk, root)
 
 
@@ -1646,8 +1667,9 @@ def _backup_restore(ns: argparse.Namespace, ctx: Context, bk: Any, root: Path) -
                 f"rollback point {result.get('rollback')}"
                 + ("" if result.get("ok") else f"; the drill found a problem: {result.get('problem')}"))
     elif result.get("status") == "deferred":
-        ctx.say(f"staged {staged['name']}: {result['reason']} — it is applied at the next hub start "
-                "(python serve.py) once no other process has the data root open")
+        ctx.say(f"staged {staged['name']}, deferred: {result['reason']} — it is applied at the next "
+                f"hub start (python serve.py) once no other process has the data root open, unless "
+                f"it expires first ({staged.get('expires_at')}); `nerva backup cancel` withdraws it")
     else:
         ctx.err.write(f"restore of {ns.name} failed ({result.get('reason')}): {result.get('detail', '')}\n")
     return EXIT_OK if result.get("status") in ("restored", "deferred") and result.get("ok", True) else EXIT_FAILED

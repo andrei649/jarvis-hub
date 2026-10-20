@@ -16,8 +16,11 @@ README said to cron a curl instead. Now, when systemd starts the hub under
   hub asked to restart itself (H010, ``agents.core.hub_restart``: an approved restore was
   staged). Then it is ``RELOADING=1``: STOPPING would move the unit to stop-sigterm and
   arm ``TimeoutStopSec``, and systemd would SIGKILL the same-pid re-exec partway through
-  the restore. The re-exec'd process sends ``READY=1`` again once it serves, and while it
-  applies the restore at boot :func:`keepalive` feeds the watchdog and extends the timeout.
+  the restore. The watchdog stays armed in the reload state, so from RELOADING=1 through
+  the drain, the execv and the new image's boot up to its ``READY=1`` a thread feeds it
+  and extends the timeout (:func:`begin_restart_keepalive`, then
+  :func:`continue_restart_keepalive` from serve.py's first lines, bounded by
+  ``RESTART_KEEPALIVE_MAX_SECONDS``); :func:`keepalive` does the same around the restore.
 
 Only the server knows those moments (uvicorn runs the app's lifespan before it binds),
 so ``serve.py`` runs :class:`NotifyingServer`; a raw ``uvicorn agents.web:app`` says
@@ -142,6 +145,8 @@ class Notifier:
             notify(f"STATUS=not ready: {readiness.get('reason') or 'starting'}")
             return False
         self.ready_sent = notify("READY=1\nSTATUS=serving")
+        if self.ready_sent:
+            end_restart_keepalive()   # a self-restart's boot is over: the heartbeat takes over
         interval = watchdog_seconds()
         if self.ready_sent and interval is not None and self._task is None:
             self._task = asyncio.get_running_loop().create_task(_heartbeat(interval), name="sd_notify-watchdog")
@@ -154,6 +159,7 @@ class Notifier:
             if restarting:
                 notify(f"RELOADING=1\nMONOTONIC_USEC={time.monotonic_ns() // 1000}\n"
                        f"STATUS=restarting: {restarting}")
+                begin_restart_keepalive(restarting)
             else:
                 notify("STOPPING=1\nSTATUS=draining")
         task, self._task = self._task, None
@@ -197,6 +203,46 @@ class NotifyingServer(uvicorn.Server):
 #: The keepalive beat when no watchdog is armed (only the timeout is extended then).
 KEEPALIVE_SECONDS = 10.0
 
+#: Set in the environment by serve.run_server just before a self-restart's execv; the new
+#: image reads (and removes) it on its first lines and keeps the unit fed until READY=1.
+RESTART_ENV = "JARVIS_SELF_RESTART"
+
+#: The longest a self-restart is kept fed without READY=1 (the shipped unit's
+#: TimeoutStartSec): a re-exec'd boot that hangs past it is left to the watchdog.
+RESTART_KEEPALIVE_MAX_SECONDS = 300.0
+
+
+class _Pinger:
+    """A thread that sends ``WATCHDOG=1`` + ``EXTEND_TIMEOUT_USEC`` every beat. A thread,
+    not a loop task: it runs while the event loop drains, while nothing has started one
+    yet (a re-exec'd boot imports the app), and while a restore blocks the main thread."""
+
+    def __init__(self, status: str, *, interval: float | None = None,
+                 max_seconds: float | None = None) -> None:
+        self.beat = interval or watchdog_seconds() or KEEPALIVE_SECONDS
+        self.message = (f"WATCHDOG=1\nEXTEND_TIMEOUT_USEC={int(self.beat * 3 * 1_000_000)}\n"
+                        f"STATUS={status}")
+        self._deadline = None if max_seconds is None else time.monotonic() + max_seconds
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, name="sd_notify-keepalive", daemon=True)
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self.beat):
+            if self._deadline is not None and time.monotonic() >= self._deadline:
+                logger.warning("sd_notify keepalive ended: no READY=1 within its bound")
+                return
+            notify(self.message)
+
+    def start(self) -> _Pinger:
+        notify(self.message)
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread.is_alive() and self._thread is not threading.current_thread():
+            self._thread.join(timeout=SEND_TIMEOUT_SECONDS + self.beat)
+
 
 @contextmanager
 def keepalive(status: str, *, interval: float | None = None) -> Iterator[None]:
@@ -206,19 +252,46 @@ def keepalive(status: str, *, interval: float | None = None) -> Iterator[None]:
     if not enabled():
         yield
         return
-    beat = interval or watchdog_seconds() or KEEPALIVE_SECONDS
-    message = f"WATCHDOG=1\nEXTEND_TIMEOUT_USEC={int(beat * 3 * 1_000_000)}\nSTATUS={status}"
-    stop = threading.Event()
-
-    def _loop() -> None:
-        while not stop.wait(beat):
-            notify(message)
-
-    notify(message)
-    thread = threading.Thread(target=_loop, name="sd_notify-keepalive", daemon=True)
-    thread.start()
+    pinger = _Pinger(status, interval=interval).start()
     try:
         yield
     finally:
-        stop.set()
-        thread.join(timeout=SEND_TIMEOUT_SECONDS + beat)
+        pinger.stop()
+
+
+_restart_pinger: _Pinger | None = None
+
+
+def _start_restart_pinger(status: str, *, interval: float | None,
+                          max_seconds: float | None) -> bool:
+    global _restart_pinger
+    if not enabled() or _restart_pinger is not None:
+        return False
+    _restart_pinger = _Pinger(status, interval=interval, max_seconds=max_seconds).start()
+    return True
+
+
+def begin_restart_keepalive(reason: str, *, interval: float | None = None) -> bool:
+    """H010 review r2: a self-restart sends RELOADING=1, and the watchdog stays armed in
+    the reload state — so the drain, the execv and the new image's boot must keep feeding
+    it. Called as the restarting server shuts down; the thread lives until the execv."""
+    return _start_restart_pinger(f"restarting: {reason}", interval=interval, max_seconds=None)
+
+
+def continue_restart_keepalive(*, interval: float | None = None,
+                               max_seconds: float | None = None) -> bool:
+    """In the image a self-restart exec'd (``RESTART_ENV`` set, then removed here): feed
+    the watchdog and extend the timeout from serve.py's first lines until READY=1
+    (:meth:`Notifier.ready` ends it), bounded by ``RESTART_KEEPALIVE_MAX_SECONDS``."""
+    if os.environ.pop(RESTART_ENV, None) != "1":
+        return False
+    return _start_restart_pinger(
+        "restarting: booting the new image", interval=interval,
+        max_seconds=RESTART_KEEPALIVE_MAX_SECONDS if max_seconds is None else max_seconds)
+
+
+def end_restart_keepalive() -> None:
+    global _restart_pinger
+    pinger, _restart_pinger = _restart_pinger, None
+    if pinger is not None:
+        pinger.stop()

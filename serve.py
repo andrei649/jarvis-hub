@@ -46,6 +46,12 @@ if missing:
 if importlib.util.find_spec("numpy") is None:
     warnings.warn("numpy not installed — vector store will be slower")
 
+# H010 review r2: an image a self-restart exec'd is still in systemd's reload state with the
+# watchdog armed; keep it fed from here (before the app's slow imports) until READY=1.
+from agents.core.sd_notify import continue_restart_keepalive  # noqa: E402
+
+continue_restart_keepalive()
+
 # H689: a refused JARVIS_PROFILE stops the start here, named, before the hub is imported
 # (its stores open under the data root at import, and data_root() refuses the name).
 from agents.core.paths import profile_error  # noqa: E402
@@ -58,8 +64,9 @@ def apply_staged_restore():
     """H010: apply an in-place restore staged by an approved ``backup.restore`` (or left
     by an offline ``nerva backup restore`` another process deferred), before ``agents.web``
     is imported and its lifespan builds the orchestrator — the hub's stores would hold the
-    DBs open, and a restore under them would be written over. It defers while another hub
-    or the jarvis-runtime coordinator has the root open, and reports a restore an earlier
+    DBs open, and a restore under them would be written over. It waits for the
+    jarvis-runtime coordinator to release the root (it does once it sees the stage), defers
+    while another hub holds it, discards an expired stage, and reports a restore an earlier
     boot was killed in the middle of. Under systemd the watchdog and the timeout are fed
     while it runs. Nothing staged: a no-op that loads nothing. Returns the outcome."""
     from agents.core import backup
@@ -79,7 +86,10 @@ def apply_staged_restore():
               + ("" if result.get("ok") else f" — the drill found a problem: {result.get('problem')}")
               + f" (rollback point: {result.get('rollback')})")
     elif result["status"] == "deferred":
-        print(f"Staged restore of {result['name']} deferred: {result['reason']}")
+        print(f"Staged restore of {result['name']} deferred: {result['reason']} "
+              f"(recorded in backups/last-restore.json)")
+    elif result["status"] == "cancelled":
+        print(f"Staged restore of {result['name']} was cancelled before it was applied")
     elif result["status"] == "interrupted":
         print(f"Staged restore of {result['name']} was INTERRUPTED partway at an earlier boot: "
               f"the data root may be half-restored. Rollback point: {result.get('rollback')} "
@@ -345,6 +355,10 @@ def run_server(server) -> None:
         return
     print(f"Nerva restarting ({reason})…", flush=True)
     install_identity.release_hub_lock()   # the new image takes it again in main()
+    from agents.core.sd_notify import RESTART_ENV
+
+    # The new image keeps systemd's watchdog fed from its first lines (sd_notify).
+    os.environ.update({RESTART_ENV: "1"})
     # The interpreter and argv this process was started with; nothing from a request.
     os.execv(sys.executable, list(sys.orig_argv))  # nosec B606 - this process's own argv
 

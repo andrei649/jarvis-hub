@@ -36,16 +36,20 @@ backup needs:
 * **A quick snapshot for rollback (H010).** ``create_backup(quick=True)`` archives only
   the state SQLite DBs (``jarvis-backup-quick-*``; ``*.db`` and SQLite ``*.sqlite`` /
   ``*.sqlite3``, see :func:`is_state_db`) — Hermes' ``backup --quick``: small and fast.
-  The newest ``JARVIS_BACKUP_QUICK_KEEP`` (default 5) are kept.
+  Of the automatic quick rollback points a restore takes (``jarvis-backup-quick-prerestore-*``)
+  the newest ``JARVIS_BACKUP_QUICK_KEEP`` (default 5) are kept; an owner's backup is never pruned.
 * **The hub restores itself in place (H010).** ``stage_restore`` drills an archive and
-  leaves a marker under ``backups/``; ``serve.py`` calls ``apply_pending_restore`` at the
+  leaves a marker under ``backups/`` that expires (``JARVIS_RESTORE_STAGE_TTL_HOURS``,
+  default 24) and can be cancelled; ``serve.py`` calls ``apply_pending_restore`` at the
   next boot, before ``agents.web`` is imported and the orchestrator built (so no store of
-  the hub holds a DB open), and only while no other hub or jarvis-runtime coordinator has
-  the root open. The archive must still be the one drilled; a rollback snapshot covering
-  what the restore overwrites (full before full, quick before quick) is taken first. A
-  running hub reaches it only through the approval queue's irreversible tier
-  (``backup.restore``, tier 3, ``apply_approved``) and then restarts itself
-  (``agents.core.hub_restart``). ``backups/restore-history.jsonl`` keeps the trace.
+  the hub holds a DB open), and only while no other hub has the root open; the
+  jarvis-runtime coordinator sees the stage and gives the root up, and the restore waits
+  for it. The archive must still be the one drilled; a rollback snapshot covering what
+  the restore overwrites (full before full, quick before quick) is taken first. A running
+  hub reaches it only through the approval queue's irreversible tier (``backup.restore``,
+  tier 3, ``apply_approved``) and then restarts itself (``agents.core.hub_restart``).
+  ``backups/restore-history.jsonl`` keeps the trace, deferrals and cancellations included.
+  Process marks (``hub.lock``, ``runtime.pid``) are never archived or restored.
 
 CLI: ``nerva backup create|list|verify|restore`` (and the older
 ``python -m agents.core.backup create|list|verify|restore``). Restore refuses to
@@ -74,7 +78,7 @@ from typing import Iterator, Optional
 
 from agents.core import archive_safe
 from agents.core.archive_safe import ArchiveLimits
-from agents.core.env_config import env_int
+from agents.core.env_config import env_float, env_int
 from agents.core.estop import SENTINEL_NAME as ESTOP_SENTINEL
 from agents.core.paths import data_root
 from agents.core.secrets import SecretStore
@@ -92,6 +96,14 @@ _LAST_RESTORE = "last-restore.json"        # what the last staged restore did
 _APPLYING = "restore-applying.json"        # journal of a restore being applied right now
 _HISTORY = "restore-history.jsonl"         # every staged/applied restore: the audit trace
 _RUNTIME_PID = "runtime.pid"               # the headless coordinator's mark, at the data root
+_CLAIMED = "pending-restore.claimed"       # the marker, renamed by the one process applying it
+_APPLY_LOCK = "restore.lock"               # held while a restore is checked and applied
+# Process marks at the data root say which process has it open NOW. They are never data:
+# archiving one and restoring it planted a stale pid (a reused one reads as a live hub or
+# coordinator) that deferred every later restore (H010 review r2). They are never
+# archived, and a restore keeps what the live root held instead of an archive's copy.
+_PROCESS_MARKS = frozenset({_RUNTIME_PID, "hub.lock"})
+_ROLLBACK_TAG = "prerestore-"  # automatic rollback points: jarvis-backup-[quick-]prerestore-*
 # State DBs are SQLite files under these suffixes (settings.db, channel_routes.sqlite,
 # checkpoints' history.sqlite3 ...). A ``*.db`` has always been treated as SQLite; the
 # other two only when the file says so (the 16-byte header), so a plugin's text file
@@ -99,6 +111,8 @@ _RUNTIME_PID = "runtime.pid"               # the headless coordinator's mark, at
 _DB_SUFFIXES = (".db", ".sqlite", ".sqlite3")
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 QUICK_KEEP_DEFAULT = 5   # automatic quick rollback points kept (JARVIS_BACKUP_QUICK_KEEP)
+STAGE_TTL_HOURS_DEFAULT = 24.0   # a staged restore expires (JARVIS_RESTORE_STAGE_TTL_HOURS)
+RUNTIME_WAIT_DEFAULT = 60.0      # seconds a restore waits for the coordinator to yield the root
 
 # H503 bomb caps for unpacking a backup (verify drill + restore). Generous, because a
 # real data root holds audio, media and many small files and a false refusal on the
@@ -415,9 +429,19 @@ def _in_exec_cache(path: Path, root: Path, owner_root: tuple[str, ...] | None = 
             and bool(_RUN_DIR.fullmatch(parts[depth])))
 
 
+def _is_process_mark(path: Path, root: Path) -> bool:
+    """A process mark at the top of the data root (``hub.lock``, ``runtime.pid``)."""
+    try:
+        parts = Path(path).relative_to(root).parts
+    except ValueError:
+        return False
+    return len(parts) == 1 and parts[0] in _PROCESS_MARKS
+
+
 def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = None,
                   label: str = "", encrypt: Optional[bool] = None,
-                  key: Optional[str] = None, quick: bool = False) -> dict:
+                  key: Optional[str] = None, quick: bool = False,
+                  rollback: bool = False) -> dict:
     """Snapshot the data root into a single ``.tar.gz``; return a manifest dict.
 
     DBs are copied through the SQLite backup API (consistent); everything else is
@@ -430,6 +454,11 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     When a backup key is configured (``key`` arg / ``$JARVIS_BACKUP_KEY``) or
     ``encrypt=True``, the archive is encrypted at rest (``.tar.gz.enc``) so it
     carries no plaintext secrets (AUD-1). Default behavior (no key) is unchanged.
+
+    ``rollback=True`` names the archive as an automatic rollback point
+    (``jarvis-backup-[quick-]prerestore-*``): only those are ever pruned by a restore,
+    never a backup the owner made. Process marks (``hub.lock``, ``runtime.pid``) are
+    never archived.
     """
     src = Path(source_root) if source_root else data_root()
     if not src.exists():
@@ -444,7 +473,8 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     # the manifest as data instead), so no user-controlled value enters a path
     # expression. The microsecond stamp + token also keep rapid backups unique.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
-    name = f"{_ARCHIVE_PREFIX}{_QUICK_TAG if quick else ''}{ts}_{secrets.token_hex(3)}.tar.gz"
+    name = (f"{_ARCHIVE_PREFIX}{_QUICK_TAG if quick else ''}{_ROLLBACK_TAG if rollback else ''}"
+            f"{ts}_{secrets.token_hex(3)}.tar.gz")
     archive = out / (name + _ENC_SUFFIX if do_encrypt else name)
     safe_label = "".join(c for c in (label or "") if c.isalnum() or c in "-_ ")[:80]
     manifest = {"created_at": _now_iso(), "source_root": str(src),
@@ -462,7 +492,8 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     # The sandbox's run directories are a disposable cache, not the owner's data: model-
     # written scripts and tool-call mailboxes stay out of an archive (review-H667 m3).
     owner_root = _owner_sandbox_root(src)
-    files = [f for f in files if not _in_exec_cache(f, src, owner_root)]
+    files = [f for f in files
+             if not _in_exec_cache(f, src, owner_root) and not _is_process_mark(f, src)]
     # H694: the ESTOP sentinel is the live kill switch shared by every profile of the
     # install, not owner data. Archiving it would let a later restore reinstate a stale
     # pause for every hub; leaving it out means a restore never touches the live switch
@@ -605,6 +636,12 @@ def _iter_archives(out: Path) -> Iterator[Path]:
                 yield p
 
 
+def _is_rollback_point(name: str) -> bool:
+    """An automatic rollback point a restore took (never a backup the owner made)."""
+    return (name.startswith(_ARCHIVE_PREFIX + _ROLLBACK_TAG)
+            or name.startswith(_ARCHIVE_PREFIX + _QUICK_TAG + _ROLLBACK_TAG))
+
+
 def list_backups(out_dir: Optional[str] = None) -> list[dict]:
     """List backup archives (newest first) with size + mtime."""
     out = Path(out_dir) if out_dir else default_backup_dir()
@@ -621,6 +658,7 @@ def list_backups(out_dir: Optional[str] = None) -> list[dict]:
             "bytes": st.st_size,
             "encrypted": _is_encrypted(p.name),
             "quick": p.name.startswith(_ARCHIVE_PREFIX + _QUICK_TAG),
+            "rollback": _is_rollback_point(p.name),
             "modified_at": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(),
         })
     rows.sort(key=lambda r: r["modified_at"], reverse=True)
@@ -732,10 +770,25 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
             f"target {target} is not empty — pass force=True to overwrite")
     target.mkdir(parents=True, exist_ok=True)
     stale: list[tuple[str, ...]] = []
+    # An archive made before process marks were left out may carry one: the live root's
+    # own mark (or its absence) is put back after the extract, never the archive's pid.
+    live_marks: dict[str, Optional[bytes]] = {}
+    for mark in _PROCESS_MARKS:
+        try:
+            live_marks[mark] = (target / mark).read_bytes()
+        except OSError:
+            live_marks[mark] = None
     with _readable_archive(arc, key) as tarpath:
         written = archive_safe.extract_tar_path(tarpath, target, limits=backup_limits(),
                                                 compression="gz", last_wins=(_MANIFEST_NAME,),
                                                 superseded=stale)
+    for mark, before in live_marks.items():
+        if (mark,) not in written:
+            continue
+        if before is None:
+            (target / mark).unlink(missing_ok=True)
+        else:
+            (target / mark).write_bytes(before)
     # A restored DB is a consistent snapshot; a -wal/-shm/-journal left beside it by the
     # state it replaced would be replayed over it on the next open (the drill below
     # included). They are dropped before anything opens the DB.
@@ -758,12 +811,15 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
 # staged — drilled, then a marker beside the archives — and applied by the next boot
 # before any store opens (serve.py), or at once by the offline `nerva backup restore`,
 # only when no other process has the root open: neither a hub (hub.lock) nor the
-# headless coordinator of jarvis-runtime (runtime.pid). The marker is cleared before the
-# restore runs, so a restore that fails is reported once (last-restore.json) and never
-# retried every boot; a journal (restore-applying.json) is kept while it runs, so one
-# killed partway is reported at the next boot as interrupted, with its rollback point.
-# Every staged and applied restore is appended to restore-history.jsonl under backups/,
-# which no archive holds, so the restore cannot erase the trace of its own approval.
+# headless coordinator of jarvis-runtime (runtime.pid). The coordinator watches for a
+# stage (restore_wanted), stops its orchestrator and drops its mark, and the restore waits
+# for that; it reopens the root once the stage and the journal are gone. The marker is
+# claimed (renamed) before the restore runs, so a restore that fails is reported once
+# (last-restore.json) and never retried every boot; a journal (restore-applying.json) is
+# kept while it runs, so one killed partway is reported at the next boot as interrupted,
+# with its rollback point. A stage expires (expires_at) and can be cancelled. Every
+# staged, deferred, cancelled and applied restore is appended to restore-history.jsonl
+# under backups/, which no archive holds, so the restore cannot erase that trace.
 
 def _root_of(source_root) -> Path:
     return Path(source_root) if source_root else data_root()
@@ -797,7 +853,8 @@ def _append_history(out: Path, event: str, record: dict) -> None:
     """One line in restore-history.jsonl. Advisory: a failed append never fails a restore."""
     row = {"event": event, "at": _now_iso(),
            **{k: record.get(k) for k in ("name", "requested_by", "task_id", "staged_at",
-                                         "rollback", "status", "reason", "ok")
+                                         "expires_at", "rollback", "pruned", "status",
+                                         "reason", "ok", "pid", "cancelled_by")
               if k in record}}
     try:
         out.mkdir(parents=True, exist_ok=True)
@@ -809,7 +866,10 @@ def _append_history(out: Path, event: str, record: dict) -> None:
 
 def restore_history(source_root=None, limit: int = 50) -> list[dict]:
     """The newest *limit* entries of restore-history.jsonl, oldest first."""
-    path = default_backup_dir(_root_of(source_root)) / _HISTORY
+    return _history_rows(default_backup_dir(_root_of(source_root)) / _HISTORY, limit)
+
+
+def _history_rows(path: Path, limit: int) -> list[dict]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -895,6 +955,83 @@ def boot_restore_due(source_root=None) -> bool:
     return (out / _PENDING_RESTORE).exists() or (out / _APPLYING).exists()
 
 
+def stage_ttl_seconds() -> float:
+    """How long a staged restore stays applicable (``JARVIS_RESTORE_STAGE_TTL_HOURS``)."""
+    return env_float("JARVIS_RESTORE_STAGE_TTL_HOURS", STAGE_TTL_HOURS_DEFAULT,
+                     minimum=0.001) * 3600.0
+
+
+def _parse_iso(value) -> Optional[float]:
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def stage_expired(staged: dict, *, now: Optional[float] = None) -> bool:
+    """Whether a staged restore is past its ``expires_at``. A marker without one (staged
+    before the expiry existed) expires ``JARVIS_RESTORE_STAGE_TTL_HOURS`` after
+    ``staged_at``; a marker with neither readable has expired (it cannot be dated)."""
+    moment = time.time() if now is None else float(now)
+    expires = _parse_iso(staged.get("expires_at"))
+    if expires is None:
+        staged_at = _parse_iso(staged.get("staged_at"))
+        if staged_at is None:
+            return True
+        expires = staged_at + stage_ttl_seconds()
+    return moment >= expires
+
+
+def restore_wanted(source_root=None) -> bool:
+    """What the jarvis-runtime coordinator watches: a restore is staged (and not expired),
+    or another live process is applying one. While true the coordinator keeps its
+    orchestrator stopped and its mark cleared, so the restore can run (H010 review r2)."""
+    root = _root_of(source_root)
+    staged = pending_restore(root)
+    if staged is not None and not stage_expired(staged):
+        return True
+    return restore_in_progress(root)
+
+
+def runtime_wait_seconds() -> float:
+    """How long a restore waits for the coordinator to yield (``JARVIS_RESTORE_RUNTIME_WAIT_SECONDS``)."""
+    return env_float("JARVIS_RESTORE_RUNTIME_WAIT_SECONDS", RUNTIME_WAIT_DEFAULT, minimum=0.0)
+
+
+def wait_for_runtime_yield(source_root=None, *, timeout: float, poll: float = 0.25,
+                           sleep=time.sleep) -> bool:
+    """Block until no other live process holds the runtime mark; False if *timeout* ran out.
+    The coordinator drops its mark once it sees a staged restore (``restore_wanted``)."""
+    waited = 0.0
+    while runtime_running_elsewhere(source_root):
+        if waited >= timeout:
+            return False
+        sleep(poll)
+        waited += poll
+    return True
+
+
+def staged_restore_view(source_root=None) -> Optional[dict]:
+    """The staged restore as the owner should read it: the marker plus ``state`` —
+    ``waiting`` (applied at the next hub start), ``deferred`` (the last attempt was put
+    off: ``deferred_reason`` says why) or ``expired`` (it will be discarded, never applied)."""
+    root = _root_of(source_root)
+    staged = pending_restore(root)
+    if staged is None:
+        return None
+    view = dict(staged)
+    last = last_restore(root) or {}
+    if stage_expired(staged):
+        view["state"] = "expired"
+    elif last.get("status") == "deferred" and last.get("staged_at") == staged.get("staged_at"):
+        view["state"] = "deferred"
+        view["deferred_reason"] = last.get("reason")
+        view["deferred_at"] = last.get("applied_at")
+    else:
+        view["state"] = "waiting"
+    return view
+
+
 def unapplied_restore_warning(source_root=None) -> Optional[str]:
     """What to log when the hub starts with a restore still staged (a raw-uvicorn start
     never applies one: only serve.py does, at boot, before the stores open)."""
@@ -908,15 +1045,19 @@ def unapplied_restore_warning(source_root=None) -> Optional[str]:
 
 def prune_quick_backups(keep: Optional[int] = None, out_dir: Optional[str] = None,
                         protect: tuple[str, ...] = ()) -> list[str]:
-    """Keep only the newest *keep* quick snapshots (never one named in *protect*);
-    return what was removed. ``JARVIS_BACKUP_QUICK_KEEP`` sets the default (at least 1)."""
+    """Keep only the newest *keep* automatic quick rollback points (never one named in
+    *protect*); return what was removed. ``JARVIS_BACKUP_QUICK_KEEP`` sets the default (at
+    least 1). Only archives a restore took (``jarvis-backup-quick-prerestore-*``) are ever
+    candidates: a quick backup the owner made (``nerva backup create --quick``) is theirs
+    to keep or delete (H010 review r2)."""
     if keep is None:
         keep = env_int("JARVIS_BACKUP_QUICK_KEEP", QUICK_KEEP_DEFAULT, minimum=1)
     keep = max(0, int(keep))
     out = Path(out_dir) if out_dir else default_backup_dir()
     if not out.is_dir():
         return []
-    quick = sorted((p for p in _iter_archives(out) if p.name.startswith(_ARCHIVE_PREFIX + _QUICK_TAG)),
+    tag = _ARCHIVE_PREFIX + _QUICK_TAG + _ROLLBACK_TAG
+    quick = sorted((p for p in _iter_archives(out) if p.name.startswith(tag)),
                    key=lambda p: p.stat().st_mtime, reverse=True)
     removed: list[str] = []
     for stale in quick[keep:]:
@@ -935,7 +1076,9 @@ def stage_restore(name: str, source_root=None, key: Optional[str] = None,
     """Drill backup *name* and, when it verifies, stage it for an in-place restore.
 
     Touches no live data. Raises FileNotFoundError for a name not in the listing;
-    a failed drill is ``{ok: False, problem}`` and stages nothing.
+    a failed drill is ``{ok: False, problem}`` and stages nothing. The stage carries an
+    ``expires_at`` (``JARVIS_RESTORE_STAGE_TTL_HOURS``, default 24): past it the restore
+    is discarded, never applied, so one accept cannot roll back data written days later.
     """
     root = _root_of(source_root)
     out = default_backup_dir(root)
@@ -952,9 +1095,13 @@ def stage_restore(name: str, source_root=None, key: Optional[str] = None,
                 "problem": report["problem"] or f"integrity check failed: {bad}"}
     st = path.stat()
     mode = (report.get("manifest") or {}).get("mode")
+    now = datetime.now(timezone.utc)
     staged = {"name": path.name, "bytes": st.st_size, "mtime": st.st_mtime,
               "mode": mode if mode in ("quick", "full") else "full",
-              "staged_at": _now_iso(), "requested_by": requested_by, "task_id": task_id,
+              "staged_at": now.isoformat(),
+              "expires_at": datetime.fromtimestamp(now.timestamp() + stage_ttl_seconds(),
+                                                   timezone.utc).isoformat(),
+              "requested_by": requested_by, "task_id": task_id,
               "file_count": report["file_count"]}
     _write_json(out / _PENDING_RESTORE, staged)
     _append_history(out, "staged", staged)
@@ -970,64 +1117,171 @@ def _finish(out: Path, result: dict) -> dict:
     return result
 
 
-def apply_pending_restore(source_root=None, key: Optional[str] = None) -> Optional[dict]:
-    """Apply a staged restore to the live root — only while no other process has it open.
+def _defer(out: Path, staged: dict, reason: str) -> dict:
+    """Record that a staged restore was put off, and why (H010 review r2: a deferral left
+    no trace). last-restore.json says ``deferred`` with the reason; restore-history.jsonl
+    gets one ``deferred`` line per process and reason, not one per poll."""
+    result = {**{k: staged.get(k) for k in ("name", "staged_at", "expires_at",
+                                            "requested_by", "task_id")},
+              "status": "deferred", "reason": reason, "applied_at": _now_iso(),
+              "pid": os.getpid()}
+    try:
+        _write_json(out / _LAST_RESTORE, result)
+    except OSError:
+        logger.warning("could not record the deferral of the staged restore")
+    last = (_history_rows(out / _HISTORY, 1) or [{}])[-1]
+    if not (last.get("event") == "deferred" and last.get("pid") == os.getpid()
+            and last.get("staged_at") == result["staged_at"] and last.get("reason") == reason):
+        _append_history(out, "deferred", result)
+    return result
 
-    None when nothing is staged. Otherwise ``{status: restored|failed|deferred|interrupted, …}``.
-    The archive must still be the one that was drilled (bytes and mtime); a rollback
-    snapshot of what the restore overwrites is taken first (``rollback``: a full snapshot
-    before a full restore, a quick one before a quick restore), then the archive is
-    restored over the root with ``force``. ``interrupted`` reports a previous attempt
-    that was killed partway (the root may be half-restored; restore its ``rollback``).
-    """
-    from agents.core import install_identity
 
+def cancel_staged_restore(source_root=None, cancelled_by: str = "") -> dict:
+    """Withdraw a staged restore before it is applied (``nerva backup cancel``,
+    ``DELETE /api/admin/backup/restore``). ``{ok: True, cancelled: name}``, or ``{ok:
+    False, reason: nothing_staged|applying}`` — a restore already claimed by the process
+    applying it cannot be withdrawn. Logged as ``cancelled`` in the history."""
     root = _root_of(source_root)
     out = default_backup_dir(root)
-    marker, journal_path = out / _PENDING_RESTORE, out / _APPLYING
+    marker = out / _PENDING_RESTORE
+    staged = _read_json(marker)
+    if staged is None:
+        applying = (out / _CLAIMED).exists() or restore_in_progress(root)
+        return {"ok": False, "reason": "applying" if applying else "nothing_staged"}
+    try:
+        marker.unlink()
+    except FileNotFoundError:   # claimed by the applying process between the read and here
+        return {"ok": False, "reason": "applying", "name": staged.get("name")}
+    result = {**{k: staged.get(k) for k in ("name", "staged_at", "expires_at",
+                                            "requested_by", "task_id")},
+              "status": "cancelled", "ok": False, "reason": "cancelled",
+              "cancelled_by": cancelled_by, "applied_at": _now_iso()}
+    _finish(out, result)
+    return {"ok": True, "cancelled": staged.get("name"), "staged_at": staged.get("staged_at")}
+
+
+@contextmanager
+def _apply_lock(out: Path) -> Iterator[bool]:
+    """An exclusive, non-blocking file lock around one apply: two hubs booting at the same
+    moment both reached apply before either took hub.lock (H010 review r2). Yields False
+    when another process holds it."""
+    from agents.core import install_identity
+
+    out.mkdir(parents=True, exist_ok=True)
+    handle = open(out / _APPLY_LOCK, "a+b")  # noqa: SIM115 - held across the yield
+    try:
+        try:
+            install_identity._file_lock(handle, blocking=False)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            try:
+                install_identity._file_unlock(handle)
+            except OSError:
+                logger.debug("restore lock already released")
+    finally:
+        handle.close()
+def apply_pending_restore(source_root=None, key: Optional[str] = None, *,
+                          runtime_wait: Optional[float] = None,
+                          sleep=time.sleep) -> Optional[dict]:
+    """Apply a staged restore to the live root — only while no other process has it open.
+
+    None when nothing is staged. Otherwise ``{status: restored|failed|deferred|interrupted|
+    cancelled, …}``. A stage past its ``expires_at`` is discarded (``failed``,
+    ``stage_expired``) without touching the root. The jarvis-runtime coordinator gives the
+    root up once it sees the stage (``restore_wanted``): this waits up to *runtime_wait*
+    seconds (``JARVIS_RESTORE_RUNTIME_WAIT_SECONDS``, default 60) for its mark to clear,
+    and defers only if it does not. Every deferral is recorded (``_defer``). The archive
+    must still be the one that was drilled (bytes and mtime); a rollback snapshot of what
+    the restore overwrites is taken first (``rollback``: a full snapshot before a full
+    restore, a quick one before a quick restore), then the archive is restored over the
+    root with ``force``. ``interrupted`` reports a previous attempt that was killed partway
+    (the root may be half-restored; restore its ``rollback``).
+    """
+    root = _root_of(source_root)
+    out = default_backup_dir(root)
+    if not boot_restore_due(root) and not (out / _CLAIMED).exists():
+        return None
+    with _apply_lock(out) as locked:
+        if not locked:
+            staged = _read_json(out / _PENDING_RESTORE)
+            if staged is None:
+                return None
+            return _defer(out, staged, "another process is applying a restore to this data root")
+        return _apply_locked(root, out, key,
+                             runtime_wait_seconds() if runtime_wait is None else runtime_wait,
+                             sleep)
+
+
+def _base(staged: dict) -> dict:
+    return {k: staged.get(k) for k in ("name", "staged_at", "expires_at", "requested_by", "task_id")}
+
+
+def _apply_locked(root: Path, out: Path, key: Optional[str], runtime_wait: float,
+                  sleep) -> Optional[dict]:
+    from agents.core import install_identity
+
+    marker, journal_path, claimed = out / _PENDING_RESTORE, out / _APPLYING, out / _CLAIMED
     journal = _read_json(journal_path)
     if journal is not None:
         if _journal_live(journal):
             staged = _read_json(marker) or journal
-            return {"status": "deferred", "name": staged.get("name"),
-                    "reason": "another process is applying a restore to this data root"}
+            return _defer(out, staged, "another process is applying a restore to this data root")
         journal_path.unlink(missing_ok=True)
         if journal.get("phase") == "snapshotting":
-            # Killed after the marker was cleared but before the restore began: the live
+            # Killed after the marker was claimed but before the restore began: the live
             # root was not touched, and the request must not vanish without a word.
+            claimed.unlink(missing_ok=True)
             return _finish(out, {
-                "name": journal.get("name"), "status": "failed", "ok": False,
-                "reason": "interrupted_before_restore", "staged_at": journal.get("staged_at"),
-                "requested_by": journal.get("requested_by"), "task_id": journal.get("task_id"),
-                "applied_at": _now_iso(),
+                **_base(journal), "status": "failed", "ok": False,
+                "reason": "interrupted_before_restore", "applied_at": _now_iso(),
                 "detail": "the process was killed while taking the rollback snapshot; nothing "
                           "was restored — stage the restore again"})
         if journal.get("phase") == "restoring":
+            claimed.unlink(missing_ok=True)
             return _finish(out, {
-                "name": journal.get("name"), "status": "interrupted", "ok": False,
-                "reason": "interrupted", "staged_at": journal.get("staged_at"),
-                "requested_by": journal.get("requested_by"), "task_id": journal.get("task_id"),
-                "rollback": journal.get("rollback"), "applied_at": _now_iso(),
+                **_base(journal), "status": "interrupted", "ok": False,
+                "reason": "interrupted", "rollback": journal.get("rollback"),
+                "applied_at": _now_iso(),
                 "detail": "the restore was killed partway: the data root may be half-restored; "
                           "restore the rollback point (or the archive again) before relying on it"})
+        # Killed while checking: nothing began. A claim it made goes back to being staged.
+        if claimed.exists() and not marker.exists():
+            os.replace(claimed, marker)
     staged = _read_json(marker)
     if staged is None:
         return None
-    base = {k: staged.get(k) for k in ("name", "staged_at", "requested_by", "task_id")}
+    if stage_expired(staged):
+        marker.unlink(missing_ok=True)
+        return _expired(out, staged)
     # Journal first, then look for other openers: a coordinator that marks the root at the
-    # same moment then sees this journal and waits (wait_while_restoring), or is seen here.
-    _write_json(journal_path, {**base, "phase": "checking", "pid": os.getpid()})
-    elsewhere = None
+    # same moment then sees this journal (restore_wanted) and gives the root up again.
+    _write_json(journal_path, {**_base(staged), "phase": "checking", "pid": os.getpid()})
+    reason = None
     if install_identity.hub_lock_held_elsewhere(root):
-        elsewhere = "another hub holds this data root; the restore stays staged"
-    elif runtime_running_elsewhere(root):
-        elsewhere = ("the jarvis-runtime coordinator has this data root open; stop it "
-                     "(systemctl stop jarvis-runtime) and the restore is applied at the next hub start")
-    if elsewhere:
+        reason = "another hub holds this data root; the restore stays staged"
+    elif not wait_for_runtime_yield(root, timeout=runtime_wait, sleep=sleep):
+        reason = (f"the jarvis-runtime coordinator did not release the data root within "
+                  f"{runtime_wait:g}s (a current coordinator releases it once it sees the staged "
+                  f"restore); the restore stays staged until it expires at {staged.get('expires_at')}")
+    if reason:
         journal_path.unlink(missing_ok=True)
-        return {"status": "deferred", "name": staged.get("name"), "reason": elsewhere}
-    marker.unlink(missing_ok=True)                  # one attempt: never a boot loop
+        return _defer(out, staged, reason)
+    try:
+        os.replace(marker, claimed)                 # one attempt: never a boot loop
+    except FileNotFoundError:                      # withdrawn while this waited
+        journal_path.unlink(missing_ok=True)
+        return {**_base(staged), "status": "cancelled", "ok": False, "reason": "cancelled"}
+    staged = _read_json(claimed) or staged         # the stage as it stands now
+    base = _base(staged)
     _write_json(journal_path, {**base, "phase": "snapshotting", "pid": os.getpid()})
+    claimed.unlink(missing_ok=True)
+    if stage_expired(staged):
+        journal_path.unlink(missing_ok=True)
+        return _expired(out, staged)
     name = str(staged.get("name") or "")
     result: dict = {**base, "name": name, "applied_at": _now_iso()}
     path = resolve_backup(name, out_dir=str(out)) if name else None
@@ -1041,12 +1295,13 @@ def apply_pending_restore(source_root=None, key: Optional[str] = None) -> Option
         try:
             rollback = create_backup(source_root=str(root), out_dir=str(out),
                                      quick=staged.get("mode") == "quick",
-                                     label="pre-restore", key=key)
+                                     label="pre-restore", key=key, rollback=True)
             result["rollback"] = Path(rollback["archive"]).name
             try:
-                prune_quick_backups(out_dir=str(out), protect=(name, result["rollback"]))
+                result["pruned"] = prune_quick_backups(out_dir=str(out),
+                                                       protect=(name, result["rollback"]))
             except OSError:
-                logger.warning("could not prune old quick snapshots")
+                logger.warning("could not prune old quick rollback points")
             _write_json(journal_path, {**base, "phase": "restoring", "pid": os.getpid(),
                                        "rollback": result["rollback"]})
             restored = restore_backup(str(path), str(root), force=True, key=key)
@@ -1060,6 +1315,14 @@ def apply_pending_restore(source_root=None, key: Optional[str] = None) -> Option
                           file_count=restored["file_count"], dbs=restored["dbs"])
     journal_path.unlink(missing_ok=True)
     return _finish(out, result)
+
+
+def _expired(out: Path, staged: dict) -> dict:
+    return _finish(out, {
+        **_base(staged), "status": "failed", "ok": False, "reason": "stage_expired",
+        "applied_at": _now_iso(),
+        "detail": "the staged restore expired before it could be applied; nothing was "
+                  "restored — stage it again if it is still wanted"})
 
 
 #: The irreversible-tier kind (agents/core/autonomy/irreversible.py BUILTIN_KINDS).
@@ -1113,7 +1376,8 @@ async def apply_approved(task, orch) -> dict:
     if not staged["ok"]:
         return {"status": "refused", "reason": "backup_failed_verify", "problem": staged["problem"]}
     restart = "requested" if hub_restart.request(APPROVAL_KIND) else "manual"
-    return {"status": "ok", "kind": APPROVAL_KIND, "staged": name, "restart": restart}
+    return {"status": "ok", "kind": APPROVAL_KIND, "staged": name, "restart": restart,
+            "expires_at": staged.get("expires_at")}
 
 
 # ── CLI (one-command) ─────────────────────────────────────────────

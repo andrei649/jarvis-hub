@@ -1,5 +1,6 @@
 {
   "DELETE /api/a2a/peers/{peer_id}": "admin",
+  "DELETE /api/admin/backup/restore": "admin",
   "DELETE /api/admin/mcp/{name}": "admin",
   "DELETE /api/admin/widgets/{token}": "admin",
   "DELETE /api/ambient/monitors/{monitor_id}": "admin",

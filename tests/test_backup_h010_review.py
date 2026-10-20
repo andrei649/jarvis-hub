@@ -72,6 +72,8 @@ def root(tmp_path):
 def _isolation(monkeypatch):
     hub_restart.reset()
     monkeypatch.delenv("JARVIS_BACKUP_QUICK_KEEP", raising=False)
+    # A stand-in "coordinator" (a live pid that never yields) must not hold a test 60s.
+    monkeypatch.setenv("JARVIS_RESTORE_RUNTIME_WAIT_SECONDS", "0")
     yield
     hub_restart.reset()
 
@@ -149,16 +151,18 @@ def test_a_quick_restore_keeps_a_quick_rollback_point(root):
 
 def test_quick_rollback_points_are_pruned_but_never_the_archive_being_restored(root, monkeypatch):
     monkeypatch.setenv("JARVIS_BACKUP_QUICK_KEEP", "2")
-    oldest = Path(bk.create_backup(source_root=str(root), quick=True)["archive"]).name
-    newer = [Path(bk.create_backup(source_root=str(root), quick=True)["archive"]).name
+    oldest = Path(bk.create_backup(source_root=str(root), quick=True, rollback=True)["archive"]).name
+    newer = [Path(bk.create_backup(source_root=str(root), quick=True, rollback=True)["archive"]).name
              for _ in range(3)]
     bk.stage_restore(oldest, source_root=str(root))
     result = bk.apply_pending_restore(root)
     assert result["status"] == "restored" and result["ok"] is True, result
     quick = {r["name"] for r in bk.list_backups(str(_out(root))) if r["quick"]}
-    # The newest two (the new rollback point and the newest snapshot) plus the protected
-    # archive that was being restored; the two in between are gone.
+    # The newest two rollback points (the new one and the newest earlier one) plus the
+    # protected archive that was being restored; the two in between are gone, and named.
     assert quick == {result["rollback"], newer[-1], oldest}
+    assert sorted(result["pruned"]) == sorted(newer[:2])
+    assert bk.restore_history(root)[-1]["pruned"] == result["pruned"]
     assert bk.prune_quick_backups(out_dir=str(_out(root)), keep=1, protect=(oldest,)) != []
 
 
@@ -263,8 +267,10 @@ def test_the_coordinator_waits_for_a_restore_in_progress(root):
 def test_the_coordinator_marks_itself_and_waits_before_it_opens_the_stores():
     text = (Path(__file__).resolve().parent.parent / "scripts" / "coordinator.py").read_text(encoding="utf-8")
     run = text[text.index("async def run()"):]
-    assert run.index("mark_runtime(") < run.index("wait_while_restoring") < run.index("_build_orchestrator()")
+    assert run.index("mark_runtime(") < run.index("restore_wanted(") < run.index("_run_marked(")
     assert "clear_runtime_mark(" in run
+    marked = text[text.index("async def _run_marked("):]
+    assert marked.index("_build_orchestrator()") < marked.index("restore_wanted")
 
 
 # ── audit trace outside the restored DBs ──────────────────────────────────────
