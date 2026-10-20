@@ -88,6 +88,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
+        "uninstall",
     }
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.

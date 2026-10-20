@@ -505,6 +505,20 @@ def build_parser() -> argparse.ArgumentParser:
         "grant", help="open the OS pane where you award a permission (owner; grants nothing itself)")
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
 
+    # H014 — the same module uninstall.sh / UNINSTALL.bat run; nothing is decided here.
+    uninstall = verbs.add_parser(
+        "uninstall", help="remove the installed software (offline; your data stays unless --purge-data)")
+    uninstall.add_argument("--dry-run", action="store_true",
+                           help="print what would be removed and whether data would be purged")
+    uninstall.add_argument("--confirm", action="store_true", help="required to actually remove anything")
+    uninstall.add_argument("--purge-data", action="store_true",
+                           help="also erase the data root (backup-first; needs the folder name typed back)")
+    uninstall.add_argument("--yes-purge", metavar="NAME",
+                           help="the data root's folder name, for --purge-data without a prompt")
+    uninstall.add_argument("--no-backup", action="store_true", help="with --purge-data, skip the backup")
+    uninstall.add_argument("--gui", action="store_true", help="also remove the desktop app")
+    uninstall.add_argument("--root", help="app root to uninstall from")
+
     security = verbs.add_parser(
         "security", help="checks you can run on this box: known vulnerabilities in what is installed")
     security_verbs = security.add_subparsers(dest="action", required=True, metavar="action")
@@ -3738,6 +3752,20 @@ def cmd_prompt_size(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_uninstall(ns: argparse.Namespace, ctx: Context) -> int:
+    """Delegate to agents.core.uninstall — its refusals, typed purge prompt and exit codes."""
+    from agents.core import uninstall as _uninstall
+
+    argv = [flag for flag, on in (("--dry-run", ns.dry_run), ("--confirm", ns.confirm),
+                                  ("--purge-data", ns.purge_data), ("--no-backup", ns.no_backup),
+                                  ("--gui", ns.gui)) if on]
+    if ns.yes_purge is not None:
+        argv.append(f"--yes-purge={ns.yes_purge}")
+    if ns.root:
+        argv += ["--root", ns.root]
+    return _uninstall._main(argv, out=ctx.out, inp=ctx.inp)
+
+
 def cmd_security(ns: argparse.Namespace, ctx: Context) -> int:
     """H022 — what is installed here, checked against a vulnerability database.
 
@@ -3846,6 +3874,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "send": cmd_send,
     "desktop": cmd_desktop,
     "support": cmd_support,
+    "uninstall": cmd_uninstall,
     "security": cmd_security,
     "completion": cmd_completion,
 }

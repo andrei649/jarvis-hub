@@ -4,11 +4,14 @@ REM  JARVIS HUB - UNINSTALL (Windows 11, double-click)
 REM  Removes the installer-created software footprint: .venv\,
 REM  WorldView's node_modules\ and generated .env files. Your
 REM  DATA (memory_logs\ or %JARVIS_HOME%) is NOT touched unless
-REM  you also pass /PURGEDATA.
+REM  you also pass /PURGEDATA - and even then only after you type
+REM  the data folder's name back when asked.
 REM
 REM  Usage:  UNINSTALL.bat            (asks for confirmation)
+REM          UNINSTALL.bat /DRYRUN    (print what WOULD be removed; nothing is)
 REM          UNINSTALL.bat /CONFIRM   (no prompt, for scripting)
-REM          UNINSTALL.bat /CONFIRM /PURGEDATA   (also erase data)
+REM          UNINSTALL.bat /CONFIRM /GUI         (also remove the desktop app)
+REM          UNINSTALL.bat /CONFIRM /PURGEDATA   (also erase data; typed confirmation)
 REM ============================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -16,8 +19,12 @@ title JARVIS HUB - Uninstall
 
 set "DOCONFIRM=0"
 set "PURGEDATA="
+set "DRYRUN="
+set "GUI="
 for %%A in (%*) do (
   if /I "%%~A"=="/CONFIRM" set "DOCONFIRM=1"
+  if /I "%%~A"=="/DRYRUN" set "DRYRUN=--dry-run"
+  if /I "%%~A"=="/GUI" set "GUI=--gui"
   if /I "%%~A"=="/PURGEDATA" set "PURGEDATA=--purge-data"
   if /I "%%~A"=="/NOBACKUP" set "NOBACKUP=--no-backup"
 )
@@ -32,6 +39,7 @@ echo generated .env files. Your data (memory_logs\ or %%JARVIS_HOME%%)
 echo is NOT touched unless /PURGEDATA is also given.
 echo.
 
+if defined DRYRUN set "DOCONFIRM=1"
 if "!DOCONFIRM!"=="0" (
   set /p "ANSWER=Continue? [y/N] "
   if /I not "!ANSWER!"=="y" (
@@ -53,7 +61,13 @@ if %errorlevel%==0 (set "PY=py") else (
   )
 )
 
-"!PY!" -m agents.core.uninstall --confirm !PURGEDATA! !NOBACKUP!
+if defined DRYRUN (
+  "!PY!" -m agents.core.uninstall --dry-run !GUI! !PURGEDATA!
+  echo.
+  echo   Dry run - nothing was removed. Re-run with /CONFIRM to proceed.
+  goto :end
+)
+"!PY!" -m agents.core.uninstall --confirm !GUI! !PURGEDATA! !NOBACKUP!
 set "RC=%errorlevel%"
 echo.
 if "!RC!"=="0" (
