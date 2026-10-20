@@ -14,7 +14,11 @@ endpoint. This reads each route's *resolved dependency graph* from the live app
    dependency guard or a WS_GUARDED_IN_HANDLER entry, and splits the open
    allowlists into IN_HANDLER_GUARDED (a credential checked in the handler body,
    proved route by route in tests/test_route_inhandler_guards.py) and
-   PUBLIC_BY_DESIGN (no credential exists to check).
+   PUBLIC_BY_DESIGN (no credential exists to check);
+5. (H511 review) AST-scans agents/ for every in-body guard call and every in-body
+   tier decision (`_web_principal`, `_admin_credential_ok`, ...), pins each site
+   with the probe(s) that prove it, and flags calls that cannot take effect; and
+   pins every mounted sub-app (at any depth) by its served path and type.
 
 The autouse user-guard override in conftest is irrelevant here: dependency
 overrides apply at request time and do not change route.dependant, which is what
@@ -194,24 +198,71 @@ IN_HANDLER_STEP_UP = {
 }
 
 # H511 review: every function in agents/ that *calls* a guard in its body (not as a
-# Depends) — found by an AST scan, pinned here, and mapped to the routes whose
-# in-handler or step-up check it is. A new in-body guard call fails CI until it is
-# mapped to an entry that has a probe.
+# Depends) — found by an AST scan, pinned here. Each site names the probe(s) that
+# prove that very call behaviourally, as "tests/<file>.py::<test>[<param>]";
+# tests/test_route_inhandler_guards.py::test_every_pinned_site_names_a_live_probe
+# fails when a named probe does not exist. A new in-body guard call fails CI until
+# it is pinned here with a probe.
+_INH = "tests/test_route_inhandler_guards.py::"
 IN_HANDLER_GUARD_SITES = {
-    "agents/core/routers/kanban.py:events": ("WS /api/kanban/events",),
-    "agents/core/routers/hermes_runtime.py:websocket_rpc": ("WS /api/hermes/ws",),
-    "agents/core/routers/hermes_runtime.py:_send_events": ("WS /api/hermes/ws",),
-    "agents/core/routers/composer_vision.py:_selected_owner_scope": tuple(sorted(IN_HANDLER_STEP_UP)),
+    "agents/core/routers/kanban.py:events": (
+        _INH + "test_websocket_in_handler_guard_refuses_unauthenticated[WS /api/kanban/events]",
+        _INH + "test_websocket_closes_when_credential_is_revoked_mid_stream[WS /api/kanban/events]"),
+    "agents/core/routers/hermes_runtime.py:websocket_rpc": (
+        _INH + "test_websocket_in_handler_guard_refuses_unauthenticated[WS /api/hermes/ws]",
+        _INH + "test_websocket_closes_when_credential_is_revoked_mid_stream[WS /api/hermes/ws]"),
+    # The per-event re-check on the push path (not the receive loop's).
+    "agents/core/routers/hermes_runtime.py:_send_events": (
+        _INH + "test_hermes_event_push_stops_when_credential_is_revoked",),
+    "agents/core/routers/composer_vision.py:_selected_owner_scope": tuple(
+        _INH + f"test_step_up_refuses_a_user_tier_caller[{route}]" for route in sorted(IN_HANDLER_STEP_UP)),
 }
 _GUARD_CALLS = {"admin_guard", "user_guard", "_admin_guard", "_user_guard"}
 
-# H511 review: mounted ASGI sub-apps. A mount with a route table is descended into
-# by iter_websocket_routes; one without (StaticFiles, an opaque ASGI app) cannot be
-# introspected, so it must be listed here by type. StaticFiles serves GET/HEAD
-# bytes only and refuses WebSocket scopes.
+# H511 review: the tier decision made in a body from the credential primitives —
+# `_web_principal(...).admin`, `owner_web_principal`, `_admin_credential_ok`,
+# `_user_credential_ok` (incl. a `getattr(web, "<name>")` lookup). The dependency
+# graph sees only the route's dependency tier; these sites branch on admin vs user
+# (or valid vs invalid) inside it. Each names the test that fails when its decision
+# is forced (mutation-checked: replacing the call with an always-admin / always-valid
+# value fails the named test).
+_TIER_CALLS = {"_web_principal", "owner_web_principal", "_admin_credential_ok", "_user_credential_ok"}
+IN_HANDLER_TIER_SITES = {
+    # The primitives themselves (agents/web.py).
+    "agents/web.py:_admin_guard": ("tests/test_admin_guard_hf7.py::test_admin_guard_token_path_unaffected",),
+    "agents/web.py:_user_credential_ok": ("tests/test_user_guard_hf1.py::test_user_guard_admin_token_is_superset",),
+    "agents/web.py:_user_guard": ("tests/test_user_guard_hf1.py::test_user_guard_token",),
+    "agents/web.py:_web_principal": (
+        "tests/test_commands_catalog.py::test_bad_owner_token_and_query_flag_cannot_reveal_owner_commands",),
+    "agents/web.py:_request_is_authed": ("tests/test_rate_limit_hf2.py::test_request_is_authed_requires_valid_token",),
+    "agents/web.py:_mcp_identity_check": (
+        "tests/test_h273e_provenance_review.py::"
+        "test_the_mcp_identity_check_refuses_a_revoked_credential_as_the_guard_does",),
+    # Step-ups inside user-tier routes.
+    "agents/web.py:chat": (
+        "tests/test_h011_preappend_commands.py::test_cli_web_owner_registry_contract_preserves_history_and_exit_status",),
+    "agents/web.py:chat_stream": (_INH + "test_chat_stream_binds_the_credentialed_principal",),
+    "agents/core/routers/canvas.py:canvas_post": (
+        "tests/test_h309_pointer.py::test_a_tip_through_the_http_route_is_marked_unless_the_owner_sent_it",),
+    "agents/core/routers/actions.py:actions_request": (
+        "tests/test_h487_approval_groups.py::test_owner_http_producer_and_optional_projection_with_legacy_complete_actions",),
+    "agents/core/routers/commands.py:command_catalog": (
+        "tests/test_commands_catalog.py::test_user_catalog_contains_only_commands_visible_to_that_chat_principal",),
+    "agents/core/routers/skills.py:_request_principal": (_INH + "test_sandbox_principal_follows_the_credential",),
+    "agents/core/routers/chat_pending.py:http_actor": (
+        "tests/test_pending_input_http_poll.py::test_revocation_retires_polled_or_unpolled_wait",
+        _INH + "test_pending_input_actor_follows_the_credential"),
+    "agents/core/routers/autonomy.py:_consent_admin_current": (_INH + "test_consent_recheck_follows_the_credential",),
+}
+
+# H511 review: mounted ASGI sub-apps, keyed by the path each is *served* under
+# (iter_mounts walks included routers and nested mounts). The route matrices cannot
+# see inside a mount, so every mount must be listed here with the class its app must
+# be an instance of. StaticFiles serves GET/HEAD bytes only and refuses WebSocket
+# scopes.
 ALLOWED_MOUNTS = {
-    "/static": "StaticFiles",
-    "/v2/assets": "StaticFiles",
+    "/static": "starlette.staticfiles.StaticFiles",
+    "/v2/assets": "starlette.staticfiles.StaticFiles",
 }
 
 WS_SNAPSHOT = repo_root / "tests" / "_snapshots" / "ws_route_auth.json"
@@ -405,14 +456,31 @@ def test_websocket_guards_match_snapshot():
         f"runtime={runtime}\nsnapshot={snap}")
 
 
+def _mount_violations(app) -> dict:
+    """Every mount (at any depth, by served path) that is not an allowlisted instance."""
+    import importlib
+
+    from tests._route_introspect import iter_mounts
+
+    def allowed(path, mounted):
+        dotted = ALLOWED_MOUNTS.get(path)
+        if not dotted:
+            return False
+        module, _, cls = dotted.rpartition(".")
+        return isinstance(mounted, getattr(importlib.import_module(module), cls))
+
+    return {m.path: type(m.app).__name__ for m in iter_mounts(app) if not allowed(m.path, m.app)}
+
+
 def test_every_mount_is_pinned():
-    """H511 review: a mounted ASGI app is invisible to the route matrices unless it
-    has a route table, so every mount must be an allowlisted StaticFiles."""
+    """H511 review: a mounted ASGI app is invisible to the HTTP route matrix, so every
+    mount — top-level, inside an included router, or nested in a sub-app — must be an
+    allowlisted instance at the path it is served under."""
     from agents.web import app
     from tests._route_introspect import iter_mounts
 
-    seen = {m.path: type(m.app).__name__ for m in iter_mounts(app)}
-    unexpected = {p: t for p, t in seen.items() if ALLOWED_MOUNTS.get(p) != t}
+    assert {m.path for m in iter_mounts(app)} >= set(ALLOWED_MOUNTS), "a pinned mount is gone — drop it"
+    unexpected = _mount_violations(app)
     assert not unexpected, (
         "Unclassified mounted sub-app(s) — guard it, or list it in ALLOWED_MOUNTS with "
         f"the reason it serves nothing credentialed: {unexpected}")
@@ -435,54 +503,174 @@ def test_mount_check_and_ws_walk_see_mounted_sub_apps():
 
     from tests._route_introspect import iter_mounts
     assert [(m.path, type(m.app).__name__) for m in iter_mounts(app)] == [("/sub", "FastAPI")]
-    assert ALLOWED_MOUNTS.get("/sub") != "FastAPI"
+    assert _mount_violations(app) == {"/sub": "FastAPI"}
 
 
-def _scan_in_body_guard_calls() -> set:
-    """AST-scan agents/ for every function whose body calls a guard directly."""
+def test_mount_check_sees_a_mount_inside_an_included_router():
+    """H511 review (round 2): `router.mount()` on an included APIRouter is served, with
+    no guard, but sits behind fastapi's opaque `_IncludedRouter` — a top-level-only
+    scan missed it. It is reported under the path that actually answers, and a
+    StaticFiles-named impostor class at an allowlisted path is still refused."""
+    from fastapi import APIRouter, FastAPI
+    from fastapi.testclient import TestClient
+
+    async def raw(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"unguarded"})
+
+    router = APIRouter(prefix="/api")
+    router.mount("/inner", raw)
+    outer = APIRouter(prefix="/outer")
+    outer.include_router(router)
+    app = FastAPI()
+    app.include_router(router)
+    app.include_router(outer)
+
+    from tests._route_introspect import iter_mounts
+    served = {m.path for m in iter_mounts(app)}
+    client = TestClient(app)
+    for path in served:   # each reported path is the one that serves the mounted app
+        assert client.get(path + "/x").text == "unguarded", path
+    assert len(served) == 2 and "/inner" in served
+    assert set(_mount_violations(app)) == served
+
+    class StaticFiles:   # same class name as the allowlisted type, not the type
+        async def __call__(self, scope, receive, send):
+            await raw(scope, receive, send)
+
+    impostor = FastAPI()
+    impostor.mount("/static", StaticFiles())
+    assert _mount_violations(impostor) == {"/static": "StaticFiles"}
+
+
+def _scan_in_body_guard_calls(root=None, rel_to=None):
+    """AST-scan agents/ for every function whose body calls a guard or a tier primitive.
+
+    Returns (guard_sites, tier_sites, suspicious). A site is "file:function". Calls are
+    matched by name, by an import alias of a name (`from ._deps import admin_guard as
+    ag`), and by a string lookup (`getattr(web, "_web_principal")`). `suspicious` lists
+    calls that cannot be doing their job: an async guard that is not awaited, a call
+    under a constant-false `if`/`while`, or one inside a `try` whose handler only
+    swallows (`pass` / `...` / `continue`)."""
     import ast
 
-    sites = set()
+    root = root or repo_root / "agents"
+    rel_to = rel_to or repo_root
+    watched = _GUARD_CALLS | _TIER_CALLS
+    awaited_only = _GUARD_CALLS | {"owner_web_principal"}
+    guard_sites, tier_sites, suspicious = set(), set(), []
 
-    def visit(node, owner, rel):
+    refusals = {"Exception", "BaseException", "HTTPException"}   # what a guard raises
+
+    def catches_refusal(handler):
+        if handler.type is None:
+            return True
+        kinds = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+        return any((k.id if isinstance(k, ast.Name) else getattr(k, "attr", "")) in refusals for k in kinds)
+
+    def swallowing(try_node):
+        return any(catches_refusal(h) and all(
+            isinstance(s, (ast.Pass, ast.Continue))
+            or (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant)) for s in h.body)
+            for h in try_node.handlers)
+
+    def visit(node, owner, rel, aliases, dead, awaited):
         for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                visit(child, child.name, rel)
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                name = owner if isinstance(child, ast.Lambda) else child.name
+                visit(child, name, rel, aliases, False, False)
                 continue
-            if isinstance(child, ast.Call) and owner is not None:
+            child_dead = dead
+            if isinstance(child, (ast.If, ast.While)) and isinstance(child.test, ast.Constant) \
+                    and not child.test.value:
+                # Only the body is dead; the else branch (orelse) runs.
+                for stmt in child.body:
+                    visit_stmt(stmt, owner, rel, aliases, True)
+                for stmt in child.orelse:
+                    visit_stmt(stmt, owner, rel, aliases, dead)
+                continue
+            if isinstance(child, ast.Try) and swallowing(child):
+                for stmt in child.body:
+                    visit_stmt(stmt, owner, rel, aliases, True)
+                for part in (*child.handlers, *child.orelse, *child.finalbody):
+                    visit_stmt(part, owner, rel, aliases, dead)
+                continue
+            name = ""
+            if owner is not None and isinstance(child, ast.Call):
                 fn = child.func
-                name = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else ""
-                if name in _GUARD_CALLS:
-                    sites.add(f"{rel}:{owner}")
-            visit(child, owner, rel)
+                raw = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else ""
+                name = aliases.get(raw, raw)
+            elif owner is not None and isinstance(child, ast.Constant) and child.value in watched:
+                name = child.value   # getattr(module, "<name>") lookup
+            if name in watched:
+                site = f"{rel}:{owner}"
+                (guard_sites if name in _GUARD_CALLS else tier_sites).add(site)
+                line = f"{rel}:{child.lineno} {name}"
+                if child_dead:
+                    suspicious.append(line + " (dead or swallowed)")
+                elif isinstance(child, ast.Call) and name in awaited_only and not awaited:
+                    suspicious.append(line + " (not awaited)")
+            visit(child, owner, rel, aliases, child_dead, isinstance(child, ast.Await))
 
-    for path in sorted((repo_root / "agents").rglob("*.py")):
-        rel = path.relative_to(repo_root).as_posix()
+    def visit_stmt(stmt, owner, rel, aliases, dead):
+        wrapper = ast.Module(body=[stmt], type_ignores=[])
+        visit(wrapper, owner, rel, aliases, dead, False)
+
+    for path in sorted(root.rglob("*.py")):
+        rel = path.relative_to(rel_to).as_posix()
         if rel == "agents/core/routers/_deps.py":   # the lazy wrappers themselves
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):
             continue
-        visit(tree, None, rel)
-    return sites
+        aliases = {a.asname: a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+                   for a in n.names if a.asname and a.name in watched}
+        visit(tree, None, rel, aliases, False, False)
+    return guard_sites, tier_sites, suspicious
 
 
 def test_every_in_body_guard_call_is_pinned():
     """H511 review: a credential check inside a handler (or a helper it calls) is
     found by the AST scan, so it cannot hide behind a "user"/"open" classification:
-    each site must map to WS_GUARDED_IN_HANDLER / IN_HANDLER_STEP_UP entries, each of
-    which has a probe in test_route_inhandler_guards.py."""
-    found = _scan_in_body_guard_calls()
+    each site is pinned in IN_HANDLER_GUARD_SITES / IN_HANDLER_TIER_SITES with the
+    probes that prove it, and no scanned call may be dead, swallowed or un-awaited."""
+    guard_sites, tier_sites, suspicious = _scan_in_body_guard_calls()
     problems = []
-    if found != set(IN_HANDLER_GUARD_SITES):
-        problems.append(f"in-body guard call sites changed: new={sorted(found - set(IN_HANDLER_GUARD_SITES))} "
-                        f"gone={sorted(set(IN_HANDLER_GUARD_SITES) - found)}")
-    proved = set(WS_GUARDED_IN_HANDLER) | set(IN_HANDLER_STEP_UP)
-    unmapped = sorted(r for routes in IN_HANDLER_GUARD_SITES.values() for r in routes if r not in proved)
-    if unmapped:
-        problems.append(f"sites mapped to routes with no probe entry: {unmapped}")
+    if guard_sites != set(IN_HANDLER_GUARD_SITES):
+        problems.append(f"in-body guard call sites changed: new={sorted(guard_sites - set(IN_HANDLER_GUARD_SITES))} "
+                        f"gone={sorted(set(IN_HANDLER_GUARD_SITES) - guard_sites)}")
+    tier_only = tier_sites - guard_sites
+    if tier_only != set(IN_HANDLER_TIER_SITES):
+        problems.append(f"in-body tier decision sites changed: new={sorted(tier_only - set(IN_HANDLER_TIER_SITES))} "
+                        f"gone={sorted(set(IN_HANDLER_TIER_SITES) - tier_only)}")
+    if suspicious:
+        problems.append(f"guard calls that cannot take effect: {suspicious}")
+    empty = sorted(k for k, v in {**IN_HANDLER_GUARD_SITES, **IN_HANDLER_TIER_SITES}.items() if not v)
+    if empty:
+        problems.append(f"pinned sites with no probe: {empty}")
     assert not problems, "\n".join(problems)
+
+
+def test_guard_scan_flags_aliases_lookups_and_inert_calls(tmp_path):
+    """The scan itself: an aliased import and a getattr lookup are sites; a call under
+    `if False:`, inside a swallowing try, or never awaited is flagged as inert."""
+    pkg = tmp_path / "agents"
+    pkg.mkdir()
+    (pkg / "mod.py").write_text(
+        "from agents.core.routers._deps import admin_guard as ag\n"
+        "async def aliased(r):\n    await ag(r)\n"
+        "def looked_up(web, r):\n    return getattr(web, '_web_principal')(r).admin\n"
+        "async def dead(r):\n    if False:\n        await ag(r)\n"
+        "async def swallowed(r):\n    try:\n        await ag(r)\n    except Exception:\n        pass\n"
+        "async def discarded(r):\n    ag(r)\n"
+        "async def live_else(r):\n    if 0:\n        pass\n    else:\n        await ag(r)\n"
+        "async def narrow(r):\n    try:\n        await ag(r)\n    except WebSocketDisconnect:\n        pass\n")
+    guard, tier, suspicious = _scan_in_body_guard_calls(pkg, tmp_path)
+    assert guard == {f"agents/mod.py:{f}"
+                     for f in ("aliased", "dead", "swallowed", "discarded", "live_else", "narrow")}
+    assert tier == {"agents/mod.py:looked_up"}
+    assert {s.split()[0] for s in suspicious} == {"agents/mod.py:8", "agents/mod.py:11", "agents/mod.py:15"}
 
 
 def test_step_up_routes_are_user_tier():

@@ -16,7 +16,11 @@ The probes use the hub's real verifiers (WebhookStore, A2ARegistry, the OAuth
 state minted by the plugin, MCPResourceServer, WidgetStore) on a temporary data
 dir, so deleting a verification line in any of them fails a probe here.
 
-A new entry in any map without a probe fails test_every_entry_has_a_probe.
+A new entry in any map without a probe fails test_every_entry_has_a_probe, and a
+pinned in-body call site (IN_HANDLER_GUARD_SITES / IN_HANDLER_TIER_SITES) whose
+named probe does not exist fails test_every_pinned_site_names_a_live_probe. The
+tier-decision probes below cover the sites no older test proved (each was checked
+by forcing the site's decision and watching the probe fail).
 """
 import hashlib
 import hmac
@@ -363,17 +367,27 @@ def test_step_up_refuses_a_user_tier_caller(route, client, monkeypatch):
 # ── WebSocket probes ──────────────────────────────────────────────────────────
 
 class _FakeHermes:
-    def __init__(self, ready=False):
+    """`pushed` (a thread-safe queue.Queue) feeds the event stream from the test
+    thread; without it the stream never yields."""
+
+    def __init__(self, ready=False, pushed=None):
         self.ready = ready
+        self.pushed = pushed
 
     async def status(self):
         return {"ready": self.ready}
 
     async def events(self):
         import asyncio
+        import queue
 
-        await asyncio.Event().wait()
-        yield {}  # pragma: no cover — never reached
+        if self.pushed is None:
+            await asyncio.Event().wait()
+        while True:
+            try:
+                yield self.pushed.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.01)
 
     async def rpc(self, method, params):
         return {"ok": True}
@@ -457,3 +471,151 @@ def test_websocket_closes_when_credential_is_revoked_mid_stream(route, client, m
                 ws.receive_text()
     assert caught.value.code == 1008
     assert verdicts[tier][-1] == 401, f"{route} closed, but not on a refused re-check: {verdicts}"
+
+
+@pytest.mark.timeout(20)
+def test_hermes_event_push_stops_when_credential_is_revoked(client, monkeypatch, tokens):
+    """The push path's own re-check (hermes_runtime._send_events): once the owner
+    credential is revoked, the next pushed event is never delivered — the stream
+    closes 1008 instead. No client frame is sent, so the receive loop sits in its
+    5 s wait and its own re-check cannot pre-empt the push: without the per-event
+    check the queued event goes out before the loop wakes."""
+    import queue
+
+    from agents.core.routers import hermes_runtime
+
+    pushed = queue.Queue()
+    service = _FakeHermes(ready=True, pushed=pushed)
+    monkeypatch.setattr(hermes_runtime, "_service", lambda: service)
+    verdicts = _spy_guards(monkeypatch)
+    with client.websocket_connect("/api/hermes/ws", headers={"x-admin-token": ADMIN}) as ws:
+        pushed.put({"event": "before-revocation"})
+        assert json.loads(ws.receive_text()) == {"event": "before-revocation"}
+        tokens.revoked = True
+        pushed.put({"event": "after-revocation"})
+        with pytest.raises(WebSocketDisconnect) as caught:
+            leaked = ws.receive_text()
+            pytest.fail(f"an event was pushed after the credential was revoked: {leaked}")
+    assert caught.value.code == 1008
+    assert 401 in verdicts["admin"], verdicts
+
+
+# ── Tier-decision probes: the admin/user branch a user-tier handler takes ─────
+
+def _request(headers=None, host="127.0.0.1"):
+    from starlette.requests import Request
+
+    return Request({"type": "http", "method": "POST", "path": "/", "scheme": "http",
+                    "headers": [(k.encode(), v.encode()) for k, v in (headers or {}).items()],
+                    "client": (host, 50000), "server": ("127.0.0.1", 80), "query_string": b""})
+
+
+def test_chat_stream_binds_the_credentialed_principal(client, monkeypatch):
+    """/chat/stream hands the turn the principal its credential earns: the owner only
+    with a valid admin token — a wrong one, or none, is a plain user."""
+    from agents import web
+
+    seen = []
+
+    async def fake_stream(orch, message, agent, agent_override, principal=None, **kw):
+        seen.append(principal)
+        yield "data: {}\n\n"
+
+    class Orch:
+        notes = None
+        session_id = "h511"
+
+    monkeypatch.setattr(web, "orch", Orch())
+    monkeypatch.setattr(web, "_chat_event_stream", fake_stream)
+    for headers in ({}, {"x-admin-token": "not-the-owner"}, {"x-admin-token": ADMIN}):
+        assert client.post("/chat/stream", json={"message": "hi"}, headers=headers).status_code == 200
+    assert [(p.channel, p.admin) for p in seen] == [("web", False), ("web", False), ("web", True)]
+
+
+def test_sandbox_principal_follows_the_credential(client):
+    """skills._request_principal (the /sandbox/execute binding) resolves the owner only
+    from a valid admin credential; an unreadable request is nobody."""
+    from agents.core.routers.skills import _request_principal
+
+    assert _request_principal(_request({"x-admin-token": ADMIN})).admin is True
+    assert _request_principal(_request({"x-admin-token": "not-the-owner"})).admin is False
+    assert _request_principal(_request()).admin is False
+    assert _request_principal(None) is None
+
+
+def test_pending_input_actor_follows_the_credential(client, monkeypatch, tokens):
+    """chat_pending.http_actor: with a user credential required, only a *valid* admin
+    or user token yields an actor; on the localhost posture the owner and a plain
+    local caller are different actors (so one cannot answer the other's wait)."""
+    from agents import web
+    from agents.core.routers.chat_pending import http_actor
+
+    monkeypatch.setattr(web, "_user_credential_required", lambda: True)
+    owner = http_actor(_request({"x-admin-token": ADMIN}))
+    assert owner is not None
+    assert http_actor(_request({"x-admin-token": "not-the-owner"})) is None
+    assert http_actor(_request()) is None
+    tokens.revoked = True
+    assert http_actor(_request({"x-admin-token": ADMIN})) is None
+    tokens.revoked = False
+
+    monkeypatch.setattr(web, "_user_credential_required", lambda: False)
+    local_owner = http_actor(_request({"x-admin-token": ADMIN}))
+    local_user = http_actor(_request())
+    assert local_owner and local_user and local_owner != local_user
+    assert http_actor(_request({"x-admin-token": ADMIN}, host="203.0.113.9")) is None
+
+
+def test_consent_recheck_follows_the_credential(client, monkeypatch, tokens):
+    """autonomy._consent_admin_current — the live owner re-check at the consent queue
+    seam — holds only while a valid admin credential is presented to the same orch."""
+    from agents.core.routers import autonomy
+
+    orch = object()
+    monkeypatch.setattr(autonomy, "get_orch", lambda: orch)
+    assert autonomy._consent_admin_current(_request({"x-admin-token": ADMIN}), orch) is True
+    assert autonomy._consent_admin_current(_request({"x-admin-token": "not-the-owner"}), orch) is False
+    assert autonomy._consent_admin_current(_request(), orch) is False
+    assert autonomy._consent_admin_current(_request({"x-admin-token": ADMIN}), object()) is False
+    tokens.revoked = True
+    assert autonomy._consent_admin_current(_request({"x-admin-token": ADMIN}), orch) is False
+
+
+# ── Every pinned in-body site names a probe that exists ───────────────────────
+
+_PARAMETRIZED = {
+    "test_websocket_in_handler_guard_refuses_unauthenticated": WS_PROBES,
+    "test_websocket_closes_when_credential_is_revoked_mid_stream": WS_PROBES,
+    "test_step_up_refuses_a_user_tier_caller": STEP_UP_PROBES,
+}
+
+
+def test_every_pinned_site_names_a_live_probe():
+    """A pin is only as good as its probe: each probe id in IN_HANDLER_GUARD_SITES /
+    IN_HANDLER_TIER_SITES must name an existing test function (and, for a test in
+    this file, an existing parameter), so a pinned call site cannot go unexercised."""
+    import ast
+    from pathlib import Path
+
+    from tests.test_route_auth_matrix import IN_HANDLER_GUARD_SITES, IN_HANDLER_TIER_SITES
+
+    root = Path(__file__).resolve().parent.parent
+    here = Path(__file__).resolve().relative_to(root).as_posix()
+    missing = []
+    for site, probes in {**IN_HANDLER_GUARD_SITES, **IN_HANDLER_TIER_SITES}.items():
+        if not probes:
+            missing.append(f"{site}: no probe")
+        for probe in probes:
+            file, _, test = probe.partition("::")
+            name, _, param = test.partition("[")
+            param = param[:-1] if param.endswith("]") else param
+            path = root / file
+            names = set()
+            if path.is_file():
+                names = {n.name for n in ast.parse(path.read_text(encoding="utf-8")).body
+                         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            if name not in names or not name.startswith("test_"):
+                missing.append(f"{site}: {probe} (no such test)")
+            elif param and (file != here or param not in _PARAMETRIZED.get(name, {})):
+                missing.append(f"{site}: {probe} (no such parameter)")
+    assert not missing, "pinned in-body guard sites without a live probe:\n" + "\n".join(missing)

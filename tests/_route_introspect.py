@@ -79,8 +79,38 @@ def _walk_websockets(routes: Any, prefix: str) -> Iterator[Any]:
 
 
 def iter_mounts(app: Any) -> Iterator[Any]:
-    """Yield every top-level `Mount` (H511) — an ASGI sub-application the route
-    matrices cannot see inside unless it exposes a route table."""
+    """Yield every `Mount` at any depth (H511) — an ASGI sub-application the HTTP
+    route matrix cannot see inside.
+
+    Each item exposes `.path` (the path the mount is actually served under) and
+    `.app` (the mounted application). A mount inside an included APIRouter is found
+    too: on fastapi >= 0.137 it sits behind an opaque `_IncludedRouter`, and the
+    `Mount` fastapi serves is `ctx.starlette_route` — whose path is the one that
+    answers (fastapi 0.142 does not apply the router prefix to a router-level mount,
+    so `APIRouter(prefix="/api").mount("/inner", ...)` serves `/inner/...`). A mount
+    with its own route table is descended into, so a mount nested in a mounted
+    sub-app is reported under its full served path.
+    """
+    yield from _walk_mounts(app.routes, "")
+
+
+def _walk_mounts(routes: Any, prefix: str) -> Iterator[Any]:
+    from types import SimpleNamespace
+
     from starlette.routing import Mount
 
-    yield from (r for r in app.routes if isinstance(r, Mount))
+    try:
+        from fastapi.routing import _iter_routes_with_context  # fastapi >= 0.137
+    except ImportError:
+        pairs = ((r, None) for r in routes)
+    else:
+        pairs = _iter_routes_with_context(routes)
+    for route, ctx in pairs:
+        served = ctx.starlette_route if ctx is not None and getattr(ctx, "starlette_route", None) is not None else route
+        if not isinstance(served, Mount):
+            continue
+        path = prefix + served.path
+        yield SimpleNamespace(path=path, app=served.app, mount=served)
+        inner = getattr(served, "routes", None)
+        if inner:
+            yield from _walk_mounts(inner, path)
