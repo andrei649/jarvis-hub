@@ -235,6 +235,27 @@ def build_parser() -> argparse.ArgumentParser:
         change.add_argument("--force", action="store_true",
                             help="forward force intent; never bypass owner approval")
 
+    backup = verbs.add_parser("backup", help="back up and restore the whole install (H010)")
+    backup_verbs = backup.add_subparsers(dest="action", required=True, metavar="action")
+    backup_create = backup_verbs.add_parser("create", help="snapshot the data root (offline, same data root)")
+    backup_create.add_argument("--quick", action="store_true",
+                               help="only the state DBs: a small, fast rollback point")
+    backup_create.add_argument("--encrypt", action="store_true",
+                               help="encrypt at rest ($JARVIS_BACKUP_KEY, else a generated key in $JARVIS_KEY_DIR)")
+    backup_create.add_argument("--label", default="")
+    backup_create.add_argument("--json", action="store_true")
+    backup_list = backup_verbs.add_parser("list", help="snapshots, a staged restore and the last one applied (offline)")
+    backup_list.add_argument("--json", action="store_true")
+    backup_verify = backup_verbs.add_parser("verify", help="restore-drill a snapshot without touching live data (offline)")
+    backup_verify.add_argument("name", nargs="?", help="backup file name (default: the newest)")
+    backup_verify.add_argument("--json", action="store_true")
+    backup_restore = backup_verbs.add_parser(
+        "restore", help="restore a snapshot over the live data root (irreversible tier)")
+    backup_restore.add_argument("name", help="backup file name (see `nerva backup list`)")
+    backup_restore.add_argument("--confirm", metavar="RESTORE", default="",
+                                help="with no hub running: type RESTORE to restore in place now")
+    backup_restore.add_argument("--json", action="store_true")
+
     kernel = verbs.add_parser("kernel", help="the Action Kernel")
     kernel_verbs = kernel.add_subparsers(dest="action", required=True, metavar="action")
     explain = kernel_verbs.add_parser(
@@ -1504,6 +1525,131 @@ def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     ctx.err.write(message + "\n")
     return EXIT_FAILED
+
+
+#: What an offline in-place restore must be told, typed (the forget route's "FORGET" shape).
+_RESTORE_WORD = "RESTORE"
+
+
+def _backup_row(row: Mapping[str, Any]) -> str:
+    tags = [tag for tag, on in (("quick", row.get("quick")), ("encrypted", row.get("encrypted"))) if on]
+    return f"  {row['name']}  {row['bytes']:>12,d} B  {row['modified_at']}" + (f"  [{', '.join(tags)}]" if tags else "")
+
+
+def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
+    """H010 — back up and restore the install. create/list/verify read the data root the
+    hub uses (a DB snapshot is consistent while the hub runs); restore crosses the
+    irreversible tier: with a hub running it is a ``backup.restore`` approval card the
+    hub applies by restarting itself, and with none running it needs RESTORE typed."""
+    from agents.core import backup as bk
+    from agents.core.paths import data_root
+
+    root = data_root(ctx.environ)
+    out = bk.default_backup_dir(root)
+    if ns.action == "create":
+        made = bk.create_backup(source_root=str(root), out_dir=str(out), label=ns.label,
+                                encrypt=True if ns.encrypt else None, quick=ns.quick)
+        if ns.json:
+            ctx.dump(made)
+        else:
+            ctx.say(f"{made['mode']} backup {Path(made['archive']).name}: {made['file_count']} file(s), "
+                    f"{len(made['dbs'])} DB(s), {made['bytes']:,d} B"
+                    + (" (encrypted)" if made["encrypted"] else ""))
+        return EXIT_OK
+    if ns.action == "list":
+        payload = {"backups": bk.list_backups(str(out)), "pending_restore": bk.pending_restore(root),
+                   "last_restore": bk.last_restore(root)}
+        if ns.json:
+            ctx.dump(payload)
+            return EXIT_OK
+        if not payload["backups"]:
+            ctx.say("no backup has ever been made — `nerva backup create`")
+        for row in payload["backups"]:
+            ctx.say(_backup_row(row))
+        if payload["pending_restore"]:
+            ctx.say(f"staged restore: {payload['pending_restore']['name']} (applied at the next hub start)")
+        if payload["last_restore"]:
+            last = payload["last_restore"]
+            ctx.say(f"last restore: {last.get('name')} {last.get('status')} at {last.get('applied_at')}")
+        return EXIT_OK
+    if ns.action == "verify":
+        name = ns.name
+        if not name:
+            listing = bk.list_backups(str(out))
+            if not listing:
+                ctx.err.write("no backups to verify\n")
+                return EXIT_FAILED
+            name = listing[0]["name"]
+        path = bk.resolve_backup(name, out_dir=str(out))
+        if path is None:
+            ctx.err.write(f"no such backup: {name}\n")
+            return EXIT_FAILED
+        try:
+            report = bk.verify_backup(str(path))
+        except (ValueError, OSError) as exc:   # ArchiveRejected is a ValueError
+            ctx.err.write(f"archive rejected: {exc}\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(report)
+        else:
+            ctx.say(f"{path.name}: {'ok' if report['ok'] else 'FAILED'} — {report['file_count']} file(s), "
+                    + ", ".join(f"{db} {verdict}" for db, verdict in report["dbs"].items())
+                    + (f"; {report['problem']}" if report["problem"] else ""))
+        return EXIT_OK if report["ok"] else EXIT_FAILED
+    return _backup_restore(ns, ctx, bk, root)
+
+
+def _backup_restore(ns: argparse.Namespace, ctx: Context, bk: Any, root: Path) -> int:
+    try:
+        reply = ctx.client().post("/api/admin/backup/restore", {"name": ns.name})
+    except HubUnavailable:
+        reply = None
+    if reply is not None:
+        task_id = (reply or {}).get("pending") if isinstance(reply, Mapping) else None
+        if type(task_id) is not int:
+            ctx.err.write("restore result unavailable: malformed hub reply\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            ctx.say(f"restore of {ns.name} queued at the irreversible tier as approval #{task_id}"
+                    + (" (already waiting)" if reply.get("existing") else "")
+                    + f". Accept it with `nerva approvals accept {task_id}`: the hub stages it, "
+                      "restarts itself and restores before any store opens.")
+        return EXIT_OK
+    # No hub: nothing holds the DBs open, so the restore can run now — but the approval
+    # queue that would ask a human is not running either, so the human is asked here.
+    tier = f"tier 3 ({_TIER_NAMES[3]})"
+    if ns.confirm != _RESTORE_WORD:
+        typed = ""
+        if _is_tty(ctx.inp):
+            ctx.err.write(f"backup.restore is {tier}: it overwrites the live data root at {root}. "
+                          f"Type {_RESTORE_WORD} to continue: ")
+            typed = (ctx.inp.readline() or "").strip()
+        if typed != _RESTORE_WORD:
+            ctx.err.write(f"not restored: backup.restore is {tier} — no hub is running to queue it for "
+                          f"approval, so rerun with --confirm {_RESTORE_WORD} to restore in place now\n")
+            return EXIT_USAGE
+    try:
+        staged = bk.stage_restore(ns.name, source_root=str(root), requested_by="nerva-cli")
+    except FileNotFoundError:
+        ctx.err.write(f"no such backup: {ns.name}\n")
+        return EXIT_FAILED
+    if not staged["ok"]:
+        ctx.err.write(f"not restored: {staged['name']} failed its restore drill: {staged['problem']}\n")
+        return EXIT_FAILED
+    result = bk.apply_pending_restore(root) or {}
+    if ns.json:
+        ctx.dump(result)
+    elif result.get("status") == "restored":
+        ctx.say(f"restored {result['name']} in place: {result['file_count']} file(s); "
+                f"rollback point {result.get('rollback')}"
+                + ("" if result.get("ok") else f"; the drill found a problem: {result.get('problem')}"))
+    elif result.get("status") == "deferred":
+        ctx.say(f"staged {staged['name']}: {result['reason']} — it is applied when that hub next starts")
+    else:
+        ctx.err.write(f"restore of {ns.name} failed ({result.get('reason')}): {result.get('detail', '')}\n")
+    return EXIT_OK if result.get("status") in ("restored", "deferred") and result.get("ok", True) else EXIT_FAILED
 
 
 def explain_action(
@@ -3868,6 +4014,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "config": cmd_config,
     "approvals": cmd_approvals,
     "checkpoints": cmd_checkpoints,
+    "backup": cmd_backup,
     "kernel": cmd_kernel,
     "tools": cmd_tools,
     "inspect": cmd_inspect,

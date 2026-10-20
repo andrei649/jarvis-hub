@@ -365,7 +365,7 @@ def test_stopping_opens_the_shutdown_even_on_a_forced_exit(listener, monkeypatch
 def test_serve_runs_the_notifying_server_with_the_readyz_verdict():
     src = (REPO / "serve.py").read_text(encoding="utf-8")
     main = src[src.index("def main():"):]
-    assert "NotifyingServer(config, readiness_snapshot).run()" in main
+    assert "run_server(NotifyingServer(config, readiness_snapshot))" in main
 
 
 def test_the_shipped_unit_is_type_notify_with_a_watchdog():

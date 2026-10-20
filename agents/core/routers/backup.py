@@ -2,11 +2,12 @@
 
 Operator-facing, **admin-guarded**: snapshot the data root, list snapshots, and
 run a restore-drill (integrity-check a snapshot's DBs without touching live
-data). Hot in-place *restore* is intentionally NOT exposed over HTTP — it
-overwrites live state and is an operator CLI action (`python -m agents.core.backup
-restore <name> <target> --force` with the server stopped). A verify target is
-resolved by matching the trusted backups listing, so no request value reaches a
-path expression.
+data). An in-place *restore* (H010) is never applied by a request: `POST
+/api/admin/backup/restore` only queues a `backup.restore` card at the approval
+queue's irreversible tier (tier 3, `agents/core/autonomy/irreversible.py`). A human's
+accept stages it and asks the hub to restart; serve.py applies it at the next boot
+before any store opens. A backup name is resolved by matching the trusted backups
+listing, so no request value reaches a path expression.
 
 Also hosts the destructive sibling `POST /api/admin/forget` (H23.9): a confirm-gated,
 backup-first "forget me" purge of the user's structured content at rest.
@@ -32,8 +33,10 @@ router = APIRouter(tags=["backup"])
 
 @router.get("/api/admin/backup", dependencies=[Depends(admin_guard)])
 async def backup_list():
-    """List local backup snapshots (newest first)."""
-    return nocache_json({"backups": _backup.list_backups()})
+    """List local backup snapshots (newest first), a staged restore and the last one applied."""
+    return nocache_json({"backups": _backup.list_backups(),
+                         "pending_restore": _backup.pending_restore(),
+                         "last_restore": _backup.last_restore()})
 
 
 @router.post("/api/admin/backup", dependencies=[Depends(admin_guard)])
@@ -77,6 +80,45 @@ async def backup_verify(req: Request):
         logger.warning("backup verify failed: %s", e)
         return JSONResponse({"error": "verify failed"}, status_code=500)
     return nocache_json(report)
+
+
+@router.post("/api/admin/backup/restore", dependencies=[Depends(admin_guard)])
+async def backup_restore(req: Request):
+    """Ask to restore a snapshot over the live data root. Body: {name}.
+
+    Answers 202 ``{"pending": task id}``: the restore waits for a human in the decision
+    inbox at the irreversible tier (``nerva approvals accept <id>``); a card for the same
+    archive already waiting is answered instead. 503 when no approval queue can take it
+    — nothing is ever restored on this request alone.
+    """
+    from agents.core.autonomy import irreversible
+
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    name = (body or {}).get("name") if isinstance(body, dict) else None
+    if not isinstance(name, str) or not name:
+        return JSONResponse({"error": "name is required (see GET /api/admin/backup)"}, status_code=400)
+    try:
+        request = await asyncio.to_thread(_backup.restore_request, name)
+    except FileNotFoundError:
+        return JSONResponse({"error": "backup not found"}, status_code=404)
+    except (OSError, ValueError) as e:
+        logger.warning("backup restore request failed: %s", e)
+        return JSONResponse({"error": "the backup could not be drilled"}, status_code=422)
+    if not request["preview"]["verify"]["ok"]:
+        return JSONResponse({"error": "the backup failed its restore drill",
+                             "verify": request["preview"]["verify"]}, status_code=422)
+    orch = get_orch()
+    for task in await asyncio.to_thread(irreversible.pending, orch, _backup.APPROVAL_KIND):
+        if (getattr(task, "payload", None) or {}).get("name") == request["payload"]["name"]:
+            return nocache_json({"pending": int(task.id), "existing": True}, status_code=202)
+    queued = irreversible.enqueue(orch, _backup.APPROVAL_KIND, **request)
+    if "pending" not in queued:
+        return JSONResponse({"error": "restore needs the approval queue",
+                             "reason": queued.get("refused")}, status_code=503)
+    return nocache_json(queued, status_code=202)
 
 
 @router.post("/api/admin/export", dependencies=[Depends(admin_guard)])

@@ -53,6 +53,38 @@ from agents.core.paths import profile_error  # noqa: E402
 if profile_error():
     sys.exit(profile_error())
 
+
+def apply_staged_restore():
+    """H010: apply an in-place restore staged by an approved ``backup.restore`` (or left
+    by an offline ``nerva backup restore`` another hub deferred), before ``agents.web`` is
+    imported — its stores open the DBs at import, and a restore under them would be
+    written over. Nothing staged: a no-op that loads nothing. Returns the outcome."""
+    from agents.core import backup
+
+    if backup.pending_restore() is None:
+        return None
+    from agents.core.env_provenance import load_hub_env
+
+    load_hub_env()   # an encrypted archive's key may live in .env (main() loads it anyway)
+    result = backup.apply_pending_restore()
+    if result is None:
+        return None
+    if result["status"] == "restored":
+        print(f"Restored backup {result['name']} in place"
+              + ("" if result.get("ok") else f" — the drill found a problem: {result.get('problem')}")
+              + f" (rollback point: {result.get('rollback')})")
+    elif result["status"] == "deferred":
+        print(f"Staged restore of {result['name']} deferred: {result['reason']}")
+    else:
+        print(f"Staged restore of {result['name']} FAILED ({result.get('reason')}); details in "
+              f"backups/last-restore.json"
+              + (f", rollback point: {result['rollback']}" if result.get("rollback") else ""),
+              file=sys.stderr)
+    return result
+
+
+apply_staged_restore()
+
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
 # raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
 # posture via the app lifespan. Re-exported here — serve.py stays the
@@ -277,7 +309,25 @@ def main():
     from agents.core.routers.ops import readiness_snapshot
     from agents.core.sd_notify import NotifyingServer
 
-    NotifyingServer(config, readiness_snapshot).run()
+    run_server(NotifyingServer(config, readiness_snapshot))
+
+
+def run_server(server) -> None:
+    """Run *server*; when the hub asked to restart itself (H010: an approved restore was
+    staged), re-exec this same command once it has drained, so the staged restore is
+    applied at boot before any store opens. Same pid, so a supervisor sees no exit."""
+    from agents.core import hub_restart, install_identity
+
+    hub_restart.install(lambda: setattr(server, "should_exit", True))
+    server.run()
+    reason = hub_restart.requested()
+    hub_restart.reset()
+    if reason is None:
+        return
+    print(f"Nerva restarting ({reason})…", flush=True)
+    install_identity.release_hub_lock()   # the new image takes it again in main()
+    # The interpreter and argv this process was started with; nothing from a request.
+    os.execv(sys.executable, list(sys.orig_argv))  # nosec B606 - this process's own argv
 
 
 if __name__ == "__main__":

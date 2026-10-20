@@ -351,6 +351,7 @@
   "POST /api/actions/{action_id}/decide",
   "POST /api/admin/agents/{agent_id}/description/draft",
   "POST /api/admin/backup",
+  "POST /api/admin/backup/restore",
   "POST /api/admin/backup/verify",
   "POST /api/admin/export",
   "POST /api/admin/forget",

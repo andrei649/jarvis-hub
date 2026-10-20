@@ -30,16 +30,28 @@ backup needs:
   regular file mid-backup is listed in the manifest's ``dropped``, never counted.
 * **An in-place restore replaces, never writes through.** ``--force`` into the live
   root unlinks a link or hardlinked name before writing the file, and credits the
-  files it overwrites against the free-space clamp.
+  files it overwrites against the free-space clamp. A restored DB's stale ``-wal`` /
+  ``-shm`` / ``-journal`` sidecars are removed before anything opens it, so an old WAL
+  can never replay over the snapshot.
+* **A quick snapshot for rollback (H010).** ``create_backup(quick=True)`` archives only
+  the state SQLite DBs (``jarvis-backup-quick-*``) — Hermes' ``backup --quick``: small
+  and fast, taken automatically before every in-place restore.
+* **The hub restores itself in place (H010).** ``stage_restore`` drills an archive and
+  leaves a marker under ``backups/``; ``serve.py`` calls ``apply_pending_restore`` at the
+  next boot, before ``agents.web`` is imported (so no store holds a DB open), after a
+  quick rollback snapshot. A running hub reaches it only through the approval queue's
+  irreversible tier (``backup.restore``, tier 3, ``apply_approved``) and then restarts
+  itself (``agents.core.hub_restart``).
 
-CLI: ``python -m agents.core.backup create|list|verify|restore`` (the
-one-command story). Restore refuses to overwrite a non-empty target unless
-``--force``.
+CLI: ``nerva backup create|list|verify|restore`` (and the older
+``python -m agents.core.backup create|list|verify|restore``). Restore refuses to
+overwrite a non-empty target unless ``--force``.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import errno
 import json
 import logging
@@ -70,6 +82,9 @@ _ARCHIVE_PREFIX = "jarvis-backup-"
 _SQLITE_SIDECARS = ("-wal", "-shm", "-journal")
 _ENC_SUFFIX = ".enc"  # an encrypted archive is "<name>.tar.gz.enc"
 _MANIFEST_NAME = "backup_manifest.json"  # the last member of every archive create_backup writes
+_QUICK_TAG = "quick-"  # a quick snapshot is "jarvis-backup-quick-<stamp>.tar.gz"
+_PENDING_RESTORE = "pending-restore.json"  # a staged in-place restore, under backups/
+_LAST_RESTORE = "last-restore.json"        # what the last staged restore did
 
 # H503 bomb caps for unpacking a backup (verify drill + restore). Generous, because a
 # real data root holds audio, media and many small files and a false refusal on the
@@ -363,11 +378,15 @@ def _in_exec_cache(path: Path, root: Path, owner_root: tuple[str, ...] | None = 
 
 def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = None,
                   label: str = "", encrypt: Optional[bool] = None,
-                  key: Optional[str] = None) -> dict:
+                  key: Optional[str] = None, quick: bool = False) -> dict:
     """Snapshot the data root into a single ``.tar.gz``; return a manifest dict.
 
     DBs are copied through the SQLite backup API (consistent); everything else is
     archived as-is. The output ``backups/`` dir and SQLite sidecars are excluded.
+
+    ``quick=True`` (H010, Hermes' ``backup --quick``) archives only the state DBs —
+    audio, media and the rest of the root are left out — as a small, fast rollback
+    point; restoring it overwrites those DBs and nothing else.
 
     When a backup key is configured (``key`` arg / ``$JARVIS_BACKUP_KEY``) or
     ``encrypt=True``, the archive is encrypted at rest (``.tar.gz.enc``) so it
@@ -386,11 +405,12 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     # the manifest as data instead), so no user-controlled value enters a path
     # expression. The microsecond stamp + token also keep rapid backups unique.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
-    name = f"{_ARCHIVE_PREFIX}{ts}_{secrets.token_hex(3)}.tar.gz"
+    name = f"{_ARCHIVE_PREFIX}{_QUICK_TAG if quick else ''}{ts}_{secrets.token_hex(3)}.tar.gz"
     archive = out / (name + _ENC_SUFFIX if do_encrypt else name)
     safe_label = "".join(c for c in (label or "") if c.isalnum() or c in "-_ ")[:80]
     manifest = {"created_at": _now_iso(), "source_root": str(src),
                 "version": BACKUP_VERSION, "label": safe_label, "encrypted": do_encrypt,
+                "mode": "quick" if quick else "full",
                 "dbs": [], "file_count": 0, "dropped": []}
 
     _sweep_abandoned_temps(out)
@@ -409,6 +429,8 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     # pause for every hub; leaving it out means a restore never touches the live switch
     # (extraction only adds files, so an engaged pause also survives a restore).
     files = [f for f in files if f != src / ESTOP_SENTINEL]
+    if quick:
+        files = [f for f in files if f.suffix == ".db"]
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         if do_encrypt:
@@ -559,6 +581,7 @@ def list_backups(out_dir: Optional[str] = None) -> list[dict]:
             "name": p.name,
             "bytes": st.st_size,
             "encrypted": _is_encrypted(p.name),
+            "quick": p.name.startswith(_ARCHIVE_PREFIX + _QUICK_TAG),
             "modified_at": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(),
         })
     rows.sort(key=lambda r: r["modified_at"], reverse=True)
@@ -657,8 +680,9 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
     """Extract a backup into ``target_root``. Refuses a non-empty target unless force.
 
     Deliberately requires an *explicit* target (never silently overwrites the live
-    data root). Hot in-place restore is an operator action: pass the live root +
-    ``force=True`` with the server stopped. Encrypted archives are decrypted first.
+    data root). Into the live root it runs only with the hub stopped: the staged path
+    below (``apply_pending_restore``) is how the hub does that to itself. Encrypted
+    archives are decrypted first.
     """
     arc = Path(archive)
     if not arc.exists():
@@ -673,12 +697,178 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
         written = archive_safe.extract_tar_path(tarpath, target, limits=backup_limits(),
                                                 compression="gz", last_wins=(_MANIFEST_NAME,),
                                                 superseded=stale)
+    # A restored DB is a consistent snapshot; a -wal/-shm/-journal left beside it by the
+    # state it replaced would be replayed over it on the next open (the drill below
+    # included). They are dropped before anything opens the DB.
+    for parts in written:
+        if parts and parts[-1].endswith(".db"):
+            db = target.joinpath(*parts)
+            for sidecar in _SQLITE_SIDECARS:
+                db.with_name(db.name + sidecar).unlink(missing_ok=True)
     # Post-restore drill on the live target so a corrupt or shortened restore is caught now.
     problem = _manifest_problem(_read_manifest(target, written), written, stale=len(stale))
     dbs = {str(p.relative_to(target)): _integrity_check(p) for p in sorted(target.rglob("*.db"))}
     return {"restored_to": str(target), "file_count": len(written), "dbs": dbs,
             "problem": problem,
             "ok": problem is None and all(v == "ok" for v in dbs.values())}
+
+
+# ── staged in-place restore (H010) ────────────────────────────────
+# The live root cannot be overwritten under a running hub: its stores hold the DBs open
+# and would write their own state back over the restore. So an in-place restore is
+# staged — drilled, then a marker beside the archives — and applied by the next boot
+# before any store opens (serve.py), or at once by the offline `nerva backup restore`
+# when no hub holds the root. The marker is cleared before the restore runs, so a
+# restore that fails is reported once (last-restore.json) and never retried every boot.
+
+def _root_of(source_root) -> Path:
+    return Path(source_root) if source_root else data_root()
+
+
+def _read_json(path: Path) -> Optional[dict]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with archive_safe.atomic_write(path) as fh:
+        fh.write(json.dumps(value, indent=2, default=str).encode("utf-8"))
+
+
+def pending_restore(source_root=None) -> Optional[dict]:
+    """The staged in-place restore waiting for the next boot, or None."""
+    return _read_json(default_backup_dir(_root_of(source_root)) / _PENDING_RESTORE)
+
+
+def last_restore(source_root=None) -> Optional[dict]:
+    """What the last staged restore did (restored / failed), or None."""
+    return _read_json(default_backup_dir(_root_of(source_root)) / _LAST_RESTORE)
+
+
+def stage_restore(name: str, source_root=None, key: Optional[str] = None,
+                  requested_by: str = "") -> dict:
+    """Drill backup *name* and, when it verifies, stage it for an in-place restore.
+
+    Touches no live data. Raises FileNotFoundError for a name not in the listing;
+    a failed drill is ``{ok: False, problem}`` and stages nothing.
+    """
+    root = _root_of(source_root)
+    out = default_backup_dir(root)
+    path = resolve_backup(name, out_dir=str(out))
+    if path is None:
+        raise FileNotFoundError(f"no such backup: {name}")
+    try:
+        report = verify_backup(str(path), key=key)
+    except (archive_safe.ArchiveRejected, ValueError, OSError) as exc:
+        return {"ok": False, "name": path.name, "problem": f"archive rejected: {exc}"}
+    if not report["ok"]:
+        bad = {k: v for k, v in report["dbs"].items() if v != "ok"}
+        return {"ok": False, "name": path.name,
+                "problem": report["problem"] or f"integrity check failed: {bad}"}
+    st = path.stat()
+    staged = {"name": path.name, "bytes": st.st_size, "mtime": st.st_mtime,
+              "staged_at": _now_iso(), "requested_by": requested_by,
+              "file_count": report["file_count"]}
+    _write_json(out / _PENDING_RESTORE, staged)
+    return {"ok": True, **staged}
+
+
+def apply_pending_restore(source_root=None, key: Optional[str] = None) -> Optional[dict]:
+    """Apply a staged restore to the live root — only while no other hub holds it.
+
+    None when nothing is staged. Otherwise ``{status: restored|failed|deferred, …}``:
+    a quick snapshot of the current state DBs is taken first (``rollback``, restorable
+    like any backup), then the archive is restored over the root with ``force``.
+    """
+    from agents.core import install_identity
+
+    root = _root_of(source_root)
+    out = default_backup_dir(root)
+    marker = out / _PENDING_RESTORE
+    staged = _read_json(marker)
+    if staged is None:
+        return None
+    if install_identity.hub_lock_held_elsewhere(root):
+        return {"status": "deferred", "name": staged.get("name"),
+                "reason": "another hub holds this data root; the restore stays staged"}
+    marker.unlink(missing_ok=True)                  # one attempt: never a boot loop
+    name = str(staged.get("name") or "")
+    result: dict = {"name": name, "staged_at": staged.get("staged_at"), "applied_at": _now_iso()}
+    path = resolve_backup(name, out_dir=str(out)) if name else None
+    if path is None:
+        result.update(status="failed", reason="backup_missing", ok=False)
+    else:
+        try:
+            rollback = create_backup(source_root=str(root), out_dir=str(out), quick=True,
+                                     label="pre-restore", key=key)
+            result["rollback"] = Path(rollback["archive"]).name
+            restored = restore_backup(str(path), str(root), force=True, key=key)
+        except archive_safe.ArchiveRejected as exc:
+            result.update(status="failed", reason="archive_rejected", ok=False,
+                          partial=bool(exc.partial), detail=str(exc))
+        except (OSError, ValueError) as exc:
+            result.update(status="failed", reason="restore_error", ok=False, detail=str(exc))
+        else:
+            result.update(status="restored", ok=restored["ok"], problem=restored["problem"],
+                          file_count=restored["file_count"], dbs=restored["dbs"])
+    try:
+        _write_json(out / _LAST_RESTORE, result)
+    except OSError:
+        logger.warning("could not record the outcome of the staged restore")
+    return result
+
+
+#: The irreversible-tier kind (agents/core/autonomy/irreversible.py BUILTIN_KINDS).
+APPROVAL_KIND = "backup.restore"
+
+
+def restore_request(name: str) -> dict:
+    """The card for restoring *name* over the live root: the archive's identity (an
+    accept is refused if it changed since) and the drill's verdict as the preview."""
+    path = resolve_backup(name)
+    if path is None:
+        raise FileNotFoundError(f"no such backup: {name}")
+    report = verify_backup(str(path))
+    st = path.stat()
+    manifest = report.get("manifest") or {}
+    return {
+        "title": f"Restore backup {path.name} over the live data root (the hub restarts)",
+        "payload": {"name": path.name, "bytes": st.st_size, "mtime": st.st_mtime},
+        "preview": {
+            "verify": {"ok": report["ok"], "problem": report["problem"],
+                       "file_count": report["file_count"], "dbs": report["dbs"]},
+            "created_at": manifest.get("created_at"), "mode": manifest.get("mode", "full"),
+            "effect": "overwrites the live state with the archive's; a quick rollback "
+                      "snapshot of the current DBs is taken first",
+        },
+    }
+
+
+async def apply_approved(task, orch) -> dict:
+    """Stage a ``backup.restore`` task a human accepted (``irreversible.execute`` checked
+    who decided) and ask the hub to restart, which applies it before any store opens."""
+    from agents.core import hub_restart
+
+    payload = task.payload
+    name = payload.get("name")
+    if not isinstance(name, str) or not name:
+        return {"status": "refused", "reason": "payload_invalid"}
+    path = resolve_backup(name)
+    if path is None:
+        return {"status": "refused", "reason": "backup_missing"}
+    st = path.stat()
+    if st.st_size != payload.get("bytes") or st.st_mtime != payload.get("mtime"):
+        return {"status": "refused", "reason": "backup_changed"}
+    staged = await asyncio.to_thread(stage_restore, name,
+                                     requested_by=str(getattr(task, "decided_by", "") or ""))
+    if not staged["ok"]:
+        return {"status": "refused", "reason": "backup_failed_verify", "problem": staged["problem"]}
+    restart = "requested" if hub_restart.request(APPROVAL_KIND) else "manual"
+    return {"status": "ok", "kind": APPROVAL_KIND, "staged": name, "restart": restart}
 
 
 # ── CLI (one-command) ─────────────────────────────────────────────
@@ -689,6 +879,7 @@ def _main(argv=None) -> int:
     pc = sub.add_parser("create", help="snapshot the data root to a .tar.gz")
     pc.add_argument("--encrypt", action="store_true",
                     help="encrypt the archive at rest (uses $JARVIS_BACKUP_KEY, else a generated key in $JARVIS_KEY_DIR)")
+    pc.add_argument("--quick", action="store_true", help="only the state DBs: a small, fast rollback point")
     sub.add_parser("list", help="list existing backups")
     pv = sub.add_parser("verify", help="restore-drill a backup (integrity-check its DBs)")
     pv.add_argument("name", help="backup file name (see `list`)")
@@ -699,7 +890,8 @@ def _main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.cmd == "create":
-        print(json.dumps(create_backup(encrypt=True if args.encrypt else None), indent=2))
+        print(json.dumps(create_backup(encrypt=True if args.encrypt else None, quick=args.quick),
+                         indent=2))
     elif args.cmd == "list":
         print(json.dumps(list_backups(), indent=2))
     elif args.cmd == "verify":

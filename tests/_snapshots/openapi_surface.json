@@ -351,6 +351,7 @@
   "POST /api/actions/{action_id}/decide": "actions_decide_api_actions__action_id__decide_post",
   "POST /api/admin/agents/{agent_id}/description/draft": "draft_agent_description_api_admin_agents__agent_id__description_draft_post",
   "POST /api/admin/backup": "backup_create_api_admin_backup_post",
+  "POST /api/admin/backup/restore": "backup_restore_api_admin_backup_restore_post",
   "POST /api/admin/backup/verify": "backup_verify_api_admin_backup_verify_post",
   "POST /api/admin/export": "export_data_api_admin_export_post",
   "POST /api/admin/forget": "forget_data_api_admin_forget_post",

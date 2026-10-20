@@ -11046,7 +11046,7 @@ export interface paths {
         };
         /**
          * Backup List
-         * @description List local backup snapshots (newest first).
+         * @description List local backup snapshots (newest first), a staged restore and the last one applied.
          */
         get: operations["backup_list_api_admin_backup_get"];
         put?: never;
@@ -11075,6 +11075,31 @@ export interface paths {
          * @description Restore-drill a snapshot (integrity-check its DBs). Body: {name?} — newest if omitted.
          */
         post: operations["backup_verify_api_admin_backup_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backup/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backup Restore
+         * @description Ask to restore a snapshot over the live data root. Body: {name}.
+         *
+         *     Answers 202 ``{"pending": task id}``: the restore waits for a human in the decision
+         *     inbox at the irreversible tier (``nerva approvals accept <id>``); a card for the same
+         *     archive already waiting is answered instead. 503 when no approval queue can take it
+         *     — nothing is ever restored on this request alone.
+         */
+        post: operations["backup_restore_api_admin_backup_restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -30724,6 +30749,26 @@ export interface operations {
         };
     };
     backup_verify_api_admin_backup_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    backup_restore_api_admin_backup_restore_post: {
         parameters: {
             query?: never;
             header?: never;

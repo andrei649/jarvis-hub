@@ -510,6 +510,9 @@ MACHINE_FACING: dict[str, str] = {
     "/sessions/resolve": "Owner CLI resolves -c/-r selectors and retrieves a free recap (agents/cli/nerva.py)",
     "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
     "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",
+    "/api/admin/backup/restore":
+        "H010: queued by `nerva backup restore` (agents/cli/nerva.py) as an irreversible-tier "
+        "card; the HUD accepts it in the decision inbox like any other approval",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",
