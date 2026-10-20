@@ -92,4 +92,59 @@ def _line_repetition_dominated(text: str, n: int) -> bool:
     return False
 
 
-__all__ = ["is_repetition_dominated", "MIN_FRAGMENT_LENGTH"]
+# Finish reasons that mean "the output budget ran out", across wire dialects:
+# OpenAI-compatible / Ollama ``length``, Anthropic ``max_tokens``, Gemini
+# ``MAX_TOKENS``, OpenAI Responses ``max_output_tokens``.
+TRUNCATED_FINISH_REASONS = frozenset({"length", "max_tokens", "MAX_TOKENS", "max_output_tokens"})
+
+
+def is_truncated_finish(finish: object) -> bool:
+    """True when ``finish`` says generation stopped at the output cap."""
+    return isinstance(finish, str) and finish in TRUNCATED_FINISH_REASONS
+
+
+# The streaming detector judges only the most recent stretch of output — a
+# loop that started late in a long, legitimate answer must still be caught,
+# and the cost of each check stays bounded however long the stream runs.
+_STREAM_TAIL = 4000
+
+# Re-check after this many new characters rather than on every token.
+_STREAM_CHECK_EVERY = 200
+
+
+class RepetitionStreamGuard:
+    """Incremental repetition-loop detector for a live token stream.
+
+    ``feed(chunk)`` returns the text that is safe to show right now. Once the
+    stream's tail becomes repetition-dominated the guard trips and every later
+    chunk (including the one that tripped it) is withheld, so a degenerate loop
+    is never painted live into the chat bubble. The caller still accumulates
+    the full text itself — the final answer is decided by the finalizers, this
+    only governs what is displayed while the model is still generating.
+    """
+
+    def __init__(self) -> None:
+        self.tripped = False
+        self._tail = ""
+        self._since_check = 0
+
+    def feed(self, chunk: str) -> str:
+        if self.tripped or not isinstance(chunk, str) or not chunk:
+            return ""
+        self._tail = (self._tail + chunk)[-_STREAM_TAIL:]
+        self._since_check += len(chunk)
+        if self._since_check >= _STREAM_CHECK_EVERY and len(self._tail) >= MIN_FRAGMENT_LENGTH:
+            self._since_check = 0
+            if is_repetition_dominated(self._tail):
+                self.tripped = True
+                return ""
+        return chunk
+
+
+__all__ = [
+    "is_repetition_dominated",
+    "is_truncated_finish",
+    "MIN_FRAGMENT_LENGTH",
+    "RepetitionStreamGuard",
+    "TRUNCATED_FINISH_REASONS",
+]

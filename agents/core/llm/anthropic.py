@@ -15,6 +15,7 @@ from .model_config import DEFAULT_CLAUDE_MODEL
 from .provider_errors import note_provider_failure
 from .quota import ProviderRateLimited
 from .reasoning_effort import apply_anthropic, parse_overrides
+from .repetition_guard import RepetitionStreamGuard
 from .tool_dialects import (
     ANTHROPIC_FINISH_REASONS,
     anthropic_messages,
@@ -166,7 +167,10 @@ class ClaudeBackend(LLMBackend):
         data, error = await self._post_messages(payload)
         if data is None:
             return error
-        answer = self._finalize_cloud(anthropic_text(data["content"])) if data.get("content") else ""
+        answer = (
+            self._finalize_cloud(anthropic_text(data["content"]), data.get("stop_reason"), model)
+            if data.get("content") else ""
+        )
         report_text_usage(anthropic_usage(data))
         return answer
 
@@ -228,6 +232,8 @@ class ClaudeBackend(LLMBackend):
         attempts = max(1, self.auth_pool.size if self.auth_pool else 1)
         for attempt in range(attempts):
             full = ""
+            stop_reason = None
+            rg = RepetitionStreamGuard()   # H393: never paint a loop live
             raw_usage = {}
             started = completed = usage_failed = final_output = False
             stream_key = self._active_key()
@@ -256,6 +262,7 @@ class ClaudeBackend(LLMBackend):
                                     if not isinstance(raw, dict):
                                         usage_failed = True
                                 elif event_type == "message_delta":
+                                    stop_reason = (data.get("delta") or {}).get("stop_reason") or stop_reason
                                     raw = data.get("usage")
                                     # A start/intermediate count is not final output.
                                     final_output = (isinstance(raw, dict)
@@ -281,7 +288,7 @@ class ClaudeBackend(LLMBackend):
                                     if text:
                                         full += text
                                         if on_token:
-                                            await _emit(on_token, text)
+                                            await _emit(on_token, rg.feed(text))
                                 elif event_type == "message_stop":
                                     completed = True
                                     break
@@ -306,7 +313,7 @@ class ClaudeBackend(LLMBackend):
                 full = f"[Claude API stream error: {e}]"
                 note_provider_failure("anthropic", model, e)
             break
-        answer = self._finalize_cloud(full)
+        answer = self._finalize_cloud(full, stop_reason, model)
         if started and completed and final_output and not usage_failed:
             report_text_usage(anthropic_usage({"usage": raw_usage}))
         return answer

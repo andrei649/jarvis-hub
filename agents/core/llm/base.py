@@ -23,7 +23,7 @@ from .auxiliary_recovery import (
 from .egress import llm_async_client
 from .host_protocol import HostProtocolRefused
 from .reasoning_effort import ReasoningEffortRefused
-from .repetition_guard import is_repetition_dominated
+from .repetition_guard import RepetitionStreamGuard, is_repetition_dominated, is_truncated_finish
 from .request_context import required_job_reasoning
 from .tool_dialects import lmstudio_usage, ollama_messages, ollama_tool_calls, ollama_usage
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
@@ -484,7 +484,7 @@ class LLMBackend(ABC):
         return strip_thinking(reasoning_full)
 
     @staticmethod
-    def _finalize_cloud(text: str) -> str:
+    def _finalize_cloud(text: str, finish: object = None, model: str = "") -> str:
         """Strip chain-of-thought from a cloud backend's final answer.
 
         Cloud APIs surface reasoning as structured fields this client never
@@ -492,8 +492,22 @@ class LLMBackend(ABC):
         ``<think>`` tags are not expected in the text field — this is
         defense-in-depth so a reasoning block that *does* land there can never
         leak. A no-op on error sentinels (``[… error: …]``) and plain answers.
+
+        H393: when ``finish`` says the output cap was hit (any dialect's
+        spelling — ``length`` / ``max_tokens`` / ``MAX_TOKENS``) and the text is
+        repetition-dominated, the model spent its budget in a loop; drop the
+        fragment like ``_finalize_stream`` does instead of delivering the flood.
         """
-        return strip_thinking(text or "")
+        answer = strip_thinking(text or "")
+        if answer and is_truncated_finish(finish) and is_repetition_dominated(answer):
+            logger.warning(
+                "Cloud reply truncated at max_tokens with repetition-dominated "
+                "output (model=%s); dropping the fragment instead of "
+                "delivering the flood",
+                model,
+            )
+            return ""
+        return answer
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
@@ -727,6 +741,7 @@ class LMStudioBackend(LLMBackend):
             status_body_too_large = False
             response_cleanup_ok = False
             sf = ThinkingStreamFilter()
+            rg = RepetitionStreamGuard()   # H393: never paint a loop live
             try:
                 async with self.client.stream(
                     "POST", "/v1/chat/completions", json=payload
@@ -789,7 +804,7 @@ class LMStudioBackend(LLMBackend):
                                         if safe:
                                             emitted += safe
                                             if on_token:
-                                                await _emit(on_token, safe)
+                                                await _emit(on_token, rg.feed(safe))
                                     if reasoning:
                                         reasoning_full += reasoning
                                 except json.JSONDecodeError:
@@ -842,7 +857,7 @@ class LMStudioBackend(LLMBackend):
         if remainder:
             emitted += remainder
             if on_token:
-                await _emit(on_token, remainder)
+                await _emit(on_token, rg.feed(remainder))
 
         # Return what was actually streamed, not the raw buffer — otherwise a
         # truncated <think> / reasoning_content trace would overwrite the clean
@@ -1038,6 +1053,7 @@ class OllamaBackend(LLMBackend):
         usage = None
         usage_failed = False
         sf = ThinkingStreamFilter()
+        rg = RepetitionStreamGuard()   # H393: never paint a loop live
         try:
             async with self.client.stream("POST", "/api/generate", json=payload) as resp:
                 resp.raise_for_status()
@@ -1060,7 +1076,7 @@ class OllamaBackend(LLMBackend):
                                 if safe:
                                     emitted += safe
                                     if on_token:
-                                        await _emit(on_token, safe)
+                                        await _emit(on_token, rg.feed(safe))
                             if reasoning:
                                 reasoning_full += reasoning
                             if data.get("done") is True:
@@ -1080,7 +1096,7 @@ class OllamaBackend(LLMBackend):
         if remainder:
             emitted += remainder
             if on_token:
-                await _emit(on_token, remainder)
+                await _emit(on_token, rg.feed(remainder))
 
         answer = self._finalize_stream(emitted, reasoning_full, finish, model)
         if usage is not None and not usage_failed:
