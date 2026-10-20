@@ -1959,7 +1959,8 @@ class Orchestrator:
                 sid = await self.new_session(f"session_{uuid4().hex}")
                 for turn in turns:
                     await self.memory.add_turn(sid, turn["role"], turn["content"],
-                                               agent_id=turn.get("agent_id"), tools=turn.get("tools"))
+                                               agent_id=turn.get("agent_id"), tools=turn.get("tools"),
+                                               media=turn.get("media"))   # H586: keep image provenance
                 if base == self._session_id_default:
                     self._session_id_default = sid
                 if command == "/undo":
@@ -2218,7 +2219,11 @@ class Orchestrator:
             logger.warning(f"process(): no agent available for completion (agent={agent})")
             return "", "no agent available"
         awake = power.hold_for_turn(self)        # H182: a one-shot completion is a turn too
+        # H586: the completion reads this session's history too, so an image reading in it
+        # taints this call's action origin; scoped here, it never leaks to the caller.
+        origin_token = bind_action_origin(current_action_origin())
         try:
+            await Orchestrator._guard_media_history(self, getattr(self, "session_id", None) or "default")
             responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
         except CompactionClockRefused:
             return CONTEXT_REFUSED_REPLY, CONTEXT_REFUSED_REPLY
@@ -2232,6 +2237,7 @@ class Orchestrator:
             log_error(logger, E_INTERNAL_UNEXPECTED, component=f"process:{channel}", detail=str(e))
             return "", f"{type(e).__name__}: {e}"
         finally:
+            reset_action_origin(origin_token)
             power.release_for_turn(awake)
         resp = responses.get(agent_id, "") if responses else ""
         # _call_agents_parallel returns structured error/timeout markers instead
@@ -2350,6 +2356,33 @@ class Orchestrator:
                 raise ForeignHistoryRefused("owner_required", 403)
             mark_turn_recall_tainted()
 
+    async def _guard_media_history(self, sid: str) -> None:
+        """H586: a committed image turn (chat-prepared, selected-chat) put the model's
+        reading of an image into this history, and text in an image is untrusted input.
+        A turn reading such a history runs tainted, so an action it proposes is queued
+        for approval rather than auto-granted. Fail safe: a history that cannot be read
+        marks the turn too."""
+        from .security.recall_taint import mark_turn_recall_tainted
+
+        get_history = getattr(getattr(self, "memory", None), "get_history", None)
+        if get_history is None:          # no conversation store at all: no history to read
+            return
+        try:
+            turns = await get_history(sid)
+        except Exception as exc:
+            logger.warning("image-history check failed (%s); marking the turn", type(exc).__name__)
+            mark_turn_recall_tainted()
+            return
+        if any(isinstance(turn, dict) and turn.get("media") for turn in turns):
+            mark_turn_recall_tainted()
+
+    def _session_has_media(self, sid: str) -> bool:
+        """H586: whether this session's held history carries a committed image turn; such
+        history is never promoted to durable memory, like a foreign import."""
+        conversation = getattr(getattr(self, "memory", None), "conversation", None)
+        turns = getattr(conversation, "sessions", {}).get(sid) or []
+        return any(getattr(turn, "media", None) for turn in turns)
+
     @measure_turn_latency
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
@@ -2417,6 +2450,7 @@ class Orchestrator:
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
         await self._guard_foreign_turn(self.session_id)
+        await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             return session_reply
@@ -2637,6 +2671,7 @@ class Orchestrator:
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
         await self._guard_foreign_turn(self.session_id)
+        await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             if on_token:
@@ -3940,6 +3975,8 @@ class Orchestrator:
         try:
             if self.session_id in self.memory.conversation.foreign_origins:
                 return
+            if self._session_has_media(self.session_id or "default"):
+                return
             if is_degraded_reply(synthesized):
                 return
             cog = getattr(self, "cognition", None)
@@ -3983,6 +4020,8 @@ class Orchestrator:
         key = self._lease_key(session_id)
         if (await asyncio.to_thread(status, self.checkpoints, key)).tainted:
             return {"ran": False, "reason": "foreign_history_not_promotable", "actions": []}
+        if self._session_has_media(key):
+            return {"ran": False, "reason": "image_history_not_promotable", "actions": []}
         lock = self.__dict__.get("_turn_leases", {}).get(key)
         if lock is not None and lock.locked() and key not in _held_turn_leases.get():
             return {"ran": False, "reason": "turn_in_flight", "actions": []}
@@ -4022,6 +4061,8 @@ class Orchestrator:
         from .foreign_history import status
         if (await asyncio.to_thread(status, self.checkpoints, self.session_id or "default")).tainted:
             return
+        if self._session_has_media(self.session_id or "default"):
+            return
         history = ""
         try:
             turns = await self.memory.get_history(self.session_id or "default", last_n=6)
@@ -4048,6 +4089,8 @@ class Orchestrator:
     ) -> None:
         """Feed completed LLM turns into LivingMemory + decay when cognition is on."""
         if self.session_id in self.memory.conversation.foreign_origins:
+            return
+        if self._session_has_media(self.session_id or "default"):
             return
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):

@@ -136,6 +136,17 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--smoke", action="store_true", help="also run the install smoke (~30 s)")
 
+    support = verbs.add_parser("support", help="a pasteable, non-sensitive diagnostic report")
+    support_verbs = support.add_subparsers(dest="action", required=True, metavar="action")
+    bundle = support_verbs.add_parser(
+        "bundle", help="version, model, which key names are set, changed settings, posture (admin)")
+    bundle.add_argument("--json", action="store_true", help="the full allow-listed bundle as JSON")
+    bundle.add_argument("--offline", action="store_true",
+                        help="build it from the data root without the hub (no audit or route count)")
+    bundle.add_argument("--out", metavar="FILE", help="also write it to FILE (owner-only permissions)")
+    bundle.add_argument("--logs", type=int, default=0, metavar="N",
+                        help="also include the newest N redacted warning/error log records (max 500)")
+
     prompt_size = verbs.add_parser(
         "prompt-size",
         help="what a fresh turn costs before anybody has said anything (offline)",
@@ -600,6 +611,40 @@ def cmd_desktop(ns: argparse.Namespace, ctx: Context) -> int:
         f"opened {result['opened']}\n"
         "Grant it there, then run `nerva desktop status` again — the re-probe is the proof.\n"
     )
+    return EXIT_OK
+
+
+def cmd_support(ns: argparse.Namespace, ctx: Context) -> int:
+    """H009 — the report a support thread asks for. Online it is the hub's own
+    ``/api/support/bundle`` (what the HUD Support panel copies); ``--offline`` builds the
+    same allow-listed bundle from this data root when the hub is down."""
+    from datetime import UTC, datetime
+
+    from agents.core import support_bundle
+
+    lines = ns.logs
+    if not 0 <= lines <= support_bundle.MAX_LOG_LINES:
+        ctx.err.write(f"--logs takes 0..{support_bundle.MAX_LOG_LINES}\n")
+        return EXIT_USAGE
+    if ns.offline:
+        bundle = support_bundle.build_bundle(now_iso=datetime.now(UTC).isoformat(),
+                                             environ=ctx.environ, log_lines=lines)
+    else:
+        query = f"?{urlencode({'log_lines': lines})}" if lines else ""
+        bundle = ctx.client().get(f"/api/support/bundle{query}")
+        if not isinstance(bundle, dict):
+            ctx.err.write("support bundle request returned a malformed response\n")
+            return EXIT_FAILED
+    text = (json.dumps(bundle, indent=2, ensure_ascii=False, default=str) + "\n" if ns.json
+            else support_bundle.render_text(bundle))
+    ctx.out.write(text)
+    if ns.out:
+        path = Path(ns.out)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)          # the create mode does not narrow a file that exists
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        ctx.err.write(f"written to {path}\n")
     return EXIT_OK
 
 
@@ -3800,6 +3845,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "chat": cmd_chat,
     "send": cmd_send,
     "desktop": cmd_desktop,
+    "support": cmd_support,
     "security": cmd_security,
     "completion": cmd_completion,
 }

@@ -339,6 +339,10 @@ class MemoryManager:
                 metadata.update({"channel": channel, "origin": origin})
                 if role == "user" and origin == INBOUND_ACTION_ORIGIN:
                     metadata = taint.mark(metadata, source=f"inbound:{channel}")
+            if media is not None:
+                # H586: an image turn carries the model's reading of an image (text in an
+                # image is attacker-controllable), so recalling it later taints the turn.
+                metadata = taint.mark(metadata, source="external:image")
             self._queue_turn_embedding(content, metadata)
 
     async def prepare_rollback_rewind(self, session_id: str, expected_instance_id: str,

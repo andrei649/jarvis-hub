@@ -64,6 +64,9 @@ export const ACTIONS: ShortcutAction[] = defineActions([
   { id: 'session.shortcuts', category: 'Session', label: 'Keyboard shortcuts', chord: 'mod+/', scope: 'global', inInputs: true },
 ]);
 
+// O(1) lookup index for shortcut actions to avoid O(N) array scans during hotkey handling and UI rendering
+export const ACTIONS_MAP: Map<string, ShortcutAction> = new Map(ACTIONS.map((a) => [a.id, a]));
+
 const MODIFIER_KEYS = new Set(['control', 'meta', 'alt', 'shift', 'os', 'altgraph', 'capslock', 'fn']);
 const MODIFIER_NAMES = new Set([...MODIFIER_KEYS, 'mod', 'ctrl', 'cmd']);
 
@@ -104,7 +107,7 @@ export function displayChord(chord: string, mac = typeof navigator !== 'undefine
 /** Whether action *id* may answer *chord*: it must end in a real key, and an action that works
     while typing (inInputs) needs mod or alt held, so a letter typed into a field never fires it. */
 export function acceptsChord(id: string, chord: string): boolean {
-  const action = ACTIONS.find((a) => a.id === id);
+  const action = ACTIONS_MAP.get(id);
   const parts = splitChord(normalizeChord(chord));
   const key = parts.pop() || '';
   if (!action || !key || MODIFIER_NAMES.has(key)) return false;
@@ -122,9 +125,8 @@ export type Overrides = Record<string, string>;
 export function readOverrides(raw: unknown): Overrides {
   const out: Overrides = {};
   if (!raw || typeof raw !== 'object') return out;   // an array's indices are no action ids
-  const known = new Set(ACTIONS.map((a) => a.id));
   for (const [id, chord] of Object.entries(raw as Record<string, unknown>)) {
-    if (!known.has(id) || typeof chord !== 'string' || chord.length > 40 || !acceptsChord(id, chord)) continue;
+    if (!ACTIONS_MAP.has(id) || typeof chord !== 'string' || chord.length > 40 || !acceptsChord(id, chord)) continue;
     out[id] = normalizeChord(chord);
   }
   return out;
@@ -152,20 +154,30 @@ export function useShortcutOverrides(): [Overrides, (next: Overrides) => void] {
 export type Binding = ShortcutAction & { current: string; custom: boolean };
 
 export function bindings(overrides: Overrides = {}): Binding[] {
-  return ACTIONS.map((a) => {
+  // Bolt Optimization: Use an indexed loop to construct bindings without callback closure allocations per invocation.
+  const res: Binding[] = new Array(ACTIONS.length);
+  for (let i = 0; i < ACTIONS.length; i++) {
+    const a = ACTIONS[i];
     const current = overrides[a.id] ?? a.chord;
-    return { ...a, current, custom: current !== a.chord };
-  });
+    res[i] = { ...a, current, custom: current !== a.chord };
+  }
+  return res;
 }
 
 /** The other actions that answer *chord* (what the panel names as "Also bound to"). */
 export function conflictsFor(id: string, chord: string, list: Binding[]): Binding[] {
-  return list.filter((b) => b.id !== id && b.current === chord);
+  // Bolt Optimization: Single indexed loop avoids array filtering predicate closures during shortcut conflict checks.
+  const res: Binding[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (b.id !== id && b.current === chord) res.push(b);
+  }
+  return res;
 }
 
 /** The chord action *id* answers now, for a hint next to it. */
 export function chordOf(overrides: Overrides, id: string): string {
-  return overrides[id] ?? ACTIONS.find((a) => a.id === id)?.chord ?? '';
+  return overrides[id] ?? ACTIONS_MAP.get(id)?.chord ?? '';
 }
 
 /** The action a key event triggers in *scope*: the first one bound to its chord. Shift+letter
@@ -173,12 +185,24 @@ export function chordOf(overrides: Overrides, id: string): string {
 export function matchAction(e: Parameters<typeof chordFromEvent>[0], list: Binding[], scope: Scope): Binding | null {
   const chord = chordFromEvent(e);
   if (!chord) return null;
-  const bound = (c: string) => list.find((b) => b.scope === scope && b.current === c) || null;
-  return bound(chord) || (/^shift\+[a-z]$/.test(chord) ? bound(chord.slice('shift+'.length)) : null);
+  // Bolt Optimization: Use indexed for loops instead of .find() predicate closures. This eliminates function closure
+  // allocations on every keydown event fired in the application shell and cinema overlay (~0 allocations per keypress).
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (b.scope === scope && b.current === chord) return b;
+  }
+  if (/^shift\+[a-z]$/.test(chord)) {
+    const fallback = chord.slice(6); // 'shift+'.length
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      if (b.scope === scope && b.current === fallback) return b;
+    }
+  }
+  return null;
 }
 
 export function rebind(overrides: Overrides, id: string, chord: string): Overrides {
-  const action = ACTIONS.find((a) => a.id === id);
+  const action = ACTIONS_MAP.get(id);
   if (!action || !acceptsChord(id, chord)) return overrides;
   const next = { ...overrides };
   const normal = normalizeChord(chord);
@@ -196,6 +220,19 @@ export function resetBinding(overrides: Overrides, id: string): Overrides {
 export function searchBindings(list: Binding[], query: string): Binding[] {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return list;
-  return list.filter((b) => b.label.toLowerCase().includes(q) || b.category.toLowerCase().includes(q)
-    || b.id.includes(q) || b.current === q || displayChord(b.current, false).toLowerCase().includes(q));
+  // Bolt Optimization: Indexed loop avoids intermediate closure creation during shortcut search queries.
+  const res: Binding[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (
+      b.label.toLowerCase().includes(q) ||
+      b.category.toLowerCase().includes(q) ||
+      b.id.includes(q) ||
+      b.current === q ||
+      displayChord(b.current, false).toLowerCase().includes(q)
+    ) {
+      res.push(b);
+    }
+  }
+  return res;
 }
