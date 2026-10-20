@@ -878,9 +878,22 @@ async def memory_core():
     living = _living_memory()
     if living is None:
         return nocache_json({"enabled": False, "memory": [], "user": [], "undoable": []})
+    from agents.core.memory_tool import MemoryToolError, _read_rings
+
+    # H423 review: reread the rings from their files first (another process's write, a
+    # hand edit), off the event loop, so the refs listed are the ones undo accepts. A
+    # hand edit that cannot be read back is named, and nothing is undoable over it.
+    drift = None
+    try:
+        await asyncio.to_thread(_read_rings, living)
+    except MemoryToolError as exc:
+        drift = exc.detail
     memory, user = living.core.list(), living.user_core.list()
-    return nocache_json({"enabled": True, "memory": memory, "user": user,
-                         "undoable": UNDO.recent(rings={"memory": memory, "user": user})})
+    body = {"enabled": True, "memory": memory, "user": user,
+            "undoable": [] if drift else UNDO.recent(rings={"memory": memory, "user": user})}
+    if drift:
+        body["drift"] = drift
+    return nocache_json(body)
 
 
 @router.post("/api/memory/core/undo", dependencies=[Depends(admin_guard)])

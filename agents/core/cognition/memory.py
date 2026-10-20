@@ -284,6 +284,9 @@ LOCK_TIMEOUT_S = 5.0
 #: H423 review — a forget must win, so it waits longer for the lock; it still never
 #: writes without it (CoreMemory.clear).
 CLEAR_LOCK_TIMEOUT_S = 30.0
+#: H423 review — how long a new session's prompt build waits for a ring's lock before it
+#: reads the (atomically saved) file without it (CoreMemory.refresh_for_prompt).
+PROMPT_REREAD_LOCK_TIMEOUT_S = 0.2
 
 
 class CoreMemoryLocked(TimeoutError):
@@ -508,6 +511,10 @@ class CoreMemory(JsonStore):
             raw = json.loads(data.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
             return [], "it is not valid JSON"
+        if raw == {}:
+            # H423 review: the forget sweep resets a JSON store it does not know to an
+            # empty container ("{}"); that is an empty ring, not a hand edit to refuse.
+            return [], None
         facts = raw.get("facts") if isinstance(raw, dict) else raw
         if not isinstance(facts, list) or not all(isinstance(f, str) for f in facts):
             return [], 'it does not hold "facts" as a list of text lines'
@@ -572,11 +579,57 @@ class CoreMemory(JsonStore):
             logger.warning("core memory: the digest of %s could not be saved", path, exc_info=True)
         return bak
 
-    def sync_from_disk(self) -> "Path | None":
+    def sync_from_disk(self, timeout: "float | None" = None) -> "Path | None":
         """H423 — reread the ring from its file under its lock, taking a hand edit as the
-        ring when it reads back exactly. Returns the ``.bak`` kept of such an edit."""
-        with self.locked(), self._lock:
+        ring when it reads back exactly. Returns the ``.bak`` kept of such an edit.
+        *timeout* bounds the lock wait (:data:`LOCK_TIMEOUT_S` by default)."""
+        with self.locked(timeout=timeout), self._lock:
             return self._sync_locked()
+
+    def refresh_for_prompt(self, timeout: "float | None" = None) -> "str | None":
+        """H423 review — reread the ring for a new session's always-injected prompt block,
+        so a hand edit or another process's write reaches the model (Hermes reloads its
+        memory files when a session starts, then freezes that snapshot).
+
+        Waits at most *timeout* (:data:`PROMPT_REREAD_LOCK_TIMEOUT_S`) for the lock; when
+        another writer holds it, the file is read without it (saves are atomic renames)
+        and taken only when it reads back exactly; nothing is written then. Never raises
+        for the ring's own state: returns why the file cannot be read back (the in-memory
+        ring, the last good one, is kept and a warning names the ``.bak`` copy), else
+        None."""
+        if self.path is None:
+            return None
+        wait = PROMPT_REREAD_LOCK_TIMEOUT_S if timeout is None else timeout
+        try:
+            self.sync_from_disk(timeout=wait)
+            return None
+        except CoreMemoryLocked:
+            return self._adopt_without_lock()
+        except CoreMemoryDrift as exc:
+            problem = exc.problem or "it was edited outside Nerva"
+            logger.warning("core memory: %s cannot be read back (%s); the prompt keeps its last good "
+                           "facts%s", self.path, problem, f"; a copy is kept at {exc.bak}" if exc.bak else "")
+            return problem
+
+    def _adopt_without_lock(self) -> "str | None":
+        """The ring as its file holds it, read without the lock (another writer holds it).
+        Taken only when it reads back exactly; no digest or copy is written here."""
+        try:
+            data = self.path.read_bytes()
+        except FileNotFoundError:
+            data = None
+        except OSError as exc:
+            problem = f"it cannot be read ({exc.strerror})"
+            logger.warning("core memory: %s %s; the prompt keeps its last good facts", self.path, problem)
+            return problem
+        facts, problem = ([], None) if data is None else self._strict_facts(data)
+        if problem is not None:
+            logger.warning("core memory: %s cannot be read back (%s); the prompt keeps its last good "
+                           "facts", self.path, problem)
+            return problem
+        with self._lock:
+            self._facts = facts
+        return None
 
     def _baseline(self) -> None:
         """A ring file saved before digests existed gets one on load, so a hand edit made

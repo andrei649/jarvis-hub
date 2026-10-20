@@ -85,6 +85,11 @@ KEEP_FILES: frozenset[str] = frozenset({
     # It is a safety control, not owner content: a forget must never resume the hubs.
     _estop.SENTINEL_NAME,
 })
+# H423 review: the core rings' cross-process lock files (``<ring>.json.lock``). They hold
+# no content (empty, or one placeholder byte for the Windows byte-range lock), and a
+# writer may hold one while the sweep runs: unlinked, the next writer would lock a new
+# inode and two writers would both hold "the" lock (the hazard HUB_LOCK_FILE is kept for).
+KEEP_SUFFIXES: tuple[str, ...] = (".json.lock",)
 KEEP_DIRS: frozenset[str] = frozenset({
     "security",         # append-only audit chain + intent log: compliance evidence
 })
@@ -141,7 +146,13 @@ PURGE_MEMORY_FILES: tuple[str, ...] = (
     "bitemporal_kg.json",
     "entities.json",
     "decay.json",
+    # H423 review: both core rings and their digests are removed, never reset: a missing
+    # ring is an empty one, while the sweep's "{}" reset of the user ring (it used to be
+    # missing here) plus a deleted digest left a file every later write refused as drift.
     "cognition/core_memory.json",
+    "cognition/core_memory.json.sha256",
+    "cognition/user_core.json",
+    "cognition/user_core.json.sha256",
     "cognition/living_tiers.json",
     "house/private_graph.enc",
     "house/private_graph.cipher.salt",
@@ -301,6 +312,8 @@ def _is_kept(rel: Path) -> bool:
     if not parts:
         return True
     if parts[0] in KEEP_DIRS:
+        return True
+    if rel.name.endswith(KEEP_SUFFIXES):
         return True
     return _sqlite_base_name(rel.name) in KEEP_FILES
 

@@ -83,4 +83,40 @@ def render_core_block(living, detect: Callable[[str], list] | None = None) -> st
     return "\n".join(lines)
 
 
-__all__ = ["render_core_block"]
+_RING_LABELS = (("core", "core memory"), ("user_core", "user profile"))
+
+
+def reread_core_rings(living) -> list[str]:
+    """H423 review — reread each core ring of *living* from its file before a new
+    session's block is rendered, so a hand edit or another Nerva process's write reaches
+    the prompt. Returns one note per ring whose file cannot be read back (its last good
+    facts stay in the block). A ring that is not a file-backed CoreMemory is left as is.
+
+    Waits at most ``PROMPT_REREAD_LOCK_TIMEOUT_S`` per ring for its lock, so the caller
+    runs it once per (session, day), off the event loop."""
+    from ..cognition.memory import CoreMemory
+
+    notes: list[str] = []
+    for attr, label in _RING_LABELS:
+        store = getattr(living, attr, None) if living is not None else None
+        if not isinstance(store, CoreMemory):
+            continue
+        try:
+            problem = store.refresh_for_prompt()
+        except Exception:
+            logger.warning("core block: the %s ring could not be reread", attr, exc_info=True)
+            continue
+        if problem:
+            notes.append(f"[memory note] The {label} file was edited outside Nerva and {problem}; "
+                         "the facts shown are the last good copy until the owner fixes the file.")
+    return notes
+
+
+def with_core_notes(block: str, notes: list[str]) -> str:
+    """*block* with the reread *notes* appended (a header of their own when it is empty)."""
+    if not notes:
+        return block
+    return "\n".join([block or _HEADER, *notes])
+
+
+__all__ = ["render_core_block", "reread_core_rings", "with_core_notes"]

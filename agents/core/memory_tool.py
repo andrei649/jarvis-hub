@@ -19,7 +19,9 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   fact (replace or remove one first). The budget is checked on the batch's final state, so
   an add listed before the remove that makes room is kept (H423); a turn that keeps
   hitting a full ring gets a terminal refusal after :data:`FULL_ATTEMPTS_PER_TURN` tries,
-  so it stops retrying;
+  so it stops retrying (the refusal sticks: the tool itself refuses every later write of
+  that turn; its ``"terminal": true`` is a hint to the model, which the runtime does not
+  read);
 * a write holds each ring's cross-process file lock (``<ring>.json.lock``, taken by
   ``CoreMemory`` itself, so the post-turn review, the reflection and a forget take it
   too) and rereads the rings from disk under it, so another writer's save is planned

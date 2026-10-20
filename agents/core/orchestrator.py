@@ -518,6 +518,19 @@ def _system_prompt_of(agent) -> str:
     return (getattr(agent, "soul", None) or {}).get("content", "")
 
 
+def _core_block_key(orch) -> tuple:
+    """The core block's frozen-snapshot key: (session, day). Jarvis sessions can live
+    for days (unlike hermes conversation-scoped ones), and the nightly reflector writes
+    core lessons; the day component bounds snapshot staleness to a day without giving up
+    intra-day prefix stability. AttributeError-safe so partially-constructed
+    orchestrators (test stubs via __new__, SimpleNamespace fakes) work."""
+    try:
+        session = orch.session_id or "default"
+    except AttributeError:
+        session = "default"
+    return (session, time.strftime("%Y-%m-%d"))
+
+
 class Orchestrator:
     # DRA-08: the reply-target resolver is pure and stateless (no per-instance
     # config), so it lives on the class. That also keeps `channel_handler`
@@ -3732,29 +3745,52 @@ class Orchestrator:
         if safe_mode.enabled():
             safe_mode.note("memory_injection")   # H490: no core block in the prompt
             return ""
-        # Key on (session, day): jarvis sessions can live for days (unlike
-        # hermes conversation-scoped ones), and the nightly reflector writes
-        # core lessons — the day component bounds snapshot staleness to a day
-        # without giving up intra-day prefix stability. AttributeError-safe so
-        # partially-constructed orchestrators (test stubs via __new__) work.
-        try:
-            session = self.session_id or "default"
-        except AttributeError:
-            session = "default"
-        cache_key = (session, time.strftime("%Y-%m-%d"))
+        cache_key = _core_block_key(self)
         cached = getattr(self, "_core_block_cache", None)
         if cached is not None and cached[0] == cache_key:
             return cached[1]
         living = cog.module("memory")
+        # H423 review: a new (session, day) render rereads the rings from their files
+        # first (a hand edit, another process's write), once; the turn path did it off the
+        # event loop already (_reread_core_rings_for_render), a direct caller does it here.
+        reread = getattr(self, "_core_rings_reread", None)
         try:
-            from .learning.core_block import render_core_block
-            block = render_core_block(living)
+            from .learning.core_block import render_core_block, reread_core_rings, with_core_notes
+            if reread is not None and reread[0] == cache_key:
+                self._core_rings_reread = None
+                notes = reread[1]
+            else:
+                notes = reread_core_rings(living)
+            block = with_core_notes(render_core_block(living), notes)
         except Exception:
             logger.debug("LivingMemory core render skipped", exc_info=True)
             return ""
         if freeze:
             self._core_block_cache = (cache_key, block)
         return block
+
+    async def _reread_core_rings_for_render(self) -> None:
+        """H423 review — before a turn renders a new (session, day) core block, reread the
+        rings from disk in a worker thread (each waits briefly for its file lock), so the
+        event loop never waits on another writer and a cached block costs nothing."""
+        cog = getattr(self, "cognition", None)
+        try:
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return
+            from . import safe_mode
+
+            if safe_mode.enabled():
+                return
+            key = _core_block_key(self)
+            cached = getattr(self, "_core_block_cache", None)
+            if cached is not None and cached[0] == key:
+                return
+            from .learning.core_block import reread_core_rings
+
+            notes = await asyncio.to_thread(reread_core_rings, cog.module("memory"))
+            self._core_rings_reread = (key, notes)
+        except Exception:
+            logger.debug("LivingMemory core reread skipped", exc_info=True)
 
     def _persona_prompt_block(self, agent_id: str) -> str:
         """Persona prompt block for a single agent, gated by cognition settings."""
@@ -3863,6 +3899,7 @@ class Orchestrator:
         if agent_context:
             parts.append(f"Agent context: {agent_context}")
 
+        await self._reread_core_rings_for_render()
         core_memory_block = (self._living_core_memory_block() if freeze_core
                              else self._living_core_memory_block(freeze=False))
         if core_memory_block:
