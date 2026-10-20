@@ -581,9 +581,32 @@ def test_consent_recheck_follows_the_credential(client, monkeypatch, tokens):
     assert autonomy._consent_admin_current(_request({"x-admin-token": ADMIN}), orch) is False
 
 
+def test_mcp_mutating_tools_are_bound_to_the_identity_check(client, monkeypatch):
+    """web._build_mcp_mutating_route_tools hands `_mcp_identity_check` to every write
+    tool as a callback (a bare reference, found by the round-3 scan): with a user
+    credential configured, a bound tool admits only that credential (or the admin's)."""
+    from types import SimpleNamespace
+
+    from agents import web
+
+    monkeypatch.setenv("JARVIS_MCP_ROUTE_TOOLS", "1")
+    monkeypatch.setenv("JARVIS_MCP_MUTATING_TOOLS", "1")
+    monkeypatch.setattr(web, "orch", SimpleNamespace(audit=object(), memory=None))
+    monkeypatch.setattr(web, "USER_TOKEN", "synthetic-h511-user")
+    monkeypatch.setattr(web, "_user_credential_required", lambda: True)
+    tools = web._build_mcp_mutating_route_tools()
+    assert tools, "both switches on with an auditor must bind the write tools"
+    for tool in tools:
+        assert tool._identity_ok(None) is False
+        assert tool._identity_ok("not-a-credential") is False
+        assert tool._identity_ok("synthetic-h511-user") is True
+        assert tool._identity_ok(ADMIN) is True
+
+
 # ── Every pinned in-body site names a probe that exists ───────────────────────
 
 _PARAMETRIZED = {
+    "test_in_handler_guard_refuses_without_credential": {**HTTP_PROBES, **EXTRA_POSTURE_PROBES},
     "test_websocket_in_handler_guard_refuses_unauthenticated": WS_PROBES,
     "test_websocket_closes_when_credential_is_revoked_mid_stream": WS_PROBES,
     "test_step_up_refuses_a_user_tier_caller": STEP_UP_PROBES,

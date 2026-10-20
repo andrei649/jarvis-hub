@@ -46,41 +46,74 @@ def iter_websocket_routes(app: Any) -> Iterator[Any]:
     never saw `/api/kanban/events` or `/api/hermes/ws`, so a new unguarded upgrade
     endpoint passed CI.
 
-    A `Mount` whose app has its own routes (a mounted FastAPI/Starlette sub-app) is
-    descended into, and its upgrade routes are yielded under the mount prefix, so a
-    WebSocket endpoint on a sub-app is classified too. A mount with no route table
+    A `Mount` or `Host` whose app has its own routes (a mounted or host-dispatched
+    FastAPI/Starlette sub-app) is descended into, and its upgrade routes are yielded
+    under the mount prefix (`//<host>` for a Host), so a WebSocket endpoint on a
+    sub-app is classified too. A mount with no route table
     (StaticFiles, an opaque ASGI callable) cannot be introspected here — those are
     pinned by `iter_mounts` + test_every_mount_is_pinned instead.
     """
     yield from _walk_websockets(app.routes, "")
 
 
-def _walk_websockets(routes: Any, prefix: str) -> Iterator[Any]:
-    from types import SimpleNamespace
-
-    from starlette.routing import Mount, WebSocketRoute
-
+def _served(routes: Any) -> Iterator[Any]:
+    """Each route as fastapi actually serves it: an included route is resolved to
+    `ctx.starlette_route` (fastapi >= 0.137), anything else is yielded as-is."""
     try:
         from fastapi.routing import _iter_routes_with_context  # fastapi >= 0.137
     except ImportError:
-        pairs = ((r, None) for r in routes)
-    else:
-        pairs = _iter_routes_with_context(routes)
-    for route, ctx in pairs:
-        served = ctx.starlette_route if ctx is not None and getattr(ctx, "starlette_route", None) is not None else route
+        yield from routes
+        return
+    for route, ctx in _iter_routes_with_context(routes):
+        starlette_route = getattr(ctx, "starlette_route", None) if ctx is not None else None
+        yield starlette_route if starlette_route is not None else route
+
+
+def _sub_app_path(served: Any, prefix: str) -> "str | None":
+    """The served-path key of a route that dispatches to a whole ASGI sub-app, or None.
+
+    `Mount` -> its path under `prefix`. starlette's `Host` is a sibling of `Mount`, not
+    a subclass (H511 round 3): it matches every path on its host, so it is keyed
+    `//<host>` under `prefix`. Any other non-endpoint route carrying an `.app` is keyed
+    by its path tagged with its class, so an unknown dispatcher is reported, not skipped.
+    """
+    from starlette.routing import Host, Mount, Route, WebSocketRoute
+
+    if isinstance(served, Mount):
+        return prefix + served.path
+    if isinstance(served, Host):
+        return prefix + "//" + served.host
+    if isinstance(served, (Route, WebSocketRoute)) or getattr(served, "app", None) is None:
+        return None
+    return f"{prefix}{getattr(served, 'path', '')}[{type(served).__name__}]"
+
+
+def _walk_websockets(routes: Any, prefix: str) -> Iterator[Any]:
+    from types import SimpleNamespace
+
+    from starlette.routing import WebSocketRoute
+
+    for served in _served(routes):
         if isinstance(served, WebSocketRoute):
             if not prefix:
                 yield served
             else:
                 yield SimpleNamespace(path=prefix + served.path,
                                       dependant=getattr(served, "dependant", None))
-        elif isinstance(served, Mount):
-            yield from _walk_websockets(served.routes, prefix + served.path)
+            continue
+        sub = _sub_app_path(served, prefix)
+        if sub is not None:
+            yield from _walk_websockets(_inner_routes(served), sub)
+
+
+def _inner_routes(served: Any) -> Any:
+    # Mount/Host expose `.routes` (Mount reads it off the app under any middleware).
+    return getattr(served, "routes", None) or getattr(served.app, "routes", None) or []
 
 
 def iter_mounts(app: Any) -> Iterator[Any]:
-    """Yield every `Mount` at any depth (H511) — an ASGI sub-application the HTTP
-    route matrix cannot see inside.
+    """Yield every `Mount` and `Host` at any depth (H511) — an ASGI sub-application
+    the HTTP route matrix cannot see inside (a Host is keyed `//<host>`).
 
     Each item exposes `.path` (the path the mount is actually served under) and
     `.app` (the mounted application). A mount inside an included APIRouter is found
@@ -97,20 +130,11 @@ def iter_mounts(app: Any) -> Iterator[Any]:
 def _walk_mounts(routes: Any, prefix: str) -> Iterator[Any]:
     from types import SimpleNamespace
 
-    from starlette.routing import Mount
-
-    try:
-        from fastapi.routing import _iter_routes_with_context  # fastapi >= 0.137
-    except ImportError:
-        pairs = ((r, None) for r in routes)
-    else:
-        pairs = _iter_routes_with_context(routes)
-    for route, ctx in pairs:
-        served = ctx.starlette_route if ctx is not None and getattr(ctx, "starlette_route", None) is not None else route
-        if not isinstance(served, Mount):
+    for served in _served(routes):
+        path = _sub_app_path(served, prefix)
+        if path is None:
             continue
-        path = prefix + served.path
         yield SimpleNamespace(path=path, app=served.app, mount=served)
-        inner = getattr(served, "routes", None)
+        inner = _inner_routes(served)
         if inner:
             yield from _walk_mounts(inner, path)

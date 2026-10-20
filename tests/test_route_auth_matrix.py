@@ -15,10 +15,12 @@ endpoint. This reads each route's *resolved dependency graph* from the live app
    allowlists into IN_HANDLER_GUARDED (a credential checked in the handler body,
    proved route by route in tests/test_route_inhandler_guards.py) and
    PUBLIC_BY_DESIGN (no credential exists to check);
-5. (H511 review) AST-scans agents/ for every in-body guard call and every in-body
-   tier decision (`_web_principal`, `_admin_credential_ok`, ...), pins each site
-   with the probe(s) that prove it, and flags calls that cannot take effect; and
-   pins every mounted sub-app (at any depth) by its served path and type.
+5. (H511 review) AST-scans agents/ for every in-body guard call or reference and
+   every in-body credential decision (`_web_principal`, `_admin_credential_ok`,
+   `_request_is_authed`, `_user_credential_required`, the MCP identity checks, ...),
+   pins each site with the probe(s) that prove it, and flags calls that cannot take
+   effect; and pins every mounted or host-dispatched sub-app (`Mount`/`Host`, at any
+   depth) by its served path and type.
 
 The autouse user-guard override in conftest is irrelevant here: dependency
 overrides apply at request time and do not change route.dependant, which is what
@@ -226,7 +228,12 @@ _GUARD_CALLS = {"admin_guard", "user_guard", "_admin_guard", "_user_guard"}
 # (or valid vs invalid) inside it. Each names the test that fails when its decision
 # is forced (mutation-checked: replacing the call with an always-admin / always-valid
 # value fails the named test).
-_TIER_CALLS = {"_web_principal", "owner_web_principal", "_admin_credential_ok", "_user_credential_ok"}
+_TIER_CALLS = {"_web_principal", "owner_web_principal", "_admin_credential_ok", "_user_credential_ok",
+               # Round 3: the other credential decisions — "is this request authed",
+               # "is a credential required at all", and the MCP identity re-checks.
+               "_request_is_authed", "_user_credential_required",
+               "_mcp_identity_check", "_mcp_agent_identity_check"}
+_DEPENDENCY_WRAPPERS = {"Depends", "Security"}
 IN_HANDLER_TIER_SITES = {
     # The primitives themselves (agents/web.py).
     "agents/web.py:_admin_guard": ("tests/test_admin_guard_hf7.py::test_admin_guard_token_path_unaffected",),
@@ -253,6 +260,20 @@ IN_HANDLER_TIER_SITES = {
         "tests/test_pending_input_http_poll.py::test_revocation_retires_polled_or_unpolled_wait",
         _INH + "test_pending_input_actor_follows_the_credential"),
     "agents/core/routers/autonomy.py:_consent_admin_current": (_INH + "test_consent_recheck_follows_the_credential",),
+    # Round 3: `_request_is_authed` / `_user_credential_required` / the MCP identity
+    # checks are credential decisions too.
+    "agents/web.py:_rate_limit": (
+        "tests/test_rate_limit_hf2.py::test_middleware_returns_429_for_unauthed",
+        "tests/test_rate_limit_hf2.py::test_valid_token_is_exempt_from_limit"),
+    "agents/core/routers/mcp.py:mcp_server_rpc": (
+        _INH + "test_in_handler_guard_refuses_without_credential[POST /api/mcp/server/rpc]",
+        _INH + "test_in_handler_guard_refuses_without_credential[POST /api/mcp/server/rpc [oauth]]"),
+    "agents/web.py:_mcp_agent_identity_check": (
+        "tests/test_h10_5_mcp_server.py::test_production_agent_guard_requires_owner_identity_for_model_lifecycle",),
+    "agents/web.py:_mcp_agent_request_guard": (
+        "tests/test_h10_5_mcp_server.py::test_production_agent_guard_requires_owner_identity_for_model_lifecycle",),
+    "agents/web.py:_build_mcp_mutating_route_tools": (
+        _INH + "test_mcp_mutating_tools_are_bound_to_the_identity_check",),
 }
 
 # H511 review: mounted ASGI sub-apps, keyed by the path each is *served* under
@@ -543,15 +564,55 @@ def test_mount_check_sees_a_mount_inside_an_included_router():
     assert _mount_violations(impostor) == {"/static": "StaticFiles"}
 
 
+def test_host_sub_apps_are_walked_like_mounts():
+    """H511 review (round 3): starlette's `Host` route is a sibling of `Mount`, not a
+    subclass — a host-dispatched sub-app was invisible to both walks. Its upgrade routes
+    are enumerated under `//<host><path>` and the Host itself is a pinned mount, whether
+    its app has a route table or is an opaque ASGI callable."""
+    from fastapi import APIRouter, FastAPI, WebSocket
+    from starlette.routing import Host, Mount
+
+    sub = FastAPI()
+
+    @sub.websocket("/s")
+    async def _s(ws: WebSocket):
+        await ws.close()
+
+    async def raw(scope, receive, send):
+        return None
+
+    app = FastAPI()
+    app.router.routes.append(Host("evil.example", app=sub))
+    assert _ws_guards(app) == {"WS //evil.example/s": "open"}
+    assert _mount_violations(app) == {"//evil.example": "FastAPI"}
+
+    # A Host behind a Mount and inside an included router, and an opaque Host app.
+    deep = FastAPI()
+    deep.router.routes.append(Host("in.example", app=sub))
+    router = APIRouter()
+    router.routes.append(Host("raw.example", app=raw))
+    app2 = FastAPI()
+    app2.router.routes.append(Mount("/m", app=deep))
+    app2.include_router(router)
+    assert _ws_guards(app2) == {"WS /m//in.example/s": "open"}
+    assert _mount_violations(app2) == {"/m": "FastAPI", "/m//in.example": "FastAPI",
+                                       "//raw.example": "function"}
+
+
 def _scan_in_body_guard_calls(root=None, rel_to=None):
     """AST-scan agents/ for every function whose body calls a guard or a tier primitive.
 
     Returns (guard_sites, tier_sites, suspicious). A site is "file:function". Calls are
     matched by name, by an import alias of a name (`from ._deps import admin_guard as
-    ag`), and by a string lookup (`getattr(web, "_web_principal")`). `suspicious` lists
-    calls that cannot be doing their job: an async guard that is not awaited, a call
-    under a constant-false `if`/`while`, or one inside a `try` whose handler only
-    swallows (`pass` / `...` / `continue`)."""
+    ag`), and by a string lookup (`getattr(web, "_web_principal")`); a bare reference
+    (`g = web._admin_guard`, a guard handed over as a callback) is a site too. A
+    reference inside `Depends(...)`/`Security(...)` is a declared dependency, not an
+    in-body call, and is skipped. `suspicious` lists calls that cannot be doing their
+    job: an async guard that is not awaited, a call under a constant-false
+    `if`/`while`, or one inside a `try` with a broad handler (bare / `Exception` /
+    `BaseException` / `HTTPException`) that does nothing (`pass` / `...` / `continue`)
+    or that neither raises nor returns while code still follows the try in its
+    function (e.g. `except Exception as e: logger.warning(e)`)."""
     import ast
 
     root = root or repo_root / "agents"
@@ -559,6 +620,10 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
     watched = _GUARD_CALLS | _TIER_CALLS
     awaited_only = _GUARD_CALLS | {"owner_web_principal"}
     guard_sites, tier_sites, suspicious = set(), set(), []
+    callee_funcs = set()   # ids of Call.func nodes, so a call is not also counted as a reference
+
+    def ref_name(node):
+        return node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else ""
 
     refusals = {"Exception", "BaseException", "HTTPException"}   # what a guard raises
 
@@ -568,11 +633,39 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
         kinds = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
         return any((k.id if isinstance(k, ast.Name) else getattr(k, "attr", "")) in refusals for k in kinds)
 
+    def leaves(handler):
+        """The handler stops the guarded flow: it raises or returns (a refusal response,
+        or after closing the socket). Nested defs do not count."""
+        stack = list(handler.body)
+        while stack:
+            s = stack.pop()
+            if isinstance(s, (ast.Raise, ast.Return)):
+                return True
+            if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                stack.extend(ast.iter_child_nodes(s))
+        return False
+
+    terminal = set()   # ids of Try nodes that end their function (falling off = return)
+
+    def mark_terminal(tree):
+        for fn in ast.walk(tree):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                last = fn.body[-1]
+                while isinstance(last, (ast.With, ast.AsyncWith)):
+                    last = last.body[-1]
+                if isinstance(last, ast.Try):
+                    terminal.add(id(last))
+
+    def inert(handler):
+        return all(isinstance(s, (ast.Pass, ast.Continue))
+                   or (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant)) for s in handler.body)
+
     def swallowing(try_node):
-        return any(catches_refusal(h) and all(
-            isinstance(s, (ast.Pass, ast.Continue))
-            or (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant)) for s in h.body)
-            for h in try_node.handlers)
+        # A broad handler that does nothing is always flagged. Round 3: so is any broad
+        # handler that neither raises nor returns — logging the refusal does not stop
+        # execution carrying on past it — unless nothing follows the try in its function.
+        return any(catches_refusal(h) and (inert(h) or (id(try_node) not in terminal and not leaves(h)))
+                   for h in try_node.handlers)
 
     def visit(node, owner, rel, aliases, dead, awaited):
         for child in ast.iter_child_nodes(node):
@@ -596,12 +689,21 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
                     visit_stmt(part, owner, rel, aliases, dead)
                 continue
             name = ""
-            if owner is not None and isinstance(child, ast.Call):
+            if isinstance(child, ast.Call):
                 fn = child.func
-                raw = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else ""
-                name = aliases.get(raw, raw)
+                raw = ref_name(fn)
+                name = aliases.get(raw, raw) if owner is not None else ""
+                callee_funcs.add(id(fn))
+                if raw in _DEPENDENCY_WRAPPERS:
+                    continue   # Depends(admin_guard): a declared dependency, not an in-body call
             elif owner is not None and isinstance(child, ast.Constant) and child.value in watched:
                 name = child.value   # getattr(module, "<name>") lookup
+            elif owner is not None and isinstance(child, (ast.Name, ast.Attribute)) \
+                    and isinstance(child.ctx, ast.Load) and id(child) not in callee_funcs:
+                # Round 3: a bare reference (`g = web._admin_guard`, a guard passed as a
+                # callback) is a site too — the call through the local name is not.
+                raw = ref_name(child)
+                name = aliases.get(raw, raw)
             if name in watched:
                 site = f"{rel}:{owner}"
                 (guard_sites if name in _GUARD_CALLS else tier_sites).add(site)
@@ -626,6 +728,9 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
             continue
         aliases = {a.asname: a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
                    for a in n.names if a.asname and a.name in watched}
+        terminal.clear()        # node ids are only meaningful while this tree is alive
+        callee_funcs.clear()
+        mark_terminal(tree)
         visit(tree, None, rel, aliases, False, False)
     return guard_sites, tier_sites, suspicious
 
@@ -665,12 +770,32 @@ def test_guard_scan_flags_aliases_lookups_and_inert_calls(tmp_path):
         "async def swallowed(r):\n    try:\n        await ag(r)\n    except Exception:\n        pass\n"
         "async def discarded(r):\n    ag(r)\n"
         "async def live_else(r):\n    if 0:\n        pass\n    else:\n        await ag(r)\n"
-        "async def narrow(r):\n    try:\n        await ag(r)\n    except WebSocketDisconnect:\n        pass\n")
+        "async def narrow(r):\n    try:\n        await ag(r)\n    except WebSocketDisconnect:\n        pass\n"
+        # Round 3: a broad handler that only logs swallows the refusal (the work after
+        # the try still runs); one that re-raises, returns (after closing), or ends the
+        # function (the try is its last statement) does not.
+        "async def logged(r):\n    try:\n        await ag(r)\n    except Exception as e:\n"
+        "        logger.warning(e)\n    return await act(r)\n"
+        "async def terminal(ws):\n    try:\n        await ag(ws)\n        await ws.send_text('x')\n"
+        "    except HTTPException:\n        await ws.close(code=1008)\n"
+        "async def reraised(r):\n    try:\n        await ag(r)\n    except Exception as e:\n"
+        "        logger.warning(e)\n        raise\n"
+        "async def refused(ws):\n    try:\n        await ag(ws)\n    except HTTPException:\n"
+        "        await ws.close(code=1008)\n        return\n"
+        # A local rebinding of a guard, and the credential-decision primitives.
+        "async def rebound(web, r):\n    g = web._admin_guard\n    await g(r)\n"
+        "def authed(web, r):\n    if not web._request_is_authed(r):\n        return 401\n"
+        "def required(web):\n    return web._user_credential_required()\n"
+        "def mcp_check(web, t):\n    return web._mcp_agent_identity_check(t)\n"
+        # A dependency declaration is not an in-body call.
+        "def wired(router, x):\n    router.include_router(x, dependencies=[Depends(ag)])\n")
     guard, tier, suspicious = _scan_in_body_guard_calls(pkg, tmp_path)
     assert guard == {f"agents/mod.py:{f}"
-                     for f in ("aliased", "dead", "swallowed", "discarded", "live_else", "narrow")}
-    assert tier == {"agents/mod.py:looked_up"}
-    assert {s.split()[0] for s in suspicious} == {"agents/mod.py:8", "agents/mod.py:11", "agents/mod.py:15"}
+                     for f in ("aliased", "dead", "swallowed", "discarded", "live_else", "narrow",
+                               "logged", "terminal", "reraised", "refused", "rebound")}
+    assert tier == {f"agents/mod.py:{f}" for f in ("looked_up", "authed", "required", "mcp_check")}
+    assert {s.split()[0] for s in suspicious} == {
+        "agents/mod.py:8", "agents/mod.py:11", "agents/mod.py:15", "agents/mod.py:28"}
 
 
 def test_step_up_routes_are_user_tier():
