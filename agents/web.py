@@ -673,12 +673,28 @@ async def lifespan(application: FastAPI):
     # restart) and mark this run as not yet cleanly stopped.
     from agents.core import resource_pressure
     resource_pressure.monitor().start()
+    # Nerva Workspace: say now, not at the first sign-in, when this hub's audit key is not
+    # the trail's (it then refuses every write with 503; reads the database read-only).
+    from agents.core.workspace import audit as workspace_audit
+    try:
+        workspace_audit.startup_key_check()
+    except Exception:  # a diagnostic must never keep the hub from starting
+        logger.exception("Nerva Workspace audit key check failed")
+    # Nerva Workspace: scheduled reports + housekeeping (a no-op tick while the workspace
+    # is off; NERVA_WORKSPACE_SCHEDULER=0 keeps it from starting at all).
+    from agents.core.workspace import scheduler as workspace_scheduler
+    workspace_scheduler.start_background()
     # H283: systemd's READY/STOPPING are not sent from here — uvicorn binds the port
     # only after this startup returns; serve.py's NotifyingServer sends them.
     yield
     # H161: the clean-shutdown mark first — a later step that hangs must not make this
     # stop look like an out-of-memory kill to the next start.
     resource_pressure.monitor().stop()
+    # Before the orchestrator closes: in-flight workspace report runs use its model router.
+    try:
+        await workspace_scheduler.stop_background()
+    except Exception:  # a workspace fault must not keep the hub from closing and unlocking
+        logger.exception("Nerva Workspace scheduler did not stop cleanly")
     from agents.core.hermes_runtime.service import get_service as get_hermes_runtime
     await get_hermes_runtime().stop()
     from agents.core import power
@@ -730,9 +746,11 @@ if _cors_configured and not _cors_origins:
         "Origins must look like https://host[:port] with no path or trailing slash."
     )
 if _cors_origins:
-    from fastapi.middleware.cors import CORSMiddleware
+    # Path-scoped: /api/workspace* and /workspace* never get CORS headers (Nerva Workspace
+    # spec §6) — its cookie is SameSite=Lax, so a listed same-site origin could read it.
+    from agents.core.workspace.http import WorkspaceExemptCORSMiddleware
     app.add_middleware(
-        CORSMiddleware,
+        WorkspaceExemptCORSMiddleware,
         allow_origins=_cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
@@ -761,10 +779,22 @@ async def security_block_handler(request: Request, exc: SecurityBlockError):
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
     log_error(logger, E_INTERNAL_UNEXPECTED, component="web", detail=str(exc), exc=exc)
+    if _workspace_errors.is_workspace_path(request):
+        # The workspace UI reads every failure as {"error", "message"} (spec §7).
+        return _workspace_errors.error_response(
+            _workspace_errors.WorkspaceError("internal_error", "Internal server error", 500))
     return _nocache_json(
         {"code": "JARVIS-INTERNAL-001", "category": "internal", "severity": "error", "message": "Internal server error"},
         status_code=500,
     )
+
+
+# Nerva Workspace: WorkspaceError → {"error", "message", ...}, and FastAPI's request
+# validation reshaped to 422 invalid_request on /api/workspace/* only — every other path
+# keeps FastAPI's default {"detail": [...]} body (agents/core/workspace/errors.py).
+from agents.core.workspace import errors as _workspace_errors  # noqa: E402
+
+_workspace_errors.register_handlers(app)
 
 
 HERE = Path(__file__).parent / "web"
@@ -799,11 +829,22 @@ async def _no_store_for_polling(request: Request, call_next):
 # perfectly healthy instance (the opposite of the operability goal).
 _PROBE_PATHS = {"/healthz", "/readyz", "/metrics"}
 
+# Nerva Workspace (/api/workspace/*, /workspace*) is not counted here: it serves many
+# people of one company, often behind one NAT address, and enforces its own per-account
+# and per-IP throttles (docs/business/WORKSPACE_PILOT_SPEC.md §6 "Rate limits").
+_WORKSPACE_PREFIXES = ("/api/workspace", "/workspace")
+
+
+def _is_workspace_path(path: str) -> bool:
+    """True for the workspace app and API (logical path: the root path is stripped)."""
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in _WORKSPACE_PREFIXES)
+
 
 @app.middleware("http")
 async def _rate_limit(request: Request, call_next):
     """HF-2: throttle unauthenticated network clients (DoS / token brute-force)."""
-    if RATE_LIMIT_PER_MIN > 0 and request.url.path not in _PROBE_PATHS:
+    if (RATE_LIMIT_PER_MIN > 0 and request.url.path not in _PROBE_PATHS
+            and not _is_workspace_path(request.url.path)):
         ip = _client_ip(request)
         # The exemption follows the localhost gate's origin, not the bucket key (H691):
         # an unlisted same-box proxy connects from 127.0.0.1 for every client it
@@ -1153,6 +1194,19 @@ if static_dir.is_dir():
 v2_assets = HERE / "v2" / "assets"
 if v2_assets.is_dir():
     app.mount("/v2/assets", StaticFiles(directory=str(v2_assets)), name="v2-assets")
+
+# Nerva Workspace bundle (agents/web/workspace, built by vite.workspace.config.ts). Mounted
+# before the workspace_ui router is included so the hashed assets win over its catch-all.
+# The stylesheet loads its fonts relative to itself; with nosniff and font-src 'self' they
+# must be served as font/woff2, which not every platform's MIME table knows.
+import mimetypes  # noqa: E402
+
+mimetypes.add_type("font/woff2", ".woff2")
+from agents.core.routers import workspace_ui as _workspace_ui  # noqa: E402
+
+_workspace_assets = _workspace_ui.assets_app()
+if _workspace_assets is not None:
+    app.mount(_workspace_ui.ASSETS_MOUNT, _workspace_assets, name="workspace-assets")
 
 
 # ── HTML ─────────────────────────────────────────────────────────
@@ -1815,6 +1869,25 @@ app.include_router(_pressure_router)   # H161: GET /api/system/pressure + dismis
 app.include_router(_model_setup_router)
 app.include_router(_permissions_router)
 app.include_router(_report_router)
+
+# Nerva Workspace — the B2B pilot app (docs/business/WORKSPACE_PILOT_SPEC.md). Every
+# /api/workspace route answers 404 workspace_disabled while NERVA_WORKSPACE is off and
+# authenticates with its own session cookie (ws_user_guard / ws_admin_guard), never the
+# hub tokens. Importing the domain routers registers their approval effects.
+from agents.core.routers.workspace_admin import router as _workspace_admin_router  # noqa: E402
+from agents.core.routers.workspace_approvals import router as _workspace_approvals_router  # noqa: E402
+from agents.core.routers.workspace_auth import router as _workspace_auth_router  # noqa: E402
+from agents.core.routers.workspace_chat import router as _workspace_chat_router  # noqa: E402
+from agents.core.routers.workspace_documents import router as _workspace_documents_router  # noqa: E402
+from agents.core.routers.workspace_reports import router as _workspace_reports_router  # noqa: E402
+
+app.include_router(_workspace_auth_router)
+app.include_router(_workspace_admin_router)
+app.include_router(_workspace_documents_router)
+app.include_router(_workspace_chat_router)
+app.include_router(_workspace_reports_router)
+app.include_router(_workspace_approvals_router)
+app.include_router(_workspace_ui.router)   # /workspace shell; after the assets mount
 
 
 # /api/digest/run (+ DigestRunBody) and /api/schedule/parse extracted to routers/tools.py (CLN-3)

@@ -14,6 +14,13 @@ endpoint. This reads each route's *resolved dependency graph* from the live app
 The autouse user-guard override in conftest is irrelevant here: dependency
 overrides apply at request time and do not change route.dependant, which is what
 we introspect.
+
+Nerva Workspace (docs/business/WORKSPACE_PILOT_SPEC.md) adds two tiers of its own:
+``ws_user`` (a workspace session cookie + CSRF on writes, ``ws_user_guard``) and
+``ws_admin`` (``ws_admin_guard``, an admin of the company). They are read before the
+hub tiers, admin first because ``ws_admin_guard`` itself depends on ``ws_user_guard``.
+The hub tokens never open a workspace route, and a workspace session never opens a hub
+route. The workspace's public routes are classified below like any other open route.
 """
 import json
 import sys
@@ -36,6 +43,14 @@ INTENTIONALLY_OPEN = {
     "POST /api/widget/{token}/message",     # widget capability token in the path
     "POST /api/channels/pairing/request",   # inbound pairing; lands in approval, mints nothing
     "POST /api/analytics/event",            # H22 public privacy-first beacon; bounded INSERT, mints nothing
+    # Nerva Workspace public entry points (spec §6/§7). Each answers 404 while
+    # NERVA_WORKSPACE is off, requires a same-origin Origin/Sec-Fetch-Site and a JSON
+    # body (check_public_origin), and is throttled by the workspace itself.
+    "POST /api/workspace/setup",            # one-time first-admin setup; setup code (10/h/IP, 50/h), 409 once done
+    "POST /api/workspace/login",            # password sign-in; per-email + per-IP failure throttle, no enumeration
+    "POST /api/workspace/login/sso",        # trusted-proxy peer + shared secret (compare_digest) + active user only
+    "POST /api/workspace/invites/lookup",   # 32-byte single-use token authenticates; 30 tries/h/IP
+    "POST /api/workspace/invites/accept",   # same token; consumes it, sets the password, mints the session
 }
 
 # Open mutating routes still awaiting a guard — SEC-3 backlog. Listed explicitly
@@ -134,6 +149,14 @@ INTENTIONALLY_OPEN_READS = {
     "GET /api/oracle/status",
     # WorldView liveness booleans; the overview (recon/alerts) is guarded.
     "GET /api/worldview/status",
+    # Nerva Workspace (spec §7). The SPA shell serves the built markup with no user data
+    # (404 while NERVA_WORKSPACE is off); the session probe tells an anonymous caller
+    # only the setup/SSO booleans — the user, org and CSRF token come back solely for a
+    # valid session cookie, which the handler resolves itself (auth.resolve_session).
+    "GET /workspace",
+    "GET /workspace/",
+    "GET /workspace/{path:path}",
+    "GET /api/workspace/session",
 }
 
 # Personal-data reads still open — SEC-B6 debt. Shrink-only.
@@ -141,7 +164,7 @@ PENDING_READ_GUARD = set()  # SEC-B6 COMPLETE — every personal-content read no
 
 
 def _runtime_guards():
-    """Map "METHOD /path" -> "open|user|admin" from the live app's dependant graph."""
+    """Map "METHOD /path" -> "open|user|admin|ws_user|ws_admin" from the live dependant graph."""
     from agents.web import app
     from tests._route_introspect import iter_effective_routes
 
@@ -162,7 +185,13 @@ def _runtime_guards():
                 if call is not None:
                     names.add(getattr(call, "__name__", ""))
                 stack.extend(getattr(d, "dependencies", []))
-        if {"_admin_guard", "admin_guard"} & names:
+        # Workspace tiers first (admin before user: ws_admin_guard depends on
+        # ws_user_guard), then the hub's own.
+        if "ws_admin_guard" in names:
+            guard = "ws_admin"
+        elif "ws_user_guard" in names:
+            guard = "ws_user"
+        elif {"_admin_guard", "admin_guard"} & names:
             guard = "admin"
         elif {"_user_guard", "user_guard"} & names:
             guard = "user"
@@ -236,3 +265,25 @@ def test_read_classifications_are_honest():
     if stale_allow:
         problems.append("INTENTIONALLY_OPEN_READS lists non-open routes: " + ", ".join(stale_allow))
     assert not problems, "\n".join(problems)
+
+
+WORKSPACE_PUBLIC = {
+    "GET /api/workspace/session", "POST /api/workspace/setup", "POST /api/workspace/login",
+    "POST /api/workspace/login/sso", "POST /api/workspace/invites/lookup",
+    "POST /api/workspace/invites/accept",
+}
+
+
+def test_workspace_routes_use_only_workspace_tiers():
+    """Nerva Workspace authenticates people of a company, never the hub owner: no
+    /api/workspace route may ride on a hub token tier, and the only open ones are the
+    six public entry points above (anything else open is an unguarded company route)."""
+    runtime = _runtime_guards()
+    workspace = {k: g for k, g in runtime.items() if k.split(" ", 1)[1].startswith("/api/workspace")}
+    assert len(workspace) >= 60, sorted(workspace)
+    hub_tiers = sorted(k for k, g in workspace.items() if g in {"user", "admin"})
+    assert not hub_tiers, f"workspace routes on a hub tier: {hub_tiers}"
+    assert {k for k, g in workspace.items() if g == "open"} == WORKSPACE_PUBLIC
+    admin_paths = {k for k, g in workspace.items() if g == "ws_admin"}
+    assert all("/admin/" in k for k in admin_paths), sorted(admin_paths)
+    assert all(g == "ws_admin" for k, g in workspace.items() if "/api/workspace/admin/" in k)

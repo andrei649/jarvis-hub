@@ -330,6 +330,19 @@ def _requested_name(raw_path: object) -> str:
 
 # ── scope ────────────────────────────────────────────────────────────────────
 
+def _without_workspace_data(setting: str, roots: list[str]) -> list[str]:
+    """*roots* minus any that reaches the Nerva Workspace's company data (NWS-17).
+
+    The workspace module is imported only when roots are configured, so the default path
+    never loads it; its guard keeps every other root unchanged and in order.
+    """
+    if not roots:
+        return roots
+    from agents.core.workspace import config as workspace_config
+
+    return workspace_config.hub_roots_without_workspace(setting, roots)
+
+
 class FileScope:
     """The owner-configured roots every file tool must stay inside."""
 
@@ -349,8 +362,14 @@ class FileScope:
 
     @classmethod
     def from_env(cls) -> FileScope:
-        roots = env_list(ROOTS_ENV) or [str(data_path("workspace"))]
-        return cls(roots)
+        """``JARVIS_FILE_ROOTS``, else ``data_path('workspace')``.
+
+        A configured root that is, contains or lies inside the Nerva Workspace data
+        directory (company data) is dropped with one warning, and when none is left the
+        default applies (:func:`_without_workspace_data`, BACKLOG NWS-17).
+        """
+        roots = _without_workspace_data(ROOTS_ENV, env_list(ROOTS_ENV))
+        return cls(roots or [str(data_path("workspace"))])
 
     @property
     def roots(self) -> tuple[Path, ...]:

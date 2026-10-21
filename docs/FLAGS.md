@@ -6,7 +6,9 @@ this page ships default-off** (`env_flag` returns False unless explicitly set,
 surface behind them refuses by name. The two exceptions ship **on** because off is the
 dangerous setting: `JARVIS_CHANNEL_PAIRING` (an unpaired chat bot answers anyone) and,
 since H502, `JARVIS_MCP_STDIO_ENV_BASELINE` (off hands every spawned MCP server the
-whole keyring). The `Default` column of the decision table is the authority. This is what each one actually buys you — and
+whole keyring). `NERVA_WORKSPACE_SCHEDULER` also ships on, but does nothing until
+`NERVA_WORKSPACE` itself is switched on (off would stop scheduled reports and approval
+expiry). The `Default` column of the decision table is the authority. This is what each one actually buys you — and
 what it costs. The first three are the posture flags everything else composes with;
 verified against code at `75e92811`. The wave-2026-09-06 flags are appended after
 them and verified against `214bc5eb`.
@@ -175,7 +177,11 @@ installed, and names the missing parser otherwise);
 touching the file, cross the kernel as `file.write`, and are reversible through
 `restore_snapshot(ref)`.
 `JARVIS_FILE_ROOTS` is a comma list of **absolute** roots; `JARVIS_FILE_MAX_BYTES`
-(minimum 1) caps both read and write.
+(minimum 1) caps both read and write. A configured root that is, contains or lies inside the
+Nerva Workspace's company data (`<data root>/business`, compared by real path: `~`, `..` and
+symlinks resolved) is dropped by `FileScope.from_env()` with one WARNING per root per process, and
+when no root is left the default applies (BACKLOG NWS-17). Nothing is dropped while
+`NERVA_WORKSPACE` is off and `business/` does not exist.
 **Cost:** the model loop can read and — after your approval — replace or delete files
 inside the roots you named. Snapshots have no retention/GC yet.
 **Revert:** unset + restart; the tools disappear from the allowlist.
@@ -187,7 +193,11 @@ inside the roots you named. Snapshots have no retention/GC yet.
 **OFF:** the `local-host` inventory row is absent and `LocalHostTransport` is not
 constructed — the refusal is the byte-identical `local_transport_not_implemented`.
 **ON:** the local host becomes a terminal target, argv-only, cwd-jailed to
-`JARVIS_TERMINAL_LOCAL_ROOTS`, output-capped, killed on timeout.
+`JARVIS_TERMINAL_LOCAL_ROOTS`, output-capped, killed on timeout. A configured root that is,
+contains or lies inside the Nerva Workspace's `<data root>/business` is dropped with one warning
+(`local_transport.default_roots()` / `LocalHostTransport.from_env()`, NWS-17), the default applying
+when none is left; the roots jail the working directory only, not absolute paths in an approved
+argv.
 **What stays gated anyway:** the static HARDLINE denylist is evaluated **before**
 authorize on every backend including docker (a hit leaves no audit entry and never
 spawns); then the target policy, then a **durable approved task**, then the
@@ -1207,6 +1217,131 @@ newcomer rather than killing a running cell.
 **Revert:** set it back to `false` and restart. The next call is a one-shot again, and
 says nothing about continuity — the fallback is named in the result shape, not silent.
 
+## Wave 2026-10-17 — Nerva Workspace (B2B pilot)
+
+Ten variables, all read through `agents/core/env_config.py` by
+`agents/core/workspace/config.py` **at call time** (nothing is cached; a systemd install still
+needs a restart for the process to see a changed environment file). Numbers are never refused —
+a typo must not take the workspace down: a value above the maximum is clamped to the maximum, while
+zero, a negative or a non-integer value (`2.5`, `abc`) falls back to the **default**, not to the
+minimum (`env_int(..., minimum=1)` returns the default below its minimum). Neither case logs a
+warning. The whole product surface —
+`/workspace` and `/api/workspace/*` — exists only while `NERVA_WORKSPACE` is on. Install,
+proxy and operations: [`business/PILOT_GUIDE.md`](business/PILOT_GUIDE.md); contract:
+[`business/WORKSPACE_PILOT_SPEC.md`](business/WORKSPACE_PILOT_SPEC.md) §3.
+
+### `NERVA_WORKSPACE`
+
+**Default: OFF** (`config.enabled()`, `env_flag(..., False)`, read per request).
+
+**OFF:** every `/api/workspace/*` answers `404 {"error": "workspace_disabled"}` — refused by
+`db.get_db` before a connection is opened, so a disabled workspace never creates
+`<data root>/business/workspace.db` — and the UI route answers a plain 404 page. The
+scheduler's tick is a no-op, so switching the flag on later needs no scheduler restart. The
+operator CLI (`nerva-run -m agents.core.workspace …`, the pilot guide's §2 wrapper) refuses with
+exit code 2 — as it does, before changing anything, when it is not run with the service's
+environment: no `JARVIS_HOME` (a data root inside the checkout), no database for `reset-link` /
+`promote` / `audit-rekey`, or an audit key that is missing or not the trail's. Its read-only
+`check` command reports the same conditions instead (`ready` exit 0, `NOT ready` exit 1).
+**ON:** the company web app: local accounts (scrypt, httpOnly sessions, CSRF tokens),
+departments and roles, the governed assistant over uploaded documents, reports, four-eyes
+approvals and a keyed audit chain. It never calls the owner's personal pipeline, memory or
+agents; model calls go through the hub router, its guardrails and its data-handling gate.
+**Cost:** a new authenticated surface. Behind a reverse proxy it is meant to be the only
+thing published (the pilot guide's Caddyfile publishes nothing else); it brings its own
+per-user limits (the hub's per-IP limiter skips it) and its data lives in
+`<data root>/business/`, which the nightly backup archives and the hub's forget keeps. That is
+not the `<data root>/workspace/` default root of `JARVIS_FILE_ROOTS` /
+`JARVIS_TERMINAL_LOCAL_ROOTS` and the tool-result spills: with default roots the owner's file
+tools never reach company data and the terminal's working directory stays outside it (a path
+inside an approved terminal command is governed by that approval), and an explicit root that is,
+contains or lies inside `business/` is ignored with one warning (NWS-17). The workspace creates `workspace.db` 0600 whatever the umask and,
+at the first database connection of each process, removes group/other access from everything under
+`business/` — when `business/` is a link to a folder that also holds other data, from the
+workspace's own entries there only, with one warning (SEC-EDGE-1); the rest of the data root still
+follows the service's umask (pilot guide §2 `UMask=0077`).
+**Revert:** unset + restart; the data stays on disk, unreachable, and comes back as it was.
+
+### `NERVA_WORKSPACE_SETUP_CODE`
+
+**Default: unset.** Unset, a code (`secrets.token_urlsafe(18)`) is generated on first need
+and written with mode 0600 to `<data root>/business/setup-code.txt`; the log line names the
+file and the command that prints it, never the code; `nerva-run -m agents.core.workspace
+setup-code` (the pilot guide's §2 wrapper: the service's own environment) prints it; the file is
+deleted after a successful first-run setup. Set, the value is the code (and is never
+deleted — remove it from the environment after setup). Guessing is throttled: 10 wrong codes
+per hour per IP and 50 per hour overall → `429 too_many_attempts`.
+
+### `NERVA_WORKSPACE_COOKIE_SECURE`
+
+**Default: `auto`** — the `nerva_ws_session` cookie carries `Secure` when the request
+arrived as `https` (behind a proxy that needs `JARVIS_TRUSTED_PROXIES`, so the hub believes
+`X-Forwarded-Proto`). A recognized boolean forces it (`1` → always `Secure`, `0` → never);
+anything else falls back to `auto` with one warning naming the variable. **Set it to `1`
+on every proxied pilot install**; on plain http a browser then refuses the cookie, so
+sign-in loops instead of silently working without TLS.
+
+### `NERVA_WORKSPACE_SSO_HEADER` · `NERVA_WORKSPACE_SSO_SECRET`
+
+**Defaults: unset · unset.** SSO through a trusted reverse proxy (e.g. oauth2-proxy behind
+Caddy) needs **both**: the name of the header that carries the user's email
+(`X-Forwarded-Email`) and the shared secret the proxy injects as `X-Nerva-Proxy-Secret`.
+`POST /api/workspace/login/sso` then succeeds only from a `JARVIS_TRUSTED_PROXIES` peer,
+with exactly one email header holding a valid address, exactly one matching secret
+(`compare_digest`) and an **active** user — no auto-provisioning. A later request from a
+trusted peer carrying a different email revokes the session. A malformed
+`JARVIS_TRUSTED_PROXIES` never reaches this route: the boot guard refuses to start the hub
+(`Refusing to start: JARVIS_TRUSTED_PROXIES: …`).
+**Cost:** anyone who can reach the hub from a trusted peer address and knows the secret can
+sign in as any active user — keep the proxy on loopback, strip client-sent copies of both
+headers, and keep the secret out of the proxy's stored config.
+**Revert:** unset either one + restart; `sso_available` turns false and password sign-in is
+unchanged.
+
+### `NERVA_WORKSPACE_MAX_UPLOAD_MB`
+
+**Default: 25** (MiB; `min(env_int(..., 25, minimum=1), 200)`). The largest accepted
+upload; the raw body is streamed and refused with `413 file_too_large` the moment it crosses
+the cap. The body is collected in memory (`documents.read_upload`: a `bytearray`, then a `bytes`
+copy — up to twice the file while it is received), at most 3 uploads in flight per user and no
+process-wide cap, so size RAM for `2 × cap × concurrent uploads`. A reverse proxy in front must allow
+a slightly larger body, or users see the proxy's error instead of the translated one.
+
+### `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS`
+
+**Defaults: 12 (1..168; above 168 → 168, below 1 → 12) · 7 (1..90; above 90 → 90, below 1 → 7).** Idle and absolute lifetime of a
+workspace session. The idle limit is checked on every request against `last_seen_at`, which is
+refreshed at most once a minute (60 s granularity); the absolute expiry (and the cookie's
+`max_age`) is stamped when the session is issued, so a change applies to sessions issued
+afterwards. Longer values keep stolen cookies useful for longer.
+
+### `NERVA_WORKSPACE_MAX_CONCURRENT_LLM`
+
+**Default: 2** (1..16; above 16 → 16, below 1 → 2). The process-wide model semaphore shared by chat answers,
+report runs and the admin model test; a caller waits up to 30 s for a slot, then gets
+`503 model_busy` with `retry_after_seconds=10`. Raise it only when the model server really
+serves that many requests in parallel — otherwise answers just queue inside the server and
+time out (180 s chat, 300 s reports).
+
+### `NERVA_WORKSPACE_SCHEDULER`
+
+**Default: ON** (`env_flag(..., True)`; checked when the hub starts the loop). One tick every
+30 s: due scheduled reports (compare-and-set claims), approval expiry (7 days) and the
+10-minute `executing` sweep, stale report runs (15 min running / 30 min queued), pending
+answers (10 min), documents left `processing` by an extraction that died (claimed over
+10 min ago, or before this hub started → `failed` / `interrupted`, re-indexable at once), report
+emails left `pending` by a hub that stopped mid-send (the run stored before this hub started, or
+15 min ago or more → `delivery_state` `failed` / `delivery_interrupted`, `email.failed` audited,
+the owner and the trigger user notified), plus retention deletes (login attempts 24 h; expired
+invites, dead sessions 7 days; read notifications 90 days). While this process's audit key is not
+the one the audit trail was signed with, the five steps that sign audit rows (due reports,
+approval expiry, the `executing` sweep, stale runs, interrupted deliveries) pause — one WARNING `workspace scheduler paused: …` when the pause starts, no traceback,
+nothing written — and the first tick after the key is back catches up; the other sweeps and the
+deletes keep running. **OFF:** none of that happens — scheduled reports never run, pending
+approvals never expire, a document interrupted by a restart reads `processing` until a
+re-index after 10 min, and a report email the hub was sending when it crashed stays `pending` (a
+graceful shutdown still records `delivery_interrupted` itself). **Revert:** unset + restart.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |
@@ -1217,8 +1352,8 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_TERMINAL_TARGETS` | off (checked in the `terminal_run` tool handler) | Arms the gated `terminal_run` ToolRPC tool: post-approval shell commands on named targets through the audit-chained policy plane, docker transport only (`environments/execution.py`) | Approved commands actually execute in the containment sandbox; **ssh** still refuses (`ssh_transport_not_implemented`), and the local host is available only with `JARVIS_TERMINAL_LOCAL_HOST` + `JARVIS_ACTION_KERNEL` + a durable approval (row below) | Unset + restart: the tool refuses `terminal_targets_disabled`; policy plane and audit chain stay inert |
 
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
-| `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
-| `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
+| `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore; a root reaching `<data root>/business` is dropped with a warning | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
+| `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout); a root reaching `<data root>/business` is dropped with a warning | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
 | `JARVIS_VOICE_COMMANDS` (+ `JARVIS_VOICE_COMMAND_TIMEOUT_S`) | off · `30`s TTS / `120`s STT (cap 600) (`voice/local_providers.py`) | The owner's approved TTS/STT command providers may run (argv-only, private run dir, capped, kill-on-timeout) | An approved program runs as the hub's user; the settings stay ROUTE_ONLY, a set waits for a human, every spawn re-checks the program's identity, off in safe mode | Unset + restart: command voices fall back to the default voice, STT to Whisper or `[STT unavailable]` |
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
 | `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |
@@ -1240,6 +1375,14 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_TLS_INSECURE_TARGETS` | unset (`tls_trust.py` `verify_for`) | Named model provider ids or hosts get clients with certificate verification **off**, each announced by a WARNING naming the URL | A listed target can be impersonated by anyone on the path — list only a LAN server you cannot anchor; ignored (ERROR) under `JARVIS_HARDENED=1` | Unset + restart: every client verifies again |
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) believed only from these networks; XFF walked right-to-left; uvicorn's own proxy-header layer is off under `serve.py` | A listed peer can name any client address — list only proxies you run; a malformed list, or a `FORWARDED_ALLOW_IPS` wider than it, refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
+| `NERVA_WORKSPACE` | off (`workspace/config.py`, read per request) | Serves Nerva Workspace: `/workspace` UI + `/api/workspace/*` (accounts, departments, documents, assistant, reports, approvals, audit) | A new authenticated surface; publish it only through the pilot Caddyfile (workspace paths only, TLS, `JARVIS_TRUSTED_PROXIES=127.0.0.1`) | Unset + restart: every route `404 workspace_disabled`, no database is created; existing data stays on disk |
+| `NERVA_WORKSPACE_SETUP_CODE` | unset → generated 0600 file `<data>/business/setup-code.txt` | Fixes the first-run setup code instead of generating one | A guessable value hands the first admin seat to whoever reaches setup first (throttled 10/h/IP, 50/h overall) | Unset: the generated file is used; it is deleted after setup |
+| `NERVA_WORKSPACE_COOKIE_SECURE` | `auto` (Secure on https) | `1` forces `Secure` on `nerva_ws_session`; `0` never | `0` behind TLS sends the session cookie over plain http if anything ever serves it | Unset: `auto`; junk values log one warning and act as `auto` |
+| `NERVA_WORKSPACE_SSO_HEADER` + `NERVA_WORKSPACE_SSO_SECRET` | unset · unset | Both set: `POST /api/workspace/login/sso` signs in the active user named by the trusted proxy's email header + matching `X-Nerva-Proxy-Secret` | Anyone reaching the hub from a trusted peer with the secret can be any active user — loopback proxy, strip client copies of both headers | Unset either + restart: `sso_disabled`, password sign-in unchanged |
+| `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 (MiB, capped 200) | Larger documents accepted (streamed, early `413 file_too_large`) | Each in-flight upload is held in memory (≤ 3 per user); the proxy body limit must follow | Unset: 25 MiB |
+| `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS` | 12 (1..168) · 7 (1..90) | Longer idle / absolute session lifetime | A stolen cookie stays useful longer | Unset + restart: 12 h idle on the next request; 7 days for sessions issued afterwards |
+| `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` | 2 (1..16) | More simultaneous model calls (chat + reports + model test share it) | Overcommits a model server that cannot run them in parallel → timeouts instead of `model_busy` | Unset + restart: 2 for new callers |
+| `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run, interrupted-delivery, pending-answer and interrupted-extraction sweeps, retention deletes every 30 s (the audited steps pause, with one warning, while the audit key is not the trail's) | Off: scheduled reports never run, pending approvals never expire, interrupted documents stay `processing`, a delivery a crash left `pending` stays so, old rows are never deleted | Unset + restart: on again |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
 | `llm.execute_code_sessions` *(runtime setting)* | on when code enabled · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, requires a current Action Kernel GRANT after its interpreter lock, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Explicitly set `false` + restart: back to the K1 one-shot, kernels destroyed |
 | `llm.tool_result_thresholds` *(runtime setting)* | `{}` (`tool_result_store.py`) | Per-tool byte ceilings for what a result may put in the context window, as `{tool: bytes}`. Beats the tool's own declaration and the `mcp_` family default; loses to a pinned tool (`file_read` is pinned to no limit, because it is how a spilled result is read back) | Raising one lets that tool fill more of the window; lowering it sends more of its output to disk. Nothing is lost either way — over the ceiling the full result is spilled and the model gets a preview naming the file | Set `{}` (no restart): back to the window-scaled default |

@@ -12,6 +12,251 @@
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 
+## Nerva Workspace — pilot B2B (2026-10-17)
+
+> **Directiva owner-ului, 2026-10-17:** *„avansează, pregătește interfața B2B pentru un pilot … produsul să
+> fie de nota 9/10 chiar și pentru pilot, toate funcțiile trebuie să funcționeze"*. Contractul:
+> [`docs/business/WORKSPACE_PILOT_SPEC.md`](docs/business/WORKSPACE_PILOT_SPEC.md) (v3.3) · instalare și operare:
+> [`docs/business/PILOT_GUIDE.md`](docs/business/PILOT_GUIDE.md) · întrebările de business, D1–D7 încă deschise:
+> [`docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md`](docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md).
+> Cinci felii construite și revizuite independent (fiecare cu propriul review adversarial și fix-urile lui),
+> apoi integrarea S6. Flag `NERVA_WORKSPACE`, default off. Numărul de teste de mai jos este cel de la
+> review-ul fiecărei felii; contorul repo-ului se regenerează cu `scripts/status_sync.py`.
+
+- [x] ✅ **NWS-1 — S1 Foundation: accounts, sessions, CSRF, throttling, departments, admin API, keyed audit.**
+  `agents/core/workspace/` `config` · `db` · `errors` · `http` · `identity` · `auth` · `audit` · `notifications`
+  · `effects_api` · `cli` + `agents/core/routers/workspace_auth.py` / `workspace_admin.py`. One SQLite schema
+  migrated through `PRAGMA user_version`; scrypt passwords with a policy; httpOnly `nerva_ws_session` (only its
+  SHA-256 stored); synchronizer CSRF token plus a same-origin rule; login throttling per email and per IP with
+  the attempt reserved before the hash runs, so a parallel burst cannot outrun 5 failures / 15 min; single-use
+  72 h invites carried in the URL fragment; SSO through a trusted proxy (email header + `X-Nerva-Proxy-Secret`);
+  admin users, departments, organisation, audit list / CSV export / chain verification, usage stats; HMAC-SHA256
+  audit chain whose key lives outside the data root; operator CLI `setup-code` · `reset-link` · `promote`.
+  489 tests at review (`tests/test_workspace_foundation_*.py`, route-inventory isolation included); the review
+  fixed 4 major and 6 minor findings (the login race, ids beyond SQLite's range, lone surrogates, nested-JSON
+  recursion, open-redirect notification links, nested secret keys in audit details).
+- [x] ✅ **NWS-2 — S2 Knowledge: uploads, extraction, chunking, FTS5 retrieval, company-wide publishing.**
+  `extract.py` · `documents.py` · `retrieval.py` + `agents/core/routers/workspace_documents.py`; dependencies
+  `pypdf` and an unconditional `tzdata`. Raw-body streamed upload (25 MiB default, 60 per hour per user with
+  re-index included, 3 in flight), extension plus content check, PDF ≤ 500 pages, OOXML only through
+  `archive_safe` and a bounded `defusedxml` iterparse, a dedicated 2-thread extraction pool under 60 s, BM25
+  search scoped in SQL, the `document.company_publish` effect pinned to `{document_id, created_at}`. 437 tests
+  at review, the isolation matrix included; the review fixed 2 critical findings (a cross-department leak
+  through rowid reuse; a GIL-holding ReDoS in text cleaning) and 6 major ones.
+- [x] ✅ **NWS-3 — S3 Assistant: governed chat over company documents, with citations.** `llm.py` ·
+  `assistant.py` + `agents/core/routers/workspace_chat.py` + `tests/support/fake_openai_server.py`. The hub
+  router under `local_only` / `allow_cloud` (never the personal pipeline), the data-handling gate, guardrails
+  binding, one process-wide model semaphore, a 64-character hold-back so a backend failure string is never
+  streamed; SSE `start` / `sources` / `token` / `done` / `error` with pings; only the citations actually used
+  are kept; 30 questions per minute per user counted from the audit; orphaned answers end as `interrupted`.
+  251 tests at review; the review fixed 1 critical finding (a cross-user leak through message-id reuse) and 4
+  major ones.
+- [x] ✅ **NWS-4 — S4 Automation: reports, schedules, exports, four-eyes approvals, SMTP.** `reports.py` ·
+  `scheduler.py` · `approvals.py` · `mailer.py` + `agents/core/routers/workspace_reports.py` /
+  `workspace_approvals.py` + `tests/support/smtp_sink.py`. Manual, daily and weekly runs in IANA time zones
+  (2 at a time, 300 s), Markdown and standalone HTML export, delivery approvals, the `report.share_company`
+  and `email.send` effects, compare-and-set decisions re-validated before execution, 7-day expiry, a 10-minute
+  `executing` sweep, SMTP through the hub's TLS trust store with exact allowed domains and an encrypted
+  password. 261 tests at review, 1,464 across every workspace module; the review fixed 3 major and 5 minor
+  findings (quadratic Markdown regexes, non-ASCII SMTP logins, a run limit reset by deleting reports).
+- [x] ✅ **NWS-5 — S5 Frontend: the Nerva Workspace web app.** `frontend/src/workspace/` +
+  `frontend/workspace.html` + `frontend/vite.workspace.config.ts`, built to `agents/web/workspace/`. React 19
+  with no new runtime dependency; every screen of spec §10 (login, setup, invite / reset, assistant with
+  streaming and a citation drawer, documents, reports with run view and export, shared reports, approvals,
+  notifications, profile, admin users / departments / organisation / email / audit / usage); a typed RO/EN
+  dictionary with identical keys; latin-ext font slices for ă, ș, ț. 159 vitest tests in `src/workspace`
+  (2,336 across the frontend), `tsc --noEmit` clean; the review fixed 1 critical and 7 major findings.
+- [x] ✅ **NWS-6 — S6 documentation: pilot guide, Caddy proxy, flags, module index, contract v3.**
+  [`docs/business/PILOT_GUIDE.md`](docs/business/PILOT_GUIDE.md) (Romanian, from an empty server to a working
+  pilot), [`deploy/workspace/Caddyfile.example`](deploy/workspace/Caddyfile.example) (workspace paths only,
+  HSTS, upload body cap, plus an oauth2-proxy SSO variant; both pass `caddy validate` on Caddy v2.11),
+  `docs/FLAGS.md` (the ten `NERVA_WORKSPACE*` variables), the `docs/ARCHITECTURE.md` module index, the
+  `CLAUDE.md` routing line, and the spec amended to v3 so it matches the code.
+- [x] ✅ **NWS-7 — S6 hub integration and the end-to-end journey.** `agents/web.py` (the six routers plus
+  `workspace_ui`, the `/workspace/assets` mount with `font/woff2`, scheduler start/stop in the lifespan, the
+  per-IP rate-limit exemption, the workspace error and validation handlers),
+  `agents/core/routers/workspace_ui.py`, the workspace directory in `data_purge.KEEP_DIRS` (`business` since
+  NWS-14), AUTOINCREMENT on the tables
+  whose ids leave the row, the cloud-only `provider_may_train` rule, the route-auth matrix and parity
+  snapshots, the `mobile/PARITY.md` row. The Playwright lane `frontend/playwright.workspace.config.ts` runs
+  `frontend/e2e/workspace-journey.spec.ts` (19 serial steps) against the real hub, the fake model server and
+  the SMTP sink, started through a sealed launcher (a fresh `JARVIS_HOME` and key folder, no cloud keys, no
+  `.env`); axe finds no violation on 26 pages at 1280 and 390 px. The journey fixed six product bugs: usage
+  counted from the audit trail, `can_open` on the citations of a shared run, the shared-reports department
+  column, theme and language controls that update at once, badge overflow and split table headers. Final
+  gate run: 27,037 backend tests, 2,340 vitest, the journey 19/19, status files regenerated with
+  `scripts/status_sync.py`. The lane runs in CI since NWS-15 (`e2e.yml`, a control-plane file: owner merges).
+- [x] ✅ **NWS-14 — separate the company data directory from the hub's file-tool root.** The workspace
+  used `data_path("workspace")`, which is also the default root of `JARVIS_FILE_TOOLS` (`JARVIS_FILE_ROOTS`),
+  of `JARVIS_TERMINAL_LOCAL_ROOTS` and of the tool-result spill directory (`workspace/tool_results/`): with
+  file tools on and default roots the owner's personal assistant could read the company database and
+  documents, and `workspace` in `data_purge.KEEP_DIRS` kept the owner's spilled tool results through a
+  forget. **Delivered 2026-10-17:** the workspace moved to its own `data_path("business")`
+  (`agents/core/workspace/config.py` `DATA_DIRNAME`, used by `workspace_dir()`, `setup_code_path()` and the
+  SMTP secret store); `KEEP_DIRS` keeps `business`, so the owner's `workspace/` (spills included) is purged
+  by a forget again. `tests/test_workspace_integration_purge.py` proves the directory is disjoint from the
+  three default roots, that nothing under `agents/` outside the workspace names `business`, that nothing
+  the workspace writes lands in `workspace/`, and that a forget empties the spill directory and the file
+  root while the company database, index, files and secrets survive. The pilot never shipped from
+  `workspace/`, so there is no migration; spec §3, pilot guide §13 / §14 / §19, `docs/FLAGS.md` and
+  `docs/ARCHITECTURE.md` updated. Explicit `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` pointed at
+  the data root still reach `business/` — the guide's checklist says not to (a hub-side refusal belongs to
+  the file-tools owner).
+- [x] ✅ **NWS-15 — the known-issues pass before the pilot assessment.** (1) NWS-14 above. (2)
+  `scheduler.py` and `reports.spawn_run` / `cancel_runs` are loop-aware: each loop task records its owning
+  event loop, `start()` starts one on a loop that has none even while another loop's runs, and `stop()` /
+  `stop_background()` / `cancel_runs()` touch only the running loop's scheduler task and report runs, so a
+  nested lifespan never cancels or awaits a foreign-loop task (two-loop tests in
+  `tests/test_workspace_scheduler.py`). (3) Chat citations carry `can_open` for the reader at read time
+  (`GET /conversations/{id}`, the `done` event, the JSON answer, the feedback `{message}`;
+  `documents.visible_ids`, like report runs); the source drawer takes a `context` and in the assistant
+  hides the document/file links of a citation the reader may no longer open and says why
+  (`source.notOpenableAnswer`, RO/EN; run views keep `source.notOpenable` and get a report-specific note).
+  (4) `tests/support/fake_openai_server.py` no longer writes „Raport: Raport: …" (the prompt's own
+  „Raport:" / „Report:" label is stripped from the heading, deterministically). (5) CI: `e2e.yml` runs the
+  workspace journey after the HUD lane (`npx playwright test -c playwright.workspace.config.ts`,
+  `E2E_PYTHON=python`) and uploads `frontend/e2e/.results/workspace-screens/` on failure; `npm run
+  e2e:workspace` in `frontend/package.json`. (6) Spec v3.1: §1/§13 the lane, §3 the data directory, §5/§9
+  the loop rule, §7 `/admin/stats` counted from the `chat.asked` / `report.run_started` audit rows and
+  `can_open` on run and conversation citations, §10 the source-drawer rule, the shared-reports
+  `department_name` and the optimistic theme/language save with revert. The journey grew to 21 steps: a
+  cited document deleted since (the stored answer keeps the excerpt, `can_open: false`, the drawer explains
+  and offers no link) and the company data found only under `home/business/`; the run view's heading is
+  pinned to „Raport: <name>". Gate run: 1,529 workspace backend tests, 2,341 vitest, the journey 21/21,
+  status files regenerated (27,048 backend tests).
+- [x] ✅ **NWS-16 — the first two assessment rounds (2026-10-18): findings fixed before the pilot.**
+  Backend: the audit key guard — a key file is minted only for an empty trail, and a process whose key
+  is not the newest row's never writes (`503 audit_key_missing` / `audit_key_mismatch`, said once at hub
+  start), with the read-only CLI `check` and the audited `audit-rekey` for a key that is truly lost; the
+  CLI preflight (exit 2, nothing changed, outside the service's environment) and `--base-url`
+  normalisation; `invalid_identifier` sign-ins kept out of the audit; `/admin/stats?tz=` with local-day
+  buckets; `ready_document_count`; `share_pending`; the withdrawal reason on superseded approvals;
+  localized delivery-failure notices; `model_unreachable` from what the backend noted, plus a 2 s / 30 s
+  liveness probe of the local model server; the sweep that fails documents an interrupted extraction left
+  `processing`; no CORS headers on the workspace's paths. Frontend: unsent drafts in `sessionStorage`, the
+  „Primii pași" card, table excerpts and previews rendered through `CitedMarkdown`, tables as cards below
+  768 px, the run view's h1 = the report's name. Round 2 (frontend; written into spec §10 in v3.3,
+  DOC-03): drafts on every other form (`email.<type>.<id>`, `invite.new`, `user.<id>`,
+  `department.<id>|new`, `org`, `smtp` without the password), kept only while the form differs from
+  its prefilled values, with „Renunță la modificări" on the two page forms; `LocalityChip` (locality
+  in words, „Pe serverul companiei") and model ids for admins only; audit values translated through
+  `audit.value.<key>[<code>]`, `from`/`to` as „Înainte"/„După", the scheduler actor named; approval
+  preview headings by status („Acțiunea cerută", „Ce s-ar fi întâmplat la aprobare"); 24 × 24 lead
+  citation chips (`ws-cite--lead`); the verify sentence for rows a re-key left unverified;
+  `.ws-dl` labels at `fit-content(45%)`; `WS_E2E_RESULTS_DIR` for the e2e lane. Test support: the
+  fake model quotes each source's `gist()` (its first prose sentence, or a table's first data row
+  „Lună: Iulie — Județ: Sibiu …") instead of raw Markdown. Docs: spec v3.2; pilot guide §2 (`UMask=0077`, a git
+  checkout or bundle, `python3.12` on Ubuntu with 3.13 present), §14 (the archive name, restore on a new
+  server, the `check` step), §16 (refusals, `check`, `audit-rekey`), §17 (audit-key and backup rows), §18,
+  §20 (every key in the handover); `docs/FLAGS.md` and `docs/ARCHITECTURE.md`.
+- [x] ✅ **NWS-17 — hub-side refusal of explicit file roots that reach the company data.** **Delivered
+  2026-10-19:** `workspace.config.hub_roots_without_workspace`, applied by `FileScope.from_env()` and
+  `local_transport.default_roots()` / `LocalHostTransport.from_env()`, drops a `JARVIS_FILE_ROOTS` /
+  `JARVIS_TERMINAL_LOCAL_ROOTS` entry whose real path is, contains or lies inside `<data root>/business`
+  (one warning, the default root when none is left; `tests/test_workspace_hub_root_guard.py`, 18
+  tests). Still outside it: roots passed in code, and absolute paths in an approved terminal argv —
+  which the warning itself now says for the terminal (REV-POLISH-03).
+- [x] ✅ **NWS-18 — backup CLI ergonomics.** **Delivered 2026-10-19:** `verify` / `restore` take the
+  name from `list` or a path whose real location is in `<data root>/backups/` (`resolve_backup_arg`),
+  and every failure is one line, exit 1 (wrong key, non-empty target, …) or 2 (names no backup), never
+  a traceback (`tests/test_backup_cli.py`, 17 tests); pilot guide §14 / §15 / §17 / §20 simplified.
+  A failed decryption names the key it actually tried (`JARVIS_BACKUP_KEY`, `JARVIS_SECRET_KEY` or
+  the key file) and `verify` / `restore` never make a key file or salt (REV-POLISH-04); a `list` name
+  that links to another archive of the directory names no backup (REV-POLISH-05).
+- [x] ✅ **NWS-19 — the polish pass (2026-10-19): the round-2 residual minors.** The scheduler pauses
+  its four audited steps (five since NWS-22) while the audit key is not the trail's — one WARNING per state change, no
+  traceback, nothing written, catch-up on the first good tick (OPS2-08,
+  `tests/test_workspace_scheduler_audit_key.py`); `workspace.db` created 0600 whatever the umask and
+  `<data root>/business` made private at each process's first connect — a symlinked `business/` at
+  the folder it links to (OPS2-05, REV-POLISH-02, `tests/test_workspace_file_modes.py`; `deploy/systemd` still sets no `UMask`, the guide's drop-in
+  does); every operator hint names `nerva-run` (OPS2-07, `tests/test_workspace_operator_hints.py`);
+  NWS-17 and NWS-18 above; the run view's export group captioned „Exportă" with short labels below
+  480 px (UX-21); two journey steps with the SMTP sink stopped — an approved email that fails
+  honestly and an approved report delivery that cannot be sent, then delivered with the sink back
+  (T-GAP-1; `frontend/e2e/support/workspace_smtp.py`; the journey has 28 steps). Docs: spec v3.3
+  (DOC-03 and this pass), pilot guide §2 / §12–§20, `docs/FLAGS.md`, `docs/ARCHITECTURE.md`. Gate
+  run: 1,658 workspace backend tests (serial, alphabetical, and `-n 6`: no test depends on the
+  order or on `--log-level` any more, REV-POLISH-01), 239 vitest in `src/workspace`, the journey
+  28/28 twice.
+- [x] ✅ **NWS-20 — the run view learns the delivery outcome without a reload.** **Delivered
+  2026-10-19:** schema v2 adds `report_runs.delivery_state` (`pending` → `sent` | `failed`, set with
+  `succeeded` in one statement), the run API returns it, and `RunView` / the report history keep
+  polling while it is `pending`, then show „Trimis pe email către …" or why it was not sent; a
+  shutdown mid-send ends `delivery_interrupted`, and the scheduler resolves a delivery a stopped hub
+  left `pending` at the first tick after a restart (`tests/test_workspace_reports_delivery_state.py`,
+  13 tests; `reports-round4.test.tsx`; journey step 24). Pilot guide §18 no longer lists it.
+- [x] ✅ **NWS-22 — the third assessment round (2026-10-19): last functional gaps.** One line each:
+  - NWS-20 above (backend and frontend halves).
+  - UX-23 — a failed run says why in the chat's own sentence and next step: `error_reason`
+    (`model_unreachable` …) stored next to `error_code`, `describeCode` + the shared `hintKey`
+    (`tests/test_workspace_reports_model_reason.py`, 20 tests).
+  - T-GAP-2 — journey step 27 stops the model server (`frontend/e2e/support/workspace_model.py`):
+    the chat and a report run explain it, the chip reads „Indisponibil", and both recover with the
+    first answer once it is back (`ChatPane` / `RunView` re-read the posture).
+  - UX-22 — locality chips never wrap (short „Local" / „Cloud" in tables), the run history has four
+    columns and fits 1024 px, long source pills stay in their card (journey step 25; `checkPage`
+    layout pass at 1024 px).
+  - SEC-EDGE-1 — a `business/` linked to a folder shared with other data gets only the workspace's
+    own entries made private (`db.own_entry`), with one warning (`tests/test_workspace_file_modes.py`).
+  - OPS3-01 — `nerva-run -m agents.core.backup --help` names `nerva-run` and the service's
+    environment (`backup.PROG`, `tests/test_backup_cli.py`).
+  - DOC-04 — `config.workspace_dir`'s docstring states the rule `secure_storage` applies.
+  - Round-4 review fixes R4-01 … R4-08: a run or report that answers 404 while its page follows
+    it stops polling and shows the not-found state (`RunView`, `ReportDetail`;
+    `reports-gone.test.tsx`, 5 tests); outside its department a shared run's failed delivery
+    hides `error` / `error_code` / `error_reason` with `delivery_state` and `delivered_to`; schema
+    v3 `report_runs.delivery_attempted`, so the restart sweep audits the count the email was
+    addressed to; the shared-folder WARNING's verb agrees with its count; tests that pin the
+    one-commit `succeeded` + `pending`, the shutdown guard, the failed branch's compare-and-set
+    and the `files/` symlink guard (`tests/test_workspace_reports_delivery_state.py` +7,
+    `tests/test_workspace_file_modes.py` +4; each killed its mutation).
+  - Docs: spec v3.4, pilot guide §10 / §12 / §13 / §15 / §17 / §18, `docs/FLAGS.md`,
+    `docs/ARCHITECTURE.md`, `docs/OWNER_TASKS.md` (NWS-21).
+  - Gate run: 1,696 workspace backend tests (+38) and 87 backup tests (1,783 together, `-n 4`), 253
+    vitest in `src/workspace` (23 files), the journey 31/31 twice.
+
+**Open follow-ups**
+
+- [ ] ⬜ **NWS-8 — native OIDC sign-in.** SSO works only through a trusted proxy today (oauth2-proxy in front
+  of Caddy, pilot guide §11). An in-app OIDC client (discovery, PKCE, ID-token validation, group → role
+  mapping) removes the extra hop. Gated on D3 in the kickoff record.
+- [ ] ⬜ **NWS-9 — MCP-first business connectors.** Knowledge comes only from uploaded documents. ERP, CRM,
+  accounting and e-Factura through MCP servers are the next slice (spec §0, D4); gated on the owner's answers
+  to D1–D4.
+- [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** A PDF without a text layer fails with `no_text`; the original is
+  kept, so a re-index works once text exists. Needs a local OCR engine with its own time and memory bounds.
+- [ ] ⬜ **NWS-11 — a killable extraction subprocess.** pypdf has no checkpoint inside a page, so one
+  pathological page keeps a pool thread busy past the 60 s bound (the document is still marked `timeout`).
+  Run extraction in a subprocess with `RLIMIT_AS` and a hard kill.
+- [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
+  lazy-load the admin console and reports to cut the first load.
+- [ ] ⬜ **NWS-21 — the pilot tag (owner).** No release tag holds the workspace yet (`v1.0.0` is older);
+  pilot guide §2 installs from `<eticheta-pilotului>` (§15 upgrades from tag to tag) and says the
+  owner cuts it after approving the pilot work, without naming it. Owner lane: merge PR #1256, tag,
+  and give the tag's name to the installer — the row „NWS-21 — merge the Nerva Workspace pilot PR
+  (#1256) and cut the pilot tag" in `docs/OWNER_TASKS.md` (owner gates).
+- [ ] ⬜ **NWS-23 — round-3 residual minors (found while fixing NWS-22, not yet fixed).** One line each:
+  - The reports list („Rapoarte", `ReportsList.tsx`) scrolls sideways inside its frame between 768
+    and 1180 px (at 1024 „Următoarea rulare" and „Livrare pe email" sit behind the scroll; the sticky
+    actions column keeps the row menu reachable). Needs a small design call (icon-only run button,
+    or merged columns in that range).
+  - At 320 px the run view's „Vizibilitate" badge „Partajat în companie" wraps inside its pill (the
+    `ws-run-meta__wide` row treatment would fix it).
+  - A run page opened on a run that has already failed announces nothing to a screen reader (the
+    notice is the page); with the model server down a run fails in milliseconds, so after „Rulează
+    acum" the outcome is usually not spoken. Announce it when the page was reached from „Rulează
+    acum" / „Rulează din nou".
+  - `backup restore <archive> <target>` with a dangling-symlink target says `target … is not empty`
+    (`mkdir` → `FileExistsError` → that line); nothing is restored, only the wording is wrong
+    (documented in pilot guide §17; any `agents/core/backup.py` edit re-opens Hermes H503's review).
+  - In a shared `business/` target, a foreign file whose name starts with `workspace.db-` or
+    `secrets.enc.` matches `db.own_entry` and is tightened to 0600 (narrow the sibling patterns to
+    the exact `-wal`/`-shm`/`-journal` and the secret store's own temp names).
+- [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
+  `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
+  contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.
+
+
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
 - 2026-10-08 local continuation (H18.30): native mobile History now binds subsequent turns to the exact selected session; streaming adopts the server's returned ID. ID and settled transcript are stored together under an opaque connection scope, rotated on URL/user/admin credential changes. Hydration, cancelled streams and late History responses cannot replace a newer conversation. New uses the existing owner-governed `/new` command; `/new` and `/reset` clear the view only after confirmed ID rollover, while `/undo` reloads the returned transcript. Chat and History forward configured owner credentials; no authority is inferred. Native device/live-Hub acceptance remains open, and H063 stays partial for its existing server-side gaps. Local evidence: `mobile/docs/h1830-session-continuity.md`.
