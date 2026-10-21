@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,7 +26,8 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core import memory_tool  # noqa: E402
-from agents.core.cognition.memory import CoreMemory  # noqa: E402
+from agents.core.cognition import memory as cognition_memory  # noqa: E402
+from agents.core.cognition.memory import CoreMemory, CoreMemoryDrift  # noqa: E402
 from agents.core.memory_tool import (  # noqa: E402
     MemoryToolError,
     UndoStore,
@@ -589,3 +591,937 @@ def test_an_undo_whose_put_back_also_fails_claims_no_put_back(rig, tmp_path, cap
     assert "could not be put back" in caplog.text
     record(actor="owner", action="other", why="the next record")
     assert _chain(tmp_path) == ["memory.undo", "other"]
+
+
+# ── H423: the budget on the batch's final state, the file lock, drift, the turn cap ──
+
+def test_the_budget_holds_for_the_batch_final_state():
+    after, rows = plan([_op("add", text="c"), _op("remove", old_text="a")],
+                       {"memory": ["a", "b"], "user": []}, {"memory": 2, "user": 20})
+    assert after["memory"] == ["b", "c"] and [r["action"] for r in rows] == ["add", "remove"]
+    with pytest.raises(MemoryToolError) as caught:
+        plan([_op("add", text="c"), _op("add", text="d"), _op("remove", old_text="a")],
+             {"memory": ["a", "b"], "user": []}, {"memory": 2, "user": 20})
+    assert caught.value.reason == "memory_full" and "3 facts" in caught.value.detail
+
+
+@pytest.mark.asyncio
+async def test_an_add_before_the_remove_that_makes_room_is_written(tmp_path):
+    living = _living(tmp_path, cap=2, core=("a", "b"))
+    server = ToolRPCServer()
+    register_memory_tool(server, living=lambda: living, audit=lambda: _Audit(),
+                         posture=lambda: "operator/owner", origin=lambda: "generated",
+                         store=UndoStore(tmp_path / "undo.json"))
+    reply = (await server.handle({"tool": "memory", "args": {"operations": [
+        _op("add", text="c"), _op("remove", old_text="a")]}}))["result"]
+    assert reply["ok"] is True and living.core.list() == ["b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_a_write_rereads_what_another_process_saved(rig, tmp_path):
+    other = CoreMemory(cap=20, path=tmp_path / "core.json")      # another process's view of the ring
+    other.put("saved by another process")
+    reply = await _call(rig, {"operations": [_op("add", text="mine")]})
+    assert reply["memory"] == ["saved by another process", "mine"]
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["saved by another process", "mine"]
+    assert (await _call(rig, {}))["memory"] == ["saved by another process", "mine"]
+
+
+@pytest.mark.asyncio
+async def test_a_write_waits_for_another_process_holding_the_ring_lock(rig, tmp_path):
+    import subprocess  # nosec B404 - the test runs its own interpreter
+
+    held = tmp_path / "held"
+    script = (
+        "import sys, time\n"
+        f"sys.path.insert(0, {str(repo_root)!r})\n"
+        "from agents.core.cognition.memory import CoreMemory\n"
+        f"ring = CoreMemory(cap=20, path={str(tmp_path / 'core.json')!r})\n"
+        "with ring.locked():\n"          # the ring's own lock, reentrant for its put
+        "    ring.put('written under the lock')\n"
+        f"    open({str(held)!r}, 'w').close()\n"
+        "    time.sleep(0.6)\n"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", script])  # nosec B603 - the test's own interpreter
+    try:
+        for _ in range(1000):
+            if held.exists() or proc.poll() is not None:
+                break
+            await asyncio.sleep(0.01)
+        assert held.exists(), "the other process never took the lock"
+        started = time.monotonic()
+        reply = await _call(rig, {"operations": [_op("add", text="mine")]})
+        waited = time.monotonic() - started
+    finally:
+        proc.wait(timeout=20)
+    assert proc.returncode == 0
+    assert reply["memory"] == ["written under the lock", "mine"]
+    # The call really waited for the other process (a no-op lock would not): it held the
+    # lock for 0.6 s after the flag, minus at most one 10 ms poll before the flag was seen.
+    assert waited >= 0.45, f"the write did not wait for the other process's lock ({waited:.2f}s)"
+
+
+@pytest.mark.asyncio
+async def test_a_ring_lock_held_too_long_refuses_and_writes_nothing(rig, tmp_path, monkeypatch):
+    monkeypatch.setattr(memory_tool, "LOCK_TIMEOUT_S", 0.2)
+    fd = _hold(tmp_path / "user.json.lock")   # its own descriptor: it conflicts like another process
+    try:
+        reply = await _call(rig, {"operations": [_op("add", text="m")]})
+    finally:
+        _let_go(fd)
+    assert reply["reason"] == "memory_locked"
+    assert rig.living.core.list() == [] and rig.audit.rows == [] and rig.store.recent() == []
+    assert (await _call(rig, {"operations": [_op("add", text="m")]}))["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edited_ring_is_not_written_over_but_kept_and_named(rig, tmp_path):
+    first = await _call(rig, {"operations": [_op("add", text="a")]})
+    hand = '{"facts": ["a", "typed by the owner"]}\n'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    reply = await _call(rig, {"operations": [_op("add", text="b")]})
+    assert reply["reason"] == "memory_drift"
+    baks = sorted(tmp_path.glob("core.json.*.bak"))
+    assert len(baks) == 1 and baks[0].read_text(encoding="utf-8") == hand
+    assert str(baks[0]) in reply["detail"] and "(memory)" in reply["detail"]
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand        # nothing written over it
+    assert [row["action"] for row in rig.audit.rows] == ["memory.write"]
+    with pytest.raises(MemoryToolError) as caught:          # the hand edit moved the ring: no undo over it
+        undo(first["undo_ref"], living=rig.living, audit=rig.audit, store=rig.store)
+    assert caught.value.reason == "memory_changed_meanwhile"
+    # The edit is adopted: the model reads it and its next write builds on it.
+    assert (await _call(rig, {}))["memory"] == ["a", "typed by the owner"]
+    again = await _call(rig, {"operations": [_op("add", text="b")]})
+    assert again["memory"] == ["a", "typed by the owner", "b"]
+    assert len(list(tmp_path.glob("core.json.*.bak"))) == 1
+
+
+def test_an_undo_over_a_hand_edited_ring_refuses_and_keeps_it(rig, tmp_path):
+    reply = asyncio.run(_call(rig, {"operations": [_op("add", "user", text="u")]}))
+    (tmp_path / "user.json").write_text('{"facts": ["edited"]}', encoding="utf-8")
+    with pytest.raises(MemoryToolError) as caught:
+        undo(reply["undo_ref"], living=rig.living, audit=rig.audit, store=rig.store)
+    assert caught.value.reason == "memory_drift" and "user.json." in caught.value.detail
+    assert (tmp_path / "user.json").read_text(encoding="utf-8") == '{"facts": ["edited"]}'
+
+
+def test_every_ring_save_records_the_digest_of_its_bytes(tmp_path):
+    ring = CoreMemory(cap=3, path=tmp_path / "ring.json")
+    ring.put("a")
+    digest = json.loads((tmp_path / "ring.json.sha256").read_text())["sha256"]
+    assert digest == hashlib.sha256((tmp_path / "ring.json").read_bytes()).hexdigest()
+    ring.clear()
+    digest = json.loads((tmp_path / "ring.json.sha256").read_text())["sha256"]
+    assert digest == hashlib.sha256((tmp_path / "ring.json").read_bytes()).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_a_turn_that_keeps_hitting_a_full_ring_gets_a_terminal_refusal(tmp_path):
+    from agents.core.tool_rpc import bind_tool_turn, reset_tool_turn
+
+    living = _living(tmp_path, cap=1, core=("a",))
+    server = ToolRPCServer()
+    register_memory_tool(server, living=lambda: living, audit=lambda: _Audit(),
+                         posture=lambda: "operator/owner", origin=lambda: "generated",
+                         store=UndoStore(tmp_path / "undo.json"))
+
+    async def call(op):
+        return (await server.handle({"tool": "memory", "args": {"operations": [op]}}))["result"]
+
+    cap = memory_tool.FULL_ATTEMPTS_PER_TURN
+    token = bind_tool_turn("turn-1")
+    try:
+        reasons = [(await call(_op("add", text=f"f{n}")))["reason"] for n in range(cap)]
+        assert reasons == ["memory_full"] * (cap - 1) + ["memory_full_terminal"]
+        last = await call(_op("replace", old_text="a", text="b"))
+        assert last["reason"] == "memory_full_terminal" and last["terminal"] is True
+        assert "stop" in last["detail"] and living.core.list() == ["a"]
+    finally:
+        reset_tool_turn(token)
+    token = bind_tool_turn("turn-2")                       # a new turn starts afresh
+    try:
+        assert (await call(_op("add", text="g")))["reason"] == "memory_full"
+    finally:
+        reset_tool_turn(token)
+    for n in range(cap + 1):                               # a script's calls carry no turn
+        assert (await call(_op("add", text=f"s{n}")))["reason"] == "memory_full"
+
+
+# ── H423 review fixes: every writer takes the lock, strict adoption, the loop stays free ──
+
+def _hold(path):
+    """The ring lock on *path* through a descriptor of its own, taken with the same
+    portable helper the rings use (flock on POSIX, msvcrt.locking on Windows): it
+    conflicts like another process's lock, even from this process."""
+    return cognition_memory._flock(Path(path), time.monotonic() + 5)
+
+
+def _let_go(fd):
+    cognition_memory._release_fd(fd)
+
+
+def test_a_review_put_over_a_hand_edit_keeps_the_edit_and_a_copy(tmp_path):
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    assert ring.put("one") is True
+    hand = '{"facts": ["one", "HAND"]}'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    assert ring.put("from-review") is True
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["one", "HAND", "from-review"]
+    baks = list(tmp_path.glob("core.json.*.bak"))
+    assert len(baks) == 1 and baks[0].read_text(encoding="utf-8") == hand
+    assert ring.put("HAND") is False                       # already there: no change reported
+
+
+@pytest.mark.asyncio
+async def test_a_stale_writer_in_the_same_process_never_loses_a_tool_write(rig, tmp_path):
+    stale = CoreMemory(cap=20, path=tmp_path / "core.json")   # loaded before the tool wrote
+    await _call(rig, {"operations": [_op("add", text="mine")]})
+    stale.put("theirs")
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["mine", "theirs"]
+    stale.clear()
+    rig.living.core.put("after")                           # a forget by another writer is not undone
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["after"]
+
+
+@pytest.mark.asyncio
+async def test_a_plain_put_from_another_process_never_loses_a_tool_write(rig, tmp_path):
+    import subprocess  # nosec B404 - the test runs its own interpreter
+
+    ready, go = tmp_path / "ready", tmp_path / "go"
+    script = (
+        "import os, sys, time\n"
+        f"sys.path.insert(0, {str(repo_root)!r})\n"
+        "from agents.core.cognition.memory import CoreMemory\n"
+        f"ring = CoreMemory(cap=20, path={str(tmp_path / 'core.json')!r})\n"
+        f"open({str(ready)!r}, 'w').close()\n"
+        f"while not os.path.exists({str(go)!r}):\n"
+        "    time.sleep(0.01)\n"
+        "ring.put('theirs')\n"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", script])  # nosec B603 - the test's own interpreter
+    try:
+        for _ in range(2000):
+            if ready.exists() or proc.poll() is not None:
+                break
+            await asyncio.sleep(0.01)
+        assert ready.exists(), "the other process never loaded the ring"
+        await _call(rig, {"operations": [_op("add", text="mine")]})
+        go.touch()
+    finally:
+        proc.wait(timeout=20)
+    assert proc.returncode == 0
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["mine", "theirs"]
+
+
+def test_the_review_counts_only_facts_its_put_kept(tmp_path):
+    from agents.core.learning.background_review import BackgroundReviewer
+
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    ring.put("a")
+    (tmp_path / "core.json").write_text('{"facts": ["a", "typed"]}', encoding="utf-8")
+    review = SimpleNamespace(_detect=lambda fact: False)
+    actions, counts = [], {"facts": 0, "blocked": 0}
+    BackgroundReviewer._put_facts(review, ["typed"], ring, "Core memory", actions, counts)
+    assert counts["facts"] == 0 and actions == [] and ring.list() == ["a", "typed"]
+    (tmp_path / "core.json").write_text("{broken", encoding="utf-8")
+    BackgroundReviewer._put_facts(review, ["new"], ring, "Core memory", actions, counts)
+    assert counts["facts"] == 0 and (tmp_path / "core.json").read_text(encoding="utf-8") == "{broken"
+
+
+def test_a_put_waits_for_the_ring_lock(tmp_path):
+    import threading
+
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    fd = _hold(tmp_path / "core.json.lock")
+    done = threading.Event()
+    worker = threading.Thread(target=lambda: (ring.put("x"), done.set()))
+    try:
+        worker.start()
+        time.sleep(0.3)
+        assert not done.is_set(), "put wrote without the ring lock"
+    finally:
+        _let_go(fd)
+    worker.join(timeout=10)
+    assert done.is_set() and ring.list() == ["x"]
+
+
+def test_the_ring_and_its_digest_are_written_under_the_ring_lock(tmp_path, monkeypatch):
+    import os
+
+    from agents.core.persistence import json_store
+
+    seen = []
+    real = json_store.atomic_write_json
+
+    def spy(path, data, **kwargs):
+        if Path(path).name in ("core.json", "core.json.sha256"):
+            fd = os.open(tmp_path / "core.json.lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o600)
+            if cognition_memory._try_lock_fd(fd):
+                seen.append((Path(path).name, "unlocked"))
+                cognition_memory._release_fd(fd)
+            else:
+                seen.append((Path(path).name, "locked"))
+                os.close(fd)
+        return real(path, data, **kwargs)
+
+    monkeypatch.setattr(json_store, "atomic_write_json", spy)
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    ring.put("a")
+    ring.compare_and_set(["a"], ["a", "b"])
+    ring.clear()
+    assert seen and all(state == "locked" for _, state in seen), seen
+    assert {name for name, _ in seen} == {"core.json", "core.json.sha256"}
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edit_that_is_not_valid_json_is_never_written_over(rig, tmp_path):
+    await _call(rig, {"operations": [_op("add", text="a")]})
+    hand = '{"facts": ["a", "owner note",]}'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    for _ in range(2):
+        reply = await _call(rig, {"operations": [_op("add", text="b")]})
+        assert reply["reason"] == "memory_drift_unreadable", reply
+        assert "not valid JSON" in reply["detail"]
+        assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand
+    baks = list(tmp_path.glob("core.json.*.bak"))
+    assert len(baks) == 1 and baks[0].read_text(encoding="utf-8") == hand and str(baks[0]) in reply["detail"]
+    with pytest.raises(CoreMemoryDrift):                   # the review's put does not write over it either
+        rig.living.core.put("from the review")
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand
+    (tmp_path / "core.json").write_text('{"facts": ["a", "owner note"]}', encoding="utf-8")   # the owner fixes it
+    assert (await _call(rig, {"operations": [_op("add", text="b")]}))["reason"] == "memory_drift"
+    assert (await _call(rig, {"operations": [_op("add", text="b")]}))["memory"] == ["a", "owner note", "b"]
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edit_over_the_cap_is_refused_not_cut(tmp_path):
+    living = _living(tmp_path, cap=3, core=("f0",))
+    server = ToolRPCServer()
+    register_memory_tool(server, living=lambda: living, audit=lambda: _Audit(),
+                         posture=lambda: "operator/owner", origin=lambda: "generated",
+                         store=UndoStore(tmp_path / "undo.json"))
+    hand = json.dumps({"facts": [f"f{n}" for n in range(5)]})
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    for _ in range(2):
+        reply = (await server.handle({"tool": "memory", "args": {"operations": [
+            _op("remove", old_text="f4")]}}))["result"]
+        assert reply["reason"] == "memory_drift_unreadable" and "5 facts, over its cap of 3" in reply["detail"]
+        assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edit_with_a_repeated_fact_is_refused_not_cut(rig, tmp_path):
+    await _call(rig, {"operations": [_op("add", text="a")]})
+    hand = '{"facts": ["a", "b", "a"]}'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    reply = await _call(rig, {"operations": [_op("add", text="c")]})
+    assert reply["reason"] == "memory_drift_unreadable" and "twice" in reply["detail"]
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == hand
+
+
+def test_a_ring_saved_before_digests_existed_gets_a_baseline_on_load(tmp_path):
+    (tmp_path / "core.json").write_text('{"facts": ["old"]}', encoding="utf-8")
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    assert (tmp_path / "core.json.sha256").exists()
+    hand = '{"facts": ["old", "edited before the first save"]}'
+    (tmp_path / "core.json").write_text(hand, encoding="utf-8")
+    ring.put("new")
+    assert ring.list() == ["old", "edited before the first save", "new"]
+    assert [b.read_text(encoding="utf-8") for b in tmp_path.glob("core.json.*.bak")] == [hand]
+
+
+def test_a_ring_with_no_digest_and_an_unreadable_file_is_kept_not_overwritten(tmp_path):
+    (tmp_path / "core.json").write_text("not json", encoding="utf-8")
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    with pytest.raises(CoreMemoryDrift) as caught:
+        ring.put("x")
+    assert caught.value.problem == "it is not valid JSON" and caught.value.bak is not None
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == "not json"
+    assert len(list(tmp_path.glob("core.json.*.bak"))) == 1
+
+
+def test_a_forget_removes_the_copies_of_hand_edits(tmp_path):
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    ring.put("a")
+    (tmp_path / "core.json").write_text('{"facts": ["a", "private"]}', encoding="utf-8")
+    ring.put("b")
+    assert list(tmp_path.glob("core.json.*.bak"))
+    assert ring.clear() == 3
+    assert not list(tmp_path.glob("core.json.*.bak")) and ring.list() == []
+
+
+@pytest.mark.asyncio
+async def test_waiting_for_a_ring_lock_does_not_block_the_event_loop(rig, tmp_path, monkeypatch):
+    monkeypatch.setattr(memory_tool, "LOCK_TIMEOUT_S", 0.5)
+    fd = _hold(tmp_path / "core.json.lock")
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    task = asyncio.create_task(ticker())
+    try:
+        reply = (await rig.server.handle({"tool": "memory", "args": {"operations": [
+            _op("add", text="m")]}}, actor="jarvis"))["result"]
+    finally:
+        task.cancel()
+        _let_go(fd)
+    assert reply["reason"] == "memory_locked"
+    assert ticks >= 10, f"the event loop ran only {ticks} times while the call waited"
+
+
+# ── H423 review round 2: a real lock on Windows, writers off the loop, a forget that never
+#    writes unlocked, the reflection's per-lesson refusal, drift on the read path ──
+
+class _FakeMsvcrt:
+    """msvcrt.locking as Windows behaves: a byte-range lock over (offset, nbytes) that a
+    second descriptor cannot take while it is held."""
+
+    LK_UNLCK, LK_NBLCK = 0, 2
+
+    def __init__(self):
+        self.calls, self.held_by = [], None
+
+    def locking(self, fd, mode, nbytes):
+        import os
+
+        self.calls.append((mode, nbytes, os.lseek(fd, 0, os.SEEK_CUR)))
+        if mode == self.LK_NBLCK:
+            if self.held_by is not None:
+                raise OSError(36, "Resource deadlock avoided")
+            self.held_by = fd
+        elif mode == self.LK_UNLCK and self.held_by == fd:
+            self.held_by = None
+
+
+def test_the_ring_lock_is_a_real_lock_where_msvcrt_is_the_os_lock(tmp_path, monkeypatch):
+    import threading
+
+    from agents.core.cognition.memory import CoreMemoryLocked
+
+    fake = _FakeMsvcrt()
+    monkeypatch.setitem(sys.modules, "msvcrt", fake)
+    monkeypatch.setattr(cognition_memory, "_lock_kind", lambda: "msvcrt")
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    fd = _hold(tmp_path / "core.json.lock")                # another writer holds byte 0
+    try:
+        assert (tmp_path / "core.json.lock").stat().st_size >= 1   # a byte for the range lock
+        with pytest.raises(CoreMemoryLocked), ring.locked(timeout=0.1):
+            pass
+        done = threading.Event()
+        worker = threading.Thread(target=lambda: (ring.put("x"), done.set()))
+        worker.start()
+        time.sleep(0.3)
+        assert not done.is_set(), "put wrote while another descriptor held the Windows lock"
+    finally:
+        _let_go(fd)
+    worker.join(timeout=10)
+    assert done.is_set() and ring.list() == ["x"] and fake.held_by is None
+    assert all(nbytes == 1 and offset == 0 for _, nbytes, offset in fake.calls)
+    assert fake.calls[-1][0] == fake.LK_UNLCK                # released before the close
+
+
+def test_a_platform_without_an_os_lock_is_warned_about(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(cognition_memory, "_lock_kind", lambda: "none")
+    monkeypatch.setattr(cognition_memory, "_NO_OS_LOCK_WARNED", False)
+    ring = CoreMemory(cap=20, path=tmp_path / "core.json")
+    with caplog.at_level(logging.WARNING, logger="jarvis.cognition.memory"):
+        assert ring.put("x") is True
+    assert "neither fcntl nor msvcrt" in caplog.text
+
+
+async def _ticks_while(coro):
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    task = asyncio.create_task(ticker())
+    try:
+        result = await coro
+    finally:
+        task.cancel()
+    return result, ticks
+
+
+@pytest.mark.asyncio
+async def test_the_review_waits_for_a_ring_lock_off_the_event_loop(tmp_path, monkeypatch):
+    from agents.core.learning.background_review import BackgroundReviewer
+
+    monkeypatch.setattr(cognition_memory, "LOCK_TIMEOUT_S", 0.6)
+    living = _living_memory(tmp_path)
+
+    async def llm(prompt):
+        return json.dumps({"user_facts": [], "agent_facts": ["LM Studio on :1234"], "corrections": [],
+                           "skill_updates": [], "nothing": False})
+
+    fd = _hold(tmp_path / "core.json.lock")
+    try:
+        result, ticks = await _ticks_while(BackgroundReviewer(llm, living=living).run("hi", "hello"))
+    finally:
+        _let_go(fd)
+    assert result["ran"] is True and living.core.list() == []        # the locked ring kept nothing
+    assert ticks >= 20, f"the event loop ran only {ticks} times while the review waited"
+
+
+def _living_memory(tmp_path):
+    from agents.core.cognition.memory import LivingMemory
+
+    return LivingMemory(core_path=tmp_path / "core.json", tiers_path=tmp_path / "t.json",
+                        user_path=tmp_path / "user.json")
+
+
+def _reflector(tmp_path, living, lessons):
+    from agents.core.autonomy.reflection import DailyReflector, ReflectionRunStore
+    from agents.core.memory.manager import MemoryManager
+
+    async def llm(prompt):
+        return json.dumps({"entities": [], "relations": [], "lessons": lessons})
+
+    return DailyReflector(MemoryManager(), llm, living_memory=living,
+                          run_store=ReflectionRunStore(tmp_path / "runs.json"))
+
+
+def test_the_reflection_keeps_encoding_lessons_past_an_unreadable_ring(tmp_path, caplog):
+    from datetime import date
+
+    living = _living_memory(tmp_path)
+    living.core.put("a")
+    (tmp_path / "core.json").write_text("{broken", encoding="utf-8")
+    lessons = ["lesson one", "lesson two", "lesson three"]
+    with caplog.at_level(logging.WARNING):
+        out = _reflector(tmp_path, living, lessons)._consolidate_living_memory({"lessons": lessons}, date.today())
+    assert out == {"available": True, "encoded": 3, "core": 0}
+    assert len(living.records(prefix="reflection:")) == 3
+    assert caplog.text.count("reflection lesson not kept in core memory") == 3
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == "{broken"
+
+
+def test_the_reflection_counts_only_lessons_its_put_kept(tmp_path):
+    from datetime import date
+
+    living = _living_memory(tmp_path)
+    today = date.today()
+    living.core.put(f"{today.isoformat()}: known already")
+    out = _reflector(tmp_path, living, [])._consolidate_living_memory({"lessons": ["known already", "new"]}, today)
+    assert out == {"available": True, "encoded": 2, "core": 1}
+
+
+def _async_return(value):
+    async def _coro(*args, **kwargs):
+        return value
+    return _coro
+
+
+@pytest.mark.asyncio
+async def test_the_reflection_waits_for_a_ring_lock_off_the_event_loop(tmp_path, monkeypatch):
+    monkeypatch.setattr(cognition_memory, "LOCK_TIMEOUT_S", 0.3)
+    living = _living_memory(tmp_path)
+    reflector = _reflector(tmp_path, living, ["lesson one", "lesson two"])
+    reflector._gather_context = _async_return("user: hi")
+    fd = _hold(tmp_path / "core.json.lock")
+    try:
+        result, ticks = await _ticks_while(reflector.run(force=True))
+    finally:
+        _let_go(fd)
+    assert result["living_memory"] == {"available": True, "encoded": 2, "core": 0}
+    assert ticks >= 20, f"the event loop ran only {ticks} times while the reflection waited"
+
+
+def test_a_forget_never_writes_a_ring_without_its_lock(tmp_path, monkeypatch):
+    from agents.core.cognition.memory import CoreMemoryLocked
+
+    monkeypatch.setattr(cognition_memory, "CLEAR_LOCK_TIMEOUT_S", 0.2, raising=False)
+    monkeypatch.setattr(cognition_memory, "LOCK_TIMEOUT_S", 0.2)
+    living = _living_memory(tmp_path)
+    living.core.put("remembered")
+    living.user_core.put("who the owner is")
+    living.encode("m1", {"x": 1}, surprise=1.0)
+    ring_bytes = (tmp_path / "core.json").read_bytes()
+    fd = _hold(tmp_path / "core.json.lock")        # a writer that has reread the ring holds it
+    try:
+        with pytest.raises(CoreMemoryLocked) as caught:
+            living.clear()
+        # Nothing was written under the holder's feet; the other stores were still forgotten.
+        assert (tmp_path / "core.json").read_bytes() == ring_bytes
+        assert "core" in str(caught.value)
+        assert living.user_core.list() == [] and living.records() == []
+        # The holder now saves what it reread: the forget was reported incomplete, not lost.
+        holder = CoreMemory(cap=20, path=tmp_path / "core.json")
+        holder._facts = ["remembered", "from the holder"]
+        holder._save()
+    finally:
+        _let_go(fd)
+    assert living.clear()["core"] == 2                     # run again: the forget wins
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_purge_reports_a_ring_it_could_not_forget(tmp_path, monkeypatch):
+    from agents.core import data_purge
+
+    monkeypatch.setattr(cognition_memory, "CLEAR_LOCK_TIMEOUT_S", 0.2, raising=False)
+    monkeypatch.setattr(cognition_memory, "LOCK_TIMEOUT_S", 0.2)
+    living = _living_memory(tmp_path)
+    living.core.put("remembered")
+    orch = SimpleNamespace(cognition=SimpleNamespace(module=lambda name: living))
+    fd = _hold(tmp_path / "core.json.lock")
+    try:
+        cleared, failed = await data_purge.clear_live_memory(orch)
+    finally:
+        _let_go(fd)
+    assert "cognition_memory" not in cleared
+    assert any(row.startswith("cognition_memory:") for row in failed), failed
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["remembered"]
+
+
+@pytest.mark.asyncio
+async def test_a_read_over_an_unreadable_hand_edit_reports_it(rig, tmp_path):
+    await _call(rig, {"operations": [_op("add", text="a")]})
+    (tmp_path / "core.json").write_text('{"facts": ["a",]}', encoding="utf-8")
+    reply = await _call(rig, {})
+    assert reply["ok"] is False and reply["reason"] == "memory_drift_unreadable"
+    assert "not valid JSON" in reply["detail"] and "(memory)" in reply["detail"]
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == '{"facts": ["a",]}'
+    (tmp_path / "core.json").write_text('{"facts": ["a", "fixed"]}', encoding="utf-8")
+    assert (await _call(rig, {}))["memory"] == ["a", "fixed"]
+
+
+# ── H423 review round 3: a new session's prompt rereads the rings; a forget leaves them writable ──
+
+def _session_block(living, session):
+    """The core block a new session of the orchestrator would freeze."""
+    from agents.core.orchestrator import Orchestrator
+
+    cog = SimpleNamespace(sub_enabled=lambda name: True, module=lambda name: living)
+    return Orchestrator._living_core_memory_block(SimpleNamespace(cognition=cog, session_id=session))
+
+
+def test_a_hand_edit_reaches_the_next_sessions_core_block(tmp_path):
+    writer = _living_memory(tmp_path)
+    writer.core.put("wrong fact")
+    writer.core.put("keep")
+    prompt_side = _living_memory(tmp_path)               # the process that renders the prompt
+    assert "- wrong fact" in _session_block(prompt_side, "s1")
+    (tmp_path / "core.json").write_text('{"facts": ["keep"]}', encoding="utf-8")   # the owner deletes it
+    block = _session_block(prompt_side, "s2")
+    assert "- keep" in block and "wrong fact" not in block
+    assert list(tmp_path.glob("core.json.*.bak")), "the hand edit is kept as a copy"
+
+
+def test_another_process_write_reaches_the_next_sessions_core_block(tmp_path):
+    prompt_side = _living_memory(tmp_path)
+    prompt_side.user_core.put("the owner lives in Cluj")
+    assert "Cluj" in _session_block(prompt_side, "s1")
+    other = _living_memory(tmp_path)                     # stands in for another Nerva process
+    other.user_core.put("the owner prefers tea")
+    assert "the owner prefers tea" in _session_block(prompt_side, "s2")
+    assert not list(tmp_path.glob("*.bak")), "a Nerva save is not a hand edit"
+
+
+def test_a_frozen_session_block_is_not_reread_on_every_turn(tmp_path, monkeypatch):
+    from agents.core.orchestrator import Orchestrator
+
+    living = _living_memory(tmp_path)
+    living.core.put("one")
+    calls = []
+    real = CoreMemory.sync_from_disk
+    monkeypatch.setattr(CoreMemory, "sync_from_disk",
+                        lambda self, *a, **k: calls.append(1) or real(self, *a, **k))
+    cog = SimpleNamespace(sub_enabled=lambda name: True, module=lambda name: living)
+    fake = SimpleNamespace(cognition=cog, session_id="s1")
+    for _ in range(3):
+        assert "- one" in Orchestrator._living_core_memory_block(fake)
+    assert len(calls) == 2                               # one reread per ring, once per session
+
+
+def test_an_unreadable_hand_edit_keeps_the_last_good_facts_in_the_block(tmp_path, caplog):
+    writer = _living_memory(tmp_path)
+    writer.core.put("keep me")
+    prompt_side = _living_memory(tmp_path)
+    (tmp_path / "core.json").write_text('{"facts": ["keep me",]}', encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        block = _session_block(prompt_side, "s1")
+    assert "- keep me" in block
+    assert "[memory note]" in block and "not valid JSON" in block
+    assert "cannot be read back" in caplog.text and ".bak" in caplog.text
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == '{"facts": ["keep me",]}'
+
+
+def test_a_held_ring_lock_does_not_stall_a_new_sessions_block(tmp_path):
+    writer = _living_memory(tmp_path)
+    writer.core.put("old")
+    prompt_side = _living_memory(tmp_path)
+    other = CoreMemory(cap=20, path=tmp_path / "core.json")
+    other._facts = ["old", "saved by the holder"]
+    fd = _hold(tmp_path / "core.json.lock")              # another process holds the ring lock
+    try:
+        other._save()                                    # ... and saved under it (atomic)
+        started = time.monotonic()
+        block = _session_block(prompt_side, "s1")
+        waited = time.monotonic() - started
+    finally:
+        _let_go(fd)
+    assert waited < 1.5, f"the render waited {waited:.2f}s on a held lock"
+    assert "- saved by the holder" in block              # read without the lock
+
+
+@pytest.mark.asyncio
+async def test_the_turn_rereads_the_rings_off_the_event_loop(tmp_path, monkeypatch):
+    from agents.core.orchestrator import Orchestrator
+
+    monkeypatch.setattr(cognition_memory, "PROMPT_REREAD_LOCK_TIMEOUT_S", 0.5, raising=False)
+    living = _living_memory(tmp_path)
+    living.core.put("one")
+    cog = SimpleNamespace(sub_enabled=lambda name: True, module=lambda name: living)
+    fake = SimpleNamespace(cognition=cog, session_id="s1")
+    fd = _hold(tmp_path / "core.json.lock")
+    try:
+        _, ticks = await _ticks_while(Orchestrator._reread_core_rings_for_render(fake))
+    finally:
+        _let_go(fd)
+    assert ticks >= 10, f"the event loop ran only {ticks} times while the reread waited"
+    calls = []
+    monkeypatch.setattr(CoreMemory, "sync_from_disk", lambda self, *a, **k: calls.append(1))
+    assert "- one" in Orchestrator._living_core_memory_block(fake)
+    assert calls == [], "the render used the turn's reread, not a second one"
+
+
+def _purge_rig(tmp_path):
+    from agents.core.cognition.memory import LivingMemory
+
+    root = tmp_path / "data"
+    (root / "cognition").mkdir(parents=True)
+    living = LivingMemory(core_path=root / "cognition" / "core_memory.json",
+                          tiers_path=root / "cognition" / "living_tiers.json",
+                          user_path=root / "cognition" / "user_core.json")
+    living.core.put("agent fact")
+    living.user_core.put("who the owner is")
+    return root, living
+
+
+def _forget(root, living):
+    from agents.core import data_purge
+
+    cleared, failed = asyncio.run(data_purge.clear_live_memory(
+        SimpleNamespace(cognition=SimpleNamespace(module=lambda name: living))))
+    assert "cognition_memory" in cleared and not [f for f in failed if f.startswith("cognition")]
+    data_purge._purge_memory_at_rest(root)
+    data_purge._purge_everything_but_keep(root)
+
+
+def test_a_forget_and_its_sweep_leave_both_rings_writable(tmp_path):
+    from agents.core.cognition.memory import LivingMemory
+
+    root, living = _purge_rig(tmp_path)
+    _forget(root, living)
+    assert living.user_core.put("x") is True and living.core.put("y") is True
+    assert living.user_core.list() == ["x"] and living.core.list() == ["y"]
+    again = LivingMemory(core_path=root / "cognition" / "core_memory.json",
+                         tiers_path=root / "cognition" / "living_tiers.json",
+                         user_path=root / "cognition" / "user_core.json")
+    assert again.user_core.put("z") is True              # no drift after a restart either
+    assert not list((root / "cognition").glob("*.bak"))
+    for ring in ("core_memory.json.lock", "user_core.json.lock"):
+        assert (root / "cognition" / ring).exists(), f"{ring} was unlinked by the sweep"
+
+
+@pytest.mark.asyncio
+async def test_after_a_forget_the_tool_reads_empty_rings(tmp_path):
+    root, living = _purge_rig(tmp_path)
+    await asyncio.to_thread(_forget, root, living)
+    server = ToolRPCServer()
+    register_memory_tool(server, living=lambda: living, audit=lambda: _Audit(),
+                         posture=lambda: "operator/owner", origin=lambda: "generated",
+                         store=UndoStore(tmp_path / "undo.json"))
+    reply = await server.handle({"tool": "memory", "args": {}}, actor="jarvis")
+    assert reply["ok"] is True and reply["result"]["ok"] is True, reply
+    assert reply["result"]["memory"] == [] and reply["result"]["user"] == []
+
+
+def test_a_ring_the_sweep_reset_to_an_empty_container_is_an_empty_ring(tmp_path):
+    from agents.core import data_purge
+
+    root, living = _purge_rig(tmp_path)
+    # A sweep without the memory pass (or a ring written back between the two passes).
+    data_purge._purge_everything_but_keep(root)
+    assert (root / "cognition" / "user_core.json").read_text() == "{}"
+    assert living.user_core.put("x") is True and living.user_core.list() == ["x"]
+    assert living.core.put("y") is True
+    assert not list((root / "cognition").glob("*.bak"))
+
+
+def test_the_sweep_never_unlinks_a_ring_lock_a_writer_holds(tmp_path):
+    from agents.core import data_purge
+
+    root, _living_rings = _purge_rig(tmp_path)
+    lock = root / "cognition" / "user_core.json.lock"
+    fd = _hold(lock)
+    try:
+        before = lock.stat().st_ino
+        data_purge._purge_everything_but_keep(root)
+        assert lock.exists() and lock.stat().st_ino == before
+    finally:
+        _let_go(fd)
+    assert data_purge._is_kept(Path("cognition/core_memory.json.lock"))
+
+
+@pytest.mark.asyncio
+async def test_the_undo_listing_rereads_the_rings(rig, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+
+    reply = await _call(rig, {"operations": [_op("add", text="x")]})
+    cognition = SimpleNamespace(sub_enabled=lambda name: True, module=lambda name: rig.living)
+    monkeypatch.setattr(web, "orch", SimpleNamespace(cognition=cognition, intent_log=rig.audit))
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "t")
+    monkeypatch.setattr(memory_tool, "UNDO", rig.store)
+    client = TestClient(web.app)
+    body = client.get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()
+    assert body["undoable"][0]["ref"] == reply["undo_ref"]
+    CoreMemory(cap=20, path=tmp_path / "core.json").put("another process")   # the ring moved
+    body = client.get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()
+    assert body["memory"] == ["x", "another process"] and body["undoable"] == []
+    (tmp_path / "core.json").write_text("{broken", encoding="utf-8")
+    body = client.get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()
+    assert body["undoable"] == [] and "not valid JSON" in body["drift"]
+
+
+# ── H423 review round 4: the "last good copy" is never a lenient parse or a rollback ──
+
+def test_an_in_process_writer_holding_the_lock_is_not_rolled_back(tmp_path):
+    import threading
+
+    living = _living_memory(tmp_path)
+    living.core.put("old fact")
+    ring = living.core
+    held, done = threading.Event(), threading.Event()
+
+    def writer():                                        # the memory tool in a worker thread
+        with ring.locked(), ring._lock:
+            held.set()
+            time.sleep(0.5)                              # a slow save (fsync on home hardware)
+            ring._facts.append("new fact")
+            ring._save()
+        done.set()
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    assert held.wait(5)
+    problem = ring.refresh_for_prompt(timeout=0.1)       # a new session's reread, lock held
+    thread.join(5)
+    assert done.is_set() and problem is None
+    assert ring.list() == ["old fact", "new fact"], "the reread rolled the writer's save back"
+
+
+@pytest.mark.parametrize("edit", ['{"facts": ["a",]}', json.dumps({"facts": [f"EDIT{i}" for i in range(25)]})])
+def test_a_read_with_the_lock_held_never_takes_a_lenient_parse(tmp_path, monkeypatch, edit):
+    monkeypatch.setattr(cognition_memory, "LOCK_TIMEOUT_S", 0.2)
+    living = _living(tmp_path, core=("a", "b"))
+    (tmp_path / "core.json").write_text(edit, encoding="utf-8")
+    fd = _hold(tmp_path / "core.json.lock")              # another process holds the ring lock
+    try:
+        with pytest.raises(MemoryToolError) as err:
+            memory_tool._read_rings(living)
+    finally:
+        _let_go(fd)
+    assert err.value.reason == "memory_drift_unreadable" and "(memory)" in err.value.detail
+    assert living.core.list() == ["a", "b"], "the last good ring was replaced by a lenient parse"
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == edit
+
+
+def test_the_undo_listing_reports_drift_while_the_lock_is_held(rig, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+
+    monkeypatch.setattr(cognition_memory, "LOCK_TIMEOUT_S", 0.2)
+    asyncio.run(_call(rig, {"operations": [_op("add", text="x")]}))
+    cognition = SimpleNamespace(sub_enabled=lambda name: True, module=lambda name: rig.living)
+    monkeypatch.setattr(web, "orch", SimpleNamespace(cognition=cognition, intent_log=rig.audit))
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "t")
+    monkeypatch.setattr(memory_tool, "UNDO", rig.store)
+    (tmp_path / "core.json").write_text("{broken", encoding="utf-8")
+    fd = _hold(tmp_path / "core.json.lock")
+    try:
+        body = TestClient(web.app).get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()
+    finally:
+        _let_go(fd)
+    assert "not valid JSON" in body.get("drift", "") and body["undoable"] == []
+    assert body["memory"] == ["x"]
+
+
+@pytest.mark.parametrize("edit", ['{"facts": ["good A",]}',
+                                  json.dumps({"facts": ["EDIT1", "EDIT2", "EDIT3", "EDIT4", "EDIT5"]})])
+def test_after_a_restart_an_unreadable_ring_shows_no_facts_as_last_good(tmp_path, edit):
+    from agents.core.cognition.memory import LivingMemory
+
+    writer = CoreMemory(cap=3, path=tmp_path / "core.json")
+    writer.put("good A")
+    writer.put("good B")
+    (tmp_path / "core.json").write_text(edit, encoding="utf-8")   # the owner's broken edit
+    restarted = CoreMemory(cap=3, path=tmp_path / "core.json")    # a new process
+    assert restarted.list() == [], "a lenient parse of the edit was taken as the ring"
+    living = LivingMemory(core_path=tmp_path / "core.json", tiers_path=tmp_path / "t.json",
+                          user_path=tmp_path / "user.json")
+    living.core = restarted
+    block = _session_block(living, "s1")
+    assert "EDIT" not in block and "good A" not in block
+    assert "[memory note]" in block and "last good copy" not in block
+    assert "no facts from it are shown" in block
+    assert (tmp_path / "core.json").read_text(encoding="utf-8") == edit
+    (tmp_path / "core.json").write_text('{"facts": ["fixed"]}', encoding="utf-8")
+    block = _session_block(living, "s2")
+    assert "- fixed" in block and "[memory note]" not in block
+
+
+def test_a_pre_digest_ring_over_its_cap_is_not_truncated_at_boot(tmp_path):
+    (tmp_path / "core.json").write_text(json.dumps({"facts": ["one", "two", "three", "four"]}),
+                                        encoding="utf-8")
+    ring = CoreMemory(cap=3, path=tmp_path / "core.json")
+    assert ring.list() == []
+    assert ring.has_good_copy is False
+    with pytest.raises(CoreMemoryDrift):
+        ring.put("five")
+    assert json.loads((tmp_path / "core.json").read_text())["facts"] == ["one", "two", "three", "four"]
+
+
+def test_a_forget_drops_the_turns_pending_reread():
+    from agents.core import data_purge
+
+    orch = SimpleNamespace(_core_block_cache=(("s", "d"), "block"),
+                           _core_rings_reread=(("s", "d"), ["[memory note] stale"]))
+    asyncio.run(data_purge.clear_live_memory(orch))
+    assert orch._core_block_cache is None and orch._core_rings_reread is None
+
+
+def test_the_at_rest_purge_waits_for_a_ring_writer(tmp_path):
+    import threading
+
+    from agents.core import data_purge
+
+    root, living = _purge_rig(tmp_path)
+    ring = living.user_core
+    held = threading.Event()
+
+    def writer():                                        # a writer mid-save when the forget runs
+        with ring.locked(), ring._lock:
+            held.set()
+            time.sleep(0.4)
+            ring._facts.append("written back")
+            ring._save()
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    assert held.wait(5)
+    data_purge._purge_memory_at_rest(root)
+    thread.join(5)
+    assert not (root / "cognition" / "user_core.json").exists(), "a writer saved after the unlink"
+    assert not (root / "cognition" / "user_core.json.sha256").exists()

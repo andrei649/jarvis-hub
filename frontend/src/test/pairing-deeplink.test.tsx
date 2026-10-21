@@ -120,3 +120,60 @@ describe('PairingPanel — the 60-second deeplink path', () => {
     await waitFor(() => expect(screen.queryByText('https://t.me/b?start=tok')).toBeNull());
   });
 });
+
+/* H154: a flooded inbox is cleared in one move, not one ✕ at a time. The button
+   only appears when something is actually pending, and the bulk drop goes through
+   the admin-guarded, audited route — after a confirm, because it cannot be undone. */
+describe('PairingPanel — clear pending', () => {
+  const EMPTY = { senders: [], summary: { enabled: true, has_code: false, pending: 0, deeplinks_outstanding: 0 } };
+
+  it('offers clear pending only when something is pending', async () => {
+    mockApi({}, EMPTY);
+    const { unmount } = render(<PairingPanel />);
+    await waitFor(() => expect(screen.getByTitle(/mint a one-use/)).toBeTruthy());
+    expect(screen.queryByTitle(/drop every pending request/)).toBeNull();
+    unmount();
+
+    mockApi({}, LIST);
+    render(<PairingPanel />);
+    await waitFor(() => expect(screen.getByTitle(/drop every pending request/)).toBeTruthy());
+  });
+
+  it('posts to the clear-pending route as admin after a two-step confirm', async () => {
+    localStorage.setItem('hud.admin_token', 'admin-secret');
+    const fn = mockApi({ '/pairing/clear-pending': ok({ ok: true, cleared: 1 }) });
+    render(<PairingPanel />);
+    await waitFor(() => expect(screen.getByTitle(/drop every pending request/)).toBeTruthy());
+    fireEvent.click(screen.getByTitle(/drop every pending request/));
+    // arming alone sends nothing — the drop needs the second, explicit click
+    expect(fn.mock.calls.some((c) => String(c[0]).includes('clear-pending'))).toBe(false);
+    fireEvent.click(screen.getByText(/^drop \d+ pending$/));
+    await waitFor(() => {
+      const call = fn.mock.calls.find((c) => String(c[0]).includes('/api/channels/pairing/clear-pending'));
+      expect(call).toBeTruthy();
+      expect(call[1].method).toBe('POST');
+      expect(call[1].headers['X-Admin-Token']).toBe('admin-secret');
+    });
+    localStorage.removeItem('hud.admin_token');
+    await waitFor(() => expect(screen.getByText(/cleared 1 pending/)).toBeTruthy());
+  });
+
+  it('says so when the server could not write the audit row', async () => {
+    mockApi({ '/pairing/clear-pending': ok({ ok: true, cleared: 2, audited: false }) });
+    render(<PairingPanel />);
+    await waitFor(() => expect(screen.getByTitle(/drop every pending request/)).toBeTruthy());
+    fireEvent.click(screen.getByTitle(/drop every pending request/));
+    fireEvent.click(screen.getByText(/^drop \d+ pending$/));
+    await waitFor(() => expect(screen.getByText(/cleared 2 pending · not audited/)).toBeTruthy());
+  });
+
+  it('does nothing when the owner cancels the confirm', async () => {
+    const fn = mockApi({});
+    render(<PairingPanel />);
+    await waitFor(() => expect(screen.getByTitle(/drop every pending request/)).toBeTruthy());
+    fireEvent.click(screen.getByTitle(/drop every pending request/));
+    fireEvent.click(screen.getByText('cancel'));
+    expect(fn.mock.calls.some((c) => String(c[0]).includes('clear-pending'))).toBe(false);
+    expect(screen.getByTitle(/drop every pending request/)).toBeTruthy();   // disarmed, back to the trigger
+  });
+});

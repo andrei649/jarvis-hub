@@ -32,6 +32,7 @@ from typing import Awaitable, Callable, Optional
 from ..action_origin import current_action_origin
 from ..ambient.policy import AttentionDeliveryBroker, AttentionLedger
 from ..security import taint
+from . import irreversible
 from .mediation import (
     DetachedHMACSigner,
     ReceiptExpectation,
@@ -1732,6 +1733,12 @@ class AutonomyWorker:
             # holds that agent's tasks at this same kernel-independent seam —
             # they stay APPROVED and run on the first tick after release.
             if self._halted(task.agent):
+                held += 1
+                continue
+            # H010 review r6: a kind another process must apply (an accepted
+            # backup.restore is the hub's: it can restart itself) stays APPROVED,
+            # unclaimed, for that process's worker.
+            if irreversible.held_here(task):
                 held += 1
                 continue
             if self.queue.consent_task_marker(task.id):

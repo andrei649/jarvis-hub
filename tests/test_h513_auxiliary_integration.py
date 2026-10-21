@@ -8,6 +8,7 @@ from agents.core import settings_db
 from agents.core.commands import Principal
 from agents.core.llm import data_handling
 from agents.core.llm.job_selection import SelectionError, selection_scope
+from agents.core.llm.model_config import DEFAULT_LOCAL_MODEL
 from agents.core.llm.providers import get_profile
 from agents.core.orchestrator import Orchestrator, bind_turn_principal, reset_turn_principal
 
@@ -71,7 +72,7 @@ async def test_loopback_auxiliary_preserves_generation_contract(auxiliary, role)
     assert await invoke(auxiliary.orch, role) == "auxiliary answer"
     assert len(auxiliary.calls) == 1
     method, request = auxiliary.calls[0]
-    assert request["model"] == "qwen3-synthetic"
+    assert request["model"] == (DEFAULT_LOCAL_MODEL if role == "session_title" else "qwen3-synthetic")
     assert request["max_tokens"] == {"session_title": 24, "query_rewrite": 96, "review": 512, "compression": 256}[role]
     assert request["temperature"] == {"session_title": 0.0, "query_rewrite": 0.0, "review": .2, "compression": .2}[role]
     assert method == ("stream" if role == "compression" else "generate")

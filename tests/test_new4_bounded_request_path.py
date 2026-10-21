@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 
 from agents import web
 from agents.core.web_helpers import BackendTimeout, bounded, degraded
+from tests.h441_native_fixture import bind_native
 
 # ── the helper itself ─────────────────────────────────────────────────────────
 
@@ -128,6 +129,7 @@ def wedged_orch(monkeypatch):
         agents={"jarvis": object()},
         channels={},
     )
+    bind_native(orch, monkeypatch, session_ids=(orch.session_id,))
     monkeypatch.setattr(web, "orch", orch)
     # Shrink the budget so the test is fast; the point is that a budget EXISTS.
     monkeypatch.setattr(web_helpers, "BACKEND_TIMEOUT_S", 0.1)
@@ -474,6 +476,7 @@ def test_memory_stats_route_renders_an_unknown_vector_count_as_unknown(monkeypat
             get_session_stats=lambda: _stats_with_no_vector_count(),
             agent_contexts={}, graph=None),
         session_id="s", agents={}, channels={})
+    bind_native(orch, monkeypatch, session_ids=("s",))
     monkeypatch.setattr(web, "orch", orch)
 
     body = TestClient(web.app).get("/memory/stats").json()

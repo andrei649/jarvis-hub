@@ -1,0 +1,746 @@
+{
+ "unit": "H283",
+ "code_under_test_commit": "2fdd5f456fd3f8290c33e3ef47e3c96231e2e5e4",
+ "date": "2026-10-11",
+ "method": "one mutant at a time on the files changed since 8b61904b; narrow run (6 test files) then, for survivors, the 18-file wide run; file restored byte for byte and 'git diff --quiet' checked after each",
+ "totals": {
+  "mutants": 101,
+  "killed": 100,
+  "survived": 0,
+  "equivalent": 1,
+  "killed_by_existing_tests": 78,
+  "killed_by_tests_added_this_round": 22
+ },
+ "tests_added": "tests/test_h283_host_identity.py: 21 new test functions/parametrizations under 'mutation round' (on spelling, wsl2 kernel word, digit bounds at the edge with literals, one-day watchdog cap, s6 over NOTIFY_SOCKET, journal/watchdog only for systemd, launchd confirmed, docker_marker needs a container, prompt_block never raises, prompt line cap, to_dict watchdog null, machine-id 256 cap / exact 32 hex / case, tmux not a terminal, 24bit, COLORFGBG edges, uninspectable stderr, breakdown order)",
+ "mutants": [
+  {
+   "id": "M01",
+   "file": "agents/core/host_identity.py",
+   "line": 223,
+   "mutation": "detect_container: JARVIS_CONTAINER off-words no longer mean not-a-container",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_marker_file_keeps_the_docker_tag_whatever_else_said_container"
+  },
+  {
+   "id": "M02",
+   "file": "agents/core/host_identity.py",
+   "line": 102,
+   "mutation": "_OFF_WORDS loses 'disabled'",
+   "killed_by": "tests/test_h283_host_identity.py::test_every_way_of_saying_off_says_it_is_not_a_container[disabled]"
+  },
+  {
+   "id": "M03",
+   "file": "agents/core/host_identity.py",
+   "line": 102,
+   "mutation": "_OFF_WORDS loses 'off'",
+   "killed_by": "tests/test_h283_host_identity.py::test_every_way_of_saying_off_says_it_is_not_a_container[off]"
+  },
+  {
+   "id": "M04",
+   "file": "agents/core/host_identity.py",
+   "line": 103,
+   "mutation": "_ON_WORDS loses 'on'",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_on_is_a_truthy_spelling (added in this round)"
+  },
+  {
+   "id": "M05",
+   "file": "agents/core/host_identity.py",
+   "line": 226,
+   "mutation": "on-word names 'docker' instead of generic 'container'",
+   "killed_by": "tests/test_h283_host_identity.py::test_container_kinds[present7-env7-container-JARVIS_CONTAINER]"
+  },
+  {
+   "id": "M06",
+   "file": "agents/core/host_identity.py",
+   "line": 227,
+   "mutation": "unknown JARVIS_CONTAINER word is accepted as 'container' instead of ignored",
+   "killed_by": "tests/test_h283_host_identity.py::test_an_unknown_word_is_not_a_silent_container[yes please]"
+  },
+  {
+   "id": "M07",
+   "file": "agents/core/host_identity.py",
+   "line": 230,
+   "mutation": "KUBERNETES_SERVICE_HOST ignored",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_marker_file_keeps_the_docker_tag_whatever_else_said_container"
+  },
+  {
+   "id": "M08",
+   "file": "agents/core/host_identity.py",
+   "line": 231,
+   "mutation": "KUBERNETES kind reported as plain container",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_marker_file_keeps_the_docker_tag_whatever_else_said_container"
+  },
+  {
+   "id": "M09",
+   "file": "agents/core/host_identity.py",
+   "line": 235,
+   "mutation": "marker file kind lookup disabled (.dockerenv no longer docker)",
+   "killed_by": "tests/test_h283_host_identity.py::test_container_kinds[present0-env0-docker-/.dockerenv]"
+  },
+  {
+   "id": "M10",
+   "file": "agents/core/host_identity.py",
+   "line": 237,
+   "mutation": "cgroup kind lookup always generic container",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_pid1_cgroup_is_host_postures_own_read[12:pids:/docker/abc\\n-docker]"
+  },
+  {
+   "id": "M11",
+   "file": "agents/core/host_identity.py",
+   "line": 240,
+   "mutation": "/run/systemd/container ignored",
+   "killed_by": "tests/test_h283_host_identity.py::test_systemds_container_file_names_the_kind"
+  },
+  {
+   "id": "M12",
+   "file": "agents/core/host_identity.py",
+   "line": 242,
+   "mutation": "container env var ignored",
+   "killed_by": "tests/test_h283_host_identity.py::test_container_kinds[present4-env4-podman-container]"
+  },
+  {
+   "id": "M13",
+   "file": "agents/core/host_identity.py",
+   "line": 212,
+   "mutation": "unknown container word maps to '' instead of generic container",
+   "killed_by": "tests/test_h283_host_identity.py::test_container_kinds[present5-env5-container-container]"
+  },
+  {
+   "id": "M14",
+   "file": "agents/core/host_identity.py",
+   "line": 250,
+   "mutation": "detect_wsl: non-linux platform check dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_wsl_versions_and_the_distro_name"
+  },
+  {
+   "id": "M15",
+   "file": "agents/core/host_identity.py",
+   "line": 256,
+   "mutation": "detect_wsl: plain Microsoft kernel reported as wsl2",
+   "killed_by": "tests/test_h283_host_identity.py::test_wsl_versions_and_the_distro_name"
+  },
+  {
+   "id": "M16",
+   "file": "agents/core/host_identity.py",
+   "line": 258,
+   "mutation": "detect_wsl: env-only WSL signal ignored",
+   "killed_by": "tests/test_h283_host_identity.py::test_wsl_versions_and_the_distro_name"
+  },
+  {
+   "id": "M17",
+   "file": "agents/core/host_identity.py",
+   "line": 262,
+   "mutation": "detect_wsl: distro sanitising removed",
+   "killed_by": "tests/test_h283_host_identity.py::test_wsl_versions_and_the_distro_name"
+  },
+  {
+   "id": "M18",
+   "file": "agents/core/host_identity.py",
+   "line": 262,
+   "mutation": "detect_wsl: distro length bound 32 -> 64",
+   "killed_by": "tests/test_h283_host_identity.py::test_wsl_versions_and_the_distro_name"
+  },
+  {
+   "id": "M19",
+   "file": "agents/core/host_identity.py",
+   "line": 254,
+   "mutation": "detect_wsl: wsl2 kernel word dropped",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_a_wsl2_kernel_word_without_microsoft_is_wsl2_even_with_the_env_set (added in this round)"
+  },
+  {
+   "id": "M20",
+   "file": "agents/core/host_identity.py",
+   "line": 267,
+   "mutation": "detect_termux: PREFIX signal dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_termux[env1-present1]"
+  },
+  {
+   "id": "M21",
+   "file": "agents/core/host_identity.py",
+   "line": 268,
+   "mutation": "detect_termux: data directory signal dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_termux[env2-present2]"
+  },
+  {
+   "id": "M22",
+   "file": "agents/core/host_identity.py",
+   "line": 276,
+   "mutation": "_journal: inode comparison inverted",
+   "killed_by": "tests/test_h283_host_identity.py::test_systemd_with_the_journal_and_a_watchdog_for_this_pid"
+  },
+  {
+   "id": "M23",
+   "file": "agents/core/host_identity.py",
+   "line": 292,
+   "mutation": "_decimal: digit cap off by one (<)",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_the_digit_bounds_are_exact (added in this round)"
+  },
+  {
+   "id": "M24",
+   "file": "agents/core/host_identity.py",
+   "line": 292,
+   "mutation": "_decimal: digit cap removed",
+   "killed_by": "tests/test_h283_host_identity.py::test_an_oversized_watchdog_is_no_watchdog_and_costs_nothing_else[400]"
+  },
+  {
+   "id": "M25",
+   "file": "agents/core/host_identity.py",
+   "line": 292,
+   "mutation": "_decimal: ascii check removed",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_watchdog_is_read_the_way_sd_notify_reads_it[\\u0666\\u0660\\u0660\\u0660\\u0660\\u0660\\u0660\\u0660]"
+  },
+  {
+   "id": "M26",
+   "file": "agents/core/host_identity.py",
+   "line": 300,
+   "mutation": "notify_address: abstract @name branch dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_socket_sd_notify_can_use_is_supervision[@abstract]"
+  },
+  {
+   "id": "M27",
+   "file": "agents/core/host_identity.py",
+   "line": 299,
+   "mutation": "notify_address: no strip",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_socket_sd_notify_can_use_is_supervision[ /run/x ]"
+  },
+  {
+   "id": "M28",
+   "file": "agents/core/host_identity.py",
+   "line": 302,
+   "mutation": "notify_address: relative path accepted",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_socket_sd_notify_cannot_use_is_not_supervision[relative/path]"
+  },
+  {
+   "id": "M29",
+   "file": "agents/core/host_identity.py",
+   "line": 312,
+   "mutation": "watchdog_deadline: usec zero allowed (is None instead of falsy)",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_watchdog_is_read_the_way_sd_notify_reads_it[0]"
+  },
+  {
+   "id": "M30",
+   "file": "agents/core/host_identity.py",
+   "line": 315,
+   "mutation": "watchdog_deadline: WATCHDOG_PID owner check dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_journal_is_only_this_stderr_and_the_watchdog_only_this_pid"
+  },
+  {
+   "id": "M31",
+   "file": "agents/core/host_identity.py",
+   "line": 106,
+   "mutation": "watchdog_deadline: PID digit bound 10 -> 12 (oversized pid)",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_the_digit_bounds_are_exact (added in this round)"
+  },
+  {
+   "id": "M32",
+   "file": "agents/core/host_identity.py",
+   "line": 106,
+   "mutation": "watchdog_deadline: PID digit bound 10 -> 3",
+   "killed_by": "tests/test_h283_host_identity.py::test_systemd_with_the_journal_and_a_watchdog_for_this_pid"
+  },
+  {
+   "id": "M33",
+   "file": "agents/core/host_identity.py",
+   "line": 105,
+   "mutation": "MAX_USEC_DIGITS 12 -> 7",
+   "killed_by": "tests/test_h283_host_identity.py::test_systemd_with_the_journal_and_a_watchdog_for_this_pid"
+  },
+  {
+   "id": "M34",
+   "file": "agents/core/host_identity.py",
+   "line": 322,
+   "mutation": "_watchdog_seconds: floor of 1 second dropped",
+   "equivalent_reason": "deadline is usec/1e6 with usec >= 1 (a zero usec returns None earlier), so deadline > 0 and math.ceil(deadline) >= 1; max(1, x) and max(0, x) are the same for every reachable x."
+  },
+  {
+   "id": "M35",
+   "file": "agents/core/host_identity.py",
+   "line": 322,
+   "mutation": "_watchdog_seconds: cap 86400 -> 864000",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_the_reported_watchdog_is_capped_at_a_day (added in this round)"
+  },
+  {
+   "id": "M36",
+   "file": "agents/core/host_identity.py",
+   "line": 322,
+   "mutation": "_watchdog_seconds: ceil -> floor",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_watchdog_agrees_with_the_heartbeat_and_never_rounds_down_to_nothing[1500000-2]"
+  },
+  {
+   "id": "M37",
+   "file": "agents/core/host_identity.py",
+   "line": 332,
+   "mutation": "detect_supervisor: AF_UNIX check inverted",
+   "killed_by": "tests/test_h283_host_identity.py::test_systemd_with_the_journal_and_a_watchdog_for_this_pid"
+  },
+  {
+   "id": "M38",
+   "file": "agents/core/host_identity.py",
+   "line": 334,
+   "mutation": "detect_supervisor: INVOCATION_ID accepted from interactive shell",
+   "killed_by": "tests/test_h283_host_identity.py::test_invocation_id_in_an_interactive_shell_is_not_supervision"
+  },
+  {
+   "id": "M39",
+   "file": "agents/core/host_identity.py",
+   "line": 336,
+   "mutation": "detect_supervisor: launchd platform check dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_launchd_on_macos[env0-launchd]"
+  },
+  {
+   "id": "M40",
+   "file": "agents/core/host_identity.py",
+   "line": 337,
+   "mutation": "detect_supervisor: launchd XPC application.* not excluded",
+   "killed_by": "tests/test_h283_host_identity.py::test_launchd_on_macos[env3-none]"
+  },
+  {
+   "id": "M41",
+   "file": "agents/core/host_identity.py",
+   "line": 337,
+   "mutation": "detect_supervisor: XPC '0' counted as launchd job",
+   "killed_by": "tests/test_h283_host_identity.py::test_launchd_on_macos[env2-none]"
+  },
+  {
+   "id": "M42",
+   "file": "agents/core/host_identity.py",
+   "line": 338,
+   "mutation": "detect_supervisor: s6 env precedence swapped below systemd",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_s6_variables_win_over_a_notify_socket (added in this round)"
+  },
+  {
+   "id": "M43",
+   "file": "agents/core/host_identity.py",
+   "line": 344,
+   "mutation": "detect_supervisor: s6 directories alone ignored",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_weak_supervisor_signal_is_not_told_to_the_model_as_fact"
+  },
+  {
+   "id": "M44",
+   "file": "agents/core/host_identity.py",
+   "line": 349,
+   "mutation": "detect_supervisor: journal computed for non-systemd supervisors",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_only_systemd_reads_the_journal_and_the_watchdog (added in this round)"
+  },
+  {
+   "id": "M45",
+   "file": "agents/core/host_identity.py",
+   "line": 353,
+   "mutation": "detect_supervisor: systemd confirmed by INVOCATION_ID alone",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_weak_supervisor_signal_is_not_told_to_the_model_as_fact"
+  },
+  {
+   "id": "M46",
+   "file": "agents/core/host_identity.py",
+   "line": 353,
+   "mutation": "detect_supervisor: s6 confirmed by directories alone",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_weak_supervisor_signal_is_not_told_to_the_model_as_fact"
+  },
+  {
+   "id": "M47",
+   "file": "agents/core/host_identity.py",
+   "line": 353,
+   "mutation": "detect_supervisor: launchd never confirmed",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_a_launchd_job_is_confirmed (added in this round)"
+  },
+  {
+   "id": "M48",
+   "file": "agents/core/host_identity.py",
+   "line": 360,
+   "mutation": "detect_supervisor: watchdog read for non-systemd supervisor",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_only_systemd_reads_the_journal_and_the_watchdog (added in this round)"
+  },
+  {
+   "id": "M49",
+   "file": "agents/core/host_identity.py",
+   "line": 330,
+   "mutation": "detect_supervisor: S6_CMD_ARG0 signal dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_s6[env1-present1-s6]"
+  },
+  {
+   "id": "M50",
+   "file": "agents/core/host_identity.py",
+   "line": 360,
+   "mutation": "detect_supervisor: pid parameter ignored",
+   "killed_by": "tests/test_h283_host_identity.py::test_systemd_with_the_journal_and_a_watchdog_for_this_pid"
+  },
+  {
+   "id": "M51",
+   "file": "agents/core/host_identity.py",
+   "line": 468,
+   "mutation": "detect: docker_marker true for any container (marker file check dropped)",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_marker_file_keeps_the_docker_tag_whatever_else_said_container"
+  },
+  {
+   "id": "M52",
+   "file": "agents/core/host_identity.py",
+   "line": 468,
+   "mutation": "detect: docker_marker true without a container verdict",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_a_marker_file_is_not_a_container_when_the_operator_said_none (added in this round)"
+  },
+  {
+   "id": "M53",
+   "file": "agents/core/host_identity.py",
+   "line": 488,
+   "mutation": "identity(): detector failure swallowed as a bare host (detected True)",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_detector_bug_never_breaks_the_prompt"
+  },
+  {
+   "id": "M54",
+   "file": "agents/core/host_identity.py",
+   "line": 486,
+   "mutation": "identity(): detector failure no longer caught",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_detector_bug_never_breaks_the_prompt"
+  },
+  {
+   "id": "M55",
+   "file": "agents/core/host_identity.py",
+   "line": 495,
+   "mutation": "prompt_block(): exceptions propagate",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_prompt_block_never_raises (added in this round)"
+  },
+  {
+   "id": "M56",
+   "file": "agents/core/host_identity.py",
+   "line": 502,
+   "mutation": "container_marker returns evidence even when no container",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_doctors_container_check_reads_the_same_detector"
+  },
+  {
+   "id": "M57",
+   "file": "agents/core/host_identity.py",
+   "line": 163,
+   "mutation": "prompt_line: supervised told without confirmation",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_weak_supervisor_signal_is_not_told_to_the_model_as_fact"
+  },
+  {
+   "id": "M58",
+   "file": "agents/core/host_identity.py",
+   "line": 168,
+   "mutation": "prompt_line: s6 directories-only sentence dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_weak_supervisor_signal_is_not_told_to_the_model_as_fact"
+  },
+  {
+   "id": "M59",
+   "file": "agents/core/host_identity.py",
+   "line": 164,
+   "mutation": "prompt_line: journal note dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_systemd_with_the_journal_and_a_watchdog_for_this_pid"
+  },
+  {
+   "id": "M60",
+   "file": "agents/core/host_identity.py",
+   "line": 165,
+   "mutation": "prompt_line: watchdog note when watchdog_s == 0",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_weak_supervisor_signal_is_not_told_to_the_model_as_fact"
+  },
+  {
+   "id": "M61",
+   "file": "agents/core/host_identity.py",
+   "line": 172,
+   "mutation": "prompt_line: length cap removed",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_the_prompt_line_is_capped (added in this round)"
+  },
+  {
+   "id": "M62",
+   "file": "agents/core/host_identity.py",
+   "line": 147,
+   "mutation": "environment_tags: docker marker no longer adds docker tag",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_marker_file_keeps_the_docker_tag_whatever_else_said_container"
+  },
+  {
+   "id": "M63",
+   "file": "agents/core/host_identity.py",
+   "line": 146,
+   "mutation": "environment_tags: podman no longer maps to docker",
+   "killed_by": "tests/test_h283_host_identity.py::test_skill_gates_read_the_same_identity"
+  },
+  {
+   "id": "M64",
+   "file": "agents/core/host_identity.py",
+   "line": 149,
+   "mutation": "environment_tags: s6 tag dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_skill_gates_read_the_same_identity"
+  },
+  {
+   "id": "M65",
+   "file": "agents/core/host_identity.py",
+   "line": 179,
+   "mutation": "to_dict: detected=False no longer yields the identity_failed shape",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_detector_bug_is_logged_and_reported_as_not_detected"
+  },
+  {
+   "id": "M66",
+   "file": "agents/core/host_identity.py",
+   "line": 184,
+   "mutation": "to_dict: watchdog_s 0 reported as 0 instead of None",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_to_dict_reports_no_watchdog_as_null_and_a_watchdog_as_seconds (added in this round)"
+  },
+  {
+   "id": "M67",
+   "file": "agents/core/host_identity.py",
+   "line": 183,
+   "mutation": "to_dict: empty container reported as '' instead of None",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_probe_reports_the_identity"
+  },
+  {
+   "id": "M68",
+   "file": "agents/core/host_identity.py",
+   "line": 426,
+   "mutation": "hash_machine_id: 16 -> 15 hex chars",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_machine_id_is_a_keyed_hash_prefix_never_the_raw_value"
+  },
+  {
+   "id": "M69",
+   "file": "agents/core/host_identity.py",
+   "line": 433,
+   "mutation": "detect_machine_id: override length cap removed",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_a_machine_id_override_is_capped_at_256_characters (added in this round)"
+  },
+  {
+   "id": "M70",
+   "file": "agents/core/host_identity.py",
+   "line": 438,
+   "mutation": "detect_machine_id: file id regex fullmatch -> match",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_a_machine_id_file_must_be_exactly_32_hex_digits (added in this round)"
+  },
+  {
+   "id": "M71",
+   "file": "agents/core/host_identity.py",
+   "line": 440,
+   "mutation": "detect_machine_id: windows branch skipped",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_missing_or_malformed_machine_id_is_none"
+  },
+  {
+   "id": "M72",
+   "file": "agents/core/host_identity.py",
+   "line": 381,
+   "mutation": "detect_terminal: TERM_PROGRAM=tmux counted as a terminal",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_tmux_as_term_program_is_no_terminal_emulator (added in this round)"
+  },
+  {
+   "id": "M73",
+   "file": "agents/core/host_identity.py",
+   "line": 398,
+   "mutation": "detect_terminal: colour 24bit spelling dropped",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_colorterm_24bit_is_truecolor (added in this round)"
+  },
+  {
+   "id": "M74",
+   "file": "agents/core/host_identity.py",
+   "line": 411,
+   "mutation": "detect_terminal: background boundary bg<=6 -> bg<=7",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_background_from_colorfgbg_at_every_edge[0;7-light] (added in this round)"
+  },
+  {
+   "id": "M75",
+   "file": "agents/core/host_identity.py",
+   "line": 408,
+   "mutation": "detect_terminal: COLORFGBG needs only one field",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_background_from_colorfgbg_at_every_edge[15-unknown] (added in this round)"
+  },
+  {
+   "id": "M76",
+   "file": "agents/core/host_identity.py",
+   "line": 378,
+   "mutation": "detect_terminal: ghostty GHOSTTY_ prefix signal dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_terminal_names_are_a_closed_vocabulary[env4-ghostty]"
+  },
+  {
+   "id": "M77",
+   "file": "agents/core/host_identity.py",
+   "line": 284,
+   "mutation": "_stderr_id: OSError not handled",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_a_stderr_that_cannot_be_inspected_is_no_journal (added in this round)"
+  },
+  {
+   "id": "M78",
+   "file": "agents/core/host_identity.py",
+   "line": 439,
+   "mutation": "detect_machine_id: raw override not lowercased consistency (file branch lower dropped)",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_a_machine_id_file_is_case_insensitive (added in this round)"
+  },
+  {
+   "id": "S01",
+   "file": "agents/core/sd_notify.py",
+   "line": 95,
+   "mutation": "watchdog_seconds: unarmed (None) deadline no longer returns None",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_watchdog_is_read_the_way_sd_notify_reads_it[\\u0666\\u0660\\u0660\\u0660\\u0660\\u0660\\u0660\\u0660]"
+  },
+  {
+   "id": "S02",
+   "file": "agents/core/sd_notify.py",
+   "line": 94,
+   "mutation": "watchdog_seconds: armed for pid 0 instead of this process",
+   "killed_by": "tests/test_h283_host_notify_and_hint.py::test_the_heartbeat_is_half_the_watchdog_for_this_process_only[60000000-self-30.0]"
+  },
+  {
+   "id": "S03",
+   "file": "agents/core/sd_notify.py",
+   "line": 52,
+   "mutation": "_address: raw NOTIFY_SOCKET accepted (shared parser bypassed)",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_socket_sd_notify_cannot_use_is_not_supervision[relative/path]"
+  },
+  {
+   "id": "S04",
+   "file": "agents/core/sd_notify.py",
+   "line": 52,
+   "mutation": "_address: shared parser fed environment other than NOTIFY_SOCKET",
+   "killed_by": "tests/test_h283_host_identity.py::test_a_socket_sd_notify_can_use_is_supervision[/run/systemd/notify]"
+  },
+  {
+   "id": "E01",
+   "file": "agents/core/environment_hint.py",
+   "line": 88,
+   "mutation": "hint_block: operator words before the detected facts",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_detected_block_reaches_every_agent_apart_from_the_operator_hint"
+  },
+  {
+   "id": "E02",
+   "file": "agents/core/environment_hint.py",
+   "line": 88,
+   "mutation": "hint_block: single newline between blocks",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_detected_block_reaches_every_agent_apart_from_the_operator_hint"
+  },
+  {
+   "id": "E03",
+   "file": "agents/core/environment_hint.py",
+   "line": 88,
+   "mutation": "hint_block: detected facts dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_detected_block_reaches_every_agent_apart_from_the_operator_hint"
+  },
+  {
+   "id": "E04",
+   "file": "agents/core/environment_hint.py",
+   "line": 88,
+   "mutation": "hint_block: operator hint dropped",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_detected_block_reaches_every_agent_apart_from_the_operator_hint"
+  },
+  {
+   "id": "E05",
+   "file": "agents/core/environment_hint.py",
+   "line": 88,
+   "mutation": "hint_block: empty blocks not filtered",
+   "killed_by": "tests/test_h283_host_identity.py::test_with_nothing_detected_and_no_hint_the_prompt_is_unchanged"
+  },
+  {
+   "id": "E06",
+   "file": "agents/core/environment_hint.py",
+   "line": 82,
+   "mutation": "detected_block: returns operator-style empty",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_detected_block_reaches_every_agent_apart_from_the_operator_hint"
+  },
+  {
+   "id": "H01",
+   "file": "agents/core/host_posture.py",
+   "line": 250,
+   "mutation": "check_container_storage: marker=True uses the old in_container() instead of host_identity",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_doctors_container_check_reads_the_same_detector"
+  },
+  {
+   "id": "H02",
+   "file": "agents/core/host_posture.py",
+   "line": 251,
+   "mutation": "check_container_storage: explicit marker argument ignored",
+   "killed_by": "tests/test_h501_host_posture.py::test_a_data_root_on_the_containers_own_filesystem_is_ephemeral"
+  },
+  {
+   "id": "P01",
+   "file": "agents/core/prompt_size.py",
+   "line": 224,
+   "mutation": "breakdown: host-detected component not added",
+   "killed_by": "tests/test_h283_host_identity.py::test_prompt_size_counts_the_detected_block"
+  },
+  {
+   "id": "P02",
+   "file": "agents/core/prompt_size.py",
+   "line": 155,
+   "mutation": "host_detected_component measures the operator block",
+   "killed_by": "tests/test_h283_host_identity.py::test_prompt_size_counts_the_detected_block"
+  },
+  {
+   "id": "P03",
+   "file": "agents/core/prompt_size.py",
+   "line": 161,
+   "mutation": "environment_hint_component measures hint_block (double counts detected)",
+   "killed_by": "tests/test_h283_host_identity.py::test_prompt_size_counts_the_detected_block"
+  },
+  {
+   "id": "P04",
+   "file": "agents/core/prompt_size.py",
+   "line": 224,
+   "mutation": "breakdown: host-detected after environment-hint",
+   "initially_survived": true,
+   "killed_by": "tests/test_h283_host_identity.py::test_prompt_size_lists_the_detected_facts_before_the_operators_hint (added in this round)"
+  },
+  {
+   "id": "R01",
+   "file": "agents/core/routers/host_probe.py",
+   "line": 59,
+   "mutation": "host_probe: identity failure not contained",
+   "killed_by": "tests/test_h283_host_identity.py::test_an_identity_failure_never_fails_the_probe"
+  },
+  {
+   "id": "R02",
+   "file": "agents/core/routers/host_probe.py",
+   "line": 63,
+   "mutation": "host_probe: identity key dropped from the payload",
+   "killed_by": "tests/test_h283_host_identity.py::test_the_probe_reports_the_identity"
+  },
+  {
+   "id": "R03",
+   "file": "agents/core/routers/host_probe.py",
+   "line": 61,
+   "mutation": "host_probe: failure marker reason renamed",
+   "killed_by": "tests/test_h283_host_identity.py::test_an_identity_failure_never_fails_the_probe"
+  },
+  {
+   "id": "R04",
+   "file": "agents/core/routers/host_probe.py",
+   "line": 61,
+   "mutation": "host_probe: identity fallback pretends detected",
+   "killed_by": "tests/test_h283_host_identity.py::test_an_identity_failure_never_fails_the_probe"
+  },
+  {
+   "id": "V01",
+   "file": "agents/core/skills/visibility.py",
+   "line": 88,
+   "mutation": "_termux ignores the shared detector",
+   "killed_by": "tests/test_h283_host_identity.py::test_skill_gates_read_the_same_identity"
+  },
+  {
+   "id": "V02",
+   "file": "agents/core/skills/visibility.py",
+   "line": 129,
+   "mutation": "host_environments drops detector tags",
+   "killed_by": "tests/test_h283_host_identity.py::test_skill_gates_read_the_same_identity"
+  },
+  {
+   "id": "V03",
+   "file": "agents/core/skills/visibility.py",
+   "line": 129,
+   "mutation": "host_environments adds only container, never docker/s6 tags",
+   "killed_by": "tests/test_h283_host_identity.py::test_skill_gates_read_the_same_identity"
+  }
+ ]
+}

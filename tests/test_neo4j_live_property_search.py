@@ -225,7 +225,9 @@ def test_add_entity_serialises_a_map_valued_property():
              "details": {"mmsi": "412331100", "status": "dark", "gapSeconds": 60}},
         )
     assert ok is True
-    params = posted[0]["statements"][0]["parameters"]
+    # H206: add_entity first looks up the node's labels (to relabel instead of duplicating),
+    # so the write is the LAST request.
+    params = posted[-1]["statements"][0]["parameters"]
     assert "412331100" in params["p_details"] and isinstance(params["p_details"], str)
     # toString() raises on a list in Neo4j 5, which would take the whole property
     # scan down for every node — arrays are serialised for that reason.

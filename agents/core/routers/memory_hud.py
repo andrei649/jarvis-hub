@@ -39,10 +39,12 @@ _EMPTY_STATS = {
 
 
 @router.get("/memory", dependencies=[Depends(user_guard)])
-async def memory():
+async def memory(req: Request):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.foreign_history import http_owner_guard
+    await http_owner_guard(orch.checkpoints, orch.session_id, req)
     try:
         history = await bounded(
             orch.memory.get_history(orch.session_id, last_n=20),
@@ -61,11 +63,16 @@ async def clear_memory(req: Request):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.foreign_history import http_owner_guard
+    await http_owner_guard(orch.checkpoints, orch.session_id, req)
     if not app_state.dev_mode():
         confirm = req.headers.get("x-confirm", "").lower()
         if confirm != "true":
             return JSONResponse({"error": "memory clear requires confirmation — send X-Confirm: true header or set DEV_MODE=1"}, status_code=400)
     await orch.memory.clear(session_id=orch.session_id)
+    from agents.core.session_archive import forget_skill_loads
+
+    forget_skill_loads(orch.session_id)         # H326: a cleared chat carries no skill loads
     orch.session_id = await orch.memory.new_session()
     orch.checkpoints.create_session_record(orch.session_id)
     return JSONResponse({"ok": True, "new_session": orch.session_id})

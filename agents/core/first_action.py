@@ -114,18 +114,51 @@ def _emptied(path: Path) -> bool:
         return False
 
 
-def _adopt_install_id(record: dict[str, Any]) -> bool:
-    """H689: a clock started before the durable install id (a 16-hex id), or while it
-    was unavailable (null), takes it on. True when the record changed."""
+def _adopt_install_id(record: dict[str, Any], target: Path) -> bool:
+    """Adopt the shared ID only for an old blank ID or a proven profile legacy ID."""
     from agents.core.install_identity import ID_RE, install_id
 
-    if ID_RE.match(str(record.get("install_id") or "")):
-        return False
     current = install_id()
     if current is None:
         return False
+    old = str(record.get("install_id") or "")
+    if old == current:
+        return False
+    if ID_RE.fullmatch(old):
+        from agents.core.paths import data_root, install_root
+
+        profile_root = data_root()
+        if (profile_root == install_root() or target.parent != profile_root
+                or target.is_symlink()):
+            return False
+        if profile_root.is_symlink() or profile_root.parent.is_symlink():
+            return False
+        try:
+            from agents.core.install_identity import _read
+
+            proven = _read(profile_root / "install_id") == old
+        except (OSError, ValueError):
+            proven = False
+        if not proven or record.get("previous_install_id") not in (None, old):
+            return False
+        record["previous_install_id"] = old
     record["install_id"] = current
     return True
+
+
+def _migration_required(record: Mapping[str, Any]) -> bool:
+    """A foreign valid record must never be displayed as this install's identity."""
+    from agents.core.install_identity import ID_RE, install_id
+
+    old = str(record.get("install_id") or "")
+    return bool(ID_RE.fullmatch(old) and old != install_id())
+
+
+def _reported(record: dict[str, Any]) -> dict[str, Any]:
+    if _migration_required(record):
+        return {**record, "migration_required": True, "migration_reason":
+                "activation identity differs from this install; reconcile the profile and re-pair"}
+    return record
 
 
 def mark_installed(
@@ -142,9 +175,9 @@ def mark_installed(
     target = store_path(path)
     existing = _read(target)
     if existing is not None:
-        if _adopt_install_id(existing):
+        if _adopt_install_id(existing, target):
             _write(target, existing)
-        return existing
+        return _reported(existing)
     from agents.core.install_identity import install_id
 
     if target.exists() and not _emptied(target):
@@ -173,7 +206,9 @@ def infer_install_at_boot(
     target = store_path(path)
     existing = _read(target)
     if existing is not None:
-        return existing
+        if _adopt_install_id(existing, target):
+            _write(target, existing)
+        return _reported(existing)
     record = mark_installed(target, now=now)
     if record.get("unreadable"):
         return record
@@ -210,8 +245,10 @@ def record_first_action(
         record = infer_install_at_boot(target, now=now)
     if record.get("unreadable"):
         return None   # H689: never write over a record that cannot be read
-    if _adopt_install_id(record):
+    if _adopt_install_id(record, target):
         _write(target, record)
+    if _migration_required(record):
+        return None
     if record.get("activated"):
         return None  # the first is the first
 
@@ -258,12 +295,16 @@ def activation_state(
         }
     installed_at = _epoch(record.get("installed_at"), moment)
     activated = record.get("activated")
+    migration_required = _migration_required(record)
+    identity_fields = ({"install_id": None, "migration_required": True,
+                        "migration_reason": "activation identity differs from this install; reconcile the profile and re-pair"}
+                       if migration_required else {"install_id": record.get("install_id")})
     if not activated:
         waiting = max(0.0, moment - installed_at)
         return {
             "schema": SCHEMA,
             "installed": True,
-            "install_id": record.get("install_id"),
+            **identity_fields,
             "installed_at": installed_at,
             "inferred_start": bool(record.get("inferred_at_boot")),
             "activated": False,
@@ -271,12 +312,13 @@ def activation_state(
             "band": None,
             "waiting_seconds": waiting,
             "waiting_band": _band(waiting),
-            "reason": "no owner-accepted governed action yet",
+            "reason": ("activation identity migration required" if migration_required
+                       else "no owner-accepted governed action yet"),
         }
     return {
         "schema": SCHEMA,
         "installed": True,
-        "install_id": record.get("install_id"),
+        **identity_fields,
         "installed_at": installed_at,
         "inferred_start": bool(record.get("inferred_at_boot")),
         "activated": True,

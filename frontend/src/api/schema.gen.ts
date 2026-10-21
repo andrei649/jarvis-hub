@@ -827,6 +827,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/incidents/{incident_id}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Jobs Incident Ack */
+        post: operations["jobs_incident_ack_api_jobs_incidents__incident_id__ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Runs Recent */
+        get: operations["jobs_runs_recent_api_jobs_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/tick": {
         parameters: {
             query?: never;
@@ -839,6 +873,25 @@ export interface paths {
         /** Jobs Tick */
         post: operations["jobs_tick_api_jobs_tick_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/notepad/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Notepad Keys */
+        get: operations["jobs_notepad_keys_api_jobs__job_id__notepad_keys_get"];
+        /** Jobs Notepad Key Set */
+        put: operations["jobs_notepad_key_set_api_jobs__job_id__notepad_keys_put"];
+        post?: never;
+        /** Jobs Notepad Key Delete */
+        delete: operations["jobs_notepad_key_delete_api_jobs__job_id__notepad_keys_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1211,6 +1264,35 @@ export interface paths {
          * @description Owner decision on a sender: approve / reject / block / unpair.
          */
         post: operations["pairing_decide_api_channels_pairing_decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/pairing/clear-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pairing Clear Pending
+         * @description Drop every pending request at once — a bulk reject (H154).
+         *
+         *     Approved and blocked senders are untouched and nobody is blocked, so a real
+         *     contact caught in the sweep can simply ask again. ``audited`` is False when
+         *     no audit row could be written (no audit log wired, or the write failed).
+         *
+         *     Runs on the event loop, not in a worker thread: every other writer of the
+         *     store (request/decide here, Telegram's deeplink redeem) mutates it on the
+         *     loop without the store lock, and the gateway's inbound gate reads it there,
+         *     so a threaded clear would race them.
+         */
+        post: operations["pairing_clear_pending_api_channels_pairing_clear_pending_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2383,7 +2465,8 @@ export interface paths {
         };
         /**
          * Support Bundle
-         * @description A non-sensitive diagnostic bundle for support triage (admin-only).
+         * @description A non-sensitive diagnostic bundle for support triage (admin-only). ``log_lines``
+         *     opts in to the newest redacted WARNING+ log records (H009).
          */
         get: operations["support_bundle_api_support_bundle_get"];
         put?: never;
@@ -3172,9 +3255,9 @@ export interface paths {
         /**
          * Switch Skill
          * @description H329 — switch one skill, or every skill of a category, on or off: everywhere, or
-         *     on one channel. Nothing is uninstalled. Off is always allowed and recorded when it
-         *     can be; on widens what the hub does, so it is refused unless the intent log records
-         *     it. An essential skill is never switched off.
+         *     on one channel. Nothing is uninstalled. Off applies at once; on creates an
+         *     exact once-scoped human approval task and stays pending until its worker runs.
+         *     An essential skill is never switched off.
          */
         post: operations["switch_skill_api_skills_switch_post"];
         delete?: never;
@@ -3504,6 +3587,53 @@ export interface paths {
          *     card here.
          */
         get: operations["skill_proposals_api_skills_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Skills Batch
+         * @description The owner edits several skills in one call, applied atomically (H665): create,
+         *     patch, write_file, remove_file and delete, in order, on staging copies first; the live
+         *     folders are swapped only when every operation and every resulting SKILL.md passed, and
+         *     any failure in the swap puts every touched skill back. ``dry_run`` answers the diffs
+         *     without changing anything. A refusal is 422 with the failing operation, hints and a
+         *     preview of the file as the batch had it.
+         */
+        post: operations["skills_batch_api_skills_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Skill Batches
+         * @description The skill batches the model proposed and the owner has not decided (H665): each
+         *     with its operations, the diffs its dry run produced, and the one approval card that
+         *     applies it whole (``POST /api/actions/{card}/decide``).
+         */
+        get: operations["skill_batches_api_skills_batches_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6081,7 +6211,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Oauth Callback Redirect
+         * @description The provider's redirect lands here as a GET (REDIRECT_URI): the same
+         *     state-gated exchange as the POST, answered with a page the owner can close.
+         */
+        get: operations["oauth_callback_redirect_api_oauth_callback_get"];
         put?: never;
         /** Oauth Callback */
         post: operations["oauth_callback_api_oauth_callback_post"];
@@ -6771,6 +6906,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kg/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kg Map
+         * @description H206 — bounded whole-map read for the memory explorer's canvas.
+         *
+         *     Names, types, relation edges and the time each name first appeared in the
+         *     bi-temporal store. Never property values: the map carries structure, so a map
+         *     code or a screenshot cannot leak what an entity's properties hold.
+         */
+        get: operations["kg_map_api_kg_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/kg/relations": {
         parameters: {
             query?: never;
@@ -6826,7 +6985,14 @@ export interface paths {
         };
         /**
          * Kg Facts As Of
-         * @description Valid-time recall: facts true in the world at time `at` (default now).
+         * @description Bi-temporal recall at time `at` (default now).
+         *
+         *     Without `axis` and `limit` this is the original route, unchanged: facts true in
+         *     the world at `at`, unsorted and unbounded (the mobile Memory graph reads it so).
+         *     H206 explorer options: ``axis=valid`` is the same valid-time answer, ``axis=known``
+         *     is what the store BELIEVED at `at` (ingested by then and not yet superseded or
+         *     retracted by then). ``limit`` keeps the newest facts (``clipped`` says so) and a
+         *     response to either option carries ``bounds``, the timeline's extent for the scrubber.
          */
         get: operations["kg_facts_as_of_api_kg_facts_as_of_get"];
         put?: never;
@@ -9963,6 +10129,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Session
+         * @description Select and recap without changing the shared active/default session.
+         */
+        post: operations["resolve_session_sessions_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Session
+         * @description Accept owner-attested, canonical text only; SQLite owns the durable seed.
+         */
+        post: operations["import_session_sessions_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions": {
         parameters: {
             query?: never;
@@ -10918,7 +11124,16 @@ export interface paths {
         };
         /**
          * Backup List
-         * @description List local backup snapshots (newest first).
+         * @description List local backup snapshots (newest first), a staged restore and the last outcome.
+         *
+         *     ``pending_restore.state`` is ``waiting`` (applied at the next hub start), ``deferred``
+         *     (``deferred_reason`` says why the last attempt was put off) or ``expired``.
+         *
+         *     H010 review r7: an accepted restore is staged by this hub's worker on its next tick, so
+         *     the listing also says how it will be applied without waiting for that: ``restart``
+         *     (``self``/``manual``, as the restore request's 202), ``stage_within_seconds`` (the
+         *     worker's tick) and ``refused_restore`` (the newest accept the apply refused, if no
+         *     restore was staged since).
          */
         get: operations["backup_list_api_admin_backup_get"];
         put?: never;
@@ -10948,6 +11163,39 @@ export interface paths {
          */
         post: operations["backup_verify_api_admin_backup_verify_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backup/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backup Restore
+         * @description Ask to restore a snapshot over the live data root. Body: {name}.
+         *
+         *     Answers 202 ``{"pending": task id}``: the restore waits for a human in the decision
+         *     inbox at the irreversible tier (``nerva approvals accept <id>``); a card for the same
+         *     archive already waiting is answered instead. 503 when no approval queue can take it
+         *     — nothing is ever restored on this request alone.
+         */
+        post: operations["backup_restore_api_admin_backup_restore_post"];
+        /**
+         * Backup Restore Cancel
+         * @description Withdraw a staged in-place restore before it is applied (H010 review r2).
+         *
+         *     200 ``{ok, cancelled}``; 404 when nothing is staged; 409 when the restore is being
+         *     applied right now (it can no longer be withdrawn). Logged as ``cancelled`` in
+         *     ``backups/restore-history.jsonl``.
+         */
+        delete: operations["backup_restore_cancel_api_admin_backup_restore_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -12977,6 +13225,15 @@ export interface components {
             reply: string;
             /** Session Id */
             session_id?: string | null;
+            /** Usage */
+            usage?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Runtime Stops
+             * @default []
+             */
+            runtime_stops: string[];
             /**
              * Pending Approvals
              * @default []
@@ -13537,6 +13794,24 @@ export interface components {
              */
             switch: boolean;
         };
+        /** ImportSessionRequest */
+        ImportSessionRequest: {
+            /** Source */
+            source: string;
+            /** External Id */
+            external_id: string;
+            /** Turns */
+            turns: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Source Sha256 */
+            source_sha256?: string | null;
+        };
         /** InstallSkillBody */
         InstallSkillBody: {
             /** Name */
@@ -13597,6 +13872,10 @@ export interface components {
             options?: {
                 [key: string]: unknown;
             } | null;
+            /** Continuity */
+            continuity?: boolean | null;
+            /** Context From */
+            context_from?: string | string[] | null;
             /**
              * Confirm Expensive
              * @default false
@@ -13612,6 +13891,13 @@ export interface components {
         JobNotepadBody: {
             /** Text */
             text: string;
+        };
+        /** JobNotepadKeyBody */
+        JobNotepadKeyBody: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
         };
         /** JobPauseBody */
         JobPauseBody: {
@@ -14248,6 +14534,16 @@ export interface components {
              */
             memo: string;
         };
+        /** ResolveSessionRequest */
+        ResolveSessionRequest: {
+            /** Selector */
+            selector: string;
+            /**
+             * Latest Mode
+             * @default false
+             */
+            latest_mode: boolean;
+        };
         /** ReviewBody */
         ReviewBody: {
             /** Card */
@@ -14438,6 +14734,21 @@ export interface components {
              * @default 200
              */
             max_reviews: number;
+        };
+        /**
+         * SkillBatchBody
+         * @description Hermes's skill_manage ``operations`` array: ordered, across several skills.
+         */
+        SkillBatchBody: {
+            /** Operations */
+            operations: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
         };
         /** SkillSwitchBody */
         SkillSwitchBody: {
@@ -16117,7 +16428,11 @@ export interface operations {
     };
     jobs_incidents_api_jobs_incidents_get: {
         parameters: {
-            query?: never;
+            query?: {
+                job_id?: string | null;
+                state?: ("detected" | "alerted" | "closed") | null;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -16131,6 +16446,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_incident_ack_api_jobs_incidents__incident_id__ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_runs_recent_api_jobs_runs_get: {
+        parameters: {
+            query?: {
+                job_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -16151,6 +16538,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    jobs_notepad_keys_api_jobs__job_id__notepad_keys_get: {
+        parameters: {
+            query?: {
+                key?: string | null;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_notepad_key_set_api_jobs__job_id__notepad_keys_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobNotepadKeyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_notepad_key_delete_api_jobs__job_id__notepad_keys_delete: {
+        parameters: {
+            query: {
+                key: string;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -16915,6 +17403,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pairing_clear_pending_api_channels_pairing_clear_pending_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -18872,7 +19380,9 @@ export interface operations {
     };
     support_bundle_api_support_bundle_get: {
         parameters: {
-            query?: never;
+            query?: {
+                log_lines?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -18886,6 +19396,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20283,6 +20802,59 @@ export interface operations {
         };
     };
     skill_proposals_api_skills_proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    skills_batch_api_skills_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillBatchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_batches_api_skills_batches_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -24654,6 +25226,39 @@ export interface operations {
             };
         };
     };
+    oauth_callback_redirect_api_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     oauth_callback_api_oauth_callback_post: {
         parameters: {
             query?: never;
@@ -25627,6 +26232,37 @@ export interface operations {
             };
         };
     };
+    kg_map_api_kg_map_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     kg_add_relation_api_kg_relations_post: {
         parameters: {
             query?: never;
@@ -25706,6 +26342,8 @@ export interface operations {
                 at?: number | null;
                 subject?: string;
                 predicate?: string;
+                axis?: string | null;
+                limit?: number | null;
             };
             header?: never;
             path?: never;
@@ -29939,6 +30577,72 @@ export interface operations {
             };
         };
     };
+    resolve_session_sessions_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_session_sessions_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_sessions_sessions_get: {
         parameters: {
             query?: {
@@ -31374,6 +32078,46 @@ export interface operations {
         };
     };
     backup_verify_api_admin_backup_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    backup_restore_api_admin_backup_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    backup_restore_cancel_api_admin_backup_restore_delete: {
         parameters: {
             query?: never;
             header?: never;

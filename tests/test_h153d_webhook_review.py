@@ -131,9 +131,11 @@ def test_rendering_one_long_line_costs_linear_time(text, render):
     renders; a marker span is bounded, so one long line costs linear time."""
     from agents.core.channels import render as renderers
 
-    started = time.perf_counter()
+    # This guards regex CPU work on the event-loop thread. Wall time also
+    # includes unrelated CI worker scheduling and cannot measure that cost.
+    started = time.thread_time()
     getattr(renderers, render)(text)
-    assert time.perf_counter() - started < 0.5
+    assert time.thread_time() - started < 0.5
 
 
 def test_a_bounded_span_still_renders_the_markup_it_did():
@@ -514,6 +516,7 @@ def test_a_slider_value_is_audited(hub, receiver):
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), "x", None, [3]])
 def test_an_hour_setting_that_is_not_a_number_falls_back_to_the_default(monkeypatch, bad):
     from agents.core.autonomy.jobs import JobRunner
+    from agents.core.autonomy.schedule_timezone import app_schedule_timezone
     from agents.core.routers import webhooks as router
 
     orch = SimpleNamespace(get_setting=lambda key, default=None: bad if key.endswith("start") else default)
@@ -521,6 +524,7 @@ def test_an_hour_setting_that_is_not_a_number_falls_back_to_the_default(monkeypa
     assert router._quiet_hours(orch) is True                  # 22 to 7, the defaults
     runner = JobRunner.__new__(JobRunner)
     runner._quiet, runner._orch, runner._now = None, orch, lambda: _at(23)
+    runner._pinned_timezone = app_schedule_timezone()
     assert runner.quiet_hours() is True
 
 

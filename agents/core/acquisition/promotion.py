@@ -615,6 +615,9 @@ class PromotionBroker:
             name,
             handler,
             gated=False,
+            # H399 — fail closed: an acquired package declares no read-only
+            # contract, so its calls never overlap the rest of a model step.
+            parallel_safe=False,
             description=f"Sandbox-only acquired capability {name}.",
             input_schema={"type": "object", "additionalProperties": True},
             capability_id=f"tool:acquired.{name}",

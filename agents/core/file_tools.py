@@ -85,6 +85,7 @@ import asyncio
 import contextlib
 import fnmatch
 import hashlib
+import io
 import json
 import logging
 import os
@@ -104,7 +105,13 @@ from agents.core.local_docs import DOC_EXTS, extract_pdf_pages, extract_text, pd
 from agents.core.paths import data_path
 from agents.core.tool_result_store import SPILL_DIRNAME as _SPILL_DIRNAME
 from agents.core.tool_result_store import is_reference as _is_spill_reference
-from agents.core.tool_rpc import ToolRPCValidationError, current_tool_turn
+from agents.core.tool_rpc import (
+    MAX_IMAGE_BYTES,
+    ToolContent,
+    ToolRPCValidationError,
+    current_tool_turn,
+    image_signature_ok,
+)
 
 logger = logging.getLogger("jarvis.file_tools")
 
@@ -129,6 +136,15 @@ MAX_LIST_ENTRIES = 2000
 # characters. ``raw=true`` still returns the bytes.
 DOCUMENT_SUFFIXES = frozenset(DOC_EXTS)
 _DOCUMENT_PARSERS = {".pdf": "pypdf", ".docx": "docx"}
+# H297 — an image inside the roots is read as the image itself: a ToolContent result
+# (a one-line summary plus the image part), which a model whose tool results carry
+# images sees as a picture and any other model reads as its descriptor. Bytes that do
+# not carry their suffix's signature are not an image and page like any other file;
+# ``raw=true`` (or an offset) always returns bytes.
+IMAGE_SUFFIXES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp",
+}
 DEFAULT_LIST_ENTRIES = 500
 # file_search bounds. Each is a ceiling the result reports hitting (``truncated``
 # plus ``stopped_by``) rather than a silent edge of the workspace.
@@ -841,6 +857,10 @@ class FileTools:
             size = target.stat().st_size
             if not raw and target.suffix.lower() in DOCUMENT_SUFFIXES:
                 return _read_document(target, size, limit, offset)
+            if not raw and offset == 0 and target.suffix.lower() in IMAGE_SUFFIXES:
+                image = _read_image(target, size)
+                if image is not None:
+                    return image
             data = b""
             if offset < size:
                 with target.open("rb") as handle:
@@ -856,6 +876,10 @@ class FileTools:
             result = await asyncio.to_thread(_read)
         except (OSError, ValueError, OverflowError) as exc:
             return {"ok": False, "reason": "io_error", "detail": exc.__class__.__name__}
+        if isinstance(result, ToolContent):
+            self._record("file.read", str(target), ok=True)
+            result.structured = await _with_project_context(result.structured, target)
+            return result
         self._record("file.read", str(target), ok=result.get("ok") is True)
         return await _with_project_context(result, target)   # H594
 
@@ -1429,6 +1453,110 @@ def _page(data: bytes, *, offset: int, total: int) -> dict:
     return fields
 
 
+#: H297 — the longest side, in pixels, an image a provider is sent may have: Anthropic
+#: rejects the whole request over 8,000 px. A larger image is scaled down to fit.
+MAX_IMAGE_SIDE = 8000
+#: The most pixels file_read decodes to check an image (about 160 MB as RGBA). A file
+#: past it is refused by name; ``raw=true`` still pages its bytes.
+MAX_IMAGE_DECODE_PIXELS = 40_000_000
+_PIL_FORMATS = {"image/png": "PNG", "image/jpeg": "JPEG", "image/gif": "GIF", "image/webp": "WEBP"}
+
+
+def _image_refusal(reason: str, detail: str, **fields: Any) -> dict:
+    return {"ok": False, "reason": reason, **fields,
+            "detail": f"{detail}; raw=true returns a bounded byte page"}
+
+
+def _fit_image(data: bytes, media_type: str) -> tuple[bytes, dict] | dict:
+    """Decode *data* and bring it within the provider's pixel limit (H297).
+
+    A provider rejects the whole request, not just the image, for an image it
+    cannot decode or one over :data:`MAX_IMAGE_SIDE` on a side, so a signature
+    check is not enough: the image is decoded here, off the event loop. Returns the
+    bytes to send (re-encoded only when scaled down) with their dimensions, or a
+    named refusal.
+    """
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover - pillow is a hard requirement
+        return _image_refusal("image_unreadable", "the image decoder is not installed")
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+            if image.format != _PIL_FORMATS.get(media_type):
+                return _image_refusal("image_unreadable", "the bytes do not decode as " + media_type)
+            if width < 1 or height < 1 or width * height > MAX_IMAGE_DECODE_PIXELS:
+                return _image_refusal(
+                    "image_dimensions_too_large", "the image has too many pixels to send",
+                    width=width, height=height, max_pixels=MAX_IMAGE_DECODE_PIXELS)
+            image.load()
+            if max(width, height) <= MAX_IMAGE_SIDE:
+                return data, {"width": width, "height": height}
+            if media_type == "image/gif":
+                return _image_refusal(
+                    "image_dimensions_too_large", "a GIF over the side limit is not rescaled",
+                    width=width, height=height, max_side=MAX_IMAGE_SIDE)
+            scaled = image.copy()
+    except Image.DecompressionBombError:
+        return _image_refusal("image_dimensions_too_large", "the image has too many pixels to send",
+                              max_pixels=MAX_IMAGE_DECODE_PIXELS)
+    except Exception:  # noqa: BLE001 - any decoder failure means the provider would refuse it too
+        return _image_refusal("image_unreadable", "the image is corrupt or truncated")
+    scaled.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+    if media_type == "image/jpeg" and scaled.mode not in ("RGB", "L", "CMYK"):
+        scaled = scaled.convert("RGB")
+    out = io.BytesIO()
+    try:
+        scaled.save(out, format=_PIL_FORMATS[media_type])
+    except Exception:  # noqa: BLE001 - an encoder failure is a refusal, not a crash
+        return _image_refusal("image_unreadable", "the scaled image could not be encoded")
+    encoded = out.getvalue()
+    if len(encoded) > MAX_IMAGE_BYTES:
+        return _image_refusal("image_too_large", "the scaled image is over max_image_bytes",
+                              max_image_bytes=MAX_IMAGE_BYTES)
+    return encoded, {"width": scaled.width, "height": scaled.height,
+                     "original_width": width, "original_height": height}
+
+
+def _read_image(target: Path, size: int) -> ToolContent | dict | None:
+    """An image file as a multimodal result (H297), a bounded refusal, or ``None``.
+
+    ``None`` means the bytes are not the image the suffix names, so the caller pages
+    them as an ordinary file. Over :data:`~agents.core.tool_rpc.MAX_IMAGE_BYTES` the
+    read is refused by name rather than cut: half an image is a corrupt image. An
+    image that does not decode is refused as ``image_unreadable``; one over
+    :data:`MAX_IMAGE_SIDE` on a side is scaled down to fit (see :func:`_fit_image`).
+    """
+    media_type = IMAGE_SUFFIXES[target.suffix.lower()]
+    too_large = {
+        "ok": False, "reason": "image_too_large", "size": size,
+        "max_image_bytes": MAX_IMAGE_BYTES,
+        "detail": "images are read whole up to max_image_bytes; raw=true returns a bounded byte page",
+    }
+    if size > MAX_IMAGE_BYTES:
+        return too_large
+    with target.open("rb") as handle:
+        data = handle.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
+        return too_large
+    if not data or not image_signature_ok(data, media_type):
+        return None
+    fitted = _fit_image(data, media_type)
+    if isinstance(fitted, dict):
+        return {**fitted, "path": str(target), "size": size}
+    sent, dims = fitted
+    digest = hashlib.sha256(data).hexdigest()
+    summary = f"{target.name}: {media_type} image, {dims['width']}x{dims['height']} px, {len(sent)} bytes."
+    if "original_width" in dims:
+        summary += (f" Scaled down from {dims['original_width']}x{dims['original_height']} px"
+                    f" to fit the {MAX_IMAGE_SIDE} px provider limit.")
+    return ToolContent(
+        [ToolContent.text(summary), ToolContent.image(sent, media_type)],
+        structured={"ok": True, "path": str(target), "image": True, "media_type": media_type,
+                    "bytes": len(data), "size": size, "sha256": digest, **dims},
+    )
+
+
 def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict:
     """Extract a bounded text page from an admitted .pdf / .docx input.
 
@@ -1663,7 +1791,9 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "starts the read at that byte; a read that stops early returns next_offset — "
             "pass it back as offset to page through a large file or a spilled tool result. "
             "PDF/DOCX extraction accepts at most 50 MB (50,000,000 bytes); raw=true pages bytes. "
-            "PDF page gaps without extracted text are reported separately from content."
+            "PDF page gaps without extracted text are reported separately from content. "
+            "A .png/.jpg/.gif/.webp image (up to 3,750,000 bytes) is returned as the image "
+            "itself; raw=true returns its bytes."
         ),
         "gated": False,
         "trusted_execution": False,
@@ -1859,13 +1989,16 @@ def register_file_tools(
             trusted_execution=spec["trusted_execution"],
             classifier=classifiers.get(name),
             gated_intake=_gated_intake(name) if mutation_intake is not None and spec["gated"] else None,
+            # H399 — a mutation runs alone: a read of the same path in the same step
+            # must see it either wholly before or wholly after, never mid-write.
+            parallel_safe=False if spec["gated"] else None,
         )
         registered.append(name)
     return registered
 
 
 __all__ = [
-    "KIND", "FLAG", "ROOTS_ENV", "MAX_BYTES_ENV", "DEFAULT_MAX_BYTES", "MAX_OFFSET",
+    "KIND", "FLAG", "ROOTS_ENV", "MAX_BYTES_ENV", "DEFAULT_MAX_BYTES", "MAX_OFFSET", "IMAGE_SUFFIXES",
     "FILE_WRITE_CONTRACT", "FILE_TOOL_SPECS", "GATED_TOOL_KINDS",
     "FileScope", "FileScopeError", "FileTools", "Snapshot", "SnapshotStore",
     "SECRET_NAME_TOKENS", "looks_secret_name", "restore_snapshot", "register_file_tools",

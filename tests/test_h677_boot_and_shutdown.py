@@ -187,25 +187,43 @@ def test_status_and_readyz_report_the_warmup(monkeypatch):
     assert readiness_snapshot()["warmup"]["warming"] is True
 
 
-def test_a_turn_served_while_warming_is_marked(monkeypatch):
+@pytest.fixture
+def native_checkpoints(tmp_path):
+    from agents.core.checkpoint import CheckpointManager
+
+    manager = CheckpointManager(str(tmp_path / "warmup.db"))
+    manager.initialize()
+    manager.create_session_record("warmup_session", "jarvis")
+    yield manager
+    manager.close()
+
+
+def test_a_turn_served_while_warming_is_marked(monkeypatch, native_checkpoints):
     from agents import web
 
     mock = MagicMock()
     mock.session_id = "warmup_session"
+    mock.checkpoints = native_checkpoints
     mock.handle_input = AsyncMock(return_value="Salut!")
     monkeypatch.setattr(web, "orch", mock)
     client = TestClient(web.app)
     assert client.post("/chat", json={"message": "hi"}).json()["warming"] is False
     lb.WARMUP.track(asyncio.Future(loop=asyncio.new_event_loop()))
     reply = client.post("/chat", json={"message": "hi"}).json()
+    usage = reply.pop("usage")
+    assert usage["usage_basis"] == usage["cost_basis"] == "measured_zero"
+    assert usage["api_calls"] == 0
+    assert reply.pop("runtime_stops") == []
     assert reply == {"reply": "Salut!", "session_id": "warmup_session",
                      "pending_approvals": [], "warming": True, "notices": [], "outcome": None}
 
 
-def test_a_streamed_turn_served_while_warming_is_marked(monkeypatch):
+def test_a_streamed_turn_served_while_warming_is_marked(monkeypatch, native_checkpoints):
     from agents import web
 
     mock = MagicMock()
+    mock.session_id = "warmup_session"
+    mock.checkpoints = native_checkpoints
     mock.agents = {}
     mock.observer = None
 

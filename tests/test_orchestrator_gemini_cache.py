@@ -14,6 +14,7 @@ from agents.core.llm.tokenizer import estimate_tokens
 from agents.core.orchestrator import Orchestrator
 from agents.core.security.guardrails import GuardrailsEngine, SecurityBlockError
 from agents.core.security.types import RedactionMode
+from tests.h441_native_fixture import bind_native
 
 EMAIL = "alice@example.com"
 
@@ -135,6 +136,7 @@ def _orchestrator(
     history: tuple[str, ...],
     *,
     cache: _FakeCache,
+    monkeypatch,
     mode: RedactionMode = RedactionMode.WARN,
 ) -> tuple[Orchestrator, _RecordingGemini, _Memory, _Router]:
     orchestrator = Orchestrator.__new__(Orchestrator)
@@ -192,7 +194,10 @@ def _orchestrator(
     orchestrator._route_candidates = lambda intent: intent.target_agents
     orchestrator.agents = {"jarvis": _Agent()}
     orchestrator.llm_router = router
-    orchestrator.checkpoints = SimpleNamespace(load=lambda agent_id, session_id: None)
+    bind_native(orchestrator, monkeypatch, session_ids=(
+        "cache-hit", "changed-prefix", "cache-miss", "cache-block", "cache-redact",
+        "policy-restart", "cache-hit-cost", "cache-miss-cost", "synthetic-cache",
+    ))
     orchestrator.security = GuardrailsEngine(backend=None, mode=mode)
     orchestrator.context_cache = cache
     orchestrator.get_setting = lambda key, default=None: default
@@ -209,7 +214,7 @@ async def _drain_cache_tasks(orchestrator: Orchestrator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cache_hit_sends_tail_exactly_once():
+async def test_cache_hit_sends_tail_exactly_once(monkeypatch):
     history = (
         "[user]: prior alpha",
         "[jarvis]: prior beta",
@@ -225,7 +230,7 @@ async def test_cache_hit_sends_tail_exactly_once():
         )
 
     cache = _FakeCache(hit)
-    orchestrator, backend, _memory, router = _orchestrator(history, cache=cache)
+    orchestrator, backend, _memory, router = _orchestrator(history, cache=cache, monkeypatch=monkeypatch)
 
     await orchestrator._handle_input_stream(
         "current question",
@@ -245,14 +250,14 @@ async def test_cache_hit_sends_tail_exactly_once():
 
 
 @pytest.mark.asyncio
-async def test_changed_or_truncated_prefix_sends_full_history():
+async def test_changed_or_truncated_prefix_sends_full_history(monkeypatch):
     history = (
         "[user]: changed alpha",
         "[jarvis]: prior beta",
         "[user]: tail gamma",
     )
     cache = _FakeCache()
-    orchestrator, backend, _memory, _router = _orchestrator(history, cache=cache)
+    orchestrator, backend, _memory, _router = _orchestrator(history, cache=cache, monkeypatch=monkeypatch)
 
     await orchestrator._handle_input_stream(
         "current question",
@@ -268,10 +273,10 @@ async def test_changed_or_truncated_prefix_sends_full_history():
 
 
 @pytest.mark.asyncio
-async def test_cache_miss_keeps_full_history_and_schedules_creation():
+async def test_cache_miss_keeps_full_history_and_schedules_creation(monkeypatch):
     history = ("[user]: prior alpha", "[jarvis]: prior beta")
     cache = _FakeCache()
-    orchestrator, backend, _memory, _router = _orchestrator(history, cache=cache)
+    orchestrator, backend, _memory, _router = _orchestrator(history, cache=cache, monkeypatch=monkeypatch)
 
     await orchestrator._handle_input_stream(
         "current question",
@@ -290,12 +295,13 @@ async def test_cache_miss_keeps_full_history_and_schedules_creation():
 
 
 @pytest.mark.asyncio
-async def test_block_mode_performs_zero_cache_network_calls():
+async def test_block_mode_performs_zero_cache_network_calls(monkeypatch):
     cache = _FakeCache()
     orchestrator, backend, _memory, _router = _orchestrator(
         (f"[user]: private contact {EMAIL}",),
         cache=cache,
         mode=RedactionMode.BLOCK,
+        monkeypatch=monkeypatch,
     )
 
     with pytest.raises(SecurityBlockError):
@@ -311,7 +317,7 @@ async def test_block_mode_performs_zero_cache_network_calls():
 
 
 @pytest.mark.asyncio
-async def test_redact_mode_uploads_copy_without_mutating_history():
+async def test_redact_mode_uploads_copy_without_mutating_history(monkeypatch):
     history = (
         f"[user]: private contact {EMAIL}",
         "[jarvis]: safe prior turn",
@@ -321,6 +327,7 @@ async def test_redact_mode_uploads_copy_without_mutating_history():
         history,
         cache=cache,
         mode=RedactionMode.REDACT,
+        monkeypatch=monkeypatch,
     )
 
     await orchestrator._handle_input_stream(
@@ -338,13 +345,14 @@ async def test_redact_mode_uploads_copy_without_mutating_history():
 
 
 @pytest.mark.asyncio
-async def test_warn_cache_is_not_reused_after_enforcing_restart():
+async def test_warn_cache_is_not_reused_after_enforcing_restart(monkeypatch):
     history = ("[user]: prior alpha", "[jarvis]: prior beta")
     cache = _PolicyCache()
     warn, warn_backend, _memory, _router = _orchestrator(
         history,
         cache=cache,
         mode=RedactionMode.WARN,
+        monkeypatch=monkeypatch,
     )
     await warn._handle_input_stream(
         "first current",
@@ -358,6 +366,7 @@ async def test_warn_cache_is_not_reused_after_enforcing_restart():
         history,
         cache=cache,
         mode=RedactionMode.REDACT,
+        monkeypatch=monkeypatch,
     )
     await enforcing._handle_input_stream(
         "second current",
@@ -457,7 +466,7 @@ async def test_cache_hit_records_the_cached_tokens_it_actually_reused(monkeypatc
             cached_prefix_count=2,
         )
 
-    orchestrator, _backend, _memory, _router = _orchestrator(history, cache=_FakeCache(hit))
+    orchestrator, _backend, _memory, _router = _orchestrator(history, cache=_FakeCache(hit), monkeypatch=monkeypatch)
     await orchestrator._handle_input_stream(
         "current question",
         channel="web",
@@ -482,7 +491,7 @@ async def test_uncached_turn_records_the_whole_prompt_it_actually_sent(monkeypat
     """
     monkeypatch.setattr("agents.core.cost_tracker.record", lambda *a, **k: None)
     history = ("[user]: prior alpha", "[jarvis]: prior beta")
-    orchestrator, backend, _memory, _router = _orchestrator(history, cache=_FakeCache())
+    orchestrator, backend, _memory, _router = _orchestrator(history, cache=_FakeCache(), monkeypatch=monkeypatch)
     await orchestrator._handle_input_stream(
         "current question",
         channel="web",
@@ -506,7 +515,7 @@ def test_non_streaming_channels_keep_the_old_input_estimate(monkeypatch):
     `estimate_tokens(text)` behaviour rather than silently reporting zero.
     """
     monkeypatch.setattr("agents.core.cost_tracker.record", lambda *a, **k: None)
-    orchestrator, _backend, _memory, _router = _orchestrator((), cache=_FakeCache())
+    orchestrator, _backend, _memory, _router = _orchestrator((), cache=_FakeCache(), monkeypatch=monkeypatch)
     orchestrator.get_setting = lambda key, default=None: default
 
     meta = _record_and_capture(orchestrator, "a telegram question", "an answer")

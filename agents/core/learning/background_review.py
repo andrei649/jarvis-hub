@@ -473,12 +473,14 @@ class BackgroundReviewer:
             if found:
                 actions.append(f"{found} fact(s) found but not kept: living memory is off "
                                "(cognition.memory_enabled)")
-        self._put_facts(review["user_facts"][:max_facts],
-                        getattr(living, "user_core", None),
-                        "User profile", actions, counts)
-        self._put_facts(review["agent_facts"][:max_facts],
-                        getattr(living, "core", None),
-                        "Core memory", actions, counts)
+        # H423: a ring put waits for the ring file's lock (up to LOCK_TIMEOUT_S per fact),
+        # so the writes run in a worker thread and never stall the event loop.
+        await asyncio.to_thread(self._put_facts, review["user_facts"][:max_facts],
+                                getattr(living, "user_core", None),
+                                "User profile", actions, counts)
+        await asyncio.to_thread(self._put_facts, review["agent_facts"][:max_facts],
+                                getattr(living, "core", None),
+                                "Core memory", actions, counts)
 
         if not max_facts and on_demand:
             found = sum(1 for fact in review["user_facts"] + review["agent_facts"] if not self._detect(fact))
@@ -552,12 +554,19 @@ class BackgroundReviewer:
                 # Content comparison (not len) so ring-dedupe (list unchanged)
                 # is not miscounted as a write, while ring-full rotation is.
                 before = store.list() if hasattr(store, "list") else None
-                store.put(fact)
+                changed = store.put(fact)
+                if isinstance(changed, bool):
+                    # H423: put rereads the ring file first, so only its own answer says
+                    # whether this fact changed it.
+                    added += int(changed)
+                    continue
                 after = store.list() if hasattr(store, "list") else None
                 if before is None or after != before:
                     added += 1
             except Exception:
-                logger.debug("core fact write skipped", exc_info=True)
+                # H423: a ring held by another writer, or hand-edited past reading back,
+                # is not written over; the fact is not kept.
+                logger.warning("core fact write skipped", exc_info=True)
         if added:
             counts["facts"] += added
             actions.append(f"{label} updated (+{added})")

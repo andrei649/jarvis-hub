@@ -1,5 +1,12 @@
 services:
 
+  # The hub runs serve.py — the canonical entry — never raw uvicorn: only serve.py applies
+  # a staged in-place restore at boot and re-execs itself when an approved restore asks it
+  # to (H010). Same posture as Dockerfile / docker-compose.quickstart.yml: host networking
+  # and a loopback bind, so boot_guards.assert_safe_bind passes without a token and nothing
+  # is published on a LAN interface (qdrant/neo4j/n8n publish their ports to the host, so
+  # .env's localhost URLs reach them). serve.py turns uvicorn's proxy-header layer off
+  # itself (H691). Docker Desktop: enable host networking first.
   jarvis:
     build:
       context: .
@@ -10,11 +17,19 @@ services:
         RUN pip install --no-cache-dir -r requirements-beta.txt
         COPY . .
         EXPOSE 8080
-        CMD ["python", "-m", "uvicorn", "agents.web:app", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers"]
-    ports:
-      - "8080:8080"
+        CMD ["python", "serve.py"]
+    network_mode: host
+    # tini as pid 1: the coordinator shares this pid namespace (below), so something here
+    # must reap what is orphaned in it; serve.py's self-restart re-exec keeps its own pid.
+    init: true
+    environment:
+      JARVIS_HOST: "127.0.0.1"
+      JARVIS_PORT: "8080"
+      JARVIS_HOME: /data
     env_file:
       - .env
+    volumes:
+      - nerva_data:/data
     depends_on:
       - qdrant
       - neo4j
@@ -23,9 +38,16 @@ services:
 
   # Headless runtime supervisor — coordinator + heartbeat + night shift, wired
   # for real (see scripts/coordinator.py). Separate container from `jarvis`
-  # (the HTTP app) so a stuck/crashed coordinator never takes chat down, and
-  # vice versa. runtime_supervisor.py respawns a killed coordinator itself;
+  # (the HTTP app) so a stuck/crashed coordinator never takes chat down.
+  # runtime_supervisor.py respawns a killed coordinator itself;
   # `restart: unless-stopped` is the second layer if the supervisor dies too.
+  #
+  # H010: it opens the SAME data root as the hub (nerva_data at /data, JARVIS_HOME), so a
+  # restore brings its DBs back too, and it sees the hub's staged restore and gives the
+  # root up. The marks both processes read (runtime.pid, hub.lock, the restore journal)
+  # hold pids, so it joins the hub's pid namespace (`pid: service:jarvis`) — in a namespace
+  # of its own every pid probe would read "nobody there". The cost: when the jarvis
+  # container stops, this one is stopped with it and comes back after it.
   runtime-coordinator:
     build:
       context: .
@@ -36,11 +58,16 @@ services:
         RUN pip install --no-cache-dir -r requirements-beta.txt
         COPY . .
         CMD ["python", "scripts/runtime_supervisor.py"]
+    pid: "service:jarvis"
+    environment:
+      JARVIS_HOME: /data
     env_file:
       - .env
     volumes:
+      - nerva_data:/data
       - runtime_logs:/app/logs
     depends_on:
+      - jarvis
       - qdrant
       - neo4j
     restart: unless-stopped
@@ -73,6 +100,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  nerva_data:
   qdrant_data:
   neo4j_data:
   n8n_data:

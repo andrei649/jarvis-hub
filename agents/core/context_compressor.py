@@ -310,12 +310,14 @@ class ContextCompressor:
                  keep_first: int = 0, structured: bool = False,
                  checkpoint: Optional[Callable[["list[dict]", "list[dict]"], Awaitable[Any]]] = None,
                  gate: Optional[Callable[[Callable[[], Awaitable[str]], int], Awaitable[Optional[str]]]] = None,
+                 untrusted_history: bool = False,
                  ) -> None:
         self._summarize = summarizer
         self.max_tokens = max_tokens
         self.keep_recent = keep_recent
         self.keep_first = max(0, int(keep_first))
         self.structured = structured
+        self.untrusted_history = untrusted_history
         # H427: awaited with exactly the turns about to be summarised away (and the whole
         # transcript) before the summary replaces them; CheckpointAborted keeps them.
         self._checkpoint = checkpoint
@@ -349,17 +351,25 @@ class ContextCompressor:
             lines.append(f"- {t.get('role', '')}: {first[:160]}")
         return "[summary of earlier conversation]\n" + "\n".join(lines)
 
-    @staticmethod
-    def _block(turns: "list[dict]") -> str:
+    def _block(self, turns: "list[dict]") -> str:
+        if self.untrusted_history:
+            from .foreign_history import render_turn
+            return "\n".join(render_turn(turn, tainted=True) for turn in turns)
         return "\n".join(f"{t.get('role', '')}: {t.get('content', '')}" for t in turns)
 
     def _summarizer_input(self, new_older: "list[dict]", prior_summary: str) -> str:
         block = self._block(new_older)
         if self.structured:
+            if prior_summary and self.untrusted_history:
+                from .foreign_history import render_summary
+                prior_summary = render_summary(prior_summary, tainted=True)
             prior_block = (f"Previous summary (fold it in, do not repeat verbatim):\n"
                            f"{prior_summary}\n" if prior_summary else "")
             return SUMMARY_PROMPT.format(prior_block=prior_block, block=block)
         if prior_summary:
+            if self.untrusted_history:
+                from .foreign_history import render_summary
+                prior_summary = render_summary(prior_summary, tainted=True)
             return f"[previous summary]\n{prior_summary}\n{block}"
         return block
 
@@ -393,19 +403,21 @@ class ContextCompressor:
         same turns, and why taking the estimate instead silently under-counts a
         request by everything that is not conversation.
 
-        ``dropped_in_prefix`` is the honest caveat: the anchor describes the
-        prefix *as it was sent*, and dropping an image rewrites it. The provider
-        never said what that image really cost, so the flat figure comes back for
-        exactly those turns. The result is floored at the plain estimate, so an
-        anchor can only ever make compaction happen sooner or at the same point,
-        never later — the same direction the window bound already runs in.
+        ``dropped_in_prefix`` records that images left the measured prefix but
+        cannot quantify their provider cost. After such a removal, its cost is
+        unknown. Keep the full provider measurement as a conservative upper
+        bound until the next response re-anchors; subtracting the flat image
+        estimate would misstate an unmeasured saving as observed occupancy.
+        The plain estimate still floors the anchor, so a measured request can
+        only make compaction happen sooner or at the same point.
         """
         if anchor is None or not anchor.usable:
             return sum(self._cost(t) for t in rows)
         covers = max(0, min(int(anchor.covers), len(rows)))
         prefix_estimate = sum(self._cost(t) for t in rows[:covers])
-        anchored = int(anchor.prompt_tokens) - int(dropped_in_prefix) * IMAGE_TOKEN_COST
-        return max(prefix_estimate, anchored) + sum(self._cost(t) for t in rows[covers:])
+        return max(prefix_estimate, int(anchor.prompt_tokens)) + sum(
+            self._cost(t) for t in rows[covers:]
+        )
 
     async def compact(
         self,
@@ -452,13 +464,10 @@ class ContextCompressor:
         head = max(0, int(pol.protect_head))
         tail = max(0, int(pol.protect_last_n))
         dropped = 0
-        # How many of those came out of the anchored prefix. The provider's
-        # number described that prefix with its images in it, so each one removed
-        # has to be taken back off a count we can no longer read off the wire.
+        working: list[dict] = []
         dropped_in_prefix = 0
         covered = max(0, min(int(anchor.covers), len(rows))) if (
             anchor is not None and anchor.usable) else 0
-        working: list[dict] = []
         for index, turn in enumerate(rows):
             in_tail = index >= len(rows) - tail if tail else False
             if _has_image(turn) and not in_tail:

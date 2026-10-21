@@ -22,6 +22,7 @@ import { useVoice } from './voice';
 import { noticeMessages } from './turn-notices';
 import { turnOutcome, type TurnOutcome } from './turn-outcome';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
+import { STATUS_CHROME_UNKNOWN } from './api/status-chrome';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet, apiPost, apiFetchOnce } from './api/client';
@@ -189,6 +190,7 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [sys, setSys] = useState(null);
   const [live, setLive] = useState(false);
   const [serverUp, setServerUp] = useState(false);
+  const [statusChrome, setStatusChrome] = useState(STATUS_CHROME_UNKNOWN);   // H133: gateway · sessions · version
   const [safeMode, setSafeMode] = useState(SAFE_MODE_OFF);
   const power = usePower(demo);   // H182: battery, resume, keep-awake
   const [pressure, dismissPressure] = usePressure(demo);   // H161: memory/disk running out
@@ -553,6 +555,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     setSys(null);
     setLive(false);
     setServerUp(false);
+    setStatusChrome(STATUS_CHROME_UNKNOWN);
     setLlm({ state: 'unknown', model: null, residents: [] });
     setTrust({ mic: 'on', strict_local: false });
     setSources({ tasks: false, trust: false });
@@ -583,7 +586,7 @@ function App({ floating = false, shortcuts, onWorld }: {
         setAgents(d.agents); baseAgents.current = d.agents;
         setTicker(d.ticker); setTasks(Array.isArray(d.tasks) ? d.tasks : []); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
-        setServerUp(!!d.serverUp); setSafeMode(d.safeMode || SAFE_MODE_OFF); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
+        setServerUp(!!d.serverUp); setStatusChrome(d.chrome || STATUS_CHROME_UNKNOWN); setSafeMode(d.safeMode || SAFE_MODE_OFF); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
         setSources(d.sources || { tasks: false, trust: false });
         /* Live approvals REPLACE the list only when the feed actually answered.
            `/autonomy/approvals` is admin-guarded, so on the common token-configured
@@ -645,13 +648,13 @@ function App({ floating = false, shortcuts, onWorld }: {
             onDismiss={() => { setFirstRunDismissed(true); try { localStorage.setItem('hud.seen', '1'); } catch { /* ignore */ } }} t={t} />
         )}
         <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live} trust={trust}
-          llm={llm} demo={demo} setDemo={setDemo} serverUp={serverUp}
+          llm={llm} demo={demo} setDemo={setDemo} serverUp={serverUp} chrome={statusChrome}
           onJobs={() => setMode('jobs')} onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} shortcutOverrides={shortcutOverrides} t={t} />
         <DesktopControls />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
         <div className="main" data-ia={ia}>
-          {ia === 'rail' && <Rail mode={mode} setMode={setMode} t={t} />}
+          {ia === 'rail' && <Rail mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} />}
           <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
             {ia === 'tabs' && <Tabs mode={mode} setMode={setMode} t={t} />}
 

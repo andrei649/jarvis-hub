@@ -35,7 +35,12 @@ import threading
 import pytest
 
 from agents.core.webhooks import MAX_FIELD, MAX_RENDERED, WebhookStore, render_prompt
-from tests.test_h10_8_webhooks import _ADMIN, _hook, hub  # noqa: F401  (hub is a fixture)
+from tests.test_h10_8_webhooks import (  # noqa: F401  (hub is a fixture)
+    _ADMIN,
+    _action_events,
+    _hook,
+    hub,
+)
 
 
 def _post(client, hook, body, **headers):
@@ -216,8 +221,12 @@ def test_a_destination_change_is_audited(hub):
     changed = client.patch(f"/api/webhooks/{hook['id']}", json={"deliver": "ntfy", "deliver_only": True,
                                                                 "description": "from CI"}, headers=_ADMIN)
     assert changed.status_code == 200 and changed.json()["webhook"]["deliver"] == "ntfy"
-    row = events[-1].content_preview
-    assert "deliver=ntfy" in row and "deliver_only=True" in row and events[-1].action_taken == "webhook_update"
+    # Guard telemetry is queued separately and can arrive after the action audit.
+    # Keep the assertion about webhook changes independent of that worker's timing.
+    action_events = _action_events(events)
+    assert [event.action_taken for event in action_events] == ["webhook_create", "webhook_update"]
+    row = action_events[-1].content_preview
+    assert "deliver=ntfy" in row and "deliver_only=True" in row
 
 
 @pytest.mark.parametrize("extra", [{"skills": ["triage"]}, {"enabled": False}, {"deliver_chat_id": "42"}])

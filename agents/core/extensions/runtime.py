@@ -217,6 +217,9 @@ class ExtensionRuntime:
 
             self.rpc.register_tool(
                 tool, handler, gated=False, untrusted_output=True,
+                # H399 — fail closed: a manifest has no read-only declaration, so
+                # an extension tool never overlaps the other calls of its step.
+                parallel_safe=False,
                 description=f"Sandboxed extension tool {tool}.",
                 input_schema={"type": "object", "additionalProperties": True},
                 capability_id=f"tool:extension.{tool}",

@@ -462,14 +462,14 @@ async def test_a_read_after_a_script_changed_the_plan_is_not_a_repeat(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_the_repeat_event_counts_a_plan_read_loop(tmp_path):
+async def test_the_stall_notice_counts_an_unchanged_plan_read_loop(tmp_path):
     store = TodoStore()
     server = _fetching_server(store)
     runtime = _k1(server, tmp_path)
     script = [("todo", {"todos": [{"id": "1", "content": "x"}]})] + [("todo", {})] * 6
     _backend, events, _origin, _reply = await _turn(runtime, script)
-    repeated = [e for e in events if e.get("event") == "tool_loop_repeated"]
-    assert repeated and repeated[0]["repeats"] >= 3
+    notices = [e for e in events if e.get("event") == "tool_loop_stall_notice"]
+    assert notices and any("no_progress" in e["tracks"] for e in notices)
 
 
 @pytest.mark.asyncio
@@ -492,4 +492,7 @@ async def test_a_script_opens_a_new_revision_only_when_it_may_have_changed_the_p
         ("todo", {}),
     ]
     _backend, _events, _origin, _reply = await _turn(runtime, script)
-    assert ("repeated_call" not in _tool_messages(_backend)[-1]) is opens
+    # A script is an intervening tool, so neither case is a consecutive stall.
+    # The plan still restates its full current contents after either script.
+    last = _tool_messages(_backend)[-1]
+    assert '"step one"' in last and "repeated_call" not in last

@@ -352,11 +352,14 @@ async def test_a_cancelled_turn_leaves_its_recall_running_as_a_straggler():
 async def test_the_handoff_ttl_counts_from_completion(monkeypatch):
     from agents.core.orchestrator import Orchestrator
 
-    monkeypatch.setattr(Orchestrator, "_RECALL_HANDOFF_TTL_S", 0.2)
-    memory = _Memory(delay=0.5, hits=[_hit()])
+    monkeypatch.setattr(Orchestrator, "_RECALL_HANDOFF_TTL_S", 1.0)
+    memory = _Memory(delay=1.0, hits=[_hit()])
     orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.1}))
     await orch._recall_block("when is the dentist?")
-    await asyncio.sleep(0.5)  # finished just now: older than the TTL since the timeout, fresh since completion
+    # t≈1.3 s: 1.2 s since the timeout (older than the 1 s TTL) but ~0.2 s since the
+    # straggler completed (fresh). The wide margin keeps a loaded CI runner from aging
+    # the result past the TTL; a TTL counted from the timeout still fails.
+    await asyncio.sleep(1.2)
     assert "Tuesday" in await orch._recall_block("when is the dentist?")
 
 

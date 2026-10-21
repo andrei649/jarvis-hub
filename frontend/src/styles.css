@@ -110,6 +110,20 @@ input { font-family: inherit; }
    4px outside a border box that sits flush with the strip — which is a WCAG 2.4.11
    defect, and one axe cannot see, since it does not check clipped outlines. */
 .brand .badges { min-width:0; overflow:hidden; }
+/* H133 — the strip sheds whole badges in priority order (`fitBadgeStrip`, shell.tsx), never
+   a half-clipped one, so it no longer needs to clip from the left (flex-end). Its box must not
+   depend on how many badges it shows, or shedding one hands the room to `.brand-tx` and the
+   fit chases itself: so the strip takes the rest of `.brand` (basis 0) and the brand line is
+   capped at the width it used to be squeezed to (~166px at 1920, ~104px at 1366, 84px floor).
+   The slightly tighter brand badges keep LLM · DATA · GATEWAY · EGRESS · MIC on one row at
+   1366px — what the strip showed at that width before GATEWAY joined it. */
+.brand .badges { flex:1 1 0; gap:6px; justify-content:flex-start; }
+.brand .brand-tx { flex:0 1 auto; max-width:clamp(84px, calc(10.5vw - 36px), 170px); }
+.brand .badges > [data-shed] { display:none; }
+.brand .badge { min-width:62px; padding:7px 9px; }
+.brand-tx .l2 .ver { white-space:nowrap; }
+/* H133 — the active-session count inside the GATEWAY badge ("● 2/3 · 12S"): ink, not the gateway colour. */
+.brand .badge .gw-sess { color:var(--ink); white-space:nowrap; }
 .badge { position:relative; padding:7px 12px; min-width:70px; background:var(--surface); border:1px solid var(--panel-line); clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%); }
 .badge .k { font-size:8px; font-weight:600; letter-spacing:.14em; color:var(--ink-2); text-transform:uppercase; }
 .badge .v { font-family:var(--font-mono); font-size:11.5px; margin-top:3px; display:flex; align-items:center; gap:5px; }
@@ -148,15 +162,27 @@ input { font-family: inherit; }
 
 /* RAIL */
 .rail { display:flex; flex-direction:column; gap:4px; align-items:center; padding-top:4px; }
+/* H133 — the rail scrolls instead of running off a short screen (17 buttons + separators are
+   ~870px; body is overflow:hidden, so the overflow used to be unreachable). The scrollbar is
+   hidden — the rail is 60px wide — wheel, touch and focus-scroll still work, and
+   scroll-padding keeps a focused button clear of the pinned gateway footer below. */
+.main[data-ia="rail"] > .rail { min-height:0; overflow-x:hidden; overflow-y:auto; scrollbar-width:none; scroll-padding-bottom:40px; }
+.main[data-ia="rail"] > .rail::-webkit-scrollbar { display:none; }
 .rail-btn { width:46px; height:46px; border-radius:var(--radius); border:1px solid transparent; background:transparent; color:var(--ink-2); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; transition:all .16s; position:relative; }
 .rail-btn svg { width:19px; height:19px; }
 .rail-btn .rl { font-size:7.5px; letter-spacing:.04em; text-transform:uppercase; }
 .rail-btn:hover { color:var(--ink); background:var(--surface); }
 .rail-btn.active { color:var(--accent-light); background:var(--accent-faint); border-color:var(--accent-dim); }
-.rail-btn.active::before { content:''; position:absolute; left:-8px; top:50%; transform:translateY(-50%); width:2px; height:22px; background:var(--accent); box-shadow:var(--glow-text); }
+.rail-btn.active::before { content:''; position:absolute; left:-7px; top:50%; transform:translateY(-50%); width:2px; height:22px; background:var(--accent); box-shadow:var(--glow-text); }
 .rail-btn.locked { opacity:.5; }
 .rail-sep { width:22px; height:1px; background:var(--panel-line); margin:4px 0; }
 .rail-spacer { flex:1; }
+/* H133 — gateway dot: outside `.rl`, so it survives the icon-only (collapsed) rail. */
+.rail-gw { display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 0; color:var(--ink-2);
+  /* pinned to the bottom of the scrolling rail; opaque so scrolled buttons pass under it */
+  position:sticky; bottom:0; width:100%; background:var(--void); z-index:1; }
+.rail-gw .rl { font-size:7.5px; letter-spacing:.04em; text-transform:uppercase; font-family:var(--font-mono); }
+.rail-gw-dot { width:8px; height:8px; border-radius:50%; box-shadow:0 0 6px currentColor; }
 
 /* TOP TABS */
 .tabs { display:flex; gap:4px; padding:0 2px 4px; overflow-x:auto; }

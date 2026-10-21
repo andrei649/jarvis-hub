@@ -885,7 +885,7 @@ on the router's existing local backend independently of the conversation model:
 
 | Setting | Consumer | Fallback when unset or ASCII-space-only |
 |---|---|---|
-| `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Active local model, then `qwen3:7b` |
+| `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Dedicated `qwen3:7b`; an unavailable model keeps the instant title |
 | `JARVIS_AUX_QUERY_REWRITE_MODEL` | Recall query rewriting | Active local model, then `qwen3:7b` |
 | `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review | Active local model, then `google/gemma-4-31b-a4b` |
 | `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
@@ -1087,7 +1087,7 @@ that.
 **This is the only forwarding-header allowlist.** uvicorn has its own (`proxy_headers` +
 `forwarded_allow_ips`, loopback by default) that would rewrite the client address and
 scheme before this list is consulted. `serve.py` builds uvicorn with it switched off, and
-`docker-compose.yml` passes `--no-proxy-headers`. `FORWARDED_ALLOW_IPS`,
+`docker-compose.yml` runs `serve.py` too. `FORWARDED_ALLOW_IPS`,
 `UVICORN_FORWARDED_ALLOW_IPS` and, on a `uvicorn` command line, `--forwarded-allow-ips` are
 checked at boot: an entry that is `*`, a `/0`, not an address, or a peer outside this list
 (and outside uvicorn's own loopback default) refuses boot naming the variable — list the
@@ -1217,6 +1217,28 @@ newcomer rather than killing a running cell.
 **Revert:** set it back to `false` and restart. The next call is a one-shot again, and
 says nothing about continuity — the fallback is named in the result shape, not silent.
 
+## H010 — in-place restore and the hub's self-restart
+
+An approved `backup.restore` is staged; the hub then restarts itself and `serve.py` applies
+the stage at boot, before any store opens. How the hub restarts depends on where it runs:
+
+| Where | How it restarts | Approval answers |
+|---|---|---|
+| POSIX `python serve.py` (systemd, docker compose, a terminal) | same-pid `os.execv` | `restart: "requested"` |
+| Windows service from `deploy/windows/install-service.ps1` (`NERVA_SERVICE_WRAPPER=nssm`) | exits `75`; NSSM `AppExit Default Restart` relaunches it (`AppExit 0 Exit` keeps a clean stop stopped) | `restart: "requested"` |
+| Windows, interactive session (packaged `nerva.exe`, `python serve.py` in a terminal) | spawns a successor in a new console and exits; the successor waits for the old pid (`JARVIS_RESTART_PREDECESSOR_WAIT_SECONDS`, default 60) | `restart: "requested"` |
+| Windows service without the NSSM marker (installed before it existed, or another wrapper), raw `uvicorn agents.web:app` | none | `restart: "manual"` |
+
+### `NERVA_SERVICE_WRAPPER` · `JARVIS_RESTART_PREDECESSOR_WAIT_SECONDS`
+
+`NERVA_SERVICE_WRAPPER=nssm` is set by `install-service.ps1`; only that value is read. With
+`restart: "manual"` nothing restarts the hub: `nerva backup list` and `GET /api/admin/backup`
+(`pending_restore.restart` / `action_needed`) say "restart the hub/service to apply it before
+<expires_at>", the jarvis-runtime coordinator stays paused for
+`JARVIS_RUNTIME_RESTORE_GRACE_SECONDS` (default 600) and then resumes, and the stage is
+discarded at `expires_at` (`JARVIS_RESTORE_STAGE_TTL_HOURS`, default 24) unless the hub was
+restarted with `python serve.py` (or the service / `nerva.exe`) before then.
+
 ## Wave 2026-10-17 — Nerva Workspace (B2B pilot)
 
 Ten variables, all read through `agents/core/env_config.py` by
@@ -1342,6 +1364,30 @@ approvals never expire, a document interrupted by a restart reads `processing` u
 re-index after 10 min, and a report email the hub was sending when it crashed stays `pending` (a
 graceful shutdown still records `delivery_interrupted` itself). **Revert:** unset + restart.
 
+## H310/H537/H607 — web search selection
+
+Four environment variables, **read on every call** (no restart), choose and fence the backend
+behind `web_search` / `web_extract`. Full guide: `docs/WEB_SEARCH.md`; check what a search
+would use right now (offline, no key printed) with `python -m agents.core.plugins.web_providers`.
+
+### `JARVIS_WEB_BACKEND` · `JARVIS_WEB_PROVIDER_TIER` · `JARVIS_WEB_RESCUE` · `JARVIS_WEB_BLOCKED_DOMAINS`
+
+**Default: unset** — `auto`: Tavily if `TAVILY_API_KEY` is set, else your SearXNG (`SEARXNG_URL`),
+else the keyless DuckDuckGo fallback. `JARVIS_WEB_BACKEND=<name>` makes one registered provider
+answer alone; an unknown, unconfigured or tier-pinned name answers `available: false` with a
+`detail`, never a silent fallback. `JARVIS_WEB_PROVIDER_TIER=free|paid` keeps the other tier out
+entirely. `JARVIS_WEB_RESCUE=0|1` overrides the one-shot rescue (default: on for `auto`, off for a
+named backend; it only ever lands on a configured provider, and the keyless DuckDuckGo fallback
+only when this is `1` and the caller is the interactive `web_search` tool, never for research
+tasks, the scout or the gatherer); a gate refusal is never rescued. `JARVIS_WEB_BLOCKED_DOMAINS=a.com,b.org` makes
+`web_extract` refuse those sites (and subdomains) on every redirect hop and drops them from
+`web_search` rows and from the rows direct `search()` callers (the gatherer, research, the scout) get; entries may be written as a host, URL,
+`host:port`, unicode or punycode, or an IP in any spelling (`167838211`, `0xa010203` and
+`::ffff:10.1.2.3` all match `10.1.2.3`); it is a list of host names and addresses, not patterns. An
+entry naming no host (a typo) blocks nothing: it is logged as a warning and flagged by the
+verification command. **Cost of ON:** a named paid backend sends your queries to that vendor; rescue sends a
+failed query to a second configured provider. **Revert:** unset the variable.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |
@@ -1354,6 +1400,10 @@ graceful shutdown still records `delivery_interrupted` itself). **Revert:** unse
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
 | `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore; a root reaching `<data root>/business` is dropped with a warning | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
 | `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout); a root reaching `<data root>/business` is dropped with a warning | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
+
+| `JARVIS_WEB_BACKEND` (+ `JARVIS_WEB_PROVIDER_TIER`, `JARVIS_WEB_RESCUE`, `JARVIS_WEB_BLOCKED_DOMAINS`) | unset = `auto` · `any` · rescue on for `auto` only · none (`plugins/web_providers.py`) | Picks which registered search backend answers `web_search`, pins free/paid, allows one rescue of a failed provider, refuses listed sites in `web_extract` | A named paid backend sends queries to that vendor; rescue sends a failed query to a second configured one | Unset: `auto` priority again (read per call, no restart) |
+| `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
+| `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
 | `JARVIS_VOICE_COMMANDS` (+ `JARVIS_VOICE_COMMAND_TIMEOUT_S`) | off · `30`s TTS / `120`s STT (cap 600) (`voice/local_providers.py`) | The owner's approved TTS/STT command providers may run (argv-only, private run dir, capped, kill-on-timeout) | An approved program runs as the hub's user; the settings stay ROUTE_ONLY, a set waits for a human, every spawn re-checks the program's identity, off in safe mode | Unset + restart: command voices fall back to the default voice, STT to Whisper or `[STT unavailable]` |
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
 | `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |
@@ -1391,3 +1441,26 @@ graceful shutdown still records `delivery_interrupted` itself). **Revert:** unse
 
 Kernel flag alone ≠ smart home. Both kernel + unified flags = facades live.
 Webhook channels cost no dependency, only configuration discipline.
+
+## H299/H397 result-aware stall policy (2026-10-10 local candidate)
+
+`llm.tool_loop_stall_halt_enabled` is a runtime toggle, default **false**.
+Each new turn reads it: only literal true enables controlled stops after five
+identical failures, eight consecutive failures of one tool, or five unchanged
+successful results. Guidance starts at two exact failures, three same-tool
+failures, two unchanged successes and three identical tool/argument/result
+signatures. Unreadable settings retain guidance only. Changing results continue
+to execute; all calls in a concurrent batch receive a response before a stop.
+
+`process`, `*_poll` and `*_get_result` skip stall guidance and duplicate stubs.
+Owner per-tool caps, approval, wall/iteration/context limits still apply; todo
+retains its full-plan/no-cap/no-stub behavior. Duplicate successful results of at
+least 512 characters use reference stubs with safe argument previews; errors
+retain their content subject to existing context/spill budgets.
+
+Constructor compatibility: `repeat_limit=0` disables identical/no-progress
+tracks; positive values set the identical warning threshold. `failure_limit=0`
+disables both failure tracks; a positive value overrides only the same-tool
+halt threshold. The default `None` selects eight, independently of the exact
+failure threshold of five. The owner toggle is separate from these detector
+settings and grants no tool authority.
