@@ -76,6 +76,11 @@ Exit status: 0 when every *required* check is ok, 1 otherwise. Advisory failures
 reported as ``warn`` and never fail the run — a doctor that reds on "server not started"
 would be noise, not signal. ``--json`` prints the whole report.
 
+Every failed or warned row links the section of ``docs/TROUBLESHOOTING.md`` that names
+its fix (``help_for``: a ``see …`` line, ``help`` in ``--json``), H631 — the symptom
+table, the recovery sequence, the local-model-server failure modes or the "feels dumber"
+checklist.
+
 Stdlib-only, like the bootstrap: the doctor must run in a broken install.
 """
 
@@ -121,6 +126,28 @@ ADVISORY = ("runtimes", "readyz", "runtime_resolves", "voice", "config_sources",
 
 OK, FAIL, WARN, SKIP = "ok", "fail", "warn", "skip"
 
+# H631 — where a red row's fix is written down: the section (its heading anchor) of the
+# user troubleshooting guide. The host rows carry their own fix and are not listed;
+# ``tests/test_troubleshooting_docs.py`` pins every anchor to a real heading.
+TROUBLESHOOTING_DOC = "docs/TROUBLESHOOTING.md"
+HELP_SECTIONS = {
+    "python": "recovery-sequence",
+    "venv": "recovery-sequence",
+    "locks_in_sync": "recovery-sequence",
+    "bind_is_loopback": "symptom-cause-fix",
+    "data_root_writable": "symptom-cause-fix",
+    "runtimes": "local-model-servers",
+    "readyz": "recovery-sequence",
+    "runtime_resolves": "local-model-servers",
+    "voice": "symptom-cause-fix",
+    "config_sources": "symptom-cause-fix",
+    "model_roles": "my-agent-feels-dumber",
+    "smoke": "recovery-sequence",
+}
+# runtime_resolves reasons that are not about the local server: a cloud key, a credential,
+# a hub address or reply — the symptom table names each.
+_NOT_LOCAL = ("cloud_", "needs_token", "hub_", "malformed_reply", "command_center_status")
+
 
 @dataclass
 class Check:
@@ -146,8 +173,21 @@ class DoctorReport:
             row = asdict(c)
             if not row.get("data"):
                 row.pop("data", None)  # only a check with a table carries one (config_sources)
+            if help_for(c):
+                row["help"] = help_for(c)  # H631: where the fix is written down
             checks.append(row)
         return {"ok": self.ok, "root": self.root, "checks": checks}
+
+
+def help_for(check: Check) -> str:
+    """The guide section a failed or warned row links (``docs/TROUBLESHOOTING.md#…``),
+    else ``""``: an ok row has nothing to fix, a skipped one did not run."""
+    if check.status not in (FAIL, WARN):
+        return ""
+    section = HELP_SECTIONS.get(check.name)
+    if check.name == "runtime_resolves" and check.reason.startswith(_NOT_LOCAL):
+        section = "symptom-cause-fix"
+    return f"{TROUBLESHOOTING_DOC}#{section}" if section else ""
 
 
 def _result(name: str, ok: bool, reason: str, detail: str = "") -> Check:
@@ -921,6 +961,8 @@ def format_report(report: DoctorReport) -> str:
         mark = {OK: "ok  ", FAIL: "FAIL", WARN: "warn", SKIP: "skip"}[c.status]
         tail = f"  ({c.detail})" if c.detail else ""
         lines.append(f"[{mark}] {c.name:<19} {c.reason}{tail}")
+        if help_for(c):
+            lines.append(f"         see {help_for(c)}")
         labels = c.data.get("labels", {}) if c.data else {}
         for row in (c.data or {}).get("sources", []):
             ignored = ", ".join(labels.get(layer, layer) for layer in row["shadowed"])
