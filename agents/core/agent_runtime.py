@@ -174,6 +174,9 @@ _MAX_ITERATIONS = 32
 _MAX_TOOL_CALLS_PER_TURN = MAX_PARSED_TOOL_CALLS - 1
 _EVENT_IDENTITY_BYTES = 256
 _EVENT_TIMEOUT_SECONDS = 0.1
+#: The MCP bridge sync (H557) is local bookkeeping plus, for a vanished server, the
+#: cancellation of its in-flight calls; this caps what a turn waits for it.
+_TOOL_SYNC_TIMEOUT_SECONDS = 5.0
 _MAX_JSON_DEPTH = 64
 _NO_CAPABILITY_REPLY = (
     "I can't use tools for this request because no live registered capability matches."
@@ -280,8 +283,12 @@ class AgentToolRuntime:
         context_window_tokens: Callable[[], int] | None = None,
         guidance_context: Callable[[str], Mapping[str, Any] | None] | None = None,
         heartbeat_seconds: float = _DEFAULT_HEARTBEAT_SECONDS,
+        tool_sync: Callable[[], Coroutine[Any, Any, Any]] | None = None,
     ) -> None:
         self._server = server
+        # H557 — brings dynamically sourced tools (the MCP client bridge) onto the
+        # allowlist before a turn reads its offer; a failure keeps what is registered.
+        self._tool_sync = tool_sync
         # H399 — 0 (or any non-positive value) turns in-flight heartbeats off.
         try:
             beat = float(heartbeat_seconds)
@@ -694,6 +701,7 @@ class AgentToolRuntime:
         inherited_clock = active_clock()
         if inherited_clock is not None and not inherited_clock.active:
             return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.TURN_REVOKED)
+        await self._sync_tools()
         registry_mode = self._registry_mode()
         metadata = self._server.tools()
         if registry_mode:
@@ -1440,6 +1448,17 @@ class AgentToolRuntime:
             for index, observation in zip(group.indices, results, strict=True):
                 observations[index] = observation
         return [observation for observation in observations if observation is not None]
+
+    async def _sync_tools(self) -> None:
+        """Run the tool-source sync (H557) under a bound; never fails the turn."""
+        if self._tool_sync is None:
+            return
+        try:
+            await asyncio.wait_for(self._tool_sync(), timeout=_TOOL_SYNC_TIMEOUT_SECONDS)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("tool source sync failed; the registered offer is unchanged")
 
     def _registry_mode(self) -> bool:
         try:

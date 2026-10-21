@@ -1763,8 +1763,16 @@ class AutonomyCoordinator:
                 "execution_context": lambda: execution_guidance_context(self, agent_id),
             }
 
+        # H557 — the MCP client's tools reach the model through the same governed
+        # allowlist: provider-legal mcp__ names, the registration-normalized schema,
+        # gated unless declared read-only, output fenced as untrusted; a built-in name
+        # is reserved against them on every sync. The loop syncs at each turn's start.
+        from .mcp.model_bridge import MCPModelBridge
+
+        mcp_bridge = MCPModelBridge(server, lambda: getattr(self._orch, "mcp", None))
         runtime = AgentToolRuntime(
             server,
+            tool_sync=mcp_bridge.sync,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
             registry_enabled=lambda: _get_setting("llm.registry_planning_enabled", False) is True,
             capability_snapshot=lambda: capability_registry.snapshot(self._orch),

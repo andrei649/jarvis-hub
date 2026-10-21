@@ -10,10 +10,17 @@ the Gemini path repaired any of them.
 :func:`normalize_mcp_input_schema` runs once, at registration (``MCPTool``), ahead of
 every serializer, so all five ship the same repaired schema:
 
-1. ``definitions`` is promoted to ``$defs`` (an existing ``$defs`` entry wins) and every
-   ``#/definitions/...`` reference is rewritten to ``#/$defs/...``;
+1. the root ``definitions`` is promoted to ``$defs`` (an existing ``$defs`` entry wins)
+   and every ``#/definitions/...`` reference is rewritten to ``#/$defs/...``; a nested
+   ``definitions`` block is kept (normalized in place), so a pointer into it still
+   resolves;
 2. a nullable union — ``anyOf``/``oneOf`` with exactly one non-null branch next to
-   ``{"type": "null"}`` — collapses to that branch, and a ``default: null`` goes with it;
+   ``{"type": "null"}`` — collapses to that branch, and a ``default: null`` goes with it.
+   A property its object lists in ``required`` (Pydantic ``Optional[X]`` with no default)
+   stays nullable: a typed branch becomes ``"type": [X, "null"]`` and an untyped one
+   (a ``$ref``) keeps its union, so the model can still send an explicit null;
+   a one-element ``allOf`` (Pydantic's ``allOf: [{"$ref": ...}]`` next to a ``default``)
+   is merged into its siblings the same way, so no serializer loses the referenced shape;
 3. ``required`` is pruned to the names ``properties`` actually declares;
 4. a node with no ``type`` gets one inferred from its shape (``properties`` → object,
    ``items`` → array, homogeneous ``enum``/``const`` → its scalar type);
@@ -40,13 +47,16 @@ PROVIDER_NAME_PREFIX = "mcp__"
 PROVIDER_NAME_MAX = 64
 #: Nesting deeper than this is replaced by an unconstrained ``{}`` node.
 MAX_SCHEMA_DEPTH = 32
+#: Wrapper collapses (nullable unions, one-element ``allOf``) one node may unwrap; a
+#: chain longer than this is degenerate and becomes ``{}`` instead of recursing.
+MAX_COLLAPSES = 256
 
 _UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9_]")
 _LEGACY_REF = "#/definitions/"
 _DEFS_REF = "#/$defs/"
 _DIGEST_CHARS = 10
 _SCHEMA_LIST_KEYS = ("anyOf", "oneOf", "allOf", "prefixItems")
-_SCHEMA_MAP_KEYS = ("properties", "patternProperties", "$defs")
+_SCHEMA_MAP_KEYS = ("properties", "patternProperties", "$defs", "definitions")
 _SCHEMA_KEYS = ("items", "additionalProperties", "not", "contains")
 _UNSET = object()
 
@@ -73,8 +83,12 @@ def _scalar_type(values: list[Any]) -> str | None:
     return None
 
 
-def _collapse_nullable(node: dict[str, Any]) -> dict[str, Any] | None:
-    """The single non-null branch merged with *node*'s siblings, or None."""
+def _collapse_nullable(node: dict[str, Any], keep_null: bool = False) -> dict[str, Any] | None:
+    """The single non-null branch merged with *node*'s siblings, or None.
+
+    ``keep_null`` (the property is ``required``) keeps the null admissible: a branch
+    with a plain ``type`` gains ``"null"`` in it; any other branch is left as a union.
+    """
     for key in ("anyOf", "oneOf"):
         variants = node.get(key)
         if not isinstance(variants, list) or len(variants) < 2:
@@ -83,30 +97,68 @@ def _collapse_nullable(node: dict[str, Any]) -> dict[str, Any] | None:
         if len(rest) != 1 or len(rest) == len(variants) or not isinstance(rest[0], dict):
             continue
         siblings = {k: v for k, v in node.items() if k != key}
-        if siblings.get("default", _UNSET) is None:
+        branch = dict(rest[0])
+        if keep_null:
+            kind = branch.get("type")
+            if isinstance(kind, str):
+                branch["type"] = [kind, "null"] if kind != "null" else kind
+            elif isinstance(kind, list) and all(isinstance(k, str) for k in kind):
+                branch["type"] = kind if "null" in kind else [*kind, "null"]
+            else:
+                return None
+        elif siblings.get("default", _UNSET) is None:
             del siblings["default"]
-        return {**rest[0], **siblings}
+        return {**branch, **siblings}
     return None
 
 
-def _normalize_node(node: Any, depth: int) -> Any:
+def _collapse_all_of(node: dict[str, Any]) -> dict[str, Any] | None:
+    """A one-element ``allOf`` merged into its siblings (the siblings win), or None."""
+    branches = node.get("allOf")
+    if not isinstance(branches, list) or len(branches) != 1 or not isinstance(branches[0], dict):
+        return None
+    siblings = {k: v for k, v in node.items() if k != "allOf"}
+    if "$ref" in siblings and "$ref" in branches[0]:
+        return None  # two references cannot share one node
+    return {**branches[0], **siblings}
+
+
+def _unwrap(node: dict[str, Any], keep_null: bool) -> dict[str, Any] | None:
+    """Collapse wrapper nodes iteratively (never by recursion); None past the cap."""
+    for _ in range(MAX_COLLAPSES):
+        collapsed = _collapse_nullable(node, keep_null)
+        if collapsed is None:
+            collapsed = _collapse_all_of(node)
+        if collapsed is None:
+            return node
+        node = collapsed
+    return None
+
+
+def _normalize_node(node: Any, depth: int, keep_null: bool = False) -> Any:
     if not isinstance(node, dict):
         return node if isinstance(node, bool) else {}
     if depth > MAX_SCHEMA_DEPTH:
         return {}
-    collapsed = _collapse_nullable(node)
-    if collapsed is not None:
-        return _normalize_node(collapsed, depth)
+    unwrapped = _unwrap(node, keep_null)
+    if unwrapped is None:
+        return {}
+    node = unwrapped
+    raw_required = node.get("required")
+    required_names = (
+        {name for name in raw_required if isinstance(name, str)}
+        if isinstance(raw_required, list) else set()
+    )
 
     out: dict[str, Any] = {}
     for key, value in node.items():
-        if key == "definitions":
-            continue  # promoted to $defs by the root pass
         if key == "$ref" and isinstance(value, str) and value.startswith(_LEGACY_REF):
             out[key] = _DEFS_REF + value[len(_LEGACY_REF):]
         elif key in _SCHEMA_MAP_KEYS and isinstance(value, dict):
             out[key] = {
-                str(name): _normalize_node(sub, depth + 1) for name, sub in value.items()
+                str(name): _normalize_node(
+                    sub, depth + 1, keep_null=key == "properties" and name in required_names)
+                for name, sub in value.items()
             }
         elif key in _SCHEMA_LIST_KEYS and isinstance(value, list):
             out[key] = [_normalize_node(sub, depth + 1) for sub in value]
@@ -139,7 +191,8 @@ def _normalize_node(node: Any, depth: int) -> Any:
             if inferred:
                 out["type"] = inferred
 
-    if out.get("type") == "object":
+    kind = out.get("type")
+    if kind == "object" or (isinstance(kind, list) and "object" in kind):
         properties = out.get("properties")
         if not isinstance(properties, dict):
             properties = {}

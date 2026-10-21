@@ -785,13 +785,18 @@ class MCPManager:
         the tool read-only, and ``untrusted_output`` always (third-party output).
 
         A row whose name equals a built-in governed tool name (``reserved_names`` plus
-        :meth:`reserve_names`) is withheld — a third-party tool never shadows one.
+        :meth:`reserve_names`) is withheld — a third-party tool never shadows one — and
+        so is a tool the server's trust tier refuses (a mutating tool on a read-only
+        server), which every call would fail on.
         """
         reserved = self.reserved_names | frozenset(str(n) for n in (reserved_names or ()))
         rows: list[dict[str, Any]] = []
         for name, (srv, tool) in self._provider_index().items():
             if name in reserved:
                 logger.warning("MCP tool %s shadows a built-in tool name; withheld", name)
+                continue
+            if srv._trust_denial(tool.name) is not None:
+                # The owner's trust tier would refuse every call: never offer it.
                 continue
             rows.append({
                 "name": name,
