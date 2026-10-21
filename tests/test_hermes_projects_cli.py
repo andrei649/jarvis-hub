@@ -1,6 +1,7 @@
 """The authenticated project command uses the real scoped Hermes store."""
 
 import asyncio
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -415,16 +416,17 @@ async def test_discover_scans_file_roots_into_the_repo_cache(tmp_path, monkeypat
         found = await execute_command(_orch(), ["discover"], OWNER)
         assert found["ok"], found
         assert "Discovered 2 repo(s) under 1 file root(s) (depth 4)" in found["output"]
+        assert "previous discovery cache cleared" not in found["output"]   # first scan: nothing to clear
         assert f"{alpha}  [project: alpha]" in found["output"] and str(beta) in found["output"]
         with pdb.connect_closing() as conn:
             assert sorted(row["root"] for row in pdb.list_discovered_repos(conn)) == [str(alpha), str(beta)]
-            assert pdb.get_discovery_policy_key(conn).startswith("v1:depth=4:roots=")
+            assert pdb.get_discovery_policy_key(conn).startswith("v2:roots=")
         listed = await execute_command(_orch(), ["repos"], OWNER)
-        assert listed["ok"] and "2 discovered repo(s):" in listed["output"]
+        assert listed["ok"] and "2 discovered repo(s) (scanned at depth 4):" in listed["output"]
         assert str(alpha) in listed["output"] and str(beta) in listed["output"]
         deeper = await execute_command(_orch(), ["discover", "--depth", "8"], OWNER)
         assert deeper["ok"] and "Discovered 3 repo(s)" in deeper["output"]
-        assert "previous discovery cache cleared" in deeper["output"]
+        assert "previous discovery cache cleared" not in deeper["output"]  # same roots: a plain rescan
         assert "too-deep" in deeper["output"]
         assert (await execute_command(_orch(), ["discover", "--depth", "9"], OWNER))["reason"] == "usage"
 
@@ -439,12 +441,90 @@ async def test_repos_drops_a_cache_from_old_file_roots(tmp_path, monkeypatch):
     with kanban_scope(KanbanContext(tmp_path / "home", "owner", can_mutate=True)):
         assert (await execute_command(_orch(), ["discover"], OWNER))["ok"]
         monkeypatch.setenv("JARVIS_FILE_ROOTS", str(second))
-        listed = await execute_command(_orch(), ["repos"], OWNER)
-        assert listed["ok"], listed
-        assert "stale cache cleared" in listed["output"] and "No discovered repos cached" in listed["output"]
-        assert str(first / "one") not in listed["output"]
+        for _ in range(2):  # the list verb hides stale rows but never deletes or rewrites anything
+            listed = await execute_command(_orch(), ["repos"], OWNER)
+            assert listed["ok"], listed
+            assert "File roots changed since the last scan" in listed["output"]
+            assert "No discovered repos cached" in listed["output"]
+            assert str(first / "one") not in listed["output"]
+        with pdb.connect_closing() as conn:
+            assert [r[0] for r in conn.execute("SELECT root FROM discovered_repos")] == [str(first / "one")]
         rescanned = await execute_command(_orch(), ["discover"], OWNER)
         assert rescanned["ok"] and str(second / "two") in rescanned["output"]
+        assert "File roots changed; previous discovery cache cleared" in rescanned["output"]
+        assert str(first / "one") not in rescanned["output"]
+        monkeypatch.setenv("JARVIS_FILE_ROOTS", str(first))
+        hidden = await execute_command(_orch(), ["repos"], OWNER)
+        assert "No discovered repos cached" in hidden["output"] and str(second / "two") not in hidden["output"]
+
+
+@pytest.mark.asyncio
+async def test_repos_lists_a_non_default_depth_scan_without_touching_the_cache(tmp_path, monkeypatch):
+    """`discover --depth N` then plain `repos` (twice) still lists the scan and reports its depth."""
+    roots = tmp_path / "roots"
+    repo = _repo(roots / "group" / "service")
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(roots))
+    with kanban_scope(KanbanContext(tmp_path / "home", "owner", can_mutate=True)):
+        found = await execute_command(_orch(), ["discover", "--depth", "2"], OWNER)
+        assert found["ok"] and "Discovered 1 repo(s)" in found["output"], found
+        with pdb.connect_closing() as conn:
+            key = pdb.get_discovery_policy_key(conn)
+        for _ in range(2):
+            listed = await execute_command(_orch(), ["repos"], OWNER)
+            assert listed["ok"], listed
+            assert "1 discovered repo(s) (scanned at depth 2):" in listed["output"]
+            assert str(repo) in listed["output"] and "cleared" not in listed["output"]
+        with pdb.connect_closing() as conn:
+            assert pdb.get_discovery_policy_key(conn) == key
+        assert (await execute_command(_orch(), ["repos", "--depth", "2"], OWNER))["reason"] == "usage"
+
+
+@pytest.mark.asyncio
+async def test_discover_walks_the_file_roots_off_the_event_loop(tmp_path, monkeypatch):
+    """The filesystem walk runs in a worker thread, so the hub's event loop keeps serving."""
+    import threading
+
+    roots = tmp_path / "roots"
+    _repo(roots / "repo")
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(roots))
+    real_scan = pdb.scan_repo_roots
+    seen = {}
+
+    def slow_scan(*args, **kwargs):
+        seen["thread"] = threading.get_ident()
+        time.sleep(0.3)
+        return real_scan(*args, **kwargs)
+
+    monkeypatch.setattr(pdb, "scan_repo_roots", slow_scan)
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.02)
+            ticks += 1
+
+    with kanban_scope(KanbanContext(tmp_path / "home", "owner", can_mutate=True)):
+        task = asyncio.create_task(ticker())
+        try:
+            result = await execute_command(_orch(), ["discover"], OWNER)
+        finally:
+            task.cancel()
+    assert result["ok"] and "Discovered 1 repo(s)" in result["output"], result
+    assert seen["thread"] != threading.get_ident()
+    assert ticks >= 5
+
+
+def test_scan_caps_entries_read_per_directory(tmp_path, monkeypatch):
+    from agents.core.file_tools import FileScope
+
+    roots = tmp_path / "roots"
+    for name in ("a", "b", "c", "d"):
+        (roots / name).mkdir(parents=True)
+    _repo(roots / "a" / "repo")
+    monkeypatch.setattr(pdb, "DISCOVERY_MAX_ENTRIES_PER_DIR", 2)
+    _, truncated = pdb.scan_repo_roots(FileScope([str(roots)]), depth=2)
+    assert truncated
 
 
 @pytest.mark.asyncio

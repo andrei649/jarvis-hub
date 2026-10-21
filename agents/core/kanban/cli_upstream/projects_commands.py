@@ -64,8 +64,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     depth_help = "Directory levels below each file root to scan (0-8, default 4)"
     discover = sub.add_parser("discover", help="Scan the file roots for git repos and refresh the cache")
     discover.add_argument("--depth", type=int, default=4, choices=range(9), metavar="N", help=depth_help)
-    repos = sub.add_parser("repos", help="List the cached discovered repos")
-    repos.add_argument("--depth", type=int, default=4, choices=range(9), metavar="N", help=depth_help)
+    sub.add_parser("repos", help="List the cached discovered repos (read-only)")
     parser.set_defaults(_project_parser=parser)
     return parser
 
@@ -393,19 +392,19 @@ def _discover(args, conn) -> int:
     emit(f"Discovered {result['count']} repo(s) under {len(result['roots'])} file root(s) "
          f"(depth {args.depth}){'; scan budget reached, results truncated' if result['truncated'] else ''}")
     if result["policy_reset"]:
-        emit("File roots or depth changed; previous discovery cache cleared")
+        emit("File roots changed; previous discovery cache cleared")
     _emit_repos(conn, rows)
     return 0
 
 
 def _repos(args, conn) -> int:
-    rows, cleared = pdb.cached_repos_for_current_policy(conn, depth=args.depth)
-    if cleared:
-        emit("File roots or depth changed since the last scan; stale cache cleared")
+    rows, stale, depth = pdb.cached_repos_for_current_policy(conn)
+    if stale:
+        emit("File roots changed since the last scan; cached repos are hidden until the next discover")
     if not rows:
         emit("No discovered repos cached. Run `nerva project discover`.")
         return 0
-    emit(f"{len(rows)} discovered repo(s):")
+    emit(f"{len(rows)} discovered repo(s){f' (scanned at depth {depth})' if depth is not None else ''}:")
     _emit_repos(conn, rows)
     return 0
 

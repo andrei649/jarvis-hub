@@ -187,12 +187,13 @@ def test_nerva_project_discover_and_repos_run_through_the_owner_route(active, tm
     assert main(["project", "discover", "--depth", "2"], context=ctx) == 0
     assert calls == [("/api/kanban/projects/command", ["discover", "--depth", "2"])]
     assert "Discovered 1 repo(s)" in output.getvalue() and str(repo) in output.getvalue()
-    listed = client.post("/api/kanban/projects/command", headers=OWNER, json={"argv": ["repos", "--depth", "2"]})
+    listed = client.post("/api/kanban/projects/command", headers=OWNER, json={"argv": ["repos"]})
     assert listed.status_code == 200 and listed.json()["ok"], listed.text
-    assert "1 discovered repo(s):" in listed.json()["output"] and str(repo) in listed.json()["output"]
+    assert "1 discovered repo(s) (scanned at depth 2):" in listed.json()["output"]
+    assert str(repo) in listed.json()["output"] and "cleared" not in listed.json()["output"]
 
 
-OWNER ={"X-Admin-Token": "synthetic-kanban-owner"}
+OWNER = {"X-Admin-Token": "synthetic-kanban-owner"}
 
 
 @pytest.fixture
