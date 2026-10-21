@@ -131,9 +131,11 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
   // Registry-only agents (ids the seed corpus never knew) must still appear —
   // the seed roster lags the backend registry by design, /status is live truth.
   if (agents.length === 0 && statusAgents.length) {
+    // Bolt Optimization: Maintain O(1) statusAgentMap lookup to avoid O(N^2) array search during fallback roster construction
+    const statusAgentMap = new Map(statusAgents.map((x) => [x.id, x]));
     const ids = new Set([...Object.keys(META), ...statusAgents.map((x) => x.id)]);
     agents = [...ids].map((id) => {
-      const sa = statusAgents.find((x) => x.id === id);
+      const sa = statusAgentMap.get(id);
       const m = META[id];
       return { id, name: (m && m.name) || cap(id), tier: m ? m.tier : 'FND', role: m ? m.role : '', status: sa ? sa.status : 'idle', model: m ? m.model : '', glyph: glyphFor(id) };
     });
