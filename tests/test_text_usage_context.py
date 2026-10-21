@@ -69,7 +69,7 @@ async def test_cancelled_scope_closes_inherited_late_task():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('tools', [False, True])
-async def test_agent_and_real_nonstream_gather_report_once(tools):
+async def test_agent_and_real_nonstream_gather_report_once(tools, caplog):
     from agents.core.agent import Agent
     from agents.core.agent_runtime import AgentToolRuntime
     from agents.core.llm.base import LLMBackend
@@ -118,7 +118,11 @@ async def test_agent_and_real_nonstream_gather_report_once(tools):
         assert await orch._call_agents_parallel(['jarvis', 'stark'], 'hello', {}) == {'jarvis': 'answer', 'stark': 'answer'}
     assert accidental == []
     assert {key: value.input_tokens for key, value in orch._last_reported_usage.items()} == {'jarvis': 9000, 'stark': 123}
-    assert orch._context_anchor == {'jarvis': (9000, 6), 'stark': (123, 6)}
+    # Unmanaged requests retain usage for metering but have no trusted retained
+    # history coverage; their old context-anchor callback is not a live reader.
+    assert orch._context_anchor == {}
+    assert 'usage sink failed' not in caplog.text
+    assert 'tool loop usage sink failed' not in caplog.text
     await orch._call_agents_parallel([], 'empty next turn', {})
     assert orch._last_reported_usage == {}
     assert m.current_observer() is None

@@ -148,6 +148,26 @@ async def test_untrusted_tool_result_is_fenced_and_turn_is_recall_tainted():
 
 
 @pytest.mark.asyncio
+async def test_missing_ok_external_error_still_fences_and_taints_the_turn():
+    server = ToolRPCServer()
+
+    async def fetch(_args):
+        return {"error": "remote text unavailable"}
+
+    server.register_tool("web_fetch", fetch, untrusted_output=True)
+    bind_action_origin("generated")
+    backend = _Backend([("web_fetch", {"n": 1})])
+    events = []
+    assert await _run(_runtime(server), backend, events) == "done"
+    (content,) = _tool_contents(backend)
+    assert json.loads(_split_fence(content, source="web_fetch"))["result"] == {
+        "error": "remote text unavailable",
+    }
+    assert current_action_origin() == TAINTED_RECALL_ORIGIN
+    assert _untrusted_events(events)[0]["reasons"] == ["untrusted_tool"]
+
+
+@pytest.mark.asyncio
 async def test_trusted_tool_result_is_byte_identical_to_today():
     log, events = [], []
     bind_action_origin("generated")
@@ -251,6 +271,7 @@ async def test_duplicate_stub_matches_on_the_raw_payload_not_the_fence():
     assert "UNTRUSTED" not in second                            # the stub is Nerva's own words
     assert json.loads(second) == {
         "ok": True, "tool": "web_fetch", "same_as": "call-1",
+        "args_preview": '{"n":2}',
         "notice": "This result is byte-identical to the result of call call-1 "
                   "earlier this turn and was not repeated; refer to that result."}
     assert [e["call_id"] for e in events if e["event"] == "tool_result_deduplicated"] == ["call-2"]

@@ -84,6 +84,27 @@ Unquoted, systemd drops the backslash and the hub receives a plain `n`. It is gi
 every agent as a description of the machine, not as instructions, at most 2,000
 characters; `nerva prompt-size`, run with the same variable, counts it.
 
+Nerva also detects that this unit supervises it (`NOTIFY_SOCKET`, and journal logging when
+`JOURNAL_STREAM` names its own stderr, as systemd documents) and tells the model so in one
+line of its own, before the hint and never under it; the HUD's host readiness card shows
+the same facts (`GET /api/host/probe`, `identity`). On a bare host run by hand there is
+nothing to say and no line is added. A `NOTIFY_SOCKET` that is not an absolute path or an
+`@name` (what `sd_notify` can send to) does not count as supervision.
+
+### Host-detection knobs (H283)
+
+Set in `/etc/jarvis-hub/jarvis.env` (or the container environment); all optional, read
+once at start.
+
+| Variable | Effect |
+|---|---|
+| `JARVIS_ENVIRONMENT_HINT` | Your description of the machine, given to every agent (see above). |
+| `JARVIS_CONTAINER` | Override container detection. A kind (`docker`, `podman`, `kubernetes`, `lxc`, `containerd`, `nspawn`) names it; `1`/`true`/`yes`/`on` says "some container"; `none`, `0`, `false`, `no`, `off`, `disable` or `disabled` says "not a container" (the model, the skill gates and the doctor's container-storage check all drop it). Any other word is ignored and the marker files decide. `/run/systemd/container` and `$container` count only when they name a container manager; `wsl` there is the WSL fact (not a container) and `proot` is neither. |
+| `JARVIS_MACHINE_ID` | Your own machine name, used instead of `/etc/machine-id`. Only a keyed hash prefix is ever shown (HUD, probe); never the value, never the model. |
+
+The `S6_VERSION` and `S6_CMD_ARG0` variables that s6-overlay's init exports make Nerva
+report `s6`; there is no Nerva variable to set for that.
+
 ## Safe mode
 
 To start without the owner's customizations (H275: skills that did not ship, saved MCP

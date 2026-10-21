@@ -31,6 +31,16 @@ needs_unix = pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="sd_notif
 REPO = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _nothing_detected_about_the_host(monkeypatch):
+    """H283: the prompt now carries what Nerva detects about its host (a container on most
+    CI boxes, under its own heading). These tests pin exact prompt bytes, so the host is
+    pinned to "nothing detected"; tests/test_h283_host_identity.py covers the block."""
+    from agents.core import host_identity
+
+    monkeypatch.setattr(host_identity, "identity", lambda: host_identity.HostIdentity())
+
+
 @pytest.fixture
 def listener(monkeypatch):
     """A service manager's end: a datagram socket at NOTIFY_SOCKET."""
@@ -196,6 +206,7 @@ def test_a_socket_nobody_listens_on_is_not_an_error(tmp_path, monkeypatch):
     ("100000", None, 0.08),                  # the floor never reaches the deadline
     ("0", None, None), ("-5", None, None), ("soon", None, None), ("", None, None),
     ("²000000", None, None), ("60000000", "²", None),   # digits int() refuses
+    ("9" * 5000, None, None), ("9" * 400, None, None), ("60000000", "9" * 400, None),  # int()/division overflow
 ])
 def test_the_heartbeat_is_half_the_watchdog_for_this_process_only(monkeypatch, usec, pid, expected):
     monkeypatch.setenv("WATCHDOG_USEC", usec)
@@ -365,7 +376,7 @@ def test_stopping_opens_the_shutdown_even_on_a_forced_exit(listener, monkeypatch
 def test_serve_runs_the_notifying_server_with_the_readyz_verdict():
     src = (REPO / "serve.py").read_text(encoding="utf-8")
     main = src[src.index("def main():"):]
-    assert "NotifyingServer(config, readiness_snapshot).run()" in main
+    assert "run_server(NotifyingServer(config, readiness_snapshot))" in main
 
 
 def test_the_shipped_unit_is_type_notify_with_a_watchdog():

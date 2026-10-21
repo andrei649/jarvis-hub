@@ -1,5 +1,11 @@
-"""Inbound sender pairing / approval endpoints (H12.19) — extracted from web.py (CLN-3)."""
+"""Inbound sender pairing / approval endpoints (H12.19) — extracted from web.py (CLN-3).
 
+H154: a bulk "clear pending" for a flooded inbox, admin-only and audited.
+"""
+
+import asyncio
+import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -10,6 +16,8 @@ from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["pairing"])
 
@@ -78,6 +86,51 @@ async def pairing_decide(body: PairingDecisionBody):
         return nocache_json({"error": "unknown action"}, status_code=400)
 
 
+async def _audit_pairing(action: str, preview: str) -> bool:
+    """H154 — one audit row for a bulk owner action. Counts only, never sender ids
+    (the precedent is webhooks._audit_webhook). A broken audit log never turns the
+    action itself into a 500: the change has already happened.
+
+    Returns whether a row was written. Without an orchestrator (or one with no
+    audit log) there is nowhere to write it, and the caller says so."""
+    orch = get_orch()
+    audit = getattr(orch, "audit", None) if orch else None
+    if audit is None:
+        return False
+    from agents.core.security.types import SecurityEvent, SecurityEventType
+
+    try:
+        await asyncio.to_thread(audit.log, SecurityEvent(
+            event_type=SecurityEventType.SETTINGS_CHANGE,
+            timestamp=time.time(),
+            content_preview=preview,
+            action_taken=f"pairing_{action}",
+        ))
+    except Exception:
+        logger.warning("pairing %s: the audit row could not be written", action, exc_info=True)
+        return False
+    return True
+
+
+@router.post("/api/channels/pairing/clear-pending", dependencies=[Depends(admin_guard)])
+async def pairing_clear_pending():
+    """Drop every pending request at once — a bulk reject (H154).
+
+    Approved and blocked senders are untouched and nobody is blocked, so a real
+    contact caught in the sweep can simply ask again. ``audited`` is False when
+    no audit row could be written (no audit log wired, or the write failed).
+
+    Runs on the event loop, not in a worker thread: every other writer of the
+    store (request/decide here, Telegram's deeplink redeem) mutates it on the
+    loop without the store lock, and the gateway's inbound gate reads it there,
+    so a threaded clear would race them.
+    """
+    cleared = _get_sender_pairing().clear_pending()
+    audited = await _audit_pairing(
+        "clear_pending", f"pairing clear pending: cleared={cleared} pending senders")
+    return nocache_json({"ok": True, "cleared": cleared, "audited": audited})
+
+
 @router.post("/api/channels/pairing/code", dependencies=[Depends(admin_guard)])
 async def pairing_set_code(body: PairingCodeBody):
     """Set/rotate (or clear) the self-service pairing code."""
@@ -105,7 +158,12 @@ async def pairing_mint_link(body: PairingLinkBody):
     exists; it is safe because the token can only ever pair one sender, once.
     """
     reg = _get_sender_pairing()
-    minted = reg.mint_deeplink(body.channel)
+    from agents.core.install_identity import InstallIdentityUnavailable, UNAVAILABLE_REASON
+
+    try:
+        minted = reg.mint_deeplink(body.channel)
+    except InstallIdentityUnavailable:
+        return nocache_json({"ok": False, "reason": UNAVAILABLE_REASON}, status_code=503)
     username = (body.bot_username or "").strip().lstrip("@")
     url = f"https://t.me/{username}?start={minted['token']}" if username else ""
     return nocache_json({

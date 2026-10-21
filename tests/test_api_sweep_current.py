@@ -62,7 +62,7 @@ def test_every_enumerated_route_carries_a_tier():
     rows = [ln for ln in text.split("\n") if ln.startswith("| API-") and "`/" in ln]
     assert rows, "no route rows found in the sweep"
     for ln in rows:
-        assert any(f"| `{t}` |" in ln for t in ("user", "admin", "open")), (
+        assert any(f"| `{t}` |" in ln for t in gen.TIERS), (
             f"row without a known tier: {ln[:120]}"
         )
 
@@ -71,9 +71,30 @@ def test_tier_counts_match_the_auth_snapshot():
     """The headline tier table is derived, not hand-typed."""
     auth = json.loads((REPO / "tests/_snapshots/route_auth.json").read_text(encoding="utf-8"))
     text = gen.TARGET.read_text(encoding="utf-8")
-    for tier in ("user", "admin", "open"):
+    for tier in gen.TIERS:
         n = sum(1 for v in auth.values() if v == tier)
         assert f"| `{tier}` | {n} |" in text, f"tier table wrong for {tier} (expected {n})"
+
+
+def test_the_tier_vocabulary_is_exactly_what_the_auth_snapshot_uses():
+    """A tier the generator does not know would be counted nowhere in the tier table, and
+    a tier it lists that no route has is dead text — both mean the matrix and the sweep
+    drifted apart (the Nerva Workspace added ``ws_user`` / ``ws_admin``)."""
+    auth = json.loads((REPO / "tests/_snapshots/route_auth.json").read_text(encoding="utf-8"))
+    assert set(auth.values()) == set(gen.TIERS)
+    assert set(gen.HEADER) == set(gen.TIERS)
+
+
+def test_workspace_rows_name_the_session_cookie_not_a_hub_token():
+    """Workspace routes authenticate with the workspace session; a probe that sends a hub
+    token would read every one of them as broken (401) and teach the tester nothing."""
+    text = gen.TARGET.read_text(encoding="utf-8")
+    rows = [ln for ln in text.split("\n") if ln.startswith("| API-") and "`/api/workspace/" in ln]
+    assert rows, "the sweep enumerates no /api/workspace route"
+    for ln in rows:
+        assert "X-User-Token" not in ln and "X-Admin-Token" not in ln, ln[:120]
+        if "| `ws_admin` |" in ln and "curl" in ln:
+            assert "$NERVA_WS_ADMIN_SESSION" in ln, ln[:120]
 
 
 def test_pass_c_does_not_claim_the_tasks_payload_leak_is_live():

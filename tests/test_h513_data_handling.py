@@ -492,13 +492,13 @@ async def test_cache_lock_wait_rechecks_consent_before_http(dh, extension):
 
 
 @pytest.mark.asyncio
-async def test_stream_refusal_names_acknowledgment_and_is_failed_turn(dh):
+async def test_stream_refusal_names_acknowledgment_and_is_failed_turn(dh, monkeypatch):
     from agents.core.agent import Agent
     from agents.core.orchestrator import is_failed_turn_reply
     from tests.test_agent_runtime_v2 import _LegacyDualBackend, _streamed_orchestrator_for
     backend = _LegacyDualBackend("should never generate")
     agent = Agent("jarvis", {"name": "Jarvis"})
-    orch, _, _, _ = _streamed_orchestrator_for(agent, backend)
+    orch, _, _, _ = _streamed_orchestrator_for(agent, backend, monkeypatch=monkeypatch)
     backend.profile = replace(get_profile("openai-compatible"), data_policy="unknown")
     backend.base_url = "https://synthetic.invalid"
     answer = await orch.handle_input_stream("private prompt", channel="internal", session_id="s")

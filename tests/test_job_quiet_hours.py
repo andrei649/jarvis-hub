@@ -7,11 +7,15 @@ interrupt budget every other night-time push spends — and waits when there is 
 
 from __future__ import annotations
 
+import time
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from agents.core import estop
+from agents.core.autonomy import jobs as jobs_module
 from agents.core.autonomy.jobs import (
     HELD_FLUSH_JOB_ID,
     MAX_HELD_PER_JOB,
@@ -21,6 +25,7 @@ from agents.core.autonomy.jobs import (
 )
 
 REMIND = {"type": "remind", "message": "stand up"}
+BUCHAREST = ZoneInfo("Europe/Bucharest")
 
 
 class _Scheduler:
@@ -195,14 +200,62 @@ def test_the_flush_is_registered_beside_the_jobs(store):
 
 def test_quiet_hours_read_the_ambient_window(store, monkeypatch):
     settings = {"ambient.quiet_hours_start": 22, "ambient.quiet_hours_end": 7}
-    clock = {"hour": 3}
-    monkeypatch.setattr("agents.core.autonomy.jobs.time.localtime", lambda ts=None: SimpleNamespace(tm_hour=clock["hour"]))
-    runner = JobRunner(store, orch=_orch(_Telegram(), settings=settings), scheduler=lambda: None, now=lambda: 0.0)
+    monkeypatch.setattr(jobs_module, "app_schedule_timezone", lambda: ZoneInfo("UTC"))
+    clock = {"ts": datetime(2026, 1, 15, 3, tzinfo=ZoneInfo("UTC")).timestamp()}
+    runner = JobRunner(store, orch=_orch(_Telegram(), settings=settings), scheduler=lambda: None, now=lambda: clock["ts"])
     assert runner.quiet_hours() is True
-    clock["hour"] = 12
+    clock["ts"] = datetime(2026, 1, 15, 12, tzinfo=ZoneInfo("UTC")).timestamp()
     assert runner.quiet_hours() is False
     settings["ambient.quiet_hours_start"] = "bad"
-    clock["hour"] = 23
+    clock["ts"] = datetime(2026, 1, 15, 23, tzinfo=ZoneInfo("UTC")).timestamp()
     assert runner.quiet_hours() is True                # the default window still applies
     settings["ambient.quiet_hours_start"] = settings["ambient.quiet_hours_end"] = 5
     assert runner.quiet_hours() is False               # an empty window means never
+
+
+@pytest.mark.asyncio
+async def test_quiet_hours_follow_the_app_zone_not_the_host(store, monkeypatch):
+    """H450: the trigger fires in the pinned app zone, so the hold must read the same
+    clock — on a UTC host the owner's 23:00 is night and the owner's 08:00 is day."""
+    settings = {"ambient.quiet_hours_start": 22, "ambient.quiet_hours_end": 7}
+    monkeypatch.setattr(jobs_module, "app_schedule_timezone", lambda: BUCHAREST)
+    monkeypatch.setattr(jobs_module.time, "localtime", lambda ts=None: time.gmtime(ts))   # the host reads as UTC
+    clock = {"ts": datetime(2026, 1, 15, 23, 0, tzinfo=BUCHAREST).timestamp()}
+    telegram = _Telegram()
+    runner = JobRunner(store, orch=_orch(telegram, settings=settings), scheduler=lambda: None, now=lambda: clock["ts"])
+    job = store.create(name="late", schedule_text="every day at 23", action=REMIND)
+
+    assert runner.quiet_hours() is True
+    assert await runner._deliver("hi", "telegram", job=job) == "held until quiet hours end"
+    assert telegram.sent == [] and store.held_count() == 1
+
+    clock["ts"] = datetime(2026, 1, 15, 8, 0, tzinfo=BUCHAREST).timestamp()
+    assert runner.quiet_hours() is False
+    assert await runner._deliver("morning", "telegram", job=job) == "delivered to telegram"
+    assert telegram.sent == [("morning", 777)] and store.held_count() == 1
+
+
+def test_the_webhook_route_holds_on_the_same_zone_as_the_jobs(monkeypatch):
+    """H450/H153: webhook pushes are held "as the jobs read it", so on a UTC host the
+    owner's 23:00 is night for the route too, and 08:00 is day."""
+    from agents.core.routers import webhooks as router
+
+    monkeypatch.setattr(jobs_module, "app_schedule_timezone", lambda: BUCHAREST)
+    monkeypatch.setattr(jobs_module.time, "localtime", lambda ts=None: time.gmtime(ts))   # the host reads as UTC
+    orch = SimpleNamespace(get_setting=lambda key, default=None: default)              # 22 to 7
+    monkeypatch.setattr(router, "_now", lambda: datetime(2026, 1, 15, 23, 0, tzinfo=BUCHAREST).timestamp())
+    assert router._quiet_hours(orch) is True
+    monkeypatch.setattr(router, "_now", lambda: datetime(2026, 1, 15, 8, 0, tzinfo=BUCHAREST).timestamp())
+    assert router._quiet_hours(orch) is False
+
+
+def test_an_unusable_app_zone_falls_back_to_the_host_clock(monkeypatch):
+    """A broken saved zone must not break delivery: the hour is then the host's."""
+    def broken():
+        raise ValueError("configured app timezone is invalid")
+
+    monkeypatch.setattr(jobs_module, "app_schedule_timezone", broken)
+    monkeypatch.setattr(jobs_module.time, "localtime", lambda ts=None: SimpleNamespace(tm_hour=4))
+    assert jobs_module.quiet_hour(0.0) == 4
+    assert jobs_module.quiet_hour(0.0, broken) == 4
+    assert jobs_module.quiet_hour(datetime(2026, 1, 15, 23, tzinfo=BUCHAREST).timestamp(), BUCHAREST) == 23

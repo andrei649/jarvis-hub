@@ -385,9 +385,14 @@ class SenderPairing(JsonStore):
         return True
 
     def _serialize(self):
+        # Shallow copies (one C-level ``dict()`` each, atomic under the GIL): the
+        # JSON encoder walks what it is given in Python, and a writer that inserts
+        # a sender meanwhile must not make the save raise "dictionary changed size
+        # during iteration". Records are replaced, never edited in place, so a
+        # shallow copy is a consistent snapshot. (H154 review)
         return {
-            "senders": self._senders, "code": self._code_hash,
-            "attempts": self._attempts, "deeplinks": self._deeplinks,
+            "senders": dict(self._senders), "code": self._code_hash,
+            "attempts": dict(self._attempts), "deeplinks": dict(self._deeplinks),
         }
 
     def _deserialize(self, raw) -> None:
@@ -435,9 +440,9 @@ class SenderPairing(JsonStore):
 
         A pre-H497 entry *is* keyed by its token, so the token is recoverable here
         and only here: it is rehashed under a fresh opaque id and the entry keeps
-        its channel, ``created_at`` and ``expires_at``. An outstanding link
-        therefore still redeems after the upgrade, and still dies at its original
-        moment rather than getting a fresh TTL.
+        its channel, ``created_at`` and ``expires_at``. Its original expiry remains
+        visible, but H689 refuses redemption without the hub ID that binds a link
+        to the install; the owner must mint a new identity-bound link.
 
         "Legacy" is decided by the *absence of both* digest fields, not by the
         digest being unusable. Since H497 a dict key is an opaque id rather than a
@@ -661,6 +666,31 @@ class SenderPairing(JsonStore):
             return True
         return False
 
+    def clear_pending(self) -> int:
+        """Drop every pending request at once (H154). Returns how many went.
+
+        A bulk ``reject``: approved and blocked senders are untouched, and a
+        cleared sender is not blocked — it may ask again. The owner's answer to a
+        flooded inbox.
+
+        The flood counters (``_attempts``) are kept on purpose: clearing is not an
+        amnesty, so a sender that spent its attempts is still rate-limited after.
+
+        The route calls this on the event loop, like every other writer (none of
+        which take ``_lock`` around ``_senders``). The walk is still over a
+        snapshot, the delete tolerant and ``_serialize`` copies, so a caller on
+        another thread cannot
+        hit "dictionary changed size during iteration" mid-flood.
+        """
+        with self._lock:
+            snapshot = list(self._senders.items())
+            dead = [k for k, r in snapshot if r.get("status") == PENDING]
+            for key in dead:
+                self._senders.pop(key, None)
+            if dead:
+                self._save()
+        return len(dead)
+
     def decide(self, channel: str, sender_id: str, action: str, name: str = "") -> dict:
         """Convenience dispatcher for the management endpoint."""
         action = (action or "").lower()
@@ -701,6 +731,11 @@ class SenderPairing(JsonStore):
         the store keeps only what it needs to redeem it — which since H497 is a
         salted digest under an opaque id, never the token itself.
         """
+        from agents.core.install_identity import InstallIdentityUnavailable
+
+        hub = _install_id()
+        if not hub:
+            raise InstallIdentityUnavailable()
         moment = time.time() if now is None else float(now)
         token = secrets.token_urlsafe(_DEEPLINK_BYTES)
         with self._lock:
@@ -715,7 +750,7 @@ class SenderPairing(JsonStore):
                 self._deeplinks.pop(oldest, None)
             self._deeplinks[_fresh_link_id(self._deeplinks)] = {
                 "channel": str(channel or "telegram"),
-                "hub": _install_id(),          # H689: redeemable only on this install
+                "hub": hub,                    # H689: never an unbound portable link
                 "created_at": moment,
                 "expires_at": moment + max(1.0, float(ttl)),
                 **_hash_secret(token),
@@ -760,7 +795,8 @@ class SenderPairing(JsonStore):
             self._save()
         if entry.get("channel") and entry["channel"] != channel:
             return {"ok": False, "reason": "wrong_channel"}
-        if entry.get("hub") and entry["hub"] != _install_id():
+        hub = _install_id()
+        if not entry.get("hub") or not hub or entry["hub"] != hub:
             return {"ok": False, "reason": "other_install"}
         record = self.approve(channel, sender_id, name=name)
         return {"ok": True, "status": ALLOWED, "channel": channel,

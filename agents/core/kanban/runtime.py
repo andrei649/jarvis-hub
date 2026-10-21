@@ -73,6 +73,11 @@ def _validate_scope(context, name, args):
         raise ValueError("session provenance is assigned by Nerva")
 
 
+#: H399 — the board tools that only read it. Every other kanban tool changes the board
+#: (create, comment, block, link, attach, heartbeat, …) and runs alone in a model step.
+KANBAN_READ_TOOLS = frozenset({"kanban_list", "kanban_show", "kanban_attachments"})
+
+
 def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda: None,
                           profiles=lambda: ("jarvis",), network=lambda: None):
     from . import tools  # noqa: F401 -- registers the pinned schemas/handlers locally
@@ -114,4 +119,5 @@ def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda
 
         schema = spec["schema"]
         server.register_tool(name, handler, description=schema.get("description", ""),
-                             input_schema=schema["parameters"], untrusted_output=True)
+                             input_schema=schema["parameters"], untrusted_output=True,
+                             parallel_safe=None if name in KANBAN_READ_TOOLS else False)

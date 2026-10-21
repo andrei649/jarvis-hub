@@ -13,13 +13,14 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..log_safe import log_safe
-from .base import LLMBackend, ThinkingStreamFilter, _emit, cloud_cap, strip_thinking
+from .base import LLMBackend, ThinkingStreamFilter, _emit, cloud_cap
 from .data_handling import DataHandlingRefused
 from .direct_transport import require_direct_async_transport
 from .egress import llm_async_client
 from .provider_errors import note_provider_failure
 from .provider_request import compatible_parameters, profile_with_declarations
 from .providers import DEFAULT_REGISTRY
+from .repetition_guard import RepetitionStreamGuard
 from .request_context import merge_extra_body, reconcile_payload
 from .tool_dialects import compatible_usage
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
@@ -146,11 +147,13 @@ class DeepInfraBackend(LLMBackend):
         }
         try:
             data = await self._send(payload)
-            content = data["choices"][0]["message"].get("content", "") or ""
+            choice = data["choices"][0]
+            content = choice["message"].get("content", "") or ""
             if not isinstance(content, str):
                 raise ValueError("invalid DeepInfra answer")
             report_text_usage(compatible_usage(data))
-            return strip_thinking(content)
+            # H393: a reply cut at the output cap that is a repetition loop is dropped.
+            return self._finalize_cloud(content, choice.get("finish_reason"), model)
         except Exception as exc:
             logger.warning("DeepInfra main request failed: %s", log_safe(exc, 200))
             note_provider_failure("deepinfra", model, exc)
@@ -172,6 +175,7 @@ class DeepInfraBackend(LLMBackend):
         }
         emitted = ""
         filter_ = ThinkingStreamFilter()
+        rg = RepetitionStreamGuard()   # H393: never paint a loop live
         finish = None
         completed = False
         usage = None
@@ -241,7 +245,7 @@ class DeepInfraBackend(LLMBackend):
                                 if safe:
                                     emitted += safe
                                     if on_token is not None:
-                                        await _emit(on_token, safe)
+                                        await _emit(on_token, rg.feed(safe))
                             if completed:
                                 break
                         if not completed or finish not in {"stop", "length"}:
@@ -252,10 +256,13 @@ class DeepInfraBackend(LLMBackend):
             if remainder:
                 emitted += remainder
                 if on_token is not None:
-                    await _emit(on_token, remainder)
+                    await _emit(on_token, rg.feed(remainder))
             if usage is not None:
                 report_text_usage(usage)
-            return strip_thinking(emitted)
+            answer = self._finalize_cloud(emitted, finish, model)
+            if on_token is not None:   # H393: withheld text reaches the bubble iff kept
+                await _emit(on_token, rg.release(answer))
+            return answer
         except Exception as exc:
             logger.warning("DeepInfra stream failed: %s", log_safe(exc, 200))
             note_provider_failure("deepinfra", model, exc)
@@ -281,7 +288,7 @@ class DeepInfraBackend(LLMBackend):
             if not isinstance(content, str):
                 raise ValueError("invalid DeepInfra answer")
             return ToolTurn(
-                content=strip_thinking(content),
+                content=self._finalize_cloud(content, choice.get("finish_reason"), model),
                 tool_calls=parse_openai_tool_calls(message.get("tool_calls") or []),
                 finish_reason=choice.get("finish_reason"),
                 usage=compatible_usage(data),

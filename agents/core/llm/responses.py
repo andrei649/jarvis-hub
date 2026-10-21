@@ -8,6 +8,7 @@ from .egress import llm_async_client
 from .provider_errors import note_provider_failure, read_error_head
 from .provider_request import compatible_parameters
 from .providers import DEFAULT_REGISTRY
+from .repetition_guard import RepetitionStreamGuard
 from .request_context import ensure_reasoning_active
 from .responses_dialect import (
     MAX_BYTES,
@@ -145,6 +146,7 @@ class ResponsesBackend(LLMBackend):
         )
         payload["stream"] = True
         full, total, events = "", 0, 0
+        guard = RepetitionStreamGuard()   # H393: never paint a loop live
         buffer = bytearray()
         terminal = None
         try:
@@ -194,7 +196,7 @@ class ResponsesBackend(LLMBackend):
                                     raise ResponsesRefused()
                                 full += delta
                                 if on_token:
-                                    await _emit(on_token, delta)
+                                    await _emit(on_token, guard.feed(delta))
                             elif kind == "response.completed":
                                 turn = self._parse_response(event.get("response"), model)
                                 if turn.tool_calls or turn.content != full:
@@ -213,7 +215,10 @@ class ResponsesBackend(LLMBackend):
         # Accept only a bounded, fully closed stream; contradictory trailers and
         # close failures cannot publish usage for a rejected attempt.
         report_text_usage(terminal.usage)
-        return self._finalize_cloud(full)
+        answer = self._finalize_cloud(full)
+        if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
+            await _emit(on_token, guard.release(answer))
+        return answer
 
     async def aclose(self):
         await self.client.aclose()

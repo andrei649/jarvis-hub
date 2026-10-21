@@ -1,0 +1,153 @@
+# Nerva Workspace — Caddy reverse proxy (pilot B2B)
+#
+# The complete guide: docs/business/PILOT_GUIDE.md (§5 for this file, §11 for SSO).
+# Replace nerva.firma.ro with your hostname everywhere below, then:
+#   sudo cp deploy/workspace/Caddyfile.example /etc/caddy/Caddyfile
+#   sudoedit /etc/caddy/Caddyfile
+#   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+#   sudo systemctl reload caddy
+# Both variants below pass `caddy adapt` and `caddy validate` on Caddy v2.11.
+#
+# What this proxy does, and what the hub expects of it:
+#   * A dedicated hostname that publishes ONLY /workspace, /workspace/* and /api/workspace/*.
+#     Everything else answers 404, so the owner's Command Center, its API and the other
+#     hub surfaces stay reachable on loopback only (http://127.0.0.1:8080).
+#   * The hub listens on 127.0.0.1:8080 (JARVIS_HOST / JARVIS_PORT, the defaults) and
+#     believes forwarding headers only from 127.0.0.1: set JARVIS_TRUSTED_PROXIES=127.0.0.1,
+#     JARVIS_ALLOWED_HOSTS=nerva.firma.ro and NERVA_WORKSPACE_COOKIE_SECURE=1 in the hub's
+#     environment, and leave JARVIS_CORS_ORIGINS unset.
+#   * Caddy forwards the original Host header and sets X-Forwarded-For / X-Forwarded-Proto
+#     itself (it drops the values a client sent), so the hub builds https:// invite links
+#     and logs the real client address.
+#   * Server-Sent Events (the assistant's streamed answers) are flushed at once: Caddy does
+#     that by default for text/event-stream. Do not add a global `encode` directive in front
+#     of /api/workspace/*; only the static assets are compressed below.
+#   * No access log is configured. If you add a `log` directive, note that an upload's file
+#     name travels in its query string (?filename=…) and will be logged. Invite and reset
+#     tokens travel in the URL fragment (#t=…) and never reach the server or its logs.
+#
+# TLS. With a public DNS name pointing at this box and ports 80/443 open, Caddy obtains and
+# renews a Let's Encrypt certificate on its own (nothing to configure). For a name that only
+# resolves inside the company network or VPN, use ONE of these inside the site block:
+#   tls internal                                   # Caddy's own CA: install its root on the clients
+#   tls /etc/caddy/certs/nerva.crt /etc/caddy/certs/nerva.key   # a certificate from your CA
+
+# ─────────────────────────────────────────────────────────────────────────────────────────
+# Variant A — accounts and passwords managed in Nerva Workspace (the default).
+# ─────────────────────────────────────────────────────────────────────────────────────────
+nerva.firma.ro {
+	# HSTS: browsers refuse plain http for this name for a year. Add `; includeSubDomains`
+	# only when every name under nerva.firma.ro is served over HTTPS as well.
+	header Strict-Transport-Security "max-age=31536000"
+
+	@workspace path /workspace /workspace/* /api/workspace/*
+	handle @workspace {
+		# The SSO headers can only ever come from this proxy. In this variant SSO is not
+		# used, so whatever a client sends under these names is dropped. If you changed
+		# NERVA_WORKSPACE_SSO_HEADER, drop that name too.
+		request_header -X-Forwarded-Email
+		request_header -X-Nerva-Proxy-Secret
+
+		# Uploads are sent as a raw request body. Keep this a little ABOVE
+		# NERVA_WORKSPACE_MAX_UPLOAD_MB (default 25, counted in MiB) so the hub answers
+		# with its own translated 413 file_too_large. Raise both together.
+		request_body {
+			max_size 26MiB
+		}
+
+		# Compress the hashed static files only (JS, CSS, fonts), never the API.
+		@assets path /workspace/assets/*
+		encode @assets zstd gzip
+
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle {
+		respond 404
+	}
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────
+# Variant B — company single sign-on through oauth2-proxy (Microsoft Entra ID, Google
+# Workspace, Keycloak … any OIDC provider). Use it INSTEAD of variant A: comment out the
+# block above and uncomment the one below.
+#
+# How it fits together:
+#   1. oauth2-proxy runs on 127.0.0.1:4180 and signs people in with the company IdP.
+#   2. For every workspace request Caddy first asks oauth2-proxy (/oauth2/auth). Without an
+#      oauth2-proxy session a page request is redirected to the sign-in page and an API
+#      request gets a 401; with one, oauth2-proxy answers 2xx with X-Auth-Request-Email.
+#   3. Caddy deletes any client-sent X-Forwarded-Email / X-Nerva-Proxy-Secret, copies the
+#      verified email into X-Forwarded-Email and adds the shared secret, then proxies to
+#      the hub. The `route` block keeps that order exactly as written.
+#   4. The hub accepts POST /api/workspace/login/sso only from a JARVIS_TRUSTED_PROXIES
+#      peer, with exactly one email header and the matching X-Nerva-Proxy-Secret, and only
+#      for an ACTIVE workspace user (invite the people first; nobody is auto-created).
+#
+# Hub environment (same file as the rest of the hub's variables):
+#   NERVA_WORKSPACE_SSO_HEADER=X-Forwarded-Email
+#   NERVA_WORKSPACE_SSO_SECRET=<a long random value, e.g. python3 -c "import secrets; print(secrets.token_urlsafe(32))">
+#
+# Caddy environment — the SAME secret, read at request time (it is not written into
+# Caddy's adapted config). With the packaged caddy.service:
+#   sudo systemctl edit caddy
+#     [Service]
+#     EnvironmentFile=/etc/caddy/nerva-sso.env     # holds NERVA_WORKSPACE_SSO_SECRET=…, mode 0600
+#
+# oauth2-proxy (check every flag against the version you install):
+#   OAUTH2_PROXY_CLIENT_SECRET=…  OAUTH2_PROXY_COOKIE_SECRET=…  oauth2-proxy \
+#     --http-address=127.0.0.1:4180 --reverse-proxy=true \
+#     --provider=oidc --oidc-issuer-url=https://login.microsoftonline.com/<tenant-id>/v2.0 \
+#     --client-id=<application-id> --email-domain=firma.ro \
+#     --redirect-url=https://nerva.firma.ro/oauth2/callback \
+#     --cookie-secure=true --set-xauthrequest=true --upstream=static://202
+#
+# ─────────────────────────────────────────────────────────────────────────────────────────
+# nerva.firma.ro {
+# 	header Strict-Transport-Security "max-age=31536000"
+#
+# 	# oauth2-proxy's own pages: sign-in, callback, sign-out.
+# 	handle /oauth2/* {
+# 		reverse_proxy 127.0.0.1:4180 {
+# 			header_up X-Real-IP {remote_host}
+# 			header_up X-Forwarded-Uri {uri}
+# 		}
+# 	}
+#
+# 	@workspace path /workspace /workspace/* /api/workspace/*
+# 	handle @workspace {
+# 		route {
+# 			request_header -X-Forwarded-Email
+# 			request_header -X-Nerva-Proxy-Secret
+#
+# 			forward_auth 127.0.0.1:4180 {
+# 				uri /oauth2/auth
+# 				header_up X-Real-IP {remote_host}
+# 				copy_headers X-Auth-Request-Email>X-Forwarded-Email
+#
+# 				@signed_out status 401
+# 				handle_response @signed_out {
+# 					route {
+# 						respond /api/workspace/* 401
+# 						redir * /oauth2/sign_in?rd={scheme}://{host}{uri}
+# 					}
+# 				}
+# 			}
+#
+# 			request_body {
+# 				max_size 26MiB
+# 			}
+#
+# 			@assets path /workspace/assets/*
+# 			encode @assets zstd gzip
+#
+# 			reverse_proxy 127.0.0.1:8080 {
+# 				header_up X-Nerva-Proxy-Secret {env.NERVA_WORKSPACE_SSO_SECRET}
+# 			}
+# 		}
+# 	}
+#
+# 	handle {
+# 		respond 404
+# 	}
+# }

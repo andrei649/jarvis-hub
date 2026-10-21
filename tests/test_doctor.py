@@ -598,9 +598,55 @@ def test_report_serialises(healthy_root):
     payload = report.to_dict()
     json.dumps(payload)
     assert set(payload) == {"ok", "root", "checks"}
-    assert all(set(c) - {"data"} == {"name", "status", "reason", "detail"} for c in payload["checks"])
+    # H631: a failed or warned row also carries the troubleshooting section it links
+    assert all(set(c) - {"data", "help"} == {"name", "status", "reason", "detail"} for c in payload["checks"])
+    assert all(("help" in c) == (c["status"] in (doctor.FAIL, doctor.WARN) and c["name"] in doctor.HELP_SECTIONS)
+               for c in payload["checks"])
     # H273: only the configuration table carries data, and it is names and layers
     assert [c["name"] for c in payload["checks"] if "data" in c] == ["config_sources"]
     buf = io.StringIO()
     print(doctor.format_report(report), file=buf)
     assert "Nerva doctor" in buf.getvalue()
+
+
+# ── H631: a red row says where its fix is written down ──────────────
+def test_a_failed_or_warned_row_links_its_troubleshooting_section(healthy_root, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOST", "0.0.0.0")
+    report = doctor.run_doctor(healthy_root, opener=_opener(readyz=None, ollama=False),
+                               version_info=(3, 12, 0, "final", 0))
+    by = report.by_name()
+    assert doctor.help_for(by["bind_is_loopback"]) == "docs/TROUBLESHOOTING.md#symptom-cause-fix"
+    assert doctor.help_for(by["runtimes"]) == "docs/TROUBLESHOOTING.md#local-model-servers"
+    assert doctor.help_for(by["readyz"]) == "docs/TROUBLESHOOTING.md#recovery-sequence"
+    assert doctor.help_for(by["python"]) == ""            # ok: nothing to fix
+    assert doctor.help_for(by["runtime_resolves"]) == ""  # skipped while the hub is down
+    text = doctor.format_report(report)
+    assert "see docs/TROUBLESHOOTING.md#local-model-servers" in text
+    rows = {c["name"]: c for c in report.to_dict()["checks"]}
+    assert rows["readyz"]["help"] == "docs/TROUBLESHOOTING.md#recovery-sequence"
+    assert "help" not in rows["python"]
+
+
+@pytest.mark.parametrize("reason, section", [
+    ("configured_not_resident", "local-model-servers"),
+    ("provider_offline", "local-model-servers"),
+    ("inventory_unavailable", "local-model-servers"),
+    ("residency_unknown", "local-model-servers"),
+    ("cloud_auth_failed", "symptom-cause-fix"),
+    ("needs_token", "symptom-cause-fix"),
+    # review-H631: not about the local server — the symptom table explains them
+    ("route_unselected", "symptom-cause-fix"),
+    ("provider_unresolved", "symptom-cause-fix"),
+    ("router_unavailable", "symptom-cause-fix"),
+    ("unreported", "symptom-cause-fix"),
+    ("hub_url_invalid", "symptom-cause-fix"),
+    ("some_future_reason", "symptom-cause-fix"),
+])
+def test_runtime_resolves_links_by_reason(reason, section):
+    check = doctor.Check("runtime_resolves", doctor.WARN, reason)
+    assert doctor.help_for(check) == f"docs/TROUBLESHOOTING.md#{section}"
+
+
+def test_model_roles_attention_links_the_feels_dumber_checklist():
+    check = doctor.Check("model_roles", doctor.WARN, "model_roles_attention:vision:x")
+    assert doctor.help_for(check) == "docs/TROUBLESHOOTING.md#my-agent-feels-dumber"

@@ -27,6 +27,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
+import { SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
 import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -662,6 +663,9 @@ function ReflectionPanel() {
 }
 
 /* ── Trust / Security ───────────────────────────────────── */
+/* H051: the sender store writes ALLOWED = "allowed" (agents/core/channels/pairing.py);
+   'paired' is accepted too so an older reply still reads as approved. */
+const senderApproved = (status) => status === 'allowed' || status === 'paired';
 export function PairingPanel() {
   const { d, e, loading, reload } = useApi('/api/channels/pairing', true, true);
   const senders = arr(d, 'senders');
@@ -677,18 +681,38 @@ export function PairingPanel() {
     (r) => { setLink(r); reload(); });
   const revokeLinks = () => actA('/api/channels/pairing/link/revoke', {},
     () => { setLink(null); reload(); });
+  /* H154: a flooded inbox in one move — a bulk reject (nobody is blocked, they may
+     ask again), admin-guarded and audited server-side, behind a two-step ConfirmAction. */
+  const [cleared, setCleared] = useState(null);
+  const pendingCount = d?.summary?.pending ?? senders.filter((s) => (s.status || 'pending') === 'pending').length;
+  const clearPending = () => {
+    // `audited: false` means the server had no audit log to write to (or the write
+    // failed) — said on screen, so a cleared inbox never implies a row that is not there.
+    actA('/api/channels/pairing/clear-pending', {}, (r) => {
+      setCleared(`${r?.cleared ?? 0} pending${r?.audited === false ? ' · not audited' : ''}`); reload(); });
+  };
   return <Card title="SENDER PAIRING" live={asLive(d)} sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
     <State e={e} loading={loading} n={senders.length} />
-    {senders.slice(0, 10).map((s, i) => <Row key={i}>
+    {senders.slice(0, 10).map((s, i) => { const ok = senderApproved(s.status); return <Row key={i}>
       <span style={mono}>{s.name || s.sender_id || s.id}</span>
       <Tag>{s.channel}</Tag>
-      <Tag c={s.status === 'paired' ? 'var(--green)' : s.status === 'blocked' ? 'var(--red)' : 'var(--amber)'}>{s.status || 'pending'}</Tag>
+      <Tag c={ok ? 'var(--green)' : s.status === 'blocked' ? 'var(--red)' : 'var(--amber)'}>{s.status || 'pending'}</Tag>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-        {s.status !== 'paired' && <button className="tool-btn" title="approve" onClick={() => decide(s, 'approve')}>✓</button>}
+        {!ok && <button className="tool-btn" title="approve" onClick={() => decide(s, 'approve')}>✓</button>}
         {s.status !== 'blocked' && <button className="tool-btn" title="block" onClick={() => decide(s, 'block')}>⛔</button>}
-        {s.status === 'paired' ? <button className="tool-btn" title="unpair" onClick={() => decide(s, 'unpair')}>✕</button>
-          : <button className="tool-btn" title="reject" onClick={() => decide(s, 'reject')}>✕</button>}
-      </span></Row>)}
+        {/* reject only drops a *pending* record server-side; an approved or blocked
+            sender is revoked with `unpair` (back to unknown). */}
+        {(s.status || 'pending') === 'pending'
+          ? <button className="tool-btn" title="reject" onClick={() => decide(s, 'reject')}>✕</button>
+          : <button className="tool-btn" title="unpair" onClick={() => decide(s, 'unpair')}>✕</button>}
+      </span></Row>; })}
+    {pendingCount > 0 && <div style={{ display: 'flex', marginTop: 6 }}>
+      <span style={{ marginLeft: 'auto' }}>
+        <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="clear pending" title="drop every pending request at once"
+          prompt="nobody is blocked; they can ask again" armedLabel={`drop ${pendingCount} pending`} onConfirm={clearPending} />
+      </span>
+    </div>}
+    {cleared != null && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>cleared {cleared}</div>}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="pairing code (empty = clear)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={() => actA('/api/channels/pairing/code', { code: code || null }, () => { setCode(''); reload(); })}>set code</button>
@@ -3235,6 +3259,7 @@ export function DecisionInboxPanel() {
   const ib = interrupts.d;
   const plans = useApi(PLANS_PATH, true, true);   // H315 — the agent's checklists, intent before the card
   const changes = useApi(SKILL_CHANGES_PATH, true, true);   // H318 — skill changes, each with its whole diff
+  const batches = useApi(SKILL_BATCHES_PATH, true, true);   // H665 — atomic multi-skill batches
   const [imageReturn,setImageReturn] = useState<number | null>(null);
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
@@ -3540,6 +3565,8 @@ export function DecisionInboxPanel() {
       ))}
       {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
       <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
+      <SkillBatchesInbox reply={batches.d} error={batches.e} onDecided={batches.reload} />
+      <SkillBatchEditor onApplied={batches.reload} />
       <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );

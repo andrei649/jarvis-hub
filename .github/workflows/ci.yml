@@ -129,7 +129,7 @@ jobs:
         os: ["ubuntu-latest", "windows-latest"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "22"
       - name: Smoke test Signal Layer replay mode
@@ -143,7 +143,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "22"
           cache: npm
@@ -160,7 +160,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "22"
           cache: npm
@@ -185,9 +185,16 @@ jobs:
         run: npm run build
         working-directory: frontend
       - name: Committed bundle is up to date
+        # Both bundles: the HUD (agents/web/v2) and Nerva Workspace (agents/web/workspace).
+        # `--exit-code` misses a file the build added but nobody committed, so new
+        # untracked files under either bundle fail the step too.
         run: |
-          git diff --exit-code -- agents/web/v2 \
-            || { echo "::error::agents/web/v2 is stale — run 'cd frontend && npm run build' and commit."; exit 1; }
+          git diff --exit-code -- agents/web/v2 agents/web/workspace \
+            || { echo "::error::agents/web/v2 or agents/web/workspace is stale — run 'cd frontend && npm run build' and commit."; exit 1; }
+          untracked="$(git ls-files --others --exclude-standard -- agents/web/v2 agents/web/workspace)"
+          if [ -n "$untracked" ]; then
+            echo "::error::the build wrote files that are not committed: $untracked"; exit 1
+          fi
 
   openapi-types:
     # Post-merge only. Generated TypeScript must match the live FastAPI OpenAPI
@@ -203,7 +210,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-beta.lock
       - run: pip install --require-hashes -r requirements-beta.lock
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "22"
           cache: npm
@@ -250,7 +257,7 @@ jobs:
 
       - name: Upload OpenAPI server log
         if: ${{ failure() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: openapi-server-log
           path: openapi-server.log

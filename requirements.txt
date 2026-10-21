@@ -7,7 +7,7 @@ pyyaml>=6.0.3
 apscheduler>=3.11.3
 httpx>=0.28.1
 websockets>=17.2,<18
-pillow>=12.3.0,<13
+pillow>=13.0.0,<14
 python-dotenv>=1.2.4
 
 # LLM
@@ -28,6 +28,13 @@ cryptography>=50.0.2
 # defusedxml: hardened parsing of untrusted RSS/Atom feeds (news + digest plugins);
 # stdlib xml.etree is unsafe on hostile XML (entity-expansion DoS).
 defusedxml>=0.7.1
+
+# Nerva Workspace (docs/business/WORKSPACE_PILOT_SPEC.md)
+# pypdf: text extraction from uploaded PDF documents (pure Python, no system deps).
+pypdf>=6.0,<7
+# tzdata: IANA zones for zoneinfo on hosts without a system zone database (report
+# schedules run in each report's timezone; slim Linux images and Windows lack one).
+tzdata>=2024.1
 
 # Voice (optional — install manually or use requirements-beta.txt)
 # openwakeword

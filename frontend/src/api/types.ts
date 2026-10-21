@@ -38,6 +38,10 @@ export interface StatusResp {
   loaded_model?: string | null;
   resident_models?: LocalModelRef[];
   residency_state?: 'known' | 'unknown' | 'offline';
+  /** H133: which channels the gateway runs (the chrome's gateway badge and rail dot). */
+  gateway?: { state?: 'running' | 'stopped' | 'none'; running?: string[]; running_count?: number; total?: number };
+  /** H133: unarchived sessions active in the last `window_s`; `active: null` when unknown. */
+  sessions?: { active?: number | null; window_s?: number; state?: 'known' | 'unknown' };
 }
 
 export interface AgentResp {

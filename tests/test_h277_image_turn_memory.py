@@ -71,6 +71,7 @@ async def test_manager_carries_media_without_embedding_it():
     assert embedded == [("Two blue squares.", {
         "role": "assistant", "agent": "jarvis", "session": sid,
         "channel": "web", "origin": "generated",
+        "tainted": True, "taint_source": "external:image",   # H586: a recalled image reading taints its turn
     })]
 
 

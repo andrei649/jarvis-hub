@@ -35,6 +35,24 @@ Restart-Service JarvisHub
 Stop-Service JarvisHub          # graceful: drains, then exits
 ```
 
+## In-place restore (H010)
+
+An approved `nerva backup restore` is staged and the hub restarts itself to apply it
+before any store opens. Under this service the hub exits with code **75** after it has
+drained; NSSM (`AppExit Default Restart`, `AppRestartDelay 5000`) starts it again and that
+boot applies the restore. A clean exit (code 0, `Stop-Service`) is not restarted
+(`AppExit 0 Exit`). The script sets `NERVA_SERVICE_WRAPPER=nssm` so serve.py knows it runs
+under NSSM; **a service installed before this marker existed has no self-restart** — the
+approval answers `restart: "manual"`, `nerva backup list` says "restart the hub/service to
+apply it before <expires_at>", and the jarvis-runtime coordinator (if you run one) stays
+paused for `JARVIS_RUNTIME_RESTORE_GRACE_SECONDS`. Re-run `install-service.ps1` once to add
+the marker, or `Restart-Service JarvisHub` after each approved restore.
+
+The packaged `nerva.exe` (Start Menu) and `python serve.py` in a terminal restart by
+starting a successor in a new console and exiting; the successor waits for the old
+process to be gone (at most `JARVIS_RESTART_PREDECESSOR_WAIT_SECONDS`, default 60) before
+it applies the restore.
+
 ## Uninstall
 
 ```powershell

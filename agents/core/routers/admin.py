@@ -702,6 +702,9 @@ async def admin_memory_clear():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     await orch.memory.clear()
+    from agents.core.skills.tools import LEDGER
+
+    LEDGER.clear()                              # H326: no session carries its skill loads on
     return {"ok": True, "message": "Session memory cleared"}
 
 

@@ -62,5 +62,10 @@ Signal Layer is a situational-awareness API (replay mode by default). Both are o
 (`JARVIS_WORLDVIEW=0`, `JARVIS_SIGNAL_LAYER=0`) and Jarvis runs fine without them.
 
 ### Something's wrong — where do I look?
+Run `nerva doctor`: every red row names its reason and links the section of
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md) with the fix. That guide has the fixed recovery
+sequence, a symptom → cause → fix table, the "my agent feels dumber" checklist, the
+Ollama / LM Studio failure modes and the scheduled-jobs troubleshooting tree — each step a
+command whose output you can paste, so nobody needs a screen-share.
 `GET /healthz` / `GET /readyz` for liveness/readiness, the **audit log** and **APM** in the
 Admin panel, and the server console. To report a security issue, see [SECURITY.md](../SECURITY.md).

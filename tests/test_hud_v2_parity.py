@@ -40,6 +40,11 @@ RULES = [
     ("/favicon", "shell"),
     ("/sw.js", "shell"),
     ("/admin", "admin"),
+    # Nerva Workspace — a separate B2B web app, not a HUD surface: its own SPA at
+    # /workspace (agents/web/workspace) calls every /api/workspace route; the caller gate
+    # below reads frontend/src/workspace like any other client.
+    ("/api/workspace", "workspace"),
+    ("/workspace", "workspace"),
     # machine-facing — intentionally not a HUD surface
     ("/.well-known/", "NOT_IN_HUD"),
     ("/healthz", "NOT_IN_HUD"),  # H23.11 liveness probe (LB / systemd / Docker HEALTHCHECK)
@@ -506,8 +511,13 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/sessions/import": "Owner CLI imports a bounded transcript from its local host (agents/cli/nerva.py)",
+    "/sessions/resolve": "Owner CLI resolves -c/-r selectors and retrieves a free recap (agents/cli/nerva.py)",
     "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
     "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",
+    "/api/admin/backup/restore":
+        "H010: queued by `nerva backup restore` (agents/cli/nerva.py) as an irreversible-tier "
+        "card; the HUD accepts it in the decision inbox like any other approval",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",
@@ -569,6 +579,11 @@ MACHINE_FACING: dict[str, str] = {
     "/docs/oauth2-redirect": "FastAPI docs UI",
     "/redoc": "FastAPI docs UI",
     "/v2/{path:path}": "SPA catch-all \u2014 serves the client, is not called by it",
+    # The Workspace shell: "/workspace" alone also matches every /api/workspace URL in the
+    # client, so these are declared rather than left to that accidental substring match.
+    "/workspace": "redirect to the Workspace SPA, navigated to rather than fetched",
+    "/workspace/": "Workspace SPA shell, navigated to rather than fetched",
+    "/workspace/{path:path}": "Workspace SPA catch-all \u2014 serves the client, is not called by it",
     "/mission-control": "server-rendered page, navigated to rather than fetched",
     "/map": "server-rendered page, navigated to rather than fetched",
     "/api/status": "alias probe"
@@ -577,6 +592,11 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # H015: the owner CLI/API is live; dedicated web/mobile controls remain in
+    # HUD_V2_REMAINING.md and mobile/PARITY.md, not a completed UI claim.
+    "/api/jobs/incidents/{incident_id}/ack",
+    "/api/jobs/runs",
+    "/api/jobs/{job_id}/notepad/keys",
     # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
     # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
     # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
