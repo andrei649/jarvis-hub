@@ -1183,6 +1183,9 @@ class Orchestrator:
             from .paths import data_path as _dp
             self.skill_proposals = SkillProposalStore(
                 path=_dp("learning", "skill_proposals.json"))
+            # H665 — batches of skill operations the model proposed, decided by the owner.
+            from .skills.batch import SkillBatchStore
+            self.skill_batches = SkillBatchStore(path=_dp("learning", "skill_batches.json"))
 
             def _review_living():
                 cog = getattr(self, "cognition", None)

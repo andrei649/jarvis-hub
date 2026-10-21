@@ -635,13 +635,15 @@ class ApprovalJudge:
 
     def wants(self, snapshot: Mapping, status: JudgeStatus | None = None) -> bool:
         """Whether *snapshot* is judged at all — decided before any text leaves."""
+        from ..skills.batch import CARD_TOOL as BATCH_CARD_TOOL
         from ..skills.proposals import CARD_TOOL
 
         status = status if status is not None else self.status()
         if not status.configured:
             return False
-        if snapshot.get("tool") == CARD_TOOL:
-            return False     # its args are {skill, proposal_id}; the diff lives in the ledger
+        if snapshot.get("tool") in (CARD_TOOL, BATCH_CARD_TOOL):
+            # Its args are ids; the diff lives in the ledger, and only the owner decides it (H665).
+            return False
         if not status.local:
             if self._agent_is_local(str(snapshot.get("agent") or "")):
                 return False

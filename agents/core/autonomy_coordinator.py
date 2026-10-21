@@ -1706,6 +1706,7 @@ class AutonomyCoordinator:
             server,
             loader=lambda: getattr(self._orch, "skills", None),
             proposals=lambda: getattr(self._orch, "skill_proposals", None),
+            batches=lambda: getattr(self._orch, "skill_batches", None),
             approvals=lambda: getattr(self._orch, "action_approvals", None),
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
             posture=lambda: tool_profile.posture().key,

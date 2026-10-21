@@ -27,6 +27,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
+import { SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
 import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -3258,6 +3259,7 @@ export function DecisionInboxPanel() {
   const ib = interrupts.d;
   const plans = useApi(PLANS_PATH, true, true);   // H315 — the agent's checklists, intent before the card
   const changes = useApi(SKILL_CHANGES_PATH, true, true);   // H318 — skill changes, each with its whole diff
+  const batches = useApi(SKILL_BATCHES_PATH, true, true);   // H665 — atomic multi-skill batches
   const [imageReturn,setImageReturn] = useState<number | null>(null);
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
@@ -3563,6 +3565,8 @@ export function DecisionInboxPanel() {
       ))}
       {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
       <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
+      <SkillBatchesInbox reply={batches.d} error={batches.e} onDecided={batches.reload} />
+      <SkillBatchEditor onApplied={batches.reload} />
       <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );

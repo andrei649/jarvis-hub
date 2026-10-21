@@ -798,3 +798,68 @@ async def skill_proposals():
     # (review-H318d m-4).
     return JSONResponse({"proposals": out, "count": len(out), "more": max(0, len(pending) - len(out)),
                          "cards": cards}, headers={"Cache-Control": "no-store"})
+
+
+# ── H665: several skills in one atomic batch ──────────────────────────────────────────
+
+class SkillBatchBody(BaseModel):
+    """Hermes's skill_manage ``operations`` array: ordered, across several skills."""
+
+    model_config = {"extra": "forbid"}
+
+    operations: list[dict] = Field(..., min_length=1, max_length=20)
+    dry_run: bool = False
+
+
+def _batch_archive():
+    from agents.core.paths import data_path
+
+    return data_path("skills", "batch-archive")
+
+
+@router.post("/api/skills/batch", dependencies=[Depends(admin_guard)])
+async def skills_batch(body: SkillBatchBody):
+    """The owner edits several skills in one call, applied atomically (H665): create,
+    patch, write_file, remove_file and delete, in order, on staging copies first; the live
+    folders are swapped only when every operation and every resulting SKILL.md passed, and
+    any failure in the swap puts every touched skill back. ``dry_run`` answers the diffs
+    without changing anything. A refusal is 422 with the failing operation, hints and a
+    preview of the file as the batch had it."""
+    import asyncio
+
+    from agents.core.skills.batch import run_batch
+
+    orch = get_orch()
+    loader = getattr(orch, "skills", None) if orch else None
+    if loader is None:
+        return component_unavailable("skills are not available")
+    result = await asyncio.to_thread(run_batch, body.operations, loader, backup_dir=_batch_archive(),
+                                     dry_run=body.dry_run)
+    return JSONResponse(result, status_code=200 if result.get("ok") else 422,
+                        headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/skills/batches", dependencies=[Depends(admin_guard)])
+async def skill_batches():
+    """The skill batches the model proposed and the owner has not decided (H665): each
+    with its operations, the diffs its dry run produced, and the one approval card that
+    applies it whole (``POST /api/actions/{card}/decide``)."""
+    orch = get_orch()
+    store = getattr(orch, "skill_batches", None) if orch else None
+    if store is None:
+        return component_unavailable("skill batches are not available")
+    queue = getattr(orch, "action_approvals", None)
+    if queue is not None:
+        store.sync_rejections(queue)
+    out = []
+    for rec in store.list("pending")[:PROPOSALS_SHOWN]:
+        if queue is not None and not rec.get("card"):
+            try:
+                store.queue_card(rec["id"], queue, agent=str(rec.get("origin") or "agent"),
+                                 summary=f"A batch of skill changes is proposed: {', '.join(rec.get('skills', []))}")
+                rec = store.get(rec["id"]) or rec
+            except Exception:
+                logger.warning("skill batch %s: its card could not be queued", rec.get("id"), exc_info=True)
+        out.append({k: rec.get(k) for k in ("id", "origin", "status", "ts", "card", "skills", "operations",
+                                            "preview")})
+    return JSONResponse({"batches": out, "count": len(out)}, headers={"Cache-Control": "no-store"})

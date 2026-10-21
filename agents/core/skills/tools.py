@@ -72,6 +72,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .batch import ACTIONS as BATCH_ACTIONS
+from .batch import MAX_OPS as BATCH_MAX_OPS
 from .frontmatter import split_frontmatter
 from .template_vars import SETTING as TEMPLATE_VARS_SETTING
 from .template_vars import render_skill_body
@@ -147,6 +149,22 @@ PROPOSE_SCHEMA: dict[str, Any] = {
         "description": {"type": "string", "minLength": 1, "maxLength": MAX_STEP},
         "steps": {"type": "array", "minItems": 1, "maxItems": MAX_STEPS,
                   "items": {"type": "string", "minLength": 1, "maxLength": MAX_STEP}},
+        # H665 — several skills in one atomic batch (Hermes skill_manage operations[]).
+        "operations": {"type": "array", "minItems": 1, "maxItems": BATCH_MAX_OPS, "items": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": 1, "maxLength": MAX_NAME},
+                "action": {"type": "string", "enum": list(BATCH_ACTIONS)},
+                "content": {"type": "string"},
+                "old_string": {"type": "string"},
+                "new_string": {"type": "string"},
+                "replace_all": {"type": "boolean"},
+                "file_path": {"type": "string", "maxLength": MAX_PATH},
+                "file_content": {"type": "string"},
+            },
+            "required": ["name", "action"],
+            "additionalProperties": False,
+        }},
     },
     "additionalProperties": False,
 }
@@ -164,7 +182,13 @@ VIEW_DESCRIPTION = (
 PROPOSE_DESCRIPTION = (
     "Propose a skill change for the owner to review; nothing changes until they approve. "
     "{name, content}: a new SKILL.md for an existing skill. {description, steps}: a new "
-    "skill from a procedure that worked."
+    "skill from a procedure that worked. {operations}: an ordered batch across several "
+    "skills, applied atomically on approval (any failure rolls every touched skill back); "
+    "each op is {name, action} with action create (content: the whole SKILL.md; must come "
+    "before that skill's other ops), patch (old_string/new_string, replace_all, file_path; "
+    "or content to rewrite the file), write_file / remove_file (file_path under references/, "
+    "templates/, scripts/ or assets/; file_content), or delete (only as the sole op). A "
+    "failing op comes back with hints and a file_preview to correct it from."
 )
 
 
@@ -511,6 +535,7 @@ def register_skill_tools(
     environment_registry=None,
     principal: Callable[[], Any] = lambda: None,
     shared_session: Callable[[], bool] = lambda: True,
+    batches: Callable[[], Any] = lambda: None,
 ) -> tuple[str, str, str]:
     """Expose the three tools. Every getter is read per call, so a reload, a new session
     or a changed setting is seen by the next call. ``shared_session`` says whether the
@@ -785,8 +810,8 @@ def register_skill_tools(
     async def _propose(args: dict) -> dict:
         unknown = sorted(str(k) for k in args if k not in PROPOSE_SCHEMA["properties"])
         if unknown:
-            return _refuse("skill_propose_bad_args", f"skill_propose takes name, content, description and "
-                                                     f"steps, not {unknown[0]!r}")
+            return _refuse("skill_propose_bad_args", f"skill_propose takes name, content, description, "
+                                                     f"steps and operations, not {unknown[0]!r}")
         try:
             where = str(posture() or "")
         except Exception:
@@ -801,6 +826,8 @@ def register_skill_tools(
             return _refuse("skill_propose_untrusted_turn",
                            "this turn has read untrusted content, so it cannot propose a skill: say what "
                            "you would change in your reply instead")
+        if "operations" in args:
+            return _propose_batch(args)
         patch = "content" in args
         if patch:
             name, content = args.get("name"), args.get("content")
@@ -901,6 +928,60 @@ def register_skill_tools(
         return {"ok": True, "kind": "patch", "skill": skill.name, "proposal_id": record["id"],
                 "pending": True,
                 "detail": "the change replaces the skill when the owner approves it in the Decision Inbox"}
+
+    def _propose_batch(args: dict) -> dict:
+        """H665 — an ordered batch across several skills, checked now by a dry run against
+        staging copies (a failing operation teaches: failed_op, hints, file_preview) and
+        recorded for the owner, who applies it whole or not at all by deciding its card."""
+        from .batch import fingerprints, run_batch
+
+        if set(args) != {"operations"}:
+            return _refuse("skill_propose_bad_args", "a batch is {operations} alone: name, content, description "
+                                                     "and steps go inside its operations")
+        operations = args.get("operations")
+        target = loader()
+        store = batches()
+        if target is None or store is None:
+            return _refuse("skill_propose_unavailable", "skill batches are not available on this hub")
+        if isinstance(operations, list):
+            for index, op in enumerate(operations):
+                # A skill this agent may not see answers as one that does not exist.
+                name = op.get("name") if isinstance(op, dict) else None
+                if (isinstance(op, dict) and op.get("action") != "create" and isinstance(name, str)
+                        and not any(isinstance(o, dict) and o.get("action") == "create" and o.get("name") == name
+                                    for o in operations[:index])):
+                    skill = _skill(name)
+                    if skill is None or skill is _UNSUPPORTED:
+                        refused = _unknown(name)
+                        refused["failed_op"] = {"index": index, "action": op.get("action"), "name": name}
+                        return refused
+        today = time.strftime("%Y-%m-%d")
+        if spent.get(today, 0) >= MAX_PROPOSALS_PER_DAY:
+            return _refuse("skill_propose_limit", f"at most {MAX_PROPOSALS_PER_DAY} skill proposals a day: "
+                                                  "the owner has enough to review")
+        expect = fingerprints(operations, target) if isinstance(operations, list) else {}
+        checked = run_batch(operations, target, dry_run=True, flagger=lambda text: bool(_flags(text)))
+        if not checked.get("ok"):
+            return checked
+        actor = _actor() or "agent"
+        record = store.propose(operations, expect=expect, preview=checked["skills"], origin=f"agent:{actor}")
+        queue = approvals()
+        store.supersede_older(record, queue)
+        if queue is not None:
+            try:
+                names = ", ".join(sorted(expect))
+                store.queue_card(record["id"], queue, agent=actor,
+                                 summary=f"The agent proposes a batch of {len(operations)} change(s) to "
+                                         f"skills: {names}"[:300])
+            except Exception:
+                logger.warning("skill_propose: the batch's approval card could not be queued", exc_info=True)
+        _spend(today)
+        return {"ok": True, "kind": "batch", "batch_id": record["id"], "pending": True,
+                "skills": [{"name": s["name"], "change": s["change"],
+                            "files": [f"{f['change']} {f['file']}" for f in s["files"]],
+                            **({"lint": s["lint"]} if s.get("lint") else {})} for s in checked["skills"]],
+                "detail": "checked against staging copies; the owner applies it whole, or not at all, from the "
+                          "Decision Inbox"}
 
     server.register_tool(TOOL_LIST, _list, gated=False, description=LIST_DESCRIPTION,
                          input_schema=LIST_SCHEMA, capability_id="tool:skills_list")

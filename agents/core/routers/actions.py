@@ -144,6 +144,18 @@ async def actions_decide(action_id: str, req: Request):
         return JSONResponse({"error": str(exc)}, status_code=400)
     if item is None:
         return JSONResponse({"error": "not found"}, status_code=404)
+    if item.get("tool") == "skill.batch_proposal":
+        # H665 — a decided batch lands now, whole or not at all; only its own card decides it.
+        store = getattr(get_orch(), "skill_batches", None)
+        loader = getattr(get_orch(), "skills", None)
+        batch_id = str((item.get("args") or {}).get("batch_id") or "")
+        if store is None or loader is None:
+            return nocache_json({"ok": True, "action": {**item, "note": "skill batches are not available"}})
+        from agents.core.paths import data_path
+
+        outcome = await asyncio.to_thread(store.decide, batch_id, action_id, body["approved"], loader,
+                                          backup_dir=data_path("skills", "batch-archive"))
+        return nocache_json({"ok": True, "action": {**item, "applied": outcome}})
     if item.get("tool") == "skill.patch_proposal":
         # H318 review — a decided skill change lands now, not at the curator's next night
         # (which never comes while the learning loop is off, the default).

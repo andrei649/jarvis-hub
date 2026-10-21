@@ -3595,6 +3595,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Skills Batch
+         * @description The owner edits several skills in one call, applied atomically (H665): create,
+         *     patch, write_file, remove_file and delete, in order, on staging copies first; the live
+         *     folders are swapped only when every operation and every resulting SKILL.md passed, and
+         *     any failure in the swap puts every touched skill back. ``dry_run`` answers the diffs
+         *     without changing anything. A refusal is 422 with the failing operation, hints and a
+         *     preview of the file as the batch had it.
+         */
+        post: operations["skills_batch_api_skills_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Skill Batches
+         * @description The skill batches the model proposed and the owner has not decided (H665): each
+         *     with its operations, the diffs its dry run produced, and the one approval card that
+         *     applies it whole (``POST /api/actions/{card}/decide``).
+         */
+        get: operations["skill_batches_api_skills_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health/components": {
         parameters: {
             query?: never;
@@ -14657,6 +14704,21 @@ export interface components {
              */
             max_reviews: number;
         };
+        /**
+         * SkillBatchBody
+         * @description Hermes's skill_manage ``operations`` array: ordered, across several skills.
+         */
+        SkillBatchBody: {
+            /** Operations */
+            operations: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+        };
         /** SkillSwitchBody */
         SkillSwitchBody: {
             /** Skill */
@@ -20709,6 +20771,59 @@ export interface operations {
         };
     };
     skill_proposals_api_skills_proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    skills_batch_api_skills_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillBatchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_batches_api_skills_batches_get: {
         parameters: {
             query?: never;
             header?: never;
