@@ -7686,20 +7686,56 @@
       "id": "H206",
       "row_sha256": "f4c58b45cbbe6bd79243ee31a44e69437317d50661a17936d69c91755a63bc86",
       "status": "partial",
-      "summary": "Memoria și graful au backend; DW-1 afișează entități și legături reale, cu mostre doar în Demo. HUD contrast collateral review (2026-10-09): foreground-only changes preserve this capability and its authority; changed source/test pins reviewed by gpt-6-sol/high, with full HUD and focused follow-up tests. Scope and browser evidence: docs/hud-muted-text-contrast-20261009.md.",
-      "remaining": "Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică.",
+      "summary": "Memory graph explorer: SVG canvas of the real graph (GET /api/kg/map, agents/core/routers/memory_kg.py:645, fetching relations only among the listed entities at memory_kg.py:663), camera, legend, scrubber on transaction time and valid time (GET /api/kg/facts/as-of?axis=known|valid, which answers 422 for a non-finite or out-of-range at, memory_kg.py:896), context menu, edit (POST /api/kg/entities, memory_kg.py:676, replace_entity; a name with leading or trailing whitespace is refused with 400 instead of being stripped onto another entity) and delete (DELETE /api/kg/entities/{name:path}, memory_kg.py:728: graph delete first, timeline facts closed after it, timeline-only entities handled with graph_deleted:false, 404 when nothing was removed, 503 and the timeline untouched when the graph could not be asked), skill switch, NML1 map code. Round 4 closes: names with '/' or '\\\\' round-trip through GET/DELETE (route declared {name:path}, client sends the percent-encoded name at frontend/src/api/memory-graph.ts:189 and :225; only '.' and '..' are unaddressable, frontend/src/api/memory-graph.ts:56); padded names get Delete but not Edit in the UI (isEditable, frontend/src/api/memory-graph.ts:58, used at frontend/src/panels/memory-graph.tsx:317, with a note at memory-graph.tsx:489); POST /api/kg/facts requires text (<=1000 chars) for subject/predicate/object and BiTemporalKG.first_seen (agents/core/memory/bitemporal.py:234) skips non-text names so /api/kg/map cannot 500; on Neo4j replace_entity is SET += plus REMOVE of dropped keys read through _node_shape (agents/core/memory/graph.py:392) so unsafe stored keys survive, a same-type edit does not relabel (case-insensitive label compare), delete_entity returns True only when a node left (count(n) > 0, graph.py:574-583), and the graph classes expose last_error() (graph.py:84, 317). Tests: tests/test_h206_memory_explorer.py (68 tests, 13 new red before the fix), frontend memory-graph-api.test.ts and memory-graph-explorer.test.tsx; full vitest 241 files / 2339 tests pass, tsc and typecheck:e2e clean, build done and agents/web/v2 committed; backend related suites, route/openapi parity, route auth matrix, doc integrity, tier honesty, typegen gate, asset manifest, web base path, archive safe, lifespan smoke, data purge, h329 switches all pass; ruff clean; bandit only the pre-existing B110 at agents/core/routers/memory_kg.py:500. Not live-proven: real browser (jsdom only), live Neo4j (statement shapes against a stubbed transport and an unreachable-transport check only), kernel-on behaviour in a running hub, owner memory data. 2026-10-20 delta re-read after the CTO-branch merge (vs d4e9b3ad): none of the row's code, test or doc evidence files changed; the two snapshot files tests/_snapshots/route_surface.json and tests/_snapshots/route_auth.json each gained one line, GET /api/oauth/callback (open), and every /api/kg/* entry in them is unchanged; the merge also touched agents/core/memory/manager.py and session_search.py (H586 image-turn taint), which touch no explorer clause. Every path:line above was re-opened at HEAD (the old ~655 and ~680 anchors are now memory_kg.py:645 and :676; the other lines were unchanged); tests/test_h206_memory_explorer.py 68 passed, the kg/bitemporal/purge/image-memory and route-snapshot suites 741 passed, the two memory-graph vitest files 107 passed, ruff clean and bandit only the B110 at memory_kg.py:500. Conclusion: the merge changed nothing the row claims; the row stays partial because the owner-decision, buildable-now, network and hardware items below are still open.",
+      "remaining": "owner-decision: the default KNOWLEDGE_GRAPH_BACKEND=memory graph is not persisted at all (graph.py create_graph, graph.py:605-614, falls back to InMemoryGraph): after a restart the live map holds only the starter seed and the skills while the persisted timeline still names every ingested entity, so explorer edits and deletes last only until restart; needs a persistence or tombstone design for InMemoryGraph and seed_graph (on a persistent Neo4j graph seed_graph only creates a starter entity when missing, so a deleted starter entity is re-seeded and later changes to a starter entity never arrive). owner-decision: whether Delete memory should also erase history (route through the existing admin forget/purge path) or keep the closed facts readable at earlier scrubber positions as it does now. owner-decision: whether seeded and directly written entities and relations should appear on the timeline (would need seeding through bt.add_fact with a fixed ingested_at); today the UI and MEM-210 state that the past view is ingested facts only. buildable-now: on Neo4j the Edit dialog shows stored properties whose key is not a safe identifier (event-id, geo.lat) as editable rows although an edit of their value cannot be written (the value is preserved, not wiped); they should be shown as kept-unchanged. network: live Neo4j proof of relabel, replace_entity (SET += with REMOVE), delete_entity count, list_relations with names, ensure_entity and the unreachable-delete 503 (statement shapes and a stubbed transport only so far). hardware: real-browser proof of canvas, camera, menu and dialogs (jsdom only).",
       "evidence": [
         {
-          "path": "frontend/src/modes.tsx",
-          "sha256": "3cef21cdac0e9455696e57847a4538be975b7e12e37b82aa80f4a459a17e5fa6"
+          "path": "frontend/src/panels/memory-graph.tsx",
+          "sha256": "d2f35971ca25a0183032d663e88a9cb3a83b942d98d161604fa7345f7340468b"
         },
         {
-          "path": "frontend/src/panels/memory-neighborhood.tsx",
-          "sha256": "1851b806d08e4db4decf43f4dd0188660199cda97f9d4ca681d87287fe44676c"
+          "path": "frontend/src/panels/memory-graph-dialogs.tsx",
+          "sha256": "84bceedf11734fc958360d1b68b090aee8bb0f7f770e82a1e0effaeede078bcf"
         },
         {
-          "path": "tests/test_session_search.py",
-          "sha256": "96e69cb501c0ded7fed3c1c6c2079cbcc2ae2cbee8510800ea326c195a4194fc"
+          "path": "frontend/src/api/memory-graph.ts",
+          "sha256": "e56531b355889ce8190cf2f43fad5044215de9a3e6bdb4373e55bbe2fe55ea08"
+        },
+        {
+          "path": "agents/core/routers/memory_kg.py",
+          "sha256": "d58cbf459b90a5175682f2707039be34c829591579b9e85fc2b97c54f6e3c272"
+        },
+        {
+          "path": "agents/core/memory/graph.py",
+          "sha256": "e901f72d259ee6dc869a9ead3b6ca024ba8e1bdd34b29baffc3e0e72e352f027"
+        },
+        {
+          "path": "agents/core/memory/bitemporal.py",
+          "sha256": "34929a99f811abf05af0dfd92d7da95d6b73afd225f08e248d8edcb5e633c208"
+        },
+        {
+          "path": "tests/test_h206_memory_explorer.py",
+          "sha256": "34817112902166a0d650a286d29304c61638bbafc4f69dc895ed84d5f6c61bb4"
+        },
+        {
+          "path": "frontend/src/test/memory-graph-explorer.test.tsx",
+          "sha256": "73bb99ec498f89258d9cb98cd9813db82a21bf248d97ec94825b84f50ea8ac13"
+        },
+        {
+          "path": "frontend/src/test/memory-graph-api.test.ts",
+          "sha256": "96daeafb69a40655a8234a212e138279b84dba15271b67183c8bb15b239684c2"
+        },
+        {
+          "path": "tests/_snapshots/route_surface.json",
+          "sha256": "a30d8c0e888d7d73cd3d19157dd2c9ef591a393091050df63e9e0b0f567216a9"
+        },
+        {
+          "path": "tests/_snapshots/route_auth.json",
+          "sha256": "498c164a5262fccc3897e2e85ce4e62498d636a0dd67e207c4cdafa2ddad60ad"
+        },
+        {
+          "path": "docs/test-manual/09-memory-knowledge.md",
+          "sha256": "1a4909806cd497a76c1ba898784a1d892a411f7253244bb63d77486399cca0d0"
         }
       ]
     },
@@ -12572,25 +12608,53 @@
     {
       "id": "H310",
       "row_sha256": "442c28f4453442aadd61d72923dfbbace2f7ecf95552332b2eb4894e25bb8492",
-      "status": "partial",
-      "summary": "Modelul poate căuta și extrage pagini prin egressul existent, cu rezultate limitate și marcate ca date.",
-      "remaining": "Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus.",
+      "status": "equivalent",
+      "summary": "web_search and web_extract at the accepted Hermes contract, with the last blocker fixed so the claim is true in the real tool loop. AgentToolRuntime cuts every tool at 30 s (agent_runtime.py:204, :1460-1472) and register_tool has no per-tool budget, so web_extract carries its own call-level budget (web_tools.py:117-118: 22 s soft, 26 s hard; read_one at :946; the soft deadline reaches WebSearchPlugin.read_page(deadline=) at websearch.py:433 and _read_pdf at :557). PDFs queue two at a time (PDF_MAX_CONCURRENT=2, per-event-loop asyncio.Semaphore, thread BoundedSemaphore backstop) but only inside that budget: a PDF that does not fit answers parser_busy with a retry hint, a read still running at 26 s answers fetch_failed with a hint, and every page finished by then is returned. Five ordinary PDFs all read; five very large ones read the first few and answer the rest parser_busy, never tool_timeout. Proven through the real AgentToolRuntime._execute_rpc with the wall scaled down (test_five_slow_pdfs_answer_every_url_before_the_loop_cuts_the_call_off, test_a_hung_page_..., test_a_pdf_that_cannot_finish_in_the_budget_..., test_a_web_extract_call_answers_inside_the_tool_loops_own_wall, which reads the loop's default from its signature). A caller with no deadline (gatherer, scripts) keeps 90 s queue wait and 30 s parse. docs/WEB_SEARCH.md no longer claims a 90 s wait inside a call. A name that does not resolve now answers url_refused exactly like a private address, so a prompt-injected caller cannot probe which internal names exist (test_a_name_that_does_not_resolve_reads_like_a_private_address; the log keeps the difference). HTTP 408/425/429/5xx and timeouts are fetch_failed (retry); every other error status is the new reason http_error with status (do not retry), checked before the media type (test_permanent_http_errors_are_not_retryable_and_transient_ones_are). Unchanged and still tested: provider ABC and registry, no keyless rescue for unattended callers, narrow provider view, 15,000-char head+tail cut, five URLs per call, full text spilled with a footer that names file_read only when reachable, untrusted_output and taint, secret_in_url, tainted_turn, site_blocked, ungated registration, no x_search. ACCEPTED NARROWINGS, to be recorded as narrowings and not as exact equivalence: (1) the backend selector is the env var JARVIS_WEB_BACKEND (plus JARVIS_WEB_PROVIDER_TIER, JARVIS_WEB_RESCUE, JARVIS_WEB_BLOCKED_DOMAINS), not a runtime web.backend setting; changing it takes an environment edit, with no HUD toggle; (2) web_search declares 50,000 bytes (web_tools.py:109, :1023) and only web_extract declares 100,000 (:1034), and web_search rows are fitted to its ceiling with the dropped count in omitted; (3) the ceiling is bytes where Hermes counts chars, and the loop may still lower it to a small model's per-result budget; (4) llm.tool_loop_enabled ships default off, so the tools reach the model only after the owner turns it on (CHT-122); (5) kernel mediation of egress is opt-in (JARVIS_ACTION_KERNEL); (6) the registry takes first-party plugins only. KNOWN LIMITS, not built: one page hung inside pypdf cannot be interrupted from Python (two such hangs hold both slots and PDF reads answer parser_busy until they end), and the memory pypdf uses to decompress a stream or extract one page is not bounded by Nerva (the 2 MB cap bounds the download only); both are in docs/WEB_SEARCH.md, and a killable subprocess with a memory rlimit would be the hard bound. NOT LIVE-PROVEN: no keyed Tavily or SearXNG query, no real PDF with pypdf installed (pypdf is in no requirements file), no plugin-registered backend dialled, no real DNS outage, no HUD ask; every leg uses fakes, a fake pypdf module and httpx.MockTransport. Mutation pass from the previous round (93 killed, 0 survived) predates this round's code and was not re-run on the new branches; the new tests cover them directly.",
+      "remaining": "",
       "evidence": [
         {
-          "path": "agents/core/web_tools.py",
-          "sha256": "304ace67aa59ea9c55578db72e33f2df075a2b6b23335dd774bd24580567dfbd"
+          "path": "agents/core/plugins/websearch.py",
+          "sha256": "40e73876c187b13d28e13bf612ea79258bd1b6907a46261f164c02c6bded20b0"
         },
         {
-          "path": "agents/core/plugins/websearch.py",
-          "sha256": "d7df9ce137089da629e1356dc5666d689ea8b4b8036fa6ac5afda02077e45828"
+          "path": "agents/core/plugins/web_providers.py",
+          "sha256": "ab028e71126b387c9935584be33558271acb5faf16e9074b66b1bcbe9bb36740"
+        },
+        {
+          "path": "agents/core/web_tools.py",
+          "sha256": "8e33f98e675205b6032cbacb138629f67c9693539b8e26549e62687ccef6b8a0"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "49fa43e1650862231593e9cb559cf2ec56cc1289fe377395391e967291ae8126"
+        },
+        {
+          "path": "tests/test_h310_web_parity.py",
+          "sha256": "c26f6a49451eda74bf53cc512a506ccc59c2dcf3b43da546fba2d409b26ecb14"
+        },
+        {
+          "path": "tests/test_h310_web_parity_mutants.py",
+          "sha256": "f5076eba5ae19ee7255585260ab6fdbaebd772df64b1614c14337593da0a32cc"
+        },
+        {
+          "path": "tests/test_agent_runtime_v2.py",
+          "sha256": "78a0b3da5355944f23290c80d8f658c9310fa0b0900b7f656270b81df6003222"
         },
         {
           "path": "tests/test_web_tools.py",
           "sha256": "f5ede64b2ad26a16c6a4ce561d15937601ce9f4bbd1c61782327f8bd4532090f"
         },
         {
-          "path": "tests/test_web_tools_wiring.py",
-          "sha256": "37a1ae50364d7c7b6491ff1264fcd0b92823fbcffbf5b10c092acc0ebcfd946c"
+          "path": "tests/test_websearch.py",
+          "sha256": "a794d8cbaca4fb3962db194e931224096eb2ba987701bcda705fc861b3c5540d"
+        },
+        {
+          "path": "docs/WEB_SEARCH.md",
+          "sha256": "c4031b918fa725652677f3f918fca9c08f0c2d0409d71dfc505bb08780e44199"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "sha256": "20bd170dff892df6a348c0cbe5eb18b1707fbbd71361a68cb1209baabae6b391"
         }
       ]
     },
@@ -17273,8 +17337,8 @@
       "id": "H417",
       "row_sha256": "3490429467dd6ce4fc73cb014d7748c21b2026a21d6eae60ee4e3992e6eefd2a",
       "status": "partial",
-      "summary": "Memoria și graful au backend; DW-1 afișează entități și legături reale, cu mostre doar în Demo. HUD contrast collateral review (2026-10-09): foreground-only changes preserve this capability and its authority; changed source/test pins reviewed by gpt-6-sol/high, with full HUD and focused follow-up tests. Scope and browser evidence: docs/hud-muted-text-contrast-20261009.md.",
-      "remaining": "Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică.",
+      "summary": "Partial. The owner-facing memory surface now shows real stored data and lets the owner act on it, but the journey narrative, the usage-insights view and the learn flow from the Hermes contract are still not built. Live Memory mode renders the stored-entity neighborhood instead of the sample graph: MemoryMode takes a demo flag (frontend/src/modes.tsx:278), skips the live recall fetch in Demo (modes.tsx:291) and mounts <MemoryNeighborhood /> for every non-Demo render (modes.tsx:339 and :369). The sample knowledge graph and time slider appear only in explicit Demo, pinned by frontend/src/test/memory-neighborhood.test.tsx:17 and :24. MemoryNeighborhood lists real entities and their stored relationships through the memory-map API and shows 'No sample data is shown' on failure (frontend/src/panels/memory-neighborhood.tsx:7-8). Since H206 it also mounts MemoryGraphExplorer above the list (memory-neighborhood.tsx:4 and :42). That explorer is a canvas of the real graph with entities and installed skills, an as-of scrubber, a node context menu with edit/delete through the kernel-mediated knowledge-graph routes, skill disable and a share/import map code (frontend/src/panels/memory-graph.tsx:3-7, :298-322). This partly covers the 'node-level delete/edit' half of the frozen contract; the delete wiring and purge semantics are owned by the H206 row and were not re-audited here. The analytics half (analytics_store, run_history, cost_tracker.apm_summary at agents/core/cost_tracker.py:381, north_star) exists in the backend only; no usage-insights view is wired into the HUD. A grep of agents, scripts and frontend/src finds no journey timeline or journey render, no /learn flow and no skill-authoring standard. 2026-10-12 re-read: of the three pinned files only frontend/src/panels/memory-neighborhood.tsx drifted (efc87a20 to HEAD, via dc658fe7 hermes(H206)). That change only wraps the section in a fragment, mounts MemoryGraphExplorer above it and rewords the intro to 'text view of the graph above'. The Demo/live split in frontend/src/modes.tsx is unchanged, so the old 'real entities and links, samples only in Demo' claim still holds and is now richer. Tests run: tests/test_session_search.py 11 passed, which is unrelated to this row's claim and is dropped from the evidence; vitest memory-neighborhood-panel, memory-graph-mount, memory-graph-explorer, memory-graph-api and memory-graph-layout 122 passed; memory-neighborhood, mode-surface-a11y and interop-live-honesty 25 passed. Not live-proven against a running backend with real memory data.",
+      "remaining": "Missing product surface, each item blocking 'equivalent': (1) an owner-facing journey/learning narrative (timeline of what was learned plus the skills produced) in the HUD; the memory graph shows state, not a journey; (2) a usage-insights view in the HUD fed by analytics_store, run_history, cost_tracker.apm_summary and the north-star metrics (token usage, cost, tool patterns, activity); (3) a /learn prompt flow and an embedded skill-authoring and knowledge-skill standard; none exist in agents/ or frontend/src. Also verify, in the H206 row rather than here, that node-level delete routes through the data_purge/retention path as the governance note requires.",
       "evidence": [
         {
           "path": "frontend/src/modes.tsx",
@@ -17282,11 +17346,19 @@
         },
         {
           "path": "frontend/src/panels/memory-neighborhood.tsx",
-          "sha256": "1851b806d08e4db4decf43f4dd0188660199cda97f9d4ca681d87287fe44676c"
+          "sha256": "7d7718105a11ed96587c916542586884cb10b08baefb4e926c12d3f71b99f6bf"
         },
         {
-          "path": "tests/test_session_search.py",
-          "sha256": "96e69cb501c0ded7fed3c1c6c2079cbcc2ae2cbee8510800ea326c195a4194fc"
+          "path": "frontend/src/panels/memory-graph.tsx",
+          "sha256": "d2f35971ca25a0183032d663e88a9cb3a83b942d98d161604fa7345f7340468b"
+        },
+        {
+          "path": "frontend/src/test/memory-neighborhood.test.tsx",
+          "sha256": "09c39e4c40e16434eeb818b6bc650bedb8df73d1b99ba6b675644adabf711302"
+        },
+        {
+          "path": "frontend/src/test/memory-graph-mount.test.tsx",
+          "sha256": "73844a4527d0b436f62b8d7177cefb7ebc861226a74b255201270acc79fc3018"
         }
       ]
     },
@@ -18369,8 +18441,8 @@
       "id": "H445",
       "row_sha256": "66d03aa679ff461c50f897156b25190e40ababae706d5dfe86e925c58c952b2a",
       "status": "partial",
-      "summary": "Memoria și graful au backend; DW-1 afișează entități și legături reale, cu mostre doar în Demo. HUD contrast collateral review (2026-10-09): foreground-only changes preserve this capability and its authority; changed source/test pins reviewed by gpt-6-sol/high, with full HUD and focused follow-up tests. Scope and browser evidence: docs/hud-muted-text-contrast-20261009.md.",
-      "remaining": "Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică.",
+      "summary": "Live Memory mode (frontend/src/modes.tsx:369 mounts <MemoryNeighborhood /> when not in Demo; the DW-1 samples are Demo-only, modes.tsx:316) shows real stored entities and links. Since 2026-10-12 that panel (frontend/src/panels/memory-neighborhood.tsx) renders <MemoryGraphExplorer /> above the text list (a star-map of real entities as diamonds plus installed skills from GET /skills as circles, a legend with counts, a timeline scrubber with a known/valid axis, a node context menu, entity edit and delete through the kernel-mediated POST/DELETE /api/kg/entities routes at agents/core/routers/memory_kg.py:676 and :728, and a skill disable/enable switch, all in frontend/src/panels/memory-graph.tsx). This is a facet view, not the frozen contract of one chronological learned-things timeline. Skill nodes carry ts: null (memory-graph.tsx:165) and are drawn outermost rather than placed in time, so skills and memory are not interleaved oldest-to-newest. The scrubber replays ingested bi-temporal facts, not memory chunks or skills. The skill verb is disable/enable, not archive (memory-graph.tsx:321-322). There is no single shared learning payload and no /api/learning/graph|node route (grep of agents finds none). Entity delete reuses the existing mediated kg route rather than adding a second deletion path, so the governance clause holds. Evidence read: git diff efc87a20634d HEAD -- frontend/src/panels/memory-neighborhood.tsx is the H206 change dc658fe7 (import of MemoryGraphExplorer, wrapper fragment, the intro text now says it is the list/text view of the graph above), and it does not alter the entity search, detail or Demo-gating behaviour. frontend/src/modes.tsx is unchanged since the pin. tests/test_session_search.py (11 passed) covers session_search only and never backed this row, so it is dropped from the evidence in favour of the frontend tests. Tests run: vitest memory-neighborhood-panel, memory-neighborhood, memory-graph-mount, memory-graph-explorer and memory-map-api (115 passed); pytest test_h14_1_bitemporal_kg, test_h12_3_kg_editor and test_kg_kernel_wave (23 passed). Not live-proven: no real browser or live-backend run was done here. Reviewed 2026-10-12.",
+      "remaining": "(1) Interleave skills and memory in one chronological order: skill nodes have no timestamp (ts: null, frontend/src/panels/memory-graph.tsx:165), so no oldest-to-newest view spans both. (2) Cover memory chunks, not only entities, in that view. (3) Prune skills by archive, which restores and refuses when pinned, instead of only the disable/enable switch (memory-graph.tsx:321-322). (4) Serve one shared learning payload (a /api/learning/graph|node equivalent) instead of the separate /api/kg/map, /api/kg/facts/as-of and /skills reads.",
       "evidence": [
         {
           "path": "frontend/src/modes.tsx",
@@ -18378,11 +18450,19 @@
         },
         {
           "path": "frontend/src/panels/memory-neighborhood.tsx",
-          "sha256": "1851b806d08e4db4decf43f4dd0188660199cda97f9d4ca681d87287fe44676c"
+          "sha256": "7d7718105a11ed96587c916542586884cb10b08baefb4e926c12d3f71b99f6bf"
         },
         {
-          "path": "tests/test_session_search.py",
-          "sha256": "96e69cb501c0ded7fed3c1c6c2079cbcc2ae2cbee8510800ea326c195a4194fc"
+          "path": "frontend/src/panels/memory-graph.tsx",
+          "sha256": "d2f35971ca25a0183032d663e88a9cb3a83b942d98d161604fa7345f7340468b"
+        },
+        {
+          "path": "frontend/src/test/memory-graph-mount.test.tsx",
+          "sha256": "73844a4527d0b436f62b8d7177cefb7ebc861226a74b255201270acc79fc3018"
+        },
+        {
+          "path": "frontend/src/test/memory-neighborhood-panel.test.tsx",
+          "sha256": "cb05023f55ee7c4cf461fc0b7f06edf8cedc89365607530c069b28ab7c2b8826"
         }
       ]
     },
@@ -24371,25 +24451,41 @@
     {
       "id": "H537",
       "row_sha256": "9976e87725933ba1b38df57b2bce946bfb5f3f5226321a384b6f179e62157234",
-      "status": "partial",
-      "summary": "Modelul poate căuta și extrage pagini prin egressul existent, cu rezultate limitate și marcate ca date.",
-      "remaining": "Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus.",
+      "status": "equivalent",
+      "summary": "Rescue-versus-policy classification and the operator site policy are consistent across callers. A DNS resolution failure or empty DNS answer from an owner-configured search backend is ProviderFailure('dns_failed') via web_providers.classified()/is_dns_failure (rescued once, reported as provider_failed, retryable); allowlist, kernel e-stop and SSRF 'unsafe address' refusals stay PolicyBlock and are never rescued (test_a_dns_failure_is_a_failure_not_a_policy_block). This is a different surface from page reads: the search URL is the owner's, so there is no name oracle, while a model-chosen page URL that does not resolve now reads url_refused like a private address (H310). This round: (a) WebSearchPlugin.search() (websearch.py:394) now drops rows from JARVIS_WEB_BLOCKED_DOMAINS sites, so the gatherer, research handler and tech scout follow the same policy as the tools (test_search_rows_from_blocked_sites_are_dropped_for_direct_callers_too); search_detailed stays unfiltered so web_search still reports its blocked count; (b) a rescue provider that was asked and also failed is attributable (SearchOutcome.rescue_tried, websearch.py:385; web_search carries rescue_tried), because a second party saw the query (test_a_failed_rescue_names_the_second_party_that_saw_the_query). Unchanged: provider ABC and manifest-checked registry, built-ins cannot be replaced or removed, providers get a two-value view, keyless DuckDuckGo is never a rescue target for unattended callers, the 15-minute cache never pins an empty answer. Residual risk: the DNS match depends on the wording of two messages in security/ssrf.py and http_client.py (a reword reverts to PolicyBlock; the test fails). Not live-proven: nothing dialled; fakes and MockTransport only.",
+      "remaining": "",
       "evidence": [
         {
-          "path": "agents/core/web_tools.py",
-          "sha256": "304ace67aa59ea9c55578db72e33f2df075a2b6b23335dd774bd24580567dfbd"
+          "path": "agents/core/plugins/web_providers.py",
+          "sha256": "ab028e71126b387c9935584be33558271acb5faf16e9074b66b1bcbe9bb36740"
         },
         {
           "path": "agents/core/plugins/websearch.py",
-          "sha256": "d7df9ce137089da629e1356dc5666d689ea8b4b8036fa6ac5afda02077e45828"
+          "sha256": "40e73876c187b13d28e13bf612ea79258bd1b6907a46261f164c02c6bded20b0"
         },
         {
-          "path": "tests/test_web_tools.py",
-          "sha256": "f5ede64b2ad26a16c6a4ce561d15937601ce9f4bbd1c61782327f8bd4532090f"
+          "path": "agents/core/web_tools.py",
+          "sha256": "8e33f98e675205b6032cbacb138629f67c9693539b8e26549e62687ccef6b8a0"
         },
         {
-          "path": "tests/test_web_tools_wiring.py",
-          "sha256": "37a1ae50364d7c7b6491ff1264fcd0b92823fbcffbf5b10c092acc0ebcfd946c"
+          "path": "tests/test_h310_web_parity.py",
+          "sha256": "c26f6a49451eda74bf53cc512a506ccc59c2dcf3b43da546fba2d409b26ecb14"
+        },
+        {
+          "path": "tests/test_h310_web_parity_mutants.py",
+          "sha256": "f5076eba5ae19ee7255585260ab6fdbaebd772df64b1614c14337593da0a32cc"
+        },
+        {
+          "path": "tests/test_websearch.py",
+          "sha256": "a794d8cbaca4fb3962db194e931224096eb2ba987701bcda705fc861b3c5540d"
+        },
+        {
+          "path": "docs/WEB_SEARCH.md",
+          "sha256": "c4031b918fa725652677f3f918fca9c08f0c2d0409d71dfc505bb08780e44199"
+        },
+        {
+          "path": "docs/FLAGS.md",
+          "sha256": "9b65f442b17bef5306f4207759e06a4faf35f9254b8f21dba843343d332d2d03"
         }
       ]
     },
@@ -27016,8 +27112,8 @@
       "id": "H605",
       "row_sha256": "08c90e0758c8d20221718ebd657a0e0a3e72492a204b341468eeef74942a35f5",
       "status": "partial",
-      "summary": "Memoria și graful au backend; DW-1 afișează entități și legături reale, cu mostre doar în Demo. HUD contrast collateral review (2026-10-09): foreground-only changes preserve this capability and its authority; changed source/test pins reviewed by gpt-6-sol/high, with full HUD and focused follow-up tests. Scope and browser evidence: docs/hud-muted-text-contrast-20261009.md.",
-      "remaining": "Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică.",
+      "summary": "Persistent memory across sessions has backend support and a live HUD surface; the explorer and timeline clauses are now built (re-read 2026-10-20), but other clauses are not. The model can search what was actually said: session_search (agents/core/memory/session_search.py) is registered read-only as an ungated tool through register_session_search (agents/core/autonomy_coordinator.py:1469-1471). It is bounded (MAX_SESSIONS 200, 8 MB per snapshot, 5 s deadline, limit 20, 256-char query). Turns that trip the injection scanner are redacted and taint the turn origin (tests/test_session_search.py:96-116). The curated core and user rings, background review, and the unified timeline digest behind the original 'superior' state are covered by tests/test_core_block_injection.py, tests/test_background_review.py and tests/test_timeline.py. Live Memory mode (frontend/src/modes.tsx:339 and :369) shows real stored entities and links: it renders the sample star-map only when demo is set, and otherwise renders <MemoryNeighborhood />. The panel (frontend/src/panels/memory-neighborhood.tsx:41-71) now mounts the H206 MemoryGraphExplorer (frontend/src/panels/memory-graph.tsx) above the accessible entity list. Its remaining text states 'No sample data is shown' and 'Could not load memory graph'. The explorer is a star-map canvas with camera and legend. It has a timeline scrubber with play/pause and a 'believed' versus 'true' as-of axis (memory-graph.tsx:88-145, :460-470), a node context menu, and edit/delete through the mediated kg routes. HUD contrast collateral review (2026-10-09): foreground-only changes preserve this capability and its authority; scope and browser evidence are in docs/hud-muted-text-contrast-20261009.md. Re-read 2026-10-20. Of the three pinned files, only frontend/src/panels/memory-neighborhood.tsx drifted. frontend/src/modes.tsx and tests/test_session_search.py still hash to their pins, and agents/core/memory/session_search.py has no commit after 797faabc. The pin matched blob f91653ba (efc87a20). The one change since is dc658fe7 (H206), which wraps the list in a fragment, mounts MemoryGraphExplorer above it, and rewords the intro to 'the text view of the graph above'. This supplies exactly what the earlier partial review listed as open: the timeline/as-of axis, explorer parity and memory controls. The list stays as the accessible text view. Limits: the past-view scrubber draws ingested facts only, so entities written directly (starter entities, editor edits) have no fact and are not on it, and the UI says so (memory-graph.tsx:470). This is a documented scope limit, not a contract gap. Not live-proven: a real browser session against a populated store was not run here. Verified today with the row's test file plus the tests covering the changed code. tests/test_session_search.py: 11 passed. tests/test_h206_memory_explorer.py: 68 passed. tests/test_background_review.py + tests/test_core_block_injection.py + tests/test_timeline.py: 30 passed. Frontend vitest: memory-neighborhood-panel, memory-neighborhood, memory-graph-mount, memory-graph-explorer and memory-map-api, 115 passed; memory-graph-api, memory-graph-layout and memory-map-code, 67 passed; mode-surface-a11y, app-demo-exit and app-routing, 28 passed.",
+      "remaining": "Clauses of the frozen Hermes row with no built and tested equivalent: a model-callable memory tool with substring matching over two targets (MEMORY/USER), capacity-management rules (explicit full-memory error, duplicate prevention) and what-to-save-versus-skip rules, the memory.write_approval config key and the extra_tools allowlist, and background-review notifications (reviewer model selection exists as JARVIS_AUX_REVIEW_MODEL, agents/core/llm/auxiliary_text.py:28). The timeline is delivered through the H206 explorer scrubber, which draws ingested facts only (frontend/src/panels/memory-graph.tsx:470), and H206 itself stays partial. Not live-proven in a browser against a populated store.",
       "evidence": [
         {
           "path": "frontend/src/modes.tsx",
@@ -27025,11 +27121,23 @@
         },
         {
           "path": "frontend/src/panels/memory-neighborhood.tsx",
-          "sha256": "1851b806d08e4db4decf43f4dd0188660199cda97f9d4ca681d87287fe44676c"
+          "sha256": "7d7718105a11ed96587c916542586884cb10b08baefb4e926c12d3f71b99f6bf"
+        },
+        {
+          "path": "frontend/src/panels/memory-graph.tsx",
+          "sha256": "d2f35971ca25a0183032d663e88a9cb3a83b942d98d161604fa7345f7340468b"
         },
         {
           "path": "tests/test_session_search.py",
           "sha256": "96e69cb501c0ded7fed3c1c6c2079cbcc2ae2cbee8510800ea326c195a4194fc"
+        },
+        {
+          "path": "tests/test_h206_memory_explorer.py",
+          "sha256": "34817112902166a0d650a286d29304c61638bbafc4f69dc895ed84d5f6c61bb4"
+        },
+        {
+          "path": "frontend/src/test/memory-graph-mount.test.tsx",
+          "sha256": "73844a4527d0b436f62b8d7177cefb7ebc861226a74b255201270acc79fc3018"
         }
       ]
     },
@@ -27074,24 +27182,40 @@
       "id": "H607",
       "row_sha256": "d07b2ddc1df210d7b3a9ecdca6e043462e115d06ed8fc19962ab9e4f44575d71",
       "status": "partial",
-      "summary": "Modelul poate căuta și extrage pagini prin egressul existent, cu rezultate limitate și marcate ca date.",
-      "remaining": "Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus.",
+      "summary": "Coverage claimed matches what exists. Built and tested: truncation budget, result caching, free/paid tier pinning, configuration priority and auto-detection table, one-shot rescue, offline verification command (python -m agents.core.plugins.web_providers), the extensible registry, research pinned to provider_tier=any, a Self-hosted SearXNG section, and an 18-row troubleshooting table (now with http_error, url_refused-on-unresolvable-name and parser_busy-by-budget rows). JARVIS_WEB_BLOCKED_DOMAINS canonicalises IP spellings (integer, hex, octal, short forms, IPv4-mapped and bracketed IPv6, now also '[::1]:8080', web_providers.py:377-401) and an entry that names no host is logged once and listed by the verification command; the list now applies to direct WebSearchPlugin.search() callers as well as the tools. The docs state the real per-call PDF budget (22 s / 26 s under the loop's 30 s) and the known pypdf limits. Accepted narrowing shared with H310/H537, not remaining work: the selector is the env var JARVIS_WEB_BACKEND, not a runtime web.backend setting. Not covered: Hermes's 8-provider table. Nerva has Tavily, SearXNG and DuckDuckGo; Firecrawl (Hermes's default), Exa, Parallel, Brave free tier and Keenable are not implemented. The keyless anonymous ring and xAI/Grok/x_search are excluded by the accepted scope and are not remaining work. Not live-proven: nothing dialled.",
+      "remaining": "(1) owner-decision: which additional vendors (Firecrawl, Exa, Parallel, Brave, Keenable) may receive the owner's queries and page URLs. (2) owner-decision (blocked on 1; buildable once decided): per vendor, a SearchProvider subclass plus its API host in a plugin_gate manifest (agents/core/plugin_gate.py, 11 pins); the registry in web_providers.py is the seam. (3) network: a live keyed query per vendor and a live keyed Tavily and SearXNG check, which only the owner can run (OWNER_TASKS P24 (4)). Out of scope by decision: keyless anonymous ring, xAI/Grok backend, x_search; the runtime web.backend setting is an accepted narrowing recorded on H310.",
       "evidence": [
         {
-          "path": "agents/core/web_tools.py",
-          "sha256": "304ace67aa59ea9c55578db72e33f2df075a2b6b23335dd774bd24580567dfbd"
+          "path": "agents/core/plugins/web_providers.py",
+          "sha256": "ab028e71126b387c9935584be33558271acb5faf16e9074b66b1bcbe9bb36740"
         },
         {
           "path": "agents/core/plugins/websearch.py",
-          "sha256": "d7df9ce137089da629e1356dc5666d689ea8b4b8036fa6ac5afda02077e45828"
+          "sha256": "40e73876c187b13d28e13bf612ea79258bd1b6907a46261f164c02c6bded20b0"
         },
         {
-          "path": "tests/test_web_tools.py",
-          "sha256": "f5ede64b2ad26a16c6a4ce561d15937601ce9f4bbd1c61782327f8bd4532090f"
+          "path": "agents/core/web_tools.py",
+          "sha256": "8e33f98e675205b6032cbacb138629f67c9693539b8e26549e62687ccef6b8a0"
         },
         {
-          "path": "tests/test_web_tools_wiring.py",
-          "sha256": "37a1ae50364d7c7b6491ff1264fcd0b92823fbcffbf5b10c092acc0ebcfd946c"
+          "path": "agents/core/acquisition/research.py",
+          "sha256": "f246ceba2619a935d7eff224dd910af45cd7c27cf79d992fdd6b81f049edd304"
+        },
+        {
+          "path": "tests/test_h310_web_parity.py",
+          "sha256": "c26f6a49451eda74bf53cc512a506ccc59c2dcf3b43da546fba2d409b26ecb14"
+        },
+        {
+          "path": "tests/test_websearch.py",
+          "sha256": "a794d8cbaca4fb3962db194e931224096eb2ba987701bcda705fc861b3c5540d"
+        },
+        {
+          "path": "docs/WEB_SEARCH.md",
+          "sha256": "c4031b918fa725652677f3f918fca9c08f0c2d0409d71dfc505bb08780e44199"
+        },
+        {
+          "path": "docs/FLAGS.md",
+          "sha256": "9b65f442b17bef5306f4207759e06a4faf35f9254b8f21dba843343d332d2d03"
         }
       ]
     },

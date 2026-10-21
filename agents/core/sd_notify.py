@@ -42,6 +42,7 @@ from contextlib import contextmanager
 
 import uvicorn
 
+from . import host_identity
 from .env_config import env_flag, env_str
 
 logger = logging.getLogger("jarvis.sd_notify")
@@ -58,14 +59,7 @@ SEND_TIMEOUT_SECONDS = 1.0
 def _address() -> str | bytes | None:
     """``NOTIFY_SOCKET`` as a socket address: a path, or ``@name`` for the abstract
     namespace (Linux). Anything else (unset, relative) is no socket."""
-    raw = env_str("NOTIFY_SOCKET").strip()
-    if not raw:
-        return None
-    if raw.startswith("@"):
-        return b"\0" + raw[1:].encode("utf-8", "surrogateescape")
-    if raw.startswith("/"):
-        return raw
-    return None
+    return host_identity.notify_address(env_str("NOTIFY_SOCKET"))
 
 
 def enabled() -> bool:
@@ -100,12 +94,6 @@ def notify(message: str) -> bool:
         return False
 
 
-def _decimal(raw: str) -> int | None:
-    """An ASCII decimal, as systemd writes them; None for anything else (``int()``
-    refuses digits such as ``²`` that ``isdigit()`` accepts)."""
-    return int(raw) if raw.isascii() and raw.isdigit() else None
-
-
 def watchdog_seconds() -> float | None:
     """Half of ``WATCHDOG_USEC``, when the watchdog is armed for this process.
 
@@ -113,13 +101,9 @@ def watchdog_seconds() -> float | None:
     variables must not ping on its parent's behalf. Without ``WATCHDOG_PID`` any
     process is armed, as in libsystemd.
     """
-    usec = _decimal(env_str("WATCHDOG_USEC").strip())
-    if not usec:
+    deadline = host_identity.watchdog_deadline(os.environ, os.getpid())
+    if deadline is None:
         return None
-    pid = env_str("WATCHDOG_PID").strip()
-    if pid and _decimal(pid) != os.getpid():
-        return None
-    deadline = usec / 1_000_000
     return min(max(MIN_WATCHDOG_SECONDS, deadline / 2), deadline * 0.8)
 
 

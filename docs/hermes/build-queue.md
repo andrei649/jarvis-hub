@@ -112,7 +112,7 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 
 ## H586
 
-Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H586`.
+Closed in #1251 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H586`.
 
 ## H667
 

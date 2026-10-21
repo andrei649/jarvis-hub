@@ -1364,6 +1364,30 @@ approvals never expire, a document interrupted by a restart reads `processing` u
 re-index after 10 min, and a report email the hub was sending when it crashed stays `pending` (a
 graceful shutdown still records `delivery_interrupted` itself). **Revert:** unset + restart.
 
+## H310/H537/H607 — web search selection
+
+Four environment variables, **read on every call** (no restart), choose and fence the backend
+behind `web_search` / `web_extract`. Full guide: `docs/WEB_SEARCH.md`; check what a search
+would use right now (offline, no key printed) with `python -m agents.core.plugins.web_providers`.
+
+### `JARVIS_WEB_BACKEND` · `JARVIS_WEB_PROVIDER_TIER` · `JARVIS_WEB_RESCUE` · `JARVIS_WEB_BLOCKED_DOMAINS`
+
+**Default: unset** — `auto`: Tavily if `TAVILY_API_KEY` is set, else your SearXNG (`SEARXNG_URL`),
+else the keyless DuckDuckGo fallback. `JARVIS_WEB_BACKEND=<name>` makes one registered provider
+answer alone; an unknown, unconfigured or tier-pinned name answers `available: false` with a
+`detail`, never a silent fallback. `JARVIS_WEB_PROVIDER_TIER=free|paid` keeps the other tier out
+entirely. `JARVIS_WEB_RESCUE=0|1` overrides the one-shot rescue (default: on for `auto`, off for a
+named backend; it only ever lands on a configured provider, and the keyless DuckDuckGo fallback
+only when this is `1` and the caller is the interactive `web_search` tool, never for research
+tasks, the scout or the gatherer); a gate refusal is never rescued. `JARVIS_WEB_BLOCKED_DOMAINS=a.com,b.org` makes
+`web_extract` refuse those sites (and subdomains) on every redirect hop and drops them from
+`web_search` rows and from the rows direct `search()` callers (the gatherer, research, the scout) get; entries may be written as a host, URL,
+`host:port`, unicode or punycode, or an IP in any spelling (`167838211`, `0xa010203` and
+`::ffff:10.1.2.3` all match `10.1.2.3`); it is a list of host names and addresses, not patterns. An
+entry naming no host (a typo) blocks nothing: it is logged as a warning and flagged by the
+verification command. **Cost of ON:** a named paid backend sends your queries to that vendor; rescue sends a
+failed query to a second configured provider. **Revert:** unset the variable.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |
@@ -1376,6 +1400,10 @@ graceful shutdown still records `delivery_interrupted` itself). **Revert:** unse
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
 | `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore; a root reaching `<data root>/business` is dropped with a warning | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
 | `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout); a root reaching `<data root>/business` is dropped with a warning | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
+
+| `JARVIS_WEB_BACKEND` (+ `JARVIS_WEB_PROVIDER_TIER`, `JARVIS_WEB_RESCUE`, `JARVIS_WEB_BLOCKED_DOMAINS`) | unset = `auto` · `any` · rescue on for `auto` only · none (`plugins/web_providers.py`) | Picks which registered search backend answers `web_search`, pins free/paid, allows one rescue of a failed provider, refuses listed sites in `web_extract` | A named paid backend sends queries to that vendor; rescue sends a failed query to a second configured one | Unset: `auto` priority again (read per call, no restart) |
+| `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
+| `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
 | `JARVIS_VOICE_COMMANDS` (+ `JARVIS_VOICE_COMMAND_TIMEOUT_S`) | off · `30`s TTS / `120`s STT (cap 600) (`voice/local_providers.py`) | The owner's approved TTS/STT command providers may run (argv-only, private run dir, capped, kill-on-timeout) | An approved program runs as the hub's user; the settings stay ROUTE_ONLY, a set waits for a human, every spawn re-checks the program's identity, off in safe mode | Unset + restart: command voices fall back to the default voice, STT to Whisper or `[STT unavailable]` |
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
 | `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |
