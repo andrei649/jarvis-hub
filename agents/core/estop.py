@@ -1,7 +1,7 @@
 """
 estop.py — global emergency stop: a resumable pause for NEW autonomous work.
 
-While the sentinel file (``data_path("ESTOP")``) exists:
+While the sentinel file (``<install root>/ESTOP``) exists:
 
 * the heartbeat scheduler skips dispatching due agent heartbeats
   (``heartbeat.py:_run_heartbeat``),
@@ -13,6 +13,12 @@ to talk to the hub (including to ask it to resume). In-flight work is NEVER
 killed — this is pause-new-work, not panic/exit. The check is a single
 ``os.stat`` so callers may run it every tick; no caching beyond the OS is
 performed, so engaging/disengaging takes effect on the very next check.
+
+H694 — one canonical kill switch: the sentinel lives at ``paths.install_root()``,
+the root every ``$JARVIS_PROFILE`` hub sits beside, so engaging it from any profile
+(or the default hub) pauses them all. A sentinel inside a profile's own data root
+(``data_path("ESTOP")``, the pre-H694 location) still pauses that profile, and a
+resume lifts both.
 
 The sentinel body is optional JSON ``{"reason": ..., "engaged_at": ...}``.
 A corrupt or empty file still counts as engaged (fail safe): the pause must
@@ -33,7 +39,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agents.core.paths import data_path
+from agents.core.paths import data_path, install_root
 
 SENTINEL_NAME = "ESTOP"
 
@@ -44,8 +50,18 @@ _logged_components: set[str] = set()
 
 
 def sentinel_path() -> Path:
-    """Path of the ESTOP sentinel under the runtime data root."""
-    return data_path(SENTINEL_NAME)
+    """Path of the canonical ESTOP sentinel, shared by every profile of the install."""
+    return install_root() / SENTINEL_NAME
+
+
+def _sentinel_paths() -> list[Path]:
+    """The canonical sentinel, then this profile's legacy one when it differs."""
+    canonical = sentinel_path()
+    try:
+        local = data_path(SENTINEL_NAME)
+    except RuntimeError:   # a refused JARVIS_PROFILE: only the canonical switch applies
+        return [canonical]
+    return [canonical] if local == canonical else [canonical, local]
 
 
 def is_engaged() -> bool:
@@ -58,7 +74,7 @@ def is_engaged() -> bool:
     operator's emergency stop exactly when the filesystem is misbehaving.
     """
     try:
-        return sentinel_path().exists()
+        return any(path.exists() for path in _sentinel_paths())
     except OSError:
         return True
 
@@ -81,14 +97,15 @@ def engage(reason: str | None = None) -> Path:
 
 
 def disengage() -> bool:
-    """Remove the ESTOP sentinel. Returns True if a pause was lifted."""
-    try:
-        sentinel_path().unlink()
-        return True
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return False
+    """Remove the ESTOP sentinel(s). Returns True if a pause was lifted."""
+    lifted = False
+    for path in _sentinel_paths():
+        try:
+            path.unlink()
+            lifted = True
+        except OSError:
+            pass
+    return lifted
 
 
 def get_state() -> dict | None:
@@ -97,12 +114,12 @@ def get_state() -> dict | None:
     A sentinel with an unreadable/corrupt body still reports engaged, with
     both fields None — the pause is authoritative, the metadata is not.
     """
-    path = sentinel_path()
     try:
-        if not path.exists():
-            return None
+        path = next((p for p in _sentinel_paths() if p.exists()), None)
     except OSError:
         return {"reason": None, "engaged_at": None}
+    if path is None:
+        return None
     reason = None
     engaged_at = None
     try:

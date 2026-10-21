@@ -23,6 +23,7 @@ from agents.core import estop
 def estop_home(tmp_path, monkeypatch):
     """Point the sentinel at a temp dir and reset the log-once bookkeeping."""
     monkeypatch.setattr(estop, "data_path", lambda *parts: tmp_path.joinpath(*parts))
+    monkeypatch.setattr(estop, "install_root", lambda: tmp_path)
     estop._reset_log_state_for_tests()
     return tmp_path
 
@@ -111,3 +112,79 @@ async def test_heartbeat_dispatch_skipped_while_engaged(estop_home):
     estop.disengage()
     await scheduler._run_heartbeat("friday", FakeOrchestrator())
     assert calls == ["friday"]
+
+
+# --- H694: one canonical kill switch every profile honors ---------------------------
+
+
+@pytest.fixture
+def profiled_install(tmp_path, monkeypatch):
+    """A real install root (``$JARVIS_HOME``) with profile hubs beside it (H689)."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("JARVIS_HOME", str(home))
+    monkeypatch.delenv("JARVIS_MEMORY_DIR", raising=False)
+    monkeypatch.delenv("JARVIS_PROFILE", raising=False)
+    estop._reset_log_state_for_tests()
+    return home
+
+
+def test_install_root_is_shared_by_every_profile(profiled_install, monkeypatch):
+    from agents.core import paths
+
+    assert paths.install_root() == profiled_install
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    # the profile's data root moves beside the install root; the install root does not
+    assert paths.data_root() == profiled_install.parent / "home-profiles" / "work"
+    assert paths.install_root() == profiled_install
+    assert paths.install_root({"JARVIS_HOME": str(profiled_install), "JARVIS_PROFILE": "x"}) == profiled_install
+
+
+def test_sentinel_lives_at_install_root_for_a_profiled_hub(profiled_install, monkeypatch):
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    assert estop.sentinel_path() == profiled_install / "ESTOP"
+
+
+def test_profiled_hub_pauses_on_the_canonical_estop(profiled_install, monkeypatch):
+    # the default hub engages the kill switch ...
+    estop.engage("canonical drill")
+    assert (profiled_install / "ESTOP").exists()
+    # ... and a hub running under another profile pauses on that same sentinel
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    logger = logging.getLogger("test.estop")
+    assert estop.is_engaged() is True
+    assert estop.check_paused("heartbeat:friday", logger) is True
+    assert estop.get_state()["reason"] == "canonical drill"
+
+
+def test_engage_from_a_profile_stops_every_scope(profiled_install, monkeypatch):
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    path = estop.engage("from work")
+    assert path == profiled_install / "ESTOP"
+    monkeypatch.setenv("JARVIS_PROFILE", "personal")
+    assert estop.is_engaged() is True
+    monkeypatch.delenv("JARVIS_PROFILE")
+    assert estop.is_engaged() is True
+    # and resuming from any scope lifts it everywhere
+    assert estop.disengage() is True
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    assert estop.is_engaged() is False
+
+
+def test_legacy_profile_local_sentinel_still_pauses(profiled_install, monkeypatch):
+    # back-compat: a sentinel touched inside the profile's own data root still holds
+    from agents.core.paths import data_root
+
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    local = data_root() / "ESTOP"
+    local.parent.mkdir(parents=True)
+    local.write_text(json.dumps({"reason": "old drill"}), encoding="utf-8")
+    assert estop.is_engaged() is True
+    assert estop.get_state()["reason"] == "old drill"
+    # the other profiles are not paused by a profile-local sentinel
+    monkeypatch.setenv("JARVIS_PROFILE", "personal")
+    assert estop.is_engaged() is False
+    # resume lifts the legacy sentinel too
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    assert estop.disengage() is True
+    assert not local.exists()
+    assert estop.is_engaged() is False
