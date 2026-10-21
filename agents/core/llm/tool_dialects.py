@@ -23,6 +23,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from ..mcp.schema_normalize import normalize_mcp_input_schema
 from .tool_protocol import TokenUsage, ToolSpec
 
 SYNTHETIC_ID_PREFIX = "nerva_call_"
@@ -424,15 +425,37 @@ def anthropic_tool_calls(blocks: Any) -> list[Any]:
 # ── Gemini generateContent ───────────────────────────────────────────────────
 
 
-def gemini_schema(schema: Any) -> dict[str, Any]:
+def _local_ref(ref: Any, root: Mapping[str, Any]) -> Any:
+    """The `$defs`/`definitions` entry a local `$ref` names, or None."""
+    if not isinstance(ref, str):
+        return None
+    for prefix, key in (("#/$defs/", "$defs"), ("#/definitions/", "definitions")):
+        if ref.startswith(prefix):
+            table = root.get(key)
+            if isinstance(table, Mapping):
+                return table.get(ref[len(prefix):])
+    return None
+
+
+def gemini_schema(schema: Any, _root: Any = None, _seen: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Project a JSON Schema onto the OpenAPI subset Gemini accepts, recursively.
 
     Drops keywords Gemini rejects, folds `["string", "null"]` into `nullable`, `const` into a
     one-value `enum`, `oneOf` into `anyOf`, stringifies enum values, keeps only the formats the
-    API knows, and filters `required` to declared properties.
+    API knows, and filters `required` to declared properties. Gemini has no `$ref`, so a local
+    `#/$defs/…` (or legacy `#/definitions/…`) reference is inlined from the root schema — it
+    used to collapse to `{}`, deleting the shape; a recursive reference stops at `{}`.
     """
     if not isinstance(schema, dict):
         return {}
+    root = schema if _root is None else _root
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        target = _local_ref(ref, root) if ref not in _seen else None
+        if not isinstance(target, dict):
+            return {}
+        merged = {**target, **{k: v for k, v in schema.items() if k != "$ref"}}
+        return gemini_schema(merged, root, _seen | {ref})
     out: dict[str, Any] = {}
     nullable = bool(schema.get("nullable"))
     raw_type = schema.get("type")
@@ -472,7 +495,7 @@ def gemini_schema(schema: Any) -> dict[str, Any]:
     properties = schema.get("properties")
     if isinstance(properties, dict):
         cleaned = {
-            name: gemini_schema(value)
+            name: gemini_schema(value, root, _seen)
             for name, value in properties.items()
             if isinstance(name, str) and isinstance(value, dict)
         }
@@ -486,22 +509,29 @@ def gemini_schema(schema: Any) -> dict[str, Any]:
                     out["required"] = kept
     items = schema.get("items")
     if isinstance(items, dict):
-        out["items"] = gemini_schema(items)
+        out["items"] = gemini_schema(items, root, _seen)
         out.setdefault("type", "array")
     variants = schema.get("anyOf", schema.get("oneOf"))
     if isinstance(variants, list):
-        cleaned_variants = [gemini_schema(variant) for variant in variants if isinstance(variant, dict)]
+        cleaned_variants = [
+            gemini_schema(variant, root, _seen) for variant in variants if isinstance(variant, dict)
+        ]
         if cleaned_variants:
             out["anyOf"] = cleaned_variants
     return out
 
 
 def gemini_function_declarations(tools: Sequence[ToolSpec]) -> list[dict[str, Any]]:
-    """`functionDeclarations`; a tool without properties omits `parameters` (empty OBJECTs are a 400)."""
+    """`functionDeclarations`; a tool without properties omits `parameters` (empty OBJECTs are a 400).
+
+    The schema first goes through the shared provider-agnostic repair (H557) — idempotent, so
+    an MCP schema already normalized at registration is unchanged — and only then through the
+    Gemini-specific projection.
+    """
     declarations: list[dict[str, Any]] = []
     for tool in tools:
         declaration: dict[str, Any] = {"name": tool.name, "description": tool.description}
-        parameters = gemini_schema(tool.input_schema)
+        parameters = gemini_schema(normalize_mcp_input_schema(tool.input_schema))
         if parameters.get("properties"):
             parameters["type"] = "object"
             declaration["parameters"] = parameters
