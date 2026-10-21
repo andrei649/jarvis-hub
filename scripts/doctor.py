@@ -149,6 +149,11 @@ HELP_SECTIONS = {
     "config_sources": "symptom-cause-fix",
     "model_roles": "my-agent-feels-dumber",
     "smoke": "recovery-sequence",
+    # `--local-pilot` rows (#1254)
+    "hub": "local-pilot-check",
+    "local_model": "local-pilot-check",
+    "fallback_policy": "local-pilot-check",
+    "mcp_memory": "local-pilot-check",
 }
 # runtime_resolves reasons about the local model server itself — the Ollama / LM Studio
 # tables name each. Every other reason (a cloud key, a credential, the hub's address or

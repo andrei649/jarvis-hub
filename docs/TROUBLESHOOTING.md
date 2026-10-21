@@ -155,6 +155,29 @@ this order — the first ones are the most common and the cheapest to rule out:
     `MEMORY_EMBED_TURNS=true` stores every turn, `POST /api/memory/remember` one fact;
     `GET /api/memory/search` (with `q`) shows what a recall would find.
 
+## Local pilot check
+
+`nerva doctor --local-pilot` is a read-only check of a hub already running on this
+computer: it starts nothing and runs no model. Each failed row names its reason:
+
+- `local_hub_required` — the hub address is not a loopback HTTP(S) URL (or carries
+  credentials, a query or a fragment), so no request was sent. Run it on the hub computer.
+- `server_not_running`, `hub_url_invalid`, `readyz_bad_reply`, `readyz_status:` — the hub
+  row: the same readiness reasons as the recovery sequence; the other rows are skipped.
+- `hub_unreachable`, `http_status:`, `malformed_reply`, `reply_too_large` — a metadata read
+  failed: the hub stopped answering, refused the admin token (`http_status:401`/`403`), or
+  sent a reply that is not a small JSON object.
+- `configured_model_not_verified` — `/api/models/local` does not show the selected Ollama or
+  LM Studio model as configured, available and resident: load it, or pick an installed one
+  in Admin, then re-run.
+- `fallback_not_verified_never` — `llm.cloud_fallback` is not `never` in
+  `/api/admin/settings/llm`: set it with `nerva config set llm.cloud_fallback never` for a
+  strict-local pilot (settings can take about 30 s to apply).
+- `mcp_catalog_unavailable`, `memory_tool_missing_or_ambiguous`, `memory_read_hint_missing`,
+  `memory_query_schema_incompatible` — the MCP catalog at `/api/mcp/server/rpc` did not list
+  exactly one read-only `route_memory_search` taking a text `q`: check that the hub's MCP
+  server is enabled and authenticated.
+
 ## Local model servers
 
 Two rows of the doctor look at the servers, and they look at different addresses:
