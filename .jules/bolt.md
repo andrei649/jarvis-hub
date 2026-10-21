@@ -47,3 +47,7 @@
 ## 2026-04-11 - O(N) Array Scans in Shortcut Action Registry Lookups
 **Learning:** `ACTIONS` registry lookups using `ACTIONS.find((a) => a.id === id)` during keyboard shortcut dispatching, rebinding, and chord hint rendering trigger repetitive O(N) array scans across all hotkey actions.
 **Action:** Maintain an `ACTIONS_MAP = new Map(ACTIONS.map((a) => [a.id, a]))` in `shortcuts.ts` to execute O(1) Map lookups for hotkey validation, rebinding, and hint display.
+
+## 2026-04-12 - O(1) Set Lookups for Public Route Validation in HUD Routing
+**Learning:** `HUD_MODES` array scans via `HUD_MODES.includes(...)` on every route parsing call during history navigation, route changes, and external sync store listeners execute O(N) comparisons on every route update.
+**Action:** Export `HUD_MODES_SET = new Set<string>(HUD_MODES)` in `hud-modes.ts` to perform O(1) Set membership lookups in `parseHudRoute`.
