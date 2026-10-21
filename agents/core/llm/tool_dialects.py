@@ -466,10 +466,13 @@ def _is_null_schema(variant: Any) -> bool:
 
 def _merge_all_of(schema: dict[str, Any], branches: list[Any]) -> dict[str, Any]:
     """One node from `allOf`: properties and required are unioned, any other keyword
-    keeps the node's own value first, then the earliest branch's."""
+    keeps the node's own value first, then the earliest branch's. A branch's own nested
+    `allOf` is carried over whole (every one of them, not only the first), so the next
+    unwrap step merges it too."""
     merged = {key: value for key, value in schema.items() if key != "allOf"}
     properties = dict(merged["properties"]) if isinstance(merged.get("properties"), dict) else {}
     required = list(merged["required"]) if isinstance(merged.get("required"), list) else []
+    nested: list[Any] = []
     for branch in branches:
         if not isinstance(branch, dict):
             continue
@@ -479,13 +482,35 @@ def _merge_all_of(schema: dict[str, Any], branches: list[Any]) -> dict[str, Any]
                     properties.setdefault(name, sub)
             elif key == "required" and isinstance(value, list):
                 required.extend(name for name in value if name not in required)
+            elif key == "allOf" and isinstance(value, list):
+                nested.extend(value)
             else:
                 merged.setdefault(key, value)
     if properties:
         merged["properties"] = properties
     if required:
         merged["required"] = required
+    if nested:
+        merged["allOf"] = nested
     return merged
+
+
+def _resolve_branch(
+    branch: Any, root: Mapping[str, Any], seen: frozenset[str],
+) -> tuple[Any, frozenset[str]]:
+    """One `allOf` branch with its own `$ref` chain inlined (bounded, recursion-safe), so
+    merging several branches never lets the first branch's reference hide the others'."""
+    for _ in range(GEMINI_MAX_DEPTH):
+        if not isinstance(branch, dict) or "$ref" not in branch:
+            return branch, seen
+        ref = branch.get("$ref")
+        rest = {key: value for key, value in branch.items() if key != "$ref"}
+        target = _resolve_pointer(ref, root) if isinstance(ref, str) and ref not in seen else None
+        if isinstance(target, dict):
+            branch, seen = _merge_all_of(rest, [target]), seen | {ref}
+        else:
+            branch = rest
+    return {key: value for key, value in branch.items() if key != "$ref"}, seen
 
 
 def _unwrap_for_gemini(
@@ -511,7 +536,16 @@ def _unwrap_for_gemini(
             continue
         all_of = schema.get("allOf")
         if "allOf" in schema:
-            schema = _merge_all_of(schema, all_of if isinstance(all_of, list) else [])
+            # Each branch resolves its own reference from the same starting point (a
+            # diamond is not recursion); the references any of them followed are carried
+            # down, so a cycle through one of them still ends at `{}`.
+            resolved: list[Any] = []
+            followed = seen
+            for branch in all_of if isinstance(all_of, list) else []:
+                branch, branch_seen = _resolve_branch(branch, root, seen)
+                resolved.append(branch)
+                followed = followed | branch_seen
+            schema, seen = _merge_all_of(schema, resolved), followed
             continue
         for key in ("anyOf", "oneOf"):
             variants = schema.get(key)
@@ -586,6 +620,10 @@ def _gemini_node(
         out["nullable"] = True
 
     enum = schema.get("enum")
+    if isinstance(enum, list) and None in enum:
+        # A null member is `nullable` on Gemini, not the string "None".
+        out["nullable"] = True
+        enum = [value for value in enum if value is not None]
     if isinstance(enum, list) and enum:
         out["enum"] = [str(value) for value in enum]
         out.setdefault("type", "string")

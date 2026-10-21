@@ -466,6 +466,10 @@ class MCPServer:
             # orphaned) on every reconnect attempt.
             if self._proc is not None:
                 await self.close()
+            # A reconnect re-lists from scratch (the HTTP path does the same): the old
+            # list would otherwise be duplicated, and every duplicated pair is withheld
+            # from the model as ambiguous (H557).
+            self.tools = []
             self._proc = await asyncio.create_subprocess_exec(
                 *argv,
                 stdin=asyncio.subprocess.PIPE,
@@ -601,6 +605,8 @@ class MCPServer:
         resp = await self._send({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2})
         if resp and "result" in resp:
             hidden = 0
+            listed: list[MCPTool] = []
+            seen_names: set[str] = set()
             for t in resp["result"].get("tools", []):
                 tool = MCPTool(
                     name=t.get("name", "unknown"),
@@ -612,7 +618,14 @@ class MCPServer:
                 if not self.tool_visible(tool.name):
                     hidden += 1
                     continue
-                self.tools.append(tool)
+                if tool.name in seen_names:
+                    # A server listing one name twice: the first entry answers to it.
+                    continue
+                seen_names.add(tool.name)
+                listed.append(tool)
+            # A listing replaces the previous one (H557): appending made every reconnect
+            # (or a tools/list refresh) duplicate each tool.
+            self.tools = listed
             if hidden:
                 logger.info("MCP server %s: %d tool(s) hidden by the owner's filter", self.name, hidden)
 
@@ -758,7 +771,17 @@ class MCPManager:
         pair; any name still shared after that is withheld from every holder (fail
         closed) instead of silently routing to whichever server came first.
         """
-        pairs = [(srv, tool) for srv in self.servers.values() for tool in srv.tools]
+        pairs: list[tuple[MCPServer, MCPTool]] = []
+        listed: set[tuple[str, str]] = set()
+        for srv in self.servers.values():
+            for tool in srv.tools:
+                # The same (server, tool) listed twice is one tool, not a collision: the
+                # first entry answers to it, as it does for dispatch.
+                key = (srv.name, tool.name)
+                if key in listed:
+                    continue
+                listed.add(key)
+                pairs.append((srv, tool))
         counts: dict[str, int] = {}
         for _srv, tool in pairs:
             counts[tool.provider_name] = counts.get(tool.provider_name, 0) + 1

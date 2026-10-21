@@ -85,14 +85,17 @@ def test_definitions_promoted_to_defs_and_refs_rewritten():
     assert refs and all(ref.startswith("#/$defs/") for ref in refs)
 
 
-def test_existing_defs_win_over_legacy_definitions():
+def test_existing_defs_keep_their_name_over_legacy_definitions():
     out = normalize_mcp_input_schema({
         "type": "object",
         "properties": {"a": {"$ref": "#/definitions/A"}},
         "$defs": {"A": {"type": "integer"}},
         "definitions": {"A": {"type": "string"}, "B": {"type": "boolean"}},
     })
-    assert out["$defs"] == {"A": {"type": "integer"}, "B": {"type": "boolean"}}
+    # The legacy A moves aside instead of being dropped: its reference keeps its shape.
+    assert out["$defs"] == {"A": {"type": "integer"}, "A__definitions": {"type": "string"},
+                            "B": {"type": "boolean"}}
+    assert out["properties"]["a"] == {"$ref": "#/$defs/A__definitions"}
 
 
 def test_pydantic_nullable_union_collapses_to_the_non_null_branch():
@@ -790,3 +793,329 @@ def test_required_nullable_property_keeps_null_admissible():
     assert gem["properties"]["n"] == {"type": "integer", "nullable": True}
     assert gem["properties"]["m"]["nullable"] is True
     assert gem["properties"]["m"]["properties"] == {"k": {"type": "string"}}
+
+
+# ── round 3: reconnect, dangling refs, $defs collisions, lossless allOf ──────────
+
+
+def _stdio_server(tools: list[dict], calls: list | None = None) -> MCPServer:
+    """A real stdio MCPServer (a live ``sleep`` child) whose JSON-RPC answers in-process,
+    so ``connect()`` runs its own spawn → initialize → tools/list path."""
+    srv = MCPServer("docs", command="sleep 30", trust="full")
+
+    async def fake_send(message):
+        if message["method"] == "initialize":
+            return {"result": {}}
+        if message["method"] == "tools/list":
+            return {"result": {"tools": tools}}
+        if calls is not None:
+            calls.append(message["params"])
+        return {"result": {"content": [{"type": "text", "text": "ok"}], "isError": False}}
+
+    srv._send = fake_send
+    return srv
+
+
+def test_reconnecting_a_stdio_server_keeps_its_tools_offered_and_callable():
+    calls: list = []
+    srv = _stdio_server([{"name": "search", "inputSchema": {},
+                          "annotations": {"readOnlyHint": True}}], calls)
+    mgr = MCPManager()
+    mgr.register(srv)
+    rpc = ToolRPCServer()
+    bridge = MCPModelBridge(rpc, lambda: mgr)
+
+    async def scenario():
+        try:
+            assert await srv.connect() is True
+            assert [row["name"] for row in mgr.model_tools()] == ["mcp__docs__search"]
+            # The owner presses "connect" again (or connect_all runs after a manual one).
+            assert await srv.connect() is True
+            await mgr.connect_all()
+            assert len(srv.tools) == 1
+            assert [row["name"] for row in mgr.model_tools()] == ["mcp__docs__search"]
+            assert await bridge.sync() == ("mcp__docs__search",)
+            return await rpc.handle({"tool": "mcp__docs__search", "args": {"q": 1}})
+        finally:
+            await mgr.close_all()
+
+    answer = asyncio.run(scenario())
+    assert answer["ok"] is True
+    assert calls == [{"name": "search", "arguments": {"q": 1}}]
+
+
+def test_a_tool_listed_twice_by_one_server_is_not_withheld_as_ambiguous():
+    mgr = _manager(("docs", ["search", "search"]))
+    assert [row["name"] for row in mgr.model_tools()] == ["mcp__docs__search"]
+    assert mgr.find_tool("mcp__docs__search").name == "search"
+    srv = _docs_server([{"name": "search", "inputSchema": {}},
+                        {"name": "search", "inputSchema": {"type": "object"}}])
+    assert len(srv.tools) == 1
+
+
+def test_a_dead_server_answers_the_model_with_a_tool_error_not_an_empty_success():
+    mgr = MCPManager()
+    srv = _docs_server([{"name": "search", "inputSchema": {},
+                         "annotations": {"readOnlyHint": True}}])
+    mgr.register(srv)
+    rpc = ToolRPCServer()
+    asyncio.run(MCPModelBridge(rpc, lambda: mgr).sync())
+
+    async def dead(message):
+        return {}  # what _send answers for a closed pipe, a timeout or no process
+
+    srv._send = dead
+    answer = asyncio.run(rpc.handle({"tool": "mcp__docs__search", "args": {}}))
+    assert answer["ok"] is False and answer["reason"] == "tool_error"
+    assert "mcp_no_response" in answer["error"]
+
+
+DRAFT07_SCHEMA = {
+    "type": "object",
+    "definitions": {"A": {"type": "string"}, "B": {"type": "integer"}},
+    "properties": {
+        "kind": {"type": "string"},
+        "c": {"type": "string"},
+        "xs": {"type": "array", "items": [{"type": "string"}],
+               "additionalItems": {"$ref": "#/definitions/B"}},
+        "m": {"type": "object", "propertyNames": {"$ref": "#/definitions/A"}},
+    },
+    "if": {"properties": {"kind": {"const": "x"}}},
+    "then": {"properties": {"c": {"$ref": "#/definitions/A"}}},
+    "else": {"properties": {"c": {"$ref": "#/definitions/B"}}},
+    "dependencies": {"c": {"properties": {"kind": {"$ref": "#/definitions/A"}}},
+                     "kind": ["c"]},
+    "dependentSchemas": {"kind": {"properties": {"c": {"$ref": "#/definitions/B"}}}},
+}
+
+
+def test_no_definitions_reference_dangles_under_any_subschema_keyword():
+    out = normalize_mcp_input_schema(DRAFT07_SCHEMA)
+    text = json.dumps(out)
+    assert "#/definitions/" not in text and "definitions" not in out
+    refs = [n["$ref"] for n in _walk(out) if isinstance(n, dict) and "$ref" in n]
+    assert len(refs) == 6
+    assert all(ref.split("/")[-1] in out["$defs"] for ref in refs)
+    assert out["then"]["properties"]["c"] == {"$ref": "#/$defs/A"}
+    assert out["dependencies"]["kind"] == ["c"]  # a property-name list stays as it was
+    assert normalize_mcp_input_schema(out) == out
+
+
+def test_definitions_and_defs_with_one_name_both_keep_their_shape():
+    schema = {
+        "type": "object",
+        "properties": {"a": {"$ref": "#/definitions/A"}, "b": {"$ref": "#/$defs/A"},
+                       "c": {"$ref": "#/definitions/B"}},
+        "$defs": {"A": {"type": "integer"}},
+        "definitions": {"A": {"type": "string"}, "B": {"type": "boolean"}},
+    }
+    out = normalize_mcp_input_schema(schema)
+    assert out["$defs"] == {"A": {"type": "integer"}, "A__definitions": {"type": "string"},
+                            "B": {"type": "boolean"}}
+    assert out["properties"]["a"] == {"$ref": "#/$defs/A__definitions"}
+    assert out["properties"]["b"] == {"$ref": "#/$defs/A"}
+    assert out["properties"]["c"] == {"$ref": "#/$defs/B"}
+    assert normalize_mcp_input_schema(out) == out
+    gem = gemini_schema(out)["properties"]
+    assert gem["a"] == {"type": "string"} and gem["b"] == {"type": "integer"}
+    # Identical entries under both names are one definition, not a rename.
+    same = normalize_mcp_input_schema({
+        "type": "object", "properties": {"a": {"$ref": "#/definitions/A"}},
+        "$defs": {"A": {"type": "integer"}}, "definitions": {"A": {"type": "integer"}}})
+    assert same["$defs"] == {"A": {"type": "integer"}}
+    assert same["properties"]["a"] == {"$ref": "#/$defs/A"}
+
+
+HOST_PORT_SCHEMA = {
+    "type": "object",
+    "properties": {"cfg": {
+        "allOf": [{"type": "object", "properties": {"host": {"type": "string"}},
+                   "required": ["host"]}],
+        "properties": {"port": {"type": "integer"}},
+        "required": ["port"],
+    }},
+}
+
+
+def _check_host_port(cfg):
+    assert cfg["properties"] == {"host": {"type": "string"}, "port": {"type": "integer"}}
+    assert sorted(cfg["required"]) == ["host", "port"]
+
+
+def test_single_branch_allof_with_sibling_properties_loses_nothing_on_any_path():
+    out = normalize_mcp_input_schema(HOST_PORT_SCHEMA)
+    assert out["properties"]["cfg"] == {
+        "type": "object",
+        "properties": {"host": {"type": "string"}, "port": {"type": "integer"}},
+        "required": ["host", "port"],
+    }
+    mgr = MCPManager()
+    mgr.register(_docs_server([{"name": "conf", "inputSchema": HOST_PORT_SCHEMA}]))
+    runtime, _rpc, _bridge = _bridged_runtime(mgr)
+    backend = _CapturingBackend()
+    asyncio.run(_turn(runtime, backend))
+    spec = {s.name: s for s in backend.calls[0]["tools"]}["mcp__docs__conf"]
+    _check_host_port(anthropic_tools([spec])[0]["input_schema"]["properties"]["cfg"])
+    _check_host_port(spec.as_openai()["function"]["parameters"]["properties"]["cfg"])
+    [responses] = ResponsesBackend("k")._payload(
+        "gpt-4.1", [{"role": "user", "content": "hi"}], 100, 0.2, tools=[spec])["tools"]
+    _check_host_port(responses["parameters"]["properties"]["cfg"])
+    [xai] = XAIBackend("k")._payload(
+        XAI_PROFILE.fallback_models[0], [{"role": "user", "content": "hi"}], 100, 0.2,
+        tools=[spec])["tools"]
+    _check_host_port(xai["parameters"]["properties"]["cfg"])
+    [decl] = gemini_function_declarations([spec])
+    _check_host_port(decl["parameters"]["properties"]["cfg"])
+
+
+@pytest.mark.parametrize("node", [
+    # two different definitions of one property
+    {"allOf": [{"properties": {"p": {"type": "string"}}}],
+     "properties": {"p": {"type": "integer"}}},
+    # conflicting type
+    {"allOf": [{"type": "string"}], "type": "integer"},
+    # conflicting validation keyword
+    {"allOf": [{"type": "integer", "minimum": 1}], "minimum": 5},
+    # two references
+    {"allOf": [{"$ref": "#/$defs/A"}], "$ref": "#/$defs/B"},
+])
+def test_single_branch_allof_that_cannot_merge_losslessly_is_kept(node):
+    out = normalize_mcp_input_schema({
+        "type": "object", "$defs": {"A": {"type": "string"}, "B": {"type": "string"}},
+        "properties": {"x": node}})
+    assert "allOf" in out["properties"]["x"]
+
+
+def test_gemini_allof_of_several_refs_keeps_every_branch():
+    out = gemini_schema({
+        "type": "object",
+        "$defs": {
+            "A": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]},
+            "B": {"type": "object", "properties": {"b": {"type": "integer"}}, "required": ["b"]},
+            "C": {"allOf": [{"$ref": "#/$defs/A"}, {"$ref": "#/$defs/B"}]},
+        },
+        "properties": {
+            "x": {"allOf": [{"$ref": "#/$defs/A"}, {"$ref": "#/$defs/B"}]},
+            # a diamond (both branches reach A) and a nested allOf of references
+            "y": {"allOf": [{"$ref": "#/$defs/C"}, {"$ref": "#/$defs/A"},
+                            {"properties": {"c": {"type": "boolean"}}}]},
+        },
+    })
+    x = out["properties"]["x"]
+    assert x["properties"] == {"a": {"type": "string"}, "b": {"type": "integer"}}
+    assert sorted(x["required"]) == ["a", "b"]
+    y = out["properties"]["y"]
+    assert set(y["properties"]) == {"a", "b", "c"}
+    assert sorted(y["required"]) == ["a", "b"]
+
+
+def test_gemini_allof_cycle_through_a_branch_still_terminates():
+    out = gemini_schema({
+        "type": "object",
+        "$defs": {"L": {"allOf": [{"$ref": "#/$defs/L"},
+                                  {"properties": {"v": {"type": "string"}}}]}},
+        "properties": {"l": {"$ref": "#/$defs/L"}},
+    })
+    json.dumps(out)
+    assert out["properties"]["l"]["properties"]["v"] == {"type": "string"}
+
+
+def test_required_nullable_enum_reaches_the_fixed_point_in_one_pass():
+    schema = {
+        "type": "object",
+        "properties": {"e": {"anyOf": [{"enum": ["a", "b"]}, {"type": "null"}]},
+                       "k": {"anyOf": [{"const": "x"}, {"type": "null"}]}},
+        "required": ["e", "k"],
+    }
+    once = normalize_mcp_input_schema(schema)
+    assert once["properties"]["e"] == {"enum": ["a", "b", None], "type": ["string", "null"]}
+    assert normalize_mcp_input_schema(once) == once
+    # A const cannot admit null as well: the union stays.
+    assert "anyOf" in once["properties"]["k"]
+    gem = gemini_schema(once)["properties"]["e"]
+    assert gem == {"type": "string", "nullable": True, "enum": ["a", "b"]}
+
+
+def test_third_party_tools_stay_off_guest_and_job_postures_by_default():
+    from agents.core.tool_profiles import (
+        GUEST_TOOLS_SETTING,
+        INTERNAL_ACTUATION_SETTING,
+        POSTURES,
+        ToolPosture,
+        resolve_tools,
+    )
+
+    rows = [
+        {"name": "mcp__docs__read", "gated": False},
+        {"name": "mcp__docs__write", "gated": True},
+        {"name": "echo", "gated": False},
+    ]
+
+    def offered(posture, settings=None):
+        values = settings or {}
+        got, _withheld = resolve_tools(
+            rows, posture=ToolPosture(*posture),
+            settings=lambda key, default: values.get(key, default))
+        return sorted(str(row["name"]) for row in got)
+
+    assert {posture: offered(posture) for posture in POSTURES} == {
+        ("operator", "owner"): ["echo", "mcp__docs__read", "mcp__docs__write"],
+        ("operator", "guest"): ["echo"],
+        ("inbound", "owner"): ["echo", "mcp__docs__read"],
+        ("inbound", "guest"): ["echo"],
+        ("internal", "system"): ["echo"],
+    }
+    named = {GUEST_TOOLS_SETTING: ["echo", "mcp__docs__read", "mcp__docs__write"]}
+    assert offered(("operator", "guest"), named) == ["echo", "mcp__docs__read"]
+    assert offered(("inbound", "guest"), named) == ["echo", "mcp__docs__read"]
+    assert offered(("internal", "system"), {INTERNAL_ACTUATION_SETTING: True}) == [
+        "echo", "mcp__docs__read", "mcp__docs__write"]
+
+
+def test_coordinator_wiring_offers_mcp_to_the_owner_and_not_to_a_job(monkeypatch):
+    """Production wiring (AutonomyCoordinator + orch.mcp): an owner's HUD turn is offered
+    the MCP tool and its call reaches the server; a job turn (no principal) is not."""
+    from types import SimpleNamespace
+
+    import agents.core.autonomy_coordinator as coordinator_module
+    from agents.core.autonomy_coordinator import AutonomyCoordinator
+    from agents.core.commands import Principal
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
+
+    monkeypatch.setattr(
+        coordinator_module, "_get_setting",
+        lambda key, default=None: True if key == "llm.tool_loop_enabled" else default,
+        raising=False)
+    calls: list = []
+    mgr = MCPManager()
+    mgr.register(_docs_server([{"name": "search", "inputSchema": PYDANTIC_SCHEMA,
+                                "annotations": {"readOnlyHint": True}}], calls=calls))
+    orch = SimpleNamespace(agents={}, mcp=mgr)
+    AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+    runtime = orch.agent_tool_runtime
+
+    def backend():
+        return _CapturingBackend([
+            ToolTurn(tool_calls=(ToolCall(id="c1", name="mcp__docs__search",
+                                          raw_arguments='{"query":"x"}',
+                                          arguments={"query": "x"}),),
+                     finish_reason="tool_calls"),
+            ToolTurn(content="done", finish_reason="stop"),
+        ])
+
+    async def owner_turn(b):
+        token = bind_turn_principal(Principal(channel="web", admin=True))
+        try:
+            return await _turn(runtime, b)
+        finally:
+            reset_turn_principal(token)
+
+    owner = backend()
+    assert asyncio.run(owner_turn(owner)) == "done"
+    assert "mcp__docs__search" in [spec.name for spec in owner.calls[0]["tools"]]
+    assert calls == [{"name": "search", "arguments": {"query": "x"}}]
+
+    job = backend()
+    asyncio.run(_turn(runtime, job))
+    assert "mcp__docs__search" not in [spec.name for spec in job.calls[0]["tools"]]
+    assert len(calls) == 1  # the job's call never reached the server

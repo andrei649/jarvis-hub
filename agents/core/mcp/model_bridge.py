@@ -96,7 +96,10 @@ class MCPModelBridge:
             if manager is None:
                 raise MCPBridgeError("mcp_unavailable")
             result = await manager.call_tool(name, args)
-            if result is None:
+            if result is None or result == {}:
+                # ``{}`` is what a server that is not connected, timed out or closed its
+                # pipe answers — no tool result, so the model reads a tool_error rather
+                # than an empty success (H557).
                 raise MCPBridgeError("mcp_no_response")
             if isinstance(result, dict) and "error" in result and "content" not in result:
                 # A refusal (manager, trust tier, call filter) or a JSON-RPC error — not
