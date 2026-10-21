@@ -1284,7 +1284,13 @@ export interface paths {
          * @description Drop every pending request at once — a bulk reject (H154).
          *
          *     Approved and blocked senders are untouched and nobody is blocked, so a real
-         *     contact caught in the sweep can simply ask again.
+         *     contact caught in the sweep can simply ask again. ``audited`` is False when
+         *     no audit row could be written (no audit log wired, or the write failed).
+         *
+         *     Runs on the event loop, not in a worker thread: every other writer of the
+         *     store (request/decide here, Telegram's deeplink redeem) mutates it on the
+         *     loop without the store lock, and the gateway's inbound gate reads it there,
+         *     so a threaded clear would race them.
          */
         post: operations["pairing_clear_pending_api_channels_pairing_clear_pending_post"];
         delete?: never;
