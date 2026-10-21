@@ -757,6 +757,190 @@ async def approve_generated_skill(name: str):
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
 
 
+# ── H331: the whole content before approval, a reject, and one move for many ─────────
+
+def _discard_archive():
+    """Where a discarded quarantined skill goes: outside every skills tree, kept."""
+    from agents.core.paths import data_path
+
+    return data_path("skills", "discarded")
+
+
+@router.get("/api/skills/pending/{name}", dependencies=[Depends(admin_guard)])
+async def pending_skill_detail(name: str):
+    """H331: a quarantined skill as the owner reviews it before approving — every file of
+    its folder with its text (SKILL.md, the code, the rest), the quarantine note and the
+    code-guidance findings. Bounded; a file cut short or left out says so."""
+    import asyncio
+
+    orch = get_orch()
+    loader = getattr(orch, "skills", None) if orch else None
+    if loader is None:
+        return component_unavailable("skills are not available")
+    detail = await asyncio.to_thread(loader.pending_skill_detail, name)
+    if detail is None:
+        return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
+    return JSONResponse({**detail, "quarantined": True}, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/api/skills/{name}/discard", dependencies=[Depends(admin_guard)])
+async def discard_generated_skill(name: str):
+    """H331: reject a quarantined skill — its folder leaves the skills tree for an archive
+    (never loaded again), its registry entry and any approval bound to its path go. A skill
+    that awaits no review is never touched (404)."""
+    import asyncio
+
+    orch = get_orch()
+    loader = getattr(orch, "skills", None) if orch else None
+    if loader is None:
+        return component_unavailable("skills are not available")
+    dest = await asyncio.to_thread(loader.discard_generated_skill, name, _discard_archive())
+    if dest is None:
+        return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
+    return {"discarded": True, "skill": name, "archived_as": dest.name}
+
+
+#: Items one bulk review decides, per kind.
+BULK_REVIEW_MAX = 50
+
+
+class BulkReviewBody(BaseModel):
+    """H331: one decision over several pending skills, skill-change proposals and skill
+    batches at once."""
+
+    model_config = {"extra": "forbid"}
+
+    approved: bool
+    skills: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
+    proposals: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
+    batches: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+def _decide_card(queue, rec: dict, card_tool: str, approved: bool, reason: str | None) -> str:
+    """Decide a proposal's or batch's own card; '' when it now says what was asked, else why not."""
+    card = str(rec.get("card") or "")
+    item = queue.get(card) if card else None
+    if not isinstance(item, dict) or item.get("tool") != card_tool:
+        return "card_not_found"
+    if item.get("status") != "pending":
+        return f"not_pending:{item.get('status')}"
+    try:
+        decided = queue.decide(card, approved, by="admin", reason=reason)
+    except ValueError as exc:
+        return str(exc) or "refused"
+    wanted = "approved" if approved else "rejected"
+    if decided is None or decided.get("status") != wanted:
+        return f"not_pending:{(decided or {}).get('status')}"
+    return ""
+
+
+def _bulk_review(orch, body: BulkReviewBody) -> dict:
+    from agents.core.skills.batch import CARD_TOOL as BATCH_CARD_TOOL
+
+    results: list[dict] = []
+    loader = getattr(orch, "skills", None)
+    queue = getattr(orch, "action_approvals", None)
+
+    for name in dict.fromkeys(body.skills):
+        if loader is None:
+            results.append({"kind": "skill", "id": name, "ok": False, "error": "unavailable"})
+            continue
+        try:
+            if body.approved:
+                ok = bool(loader.approve_generated_skill(name))
+                done = {"approved": True}
+            else:
+                dest = loader.discard_generated_skill(name, _discard_archive())
+                ok = dest is not None
+                done = {"discarded": True}
+        except Exception:
+            logger.warning("bulk review: skill %s could not be decided", name, exc_info=True)
+            results.append({"kind": "skill", "id": name, "ok": False, "error": "error"})
+            continue
+        results.append({"kind": "skill", "id": name, "ok": ok, **(done if ok else {"error": "not_pending"})})
+
+    proposals = getattr(orch, "skill_proposals", None)
+    decided_proposals: list[dict] = []
+    for pid in dict.fromkeys(body.proposals):
+        row = {"kind": "proposal", "id": pid}
+        rec = proposals.get(pid) if proposals is not None else None
+        if proposals is None or queue is None:
+            results.append({**row, "ok": False, "error": "unavailable"})
+            continue
+        if rec is None:
+            results.append({**row, "ok": False, "error": "not_found"})
+            continue
+        if rec.get("status") != "pending":
+            results.append({**row, "ok": False, "error": f"not_pending:{rec.get('status')}"})
+            continue
+        if not rec.get("card"):
+            try:
+                proposals.queue_card(pid, queue, agent=str(rec.get("origin") or "agent"),
+                                     summary=f"A change to skill '{rec.get('skill')}' is proposed")
+                rec = proposals.get(pid) or rec
+            except Exception:
+                logger.warning("bulk review: proposal %s card could not be queued", pid, exc_info=True)
+        error = _decide_card(queue, rec, "skill.patch_proposal", body.approved, body.reason)
+        row = {**row, "ok": not error, **({"error": error} if error else {})}
+        results.append(row)
+        if not error:
+            decided_proposals.append(row)
+    curator = getattr(orch, "curator", None)
+    if decided_proposals and curator is not None and hasattr(curator, "apply_decisions"):
+        try:
+            curator.apply_decisions()
+        except Exception:
+            logger.warning("bulk review: applying the decided proposals failed", exc_info=True)
+    for row in decided_proposals:
+        row["status"] = (proposals.get(row["id"]) or {}).get("status")
+
+    batches = getattr(orch, "skill_batches", None)
+    for bid in dict.fromkeys(body.batches):
+        row = {"kind": "batch", "id": bid}
+        rec = batches.get(bid) if batches is not None else None
+        if batches is None or queue is None or loader is None:
+            results.append({**row, "ok": False, "error": "unavailable"})
+            continue
+        if rec is None:
+            results.append({**row, "ok": False, "error": "not_found"})
+            continue
+        if rec.get("status") != "pending":
+            results.append({**row, "ok": False, "error": f"not_pending:{rec.get('status')}"})
+            continue
+        error = _decide_card(queue, rec, BATCH_CARD_TOOL, body.approved, body.reason)
+        if error:
+            results.append({**row, "ok": False, "error": error})
+            continue
+        # The card's own status decides (review-H665 #2), now that it is decided.
+        out = batches.decide(bid, rec["card"], queue, loader, backup_dir=_batch_archive())
+        ok = bool(out.get("ok"))
+        results.append({**row, "ok": ok, "status": (batches.get(bid) or {}).get("status"),
+                        **({} if ok else {"error": str(out.get("reason") or "apply_failed")})})
+
+    failed = sum(1 for r in results if not r["ok"])
+    return {"ok": failed == 0, "approved": body.approved, "decided": len(results) - failed,
+            "failed": failed, "results": results}
+
+
+@router.post("/api/skills/review/bulk", dependencies=[Depends(admin_guard)])
+async def bulk_review(body: BulkReviewBody):
+    """H331: approve or reject several pending skills, skill-change proposals and skill
+    batches in one move. A pending skill approved is signed and activated, rejected is
+    discarded; a proposal's or batch's own approval card is decided and the change applied
+    (or closed) as one decision on its card would. Each item reports its own outcome; one
+    failure never undoes the others."""
+    import asyncio
+
+    if not (body.skills or body.proposals or body.batches):
+        return JSONResponse({"error": "nothing to review: name skills, proposals or batches"}, status_code=400)
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    out = await asyncio.to_thread(_bulk_review, orch, body)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
 #: Proposals one answer carries, whole diffs included (review-H318c n-2: forty review
 #: proposals of a large skill made an 8 MB answer). The rest are counted in ``more``.
 PROPOSALS_SHOWN = 20

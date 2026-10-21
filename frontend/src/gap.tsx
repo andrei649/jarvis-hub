@@ -1192,35 +1192,151 @@ export function SelfImprovementPanel() {
    `loader.py` never exec's its module in-process while `PENDING_REVIEW` exists, so nothing
    here is running code; approving is what promotes it.
 
-   Approve-only, deliberately. There is no reject endpoint and this does not invent one:
-   quarantine is already the fail-closed state, so leaving a skill unapproved IS the reject.
-   Sits beside SELF-IMPROVEMENT rather than the marketplace panels — the marketplace has its
-   own `review_status` path for third-party skills, and merging the two surfaces would imply
+   H331 completes the gate. "review" opens the skill's whole content before any decision
+   (`GET /api/skills/pending/{name}`: SKILL.md, the code, every other file, the quarantine
+   note and the code-guidance findings), ✕ discards it (`POST /api/skills/{name}/discard`:
+   the folder leaves the skills tree for an archive, never loaded again), and the checkboxes
+   decide several pending skills, skill-change proposals and skill batches in one move
+   (`POST /api/skills/review/bulk`), each item reporting its own outcome. Sits beside
+   SELF-IMPROVEMENT rather than the marketplace panels — the marketplace has its own
+   `review_status` path for third-party skills, and merging the two surfaces would imply
    they share a mechanism they do not. */
+const reviewKey = (kind, id) => `${kind}:${id}`;
+
+function PendingSkillDetail({ name }) {
+  const { d, e, loading } = useApi(`/api/skills/pending/${encodeURIComponent(name)}`, true, true);
+  const files = arr(d, 'files');
+  const warnings = arr(d, 'warnings');
+  return (
+    <div data-testid={`pending-detail-${name}`} style={{ padding: '4px 0 8px 18px', borderBottom: '1px solid var(--panel-line)' }}>
+      <State e={e} loading={loading} n={d ? files.length : undefined} />
+      {d && d.review_note && <Json v={d.review_note} max={80} />}
+      {warnings.length > 0 && (
+        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
+          {warnings.length} code warning(s): {[...new Set(warnings.map((w) => w.rule))].join(', ')}
+        </div>
+      )}
+      {files.map((f) => (
+        <div key={f.path} style={{ marginTop: 6 }}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{f.path}</span>
+          {f.size != null && <span style={{ fontSize: 10, color: 'var(--ink-2)', marginLeft: 6 }}>{f.size} B</span>}
+          {f.truncated && <Tag c="var(--amber)">cut short</Tag>}
+          {f.binary && <Tag c="var(--amber)">binary · not shown</Tag>}
+          {f.symlink && <Tag c="var(--red)">link · not followed</Tag>}
+          {f.unreadable && <Tag c="var(--red)">unreadable</Tag>}
+          {typeof f.text === 'string' && <Json v={f.text} max={260} />}
+        </div>
+      ))}
+      {d && d.more_files > 0 && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{d.more_files} more file(s) not shown</div>}
+    </div>
+  );
+}
+
 export function PendingSkillsPanel() {
   const { d, e, loading, reload } = useApi('/api/skills/pending', true, true);  // admin-guarded
+  const props = useApi('/api/skills/proposals', true, true);
+  const bats = useApi('/api/skills/batches', true, true);
   const pending = arr(d, 'pending');
+  const proposals = arr(props.d, 'proposals');
+  const batches = arr(bats.d, 'batches');
+  const [open, setOpen] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [note, setNote] = useState(null);
+  const reloadAll = () => { reload(); props.reload(); bats.reload(); };
+  const toggle = (key) => setPicked((prev) => {
+    const next = new Set<string>(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const failed = (err) => setNote({ bad: true, text: `refused · ${refusalReason(err)}` });
+  const discard = (name) => apiPost(`/api/skills/${encodeURIComponent(name)}/discard`, {}, { admin: true })
+    .then(() => { setNote({ bad: false, text: `discarded ${name}` }); if (open === reviewKey('skill', name)) setOpen(''); reloadAll(); })
+    .catch((err) => { failed(err); return false; });
+  const bulk = (approved) => {
+    const of = (kind) => [...picked].filter((k) => k.startsWith(kind + ':')).map((k) => k.slice(kind.length + 1));
+    return apiPost<any>('/api/skills/review/bulk', { approved, skills: of('skill'), proposals: of('proposal'), batches: of('batch') },
+      { admin: true })
+      .then((r) => {
+        const bad = arr(r, 'results').filter((x) => !x.ok);
+        setNote({ bad: bad.length > 0,
+          text: `${approved ? 'approved' : 'rejected'} ${r?.decided ?? 0}`
+            + (bad.length ? ` · ${bad.length} not decided: ${bad.map((x) => `${x.id} (${x.error})`).join(', ')}` : '') });
+        setPicked(new Set());
+        reloadAll();
+      })
+      .catch((err) => { failed(err); return false; });
+  };
+  const Pick = ({ k, label }) => (
+    <input type="checkbox" aria-label={`select ${label}`} checked={picked.has(k)} onChange={() => toggle(k)} />
+  );
   return (
-    <Card title="GENERATED SKILLS — PENDING REVIEW" live={asLive(d)} sub={pending.length} onReload={reload}>
+    <Card title="GENERATED SKILLS — PENDING REVIEW" live={asLive(d)} sub={pending.length} onReload={reloadAll}>
       <State e={e} loading={loading} n={pending.length} />
       {pending.slice(0, 10).map((s, i) => (
-        <Row key={i}>
-          <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(s.description || '').slice(0, 40)}</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-            <Tag c="var(--amber)">quarantined</Tag>
-            {arr(s, 'agents').length > 0 && <Tag c="var(--ink-2)">{arr(s, 'agents').length} agent(s)</Tag>}
-            <button
-              className="tool-btn"
-              title="approve — sign and activate this generated skill"
-              onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`, {}, reload)}
-            >✓</button>
-          </span>
-        </Row>
+        <React.Fragment key={i}>
+          <Row>
+            <Pick k={reviewKey('skill', s.name)} label={s.name} />
+            <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
+            <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(s.description || '').slice(0, 40)}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c="var(--amber)">quarantined</Tag>
+              {arr(s, 'agents').length > 0 && <Tag c="var(--ink-2)">{arr(s, 'agents').length} agent(s)</Tag>}
+              <button className="tool-btn" title="review — read its full content (SKILL.md and code)"
+                aria-expanded={open === reviewKey('skill', s.name)} onClick={() => setOpen(open === reviewKey('skill', s.name) ? '' : reviewKey('skill', s.name))}>review</button>
+              <button
+                className="tool-btn"
+                title="approve — sign and activate this generated skill"
+                onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`, {}, reloadAll, failed)}
+              >✓</button>
+              <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="✕" title="discard — reject this generated skill"
+                ariaLabel={`discard ${s.name}`} armedLabel="discard" prompt="moves it out of the skills tree"
+                onConfirm={() => discard(s.name)} />
+            </span>
+          </Row>
+          {open === reviewKey('skill', s.name) && <PendingSkillDetail name={s.name} />}
+        </React.Fragment>
       ))}
+      {proposals.slice(0, 10).map((p) => (
+        <React.Fragment key={`p-${p.id}`}>
+          <Row>
+            <Pick k={reviewKey('proposal', p.id)} label={`change to ${p.skill}`} />
+            <Tag>change</Tag>
+            <span style={{ ...mono, color: 'var(--accent-light)' }}>{p.skill}</span>
+            {p.drifted && <Tag c="var(--amber)">drifted</Tag>}
+            <button className="tool-btn" style={{ marginLeft: 'auto' }} title="diff — the whole proposed change"
+              aria-expanded={open === reviewKey('proposal', p.id)}
+              onClick={() => setOpen(open === reviewKey('proposal', p.id) ? '' : reviewKey('proposal', p.id))}>diff</button>
+          </Row>
+          {open === reviewKey('proposal', p.id) && <Json v={p.diff || ''} max={260} />}
+        </React.Fragment>
+      ))}
+      {batches.slice(0, 10).map((b) => (
+        <React.Fragment key={`b-${b.id}`}>
+          <Row>
+            <Pick k={reviewKey('batch', b.id)} label={`batch ${arr(b, 'skills').join(', ')}`} />
+            <Tag>batch</Tag>
+            <span style={{ ...mono, color: 'var(--accent-light)' }}>{arr(b, 'skills').join(', ')}</span>
+            <button className="tool-btn" style={{ marginLeft: 'auto' }} title="diff — every file the batch changes"
+              aria-expanded={open === reviewKey('batch', b.id)}
+              onClick={() => setOpen(open === reviewKey('batch', b.id) ? '' : reviewKey('batch', b.id))}>diff</button>
+          </Row>
+          {open === reviewKey('batch', b.id) && <Json v={b.preview ?? []} max={260} />}
+        </React.Fragment>
+      ))}
+      {picked.size > 0 && (
+        <div role="group" aria-label="bulk review" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{picked.size} selected</span>
+          <ConfirmAction tier={RISK_TIER.REVERSIBLE} label={`approve ${picked.size}`} title="approve every selected item"
+            armedLabel={`approve ${picked.size} selected`} onConfirm={() => bulk(true)} />
+          <ConfirmAction tier={RISK_TIER.REVERSIBLE} label={`reject ${picked.size}`} title="reject every selected item"
+            armedLabel={`reject ${picked.size} selected`} prompt="discards the skills, closes the changes"
+            onConfirm={() => bulk(false)} />
+        </div>
+      )}
+      {note && <div role="status" style={{ fontSize: 11, marginTop: 6, color: note.bad ? 'var(--amber)' : 'var(--green)' }}>{note.text}</div>}
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
-        LLM-authored code, never exec&apos;d in-process until approved — ✓ signs and activates it (CDX-8).
-        No reject action: leaving a skill here is the safe outcome.
+        LLM-authored code, never exec&apos;d in-process until approved — review reads it whole, ✓ signs and
+        activates it, ✕ discards it (CDX-8). Leaving a skill here is still the safe outcome.
       </div>
     </Card>
   );

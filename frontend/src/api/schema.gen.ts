@@ -3571,6 +3571,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/pending/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending Skill Detail
+         * @description H331: a quarantined skill as the owner reviews it before approving — every file of
+         *     its folder with its text (SKILL.md, the code, the rest), the quarantine note and the
+         *     code-guidance findings. Bounded; a file cut short or left out says so.
+         */
+        get: operations["pending_skill_detail_api_skills_pending__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/{name}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard Generated Skill
+         * @description H331: reject a quarantined skill — its folder leaves the skills tree for an archive
+         *     (never loaded again), its registry entry and any approval bound to its path go. A skill
+         *     that awaits no review is never touched (404).
+         */
+        post: operations["discard_generated_skill_api_skills__name__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/review/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Review
+         * @description H331: approve or reject several pending skills, skill-change proposals and skill
+         *     batches in one move. A pending skill approved is signed and activated, rejected is
+         *     discarded; a proposal's or batch's own approval card is decided and the change applied
+         *     (or closed) as one decision on its card would. Each item reports its own outcome; one
+         *     failure never undoes the others.
+         */
+        post: operations["bulk_review_api_skills_review_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/proposals": {
         parameters: {
             query?: never;
@@ -13059,6 +13127,23 @@ export interface components {
             /** Text */
             text: string;
         };
+        /**
+         * BulkReviewBody
+         * @description H331: one decision over several pending skills, skill-change proposals and skill
+         *     batches at once.
+         */
+        BulkReviewBody: {
+            /** Approved */
+            approved: boolean;
+            /** Skills */
+            skills?: string[];
+            /** Proposals */
+            proposals?: string[];
+            /** Batches */
+            batches?: string[];
+            /** Reason */
+            reason?: string | null;
+        };
         /** BulkTaskBody */
         BulkTaskBody: {
             /** Status */
@@ -20782,6 +20867,101 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pending_skill_detail_api_skills_pending__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_generated_skill_api_skills__name__discard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_review_api_skills_review_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkReviewBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
