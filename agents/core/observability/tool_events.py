@@ -38,6 +38,11 @@ MAX_EVENTS = 500
 MAX_KEYS = 16
 MAX_VALUE_CHARS = 256
 MAX_LIST_ITEMS = 8
+#: H399 — in-flight calls whose latest heartbeat row is tracked for coalescing. A call
+#: keeps at most one ``tool_heartbeat`` row in the ring (each beat replaces the last),
+#: so a long call cannot push the real trail out of it; past this many concurrent
+#: calls the oldest tracked beat is simply no longer coalesced.
+MAX_TRACKED_HEARTBEATS = 64
 
 
 def _bounded_value(value: Any) -> Any:
@@ -73,6 +78,8 @@ class ToolEventLog:
         self._counts: Counter[str] = Counter()
         self._seq = 0
         self._lock = threading.Lock()
+        # H399 — (agent_id, call_id) → the call's heartbeat row still in the ring.
+        self._beats: dict[tuple[Any, Any], dict[str, Any]] = {}
 
     def record(self, event: Any) -> None:
         """Append one event. Never raises: an observability sink that can break a turn
@@ -86,9 +93,37 @@ class ToolEventLog:
             self._seq += 1
             row["seq"] = self._seq
             row["at"] = datetime.now(UTC).isoformat()
+            self._coalesce_heartbeat(row)
             self._events.append(row)
             self._counts[str(row.get("event", "unknown"))] += 1
         self._observed(row)
+
+    def _coalesce_heartbeat(self, row: dict[str, Any]) -> None:
+        """H399 — keep one heartbeat row per in-flight call. Called under the lock.
+
+        A beat replaces the same call's previous beat (the latest elapsed time is the
+        only news a beat carries), so however long a call runs it holds one slot of
+        the ring, and the trail's ``tool_result_untrusted``, ``tool_failed`` and
+        loop-breaker rows are never evicted by "still running". The call's terminal
+        event stops tracking it, leaving its last beat as the record of how long it
+        ran. Counts still see every beat.
+        """
+        event = row.get("event")
+        key = (row.get("agent_id"), row.get("call_id"))
+        if event in {"tool_result", "tool_failed"}:
+            self._beats.pop(key, None)
+            return
+        if event != "tool_heartbeat":
+            return
+        previous = self._beats.pop(key, None)
+        if previous is not None:
+            for index, existing in enumerate(self._events):
+                if existing is previous:
+                    del self._events[index]
+                    break
+        while len(self._beats) >= MAX_TRACKED_HEARTBEATS:
+            self._beats.pop(next(iter(self._beats)))
+        self._beats[key] = row
 
     @staticmethod
     def _observed(row: dict[str, Any]) -> None:
@@ -132,6 +167,7 @@ class ToolEventLog:
         with self._lock:
             self._events.clear()
             self._counts.clear()
+            self._beats.clear()
             self._seq = 0
 
 

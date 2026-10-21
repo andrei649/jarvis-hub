@@ -2797,3 +2797,207 @@ def test_h399_production_mutators_declare_themselves_not_parallel_safe(tmp_path)
     assert server.allows("file_read") and server.allows("file_search")
     assert server.declares_parallel_safe("file_read") is None
     assert server.declares_parallel_safe("file_search") is None
+
+
+# ── H399 r2 — gated in-loop effects are barriers; heartbeats do not crowd the trail ──
+
+
+def _reviewed_gated_server(review, *, parallel_safe=None):
+    """A trusted gated tool whose registrar-owned review runs the effect inside the
+    tool-loop call (the terminal_run shape) beside an ungated reader."""
+    server = ToolRPCServer(agent="default")
+
+    async def never(args):
+        pytest.fail("a reviewed gated handler must not run directly")
+
+    options = {} if parallel_safe is None else {"parallel_safe": parallel_safe}
+    server.register_tool(
+        "shell", never, gated=True, trusted_execution=True,
+        gated_intake=lambda actor, args: 41, gated_review=review, **options,
+    )
+    return server
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("declared", [None, False])
+async def test_h399_a_gated_tool_reviewed_in_the_loop_never_overlaps_a_read(declared):
+    timeline = []
+
+    async def review(actor, args, task_id):
+        timeline.append(("start", "shell"))
+        await asyncio.sleep(0.05)
+        timeline.append(("end", "shell"))
+        return {"ok": True, "tool": "shell", "result": {"status": "ok"}}
+
+    server = _reviewed_gated_server(review, parallel_safe=declared)
+
+    async def read(args):
+        timeline.append(("start", "read"))
+        await asyncio.sleep(0.01)
+        timeline.append(("end", "read"))
+        return {"value": "tree"}
+
+    server.register_tool("read", read)
+    calls = (
+        _call("shell", call_id="sh", arguments={"command": "git checkout feature"}),
+        _call("read", call_id="rd", arguments={"value": "src/x.py"}),
+    )
+    backend = _ScriptedBackend([ToolTurn(tool_calls=calls), ToolTurn(content="done")])
+    events = []
+    runtime = AgentToolRuntime(server, enabled=lambda: True, tool_timeout_seconds=1.0)
+
+    answer = await asyncio.wait_for(_run(runtime, backend, event_sink=events.append), timeout=2)
+
+    assert answer == "done"
+    # The read (provider order: after the shell) starts only once the reviewed
+    # effect has finished — an undeclared gated tool fails closed to a barrier.
+    assert timeline == [("start", "shell"), ("end", "shell"), ("start", "read"), ("end", "read")]
+    tool_messages = backend.calls[1]["messages"][-2:]
+    assert [message["tool_call_id"] for message in tool_messages] == ["sh", "rd"]
+    planned = [event for event in events if event["event"] == "tool_batch_planned"]
+    assert planned and planned[0]["sequential_calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_h399_a_gated_tool_may_opt_into_overlap():
+    active = 0
+    peak = 0
+
+    async def enter(delay):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(delay)
+        active -= 1
+
+    async def review(actor, args, task_id):
+        await enter(0.03)
+        return {"ok": True, "tool": "shell", "result": {}}
+
+    server = _reviewed_gated_server(review, parallel_safe=True)
+
+    async def read(args):
+        await enter(0.03)
+        return {}
+
+    server.register_tool("read", read)
+    backend = _ScriptedBackend([
+        ToolTurn(tool_calls=(_call("shell", call_id="sh", arguments={"command": "ls"}),
+                             _call("read", call_id="rd", arguments={"value": "x"}))),
+        ToolTurn(content="ok"),
+    ])
+    runtime = AgentToolRuntime(server, enabled=lambda: True, tool_timeout_seconds=1.0)
+    assert await asyncio.wait_for(_run(runtime, backend), timeout=2) == "ok"
+    # An explicit True is the registrar's word: the gated call and the read overlap.
+    assert peak == 2
+
+
+@pytest.mark.asyncio
+async def test_h399_a_gated_calls_heartbeat_does_not_claim_the_effect_is_running():
+    async def review(actor, args, task_id):
+        await asyncio.sleep(0.12)  # e.g. the owner-consent wait
+        return {"ok": True, "tool": "shell", "result": {}}
+
+    server = _reviewed_gated_server(review)
+    backend = _ScriptedBackend([
+        ToolTurn(tool_calls=(_call("shell", call_id="sh", arguments={"command": "make"}),)),
+        ToolTurn(content="ok"),
+    ])
+    events = []
+    runtime = AgentToolRuntime(server, enabled=lambda: True, tool_timeout_seconds=1.0,
+                               heartbeat_seconds=0.03)
+    assert await asyncio.wait_for(_run(runtime, backend, event_sink=events.append),
+                                  timeout=2) == "ok"
+    beats = [event for event in events if event["event"] == "tool_heartbeat"]
+    assert beats
+    assert {event["status"] for event in beats} == {"gated_in_flight"}
+
+
+def test_h399_a_long_calls_heartbeats_never_evict_the_trail():
+    from agents.core.observability.tool_events import ToolEventLog
+
+    log = ToolEventLog(max_events=10)
+    log.record({"event": "tool_result_untrusted", "agent_id": "a", "call_id": "x", "tool": "web"})
+    log.record({"event": "tool_failed", "agent_id": "a", "call_id": "y", "tool": "web"})
+    log.record({"event": "tool_loop_repeated", "agent_id": "a", "tool": "web"})
+    for beat in range(240):  # the per-call beat ceiling, for two concurrent long calls
+        log.record({"event": "tool_heartbeat", "agent_id": "a", "call_id": "long",
+                    "tool": "terminal_run", "status": "running", "elapsed_seconds": beat})
+        log.record({"event": "tool_heartbeat", "agent_id": "b", "call_id": "long",
+                    "tool": "terminal_run", "status": "running", "elapsed_seconds": beat})
+
+    names = [row["event"] for row in log.snapshot(limit=10)]
+    assert names[:3] == ["tool_result_untrusted", "tool_failed", "tool_loop_repeated"]
+    beats = [row for row in log.snapshot(limit=10) if row["event"] == "tool_heartbeat"]
+    # One row per in-flight call (agent "a" and agent "b" are distinct calls), latest.
+    assert [(row["agent_id"], row["elapsed_seconds"]) for row in beats] == [("a", 239), ("b", 239)]
+    # Totals still count every beat.
+    assert log.counts()["tool_heartbeat"] == 480
+
+    # The terminal event closes the call: its last beat stays as the record, and a
+    # later call that reuses the id starts a fresh row instead of moving the old one.
+    log.record({"event": "tool_result", "agent_id": "a", "call_id": "long", "tool": "terminal_run"})
+    log.record({"event": "tool_heartbeat", "agent_id": "a", "call_id": "long",
+                "tool": "terminal_run", "status": "running", "elapsed_seconds": 0})
+    a_beats = [row for row in log.snapshot(limit=10)
+               if row["event"] == "tool_heartbeat" and row["agent_id"] == "a"]
+    assert [row["elapsed_seconds"] for row in a_beats] == [239, 0]
+    log.clear()
+    assert log.snapshot() == []
+
+
+def test_h399_in_loop_effects_declare_themselves_not_parallel_safe(tmp_path):
+    from agents.core.channels.pending_input_runtime import ENABLED_SETTING, register_clarify_tool
+    from agents.core.commands import Principal
+    from agents.core.kanban import runtime as kanban_runtime
+    from agents.core.skills.tools import TOOL_LIST, TOOL_PROPOSE, TOOL_VIEW, register_skill_tools
+
+    server = ToolRPCServer()
+    orch = SimpleNamespace(get_setting=lambda key, default=None: key == ENABLED_SETTING,
+                           _pending_input_service=lambda: None)
+    assert register_clarify_tool(server, orch)
+    kanban_runtime.register_kanban_tools(
+        server, home=lambda: tmp_path, enabled=lambda: True,
+        principal=lambda: Principal(channel="web", admin=True))
+    register_skill_tools(server, loader=lambda: None, posture=lambda: "operator/owner",
+                         origin=lambda: "hud")
+
+    assert server.declares_parallel_safe("clarify") is False
+    assert server.declares_parallel_safe(TOOL_PROPOSE) is False
+    assert server.declares_parallel_safe(TOOL_LIST) is None
+    assert server.declares_parallel_safe(TOOL_VIEW) is None
+    reads = getattr(kanban_runtime, "KANBAN_READ_TOOLS", frozenset())
+    kanban = [row["name"] for row in server.tools() if row["name"].startswith("kanban_")]
+    assert {"kanban_create", "kanban_comment", "kanban_complete", "kanban_heartbeat"} <= set(kanban)
+    assert {"kanban_list", "kanban_show", "kanban_attachments"} == set(reads)
+    for name in kanban:
+        expected = None if name in reads else False
+        assert server.declares_parallel_safe(name) is expected, name
+
+
+def test_h399_extension_and_acquired_tools_fail_closed_to_barriers():
+    from agents.core.acquisition.promotion import PromotionBroker
+    from agents.core.extensions.runtime import ExtensionRuntime
+
+    server = ToolRPCServer()
+    ExtensionRuntime._expose(
+        SimpleNamespace(rpc=server, dispatch=None),
+        SimpleNamespace(manifest=SimpleNamespace(qualified_tools=("ext.lookup",))),
+    )
+    PromotionBroker._register(
+        SimpleNamespace(tool_rpc=server, runtime=None, packages=SimpleNamespace(get=lambda name: None)),
+        "acquired_tool",
+    )
+    assert server.declares_parallel_safe("ext.lookup") is False
+    assert server.declares_parallel_safe("acquired_tool") is False
+
+
+def test_h399_terminal_and_desktop_run_are_barriers_in_production_wiring(tmp_path, monkeypatch):
+    from tests.test_hermes_file_coordinator_intake import wire
+
+    _, orch, _, _ = wire(tmp_path, monkeypatch)
+    server = orch.tool_rpc
+    assert server.allows("terminal_run") and server.allows("desktop_run")
+    assert server.declares_parallel_safe("terminal_run") is False
+    assert server.declares_parallel_safe("desktop_run") is False
+    assert server.declares_parallel_safe("file_write") is False

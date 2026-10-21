@@ -982,6 +982,7 @@ class AutonomyCoordinator:
             "desktop_run",
             _rpc_desktop_run,
             gated=True,
+            parallel_safe=False,  # H399 — drives the shared desktop; never overlaps
             description=_DESKTOP_RUN_DESCRIPTION,
             # H296: the actions the step validator and this host's driver accept.
             schema_overrides=_desktop_run_overrides,
@@ -1289,6 +1290,9 @@ class AutonomyCoordinator:
             gated=True,
             gated_intake=_terminal_intake,
             gated_review=_terminal_review,
+            # H399 — its review runs the command inside the model step, so no other
+            # call of that step (a read of the tree it changes) may overlap it.
+            parallel_safe=False,
             description="Run one bounded shell command on a named governed target.",
             input_schema={
                 "type": "object",

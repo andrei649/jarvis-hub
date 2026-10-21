@@ -532,8 +532,11 @@ class ToolRPCServer:
         ``parallel_safe`` (H399) says whether a call to this tool may overlap other
         calls of the same model step. ``False`` makes every call to it a barrier the
         tool loop runs alone, in provider order (a writer that two concurrent calls
-        could interleave on). ``None`` (undeclared) and ``True`` keep the concurrent
-        default. Like ``max_result_bytes`` it is not part of :meth:`tools`.
+        could interleave on). ``True`` keeps the concurrent default. ``None``
+        (undeclared) fails closed for a gated tool — the loop treats it as a barrier,
+        since a gated review may run the effect inside the step — and stays
+        concurrent for an ungated one. Like ``max_result_bytes`` it is not part of
+        :meth:`tools`.
         """
         if parallel_safe is not None and type(parallel_safe) is not bool:
             raise ValueError("parallel_safe must be a bool or None")

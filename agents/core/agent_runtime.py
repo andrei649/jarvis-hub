@@ -1407,12 +1407,18 @@ class AgentToolRuntime:
             )
 
         def parallel_safe(call: ToolCall) -> bool:
-            # A call that is not offered is refused locally and touches nothing; an
-            # offered tool is serialized only by its registrar's explicit False.
+            # A call that is not offered is refused locally and touches nothing. An
+            # offered tool's explicit declaration wins; an undeclared one is a
+            # barrier when it is gated (a mutator — a gated review can run the
+            # effect inside this step, as terminal_run does) and keeps the
+            # concurrent default only when it is not.
             if call.name not in gated_tools:
                 return True
             reader = getattr(self._server, "declares_parallel_safe", None)
-            return reader is None or reader(call.name) is not False
+            declared = reader(call.name) if reader is not None else None
+            if declared is not None:
+                return declared is True
+            return gated_tools[call.name] is False
 
         plan = plan_tool_batch(calls, parallel_safe)
         sequential = sum(len(group.indices) for group in plan if group.mode == "sequential")
@@ -1590,6 +1596,7 @@ class AgentToolRuntime:
                     agent_id=agent_id,
                     event_sink=event_sink,
                     spent=spent,
+                    gated=True,
                 )
                 if observation[0].get("reason") == "approval_required":
                     approval_state["required"] = True
@@ -1616,6 +1623,7 @@ class AgentToolRuntime:
         agent_id: str,
         event_sink: ToolEventSink | None,
         spent: dict[str, int] | None = None,
+        gated: bool = False,
     ) -> tuple[dict[str, Any], str]:
         await self._emit(
             event_sink,
@@ -1627,7 +1635,7 @@ class AgentToolRuntime:
                 lambda name, row: self._profile_allows_execution(agent_id, name, row)
             )
         heartbeat = (
-            asyncio.create_task(self._heartbeat(call, agent_id, event_sink))
+            asyncio.create_task(self._heartbeat(call, agent_id, event_sink, gated=gated))
             if self._heartbeat_seconds > 0 and event_sink is not None else None
         )
         try:
@@ -1668,16 +1676,21 @@ class AgentToolRuntime:
 
     async def _heartbeat(
         self, call: ToolCall, agent_id: str, event_sink: ToolEventSink | None,
+        *, gated: bool = False,
     ) -> None:
-        """H399 — report a call that is still running, at a fixed cadence, until the
+        """H399 — report a call that is still in flight, at a fixed cadence, until the
         caller cancels this task when the call's result (or timeout) lands. A beat
         carries the bounded identities and the elapsed time only — never arguments,
         never partial output — and it marks the session active, so a long tool call
-        is not mistaken for an idle session."""
+        is not mistaken for an idle session. A gated call's beat says
+        ``gated_in_flight``, not ``running``: from here the loop cannot tell an
+        owner-consent wait from the approved effect, and the trail must not claim a
+        command started that may still be waiting for the owner."""
+        status = "gated_in_flight" if gated else "running"
         started = time.monotonic()
         for _ in range(_MAX_HEARTBEATS_PER_CALL):
             await asyncio.sleep(self._heartbeat_seconds)
-            event = self._event(call, agent_id, "tool_heartbeat", "running")
+            event = self._event(call, agent_id, "tool_heartbeat", status)
             event["elapsed_seconds"] = round(time.monotonic() - started, 3)
             await self._emit(event_sink, event)
 

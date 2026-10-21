@@ -908,7 +908,8 @@ def register_skill_tools(
                          input_schema=VIEW_SCHEMA, capability_id="tool:skill_view",
                          max_result_bytes=MAX_ENCODED_BYTES + MAX_LISTED_BYTES + MAX_DESCRIPTION_BYTES + 4096)
     server.register_tool(TOOL_PROPOSE, _propose, gated=False, description=PROPOSE_DESCRIPTION,
-                         input_schema=PROPOSE_SCHEMA, capability_id="tool:skill_propose")
+                         input_schema=PROPOSE_SCHEMA, capability_id="tool:skill_propose",
+                         parallel_safe=False)  # H399 — spends the daily budget, queues a card
     return TOOL_LIST, TOOL_VIEW, TOOL_PROPOSE
 
 
