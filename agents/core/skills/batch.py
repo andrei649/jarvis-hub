@@ -526,14 +526,23 @@ def _diffs(target: _Target) -> list[dict]:
         old, new = target.before_files.get(rel), after.get(rel)
         if old == new:
             continue
-        try:
-            a = (old or b"").decode("utf-8").splitlines(keepends=True)
-            b = (new or b"").decode("utf-8").splitlines(keepends=True)
-            text = "".join(difflib.unified_diff(a, b, fromfile=f"{rel} (now)", tofile=f"{rel} (after)"))
-        except UnicodeDecodeError:
+        a, b = _text_of(old), _text_of(new)
+        unreadable = new is not None and b is None
+        if a is not None and b is not None:
+            text = "".join(difflib.unified_diff(a.splitlines(keepends=True), b.splitlines(keepends=True),
+                                                fromfile=f"{rel} (now)", tofile=f"{rel} (after)"))
+        elif b is not None:
+            # review-H665 r4: text replacing a binary file is shown whole, every line added, so
+            # the owner never approves text the diff hid behind "(binary)".
+            text = f"{rel}: binary file replaced by text\n" + "".join(
+                "+" + line + ("" if line.endswith(("\n", "\r")) else "\n") for line in b.splitlines(keepends=True))
+        else:
             text = "(binary)"
         change = "added" if old is None else "removed" if new is None else "changed"
         entry = {"file": rel, "change": change, "diff": text[:MAX_DIFF_CHARS]}
+        if unreadable:
+            # Bytes no owner can read as text: the governed path refuses this one.
+            entry["added_unreadable"] = True
         if len(text) > MAX_DIFF_CHARS:
             entry["diff_truncated"] = True
             if _adds_past(text, MAX_DIFF_CHARS):
@@ -541,6 +550,14 @@ def _diffs(target: _Target) -> list[dict]:
                 entry["added_truncated"] = True
         out.append(entry)
     return out
+
+
+def _text_of(data: bytes | None) -> str | None:
+    """A file's bytes as text; "" for no file, None when they are not UTF-8."""
+    try:
+        return (data or b"").decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def _adds_past(text: str, cut: int) -> bool:

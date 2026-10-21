@@ -981,7 +981,16 @@ def register_skill_tools(
         # (review-H665 #2, r3). A removal (remove_file, delete) never does.
         from .batch import MAX_DIFF_CHARS
 
-        cut = [f"{s['name']}/{f['file']}" for s in checked["skills"] for f in s["files"] if f.get("added_truncated")]
+        # review-H665 r4: bytes that are not text cannot be reviewed at all, so they never ride a card.
+        unreadable = [f"{s['name']}/{f['file']}" for s in checked["skills"] for f in s["files"]
+                      if f.get("added_unreadable")]
+        if unreadable:
+            refused = _refuse("skill_batch_unreviewable", "the change to " + ", ".join(unreadable[:5]) + " adds "
+                              "bytes that are not UTF-8 text, which the owner's review cannot show")
+            refused["hints"] = ["to replace a binary asset, remove_file it and write_file a text file under a new "
+                                "path, or ask the owner"]
+            return refused
+        cut =[f"{s['name']}/{f['file']}" for s in checked["skills"] for f in s["files"] if f.get("added_truncated")]
         if cut:
             refused = _refuse("skill_batch_too_large_to_review", "the change to " + ", ".join(cut[:5]) + " is "
                               f"longer than the {MAX_DIFF_CHARS:,} characters the owner's review shows whole")

