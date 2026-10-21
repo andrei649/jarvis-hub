@@ -290,12 +290,26 @@ def _dynamic_reasons() -> dict[tuple[str, str], set[str]]:
     lock_reasons = set(re.findall(r"rows\.append\(\(src_name, lock\.name, \"([a-z_]+)\"\)\)", doctor_src))
     assert lock_reasons == {"source_missing", "lock_missing"}, lock_reasons
     assert '"ok" if want == have else "lock_stale"' in doctor_src
+    pilot = re.search(r"def _pilot_json\(.*?(?=\ndef )", doctor_src, re.S)
+    assert pilot
+    pilot_errors = set(re.findall(r'return \{\}, f?"([a-z_]+:?)', pilot.group(0)))
+    assert pilot_errors == {"http_status:", "reply_too_large", "malformed_reply", "hub_unreachable"}, pilot_errors
     return {
         ("python", "reason"): {"python_too_old:"},
         ("locks_in_sync", "bad[0]"): {f"{r}:" for r in lock_reasons} | {"lock_stale:"},
         ("runtime_resolves", "reason"): set(MODEL_READINESS_REASONS) | {"unreported"},
         ("smoke", "exc.reason"): set(re.findall(r"BootstrapError\(\"([a-z_]+)\"", smoke.group(0))),
         ("config_sources", "reason"): {"env_not_utf8:", "withheld_env_names:"},
+        # `--local-pilot` (#1254): the hub row passes on check_readyz's failures, and each
+        # metadata row passes on _pilot_json's read errors before its own verdict.
+        ("hub", "ready.reason"): {"readyz_status:", "hub_url_invalid", "server_not_running", "readyz_bad_reply"},
+        ("local_model", "'configured_model_resident' if ok else error or 'configured_model_not_verified'"):
+            pilot_errors | {"configured_model_not_verified"},
+        ("fallback_policy", "'configured_fallback_never' if ok else error or 'fallback_not_verified_never'"):
+            pilot_errors | {"fallback_not_verified_never"},
+        ("mcp_memory", "reason or 'memory_read_catalog_verified'"):
+            pilot_errors | {"mcp_catalog_unavailable", "memory_tool_missing_or_ambiguous",
+                            "memory_read_hint_missing", "memory_query_schema_incompatible"},
     }
 
 

@@ -3917,6 +3917,14 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   against a running hub** → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P17**. Deferred from
   the ledger row on purpose: `nerva send <channel>` needs a send route that does not exist, and
   adding one trips four snapshot gates plus the HUD caller gate — it lands with the HUD wiring.
+  Follow-up (2026-10-12): `doctor --local-pilot` reuses readiness,
+  local-model inventory, stored fallback policy and MCP `tools/list` for one prerequisite
+  report. It requires the configured model to be available/resident and the memory read
+  descriptor to match; unknown evidence fails. It does not generate text, query memory,
+  start services or change configuration. Normal authentication audit/cache bookkeeping
+  remains. Final serial verification: 25,589 cases, 25,527 passed, 58 skipped, one
+  xfail, three baseline-reproduced browser/DNS failures and zero errors. Actual
+  hub/model acceptance remains unproven. See `docs/plans/2026-10-12-local-pilot-doctor.md`.
 - [x] ✅ **HA-1B — the chat slash-command plane.** `agents/core/commands.py`: one registry with
   access tiers, dispatched by the orchestrator before skills and the model on every
   conversational surface — `/help`, `/status`, `/sessions` (user), `/pause`, `/stop`, `/resume`
@@ -4055,6 +4063,13 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   kernel. `schema.gen.ts` regenerated. Tests: `tests/test_mcp_trust.py` (10). **Not proven
   against a real MCP server** → P21. Named and not done: per-server tool include / exclude,
   `destructiveHint`-aware approval tiers, a vetted default-disabled catalogue.
+  Local follow-up 2026-10-12: the hub's curated read-route descriptors now declare
+  `annotations.readOnlyHint: true`, so default read-only MCP consumers can call
+  `route_memory_search` without granting full trust. Fourteen offline interoperability
+  regressions include three independent readers of the same synthetic memory,
+  write/agent-call refusal, owner filters, disabled routes and custom-spec refusal. This does not
+  establish live ChatGPT/Claude/Hermes connectivity or cross-machine sync. Proof:
+  [local plan and verification](docs/plans/2026-10-12-mcp-memory-read-interop.md).
 - [x] ✅ **HA-4c — a chat reply written in place; attaching a server is not attaching every
   tool.** On a chat surface a long silence and a crash look the same. `TelegramDraft`
   (`channels/telegram.py`): the first token sends the message, later tokens edit it under
