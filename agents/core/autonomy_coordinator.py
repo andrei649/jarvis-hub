@@ -150,6 +150,13 @@ def _desktop_run_overrides() -> dict:
     return {"properties": {"steps": steps}}
 
 
+def autonomy_tick_seconds(orch) -> int:
+    """Seconds ``AutonomyCoordinator.loop`` sleeps before each tick: ``system.autonomy_tick``
+    (60 by default), never under 15. An accepted task waits up to this long to run, which
+    ``GET /api/admin/backup`` reports for a restore (H010 review r7)."""
+    return max(15, int(orch.get_setting("system.autonomy_tick", 60) or 60))
+
+
 class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
@@ -562,8 +569,7 @@ class AutonomyCoordinator:
         external/irreversible tasks always wait for a waking human.
         """
         while True:
-            interval = int(self._orch.get_setting("system.autonomy_tick", 60) or 60)
-            await asyncio.sleep(max(15, interval))
+            await asyncio.sleep(autonomy_tick_seconds(self._orch))
             # Global emergency stop: skip the whole self-tasking tick while the
             # ESTOP sentinel exists (pause-new-work; in-flight work is not killed).
             from agents.core import estop

@@ -37,10 +37,19 @@ async def backup_list():
     """List local backup snapshots (newest first), a staged restore and the last outcome.
 
     ``pending_restore.state`` is ``waiting`` (applied at the next hub start), ``deferred``
-    (``deferred_reason`` says why the last attempt was put off) or ``expired``."""
+    (``deferred_reason`` says why the last attempt was put off) or ``expired``.
+
+    H010 review r7: an accepted restore is staged by this hub's worker on its next tick, so
+    the listing also says how it will be applied without waiting for that: ``restart``
+    (``self``/``manual``, as the restore request's 202), ``stage_within_seconds`` (the
+    worker's tick) and ``refused_restore`` (the newest accept the apply refused, if no
+    restore was staged since)."""
     return nocache_json({"backups": _backup.list_backups(),
                          "pending_restore": _backup.staged_restore_view(),
-                         "last_restore": _backup.last_restore()})
+                         "last_restore": _backup.last_restore(),
+                         "refused_restore": _backup.last_refused_restore(),
+                         "restart": _restart_mode(),
+                         "stage_within_seconds": _stage_within_seconds()})
 
 
 @router.post("/api/admin/backup", dependencies=[Depends(admin_guard)])
@@ -133,6 +142,19 @@ def _restart_mode() -> str:
     from agents.core import hub_restart
 
     return "self" if hub_restart.available() else "manual"
+
+
+def _stage_within_seconds() -> int | None:
+    """How long this hub's autonomy loop may take to stage an accepted restore (its tick)."""
+    from agents.core.autonomy_coordinator import autonomy_tick_seconds
+
+    orch = get_orch()
+    if orch is None or not callable(getattr(orch, "get_setting", None)):
+        return None
+    try:
+        return autonomy_tick_seconds(orch)
+    except (TypeError, ValueError):
+        return None
 
 
 @router.delete("/api/admin/backup/restore", dependencies=[Depends(admin_guard)])

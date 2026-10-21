@@ -1527,6 +1527,33 @@ def restore_held_here(task=None) -> Optional[str]:
     return "hub_applies_restore" if elsewhere else None
 
 
+async def _refuse(task, reason: str, **extra) -> dict:
+    """The refusal of an accepted restore, recorded (H010 review r7): it stages nothing and
+    writes no outcome, so without a ``refused`` line in restore-history.jsonl the owner
+    who accepted it would wait for a stage that never comes (``last_refused_restore``)."""
+    payload = getattr(task, "payload", None)
+    name = payload.get("name") if isinstance(payload, dict) else None
+    task_id = getattr(task, "id", None)
+    record = {"name": name if isinstance(name, str) else None, "reason": reason,
+              "status": "refused", "task_id": task_id if isinstance(task_id, int) else None,
+              "requested_by": str(getattr(task, "decided_by", "") or "")}
+    await asyncio.to_thread(_append_history, default_backup_dir(_root_of(None)), "refused",
+                            record)
+    return {"status": "refused", "reason": reason, **extra}
+
+
+def last_refused_restore(source_root=None) -> Optional[dict]:
+    """The newest accepted restore the apply refused, unless a restore was staged since
+    (``GET /api/admin/backup`` → ``refused_restore``; the CLI matches it by ``task_id``)."""
+    rows = _history_rows(default_backup_dir(_root_of(source_root)) / _HISTORY, 200)
+    for row in reversed(rows):
+        if row.get("event") == "refused":
+            return row
+        if row.get("event") == "staged":
+            return None
+    return None
+
+
 async def apply_approved(task, orch) -> dict:
     """Stage a ``backup.restore`` task a human accepted (``irreversible.execute`` checked
     who decided) and ask the hub to restart, which applies it before any store opens."""
@@ -1536,17 +1563,17 @@ async def apply_approved(task, orch) -> dict:
     if held is not None:
         # The worker holds this kind for the hub (``irreversible.held_here``); reached
         # only if a hub took the data root between that check and here. Nothing staged.
-        return {"status": "refused", "reason": held}
+        return await _refuse(task, held)
     payload = task.payload
     name = payload.get("name")
     if not isinstance(name, str) or not name:
-        return {"status": "refused", "reason": "payload_invalid"}
+        return await _refuse(task, "payload_invalid")
     path = resolve_backup(name)
     if path is None:
-        return {"status": "refused", "reason": "backup_missing"}
+        return await _refuse(task, "backup_missing")
     st = path.stat()
     if st.st_size != payload.get("bytes") or st.st_mtime != payload.get("mtime"):
-        return {"status": "refused", "reason": "backup_changed"}
+        return await _refuse(task, "backup_changed")
     task_id = getattr(task, "id", None)
     # Known before the stage is written (review r6), so the stage never reads as waiting
     # for a restart that is not coming.
@@ -1556,7 +1583,7 @@ async def apply_approved(task, orch) -> dict:
                                      task_id=task_id if isinstance(task_id, int) else None,
                                      restart=planned)
     if not staged["ok"]:
-        return {"status": "refused", "reason": "backup_failed_verify", "problem": staged["problem"]}
+        return await _refuse(task, "backup_failed_verify", problem=staged["problem"])
     restart = "requested" if planned == "self" and hub_restart.request(APPROVAL_KIND) else "manual"
     result = {"status": "ok", "kind": APPROVAL_KIND, "staged": name, "restart": restart,
               "expires_at": staged.get("expires_at")}

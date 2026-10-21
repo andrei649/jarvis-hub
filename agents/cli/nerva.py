@@ -1413,14 +1413,16 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 #: How long ``nerva approvals accept`` waits for an accepted restore to be staged, and
-#: how often it asks (H010 review r6). The hub's loop runs the accept after the reply.
+#: how often it asks (H010 review r6). The hub's loop runs the accept after the reply, on
+#: its next tick — so the answer never depends on the stage showing up in this window (r7).
 RESTORE_FOLLOW_SECONDS = 8.0
 RESTORE_FOLLOW_POLL_SECONDS = 0.5
 
 
 def _restore_of_task(reply: Any, task_id: int) -> tuple[str, Mapping[str, Any]] | None:
     """What ``GET /api/admin/backup`` says about the restore task ``task_id`` accepted:
-    ``("staged", view)`` or ``("finished", last_restore)``, or None when nothing yet."""
+    ``("staged", view)``, ``("finished", last_restore)`` or ``("refused", row)``, or None
+    when nothing yet."""
     if not isinstance(reply, Mapping):
         return None
     staged = reply.get("pending_restore")
@@ -1430,33 +1432,63 @@ def _restore_of_task(reply: Any, task_id: int) -> tuple[str, Mapping[str, Any]] 
     if (isinstance(last, Mapping) and last.get("task_id") == task_id
             and last.get("status") != "deferred"):
         return "finished", last
+    refused = reply.get("refused_restore")
+    if isinstance(refused, Mapping) and refused.get("task_id") == task_id:
+        return "refused", refused
     return None
 
 
+def _say_accepted_restore(ctx: Context, reply: Any) -> bool:
+    """H010 review r7: say at once how the hub applies the accept — the hub's worker stages
+    it only on its next tick (60 s by default), far past the follow window. True when said."""
+    if not isinstance(reply, Mapping) or reply.get("restart") not in ("self", "manual"):
+        return False                                      # a hub that predates r7
+    tick = reply.get("stage_within_seconds")
+    when = (f"on its next autonomy tick (within ~{tick} s)"
+            if isinstance(tick, int) and not isinstance(tick, bool) else "on its next autonomy tick")
+    if reply["restart"] == "manual":
+        ctx.say(f"  restore accepted, NOT applied yet: the hub stages it {when}, and nothing "
+                f"restarts this hub — restart the hub/service yourself once `nerva backup list` "
+                f"shows it staged (it says by when)")
+    else:
+        ctx.say(f"  restore accepted: the hub stages it {when} and restarts itself to apply it "
+                f"(`nerva backup list` shows the outcome)")
+    return True
+
+
 def _follow_accepted_restore(ctx: Context, task_id: int) -> None:
-    """H010 review r6: the decision route answers ``approved`` before the hub's loop
-    stages the restore, so wait a bounded few seconds for the stage and say what it is —
-    NOT applied yet when the hub cannot restart itself, never a restart nobody makes."""
+    """H010 review r6/r7: the decision route answers ``approved`` before the hub's loop
+    stages the restore. Say right away what happens (NOT applied yet when the hub cannot
+    restart itself), then wait a bounded few seconds for the stage, an outcome or a refusal
+    and add it — never a restart nobody makes, never a stage that will not come."""
     end = time.monotonic() + RESTORE_FOLLOW_SECONDS
+    announced = False
     while True:
         try:
-            found = _restore_of_task(ctx.client().get("/api/admin/backup"), task_id)
+            reply = ctx.client().get("/api/admin/backup")
         except HubUnavailable:
             # The hub went away right after the accept: most likely restarting to apply it.
             ctx.say("  the hub stopped answering (restarting to apply the restore?) — "
                     "`nerva backup list` shows whether it was applied")
             return
         except HubError:
-            found = None
+            reply = None
+        found = _restore_of_task(reply, task_id)
+        if found is None and not announced:
+            announced = _say_accepted_restore(ctx, reply)
         if found is not None:
             break
         if time.monotonic() >= end:
-            ctx.say("  the restore is not staged yet — `nerva backup list` shows when it is, "
-                    "and whether the hub must be restarted by hand")
+            if not announced:
+                ctx.say("  the restore is not staged yet — `nerva backup list` shows when it is, "
+                        "and whether the hub must be restarted by hand")
             return
         time.sleep(RESTORE_FOLLOW_POLL_SECONDS)
     state, view = found
-    if state == "finished":
+    if state == "refused":
+        ctx.say(f"  restore of {view.get('name')} refused ({view.get('reason')}): it will not "
+                f"be applied — request it again with `nerva backup restore`")
+    elif state == "finished":
         ctx.say(f"  restore of {view.get('name')}: {view.get('status')}")
     elif view.get("action_needed"):
         # The accept staged the restore but nothing restarts this hub.
@@ -1623,7 +1655,8 @@ def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     if ns.action == "list":
         payload = {"backups": bk.list_backups(str(out)), "pending_restore": bk.staged_restore_view(root),
-                   "last_restore": bk.last_restore(root)}
+                   "last_restore": bk.last_restore(root),
+                   "refused_restore": bk.last_refused_restore(root)}
         if ns.json:
             ctx.dump(payload)
             return EXIT_OK
@@ -1648,6 +1681,11 @@ def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
         if payload["last_restore"]:
             last = payload["last_restore"]
             ctx.say(f"last restore: {last.get('name')} {last.get('status')} at {last.get('applied_at')}")
+        if payload["refused_restore"]:
+            # H010 review r7: an accept the apply refused staged nothing; it must be asked again.
+            refused = payload["refused_restore"]
+            ctx.say(f"refused restore: {refused.get('name')} ({refused.get('reason')}) at "
+                    f"{refused.get('at')} — not applied; `nerva backup restore` asks again")
         return EXIT_OK
     if ns.action == "verify":
         name = ns.name
