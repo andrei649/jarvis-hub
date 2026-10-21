@@ -430,24 +430,106 @@ def _table_rows(text: str) -> list[list[str]]:
     return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in rows]
 
 
-def test_local_servers_name_tool_calls_that_come_back_as_text():
-    """Both local backends declare tools and the loop offers them to any model once
-    ``llm.tool_loop_enabled`` is on; a model without native tool calling then writes the
-    call out as text."""
+def _server_rows(server: str) -> list[list[str]]:
+    body = _section("Local model servers").split(f"\n### {server}\n", 1)[1].split("\n### ", 1)[0]
+    return _table_rows(body)
+
+
+def _ollama_tool_turn(status: int, body: dict, caplog) -> str:
+    """Run OllamaBackend.generate_tool_turn against a mocked /api/chat; the reply text."""
+    import asyncio
+    import logging
+
+    import httpx
+
+    from agents.core.llm.base import OllamaBackend
+    from agents.core.llm.tool_protocol import ToolSpec
+
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        seen.append(json.loads(request.content))
+        return httpx.Response(status, json=body)
+
+    backend = OllamaBackend("http://ollama.test", num_ctx=8192)
+    backend.client = httpx.AsyncClient(base_url="http://ollama.test",
+                                       transport=httpx.MockTransport(handler))
+    with caplog.at_level(logging.ERROR, logger="jarvis.llm.base"):
+        turn = asyncio.run(backend.generate_tool_turn(
+            "m", [{"role": "user", "content": "hi"}], [ToolSpec(name="memory")]))
+    assert seen and seen[0]["tools"], "the tool loop offers tools to /api/chat"
+    return turn.content
+
+
+def test_ollama_model_without_tools_is_an_error_bubble_not_text(caplog):
+    """Ollama refuses ``tools`` for a model whose template has none: HTTP 400
+    ``<model> does not support tools``. The owner gets a reply that says so (not the
+    generic "hit an error" bubble, not JSON as text), the log keeps the server's words,
+    and the guide's Ollama table names both."""
+    from agents.core.llm.base import (
+        OLLAMA_TOOLS_UNSUPPORTED_REPLY,
+        is_backend_failure_reply,
+        is_degraded_reply,
+    )
+
+    reply = _ollama_tool_turn(400, {"error": "m does not support tools"}, caplog)
+    assert reply == OLLAMA_TOOLS_UNSUPPORTED_REPLY
+    assert is_degraded_reply(reply) and is_backend_failure_reply(reply)
+    assert "llm.tool_loop_enabled" in reply and "ollama show" in reply
+    assert "server said:" in caplog.text and "does not support tools" in caplog.text
+    # any other 400 keeps the generic bubble
+    caplog.clear()
+    other = _ollama_tool_turn(400, {"error": "invalid options"}, caplog)
+    assert other.startswith("⚠️ The local Ollama model hit an error")
+
+    rows = _server_rows("Ollama")
+    no_tools = [r for r in rows if "no tool support" in r[0]]
+    assert no_tools, "Ollama: no 'model has no tool support' failure mode"
+    _mode, seen, fix = no_tools[0]
+    assert "llm.tool_loop_enabled" in seen and "does not support tools" in seen
+    assert "nerva logs -n 100" in seen
+    assert " ".join(OLLAMA_TOOLS_UNSUPPORTED_REPLY.split()) in " ".join(seen.split())
+    assert "ollama show MODEL" in fix and "nerva config set llm.tool_loop_enabled false" in fix
+    # the "server error" row points there, so the 400 is not read as a corrupt model
+    server_error = [r for r in rows if r[0] == "server error"][0]
+    assert "no tool support" in server_error[2]
+
+
+def test_tool_calls_as_text_rows_are_for_tool_capable_models():
+    """JSON-as-text is what a model that does take ``tools`` produces when it writes the
+    call into its answer — not what a model without tools produces on Ollama."""
     from agents.core.llm.base import LMStudioBackend, OllamaBackend
 
     assert LMStudioBackend.supports_tools is True and OllamaBackend.supports_tools is True
     runtime = (REPO / "agents" / "core" / "agent_runtime.py").read_text(encoding="utf-8")
     assert 'getattr(backend, "supports_tools", False)' in runtime
-    for server, check in (("Ollama", "ollama show"), ("LM Studio", "tool")):
-        body = _section("Local model servers").split(f"\n### {server}\n", 1)[1].split("\n### ", 1)[0]
-        rows = [r for r in _table_rows(body) if "as text" in r[0]]
+    for server in ("Ollama", "LM Studio"):
+        rows = [r for r in _server_rows(server) if "as text" in r[0]]
         assert rows, f"{server}: no 'tool calls appear as text' failure mode"
         _mode, seen, fix = rows[0]
         assert "llm.tool_loop_enabled" in seen + fix, server
-        assert check in fix and "nerva config set llm.tool_loop_enabled false" in fix, server
-    step7 = re.search(r"^7\. .*?(?=^8\. )", _section('"My agent feels dumber"'), re.S | re.M).group(0)
-    assert "as text" in step7 and "#local-model-servers" in step7
+        assert "nerva config set llm.tool_loop_enabled false" in fix, server
+    ollama_text = [r for r in _server_rows("Ollama") if "as text" in r[0]][0]
+    assert "has no native tool calling" not in ollama_text[2]
+    assert "lists `tools`" in ollama_text[2]
+    # the degraded-bubble symptom names the no-tools cause; step 7 names both symptoms
+    bubble = [r for r in _table_rows(_section("Symptom, cause, fix")) if "degraded bubble" in r[0]]
+    assert bubble and "does not support tools" in bubble[0][1] and "#ollama" in bubble[0][2]
+    step7 = " ".join(re.search(r"^7\. .*?(?=^8\. )", _section('"My agent feels dumber"'),
+                               re.S | re.M).group(0).split())
+    assert "as text" in step7 and "does not support tools" in step7
+    assert "#local-model-servers" in step7 or "#ollama" in step7
+
+
+def test_memory_step_names_the_untrusted_content_refusal():
+    """The memory tool refuses a write once the turn has read untrusted content."""
+    src = (REPO / "agents" / "core" / "memory_tool.py").read_text(encoding="utf-8")
+    assert "\"memory_untrusted_turn\"" in src
+    steps = re.split(r"^\d+\. ", _section('"My agent feels dumber"'), flags=re.M)[1:]
+    step = [" ".join(s.split()) for s in steps if "forget" in s.lower() and "memory" in s.lower()][0]
+    assert "untrusted" in step and "`memory_untrusted_turn`" in step
 
 
 def test_checklist_has_a_memory_step_that_matches_the_code():

@@ -81,7 +81,7 @@ that fails and fix that one; the later steps would only report its consequences.
 | `runtime_resolves` = `route_unselected` / `provider_unresolved` / `router_unavailable` | no route chosen, an indirect fallback, or the router did not start | `nerva config get llm.backend_type`; set it to `lm-studio` or `ollama` explicitly; restart |
 | `runtime_resolves` = `unreported` | the hub answered "not ready" without naming why — an older or partly started hub | restart with `python serve.py`, then re-run `nerva doctor`; `nerva logs -n 100` if it stays |
 | `runtime_resolves` = `inventory_unavailable` / `residency_unknown` | the runtime would not list its loaded models | see [Ollama](#ollama) / [LM Studio](#lm-studio) |
-| replies say "LLM unavailable" / degraded bubble | the local server stopped or the model was unloaded | [local model servers](#local-model-servers) |
+| replies say "LLM unavailable" / degraded bubble | the local server stopped or the model was unloaded; or, with the tool loop on, an Ollama model without tool support (the log says "does not support tools") | [local model servers](#local-model-servers); for the tools case the "model has no tool support" row under [Ollama](#ollama) |
 | answers got worse, shorter or forgetful | wrong model, truncated context, or a fallback | the ["feels dumber" checklist](#my-agent-feels-dumber) |
 | forgot what I told it last week | memory is off (it is by default), the fact was never written, or it was written after this session started | step 11 of the ["feels dumber" checklist](#my-agent-feels-dumber) |
 | `voice` = `voice_command_not_ready` | a TTS/STT command provider is configured but not armed, changed since approval, missing, or safe mode is on | the row names which; re-approve it in **Admin → settings** |
@@ -120,9 +120,12 @@ this order — the first ones are the most common and the cheapest to rule out:
 7. **Are its tools and skills there?** `nerva inspect jarvis --section tools` and
    `nerva inspect jarvis --section skills`; a skill switched off shows in
    `nerva skills list`. The agent tool loop is opt-in: `llm.tool_loop_enabled`. With it on,
-   a reply that shows a tool call as text (`{"name": …, "arguments": …}`) instead of
-   running it means the model has no native tool calling — see the "tool calls appear as
-   text" rows under [local model servers](#local-model-servers).
+   two symptoms point at the model rather than the tools. On Ollama, a model without tool
+   support fails every turn with "The local Ollama model can't call tools" (the hub log
+   says "does not support tools") — see the "model has no tool support" row under
+   [Ollama](#ollama). A reply that shows a tool call as text (`{"name": …, "arguments": …}`)
+   instead of running it means a model that takes tools wrote the call into its answer —
+   see the "tool calls appear as text" rows under [local model servers](#local-model-servers).
 8. **Is it in safe mode?** Safe mode drops your skills, overlays and the memory a turn is
    given. `GET /healthz` says so; restart without `--safe-mode`.
 9. **Is a role pointed somewhere unexpected?** The doctor's `model_roles` row lists which
@@ -144,7 +147,9 @@ this order — the first ones are the most common and the cheapest to rule out:
     oldest fact), or by the per-turn review (`cognition.review_enabled`, off by default).
     The rings a turn sees are frozen for the session and the day, so a fact written now
     reaches the prompt at the next session (`/new`) or the next day. `GET /api/memory/core`
-    lists both rings — check the fact is there. Older conversations are a separate,
+    lists both rings — check the fact is there. A turn that has read untrusted content (an
+    inbound message, web text, a tainted recall) cannot write memory: the tool refuses with
+    `memory_untrusted_turn`, so tell it the fact again in a fresh turn of your own. Older conversations are a separate,
     searched store: `memory.recall_enabled` (off by default) adds the
     `memory.recall_top_k` best hits to a turn, and only what was stored is found —
     `MEMORY_EMBED_TURNS=true` stores every turn, `POST /api/memory/remember` one fact;
@@ -177,12 +182,13 @@ setting is right — trust `runtime_resolves` then. And a wrong `llm.*_url` show
 | server not running | `ollama=connection_refused`; `runtime_resolves` = `provider_offline` | start `ollama serve` (or the Ollama app) |
 | wrong address / port in the setting | `ollama=ok` (or Ollama runs elsewhere) but `runtime_resolves` = `provider_offline` | `nerva config get llm.ollama_url`; set it to where Ollama listens: `nerva config set llm.ollama_url http://127.0.0.1:11434` (or `JARVIS_OLLAMA_URL`) |
 | server busy or hung | `ollama=timeout` | the server is loading a large model or out of memory; wait, then restart it |
-| server error | `ollama=http_status:500` (any `ollama=http_status:` code) | the Ollama log names it — usually a corrupt model file: re-pull it |
+| server error | `ollama=http_status:500` (any `ollama=http_status:` code) | the Ollama log names it — usually a corrupt model file: re-pull it. A chat turn refused with "does not support tools" is not a corrupt file: see "model has no tool support" below |
 | model not pulled / not loaded | `configured_not_resident` (the detail lists `resident=` models) | `ollama pull MODEL`, or switch to a resident one: `nerva config set llm.default_model MODEL` |
 | no model list | `inventory_unavailable` / `residency_unknown` | an old Ollama, or a proxy in the way; update Ollama |
 | context silently truncated | the agent forgets the start of the conversation | `nerva config set llm.ollama_num_ctx 32768` (0 = the model's own `num_ctx`) |
 | slow first reply after idle | the model was evicted to make room | Nerva pins its model on warm-up; keep other Ollama clients from loading models next to it |
-| tool calls appear as text instead of running | with `llm.tool_loop_enabled` on, the reply holds JSON like `{"name": …, "arguments": …}` and nothing ran | the model has no native tool calling: `ollama show MODEL` lists `tools` under its capabilities when it does — pull one that does, or switch the loop off: `nerva config set llm.tool_loop_enabled false` |
+| model has no tool support | with `llm.tool_loop_enabled` on, every turn answers "⚠️ The local Ollama model can't call tools. Pick a model whose `ollama show` lists tools, or turn the tool loop off: nerva config set llm.tool_loop_enabled false", and `nerva logs -n 100` shows `server said: {"error":"MODEL does not support tools"}` (Ollama refuses a chat that offers tools to such a model) | `ollama show MODEL` lists `tools` under Capabilities when the model has them — pull a model that does and `nerva config set llm.default_model MODEL`, or switch the loop off: `nerva config set llm.tool_loop_enabled false` |
+| tool calls appear as text instead of running | with `llm.tool_loop_enabled` on, the reply holds JSON like `{"name": …, "arguments": …}` and nothing ran | the model takes tools (`ollama show MODEL` lists `tools`) but wrote the call into its answer instead of making it — its template and Ollama's parser disagree, or the model is too small to follow the format: update Ollama and re-pull the model, use a larger or instruct variant, or switch the loop off: `nerva config set llm.tool_loop_enabled false` |
 
 ### LM Studio
 

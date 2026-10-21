@@ -114,10 +114,35 @@ def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Excep
         "%s request failed — serving a degraded reply: %s%s",
         backend_name, exc, f" | server said: {detail}" if detail else "",
     )
+    if backend_name == "Ollama" and is_tools_unsupported_error(exc):
+        return OLLAMA_TOOLS_UNSUPPORTED_REPLY
     return (
         f"⚠️ The local {backend_name} model hit an error and couldn't answer. "
         f"Check the {backend_name} server and try again."
     )
+
+
+# H631: Ollama refuses a /api/chat request carrying ``tools`` for a model whose template
+# has no tool support — HTTP 400 {"error": "<model> does not support tools"}. With
+# llm.tool_loop_enabled on, every turn on such a model fails this way, so the owner is
+# told the cause and the two fixes instead of the generic "hit an error" bubble. Starts
+# with "⚠️ The local " so it stays a degraded / backend-failure reply (H23.12, H681).
+OLLAMA_TOOLS_UNSUPPORTED_REPLY = (
+    "⚠️ The local Ollama model can't call tools. Pick a model whose `ollama show` "
+    "lists tools, or turn the tool loop off: nerva config set llm.tool_loop_enabled false"
+)
+_TOOLS_UNSUPPORTED = re.compile(r"does\s+not\s+support\s+tools", re.IGNORECASE)
+
+
+def is_tools_unsupported_error(exc: BaseException) -> bool:
+    """True for Ollama's 400 "<model> does not support tools"."""
+    response = getattr(exc, "response", None)
+    if response is None or getattr(response, "status_code", None) != 400:
+        return False
+    try:
+        return bool(_TOOLS_UNSUPPORTED.search(response.text or ""))
+    except Exception:
+        return False
 
 
 def _server_error_detail(exc: Exception, limit: int = 300) -> str:
