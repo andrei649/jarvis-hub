@@ -888,6 +888,8 @@ class Orchestrator:
         # result lives on the reviewer (reviewer.last_result), which /api/cognition/learning
         # reads.
         self._core_block_cache: Optional[tuple] = None
+        # H423: the rings reread once per prompt key, with its drift notes; a forget drops it.
+        self._core_rings_reread: Optional[tuple] = None
         self.reviewer = None            # BackgroundReviewer, built in load_agents
         self.curator = None             # SkillCurator, built in load_agents
         # Daily Reflection & Graph Consolidation (H5.15)
