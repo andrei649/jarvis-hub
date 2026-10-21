@@ -342,3 +342,90 @@ def test_posture_reads_the_stored_or_runtime_settings(temp_settings):
         audit = None
 
     assert support_bundle.build_bundle(_Orch())["posture"]["product_posture"]["name"] == "off"
+
+
+# ── H164: component-health roll-up and a file download of the bundle ──
+
+
+class _Registry:
+    def __init__(self, status):
+        self._status = status
+
+    def health(self):
+        return dict(self._status)
+
+
+def test_health_rolls_up_the_component_registry():
+    class _Orch:
+        components = _Registry({"arena": "ok", "planner": "ok", "vision": "failed"})
+
+    h = support_bundle.build_bundle(_Orch())["health"]
+    assert h == {"total": 3, "ok": 2, "failed": ["vision"], "failed_unnamed": 0, "state": "degraded"}
+
+    class _Clean:
+        components = _Registry({"arena": "ok"})
+
+    assert support_bundle.build_bundle(_Clean())["health"]["state"] == "ok"
+
+    class _Empty:
+        components = _Registry({})
+
+    assert support_bundle.build_bundle(_Empty())["health"]["state"] == "empty"
+
+
+def test_health_is_unavailable_without_a_registry_and_never_names_odd_text():
+    assert support_bundle.build_bundle(None)["health"] == {"error": "unavailable"}
+
+    class _NoReg:
+        components = None
+
+    assert support_bundle.build_bundle(_NoReg())["health"] == {"error": "unavailable"}
+
+    class _Boom:
+        @property
+        def components(self):
+            raise RuntimeError("down")
+
+    assert support_bundle.build_bundle(_Boom())["health"] == {"error": "unavailable"}
+
+    class _Odd:
+        # a non-identifier name is counted but never printed (it cannot carry text out)
+        components = _Registry({"ok_one": "ok", "x y owner@example.com": "failed", 7: "ok"})
+
+    h = support_bundle.build_bundle(_Odd())["health"]
+    assert h["total"] == 3 and h["ok"] == 2 and h["failed"] == [] and h["failed_unnamed"] == 1
+    assert "example.com" not in json.dumps(h)
+
+
+def test_render_text_carries_the_component_roll_up():
+    class _Orch:
+        components = _Registry({"arena": "ok", "vision": "failed"})
+
+    text = support_bundle.render_text(support_bundle.build_bundle(_Orch(), environ={}))
+    assert "components: 1/2 ok · failed: vision" in text
+    assert "components: unavailable" in support_bundle.render_text(support_bundle.build_bundle(None))
+
+
+def test_route_download_serves_an_attachment_file(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from agents.core.routers import _deps
+    from agents.core.routers import support as support_router
+
+    log = tmp_path / "jarvis.log"
+    log.write_text("2026-10-20 10:00:01  ERROR  jarvis.llm  boom\n", encoding="utf-8")
+    monkeypatch.setenv("JARVIS_LOG_FILE", str(log))
+    app = FastAPI()
+    app.include_router(support_router.router)
+    app.dependency_overrides[_deps.admin_guard] = lambda: None
+    client = TestClient(app)
+    plain = client.get("/api/support/bundle")
+    assert "content-disposition" not in plain.headers
+    got = client.get("/api/support/bundle?download=true&log_lines=3")
+    assert got.status_code == 200
+    disp = got.headers["content-disposition"]
+    assert disp.startswith('attachment; filename="nerva-support-bundle-') and disp.endswith('.json"')
+    assert "no-store" in got.headers["cache-control"] or "no-cache" in got.headers["cache-control"]
+    body = got.json()
+    assert body["logs"]["included"] is True and "health" in body

@@ -2466,7 +2466,8 @@ export interface paths {
         /**
          * Support Bundle
          * @description A non-sensitive diagnostic bundle for support triage (admin-only). ``log_lines``
-         *     opts in to the newest redacted WARNING+ log records (H009).
+         *     opts in to the newest redacted WARNING+ log records (H009); ``download`` serves the
+         *     same JSON as an attachment file to save and attach to a support request (H164).
          */
         get: operations["support_bundle_api_support_bundle_get"];
         put?: never;
@@ -19382,6 +19383,7 @@ export interface operations {
         parameters: {
             query?: {
                 log_lines?: number;
+                download?: boolean;
             };
             header?: never;
             path?: never;

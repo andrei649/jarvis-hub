@@ -32,7 +32,7 @@
       "defaults-only" tag and points at GET /api/security/posture instead. This is stated
       as the panel's own code-verified note — the backend emits no such warning.
 
-   3. A SECTION THAT FAILED IS NEVER A ZERO. Each of the six sections is assembled
+   3. A SECTION THAT FAILED IS NEVER A ZERO. Each of the seven sections is assembled
       defensively and degrades to the literal {"error": "unavailable"}; they fail
       INDEPENDENTLY. Those render amber with the backend's own word, never 0 / empty.
 
@@ -92,9 +92,23 @@ const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? String(v)
 const RIGHT: React.CSSProperties = { marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' };
 const FOOT: React.CSSProperties = { ...mono, fontSize: 9.5, color: 'var(--ink-2)', lineHeight: 1.5, marginTop: 8 };
 
+/* H164: the opt-in log tail. The route caps log_lines at 500 (support.py Query le=500),
+   so the menu never offers more; 0 is the default bundle, which carries no log text. */
+export const LOG_LINE_CHOICES = [0, 50, 200, 500] as const;
+
+/* The download's file name, from the bundle's own generated_at — never a client clock. */
+export function bundleFileName(d: any): string {
+  const at = d && d.meta && typeof d.meta.generated_at === 'string' ? d.meta.generated_at : '';
+  const stamp = at.replace(/[^0-9A-Za-z]/g, '').slice(0, 32);
+  return stamp ? `nerva-support-bundle-${stamp}.json` : 'nerva-support-bundle.json';
+}
+
 function SupportBundleCard() {
-  const { d, e, loading, reload } = useApi('/api/support/bundle', true, true);   // admin-tier read
+  const [logLines, setLogLines] = useState<number>(0);
+  const path = logLines > 0 ? `/api/support/bundle?log_lines=${logLines}` : '/api/support/bundle';
+  const { d, e, loading, reload } = useApi(path, true, true);   // admin-tier read
   const [copy, setCopy] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [dl, setDl] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const posture = d && typeof d.posture === 'object' && d.posture ? d.posture : null;
   const sections: Array<[string, any]> = [
@@ -104,6 +118,7 @@ function SupportBundleCard() {
     ['capabilities', d ? d.capabilities : undefined],
     ['egress', d ? d.egress : undefined],
     ['audit', d ? d.audit : undefined],
+    ['health', d ? d.health : undefined],
   ];
   const states = sections.map(([name, v]) => [name, secState(v)] as [string, SecState]);
   const okCount = states.filter(([, s]) => s.kind === 'ok').length;
@@ -129,6 +144,39 @@ function SupportBundleCard() {
     : [];
   const chainOk = au && !auErr ? au.chain_ok : undefined;
 
+  const hl = d ? d.health : undefined;
+  const hlErr = sectionError(hl);
+  const hlFailed: string[] = hl && !hlErr && Array.isArray(hl.failed) ? hl.failed : [];
+  const hlUnnamed = hl && !hlErr && typeof hl.failed_unnamed === 'number' ? hl.failed_unnamed : 0;
+
+  const lg = d ? d.logs : undefined;
+  const lgErr = sectionError(lg);
+  const lgEntries: string[] = lg && !lgErr && Array.isArray(lg.entries) ? lg.entries : [];
+
+  const doDownload = () => {
+    const text = JSON.stringify(d, null, 2);
+    const name = bundleFileName(d);
+    const U: any = typeof URL !== 'undefined' ? URL : undefined;
+    if (!U || typeof U.createObjectURL !== 'function' || typeof Blob === 'undefined') {
+      setDl({ ok: false, msg: 'file download unavailable in this browser — copy the JSON instead' });
+      return;
+    }
+    try {
+      const href = U.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => { if (typeof U.revokeObjectURL === 'function') U.revokeObjectURL(href); }, 0);
+      // The browser owns the save dialog: we can say the download started, not that it landed.
+      setDl({ ok: true, msg: `download started · ${name} · ${text.length} chars` });
+    } catch (err: any) {
+      setDl({ ok: false, msg: `download failed · ${(err && err.message) || String(err)}` });
+    }
+  };
+
   const doCopy = () => {
     const text = JSON.stringify(d, null, 2);
     const cb: any = typeof navigator !== 'undefined' ? (navigator as any).clipboard : undefined;
@@ -145,10 +193,24 @@ function SupportBundleCard() {
   return (
     <Card
       title="SUPPORT BUNDLE"
-      live={asLive(d, d && okCount === 6)}
-      sub={d ? `${okCount}/6 sections` : null}
+      live={asLive(d, d && okCount === sections.length)}
+      sub={d ? `${okCount}/${sections.length} sections` : null}
       onReload={reload}
     >
+      <Row>
+        <span style={mono}>log tail (opt-in)</span>
+        <span style={RIGHT}>
+          <select
+            aria-label="log lines to include"
+            value={String(logLines)}
+            onChange={(ev) => { setLogLines(Number(ev.target.value) || 0); setCopy(null); setDl(null); }}
+          >
+            {LOG_LINE_CHOICES.map((n) => (
+              <option key={n} value={String(n)}>{n === 0 ? 'no logs' : `newest ${n} warnings/errors`}</option>
+            ))}
+          </select>
+        </span>
+      </Row>
       {/* On 401/403 this is useApi's own message ("GET /api/support/bundle -> 403").
           The guard's `detail` never reaches the client, so it is never printed. */}
       <State e={e} loading={loading} n={d ? 1 : 0} />
@@ -255,14 +317,56 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
+            <span style={mono}>component health</span>
+            <span style={RIGHT}>
+              {hlErr !== null ? <Tag c="var(--amber)">error: {hlErr}</Tag> : !hl || typeof hl !== 'object' ? (
+                <Tag c="var(--amber)">health absent from bundle</Tag>
+              ) : (
+                <>
+                  <Tag c="var(--ink-2)">{num(hl.ok)}/{num(hl.total)} ok</Tag>
+                  {hl.state === 'empty'
+                    ? <Tag c="var(--ink-2)">no components registered — nothing to check</Tag>
+                    : hlFailed.length > 0 || hlUnnamed > 0
+                      ? <Tag c="var(--red)">failed: {[...hlFailed, ...(hlUnnamed > 0 ? [`${hlUnnamed} unnamed`] : [])].join(', ')}</Tag>
+                      : hl.state === 'ok'
+                        ? <Tag c="var(--green)">all components initialized</Tag>
+                        : null}
+                </>
+              )}
+            </span>
+          </Row>
+
+          <Row>
+            <span style={mono}>logs</span>
+            <span style={RIGHT}>
+              {lgErr !== null ? <Tag c="var(--amber)">error: {lgErr}</Tag>
+                : !lg || lg.included !== true
+                  ? <Tag c="var(--ink-2)">not included — opt in above</Tag>
+                  : (
+                    <>
+                      <Tag c="var(--ink-2)">{lgEntries.length} {lg.level || 'WARNING'}+ record(s)</Tag>
+                      {lg.truncated ? <Tag>truncated</Tag> : null}
+                      {typeof lg.note === 'string' && lg.note ? <Tag c="var(--amber)">{lg.note}</Tag> : null}
+                    </>
+                  )}
+            </span>
+          </Row>
+
+          <Row>
             <span style={mono}>attachable artifact</span>
             <span style={RIGHT}>
-              <button className="tool-btn" onClick={doCopy} aria-label="copy the bundle JSON">copy bundle JSON</button>
+              <button className="tool-btn" onClick={doCopy} disabled={loading} aria-label="copy the bundle JSON">copy bundle JSON</button>
+              <button className="tool-btn" onClick={doDownload} disabled={loading} aria-label="download the bundle as a file">download .json</button>
             </span>
           </Row>
           {copy && (
             <div style={{ ...mono, fontSize: 10, marginTop: 4, color: copy.ok ? 'var(--green)' : 'var(--red)' }}>
               {copy.msg}
+            </div>
+          )}
+          {dl && (
+            <div style={{ ...mono, fontSize: 10, marginTop: 4, color: dl.ok ? 'var(--green)' : 'var(--red)' }}>
+              {dl.msg}
             </div>
           )}
           {/* Rendered in full so it can be selected by hand even when the clipboard is
@@ -275,7 +379,8 @@ function SupportBundleCard() {
         here comes from the admin guard, and the client throws before reading the guard&apos;s body, so only the
         status is shown above. Allow-list bundle: aggregates only — never raw config, secrets, message content
         or audit previews. Each section is assembled defensively, so a failed source reports
-        <code> {'{"error":"unavailable"}'} </code> instead of crashing the bundle, and the six fail independently.
+        <code> {'{"error":"unavailable"}'} </code> instead of crashing the bundle, and the seven fail independently. Logs are opt-in (the menu above sets
+        <code>log_lines</code>; 0 carries no log text) and the download saves exactly the JSON shown.
         The product-posture section is computed from CODE DEFAULTS — support_bundle.py calls
         product_posture.snapshot() with no runtime settings — so it can read <code>off</code> on a box whose
         product.posture is set; the live one is GET /api/security/posture.
