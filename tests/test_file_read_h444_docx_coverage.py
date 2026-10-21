@@ -179,7 +179,9 @@ async def test_docx_visual_and_unextracted_content_are_named(root, monkeypatch):
 
 
 def test_real_docx_with_table_header_and_picture(tmp_path):
-    docx = pytest.importorskip("docx")
+    # python-docx is a declared runtime dependency (requirements.txt / *.lock): a
+    # missing parser must fail this test, not skip it.
+    import docx
     png = (b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
            + zlib.crc32(b"IHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00").to_bytes(4, "big")
            + len(zlib.compress(b"\x00\x00\x00\x00")).to_bytes(4, "big") + b"IDAT"
@@ -203,6 +205,79 @@ def test_real_docx_with_table_header_and_picture(tmp_path):
         "| 2025 | 1,200 |", "| 2026 | 1,850 |", "",
     ]
     assert out.content_counts["images"] == 1 and out.content_counts["tables"] == 1
+
+
+REAL_NS = (
+    f'xmlns:w="{W}" '
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+    'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+    'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" '
+    'xmlns:v="urn:schemas-microsoft-com:vml"'
+)
+
+
+def test_real_docx_footnotes_part_text_box_fallback_footer_and_tracked_changes(tmp_path):
+    """Real python-docx paths the stdlib stand-in cannot exercise: a footnotes part
+    python-docx has no class for (a generic blob part, parsed by ``_docx_story_root``
+    through ``parse_xml``), an ``mc:AlternateContent`` text box with its VML fallback
+    copy, a footer part, and tracked changes (``w:ins`` kept, ``w:delText`` dropped)."""
+    import docx
+    from docx.opc.constants import CONTENT_TYPE, RELATIONSHIP_TYPE
+    from docx.opc.packuri import PackURI
+    from docx.opc.part import Part
+    from docx.oxml.parser import parse_xml
+
+    document = docx.Document()
+    document.sections[0].footer.paragraphs[0].text = "Page footer"
+    document.add_paragraph("Intro")
+    sect = document.element.body[-1]  # w:sectPr stays last
+    box = f'<w:txbxContent {REAL_NS}><w:p><w:r><w:t>Boxed note</w:t></w:r></w:p></w:txbxContent>'
+    sect.addprevious(parse_xml(
+        f'<w:p {REAL_NS}><w:r><w:t>Before box</w:t></w:r><w:r><mc:AlternateContent>'
+        '<mc:Choice Requires="wps"><w:drawing><wp:anchor><a:graphic><a:graphicData>'
+        f'<wps:wsp><wps:txbx>{box}</wps:txbx></wps:wsp>'
+        '</a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>'
+        f'<mc:Fallback><w:pict><v:shape><v:textbox>{box}</v:textbox></v:shape></w:pict></mc:Fallback>'
+        '</mc:AlternateContent></w:r></w:p>'))
+    sect.addprevious(parse_xml(
+        f'<w:p {REAL_NS}><w:r><w:t xml:space="preserve">Net </w:t></w:r>'
+        '<w:del w:id="7" w:author="A" w:date="2026-01-01T00:00:00Z"><w:r><w:delText>gross </w:delText></w:r></w:del>'
+        '<w:ins w:id="8" w:author="A" w:date="2026-01-01T00:00:00Z">'
+        '<w:r><w:t xml:space="preserve">adjusted </w:t></w:r></w:ins>'
+        '<w:r><w:t>revenue</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>'))
+    footnotes = (
+        f'<w:footnotes {REAL_NS}>'
+        '<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>'
+        '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:t>cont</w:t></w:r></w:p></w:footnote>'
+        '<w:footnote w:id="1"><w:p><w:r><w:t>Source: audit</w:t></w:r></w:p></w:footnote>'
+        '</w:footnotes>'
+    ).encode()
+    notes = Part(PackURI("/word/footnotes.xml"), CONTENT_TYPE.WML_FOOTNOTES, footnotes, document.part.package)
+    document.part.relate_to(notes, RELATIONSHIP_TYPE.FOOTNOTES)
+    target = tmp_path / "tracked.docx"
+    document.save(str(target))
+
+    reloaded = docx.Document(str(target))
+    notes_part = next(rel.target_part for rel in reloaded.part.rels.values()
+                      if rel.reltype == RELATIONSHIP_TYPE.FOOTNOTES)
+    assert getattr(notes_part, "element", None) is None  # the blob / parse_xml branch
+
+    out = local_docs.extract_docx_document(io.BytesIO(target.read_bytes()))
+    lines = out.text.split("\n")
+    assert lines == [
+        "Intro",
+        "Before box",
+        "[text box] Boxed note",
+        "Net adjusted revenue",
+        "[footer] Page footer",
+        "[footnote 1] Source: audit",
+    ]
+    assert sum(line.count("Boxed note") for line in lines) == 1
+    assert "gross" not in out.text and "cont" not in out.text
+    assert out.stopped is None and out.units_read == out.units_total == 5
+    assert (out.content_counts["text_boxes"], out.content_counts["headers_footers"],
+            out.content_counts["notes"]) == (1, 1, 1)
 
 
 @pytest.mark.asyncio
