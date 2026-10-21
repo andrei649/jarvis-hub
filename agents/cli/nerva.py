@@ -506,8 +506,11 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
 
     # H014 — the same module uninstall.sh / UNINSTALL.bat run; nothing is decided here.
+    # On Windows the verb runs from the .venv it would delete (locked), so the module refuses
+    # the software removal there and points to UNINSTALL.bat; --dry-run/--gui-only still work.
     uninstall = verbs.add_parser(
-        "uninstall", help="remove the installed software (offline; your data stays unless --purge-data)")
+        "uninstall", help="remove the installed software (offline; your data stays unless --purge-data;"
+                          " on Windows use UNINSTALL.bat for the engine — the running .venv is locked)")
     uninstall.add_argument("--dry-run", action="store_true",
                            help="print what would be removed and whether data would be purged")
     uninstall.add_argument("--confirm", action="store_true", help="required to actually remove anything")

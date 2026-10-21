@@ -26,6 +26,11 @@ it is removed), which normally lacks the engine's dependencies that ``data_purge
 purge is then handed to ``.venv``'s interpreter (``--purge-only`` in a child process, before
 any software is removed), and refused cleanly — exit 2, nothing touched — when no such
 interpreter exists. The dry run reports which of the three applies (``purge_runnable``).
+"Already running in ``.venv``" is an *environment* check (``sys.prefix``), never a resolved
+executable comparison: a POSIX venv's ``bin/python`` is a symlink to the very base binary the
+wrappers run. On Windows, a run from inside ``.venv`` (``nerva uninstall``) that would remove
+the software is refused (exit 2, nothing touched) with a pointer to ``UNINSTALL.bat``, because
+Windows locks the running venv's files; ``--dry-run`` reports this as ``venv_locked_on_windows``.
 
 ``--gui`` also removes the Tauri desktop shell (``desktop/src-tauri``: productName ``Jarvis
 Hub``, identifier ``com.jarvis.hub``) from the per-OS places its bundles install to, plus the
@@ -278,11 +283,30 @@ def venv_python(base: Path) -> Path | None:
     return None
 
 
-def _is_current_interpreter(p: Path) -> bool:
+def _platform() -> str:
+    return sys.platform
+
+
+def _running_in_venv(base: Path) -> bool:
+    """Is THIS process running inside *base*'s ``.venv`` environment?
+
+    An environment check, not a binary check: ``python3 -m venv`` makes ``.venv/bin/python`` a
+    symlink to the base interpreter, so the resolved executables of the system ``python3`` and
+    of the venv are the same file — yet ``pyvenv.cfg`` gives the venv its own ``sys.prefix``
+    and site-packages (where the engine's dependencies live).
+    """
+    if sys.prefix == sys.base_prefix:
+        return False
     try:
-        return p.resolve() == Path(sys.executable).resolve()
+        return Path(sys.prefix).resolve() == (Path(base) / ".venv").resolve()
     except (OSError, RuntimeError):
         return False
+
+
+WINDOWS_VENV_LOCK_HINT = (
+    "on Windows this process runs from the .venv it would delete, and Windows locks a running "
+    "interpreter's files; run UNINSTALL.bat instead (it uses the system Python, so .venv can "
+    "be removed)")
 
 
 def purge_runnable(base: Path) -> dict:
@@ -297,9 +321,12 @@ def purge_runnable(base: Path) -> dict:
     if err is None:
         return {"runnable": True, "in_process": True, "handoff": None, "reason": None}
     vpy = venv_python(base)
-    if vpy is not None and not _is_current_interpreter(vpy):
+    if vpy is not None and not _running_in_venv(base):
         return {"runnable": True, "in_process": False, "handoff": str(vpy), "reason": err}
-    return {"runnable": False, "in_process": False, "handoff": None, "reason": err}
+    # ``venv_python`` tells the refusal apart: None = no .venv interpreter at all; a path =
+    # it exists but is the environment already running (and it lacks the dependencies).
+    return {"runnable": False, "in_process": False, "handoff": None, "reason": err,
+            "venv_python": str(vpy) if vpy is not None else None}
 
 
 def _run_purge_handoff(vpy: Path, data: Path, no_backup: bool) -> tuple[int, str, dict | None]:
@@ -602,6 +629,19 @@ def _main_purge_handoff(args, root: Path | None, vpy: Path, out) -> int:
     return 0 if report["ok"] else 1
 
 
+def _venv_locked(args, root: Path | None) -> bool:
+    """Would this run try to delete the ``.venv`` it is running from, on Windows?
+
+    ``nerva uninstall`` (and ``.venv\\Scripts\\python -m agents.core.uninstall``) runs inside
+    the app's own venv; Windows keeps a running interpreter's files locked, so the removal
+    would leave ``.venv`` behind half-deleted. ``--gui-only`` and ``--purge-only`` never touch
+    ``.venv``, and POSIX unlinks open files fine.
+    """
+    if args.gui_only or args.purge_only or not _platform().startswith("win"):
+        return False
+    return _running_in_venv(root if root is not None else _paths.app_root())
+
+
 def _main(argv=None, *, out=None, inp=None) -> int:
     out = out if out is not None else sys.stdout
     inp = inp if inp is not None else sys.stdin
@@ -664,12 +704,18 @@ def _main(argv=None, *, out=None, inp=None) -> int:
         plan = plan_uninstall(root, purge_data=args.purge_data, gui=args.gui,
                               gui_only=args.gui_only)
         plan["dry_run"] = True
+        if _venv_locked(args, root):
+            plan["venv_locked_on_windows"] = WINDOWS_VENV_LOCK_HINT
         out.write(json.dumps(plan, indent=2) + "\n")
         return 0
 
     if not args.confirm:
         out.write("refusing to uninstall without --confirm (this removes .venv/ and "
                   "WorldView's node_modules/ + generated env files)\n")
+        return 2
+
+    if _venv_locked(args, root):
+        out.write(f"refusing to uninstall: {WINDOWS_VENV_LOCK_HINT}; nothing was removed\n")
         return 2
 
     if args.purge_data:
@@ -682,11 +728,17 @@ def _main(argv=None, *, out=None, inp=None) -> int:
                       f"{sys.executable} ({can['reason']}); nothing was removed\n")
             return 2
         if not can["runnable"]:
-            out.write(f"refusing to purge: the engine's dependencies are unavailable under "
-                      f"{sys.executable} ({can['reason']}) and no .venv interpreter was found "
-                      f"under {base}; nothing was removed. Re-run with the interpreter the "
-                      f"engine was installed into, e.g. .venv/bin/python -m "
-                      f"agents.core.uninstall ...\n")
+            if can.get("venv_python"):
+                out.write(f"refusing to purge: the .venv interpreter {can['venv_python']} "
+                          f"exists but is the one running, and it cannot import the engine's "
+                          f"dependencies ({can['reason']}); nothing was removed. Repair the "
+                          f"venv (re-run the installer) and try again\n")
+            else:
+                out.write(f"refusing to purge: the engine's dependencies are unavailable "
+                          f"under {sys.executable} ({can['reason']}) and no .venv interpreter "
+                          f"was found under {base}; nothing was removed. Re-run with the "
+                          f"interpreter the engine was installed into, e.g. .venv/bin/python "
+                          f"-m agents.core.uninstall ...\n")
             return 2
         if not _confirm_purge(args, out, inp):
             return 2

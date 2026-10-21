@@ -1066,3 +1066,122 @@ def test_wrapper_failure_message_does_not_promise_a_json_report():
     bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
     assert "see the JSON report above" not in sh
     assert "see the JSON report above" not in bat
+
+
+
+# --- H014 round 4: a REAL venv (bin/python is a symlink to the base interpreter) -----------
+#
+# install.sh makes .venv with ``python3 -m venv``: on POSIX .venv/bin/python is a symlink to
+# the same base binary the wrappers' system python3 runs. A binary-identity check counted the
+# venv as "the current interpreter" and dropped the hand-off, so --purge-data through
+# uninstall.sh was refused in the default install (with a false "no .venv found" message).
+
+def _make_real_venv(root: Path) -> Path:
+    subprocess.run([sys.executable, "-m", "venv", "--system-site-packages", "--without-pip",
+                    str(root / ".venv")], check=True, capture_output=True, timeout=180)
+    return root / ".venv" / "bin" / "python"
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX symlinked venv layout")
+def test_real_symlinked_venv_receives_the_purge_handoff(tmp_path, bare_app):
+    root, data_home = bare_app
+    shutil.rmtree(root / ".venv")
+    vpy = _make_real_venv(root)
+    # the case the old binary-identity check missed: same binary, different environment
+    assert vpy.resolve() == Path(sys.executable).resolve()
+
+    dry = _bare_interpreter_run(tmp_path, data_home, [
+        "--dry-run", "--purge-data", "--root", str(root)])
+    assert dry.returncode == 0, dry.stderr
+    runnable = json.loads(dry.stdout)["purge_runnable"]
+    assert runnable["runnable"] is True, runnable
+    assert runnable["handoff"] == str(vpy)
+
+    res = _bare_interpreter_run(tmp_path, data_home, [
+        "--confirm", "--purge-data", f"--yes-purge={data_home}", "--no-backup", "--root", str(root)])
+    assert "Traceback" not in res.stdout + res.stderr, res.stderr
+    assert res.returncode == 0, res.stdout + res.stderr
+    report = json.loads(res.stdout)
+    assert report["data_purge_interpreter"] == str(vpy)
+    assert report["data_purge"]["ok"] is True
+    assert not (data_home / "notes.txt").exists()   # erased by the venv child
+    assert ".venv" in report["removed"]             # then the software went
+    assert not (root / ".venv").exists()
+
+
+def test_purge_runnable_skips_handoff_only_inside_that_venv(app_root, monkeypatch):
+    monkeypatch.setattr(un, "_purge_import_error", lambda: "ModuleNotFoundError: httpx")
+    venv = app_root / ".venv"
+    # a different environment (the base interpreter) -> hand off, even if binaries match
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: False)
+    assert un.purge_runnable(app_root)["handoff"] == str(venv / "bin" / "python")
+    # already running inside that very .venv -> handing off to itself is pointless
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: True)
+    can = un.purge_runnable(app_root)
+    assert can["runnable"] is False and can["handoff"] is None
+    assert can["venv_python"] == str(venv / "bin" / "python")
+
+
+def test_running_in_venv_compares_environments_not_binaries(app_root, monkeypatch):
+    venv = app_root / ".venv"
+    monkeypatch.setattr(sys, "prefix", str(venv))
+    monkeypatch.setattr(sys, "base_prefix", "/usr")
+    assert un._running_in_venv(app_root) is True
+    monkeypatch.setattr(sys, "prefix", "/usr")
+    assert un._running_in_venv(app_root) is False
+
+
+def test_refusal_names_a_present_venv_that_is_the_running_one(app_root, monkeypatch):
+    monkeypatch.setattr(un, "_purge_import_error", lambda: "ModuleNotFoundError: httpx")
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: True)
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_path()}",
+                   "--root", str(app_root)], out=out)
+    assert rc == 2
+    text = out.getvalue()
+    assert "no .venv interpreter was found" not in text
+    assert "is the one running" in text and "nothing was removed" in text
+    assert (app_root / ".venv").exists()
+
+
+def test_refusal_says_no_venv_only_when_none_exists(app_root, monkeypatch):
+    shutil.rmtree(app_root / ".venv")
+    monkeypatch.setattr(un, "_purge_import_error", lambda: "ModuleNotFoundError: httpx")
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_path()}",
+                   "--root", str(app_root)], out=out)
+    assert rc == 2
+    assert "no .venv interpreter was found" in out.getvalue()
+
+
+# Windows: `nerva uninstall` (and `.venv\Scripts\python -m agents.core.uninstall`) runs from
+# the .venv it would delete; Windows locks a running interpreter's files, so .venv cannot go.
+
+def test_windows_in_venv_software_removal_refuses_and_points_to_bat(app_root, monkeypatch):
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: True)
+    monkeypatch.setattr(un, "_platform", lambda: "win32")
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--root", str(app_root)], out=out)
+    assert rc == 2
+    assert "UNINSTALL.bat" in out.getvalue() and "nothing was removed" in out.getvalue()
+    assert (app_root / ".venv").exists() and (app_root / "worldview" / "node_modules").exists()
+
+
+def test_windows_in_venv_dry_run_and_gui_only_still_work(app_root, monkeypatch):
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: True)
+    monkeypatch.setattr(un, "_platform", lambda: "win32")
+    out = io.StringIO()
+    assert un._main(["--dry-run", "--root", str(app_root)], out=out) == 0
+    plan = json.loads(out.getvalue())
+    assert "UNINSTALL.bat" in plan["venv_locked_on_windows"]
+    out = io.StringIO()
+    assert un._main(["--confirm", "--gui-only", "--root", str(app_root)], out=out) == 0
+    assert (app_root / ".venv").exists()
+
+
+def test_posix_in_venv_removal_still_runs(app_root, monkeypatch):
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: True)
+    monkeypatch.setattr(un, "_platform", lambda: "linux")
+    out = io.StringIO()
+    assert un._main(["--confirm", "--root", str(app_root)], out=out) == 0
+    assert not (app_root / ".venv").exists()
