@@ -333,3 +333,52 @@ def test_bulk_reports_a_curator_that_raised(hub, client, monkeypatch):
                       json={"approved": True, "proposals": [proposal]}).json()
     assert out["ok"] is False and out["failed"] == 1, out
     assert out["results"][0]["error"] == "apply_error"
+
+
+def test_bulk_reports_an_approval_the_curator_returned_no_outcome_for(hub, client, monkeypatch):
+    # Review (round 2): a pass that reports nothing for the proposal (its decision sync
+    # failed, or no ledger) applied nothing, so the item is a failure, not a success.
+    _write(hub, "plan")
+    hub.loader.discover()
+    proposal = _proposal(hub, "plan")
+    monkeypatch.setattr(hub.curator, "apply_decisions", lambda: {"outcomes": []})
+    out = client.post("/api/skills/review/bulk", headers=ADMIN,
+                      json={"approved": True, "proposals": [proposal]}).json()
+    assert out["ok"] is False and out["failed"] == 1, out
+    row = out["results"][0]
+    assert row["ok"] is False and row["error"] == "not_applied:pending" and row["status"] == "pending"
+
+
+@pytest.mark.parametrize("approved", [True, False])
+def test_bulk_reports_a_decision_with_no_curator_to_carry_it_out(hub, client, monkeypatch, approved):
+    import agents.web as web
+
+    _write(hub, "plan")
+    hub.loader.discover()
+    proposal = _proposal(hub, "plan")
+    monkeypatch.setattr(web.orch, "curator", None)
+    out = client.post("/api/skills/review/bulk", headers=ADMIN,
+                      json={"approved": approved, "proposals": [proposal]}).json()
+    assert out["ok"] is False and out["failed"] == 1, out
+    assert out["results"][0]["error"] == "curator_unavailable"
+
+
+def test_bulk_reports_an_approval_another_pass_found_stale_first(hub, client, monkeypatch):
+    # The race: another pass (the nightly run, or a card decided elsewhere) consumes the
+    # drifted proposal between the decision and this apply, so this pass has no outcome.
+    path = _write(hub, "plan")
+    hub.loader.discover()
+    proposal = _proposal(hub, "plan")
+    (path / "SKILL.md").write_bytes(b"---\nname: plan\ndescription: plan helper\n---\nEdited since.\n")
+    real = hub.curator.apply_decisions
+
+    def raced():
+        real()
+        return real()
+
+    monkeypatch.setattr(hub.curator, "apply_decisions", raced)
+    out = client.post("/api/skills/review/bulk", headers=ADMIN,
+                      json={"approved": True, "proposals": [proposal]}).json()
+    assert out["ok"] is False and out["failed"] == 1 and out["decided"] == 0, out
+    row = out["results"][0]
+    assert row["ok"] is False and row["error"] == "not_applied:stale" and row["status"] == "stale"

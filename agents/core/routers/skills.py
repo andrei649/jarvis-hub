@@ -889,24 +889,29 @@ def _bulk_review(orch, body: BulkReviewBody) -> dict:
     curator = getattr(orch, "curator", None)
     applied: dict = {}
     apply_error = False
-    if decided_proposals and curator is not None and hasattr(curator, "apply_decisions"):
+    can_apply = curator is not None and hasattr(curator, "apply_decisions")
+    if decided_proposals and can_apply:
         try:
             applied = {o.get("proposal_id"): o for o in (curator.apply_decisions() or {}).get("outcomes") or []
                        if isinstance(o, dict)}
         except Exception:
             logger.warning("bulk review: applying the decided proposals failed", exc_info=True)
             apply_error = True
+    want = "applied" if body.approved else "rejected"
     for row in decided_proposals:
         row["status"] = (proposals.get(row["id"]) or {}).get("status")
-        if not body.approved:
-            continue
-        # An approved change the curator could not apply (drifted, refused, not written) is
-        # this item's failure, not a success (Codex P2 on PR #1279).
-        outcome = applied.get(row["id"])
-        if apply_error and outcome is None:
-            row.update(ok=False, error="apply_error")
-        elif outcome is not None and not outcome.get("ok"):
-            row.update(ok=False, error=str(outcome.get("reason") or "apply_failed"))
+        # A decision counts only once it is carried out: the curator's outcome says so, or,
+        # with none (its sync failed, another pass took the proposal first, no curator), the
+        # ledger's final status must be the decided one. Otherwise the item failed, not
+        # succeeded (Codex P2 on PR #1279).
+        outcome = applied.get(row["id"]) if body.approved else None
+        if outcome is not None:
+            if not outcome.get("ok"):
+                row.update(ok=False, error=str(outcome.get("reason") or "apply_failed"))
+        elif row["status"] != want:
+            error = ("apply_error" if apply_error else "curator_unavailable" if not can_apply
+                     else f"not_applied:{row['status']}")
+            row.update(ok=False, error=error)
 
     batches = getattr(orch, "skill_batches", None)
     for bid in dict.fromkeys(body.batches):
