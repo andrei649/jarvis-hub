@@ -303,3 +303,33 @@ def test_bulk_is_admin_only_and_validates_its_body(client):
                        json={"approved": True, "skills": ["x"] * 51}).status_code == 422
     assert client.post("/api/skills/review/bulk", headers=ADMIN,
                        json={"approved": True, "skills": ["x"], "extra": 1}).status_code == 422
+
+
+def test_bulk_reports_a_proposal_the_curator_could_not_apply(hub, client):
+    # Codex P2 (PR #1279): the skill changed after the proposal was made, so the curator
+    # marks it stale and applies nothing; the bulk answer must say so, not report it approved.
+    path = _write(hub, "plan")
+    hub.loader.discover()
+    proposal = _proposal(hub, "plan")
+    (path / "SKILL.md").write_bytes(b"---\nname: plan\ndescription: plan helper\n---\nEdited since.\n")
+    out = client.post("/api/skills/review/bulk", headers=ADMIN,
+                      json={"approved": True, "proposals": [proposal]}).json()
+    assert out["ok"] is False and out["failed"] == 1 and out["decided"] == 0, out
+    row = out["results"][0]
+    assert row["ok"] is False and row["error"] == "drifted_since_proposal" and row["status"] == "stale"
+    assert "Edited since." in (path / "SKILL.md").read_text()
+
+
+def test_bulk_reports_a_curator_that_raised(hub, client, monkeypatch):
+    _write(hub, "plan")
+    hub.loader.discover()
+    proposal = _proposal(hub, "plan")
+
+    def boom():
+        raise RuntimeError("apply pass broke")
+
+    monkeypatch.setattr(hub.curator, "apply_decisions", boom)
+    out = client.post("/api/skills/review/bulk", headers=ADMIN,
+                      json={"approved": True, "proposals": [proposal]}).json()
+    assert out["ok"] is False and out["failed"] == 1, out
+    assert out["results"][0]["error"] == "apply_error"

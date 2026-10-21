@@ -887,13 +887,26 @@ def _bulk_review(orch, body: BulkReviewBody) -> dict:
         if not error:
             decided_proposals.append(row)
     curator = getattr(orch, "curator", None)
+    applied: dict = {}
+    apply_error = False
     if decided_proposals and curator is not None and hasattr(curator, "apply_decisions"):
         try:
-            curator.apply_decisions()
+            applied = {o.get("proposal_id"): o for o in (curator.apply_decisions() or {}).get("outcomes") or []
+                       if isinstance(o, dict)}
         except Exception:
             logger.warning("bulk review: applying the decided proposals failed", exc_info=True)
+            apply_error = True
     for row in decided_proposals:
         row["status"] = (proposals.get(row["id"]) or {}).get("status")
+        if not body.approved:
+            continue
+        # An approved change the curator could not apply (drifted, refused, not written) is
+        # this item's failure, not a success (Codex P2 on PR #1279).
+        outcome = applied.get(row["id"])
+        if apply_error and outcome is None:
+            row.update(ok=False, error="apply_error")
+        elif outcome is not None and not outcome.get("ok"):
+            row.update(ok=False, error=str(outcome.get("reason") or "apply_failed"))
 
     batches = getattr(orch, "skill_batches", None)
     for bid in dict.fromkeys(body.batches):
