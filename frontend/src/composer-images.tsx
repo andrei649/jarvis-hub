@@ -50,9 +50,7 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
   const [consents,setConsents]=useState<Partial<Record<SelectionNeed,string>>>({});
   const [refreshId,setRefreshId]=useState(0);
   const refreshCatalog=useRef(false);
-  // Bolt Optimization: Maintain activeImageMap O(1) Map lookup to avoid repeated O(N) activeImages.find() array scans on handle selection updates and submission formatting.
-  const activeImageMap=React.useMemo(()=>new Map(activeImages.map(img=>[img.handle,img])),[activeImages]);
-  const activeCount=selectedHandles.reduce((total,handle)=>total+(activeImageMap.get(handle)?.count||0),0);
+  const activeCount=selectedHandles.reduce((total,handle)=>total+(activeImages.find(image=>image.handle===handle)?.count||0),0);
   const reviewPrompt=prompt.trim()||'Describe these images.';
   const invalidateReview=()=>{setDestination(null);setReviewedSelection(null);setAck('');setConsents({});};
   const publish=()=>setImages([...records.current]);
@@ -82,9 +80,9 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
     finally {if(activeRequest.current===controller)activeRequest.current=null;}
   };
   const toggleActive=(handle:string)=>{
-    const row=activeImageMap.get(handle);if(!row)return;
+    const row=activeImages.find(image=>image.handle===handle);if(!row)return;
     const next=selectedHandles.includes(handle)?selectedHandles.filter(item=>item!==handle):[...selectedHandles,handle];
-    const count=next.reduce((total,item)=>total+(activeImageMap.get(item)?.count||0),0);
+    const count=next.reduce((total,item)=>total+(activeImages.find(image=>image.handle===item)?.count||0),0);
     if(count+records.current.length>MAX_IMAGES){setNote('At most eight images across previous and new selections');return;}
     setSelectedHandles(next);setNote('');invalidateReview();
   };
@@ -175,7 +173,7 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
     !xaiUnsupported&&(destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
   const submission=():VisionDraft|null=>ready?{
     images:images.map(image=>image.data!),names:[...images.map(image=>image.name),
-      ...selectedHandles.map(handle=>`Previous: ${activeImageMap.get(handle)?.question||'image'}`)],
+      ...selectedHandles.map(handle=>`Previous: ${activeImages.find(image=>image.handle===handle)?.question||'image'}`)],
     ...(selectedHandles.length?{active_image_handles:selectedHandles}:{}),
     expected_destination:destination!.destination!,expected_binding:destination!.binding!,review_token:destination!.review_token!,agent,
     selected_turn:true,session_id:destination!.session_id!,
