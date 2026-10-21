@@ -214,6 +214,9 @@ export async function saveEntity(name: string, type: string, properties: Record<
   if (name !== name.trim()) return fail('padded');
   if (!SAFE_TYPE.test(type.trim())) return fail('invalid', 'invalid entity type');
   const body = await mutate(() => apiPost<any>('/api/kg/entities', { name, type: type.trim(), properties }));
+  /* A 200 with ok:false means the graph could not store the write (e.g. a Neo4j node-shape
+     lookup failed): the owner's edit was NOT kept, so it is never reported as saved. */
+  if (body?.ok !== true) return fail('unavailable', 'the graph did not store the change');
   const e = body?.entity;
   return { name, type: text(e?.type, 80) ? e.type : type.trim(), properties: e?.properties && typeof e.properties === 'object' ? e.properties : properties };
 }

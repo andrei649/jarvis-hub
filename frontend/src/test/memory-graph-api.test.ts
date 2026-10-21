@@ -118,6 +118,13 @@ describe('memory graph writes use only the mediated routes', () => {
     expect(saved).toMatchObject({ name: 'Andrei', type: 'person' });
   });
 
+  it('a 200 whose body says ok:false is not a save: the edit was not stored', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ ok: false, entity: { name: 'A', type: 'person', properties: { old: 1 } } }));
+    await expect(saveEntity('A', 'person', { city: 'Cluj' })).rejects.toMatchObject({ code: 'unavailable' });
+    vi.mocked(fetch).mockResolvedValue(json({ ok: false, entity: null }));
+    await expect(saveEntity('A', 'person', {})).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
   it('refuses an unsafe type locally, mirroring the server, without a request', async () => {
     await expect(saveEntity('A', 'bad type!', {})).rejects.toMatchObject({ code: 'invalid' });
     expect(fetch).not.toHaveBeenCalled();

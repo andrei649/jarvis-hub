@@ -1409,7 +1409,9 @@ def _apply_lock(out: Path) -> Iterator[bool]:
     from agents.core import install_identity
 
     out.mkdir(parents=True, exist_ok=True)
-    handle = open(out / _APPLY_LOCK, "a+b")  # noqa: SIM115 - held across the yield
+    # Text mode, like every other _file_lock caller: on Windows the helper pads a short lock
+    # file with a str (Codex review on #1249), which a binary handle would refuse.
+    handle = open(out / _APPLY_LOCK, "a+", encoding="ascii")  # noqa: SIM115 - held across the yield
     try:
         try:
             install_identity._file_lock(handle, blocking=False)

@@ -421,3 +421,25 @@ def test_the_in_place_restore_is_reached_only_from_the_boot_hook_and_the_offline
         if "apply_pending_restore" in path.read_text(encoding="utf-8", errors="replace"):
             callers.add(rel)
     assert callers == {"serve.py", "agents/cli/nerva.py"}
+
+
+def test_apply_lock_works_with_the_windows_lock_helper(tmp_path, monkeypatch):
+    """Codex review on #1249: on Windows install_identity._file_lock pads a short lock file
+    with a str; the apply lock opened its file in binary mode, so the first staged restore
+    raised TypeError before it could lock — and serve.py would fail to boot on every start."""
+    import os
+    import sys
+    import types
+
+    from agents.core import backup, install_identity
+
+    calls = []
+    fake_msvcrt = types.SimpleNamespace(LK_LOCK=1, LK_NBLCK=2, LK_UNLCK=0,
+                                        locking=lambda fd, mode, n: calls.append(mode))
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+    monkeypatch.setattr(install_identity, "os", types.SimpleNamespace(name="nt", SEEK_END=os.SEEK_END))
+    with backup._apply_lock(tmp_path) as locked:
+        assert locked is True
+    assert calls[0] == fake_msvcrt.LK_NBLCK and calls[-1] == fake_msvcrt.LK_UNLCK
+    lock_file = tmp_path / backup._APPLY_LOCK
+    assert lock_file.read_text(encoding="ascii").strip() == ""     # padded with spaces only
