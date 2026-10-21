@@ -42,6 +42,11 @@ Safe mode only takes things away. It leaves out, at boot and at every later relo
   and no sweep is scheduled, and a sweep that finds safe mode on does nothing — no run
   takes a step, parks or is graded until the hub restarts without it.
 
+- (H592) the personality overlays: no ``/personality`` preset enters a turn, neither an
+  owner file (``<data home>/personalities/*.md``) nor a built-in chosen for a
+  conversation or as the hub-wide default (``personality_overlays.json``); the choices
+  are kept for the next normal boot, and ``/personality`` refuses to change them.
+
 There are no shell hooks to leave out: Nerva runs no owner-configured hook commands (the
 voice command providers above are the one owner-configured program, and they stay off).
 
@@ -81,6 +86,8 @@ LAYERS = (
     "voice_commands",
     # H464c — the company-mode night shift: no sweep is scheduled, none runs.
     "company_mode",
+    # H592 — the /personality style overlays (owner files and persisted choices).
+    "personality_overlays",
 )
 #: H490 — settings an owner can set looser than the shipped default (an approval that
 #: stops being asked, a wider tool offer, a bigger budget), each with how to take the

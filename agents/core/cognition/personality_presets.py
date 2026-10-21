@@ -35,6 +35,7 @@ from pathlib import Path
 
 from agents.core.paths import data_path
 
+from .. import safe_mode
 from ..persistence import JsonStore
 
 #: ``/personality none`` — this conversation runs on the plain SOUL, even when a
@@ -87,15 +88,42 @@ def valid_name(name: str) -> bool:
     return bool(_NAME_RE.match(name or "")) and name not in RESERVED
 
 
-def _owner_preset(folder: Path, name: str) -> Preset | None:
-    path = folder / f"{name}.md"
+def _read_owner_file(path: Path) -> tuple[str | None, str]:
+    """``(text, "")`` for a usable owner file, else ``(None, why it is ignored)``
+    (``""`` when there is simply no file)."""
     try:
         if not path.is_file():
-            return None
+            return None, ""
         text = path.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeDecodeError):
-        return None
-    if not text or len(text) > MAX_PRESET_CHARS:
+    except UnicodeDecodeError:
+        return None, "not UTF-8 text"
+    except OSError:
+        return None, "unreadable"
+    if not text:
+        return None, "empty"
+    if len(text) > MAX_PRESET_CHARS:
+        return None, f"over {MAX_PRESET_CHARS:,} chars"
+    return text, ""
+
+
+def ignored_files(folder: Path | None = None) -> dict[str, str]:
+    """Owner preset files that are never applied, by name, with the reason (an empty or
+    oversize file; a built-in of the same name, if any, is used instead)."""
+    folder = folder if folder is not None else presets_dir()
+    out: dict[str, str] = {}
+    with contextlib.suppress(OSError):
+        for path in sorted(folder.glob("*.md")):
+            if valid_name(path.stem):
+                why = _read_owner_file(path)[1]
+                if why:
+                    out[path.stem] = why
+    return out
+
+
+def _owner_preset(folder: Path, name: str) -> Preset | None:
+    path = folder / f"{name}.md"
+    text, _why = _read_owner_file(path)
+    if text is None:
         return None
     from agents.core.agent import _scan_soul_body
 
@@ -189,6 +217,19 @@ class PersonalityOverlayStore(JsonStore):
             self._global = name
             self._save()
 
+    def forget(self, session: object) -> bool:
+        """Drop a deleted conversation's choice; True when there was one (only then is
+        the store written)."""
+        try:
+            key = _key(session)
+        except ValueError:
+            return False
+        with self._lock:
+            if self._sessions.pop(key, None) is None:
+                return False
+            self._save()
+        return True
+
     def effective(self, session: object) -> str | None:
         """The preset in force for *session*: its own choice, else the global default."""
         own = self.get_session(session)
@@ -218,9 +259,16 @@ def use_store(store: PersonalityOverlayStore | None) -> None:
 
 
 def overlay_block(session: object, *, store: PersonalityOverlayStore | None = None) -> str:
-    """The per-turn overlay block for *session*, or ``""`` when none applies."""
+    """The per-turn overlay block for *session*, or ``""`` when none applies.
+
+    In safe mode (H275) none applies: an owner file and a persisted choice (even of a
+    built-in) are both owner customization, so the turn runs on the plain SOUL and the
+    ``personality_overlays`` layer is noted on the status surfaces."""
     name = (store or default_store()).effective(session)
     if not name:
+        return ""
+    if safe_mode.enabled():
+        safe_mode.note("personality_overlays")
         return ""
     preset = resolve(name)
     if preset is None or preset.blocked or not preset.text:
@@ -240,6 +288,7 @@ __all__ = [
     "Preset",
     "catalog",
     "default_store",
+    "ignored_files",
     "overlay_block",
     "presets_dir",
     "resolve",

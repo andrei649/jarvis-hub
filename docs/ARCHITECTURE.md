@@ -906,6 +906,16 @@ a blocked file is never applied, re-checked every turn). The owner command
 `/personality default` (or `reset`) forgets the conversation's choice; `/personality global
 <name|none>` sets or clears the hub-wide default. Choices persist in
 `<data home>/personality_overlays.json`; nothing writes a SOUL file or a `soul_versioning` commit.
+An owner file that is empty or over 4,000 chars is never applied (a built-in of the same name
+is used instead); `/personality` lists it as `(ignored: …)`. Deleting a conversation
+(`forget_channel_session`) drops its choice.
+
+**Safe mode** (`JARVIS_SAFE_MODE=1` / `serve.py --safe-mode`, H275) leaves every overlay out:
+no preset enters a turn — not an owner file, and not a built-in chosen per conversation or
+as the hub-wide default, since a persisted choice is owner customization too. The choices
+stay on disk for the next normal boot; `/personality` says the overlay is suspended and
+refuses to change them. The `personality_overlays` safe-mode layer is reported on
+`/healthz`, `/status`, the posture route and the HUD banner.
 
 **Prompt-stack order** (top to bottom, as the model reads it):
 

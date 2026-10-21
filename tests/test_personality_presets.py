@@ -209,3 +209,92 @@ async def test_overlay_sits_after_the_persona_block_and_before_project_files(sto
     o._session_id_default = "other"
     text = await o._build_agent_turn_text("jarvis", "hello")
     assert pp.HEADER not in text
+
+
+# ── safe mode (review r2) ──────────────────────────────────────────────────
+
+
+@pytest.fixture
+def safe_on(monkeypatch):
+    from agents.core import safe_mode
+
+    monkeypatch.setenv(safe_mode.ENV_NAME, "1")
+    safe_mode.reset()
+    yield safe_mode
+    safe_mode.reset()
+
+
+def test_safe_mode_has_a_personality_overlays_layer():
+    from agents.core import safe_mode
+
+    assert "personality_overlays" in safe_mode.LAYERS
+    assert "personality" in (safe_mode.__doc__ or "")
+
+
+def test_safe_mode_leaves_every_personality_overlay_out(store, presets_dir, safe_on):
+    (presets_dir / "pirate.md").write_text("Talk like a pirate.", encoding="utf-8")
+    store.set_session("s1", "pirate")       # an owner file chosen for one conversation
+    store.set_session("s3", "concise")      # a built-in chosen for one conversation
+    store.set_global("teacher")             # the hub-wide default
+    assert pp.overlay_block("s1") == ""
+    assert pp.overlay_block("s2") == ""
+    assert pp.overlay_block("s3") == ""
+    assert "personality_overlays" in safe_on.status()["skipped"]
+    # the choices themselves are kept for when the hub restarts without safe mode
+    assert store.effective("s1") == "pirate" and store.effective("s2") == "teacher"
+
+
+def test_without_safe_mode_nothing_is_noted(store, monkeypatch):
+    from agents.core import safe_mode
+
+    monkeypatch.delenv(safe_mode.ENV_NAME, raising=False)
+    safe_mode.reset()
+    store.set_global("teacher")
+    assert pp.HEADER in pp.overlay_block("s1")
+    assert safe_mode.status() == {"enabled": False, "skipped": []}
+
+
+@pytest.mark.asyncio
+async def test_personality_command_refuses_writes_and_says_suspended_in_safe_mode(store, safe_on):
+    orch = _orch()
+    for text in ("/personality teacher", "/personality none", "/personality default",
+                 "/personality global formal", "/personality global none"):
+        out = await _cmd(text, orch)
+        assert "safe mode" in out.reply.lower(), text
+    assert store.get_session("s1") is None and store.get_global() is None
+    listed = await _cmd("/personality", orch)
+    assert "safe mode" in listed.reply.lower() and "concise" in listed.reply
+
+
+def test_ignored_owner_files_are_reported_with_a_reason(presets_dir):
+    (presets_dir / "huge.md").write_text("y" * (pp.MAX_PRESET_CHARS + 1), encoding="utf-8")
+    (presets_dir / "empty.md").write_text("   \n", encoding="utf-8")
+    (presets_dir / "concise.md").write_text("z" * (pp.MAX_PRESET_CHARS + 1), encoding="utf-8")
+    ignored = pp.ignored_files(presets_dir)
+    assert "4,000" in ignored["huge"] and "empty" in ignored["empty"]
+    assert "4,000" in ignored["concise"]
+    assert pp.resolve("concise", presets_dir).source == "builtin"
+
+
+@pytest.mark.asyncio
+async def test_personality_list_shows_ignored_owner_files(store, presets_dir):
+    (presets_dir / "huge.md").write_text("y" * (pp.MAX_PRESET_CHARS + 1), encoding="utf-8")
+    out = await _cmd("/personality", _orch())
+    assert "huge" in out.reply and "ignored: over 4,000 chars" in out.reply
+
+
+def test_forgetting_a_session_drops_its_overlay_choice(store):
+    store.set_session("gone", "formal")
+    store.set_session("kept", "teacher")
+    assert store.forget("gone") is True
+    assert store.get_session("gone") is None and store.get_session("kept") == "teacher"
+    assert store.forget("gone") is False and store.forget("") is False
+
+
+def test_orchestrator_forget_channel_session_drops_the_overlay(store):
+    from agents.core.orchestrator import Orchestrator
+
+    store.set_session("gone", "formal")
+    o = Orchestrator.__new__(Orchestrator)
+    o.forget_channel_session("gone")
+    assert store.get_session("gone") is None

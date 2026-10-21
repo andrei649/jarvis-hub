@@ -2098,6 +2098,12 @@ class Orchestrator:
         channel_sessions = self.__dict__.get("_channel_sessions", {})
         for key in [key for key, sid in channel_sessions.items() if sid == session_id]:
             del channel_sessions[key]
+        try:  # H592 — nor does it keep a /personality choice
+            from .cognition.personality_presets import default_store
+
+            default_store().forget(session_id)
+        except Exception:
+            logger.debug("personality overlay not forgotten for %s", session_id, exc_info=True)
 
     def live_session_ids(self) -> set[str]:
         """H262 — every session a chat is on right now: the session in use and each

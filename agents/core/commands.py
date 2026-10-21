@@ -459,6 +459,7 @@ def _personality(ctx: CommandContext) -> str:
     choice (follow the hub-wide default); ``global <name|none>`` sets or clears that
     default. Nothing here writes a SOUL file or a prompt version.
     """
+    from . import safe_mode
     from .cognition import personality_presets as pp
 
     store = pp.default_store()
@@ -467,11 +468,16 @@ def _personality(ctx: CommandContext) -> str:
     untouched = "The SOUL and its version history are untouched."
     words = (ctx.args or "").split()
     wanted = words[0].lower() if words else ""
+    suspended = safe_mode.enabled()
     if not wanted or wanted == "list":
         rows = []
         for preset in pp.catalog():
             state = " (blocked by the injection scan)" if preset.blocked else ""
             rows.append(f"- {preset.name} [{preset.source}]{state}")
+        builtins = set(pp.BUILTIN_PRESETS)
+        for name, why in pp.ignored_files().items():
+            instead = "; the built-in is used" if name in builtins else ""
+            rows.append(f"- {name}.md [owner file] (ignored: {why}{instead})")
         own = store.get_session(session) if session else None
         current = store.effective(session) if session else store.get_global()
         lines = [
@@ -481,7 +487,15 @@ def _personality(ctx: CommandContext) -> str:
             "Presets:", *rows,
             f"Add your own as {pp.presets_dir()}/<name>.md. {usage}",
         ]
+        if suspended:
+            lines.insert(0, "Safe mode is on: no personality overlay is applied (every turn runs on "
+                            "the plain SOUL) and the choices below cannot be changed until the hub "
+                            "restarts without safe mode.")
         return "\n".join(lines)
+    if suspended:
+        safe_mode.note("personality_overlays")
+        return ("Safe mode is on: personality overlays are suspended and cannot be changed; "
+                "nothing changed. Restart the hub without safe mode to use /personality.")
     if wanted == "global":
         target = words[1].lower() if len(words) > 1 else ""
         if target in (pp.NONE, pp.DEFAULT, "off"):

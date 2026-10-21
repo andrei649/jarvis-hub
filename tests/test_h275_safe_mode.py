@@ -662,6 +662,9 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/inspector.py",
         "agents/core/acquisition/runtime.py",
         "agents/core/agent.py",
+        # H592: no /personality overlay enters a turn, and the command refuses to change one.
+        "agents/core/cognition/personality_presets.py",
+        "agents/core/commands.py",
         # H277: the advisory approval judge is off in safe mode (and reads cloud_fallback's
         # stricter value).
         "agents/core/autonomy/approval_judge.py",
