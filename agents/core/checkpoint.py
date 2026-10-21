@@ -404,6 +404,22 @@ class CheckpointManager:
                 f" ORDER BY {self._ACTIVITY_SQL} LIMIT ?", (before, limit)).fetchall()
         return [r[0] for r in rows]
 
+    def active_session_count(self, since: str) -> int | None:
+        """H133 — unarchived sessions whose last activity (a turn, or a keep) is at or after
+        the ISO timestamp ``since``: the "active sessions" figure of the HUD status strip.
+        ``None`` when the store is unavailable, so the chrome never shows a guessed zero."""
+        if not self._conn:
+            return None
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    f"SELECT COUNT(*) FROM sessions WHERE {self._ARCHIVED_SQL} IS NULL"  # nosec B608 - fixed SQL fragments
+                    f" AND {self._ACTIVITY_SQL} >= ?", (since,)).fetchone()
+            return int(row[0])
+        except Exception as e:
+            logger.warning(f"Failed to count active sessions: {e}")
+            return None
+
     #: H262 — what retention may delete: archived, unpinned, archived at or before the
     #: first ``?`` (H262 review: the grace — a chat stays in the Archived view at least
     #: ``retention.DELETE_GRACE_DAYS``, so one archived in this sweep never qualifies) and

@@ -11,6 +11,7 @@ import type {
   LlmLiveState, LocalModelRef, ModelState,
 } from './types';
 import { runningTasks } from '../task-state';
+import { STATUS_CHROME_UNKNOWN, readStatusChrome, type StatusChrome } from './status-chrome';
 // data.ts is the prototype's (untyped) mock — used ONLY as the opt-in demo corpus.
 import { V2 } from '../data';
 
@@ -38,6 +39,7 @@ export interface JarvisData {
   trust: { mic: string; strict_local: boolean; cloud_available?: boolean; claude_available?: boolean };
   sources: LiveSources;   // per-tile: did REAL data arrive in this load cycle?
   safeMode: SafeModeState; // H275: the hub was started in safe mode
+  chrome: StatusChrome;    // H133: gateway / sessions / version for the top bar and rail
 }
 
 /* A pending approval, projected into the shape the cockpit's decision cards read.
@@ -86,6 +88,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     decisions: [],
     trust: { mic: 'on', strict_local: false },
     sources: { tasks: false, trust: false },
+    chrome: STATUS_CHROME_UNKNOWN,
   };
 
   // 1) full enriched roster (real registry)
@@ -113,6 +116,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     const d = await apiGet<any>('/status');
     out.serverUp = true;
     out.safeMode = readSafeMode(d.safe_mode);
+    out.chrome = readStatusChrome(d);
     if (d.sys) out.sys = d.sys;
     const residents: LocalModelRef[] = Array.isArray(d.resident_models)
       ? d.resident_models.flatMap((pair: unknown) => {

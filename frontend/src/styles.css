@@ -157,6 +157,10 @@ input { font-family: inherit; }
 .rail-btn.locked { opacity:.5; }
 .rail-sep { width:22px; height:1px; background:var(--panel-line); margin:4px 0; }
 .rail-spacer { flex:1; }
+/* H133 — gateway dot: outside `.rl`, so it survives the icon-only (collapsed) rail. */
+.rail-gw { display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 0; color:var(--ink-2); }
+.rail-gw .rl { font-size:7.5px; letter-spacing:.04em; text-transform:uppercase; font-family:var(--font-mono); }
+.rail-gw-dot { width:8px; height:8px; border-radius:50%; box-shadow:0 0 6px currentColor; }
 
 /* TOP TABS */
 .tabs { display:flex; gap:4px; padding:0 2px 4px; overflow-x:auto; }

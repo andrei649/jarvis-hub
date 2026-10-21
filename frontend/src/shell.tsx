@@ -8,6 +8,16 @@ import { BriefingWall } from './wall';
 import { runningTasks } from './task-state';
 import { V2 } from './data';
 import { bindings as shortcutBindings, chordOf, displayChord, matchAction } from './shortcuts';
+import { STATUS_CHROME_UNKNOWN, type StatusChrome } from './api/status-chrome';
+
+/* H133 — the gateway readout, shared by the top-bar badge and the rail dot. */
+function gatewayView(gw: StatusChrome['gateway'] = STATUS_CHROME_UNKNOWN.gateway){
+  const list = gw.running.length ? gw.running.join(', ') : 'none';
+  if(gw.state === 'running') return { v:'● ' + gw.running.length + (gw.total != null ? '/' + gw.total : ''), c:'var(--green)', t:'gateway running · channels: ' + list };
+  if(gw.state === 'stopped') return { v:'○ STOPPED', c:'var(--amber)', t:'gateway: ' + (gw.total ?? 0) + ' channel(s) registered, none running' };
+  if(gw.state === 'none') return { v:'○ NONE', c:'var(--ink-2)', t:'gateway: no channel registered' };
+  return { v:'○ —', c:'var(--ink-2)', t:'gateway state unknown (status not answered)' };
+}
 
 const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; sep?: boolean; locked?: boolean }> = [
   { id:'cockpit', icon:'cockpit', tkey:'cockpit', live:true },
@@ -31,8 +41,11 @@ const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; 
   { id:'admin', icon:'admin', tkey:'admin' },
 ];
 
-function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, onJobs = () => {}, shortcutOverrides = {}, t }){
+function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, onJobs = () => {}, shortcutOverrides = {}, chrome = STATUS_CHROME_UNKNOWN, t }: any){
   const tr = trust || { mic:'on', strict_local:false };
+  const ch: StatusChrome = chrome || STATUS_CHROME_UNKNOWN;
+  const GW = gatewayView(ch.gateway);
+  const win = ch.sessions.windowS != null ? Math.round(ch.sessions.windowS / 60) + ' min' : 'the recent window';
   const lm = llm || { state:'unknown', model:null };
   const enabled = agents.length;
   const running = agents.filter(isExecutingAgent).length;
@@ -54,6 +67,9 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
           <div className="badge" title="agents enabled · actually running"><div className="k">AGENTS</div><div className="v">{enabled} en{running>0 ? ' · '+running+' ▶' : ''}</div></div>
           <div className="badge" title={LLM.t}><div className="k">LLM</div><div className="v" style={{color:LLM.c}}>{LLM.v}</div></div>
           <div className="badge" title={DATA.t}><div className="k">DATA</div><div className="v" style={{color:DATA.c}}>{DATA.v}</div></div>
+          <div className="badge" data-chrome="gateway" data-state={ch.gateway.state} title={GW.t}><div className="k">GATEWAY</div><div className="v" style={{color:GW.c}}>{GW.v}</div></div>
+          <div className="badge" data-chrome="sessions" title={ch.sessions.active != null ? 'sessions active in the last ' + win : 'active sessions unknown (session store not answering)'}><div className="k">SESSIONS</div><div className="v">{ch.sessions.active != null ? ch.sessions.active : '—'}</div></div>
+          {ch.version && <div className="badge" data-chrome="version" title="Nerva hub version"><div className="k">VER</div><div className="v">v{ch.version}</div></div>}
           {localPct!=null && <div className={'badge' + (localPct===100 ? ' ok' : '')} title="share of processing kept on-device"><div className="k">{t.local}</div><div className="v">{localPct}%</div></div>}
           <div className={'badge' + (tr.strict_local ? ' ok' : '')} title={tr.strict_local ? 'strict-local — no cloud egress path; nothing leaves the machine' : 'hybrid — a cloud backend is reachable'}><div className="k">EGRESS</div><div className="v">{tr.strict_local ? '⊘ SEALED' : '↗ HYBRID'}</div></div>
           <div className={'badge' + (tr.mic === 'off' ? ' ok' : '')} title={tr.mic === 'off' ? 'microphone muted (JARVIS_MIC_MUTED)' : 'microphone live'}><div className="k">MIC</div><div className="v">{tr.mic === 'off' ? '⊘ MUTED' : '● ON'}</div></div>
@@ -100,7 +116,9 @@ function Ticker({ items, t, hidden }){
   );
 }
 
-function Rail({ mode, setMode, t }){
+function Rail({ mode, setMode, gateway = STATUS_CHROME_UNKNOWN.gateway, t }: any){
+  const gw = gateway || STATUS_CHROME_UNKNOWN.gateway;
+  const GW = gatewayView(gw);
   return (
     <div className="rail">
       {MODES.map((m,i)=> m.sep
@@ -110,6 +128,11 @@ function Rail({ mode, setMode, t }){
             <Icon d={ICONS[m.icon]} size={19}/><span className="rl">{t[m.tkey]}</span>
           </button>
       )}
+      <div className="rail-spacer"></div>
+      {/* H133: the dot sits outside `.rl`, so the collapsed (icon-only) rail keeps it. */}
+      <div className="rail-gw" data-chrome="rail-gateway" data-state={gw.state} title={GW.t}>
+        <span className="rail-gw-dot" style={{background:GW.c}}></span><span className="rl">GW {gw.state === 'running' ? gw.running.length : '—'}</span>
+      </div>
     </div>
   );
 }
