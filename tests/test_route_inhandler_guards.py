@@ -510,10 +510,16 @@ def _request(headers=None, host="127.0.0.1"):
                     "client": (host, 50000), "server": ("127.0.0.1", 80), "query_string": b""})
 
 
-def test_chat_stream_binds_the_credentialed_principal(client, monkeypatch):
+def test_chat_stream_binds_the_credentialed_principal(client, monkeypatch, tmp_path):
     """/chat/stream hands the turn the principal its credential earns: the owner only
     with a valid admin token — a wrong one, or none, is a plain user."""
     from agents import web
+    from agents.core.checkpoint import CheckpointManager
+
+    # The H441 foreign-history fence reads the session's lineage first; a real
+    # (empty) store answers "native", so the turn itself is what is probed here.
+    checkpoints = CheckpointManager(str(tmp_path / "history.db"))
+    checkpoints.initialize()
 
     seen = []
 
@@ -525,11 +531,13 @@ def test_chat_stream_binds_the_credentialed_principal(client, monkeypatch):
         notes = None
         session_id = "h511"
 
+    Orch.checkpoints = checkpoints
     monkeypatch.setattr(web, "orch", Orch())
     monkeypatch.setattr(web, "_chat_event_stream", fake_stream)
     for headers in ({}, {"x-admin-token": "not-the-owner"}, {"x-admin-token": ADMIN}):
         assert client.post("/chat/stream", json={"message": "hi"}, headers=headers).status_code == 200
     assert [(p.channel, p.admin) for p in seen] == [("web", False), ("web", False), ("web", True)]
+    checkpoints.close()
 
 
 def test_sandbox_principal_follows_the_credential(client):

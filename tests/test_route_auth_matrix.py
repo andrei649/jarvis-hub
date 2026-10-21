@@ -234,6 +234,7 @@ _TIER_CALLS = {"_web_principal", "owner_web_principal", "_admin_credential_ok", 
                "_request_is_authed", "_user_credential_required",
                "_mcp_identity_check", "_mcp_agent_identity_check"}
 _DEPENDENCY_WRAPPERS = {"Depends", "Security"}
+_H441 = "tests/test_h441_foreign_access_review.py::"
 IN_HANDLER_TIER_SITES = {
     # The primitives themselves (agents/web.py).
     "agents/web.py:_admin_guard": ("tests/test_admin_guard_hf7.py::test_admin_guard_token_path_unaffected",),
@@ -246,9 +247,19 @@ IN_HANDLER_TIER_SITES = {
         "tests/test_h273e_provenance_review.py::"
         "test_the_mcp_identity_check_refuses_a_revoked_credential_as_the_guard_does",),
     # Step-ups inside user-tier routes.
-    "agents/web.py:chat": (
-        "tests/test_h011_preappend_commands.py::test_cli_web_owner_registry_contract_preserves_history_and_exit_status",),
+    # /chat's body moved into _chat_with_usage (usage/stops scopes) on the PR branch.
+    "agents/web.py:_chat_with_usage": (
+        "tests/test_h011_preappend_commands.py::test_cli_web_owner_registry_contract_preserves_history_and_exit_status",
+        _H441 + "test_explicit_and_effective_default_chat_stream_and_active_memory_are_private"),
     "agents/web.py:chat_stream": (_INH + "test_chat_stream_binds_the_credentialed_principal",),
+    # H441 foreign-history fences: an imported (tainted) session is owner-only.
+    "agents/core/foreign_history.py:http_owner_guard": (
+        _H441 + "test_explicit_and_effective_default_chat_stream_and_active_memory_are_private",),
+    "agents/core/routers/sessions.py:get_sessions": (
+        _H441 + "test_import_and_resolve_are_owner_only_and_guest_cannot_enumerate_title",
+        _H441 + "test_guest_list_is_not_emptied_by_twenty_newer_foreign_sessions"),
+    "agents/core/routers/sessions.py:get_recent_plans": (
+        _H441 + "test_recent_todo_omits_foreign_plans_and_native_stamps_remain_usable",),
     "agents/core/routers/canvas.py:canvas_post": (
         "tests/test_h309_pointer.py::test_a_tip_through_the_http_route_is_marked_unless_the_owner_sent_it",),
     "agents/core/routers/actions.py:actions_request": (
@@ -602,17 +613,24 @@ def test_host_sub_apps_are_walked_like_mounts():
 def _scan_in_body_guard_calls(root=None, rel_to=None):
     """AST-scan agents/ for every function whose body calls a guard or a tier primitive.
 
-    Returns (guard_sites, tier_sites, suspicious). A site is "file:function". Calls are
-    matched by name, by an import alias of a name (`from ._deps import admin_guard as
-    ag`), and by a string lookup (`getattr(web, "_web_principal")`); a bare reference
-    (`g = web._admin_guard`, a guard handed over as a callback) is a site too. A
-    reference inside `Depends(...)`/`Security(...)` is a declared dependency, not an
-    in-body call, and is skipped. `suspicious` lists calls that cannot be doing their
-    job: an async guard that is not awaited, a call under a constant-false
-    `if`/`while`, or one inside a `try` with a broad handler (bare / `Exception` /
-    `BaseException` / `HTTPException`) that does nothing (`pass` / `...` / `continue`)
-    or that neither raises nor returns while code still follows the try in its
-    function (e.g. `except Exception as e: logger.warning(e)`)."""
+    Returns (guard_sites, tier_sites, suspicious). A site is "file:function", or
+    "file:<module>" for a reference at module/class scope. Calls are matched by name,
+    by an import alias of a name (`from ._deps import admin_guard as ag`), by a
+    rebinding anywhere in the file (`ADMIN = web._admin_guard` at module scope, a
+    class attribute, `g = ADMIN` in a body — resolved to a fixed point), and by a
+    string lookup (`getattr(web, "_web_principal")`); a bare reference (a guard handed
+    over as a callback, or the rebinding itself) is a site too. A reference inside
+    `Depends(...)`/`Security(...)` is a declared dependency, not an in-body call, and
+    is skipped. `suspicious` lists calls that cannot be doing their job: an async
+    guard that is not awaited, a call under a constant-false `if`/`while`, or one
+    inside a `try` with a broad handler (bare / `Exception` / `BaseException` /
+    `HTTPException`, incl. an import alias or rebinding of those) through which some
+    path neither raises nor returns. Round 4: that is judged per path (a conditional
+    `return` followed by logging is a swallow) and wherever the try sits — a helper
+    whose try is its last statement returns None to a caller that carries on, and a
+    `finally:` runs after the swallow — so a refusing WebSocket handler must leave
+    explicitly (`await ws.close(code=1008); return`). What a handler does before it
+    leaves (closing the socket, logging) is not judged."""
     import ast
 
     root = root or repo_root / "agents"
@@ -621,87 +639,94 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
     awaited_only = _GUARD_CALLS | {"owner_web_principal"}
     guard_sites, tier_sites, suspicious = set(), set(), []
     callee_funcs = set()   # ids of Call.func nodes, so a call is not also counted as a reference
+    module = "<module>"
+    base_refusals = {"Exception", "BaseException", "HTTPException"}   # what a guard raises
 
     def ref_name(node):
         return node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else ""
 
-    refusals = {"Exception", "BaseException", "HTTPException"}   # what a guard raises
+    def rebindings(tree, base):
+        """name -> base name, for `from x import B as n` and any `n = <ref to B or to
+        another such n>` (plain, annotated or walrus), resolved to a fixed point."""
+        out = {a.asname: a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+               for a in n.names if a.asname and a.name in base}
+        pairs = []
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Assign):
+                pairs += [(t, n.value) for t in n.targets]
+            elif isinstance(n, (ast.AnnAssign, ast.NamedExpr)) and n.value is not None:
+                pairs.append((n.target, n.value))
+        changed = True
+        while changed:
+            changed = False
+            for target, value in pairs:
+                src, dst = ref_name(value), ref_name(target)
+                resolved = src if src in base else out.get(src)
+                if resolved and dst and dst not in base and out.get(dst) != resolved:
+                    out[dst] = resolved
+                    changed = True
+        return out
 
-    def catches_refusal(handler):
-        if handler.type is None:
+    def stmt_exits(s):
+        """Every path through statement `s` ends in a raise or a return."""
+        if isinstance(s, (ast.Raise, ast.Return)):
             return True
-        kinds = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-        return any((k.id if isinstance(k, ast.Name) else getattr(k, "attr", "")) in refusals for k in kinds)
-
-    def leaves(handler):
-        """The handler stops the guarded flow: it raises or returns (a refusal response,
-        or after closing the socket). Nested defs do not count."""
-        stack = list(handler.body)
-        while stack:
-            s = stack.pop()
-            if isinstance(s, (ast.Raise, ast.Return)):
+        if isinstance(s, ast.If):
+            return must_exit(s.body) and must_exit(s.orelse)
+        if isinstance(s, (ast.With, ast.AsyncWith)):
+            return must_exit(s.body)
+        if isinstance(s, ast.Try):
+            if must_exit(s.finalbody):
                 return True
-            if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
-                stack.extend(ast.iter_child_nodes(s))
+            return (must_exit(s.body) or must_exit(s.orelse)) and all(must_exit(h.body) for h in s.handlers)
         return False
 
-    terminal = set()   # ids of Try nodes that end their function (falling off = return)
+    def must_exit(stmts):
+        return any(stmt_exits(s) for s in stmts)
 
-    def mark_terminal(tree):
-        for fn in ast.walk(tree):
-            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                last = fn.body[-1]
-                while isinstance(last, (ast.With, ast.AsyncWith)):
-                    last = last.body[-1]
-                if isinstance(last, ast.Try):
-                    terminal.add(id(last))
+    def swallowing(try_node, refusals):
+        def catches_refusal(handler):
+            if handler.type is None:
+                return True
+            kinds = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+            return any(ref_name(k) in refusals for k in kinds)
+        return any(catches_refusal(h) and not must_exit(h.body) for h in try_node.handlers)
 
-    def inert(handler):
-        return all(isinstance(s, (ast.Pass, ast.Continue))
-                   or (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant)) for s in handler.body)
-
-    def swallowing(try_node):
-        # A broad handler that does nothing is always flagged. Round 3: so is any broad
-        # handler that neither raises nor returns — logging the refusal does not stop
-        # execution carrying on past it — unless nothing follows the try in its function.
-        return any(catches_refusal(h) and (inert(h) or (id(try_node) not in terminal and not leaves(h)))
-                   for h in try_node.handlers)
-
-    def visit(node, owner, rel, aliases, dead, awaited):
+    def visit(node, owner, rel, aliases, refusals, dead, awaited):
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
                 name = owner if isinstance(child, ast.Lambda) else child.name
-                visit(child, name, rel, aliases, False, False)
+                visit(child, name, rel, aliases, refusals, False, False)
                 continue
             child_dead = dead
             if isinstance(child, (ast.If, ast.While)) and isinstance(child.test, ast.Constant) \
                     and not child.test.value:
                 # Only the body is dead; the else branch (orelse) runs.
                 for stmt in child.body:
-                    visit_stmt(stmt, owner, rel, aliases, True)
+                    visit_stmt(stmt, owner, rel, aliases, refusals, True)
                 for stmt in child.orelse:
-                    visit_stmt(stmt, owner, rel, aliases, dead)
+                    visit_stmt(stmt, owner, rel, aliases, refusals, dead)
                 continue
-            if isinstance(child, ast.Try) and swallowing(child):
+            if isinstance(child, ast.Try) and swallowing(child, refusals):
                 for stmt in child.body:
-                    visit_stmt(stmt, owner, rel, aliases, True)
+                    visit_stmt(stmt, owner, rel, aliases, refusals, True)
                 for part in (*child.handlers, *child.orelse, *child.finalbody):
-                    visit_stmt(part, owner, rel, aliases, dead)
+                    visit_stmt(part, owner, rel, aliases, refusals, dead)
                 continue
             name = ""
             if isinstance(child, ast.Call):
                 fn = child.func
                 raw = ref_name(fn)
-                name = aliases.get(raw, raw) if owner is not None else ""
+                name = aliases.get(raw, raw)
                 callee_funcs.add(id(fn))
                 if raw in _DEPENDENCY_WRAPPERS:
                     continue   # Depends(admin_guard): a declared dependency, not an in-body call
-            elif owner is not None and isinstance(child, ast.Constant) and child.value in watched:
+            elif owner != module and isinstance(child, ast.Constant) and child.value in watched:
                 name = child.value   # getattr(module, "<name>") lookup
-            elif owner is not None and isinstance(child, (ast.Name, ast.Attribute)) \
+            elif isinstance(child, (ast.Name, ast.Attribute)) \
                     and isinstance(child.ctx, ast.Load) and id(child) not in callee_funcs:
-                # Round 3: a bare reference (`g = web._admin_guard`, a guard passed as a
-                # callback) is a site too — the call through the local name is not.
+                # A bare reference (`g = web._admin_guard`, a guard passed as a callback)
+                # is a site too — at module/class scope as "<module>" (round 4).
                 raw = ref_name(child)
                 name = aliases.get(raw, raw)
             if name in watched:
@@ -712,11 +737,11 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
                     suspicious.append(line + " (dead or swallowed)")
                 elif isinstance(child, ast.Call) and name in awaited_only and not awaited:
                     suspicious.append(line + " (not awaited)")
-            visit(child, owner, rel, aliases, child_dead, isinstance(child, ast.Await))
+            visit(child, owner, rel, aliases, refusals, child_dead, isinstance(child, ast.Await))
 
-    def visit_stmt(stmt, owner, rel, aliases, dead):
+    def visit_stmt(stmt, owner, rel, aliases, refusals, dead):
         wrapper = ast.Module(body=[stmt], type_ignores=[])
-        visit(wrapper, owner, rel, aliases, dead, False)
+        visit(wrapper, owner, rel, aliases, refusals, dead, False)
 
     for path in sorted(root.rglob("*.py")):
         rel = path.relative_to(rel_to).as_posix()
@@ -726,12 +751,10 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):
             continue
-        aliases = {a.asname: a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
-                   for a in n.names if a.asname and a.name in watched}
-        terminal.clear()        # node ids are only meaningful while this tree is alive
-        callee_funcs.clear()
-        mark_terminal(tree)
-        visit(tree, None, rel, aliases, False, False)
+        aliases = rebindings(tree, watched)
+        refusals = base_refusals | set(rebindings(tree, base_refusals))
+        callee_funcs.clear()    # node ids are only meaningful while this tree is alive
+        visit(tree, module, rel, aliases, refusals, False, False)
     return guard_sites, tier_sites, suspicious
 
 
@@ -772,8 +795,9 @@ def test_guard_scan_flags_aliases_lookups_and_inert_calls(tmp_path):
         "async def live_else(r):\n    if 0:\n        pass\n    else:\n        await ag(r)\n"
         "async def narrow(r):\n    try:\n        await ag(r)\n    except WebSocketDisconnect:\n        pass\n"
         # Round 3: a broad handler that only logs swallows the refusal (the work after
-        # the try still runs); one that re-raises, returns (after closing), or ends the
-        # function (the try is its last statement) does not.
+        # the try still runs); one that re-raises or returns (after closing) does not.
+        # Round 4: a try that ends its function is no longer exempt — closing without
+        # leaving (`terminal`, line 34) is flagged; `refused` is the accepted shape.
         "async def logged(r):\n    try:\n        await ag(r)\n    except Exception as e:\n"
         "        logger.warning(e)\n    return await act(r)\n"
         "async def terminal(ws):\n    try:\n        await ag(ws)\n        await ws.send_text('x')\n"
@@ -795,7 +819,94 @@ def test_guard_scan_flags_aliases_lookups_and_inert_calls(tmp_path):
                                "logged", "terminal", "reraised", "refused", "rebound")}
     assert tier == {f"agents/mod.py:{f}" for f in ("looked_up", "authed", "required", "mcp_check")}
     assert {s.split()[0] for s in suspicious} == {
-        "agents/mod.py:8", "agents/mod.py:11", "agents/mod.py:15", "agents/mod.py:28"}
+        "agents/mod.py:8", "agents/mod.py:11", "agents/mod.py:15", "agents/mod.py:28",
+        "agents/mod.py:34"}
+
+
+def test_guard_scan_sees_module_aliases_and_every_swallowing_path(tmp_path):
+    """H511 round 4: the scan resolves a guard rebound at module or class scope (and
+    reports that reference itself), and a broad handler only counts as stopping the
+    guarded flow when *every* path through it raises or returns — a helper whose try
+    is its last statement, a `finally:` doing the work, a conditional return, or an
+    aliased `HTTPException` no longer hide a swallowed refusal. Lines marked `# FLAG`
+    must be reported; nothing else may be."""
+    pkg = tmp_path / "agents"
+    pkg.mkdir()
+    src = (
+        "from fastapi import HTTPException as HE\n"
+        "from agents import web\n"
+        "ADMIN = web._admin_guard\n"
+        "RENAMED = ADMIN\n"
+        "class K:\n"
+        "    guard = web._user_guard\n"
+        "async def via_module_alias(r):\n"
+        "    await ADMIN(r)\n"
+        "    return await act(r)\n"
+        "async def via_rebinding(r):\n"
+        "    await RENAMED(r)\n"
+        "async def via_class(r):\n"
+        "    await K.guard(r)\n"
+        "async def bare_alias(r):\n"
+        "    ADMIN(r)  # FLAG\n"
+        # A helper that logs the refusal and falls off its end: the caller carries on.
+        "async def _require(r):\n"
+        "    try:\n"
+        "        await ADMIN(r)  # FLAG\n"
+        "    except HE:\n"
+        "        logger.warning('denied')\n"
+        "async def handler(r):\n"
+        "    await _require(r)\n"
+        "    return await act(r)\n"
+        # The work in `finally` runs after the refusal was swallowed.
+        "async def fin(r):\n"
+        "    try:\n"
+        "        await ADMIN(r)  # FLAG\n"
+        "    except Exception:\n"
+        "        logger.warning('x')\n"
+        "    finally:\n"
+        "        await act(r)\n"
+        # Only one branch of the handler leaves.
+        "async def partial_return(r, flag):\n"
+        "    try:\n"
+        "        await ADMIN(r)  # FLAG\n"
+        "    except Exception as e:\n"
+        "        if flag:\n"
+        "            return None\n"
+        "        logger.warning(e)\n"
+        "    return await act(r)\n"
+        # Every path leaves: not flagged.
+        "async def all_paths_leave(r, flag):\n"
+        "    try:\n"
+        "        await ADMIN(r)\n"
+        "    except HE as e:\n"
+        "        if flag:\n"
+        "            return None\n"
+        "        else:\n"
+        "            raise\n"
+        "    return await act(r)\n"
+        # The real WebSocket shape: refuse with a close, leave, clean up in finally.
+        "async def ws_endpoint(ws):\n"
+        "    tail = None\n"
+        "    try:\n"
+        "        await ADMIN(ws)\n"
+        "        await ws.accept()\n"
+        "    except (HE, ValueError):\n"
+        "        await ws.close(code=1008)\n"
+        "        return\n"
+        "    except WebSocketDisconnect:\n"
+        "        pass\n"
+        "    finally:\n"
+        "        if tail is not None:\n"
+        "            await tail.close()\n"
+    )
+    (pkg / "mod.py").write_text(src)
+    guard, tier, suspicious = _scan_in_body_guard_calls(pkg, tmp_path)
+    assert guard == {f"agents/mod.py:{f}" for f in (
+        "<module>", "via_module_alias", "via_rebinding", "via_class", "bare_alias", "_require", "fin",
+        "partial_return", "all_paths_leave", "ws_endpoint")}
+    assert tier == set()
+    flagged = {f"agents/mod.py:{n}" for n, line in enumerate(src.splitlines(), 1) if "# FLAG" in line}
+    assert {s.split()[0] for s in suspicious} == flagged, suspicious
 
 
 def test_step_up_routes_are_user_tier():
