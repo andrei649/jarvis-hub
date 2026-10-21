@@ -531,7 +531,7 @@ def _diffs(target: _Target) -> list[dict]:
         if a is not None and b is not None:
             text = "".join(difflib.unified_diff(a.splitlines(keepends=True), b.splitlines(keepends=True),
                                                 fromfile=f"{rel} (now)", tofile=f"{rel} (after)"))
-        elif b is not None:
+        elif b is not None and new is not None:
             # review-H665 r4: text replacing a binary file is shown whole, every line added, so
             # the owner never approves text the diff hid behind "(binary)".
             text = f"{rel}: binary file replaced by text\n" + "".join(

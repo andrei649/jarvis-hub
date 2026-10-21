@@ -587,6 +587,19 @@ def test_text_replacing_a_binary_asset_is_recorded_with_every_added_line(hub):
     assert (hub.root / "alpha" / "assets" / "logo.png").read_text() == payload
 
 
+def test_a_binary_file_that_is_only_removed_reads_binary(hub):
+    # review-H665 r4 skeptic: a removed binary file has no "after" text, so it must read
+    # "(binary)", not "binary file replaced by text" with nothing under it.
+    hub.write("alpha")
+    hub.load()
+    target = batch_mod._Target("alpha", hub.root / "alpha", existing=True)
+    target.staged = hub.root / "alpha"
+    target.before_files = {"SKILL.md": (hub.root / "alpha" / "SKILL.md").read_bytes(),
+                           "assets/logo.png": b"\x89PNG\r\n\x1a\n\xff\xfe\x00binary"}
+    entry = next(e for e in batch_mod._diffs(target) if e["file"] == "assets/logo.png")
+    assert entry == {"file": "assets/logo.png", "change": "removed", "diff": "(binary)"}
+
+
 def test_an_unreadable_added_file_is_flagged_and_refuses_a_proposed_batch(hub, monkeypatch):
     # Bytes no owner can read as text never ride an approval card: added_unreadable refuses.
     hub.write("alpha")
