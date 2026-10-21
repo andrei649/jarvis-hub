@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
+import itertools
 import json
 import logging
 import posixpath
@@ -291,20 +292,44 @@ def note_compacted() -> None:
         transcript.compacted()
 
 
+_TURN_IDS = itertools.count(1)
+_CARRY_TURN: contextvars.ContextVar[int | None] = contextvars.ContextVar("nerva_skill_carry_turn", default=None)
+
+
+def bind_carry_turn() -> contextvars.Token:
+    """Open one real turn for the carry (``Orchestrator.handle_input`` and
+    ``handle_input_stream`` do, once a turn). Every prompt built under it — the planner's
+    trial builds, the context-cache rebuild, the one dispatched — renders the same carry
+    and counts as one turn of :data:`CARRY_TTL_TURNS`."""
+    return _CARRY_TURN.set(next(_TURN_IDS))
+
+
+def reset_carry_turn(token: contextvars.Token) -> None:
+    _CARRY_TURN.reset(token)
+
+
+def bind_carry_preview() -> contextvars.Token:
+    """A prompt built outside any turn (the admin inspector's preview): the carry renders
+    but the ledger is left as it was — no turn counted, no load aged, nothing marked carried."""
+    return _CARRY_TURN.set(None)
+
+
 def _source_digest(skill: Any) -> str | None:
     data = (getattr(skill, "view_files", None) or {}).get(_SKILL_FILE)
     return hashlib.sha256(data).hexdigest() if isinstance(data, bytes) else None
 
 
 class _Bucket:
-    """One session and agent's loads, its turn count (one a prompt built for it) and the
-    digests its latest prompt carried."""
+    """One session and agent's loads, its turn count (one a real turn that built a prompt
+    for it), the turn it last counted (``last_turn``) and the digests that turn's prompts
+    carried."""
 
-    __slots__ = ("carried", "loads", "turn")
+    __slots__ = ("carried", "last_turn", "loads", "turn")
 
-    def __init__(self) -> None:
+    def __init__(self, last_turn: int | None = None) -> None:
         self.loads: OrderedDict[str, dict] = OrderedDict()
         self.turn = 0
+        self.last_turn = last_turn
         self.carried: frozenset[str] = frozenset()
 
 
@@ -321,7 +346,7 @@ class LoadedSkillLedger:
     owner-vouched, still visible to this agent, and rendered with the same template
     variables, directory and session (:func:`render_key`) — else it is not carried and the
     next ``skill_view`` serves the current text whole. The carry holds the reply's file
-    list with its body. A load is carried for :data:`CARRY_TTL_TURNS` turns after it was
+    list with its body. A load is carried for :data:`CARRY_TTL_TURNS` real turns after it was
     last loaded or pointed at, within a byte budget the caller sizes to the model's
     window (:func:`carry_budget`). Bounded in sessions, loads and bytes; a session's
     loads are forgotten when it is archived, deleted or cleared (:meth:`forget`)."""
@@ -339,7 +364,8 @@ class LoadedSkillLedger:
         with self._lock:
             bucket = self._sessions.get((session, agent))
             if bucket is None:
-                bucket = self._sessions[(session, agent)] = _Bucket()
+                # A load in this turn is not aged by this turn's own later prompt builds.
+                bucket = self._sessions[(session, agent)] = _Bucket(_CARRY_TURN.get())
             self._sessions.move_to_end((session, agent))
             bucket.loads.pop(skill.name, None)
             bucket.loads[skill.name] = {"digest": digest, "source": source, "text": text, "skill": skill,
@@ -358,7 +384,8 @@ class LoadedSkillLedger:
                 entry["turn"] = bucket.turn
 
     def carried(self, session: str, agent: str, digest: str) -> bool:
-        """Whether this session and agent's latest prompt carried the body with ``digest``."""
+        """Whether this session and agent's prompt in the current turn carried the body with
+        ``digest`` (a prompt built outside a turn — a preview — marks nothing)."""
         with self._lock:
             bucket = self._sessions.get((session, agent))
             return bucket is not None and digest in bucket.carried
@@ -384,19 +411,25 @@ class LoadedSkillLedger:
                     max_bytes: int = CARRY_MAX_BYTES) -> str:
         """The bodies this session's agent loaded in its last :data:`CARRY_TTL_TURNS` turns,
         newest first, each still what ``skill_view`` would answer now; "" when there are
-        none. Each call is one prompt built for this session and agent: it counts a turn."""
+        none. A turn is a real one (:func:`bind_carry_turn`), not a prompt build: the first
+        build in a new turn counts it and ages the loads out, and every build in that turn
+        adds the digests it rendered to the turn's carried set (a later build never takes
+        one away). Outside a turn (:func:`bind_carry_preview`) it only renders."""
         from .visibility import SOFT_GATES
 
         if not session or not agent or loader is None:
             return ""
+        turn = _CARRY_TURN.get()
         with self._lock:
             bucket = self._sessions.get((session, agent))
             if bucket is None:
                 return ""
-            bucket.turn += 1
-            bucket.carried = frozenset()
-            for name in [n for n, e in bucket.loads.items() if bucket.turn - e["turn"] > CARRY_TTL_TURNS]:
-                del bucket.loads[name]
+            if turn is not None and bucket.last_turn != turn:
+                bucket.last_turn = turn
+                bucket.turn += 1
+                bucket.carried = frozenset()
+                for name in [n for n, e in bucket.loads.items() if bucket.turn - e["turn"] > CARRY_TTL_TURNS]:
+                    del bucket.loads[name]
             loads = list(bucket.loads.items())
         budget = min(CARRY_MAX_BYTES, max(0, int(max_bytes)))
         parts, used, digests = [], 0, set()
@@ -421,8 +454,8 @@ class LoadedSkillLedger:
             digests.add(entry["digest"])
             used += size
         with self._lock:
-            if self._sessions.get((session, agent)) is bucket:
-                bucket.carried = frozenset(digests)
+            if turn is not None and self._sessions.get((session, agent)) is bucket and bucket.last_turn == turn:
+                bucket.carried = bucket.carried | digests
         if not parts:
             return ""
         return CARRY_HEADER + "\n" + "\n".join(parts)

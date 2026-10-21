@@ -64,6 +64,7 @@ from .skills.importer import SkillImporter
 from .skills.marketplace import SkillMarketplace
 from .skills.skill_history import SkillHistory
 from .skills import switches as skill_switches  # H329: the turn's channel for the skill switches
+from .skills.tools import bind_carry_turn, reset_carry_turn  # H326: one real turn for the skill carry
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, InterruptBudget, MissionStore
 from .autonomy import ProactiveObserver, default_probes
@@ -2411,6 +2412,8 @@ class Orchestrator:
         # review-H329 F4: the catalog hides a skill switched off on this channel even when
         # no principal is bound (mcp, webhook, workflow), as its command is refused there.
         channel_token = skill_switches.bind_turn_channel(channel)
+        # H326: one real turn for the loaded-skills carry, however many prompts it builds.
+        carry_token = bind_carry_turn()
         # The reply is one string, so an approval this turn queues would otherwise
         # be unnameable. The collector adopts a sink the caller opened (that is how
         # /chat reads the ids back); otherwise the turn gets its own, so a voice or
@@ -2445,6 +2448,7 @@ class Orchestrator:
             power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
+            reset_carry_turn(carry_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
             project_context.reset(project_token)
@@ -2637,6 +2641,7 @@ class Orchestrator:
         snapshot_token = _TURN_CHAT_OUTCOMES.set(None)
         origin_token = bind_turn_action_origin(channel)
         channel_token = skill_switches.bind_turn_channel(channel)   # see handle_input
+        carry_token = bind_carry_turn()          # H326: see handle_input
         approvals_token = bind_turn_approvals()  # see handle_input
         meter_token = _TURN_METER_MAPS.set({})
         title_token = _TURN_TITLE.set([])
@@ -2667,6 +2672,7 @@ class Orchestrator:
             power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
+            reset_carry_turn(carry_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
             project_context.reset(project_token)
