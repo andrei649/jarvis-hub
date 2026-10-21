@@ -21,6 +21,11 @@ purged — and removes nothing. ``--purge-data`` is never a bare flag: interacti
 root's folder name must be typed back; non-interactively ``--yes-purge=<absolute
 data-root path>`` must name the exact root, so a script written for one machine cannot erase another
 machine's data with a guessable constant. ``--yes-purge`` without ``--purge-data`` is refused.
+The wrappers run this module from the *system* interpreter (so ``.venv`` is not locked while
+it is removed), which normally lacks the engine's dependencies that ``data_purge`` needs; the
+purge is then handed to ``.venv``'s interpreter (``--purge-only`` in a child process, before
+any software is removed), and refused cleanly — exit 2, nothing touched — when no such
+interpreter exists. The dry run reports which of the three applies (``purge_runnable``).
 
 ``--gui`` also removes the Tauri desktop shell (``desktop/src-tauri``: productName ``Jarvis
 Hub``, identifier ``com.jarvis.hub``) from the per-OS places its bundles install to, plus the
@@ -250,6 +255,88 @@ def kept_after_purge(environ: Mapping[str, str] | None = None) -> list[str]:
     return [str(home / name) for name in USER_HOME_KEPT if (home / name).exists()]
 
 
+def _purge_import_error() -> str | None:
+    """Why ``data_purge`` cannot be imported by *this* interpreter (``None`` when it can).
+
+    The wrappers run the module from the system interpreter so ``.venv`` is not locked while
+    it is removed, but the installers put the engine's dependencies (``httpx`` for the
+    ingestion chain, ``cryptography`` for the backup's secret store) into ``.venv`` only.
+    """
+    try:
+        import agents.core.data_purge  # noqa: F401
+    except ImportError as e:
+        return f"{type(e).__name__}: {e}"
+    return None
+
+
+def venv_python(base: Path) -> Path | None:
+    """The app's own ``.venv`` interpreter under *base*, when one exists."""
+    for rel in (".venv/bin/python", ".venv/Scripts/python.exe"):
+        p = base / rel
+        if p.is_file():
+            return p
+    return None
+
+
+def _is_current_interpreter(p: Path) -> bool:
+    try:
+        return p.resolve() == Path(sys.executable).resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
+def purge_runnable(base: Path) -> dict:
+    """Can a ``--purge-data`` run actually erase the data root from here?
+
+    ``in_process``: this interpreter imports ``data_purge``. Otherwise ``handoff`` names the
+    ``.venv`` interpreter the purge is delegated to (``--purge-only`` in a child process, run
+    before any software is removed); with neither, the purge is refused before anything is
+    touched. The dry run reports this so it never promises a purge the real run cannot do.
+    """
+    err = _purge_import_error()
+    if err is None:
+        return {"runnable": True, "in_process": True, "handoff": None, "reason": None}
+    vpy = venv_python(base)
+    if vpy is not None and not _is_current_interpreter(vpy):
+        return {"runnable": True, "in_process": False, "handoff": str(vpy), "reason": err}
+    return {"runnable": False, "in_process": False, "handoff": None, "reason": err}
+
+
+def _run_purge_handoff(vpy: Path, data: Path, no_backup: bool) -> tuple[int, str, dict | None]:
+    """Run ``--purge-only`` under the ``.venv`` interpreter *vpy*; return (rc, output, report).
+
+    The typed confirmation already passed in this process, so the child gets the data root's
+    absolute path as ``--yes-purge`` — and re-resolves the root itself, so a child that sees a
+    different root refuses instead of erasing it. The child exits before any target is
+    removed, so on Windows the venv interpreter is not locked during the removal.
+    """
+    import subprocess  # nosec B404 - fixed argv: the app's own .venv interpreter and this module
+
+    code_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(code_root)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+    argv = [str(vpy), "-m", "agents.core.uninstall", "--confirm", "--purge-data",
+            "--purge-only", f"--yes-purge={data}"]
+    if no_backup:
+        argv.append("--no-backup")
+    try:
+        res = subprocess.run(argv, cwd=str(code_root), env=env, capture_output=True,  # nosec B603
+                             text=True, check=False)
+    except OSError as e:
+        return _NOT_FOUND, f"could not start {vpy}: {e}", None
+    output = (res.stdout or "") + (res.stderr or "")
+    if res.returncode != 0:
+        return res.returncode, output.strip(), None
+    try:
+        report = json.loads(res.stdout)
+    except ValueError:
+        return 1, f"unreadable purge report: {output.strip()}", None
+    if not isinstance(report, dict) or "data_purge" not in report:
+        return 1, f"unexpected purge report: {output.strip()}", None
+    return 0, output.strip(), report
+
+
 def plan_uninstall(root: Path | None = None, *, purge_data: bool = False, gui: bool = False,
                    gui_only: bool = False,
                    data_source_root: str | None = None, desktop: dict | None = None) -> dict:
@@ -279,6 +366,7 @@ def plan_uninstall(root: Path | None = None, *, purge_data: bool = False, gui: b
         except RuntimeError as e:
             plan["data_root_error"] = str(e)
         plan["kept_after_purge"] = kept_after_purge()
+        plan["purge_runnable"] = purge_runnable(base)
     if gui or gui_only:
         plan["desktop"] = desktop_app_targets(**{"app_root": base, **(desktop or {})})
     return plan
@@ -492,6 +580,28 @@ def _confirm_purge(args, out, inp) -> bool:
     return True
 
 
+def _main_purge_handoff(args, root: Path | None, vpy: Path, out) -> int:
+    """--purge-data when this interpreter lacks the dependencies: purge under *vpy* first,
+    then remove the software here. A failed purge removes nothing (same order and reason as
+    :func:`run_uninstall`)."""
+    data = data_root()
+    rc, output, purge_report = _run_purge_handoff(vpy, data, args.no_backup)
+    if rc != 0 or purge_report is None:
+        out.write(f"uninstall aborted: the data purge under {vpy} failed (exit {rc}); "
+                  f"nothing was removed\n")
+        if output:
+            out.write(output + "\n")
+        return 2 if rc == 2 else 1  # a refusal in the child stays a refusal
+    report = run_uninstall(root=root, gui=args.gui)
+    report["data_purge"] = purge_report["data_purge"]
+    report["data_purge_interpreter"] = str(vpy)
+    if report["data_purge"].get("ok") is False:
+        report["not_removed"] = ["data_purge"] + report.get("not_removed", [])
+        report["ok"] = False
+    out.write(json.dumps(report, indent=2) + "\n")
+    return 0 if report["ok"] else 1
+
+
 def _main(argv=None, *, out=None, inp=None) -> int:
     out = out if out is not None else sys.stdout
     inp = inp if inp is not None else sys.stdin
@@ -524,10 +634,20 @@ def _main(argv=None, *, out=None, inp=None) -> int:
                          "and your data")
     ap.add_argument("--gui-summary", action="store_true",
                     help="print a JSON probe of the desktop app (installed, paths); remove nothing")
+    ap.add_argument("--purge-only", action="store_true",
+                    help="with --confirm --purge-data: erase the data root and remove nothing "
+                         "else (used to run the purge under .venv's interpreter when the "
+                         "calling interpreter lacks the engine's dependencies)")
     ap.add_argument("--root", default=None,
                     help="app root to uninstall from (defaults to the detected app root)")
     args = ap.parse_args(argv)
     root = Path(args.root) if args.root else None
+
+    if args.purge_only and (not args.purge_data or args.gui or args.gui_only
+                            or args.gui_summary or args.dry_run):
+        out.write("refusing: --purge-only needs --confirm --purge-data and cannot be combined "
+                  "with --gui, --gui-only, --gui-summary or --dry-run\n")
+        return 2
 
     if args.gui_summary:
         out.write(json.dumps(gui_summary(app_root=root), indent=2) + "\n")
@@ -553,9 +673,37 @@ def _main(argv=None, *, out=None, inp=None) -> int:
         return 2
 
     if args.purge_data:
+        base = root if root is not None else _paths.app_root()
+        # Checked BEFORE the typed confirmation: never ask the owner to type the data
+        # root's name for a purge this interpreter cannot perform.
+        can = purge_runnable(base)
+        if args.purge_only and not can["in_process"]:
+            out.write(f"refusing to purge: the engine's dependencies are unavailable under "
+                      f"{sys.executable} ({can['reason']}); nothing was removed\n")
+            return 2
+        if not can["runnable"]:
+            out.write(f"refusing to purge: the engine's dependencies are unavailable under "
+                      f"{sys.executable} ({can['reason']}) and no .venv interpreter was found "
+                      f"under {base}; nothing was removed. Re-run with the interpreter the "
+                      f"engine was installed into, e.g. .venv/bin/python -m "
+                      f"agents.core.uninstall ...\n")
+            return 2
         if not _confirm_purge(args, out, inp):
             return 2
+        if can["handoff"]:
+            return _main_purge_handoff(args, root, Path(can["handoff"]), out)
         from agents.core.data_purge import PurgeError
+        from agents.core.data_purge import purge_data as _purge_data
+        if args.purge_only:
+            try:
+                purge = _purge_data(source_root=None, backup_first=not args.no_backup,
+                                    memory=True)
+            except PurgeError as e:
+                out.write(f"purge aborted: {e}\n")
+                return 1
+            out.write(json.dumps({"data_purge": purge, "ok": purge.get("ok") is not False},
+                                 indent=2) + "\n")
+            return 0
         try:
             report = run_uninstall(
                 root=root,

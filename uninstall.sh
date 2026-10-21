@@ -99,7 +99,7 @@ elif [ "$RC" = "0" ]; then
   echo "  The repo checkout itself (source files) is left in place — delete this"
   echo "  folder yourself if you're removing Nerva entirely."
 else
-  echo "  [WARN] uninstall reported problems — see the JSON report above."
+  echo "  [WARN] uninstall reported problems — see the messages above (the JSON report, or the module's refusal/error)."
 fi
 echo "============================================================"
 exit "$RC"

@@ -929,3 +929,140 @@ def test_bat_warns_when_only_the_venv_interpreter_is_available():
     venv_at = det.index(r'set "PY=.venv\Scripts\python.exe"')
     assert "[WARNING]" in det[venv_at:]
     assert "no Python found" in det[venv_at:]
+
+
+# ── round 4: --purge-data under an interpreter without the engine's dependencies
+#
+# Both wrappers prefer the SYSTEM interpreter (so .venv is not locked while it is being
+# removed), but install.sh / INSTALL.bat put the dependencies into .venv only. The purge
+# chain (data_purge -> ingestion -> httpx; backup -> secrets -> cryptography) then failed
+# with a raw ModuleNotFoundError traceback after the typed confirmation had passed.
+
+_BLOCKER_SHIM = '''
+import sys
+
+class _Blocker:
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] in ("httpx", "cryptography"):
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+        return None
+
+sys.meta_path.insert(0, _Blocker())
+from agents.core.uninstall import _main
+raise SystemExit(_main(sys.argv[1:]))
+'''
+
+
+def _bare_interpreter_run(tmp_path, data_home, args):
+    """Run the module CLI as a 'system python' that cannot import httpx/cryptography."""
+    shim = tmp_path / "bare_python_shim.py"
+    shim.write_text(_BLOCKER_SHIM, encoding="utf-8")
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("JARVIS_PROFILE", "JARVIS_MEMORY_DIR", "JARVIS_USER_HOME")}
+    env["JARVIS_HOME"] = str(data_home)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    return subprocess.run([sys.executable, str(shim), *args], cwd=str(REPO_ROOT), env=env,
+                          capture_output=True, text=True, timeout=180)
+
+
+@pytest.fixture()
+def bare_app(tmp_path):
+    root = tmp_path / "app"
+    (root / ".venv" / "lib").mkdir(parents=True)  # a venv dir, but no interpreter in it
+    (root / "worldview" / "node_modules" / "pkg").mkdir(parents=True)
+    data_home = tmp_path / "data_home"
+    data_home.mkdir()
+    (data_home / "notes.txt").write_text("user content", encoding="utf-8")
+    return root, data_home
+
+
+def test_purge_without_dependencies_and_no_venv_interpreter_refuses_cleanly(tmp_path, bare_app):
+    root, data_home = bare_app
+    res = _bare_interpreter_run(tmp_path, data_home, [
+        "--confirm", "--purge-data", f"--yes-purge={data_home}", "--root", str(root)])
+    assert "Traceback" not in res.stdout + res.stderr, res.stderr
+    assert res.returncode == 2, res.stdout + res.stderr
+    assert "refusing to purge" in res.stdout
+    assert "nothing was removed" in res.stdout
+    # data and software both untouched
+    assert (data_home / "notes.txt").read_text(encoding="utf-8") == "user content"
+    assert (root / ".venv").is_dir() and (root / "worldview" / "node_modules").is_dir()
+
+
+def test_dry_run_reports_a_purge_that_cannot_run(tmp_path, bare_app):
+    root, data_home = bare_app
+    res = _bare_interpreter_run(tmp_path, data_home, [
+        "--dry-run", "--purge-data", "--root", str(root)])
+    assert res.returncode == 0, res.stderr
+    plan = json.loads(res.stdout)
+    assert plan["purge_data"] is True
+    runnable = plan["purge_runnable"]
+    assert runnable["runnable"] is False
+    assert runnable["handoff"] is None
+    assert "httpx" in runnable["reason"] or "cryptography" in runnable["reason"]
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX venv layout for the fake interpreter")
+def test_purge_hands_off_to_the_venv_interpreter_then_removes_software(tmp_path, bare_app):
+    root, data_home = bare_app
+    vpy = root / ".venv" / "bin" / "python"
+    vpy.parent.mkdir(parents=True)
+    # stands in for .venv/bin/python: an interpreter that HAS the dependencies
+    vpy.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    vpy.chmod(0o755)
+
+    dry = _bare_interpreter_run(tmp_path, data_home, [
+        "--dry-run", "--purge-data", "--root", str(root)])
+    runnable = json.loads(dry.stdout)["purge_runnable"]
+    assert runnable["runnable"] is True and runnable["handoff"] == str(vpy)
+
+    res = _bare_interpreter_run(tmp_path, data_home, [
+        "--confirm", "--purge-data", f"--yes-purge={data_home}", "--no-backup", "--root", str(root)])
+    assert "Traceback" not in res.stdout + res.stderr, res.stderr
+    assert res.returncode == 0, res.stdout + res.stderr
+    report = json.loads(res.stdout)
+    assert report["data_purge_interpreter"] == str(vpy)
+    assert report["data_purge"]["ok"] is True
+    assert not (data_home / "notes.txt").exists()  # the purge really ran (in the venv child)
+    assert ".venv" in report["removed"]  # ...and the software went afterwards
+    assert not (root / ".venv").exists()
+
+
+def test_failed_handoff_purge_removes_nothing(app_root, monkeypatch):
+    calls = []
+    monkeypatch.setattr(un, "_purge_import_error", lambda: "ModuleNotFoundError: httpx")
+    monkeypatch.setattr(un, "_run_purge_handoff",
+                        lambda vpy, data, no_backup: calls.append(vpy) or (1, "boom", None))
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--purge-data", f"--yes-purge={_data_path()}",
+                   "--root", str(app_root)], out=out)
+    assert rc == 1
+    assert calls == [app_root / ".venv" / "bin" / "python"]
+    assert "nothing was removed" in out.getvalue() and "boom" in out.getvalue()
+    assert (app_root / ".venv").exists()
+
+
+def test_purge_only_mode_never_removes_software(app_root, monkeypatch):
+    calls = []
+    monkeypatch.setattr("agents.core.data_purge.purge_data", _fake_purge(calls))
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--purge-data", "--purge-only", f"--yes-purge={_data_path()}",
+                   "--root", str(app_root)], out=out)
+    assert rc == 0
+    assert calls == [True]
+    assert json.loads(out.getvalue())["ok"] is True
+    assert (app_root / ".venv").exists()
+
+
+def test_purge_only_requires_purge_data(app_root):
+    out = io.StringIO()
+    assert un._main(["--confirm", "--purge-only", "--root", str(app_root)], out=out) == 2
+    assert (app_root / ".venv").exists()
+
+
+def test_wrapper_failure_message_does_not_promise_a_json_report():
+    """A refusal or crash prints no JSON: the wrappers must not point at one."""
+    sh = (REPO_ROOT / "uninstall.sh").read_text(encoding="utf-8")
+    bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
+    assert "see the JSON report above" not in sh
+    assert "see the JSON report above" not in bat

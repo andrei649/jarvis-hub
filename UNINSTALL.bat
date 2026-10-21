@@ -117,7 +117,7 @@ if "!RC!"=="0" (
   echo   The repo checkout itself ^(source files^) is left in place -
   echo   delete this folder yourself if you're removing Nerva entirely.
 ) else (
-  echo   [WARNING] uninstall reported problems - see the JSON report above.
+  echo   [WARNING] uninstall reported problems - see the messages above ^(the JSON report, or the module's refusal or error^).
 )
 
 :end
