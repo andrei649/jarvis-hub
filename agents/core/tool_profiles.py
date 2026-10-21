@@ -49,6 +49,13 @@ skill body) stays off inbound/guest unless the owner names it in ``llm.guest_too
 (:data:`OWNER_OPERATOR_TOOLS`, today ``memory``, H314) are stricter still: they are offered
 to operator/owner only, whatever ``llm.guest_tools`` says.
 
+A **third-party MCP tool** (a ``mcp__<server>__<tool>`` row the H557 bridge registers) is
+ungated only on its server's own ``readOnlyHint``, which the MCP spec calls untrusted. So
+off operator/owner it is never offered by default: an operator guest gets one only when
+``llm.guest_tools`` names it (as an inbound guest already does), and a job only when
+``llm.internal_actuation`` is on. Inbound/owner keeps the table's row: the owner is in the
+turn.
+
 A per-agent ``tools:`` list in ``agents.yaml`` (names or glob patterns; ``"*"`` = all)
 narrows the posture further and never widens it. The resolved sets are snapshot-tested in
 ``tests/_snapshots/tool_profiles.json`` the way ``route_auth.json`` pins route guards, so a
@@ -82,6 +89,8 @@ GUEST_TOOLS_SETTING = "llm.guest_tools"
 INBOUND_ACTUATION_SETTING = "llm.inbound_actuation"
 INTERNAL_ACTUATION_SETTING = "llm.internal_actuation"
 DEFAULT_GUEST_TOOLS: tuple[str, ...] = ("echo", "time", "todo")
+#: The model-facing prefix of a bridged third-party MCP tool (H557).
+MCP_TOOL_PREFIX = "mcp__"
 
 # Every posture the resolver can produce, in snapshot order.
 POSTURES: tuple[tuple[str, str], ...] = (
@@ -184,15 +193,22 @@ def _posture_allows(
 ) -> bool:
     gated = bool(tool.get("gated"))
     name = str(tool.get("name") or "")
+    third_party = name.startswith(MCP_TOOL_PREFIX)
     if posture.surface == SURFACE_OPERATOR:
         if posture.principal == PRINCIPAL_OWNER:
             return True
+        if third_party:
+            # "Ungated" rests on the server's own readOnlyHint: a guest gets it only
+            # when the owner names it.
+            return (not gated) and name in guest_names
         return not gated
     if posture.surface == SURFACE_INBOUND:
         if posture.principal == PRINCIPAL_OWNER:
             return (not gated) or _flag(settings, INBOUND_ACTUATION_SETTING)
         return (not gated) and name in guest_names
     if posture.surface == SURFACE_INTERNAL:
+        if third_party:
+            return _flag(settings, INTERNAL_ACTUATION_SETTING)
         return (not gated) or _flag(settings, INTERNAL_ACTUATION_SETTING)
     return False
 

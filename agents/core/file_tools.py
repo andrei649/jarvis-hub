@@ -69,6 +69,16 @@ Governance (MOONSHOT §5):
   Nothing is listed, searched or written through that door (:meth:`FileTools._spill_file`).
   A page of a spill, by either route, declares ``tainted``: the loop fences it and
   marks the turn as it did when the tool first answered (:meth:`FileTools._is_spill`).
+* H444 — ``file_read`` also pages by whole lines (``line_offset`` / ``line_limit`` →
+  ``next_line_offset``, bounded by ``max_bytes``; :func:`_line_page`). A .pdf / .docx
+  is read once into memory within the 50 MB ceiling and parsed from those bytes, never
+  the path (:func:`_admitted_bytes`); the parse is cached under their SHA-256
+  (:class:`DocumentCache`), so later pages of an unchanged document are not parsed
+  again (a stop on the load-dependent time budget is not cached). Extraction is
+  budgeted (``extraction_incomplete``), and garbled pages and pages holding images
+  are named beside the text (no OCR is performed). A .docx is walked in document
+  order — tables, text boxes, headers/footers, notes — and its images, charts and
+  equations are named (:func:`_docx_annotations`).
 * Local-first, no new dependencies, no shell; blocking file I/O runs in
   ``asyncio.to_thread`` so the event loop stays free.
 
@@ -91,7 +101,9 @@ import logging
 import os
 import stat
 import tempfile
+import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,7 +113,16 @@ from agents.core import project_context
 from agents.core.automation_contracts import ContractTemplate, predicate
 from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
-from agents.core.local_docs import DOC_EXTS, extract_pdf_pages, extract_text, pdf_coverage_warning
+from agents.core.local_docs import (
+    DOC_EXTS,
+    DOCX_READ_KINDS,
+    DOCX_VISUAL_KINDS,
+    DocumentExtraction,
+    extract_docx_document,
+    extract_pdf_document,
+    page_ranges,
+    pdf_coverage_warning,
+)
 from agents.core.paths import data_path
 from agents.core.tool_result_store import SPILL_DIRNAME as _SPILL_DIRNAME
 from agents.core.tool_result_store import is_reference as _is_spill_reference
@@ -124,6 +145,15 @@ MAX_BYTES_ENV = "JARVIS_FILE_MAX_BYTES"
 DEFAULT_MAX_BYTES = 2_000_000
 MAX_DOCUMENT_BYTES = 50_000_000
 MAX_PATH_CHARS = 4096
+#: H444 — ``file_read``'s line window: ``line_offset`` (1-based first line) and
+#: ``line_limit`` (lines per page, default :data:`DEFAULT_LINE_LIMIT`). The window
+#: is still bounded by ``max_bytes``.
+DEFAULT_LINE_LIMIT = 500
+MAX_LINE_LIMIT = 2000
+#: H444 — parsed documents a :class:`FileTools` keeps, keyed by the SHA-256 of the
+#: admitted input bytes, so paging a document does not parse it again.
+DOCUMENT_CACHE_ENTRIES = 8
+DOCUMENT_CACHE_TEXT_BYTES = 64_000_000
 #: The largest ``file_read`` offset (H661): the largest integer every JSON reader holds
 #: exactly, and far past any file. Above it an offset is refused as ``bad_offset``
 #: rather than reaching ``seek``, which raises ``ValueError`` past 2**63 and ``EINVAL``
@@ -739,6 +769,7 @@ class FileTools:
                 raise ValueError("spill directories must be absolute paths")
             dirs.append(directory.resolve())
         self._spill_dirs: tuple[Path, ...] = tuple(dict.fromkeys(dirs))
+        self._documents = DocumentCache()
 
     @classmethod
     def from_env(cls, *, authorizer: Callable[..., Any] | None = None, audit: Any = None,
@@ -842,6 +873,9 @@ class FileTools:
             offset = 0
         elif not _valid_offset(offset):
             return {"ok": False, "reason": "bad_offset"}
+        window = _line_window_args(args)
+        if isinstance(window, str):
+            return {"ok": False, "reason": window}
         try:
             target = self._resolve_read(args.get("path"))
         except FileScopeError as exc:
@@ -856,7 +890,15 @@ class FileTools:
                 return {"ok": False, "reason": "not_a_file"}
             size = target.stat().st_size
             if not raw and target.suffix.lower() in DOCUMENT_SUFFIXES:
-                return _read_document(target, size, limit, offset)
+                return _read_document(target, size, limit, offset,
+                                      cache=self._documents, window=window)
+            if window is not None:
+                with target.open("rb") as handle:
+                    page = {"ok": True, "path": str(target),
+                            **_line_page(handle, *window, budget=limit), "size": size}
+                if self._is_spill(target):
+                    page["tainted"] = True
+                return page
             if not raw and offset == 0 and target.suffix.lower() in IMAGE_SUFFIXES:
                 image = _read_image(target, size)
                 if image is not None:
@@ -1401,7 +1443,7 @@ def _parser_available(suffix: str) -> bool:
         return False
 
 
-def _utf8_page_end(data: bytes) -> int:
+def _utf8_page_end(data: bytes, *, allow_empty: bool = False) -> int:
     """How much of *data* to keep so a page never ends inside a UTF-8 character.
 
     A byte page cut through a multi-byte character decodes as a replacement mark at
@@ -1409,7 +1451,8 @@ def _utf8_page_end(data: bytes) -> int:
     perfectly good file reassembles a corrupted one. Dropping the incomplete tail
     moves those bytes to the next page instead. Never returns 0: a page too small for
     one whole character keeps the fragment rather than stall the reader at the same
-    offset forever.
+    offset forever — unless *allow_empty*, for a caller whose next page starts
+    elsewhere anyway (a line page moves on to the next line), which then gets 0.
     """
     size = len(data)
     for back in range(1, min(4, size) + 1):
@@ -1424,10 +1467,115 @@ def _utf8_page_end(data: bytes) -> int:
             needed = 2
         else:
             needed = 1
-        if needed > back and size - back > 0:
+        if needed > back and (size - back > 0 or allow_empty):
             return size - back
         return size
     return size
+
+
+def _line_window_args(args: Mapping[str, Any]) -> tuple[int, int] | str | None:
+    """``(first_line, line_count)`` when the read asks for a line window, ``None`` for
+    a byte page, or the refusal reason. A window and a byte ``offset`` together are
+    refused (``bad_window``): the two count different things, and silently picking
+    one would return a page labelled as the other. ``offset: 0`` is the absent offset
+    (the start of the file, which every read-back recipe names), not a conflict."""
+    has_start = args.get("line_offset") is not None
+    has_limit = args.get("line_limit") is not None
+    if not has_start and not has_limit:
+        return None
+    offset = args.get("offset")
+    if offset is not None and not (type(offset) is int and offset == 0):
+        return "bad_window"
+    start = args.get("line_offset", 1) if has_start else 1
+    count = args.get("line_limit") if has_limit else DEFAULT_LINE_LIMIT
+    if isinstance(start, bool) or not isinstance(start, int) or not 1 <= start <= MAX_OFFSET:
+        return "bad_line_offset"
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= MAX_LINE_LIMIT:
+        return "bad_line_limit"
+    return start, count
+
+
+_LINE_CHUNK = 65536
+
+
+def _read_line(stream: Any, keep: int) -> tuple[bytes, int] | None:
+    """One line from *stream* (with its ``\n``): the first *keep* bytes of it and its
+    full length, or ``None`` at end of input. A line longer than *keep* is still
+    consumed to its end, so the stream always stands at the next line."""
+    kept = bytearray()
+    length = 0
+    while True:
+        chunk = stream.readline(_LINE_CHUNK)
+        if not chunk:
+            return (bytes(kept), length) if length else None
+        length += len(chunk)
+        if len(kept) < keep:
+            kept += chunk[:keep - len(kept)]
+        if chunk.endswith(b"\n"):
+            return bytes(kept), length
+
+
+def _line_page(stream: Any, start: int, count: int, *, budget: int,
+               total_lines: int | None = None) -> dict:
+    """A page of up to *count* whole lines starting at line *start* (1-based), never
+    more than *budget* bytes (H444).
+
+    A line that would overflow the budget ends the page before it, and
+    ``next_line_offset`` names it. A first line bigger than the whole budget comes
+    back cut (``line_truncated``) with ``line_byte_offset`` — where that line starts —
+    so the rest of it is reachable through the byte ``offset``; the next page then
+    starts at the following line. ``total_lines`` is present once the end is known.
+    """
+    line = 1
+    while line < start:
+        if _read_line(stream, 0) is None:
+            break
+        line += 1
+    out = bytearray()
+    returned = 0
+    line_truncated = False
+    line_byte_offset: int | None = None
+    more = True
+    while returned < count:
+        position = stream.tell()
+        item = _read_line(stream, budget - len(out) + 1)
+        if item is None:
+            more = False
+            break
+        kept, length = item
+        if len(out) + length > budget:
+            if returned == 0:
+                cut = kept[:budget]
+                out += cut[:_utf8_page_end(cut, allow_empty=True)] if len(cut) < length else cut
+                returned = 1
+                line_truncated = True
+                line_byte_offset = position
+            else:
+                stream.seek(position)
+            break
+        out += kept
+        returned += 1
+    if more:
+        more = bool(stream.read(1))
+    if not more and total_lines is None:
+        total_lines = (line - 1) + returned if line == start else line - 1
+    data = bytes(out)
+    fields: dict[str, Any] = {
+        "content": data.decode("utf-8", errors="replace"),
+        "bytes": len(data),
+        "line_offset": start,
+        "lines": returned,
+        "truncated": more,
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+    if more:
+        fields["next_line_offset"] = start + returned
+    if total_lines is not None:
+        fields["total_lines"] = total_lines
+    if line_truncated:
+        fields["line_truncated"] = True
+        fields["line_byte_offset"] = line_byte_offset
+    return fields
 
 
 def _page(data: bytes, *, offset: int, total: int) -> dict:
@@ -1557,25 +1705,183 @@ def _read_image(target: Path, size: int) -> ToolContent | dict | None:
     )
 
 
-def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict:
+@dataclass(frozen=True)
+class _ParsedDocument:
+    """One document's extraction, as every page of it is served (H444)."""
+
+    text: bytes
+    total_lines: int
+    annotations: dict[str, Any]
+
+
+class DocumentCache:
+    """Parsed documents, keyed by ``(suffix, sha256 of the admitted input bytes)``.
+
+    Content-keyed, so an edited file (same name, same size, same mtime or not) is a
+    new key and is parsed again, and an unchanged one is parsed once however many
+    pages are read. Least-recently-used entries leave first; the cache holds at most
+    :data:`DOCUMENT_CACHE_ENTRIES` documents and :data:`DOCUMENT_CACHE_TEXT_BYTES` of
+    extracted text (a larger document is served but not kept). Thread-safe: reads
+    run in worker threads.
+    """
+
+    def __init__(self, *, max_entries: int = DOCUMENT_CACHE_ENTRIES,
+                 max_text_bytes: int = DOCUMENT_CACHE_TEXT_BYTES) -> None:
+        self.max_entries = max_entries
+        self.max_text_bytes = max_text_bytes
+        self._entries: OrderedDict[tuple[str, str], _ParsedDocument] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._entries)
+
+    def get(self, key: tuple[str, str]) -> _ParsedDocument | None:
+        with self._lock:
+            value = self._entries.get(key)
+            if value is not None:
+                self._entries.move_to_end(key)
+            return value
+
+    def put(self, key: tuple[str, str], value: _ParsedDocument) -> None:
+        if len(value.text) > self.max_text_bytes:
+            return
+        with self._lock:
+            self._entries[key] = value
+            self._entries.move_to_end(key)
+            while (len(self._entries) > self.max_entries
+                   or sum(len(v.text) for v in self._entries.values()) > self.max_text_bytes):
+                self._entries.popitem(last=False)
+
+
+def _too_large(size: int) -> dict:
+    return {
+        "ok": False,
+        "reason": "document_too_large",
+        "size": size,
+        "max_document_bytes": MAX_DOCUMENT_BYTES,
+        "detail": (
+            "document extraction is limited to 50000000 bytes (50 MB); "
+            "raw=true returns a bounded byte page"
+        ),
+    }
+
+
+def _admitted_bytes(target: Path) -> bytes | int:
+    """The document's bytes, read once and bounded: at most one byte past the
+    ceiling is read, and a file that grew past it after it was measured comes back
+    as its observed size instead, so the parser only ever sees admitted bytes."""
+    with target.open("rb") as handle:
+        data = handle.read(MAX_DOCUMENT_BYTES + 1)
+        if len(data) > MAX_DOCUMENT_BYTES:
+            return max(len(data), os.fstat(handle.fileno()).st_size)
+    return data
+
+
+def _count_lines(data: bytes) -> int:
+    if not data:
+        return 0
+    return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
+
+
+def _docx_annotations(counts: Mapping[str, int]) -> dict[str, Any]:
+    """What a DOCX read says beside its text (H444): the parts it read besides body
+    paragraphs (``document_parts``), the visual parts it cannot carry
+    (``visual_content``) and the equations it does not extract (``coverage_warning``)."""
+    annotations: dict[str, Any] = {}
+    parts = {kind: counts[kind] for kind in DOCX_READ_KINDS if counts.get(kind)}
+    if parts:
+        annotations["document_parts"] = parts
+    visual = {kind: int(counts.get(kind, 0)) for kind in DOCX_VISUAL_KINDS}
+    if any(visual.values()):
+        annotations["visual_content"] = {
+            "reason": "docx_images",
+            "detail": (
+                "This document embeds images, charts, diagrams or objects. file_read "
+                "returns only the text and performs no OCR: what they show is not in "
+                "the content."
+            ),
+            **visual,
+        }
+    if counts.get("equations"):
+        annotations["coverage_warning"] = {
+            "reason": "docx_content_not_extracted",
+            "detail": (
+                "This document holds equations, which are not extracted: the text "
+                "around them is complete, the equations themselves are missing."
+            ),
+            "equations": int(counts["equations"]),
+        }
+    return annotations
+
+
+def _parse_document(suffix: str, data: bytes, target: Path) -> _ParsedDocument | None:
+    stream = io.BytesIO(data)
+    stream.name = str(target)  # type: ignore[attr-defined]  # what a parser error names
+    extract = extract_pdf_document if suffix == ".pdf" else extract_docx_document
+    result = extract(stream)
+    if not isinstance(result, DocumentExtraction):
+        return None
+    annotations: dict[str, Any] = {}
+    if suffix == ".pdf":
+        coverage = pdf_coverage_warning(result.pages)
+        if coverage is not None:
+            annotations["coverage_warning"] = coverage
+        if result.image_pages:
+            ranges = page_ranges(result.image_pages)
+            annotations["visual_content"] = {
+                "reason": "pdf_pages_with_images",
+                "detail": (
+                    "These pages hold embedded images. file_read returns only the text "
+                    "layer and performs no OCR: charts, scans and pictures on them are "
+                    "not in the content."
+                ),
+                "pages_with_images": len(result.image_pages),
+                "ranges": ranges["ranges"],
+                "omitted_range_count": ranges["omitted_range_count"],
+            }
+    else:
+        annotations.update(_docx_annotations(result.content_counts))
+    if result.stopped is not None:
+        limit = ("the extracted-text ceiling" if result.stopped == "text_limit"
+                 else "the extraction time budget")
+        retry = ("" if result.stopped == "text_limit" else
+                 " The time budget depends on load, so this result is not cached: "
+                 "reading the file again parses the document again.")
+        annotations["extraction_incomplete"] = {
+            "reason": result.stopped,
+            "unit": result.unit,
+            "units_read": result.units_read,
+            "units_total": result.units_total,
+            "detail": (
+                f"Extraction stopped at {limit} after {result.units_read} of "
+                f"{result.units_total} {result.unit}s; the text ends there and is not "
+                f"the whole document.{retry}"
+            ),
+        }
+    text = result.text.encode("utf-8")
+    return _ParsedDocument(text=text, total_lines=_count_lines(text), annotations=annotations)
+
+
+def _read_document(target: Path, size: int, limit: int, offset: int = 0, *,
+                   cache: DocumentCache | None = None,
+                   window: tuple[int, int] | None = None) -> dict:
     """Extract a bounded text page from an admitted .pdf / .docx input.
 
     ``offset`` counts bytes of the *extracted text* (UTF-8), not of the file: that is
     the text the reader was shown, so it is the only thing a page number can mean.
+    ``window`` (``line_offset``, ``line_limit``) pages the same text by lines instead.
     ``size`` is the observed on-disk input size; refuse above 50,000,000 bytes
     before probing a parser. ``text_size`` names the extracted text's byte size.
+
+    H444 — the parser reads the bytes admitted here (bounded, read once), never the
+    path, and its result is kept in *cache* under the SHA-256 of those bytes, so the
+    next page of an unchanged document is served without parsing it again
+    (``cached``). Extraction runs within a text-size and time budget
+    (``extraction_incomplete`` when one ran out).
     """
     if size > MAX_DOCUMENT_BYTES:
-        return {
-            "ok": False,
-            "reason": "document_too_large",
-            "size": size,
-            "max_document_bytes": MAX_DOCUMENT_BYTES,
-            "detail": (
-                "document extraction is limited to 50000000 bytes (50 MB); "
-                "raw=true returns a bounded byte page"
-            ),
-        }
+        return _too_large(size)
     suffix = target.suffix.lower()
     if not _parser_available(suffix):
         return {
@@ -1583,26 +1889,37 @@ def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict
             "reason": "parser_missing",
             "detail": f"reading {suffix} needs the {_DOCUMENT_PARSERS[suffix]} package; raw=true returns the bytes",
         }
-    coverage = None
-    if suffix == ".pdf":
-        pages = extract_pdf_pages(target)
-        text = "\n".join(pages) if pages is not None else None
-        if pages is not None:
-            coverage = pdf_coverage_warning(pages)
+    data = _admitted_bytes(target)
+    if isinstance(data, int):
+        return _too_large(data)
+    key = (suffix, hashlib.sha256(data).hexdigest())
+    parsed = cache.get(key) if cache is not None else None
+    cached = parsed is not None
+    if parsed is None:
+        parsed = _parse_document(suffix, data, target)
+        if parsed is None:
+            return {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
+        stop = parsed.annotations.get("extraction_incomplete", {}).get("reason")
+        if cache is not None and stop != "time_limit":
+            # A time-budget stop depends on machine load: caching it would serve the
+            # truncated prefix to every later read. A text-budget stop is
+            # deterministic and stays cached.
+            cache.put(key, parsed)
+    text = parsed.text
+    if window is not None:
+        page = _line_page(io.BytesIO(text), *window, budget=limit, total_lines=parsed.total_lines)
     else:
-        text = extract_text(target)
-    if text is None:
-        return {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
-    data = text.encode("utf-8")
+        page = _page(text[offset:offset + limit], offset=offset, total=len(text))
     return {
         "ok": True,
         "path": str(target),
-        **({"coverage_warning": coverage} if coverage is not None else {}),
-        **_page(data[offset:offset + limit], offset=offset, total=len(data)),
+        **parsed.annotations,
+        **page,
         "size": size,
-        "text_size": len(data),
+        "text_size": len(text),
         "extracted": True,
         "format": suffix.lstrip("."),
+        "cached": cached,
     }
 
 
@@ -1721,6 +2038,13 @@ def _preflight_read(args: dict) -> Mapping:
         if not _valid_offset(value):
             raise ToolRPCValidationError("bad_offset")
         clean["offset"] = value
+    for name in ("line_offset", "line_limit"):
+        if name in args:
+            clean[name] = args[name]
+    if "line_offset" in clean or "line_limit" in clean:
+        window = _line_window_args(clean)
+        if isinstance(window, str):
+            raise ToolRPCValidationError(window)
     return clean
 
 
@@ -1790,8 +2114,16 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             ".docx is returned as its extracted text (raw=true for the bytes). offset "
             "starts the read at that byte; a read that stops early returns next_offset — "
             "pass it back as offset to page through a large file or a spilled tool result. "
+            "Or read by lines: line_offset (1-based first line) and line_limit (default "
+            "500, at most 2000) return whole lines, and next_line_offset names the next "
+            "page; a byte offset other than 0 and a line window cannot be combined. "
             "PDF/DOCX extraction accepts at most 50 MB (50,000,000 bytes); raw=true pages bytes. "
-            "PDF page gaps without extracted text are reported separately from content. "
+            "A .docx is read in document order: tables as | rows, text boxes, "
+            "headers/footers and notes included; its images, charts and objects (no OCR) "
+            "and equations are reported beside the content. "
+            "PDF page gaps without extracted text, pages of garbled text and pages "
+            "holding images (no OCR is done) are reported separately from content; an "
+            "unchanged document is parsed once and later pages come from cache. "
             "A .png/.jpg/.gif/.webp image (up to 3,750,000 bytes) is returned as the image "
             "itself; raw=true returns its bytes."
         ),
@@ -1804,6 +2136,8 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
                 "path": _PATH_SCHEMA,
                 "max_bytes": {"type": "integer", "minimum": 1},
                 "offset": {"type": "integer", "minimum": 0, "maximum": MAX_OFFSET},
+                "line_offset": {"type": "integer", "minimum": 1, "maximum": MAX_OFFSET},
+                "line_limit": {"type": "integer", "minimum": 1, "maximum": MAX_LINE_LIMIT},
                 "raw": {"type": "boolean"},
             },
             "required": ["path"],

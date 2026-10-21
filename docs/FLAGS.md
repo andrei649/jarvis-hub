@@ -171,7 +171,8 @@ allowlist at all**.
 (no `..`, no symlink escape, secret-looking names refused, bytes/entries/matches bounded;
 `file_search` is a *literal* content search — no regex, no ripgrep — that reports every cap
 it hit; `file_read` returns a `.pdf`/`.docx` as extracted text when `pypdf`/`python-docx` is
-installed, and names the missing parser otherwise);
+installed — both are declared in `requirements.txt` / `requirements-beta.txt` and their
+hash-pinned locks, so a default install has them — and names the missing parser otherwise);
 `file_write` / `file_delete` are **gated** ask-tier ToolRPC tasks
 (`toolrpc.file_write`, `toolrpc.file_delete`) that snapshot the previous bytes before
 touching the file, cross the kernel as `file.write`, and are reversible through

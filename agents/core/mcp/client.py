@@ -78,6 +78,11 @@ from agents.core.mcp.http_transport import (
     transport_allowed,
     validate_mcp_url,
 )
+from agents.core.mcp.schema_normalize import (
+    PROVIDER_NAME_PREFIX,
+    mcp_provider_name,
+    normalize_mcp_input_schema,
+)
 from agents.core.security.quarantine import strip_invisible_deep
 
 logger = logging.getLogger("jarvis.mcp")
@@ -354,7 +359,11 @@ class MCPTool:
     ):
         self.name = name
         self.description = description
-        self.input_schema = input_schema
+        #: What the server sent, kept for diagnostics only — never offered to a model.
+        self.raw_input_schema = input_schema
+        #: The provider-agnostic repair (H557): applied here, at registration, so every
+        #: dialect serializer downstream ships the same safe schema.
+        self.input_schema = normalize_mcp_input_schema(input_schema)
         self.server = server
         #: The server's own claims about the tool (``readOnlyHint``, ``destructiveHint``, …).
         self.annotations: dict = dict(annotations) if isinstance(annotations, dict) else {}
@@ -368,6 +377,13 @@ class MCPTool:
     def qualified_name(self) -> str:
         """``server/tool`` — the name that stays unambiguous across servers."""
         return f"{self.server}/{self.name}"
+
+    @property
+    def provider_name(self) -> str:
+        """``mcp__<server>__<tool>`` — the model-facing function name, legal for every
+        provider and outside the built-in tool namespace. :meth:`MCPManager.model_tools`
+        disambiguates the rare pairs that sanitize to the same text."""
+        return mcp_provider_name(self.server, self.name)
 
 
 class MCPServer:
@@ -450,6 +466,10 @@ class MCPServer:
             # orphaned) on every reconnect attempt.
             if self._proc is not None:
                 await self.close()
+            # A reconnect re-lists from scratch (the HTTP path does the same): the old
+            # list would otherwise be duplicated, and every duplicated pair is withheld
+            # from the model as ambiguous (H557).
+            self.tools = []
             self._proc = await asyncio.create_subprocess_exec(
                 *argv,
                 stdin=asyncio.subprocess.PIPE,
@@ -585,6 +605,8 @@ class MCPServer:
         resp = await self._send({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2})
         if resp and "result" in resp:
             hidden = 0
+            listed: list[MCPTool] = []
+            seen_names: set[str] = set()
             for t in resp["result"].get("tools", []):
                 tool = MCPTool(
                     name=t.get("name", "unknown"),
@@ -596,7 +618,14 @@ class MCPServer:
                 if not self.tool_visible(tool.name):
                     hidden += 1
                     continue
-                self.tools.append(tool)
+                if tool.name in seen_names:
+                    # A server listing one name twice: the first entry answers to it.
+                    continue
+                seen_names.add(tool.name)
+                listed.append(tool)
+            # A listing replaces the previous one (H557): appending made every reconnect
+            # (or a tools/list refresh) duplicate each tool.
+            self.tools = listed
             if hidden:
                 logger.info("MCP server %s: %d tool(s) hidden by the owner's filter", self.name, hidden)
 
@@ -728,6 +757,81 @@ class MCPServer:
 class MCPManager:
     def __init__(self):
         self.servers: dict[str, MCPServer] = {}
+        #: Built-in governed tool names an MCP tool may never answer to (H557).
+        self.reserved_names: frozenset[str] = frozenset()
+
+    def reserve_names(self, names) -> None:
+        """Declare the built-in tool names a third-party MCP tool may never shadow."""
+        self.reserved_names = frozenset(str(n) for n in (names or ()) if str(n))
+
+    def _provider_index(self) -> dict[str, tuple["MCPServer", MCPTool]]:
+        """Model-facing name → (server, tool), collision-free.
+
+        Pairs that sanitize to the same name are re-named with a digest of their raw
+        pair; any name still shared after that is withheld from every holder (fail
+        closed) instead of silently routing to whichever server came first.
+        """
+        pairs: list[tuple[MCPServer, MCPTool]] = []
+        listed: set[tuple[str, str]] = set()
+        for srv in self.servers.values():
+            for tool in srv.tools:
+                # The same (server, tool) listed twice is one tool, not a collision: the
+                # first entry answers to it, as it does for dispatch.
+                key = (srv.name, tool.name)
+                if key in listed:
+                    continue
+                listed.add(key)
+                pairs.append((srv, tool))
+        counts: dict[str, int] = {}
+        for _srv, tool in pairs:
+            counts[tool.provider_name] = counts.get(tool.provider_name, 0) + 1
+        named: list[tuple[str, MCPServer, MCPTool]] = []
+        for srv, tool in pairs:
+            name = tool.provider_name
+            if counts[name] > 1:
+                name = mcp_provider_name(tool.server, tool.name, hashed=True)
+            named.append((name, srv, tool))
+        final: dict[str, int] = {}
+        for name, _srv, _tool in named:
+            final[name] = final.get(name, 0) + 1
+        index: dict[str, tuple[MCPServer, MCPTool]] = {}
+        for name, srv, tool in named:
+            if final[name] > 1:
+                logger.warning("MCP tool name %s is ambiguous after sanitizing; withheld", name)
+                continue
+            index[name] = (srv, tool)
+        return index
+
+    def model_tools(self, reserved_names=None) -> list[dict[str, Any]]:
+        """The MCP tools as model-offer rows (H557): provider-legal ``name``, the
+        registration-normalized ``input_schema``, ``gated`` unless the server declared
+        the tool read-only, and ``untrusted_output`` always (third-party output).
+
+        A row whose name equals a built-in governed tool name (``reserved_names`` plus
+        :meth:`reserve_names`) is withheld — a third-party tool never shadows one — and
+        so is a tool the server's trust tier refuses (a mutating tool on a read-only
+        server), which every call would fail on.
+        """
+        reserved = self.reserved_names | frozenset(str(n) for n in (reserved_names or ()))
+        rows: list[dict[str, Any]] = []
+        for name, (srv, tool) in self._provider_index().items():
+            if name in reserved:
+                logger.warning("MCP tool %s shadows a built-in tool name; withheld", name)
+                continue
+            if srv._trust_denial(tool.name) is not None:
+                # The owner's trust tier would refuse every call: never offer it.
+                continue
+            rows.append({
+                "name": name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+                "gated": not tool.read_only,
+                "untrusted_output": True,
+                "server": srv.name,
+                "tool": tool.name,
+                "qualified_name": tool.qualified_name,
+            })
+        return rows
 
     def register(self, server: MCPServer):
         self.servers[server.name] = server
@@ -754,6 +858,14 @@ class MCPManager:
         an existing call (Hermes absorption 4a).
         """
         bare = str(name or "")
+        if server is None and bare in self.reserved_names:
+            # H557: a bare or model-facing name equal to a built-in governed tool
+            # never dispatches to a third-party server.
+            return None, bare, {"error": "shadows_builtin", "tool": bare}
+        if server is None and bare.startswith(PROVIDER_NAME_PREFIX):
+            hit = self._provider_index().get(bare)
+            if hit is not None:
+                return hit[0], hit[1].name, None
         if server is None and "/" in bare:
             prefix, _, rest = bare.partition("/")
             if prefix in self.servers and rest:

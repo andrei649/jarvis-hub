@@ -1763,8 +1763,16 @@ class AutonomyCoordinator:
                 "execution_context": lambda: execution_guidance_context(self, agent_id),
             }
 
+        # H557 — the MCP client's tools reach the model through the same governed
+        # allowlist: provider-legal mcp__ names, the registration-normalized schema,
+        # gated unless declared read-only, output fenced as untrusted; a built-in name
+        # is reserved against them on every sync. The loop syncs at each turn's start.
+        from .mcp.model_bridge import MCPModelBridge
+
+        mcp_bridge = MCPModelBridge(server, lambda: getattr(self._orch, "mcp", None))
         runtime = AgentToolRuntime(
             server,
+            tool_sync=mcp_bridge.sync,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
             registry_enabled=lambda: _get_setting("llm.registry_planning_enabled", False) is True,
             capability_snapshot=lambda: capability_registry.snapshot(self._orch),
@@ -2022,11 +2030,21 @@ class AutonomyCoordinator:
             out = await self._orch.process(prompt, channel="autonomy")
             return {"status": "ok", "kind": task.kind, "output": out}
 
-        # K3: optional per-task wall-time budget (JARVIS_TASK_MAX_SECONDS, unset = unbounded).
-        from .env_config import env_float
+        # K3 + H288: a finite per-task wall-time budget out of the box (JARVIS_TASK_MAX_SECONDS
+        # > 0 overrides the validated autonomy.task_max_seconds setting; never unbounded).
+        from .autonomy.executor import resolve_task_budget
 
-        _task_budget_value = env_float("JARVIS_TASK_MAX_SECONDS", 0.0, minimum=0.0)
-        _task_budget = _task_budget_value if _task_budget_value > 0 else None
+        _task_budget = resolve_task_budget(getattr(self._orch, "get_setting", None))
+        try:
+            _reaper_ttl = float(self._orch.get_setting("autonomy.running_ttl_seconds", 3600))
+        except Exception:
+            _reaper_ttl = 0.0
+        if _reaper_ttl > 0 and _task_budget >= _reaper_ttl:
+            logger.warning(
+                "autonomy.task_max_seconds (%.0fs) is not below autonomy.running_ttl_seconds "
+                "(%.0fs): the stuck-running reaper fails an overrunning task first",
+                _task_budget, _reaper_ttl,
+            )
         _budget_ledger = getattr(self._orch, "budget_ledger", None)
         executor = TaskExecutor(
             fallback=_llm,
@@ -2039,7 +2057,15 @@ class AutonomyCoordinator:
         async def _kanban_worker(task):
             return await self.kanban_dispatcher().execute(task)
 
-        executor.register(KanbanDispatcher.KIND, _kanban_worker)
+        # H288 review: the Kanban worker enforces the card's own max_runtime_seconds
+        # (asyncio.timeout(max_runtime_seconds or 1800) in KanbanDispatcher.execute) and
+        # records the card's own outcome, so the global task budget must not pre-empt it.
+        # The queue's stuck-running reaper (autonomy.running_ttl_seconds, default 3600 s)
+        # still applies: the worker's 30 s heartbeat does not refresh the queue row, so a
+        # card capped above that TTL has its queue row reaped at the TTL and the heartbeat
+        # then stops the worker (KanbanExecutionRefused). Raise running_ttl_seconds above
+        # the largest card cap to let such a card run to its own cap.
+        executor.register(KanbanDispatcher.KIND, _kanban_worker, self_bounded=True)
         self._wire_url_monitor(executor)
         self._wire_cloud_image(executor)
         self._wire_kanban_network(executor)

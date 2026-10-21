@@ -25,6 +25,9 @@ Included:
   * ``logs``         — opt-in only (``log_lines`` > 0): the newest WARNING+ hub log records,
                        secret-redacted by the log reader and e-mail-masked here. The one
                        section that can carry log text, so it is never in a default bundle.
+  * ``health``       — component-health roll-up (H164): how many optional orchestrator
+                       components initialized vs failed, and the failed component *names*
+                       (identifier-shaped only — any other key is counted, never printed).
 """
 
 from __future__ import annotations
@@ -59,6 +62,8 @@ _OTHER_KEYS = {
 #: Log lines a support bundle may carry at most, and the floor it reads them at.
 MAX_LOG_LINES = 500
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+#: A component name the health roll-up may print: a plain identifier, nothing else.
+_COMPONENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}")
 
 
 def _shown_value(category: str, key: str, kind: str, opts, value) -> tuple[bool, object]:
@@ -263,6 +268,28 @@ def _logs(lines: int) -> dict:
             "note": tail.get("note", "")}
 
 
+def _health(orch) -> dict:
+    """Component-health roll-up from the orchestrator's ComponentRegistry (the same
+    source as ``GET /api/health/components``): totals, failed names, one state word.
+    Without a live registry (``--offline``, a hub still starting) it is unavailable —
+    never an invented "all ok"."""
+    try:
+        reg = getattr(orch, "components", None) if orch is not None else None
+        if reg is None:
+            return {"error": "unavailable"}
+        status = reg.health()
+        if not isinstance(status, Mapping):
+            return {"error": "unavailable"}
+        bad = [name for name, state in status.items() if state != "ok"]
+        named = sorted(n for n in bad if isinstance(n, str) and _COMPONENT_NAME.fullmatch(n))
+        total = len(status)
+        return {"total": total, "ok": total - len(bad), "failed": named,
+                "failed_unnamed": len(bad) - len(named),
+                "state": "empty" if total == 0 else ("degraded" if bad else "ok")}
+    except Exception:
+        return {"error": "unavailable"}
+
+
 def build_bundle(orch=None, *, now_iso: str = "", route_count: int | None = None,
                  environ: Mapping[str, str] | None = None, log_lines: int = 0) -> dict:
     """Assemble the diagnostic bundle. Pure aside from reading live diagnostics; every
@@ -282,6 +309,7 @@ def build_bundle(orch=None, *, now_iso: str = "", route_count: int | None = None
         "credentials": _credentials(environ),
         "overrides": _overrides(),
         "logs": _logs(log_lines),
+        "health": _health(orch),
     }
 
 
@@ -311,6 +339,15 @@ def render_text(bundle: Mapping) -> str:
         for item in over.get("settings") or []:
             shown = "(withheld)" if item.get("withheld") else repr(item.get("value"))
             lines.append(f"  {item['name']} = {shown}  [{item.get('source')}]")
+    health = bundle.get("health") or {}
+    if "error" in health:
+        lines.append("components: unavailable")
+    else:
+        failed = list(health.get("failed") or [])
+        if health.get("failed_unnamed"):
+            failed.append(f"{health['failed_unnamed']} unnamed")
+        lines.append(f"components: {health.get('ok', '?')}/{health.get('total', '?')} ok"
+                     + (f" · failed: {', '.join(failed)}" if failed else ""))
     posture = bundle.get("posture") or {}
     hard = posture.get("hardened") or {}
     prod = posture.get("product_posture") or {}

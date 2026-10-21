@@ -132,12 +132,16 @@ def _parse_lines(text: str) -> list[Any]:
 def _files(session_id: str, archive_root: Path | None) -> dict[str, Path]:
     from agents.core.memory.persistence import memory_dir
     from agents.core.memory.precompress import TranscriptArchive
+    from agents.core.trajectory import path_for as trajectory_path_for
 
     base = memory_dir()
     return {
         "snapshot": base / f"{session_id}.json",
         "log": base / f"{session_id}.jsonl",
         "compaction_archive": TranscriptArchive(archive_root).path_for(session_id),
+        # H652: the session's saved full turns (opt-in training capture), backed up and
+        # deleted with the rest of it.
+        "trajectory": trajectory_path_for(session_id),
     }
 
 
@@ -261,6 +265,12 @@ def _delete_traces(session_id: str, checkpoints: Any, files: dict[str, Path],
             removed[name] = True
         except FileNotFoundError:
             removed[name] = False
+    # H574: the transcript's turns leave the session-search index in the same delete.
+    snapshot = files.get("snapshot")
+    if snapshot is not None:
+        from agents.core.memory import session_index
+
+        removed["search_index"] = bool(session_index.forget_sessions(snapshot.parent, [session_id]))
     return removed
 
 

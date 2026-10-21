@@ -29,6 +29,9 @@ psutil>=7.2.2
 # Nerva Workspace: PDF text extraction for uploaded documents, and IANA zones for
 # zoneinfo on hosts without a system zone database (report schedules).
 pypdf>=6.0,<7
+# python-docx: Word (.docx) text extraction for file_read (H444); without it a .docx
+# read returns parser_missing.
+python-docx>=1.1,<2
 tzdata>=2024.1
 
 # === Memory (optional — improves with numpy) ===

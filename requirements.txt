@@ -32,6 +32,10 @@ defusedxml>=0.7.1
 # Nerva Workspace (docs/business/WORKSPACE_PILOT_SPEC.md)
 # pypdf: text extraction from uploaded PDF documents (pure Python, no system deps).
 pypdf>=6.0,<7
+# python-docx: Word (.docx) text extraction for file_read (local_docs)
+# (H444: tables, text boxes, headers/footers, notes in document order). Without it
+# a .docx read returns parser_missing.
+python-docx>=1.1,<2
 # tzdata: IANA zones for zoneinfo on hosts without a system zone database (report
 # schedules run in each report's timezone; slim Linux images and Windows lack one).
 tzdata>=2024.1

@@ -148,6 +148,11 @@ class _WorkerFileTools(FileTools):
         super().__init__(binding.file_scope(), snapshots=base.snapshots, max_bytes=base.max_bytes,
                          authorizer=base._authorizer, audit=base._audit,
                          agent=binding.context.profile, spill_dirs=base._spill_dirs)
+        # H444 — one handler is built per call, so it shares the owner's parsed-
+        # document cache: paging a document must not reparse it on every page. The
+        # cache is keyed by (suffix, SHA-256 of the admitted bytes), so it holds no
+        # path or scope, and it is thread-safe.
+        self._documents = base._documents
 
     def _resolve_read(self, raw_path):
         self.binding.check()

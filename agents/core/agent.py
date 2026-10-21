@@ -961,17 +961,39 @@ class Agent:
                 prepared_route, prompt, system, cached_input_tokens=cached_input_tokens,
             )
         sink = usage_sink if usage_sink is not None else current_observer()
-        with clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
+        from . import trajectory  # H652: the whole turn, kept for training export (opt-in)
+
+        with (clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer,
+              text_usage_scope(None),
+              trajectory.capture(agent_id=getattr(self, "id", ""), model=model, system=system,
+                                 prompt=prompt) as recorded):
             response = await self._generate_response(
                 backend, model, prompt, system, max_tokens, temperature,
                 on_token=on_token, wall_seconds=wall_seconds,
                 usage_sink=observer if sink is not None else None,
                 effective_window=effective_window,
             )
-            from .llm.base import THINKING_EXHAUSTED_REPLY
+            from .llm.base import (
+                THINKING_EXHAUSTED_REPLY,
+                is_backend_failure_reply,
+                is_degraded_reply,
+            )
             if response == THINKING_EXHAUSTED_REPLY:
                 from .turn_stops import record_runtime_stop
                 record_runtime_stop("thinking_exhausted")
+            if recorded is not None:
+                if response == THINKING_EXHAUSTED_REPLY:
+                    recorded.note_exit("thinking_exhausted")
+                elif not recorded.exit_reason and is_degraded_reply(response):
+                    recorded.note_exit("degraded")
+                elif recorded.exit_reason == "model_response" and is_backend_failure_reply(
+                        response.lstrip() if isinstance(response, str) else response):
+                    # A failed tool-capable adapter returns its degraded reply as a plain
+                    # ToolTurn, so the loop's normal model_response exit must not keep it
+                    # completed — but only the fixed failure texts count (H681), never a
+                    # real answer that happens to open with "[".
+                    recorded.note_exit("degraded")
+                recorded.finish(response)
             return response
 
     def _check_prepared_budget(self, prepared_route, prompt, rendered_system,
@@ -1021,6 +1043,8 @@ class Agent:
         """
         from .llm.job_selection import selected_window
         system = self.model_system_prompt(backend, model, system)
+        from . import trajectory
+        trajectory.note_system(system)
         pinned_window = selected_window(model)
         if pinned_window is not None:
             cap = pinned_window // 4
@@ -1063,6 +1087,7 @@ class Agent:
         steering = prepare_steering_rows(getattr(self, "id", ""))
         if steering.rows:
             prompt = "\n\n".join([prompt, *(row["content"] for row in steering.rows)])
+            trajectory.note_prompt(prompt)  # H652: the saved human turn is what was sent
 
         check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
         guard = (lambda: check(backend, model)) if callable(check) else None

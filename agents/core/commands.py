@@ -451,6 +451,91 @@ async def _project(ctx: CommandContext) -> str:
     return result["output"]
 
 
+def _personality(ctx: CommandContext) -> str:
+    """H592 — Hermes' ``/personality``: switch this conversation's style preset.
+
+    ``/personality`` lists presets and what is in force; ``<name>`` sets this
+    conversation's preset; ``none`` runs it on the plain SOUL; ``default`` forgets the
+    choice (follow the hub-wide default); ``global <name|none>`` sets or clears that
+    default. Nothing here writes a SOUL file or a prompt version.
+    """
+    from . import safe_mode
+    from .cognition import personality_presets as pp
+
+    store = pp.default_store()
+    session = getattr(ctx.orch, "session_id", None)
+    usage = "Usage: /personality [<name> | none | default | global <name|none>]."
+    untouched = "The SOUL and its version history are untouched."
+    words = (ctx.args or "").split()
+    wanted = words[0].lower() if words else ""
+    suspended = safe_mode.enabled()
+    if not wanted or wanted == "list":
+        rows = []
+        for preset in pp.catalog():
+            state = " (blocked by the injection scan)" if preset.blocked else ""
+            rows.append(f"- {preset.name} [{preset.source}]{state}")
+        builtins = set(pp.BUILTIN_PRESETS)
+        for name, why in pp.ignored_files().items():
+            instead = "; the built-in is used" if name in builtins else ""
+            rows.append(f"- {name}.md [owner file] (ignored: {why}{instead})")
+        own = store.get_session(session) if session else None
+        current = store.effective(session) if session else store.get_global()
+        lines = [
+            f"Personality here: {current or 'none (plain SOUL)'}"
+            + (" — this conversation's choice" if own else (" — the hub-wide default" if current else "")),
+            f"Hub-wide default: {store.get_global() or 'none'}",
+            "Presets:", *rows,
+            f"Add your own as {pp.presets_dir()}/<name>.md. {usage}",
+        ]
+        if suspended:
+            lines.insert(0, "Safe mode is on: no personality overlay is applied (every turn runs on "
+                            "the plain SOUL) and the choices below cannot be changed until the hub "
+                            "restarts without safe mode.")
+        return "\n".join(lines)
+    if suspended:
+        safe_mode.note("personality_overlays")
+        return ("Safe mode is on: personality overlays are suspended and cannot be changed; "
+                "nothing changed. Restart the hub without safe mode to use /personality.")
+    if wanted == "global":
+        target = words[1].lower() if len(words) > 1 else ""
+        if target in (pp.NONE, pp.DEFAULT, "off"):
+            store.set_global(None)
+            return f"Hub-wide default personality cleared. {untouched}"
+        preset = pp.resolve(target)
+        refusal = _personality_refusal(preset, target, usage)
+        if refusal:
+            return refusal
+        store.set_global(preset.name)
+        return (f"Hub-wide default personality is now {preset.name}; a conversation's own choice "
+                f"still wins. {untouched}")
+    if not session:
+        return "There is no conversation here to set a personality for."
+    if wanted in (pp.NONE, "off"):
+        store.set_session(session, pp.NONE)
+        return f"This conversation now runs on the plain SOUL, with no personality overlay. {untouched}"
+    if wanted in (pp.DEFAULT, "reset"):
+        store.set_session(session, None)
+        fallback = store.get_global()
+        return (f"This conversation's personality choice is cleared; it follows the hub-wide default "
+                f"({fallback or 'none'}). {untouched}")
+    preset = pp.resolve(wanted)
+    refusal = _personality_refusal(preset, wanted, usage)
+    if refusal:
+        return refusal
+    store.set_session(session, preset.name)
+    return (f"Personality for this conversation is now {preset.name} ({preset.source}) — from the next "
+            f"reply. /personality none drops it. {untouched}")
+
+
+def _personality_refusal(preset, wanted: str, usage: str) -> str:
+    if preset is None:
+        return f"Unknown personality {wanted[:32]!r}; nothing changed. /personality lists them. {usage}"
+    if preset.blocked:
+        return (f"The personality file {preset.name}.md was blocked by the injection scan; "
+                "nothing changed. Edit the file and try again.")
+    return ""
+
+
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
 
@@ -469,6 +554,8 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("jobs", "your scheduled jobs and whether the scheduler is alive", _jobs))
     registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
+    registry.register(SlashCommand("personality", "switch this conversation's personality preset", _personality,
+                                   tier=ADMIN, usage="[<name>|none|default|global <name|none>]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
     registry.register(SlashCommand("checkpoints", "checkpoint previews and approved owner operations",
                                    checkpoint_command, tier=ADMIN,

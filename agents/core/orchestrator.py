@@ -2098,6 +2098,12 @@ class Orchestrator:
         channel_sessions = self.__dict__.get("_channel_sessions", {})
         for key in [key for key, sid in channel_sessions.items() if sid == session_id]:
             del channel_sessions[key]
+        try:  # H592 — nor does it keep a /personality choice
+            from .cognition.personality_presets import default_store
+
+            default_store().forget(session_id)
+        except Exception:
+            logger.debug("personality overlay not forgotten for %s", session_id, exc_info=True)
 
     def live_session_ids(self) -> set[str]:
         """H262 — every session a chat is on right now: the session in use and each
@@ -3818,6 +3824,16 @@ class Orchestrator:
             logger.debug("persona prompt block skipped for %s", agent_id, exc_info=True)
             return ""
 
+    def _personality_overlay_block(self) -> str:
+        """H592 — this conversation's ``/personality`` preset, or ``""``. Never fails a turn."""
+        try:
+            from .cognition.personality_presets import overlay_block
+
+            return overlay_block(self.session_id or "default")
+        except Exception:
+            logger.debug("personality overlay skipped", exc_info=True)
+            return ""
+
     def _begin_chat_outcomes(self):
         """Freeze authoritative observations only after accepting a real user turn."""
         from .approval_outcomes import bind_approval_turn, open_approval_turn
@@ -3906,6 +3922,9 @@ class Orchestrator:
         persona_block = self._persona_prompt_block(agent_id)
         if persona_block:
             parts.append(persona_block)
+        overlay = self._personality_overlay_block()   # H592: after the SOUL, before project files
+        if overlay:
+            parts.append(overlay)
 
         agent_context = await self.memory.get_agent_context(agent_id)
         if agent_context:

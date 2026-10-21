@@ -2466,7 +2466,8 @@ export interface paths {
         /**
          * Support Bundle
          * @description A non-sensitive diagnostic bundle for support triage (admin-only). ``log_lines``
-         *     opts in to the newest redacted WARNING+ log records (H009).
+         *     opts in to the newest redacted WARNING+ log records (H009); ``download`` serves the
+         *     same JSON as an attachment file to save and attach to a support request (H164).
          */
         get: operations["support_bundle_api_support_bundle_get"];
         put?: never;
@@ -3564,6 +3565,74 @@ export interface paths {
          *     admin can promote LLM-authored code from pending to executable.
          */
         post: operations["approve_generated_skill_api_skills__name__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/pending/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending Skill Detail
+         * @description H331: a quarantined skill as the owner reviews it before approving — every file of
+         *     its folder with its text (SKILL.md, the code, the rest), the quarantine note and the
+         *     code-guidance findings. Bounded; a file cut short or left out says so.
+         */
+        get: operations["pending_skill_detail_api_skills_pending__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/{name}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard Generated Skill
+         * @description H331: reject a quarantined skill — its folder leaves the skills tree for an archive
+         *     (never loaded again), its registry entry and any approval bound to its path go. A skill
+         *     that awaits no review is never touched (404).
+         */
+        post: operations["discard_generated_skill_api_skills__name__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/review/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Review
+         * @description H331: approve or reject several pending skills, skill-change proposals and skill
+         *     batches in one move. A pending skill approved is signed and activated, rejected is
+         *     discarded; a proposal's or batch's own approval card is decided and the change applied
+         *     (or closed) as one decision on its card would. Each item reports its own outcome; one
+         *     failure never undoes the others.
+         */
+        post: operations["bulk_review_api_skills_review_bulk_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10294,6 +10363,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/trajectories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Trajectories
+         * @description H652 — the session's saved full turns (system, prompt, tool calls, tool results,
+         *     reply) as training data: ``format=sharegpt`` (Hermes ``conversations`` of from/value)
+         *     or ``format=messages`` (OpenAI chat rows for ``training/sft_grpo.py``).
+         *     ``completed_only`` keeps the turns that ended on the model's own answer; ``jsonl``
+         *     answers one row per line. Admin only — a tool result can carry what the owner read.
+         *     Capture is opt-in (``NERVA_SAVE_TRAJECTORIES``), so ``capture_enabled`` says why a
+         *     session may have none.
+         */
+        get: operations["get_session_trajectories_sessions__session_id__trajectories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/todo": {
         parameters: {
             query?: never;
@@ -13057,6 +13152,23 @@ export interface components {
             selector: string;
             /** Text */
             text: string;
+        };
+        /**
+         * BulkReviewBody
+         * @description H331: one decision over several pending skills, skill-change proposals and skill
+         *     batches at once.
+         */
+        BulkReviewBody: {
+            /** Approved */
+            approved: boolean;
+            /** Skills */
+            skills?: string[];
+            /** Proposals */
+            proposals?: string[];
+            /** Batches */
+            batches?: string[];
+            /** Reason */
+            reason?: string | null;
         };
         /** BulkTaskBody */
         BulkTaskBody: {
@@ -19382,6 +19494,7 @@ export interface operations {
         parameters: {
             query?: {
                 log_lines?: number;
+                download?: boolean;
             };
             header?: never;
             path?: never;
@@ -20780,6 +20893,101 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pending_skill_detail_api_skills_pending__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_generated_skill_api_skills__name__discard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_review_api_skills_review_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkReviewBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -30802,6 +31010,42 @@ export interface operations {
         parameters: {
             query?: {
                 confirm?: string;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_trajectories_sessions__session_id__trajectories_get: {
+        parameters: {
+            query?: {
+                format?: string;
+                completed_only?: boolean;
+                jsonl?: boolean;
+                limit?: number;
             };
             header?: never;
             path: {

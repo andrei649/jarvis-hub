@@ -28,6 +28,32 @@ Handler = Callable[[object], Awaitable[dict]]
 #: The reason key on the executor's refusal when its execution guard said why it declined.
 GUARD_REASON_KEY = "guard_reason"
 
+#: H288: the shipped wall-clock budget for one queued in-process task. Finite and below the
+#: 3600 s stuck-running reaper TTL, so a hung handler is cancelled and recorded as a failed
+#: task long before the reaper has to reclaim the row.
+TASK_MAX_SECONDS_SETTING = "autonomy.task_max_seconds"
+DEFAULT_TASK_MAX_SECONDS = 1800
+MAX_TASK_MAX_SECONDS = 86_400
+
+
+def resolve_task_budget(get_setting: Optional[Callable[..., object]]) -> float:
+    """The per-task wall-time budget: a positive ``JARVIS_TASK_MAX_SECONDS`` wins, then the
+    validated ``autonomy.task_max_seconds`` setting, then the finite default. Never None."""
+    from ..env_config import env_float
+
+    override = env_float("JARVIS_TASK_MAX_SECONDS", 0.0, minimum=0.0)
+    if override > 0:
+        return float(override)
+    value = None
+    if callable(get_setting):
+        try:
+            value = get_setting(TASK_MAX_SECONDS_SETTING, DEFAULT_TASK_MAX_SECONDS)
+        except Exception:
+            logger.warning("%s could not be read; using the default", TASK_MAX_SECONDS_SETTING)
+    if type(value) is int and 1 <= value <= MAX_TASK_MAX_SECONDS:
+        return float(value)
+    return float(DEFAULT_TASK_MAX_SECONDS)
+
 
 class ExecutionGuardDeclined(Exception):
     """An execution guard declining for a reason it can name (review round 6, item 6).
@@ -55,16 +81,37 @@ class TaskExecutor:
         self._handlers: dict[str, Handler] = {}
         self.fallback = fallback
         # K3 (OWASP unbounded-consumption): a per-task wall-time budget. None = unbounded
-        # (the default → byte-identical behavior); set via JARVIS_TASK_MAX_SECONDS at the
-        # worker. A task that overruns is cancelled and returns a clean failed result.
+        # for a bare executor; the shipped worker always passes ``resolve_task_budget(...)``
+        # (H288: finite by default). A task that overruns is cancelled and returns a clean
+        # failed result.
         self.max_wall_seconds = max_wall_seconds
         self.budget_ledger = budget_ledger
         self.execution_guard = execution_guard
+        # H288 review: prefixes whose handler enforces its own owner-set runtime cap (the
+        # Kanban worker's per-card ``max_runtime_seconds``). The global budget must not cut
+        # them short and pre-empt their own timeout outcome.
+        self._self_bounded: set[str] = set()
 
-    def register(self, prefix: str, handler: Handler) -> "TaskExecutor":
-        """Register a handler for any task kind starting with `prefix`."""
-        self._handlers[prefix.lower()] = handler
+    def register(self, prefix: str, handler: Handler, *, self_bounded: bool = False) -> "TaskExecutor":
+        """Register a handler for any task kind starting with `prefix`.
+
+        ``self_bounded=True`` declares that the handler bounds its own runtime, so the
+        executor's ``max_wall_seconds`` does not apply to the kinds it runs."""
+        key = prefix.lower()
+        self._handlers[key] = handler
+        if self_bounded:
+            self._self_bounded.add(key)
+        else:
+            self._self_bounded.discard(key)
         return self
+
+    def budget_for(self, kind: str) -> Optional[float]:
+        """The wall-time budget applied to *kind*: None when a self-bounded handler runs it
+        (it enforces its own cap), otherwise ``max_wall_seconds``."""
+        prefix = self._prefix_for(kind)
+        if prefix is not None and prefix in self._self_bounded:
+            return None
+        return self.max_wall_seconds
 
     def _prefix_for(self, kind: str) -> Optional[str]:
         kind = (kind or "").lower()
@@ -127,7 +174,8 @@ class TaskExecutor:
         # a child Task, and an inherited ContextVar alone cannot authorize it.
         from .consent_execution import authorize_consent_handler, consent_scope_present
 
-        if self.max_wall_seconds is not None or consent_scope_present():
+        budget = self.budget_for(getattr(dispatch_task, "kind", ""))
+        if budget is not None or consent_scope_present():
             handler_task = asyncio.create_task(handler(dispatch_task))
             authorized = authorize_consent_handler(self, dispatch_task, handler_task)
             if authorized is False:
@@ -135,20 +183,22 @@ class TaskExecutor:
                 await asyncio.gather(handler_task, return_exceptions=True)
                 return {"status": "refused", "reason": "mediation_execution_context_required"}
             try:
-                if self.max_wall_seconds is None:
+                if budget is None:
                     result = await handler_task
                 else:
-                    result = await asyncio.wait_for(handler_task, timeout=self.max_wall_seconds)
+                    result = await asyncio.wait_for(handler_task, timeout=budget)
             except TimeoutError:
+                if budget is None:
+                    raise  # the handler's own timeout, not the executor's budget
                 logger.warning(
                     "task wall-time budget exceeded (kind=%s, %.0fs)",
                     getattr(dispatch_task, "kind", "?"),
-                    self.max_wall_seconds,
+                    budget,
                 )
                 return {
                     "status": "failed",
                     "reason": "wall_time_budget_exceeded",
-                    "budget_seconds": self.max_wall_seconds,
+                    "budget_seconds": budget,
                 }
         else:
             result = await handler(dispatch_task)

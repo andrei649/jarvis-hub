@@ -512,6 +512,9 @@ _CLIENT_GLOBS = (
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
     "/sessions/import": "Owner CLI imports a bounded transcript from its local host (agents/cli/nerva.py)",
+    "/sessions/{session_id}/trajectories":
+        "H652: training-data export read by `nerva sessions export ID --sharegpt` and by "
+        "trainers/scripts; JSONL for a fine-tune, not a HUD view",
     "/sessions/resolve": "Owner CLI resolves -c/-r selectors and retrieves a free recap (agents/cli/nerva.py)",
     "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
     "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",

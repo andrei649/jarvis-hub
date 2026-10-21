@@ -17,13 +17,17 @@ Hermes absorption, wave 0.1 — see docs/HERMES_ABSORPTION.md.
 
 from __future__ import annotations
 
+import copy
 import itertools
 import json
+import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from .tool_protocol import TokenUsage, ToolSpec
+
+logger = logging.getLogger("jarvis.llm.tool_dialects")
 
 SYNTHETIC_ID_PREFIX = "nerva_call_"
 _synthetic_counter = itertools.count(1)
@@ -424,15 +428,179 @@ def anthropic_tool_calls(blocks: Any) -> list[Any]:
 # ── Gemini generateContent ───────────────────────────────────────────────────
 
 
+#: Gemini has no `$ref`, so references are expanded in place. A schema can name a
+#: definition from many places (a DAG that fans out) or chain references without end;
+#: these bound the expansion so a pathological third-party schema degrades to `{}`
+#: nodes instead of stalling, exhausting memory or raising RecursionError (H557).
+GEMINI_MAX_DEPTH = 32
+GEMINI_MAX_NODES = 2_000
+
+
+class _Budget:
+    __slots__ = ("nodes",)
+
+    def __init__(self, nodes: int) -> None:
+        self.nodes = nodes
+
+
+def _resolve_pointer(ref: str, root: Mapping[str, Any]) -> Any:
+    """The node a local JSON pointer (`#/…`, any depth) names in *root*, or None."""
+    if ref == "#":
+        return root
+    if not ref.startswith("#/"):
+        return None
+    node: Any = root
+    for raw in ref[2:].split("/"):
+        part = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, Mapping):
+            node = node.get(part)
+        elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
+            node = node[int(part)]
+        else:
+            return None
+    return node
+
+
+def _is_null_schema(variant: Any) -> bool:
+    return isinstance(variant, dict) and variant.get("type") == "null" and len(variant) == 1
+
+
+def _merge_all_of(schema: dict[str, Any], branches: list[Any]) -> dict[str, Any]:
+    """One node from `allOf`: properties and required are unioned, any other keyword
+    keeps the node's own value first, then the earliest branch's. A branch's own nested
+    `allOf` is carried over whole (every one of them, not only the first), so the next
+    unwrap step merges it too."""
+    merged = {key: value for key, value in schema.items() if key != "allOf"}
+    properties = dict(merged["properties"]) if isinstance(merged.get("properties"), dict) else {}
+    required = list(merged["required"]) if isinstance(merged.get("required"), list) else []
+    nested: list[Any] = []
+    for branch in branches:
+        if not isinstance(branch, dict):
+            continue
+        for key, value in branch.items():
+            if key == "properties" and isinstance(value, dict):
+                for name, sub in value.items():
+                    properties.setdefault(name, sub)
+            elif key == "required" and isinstance(value, list):
+                required.extend(name for name in value if name not in required)
+            elif key == "allOf" and isinstance(value, list):
+                nested.extend(value)
+            else:
+                merged.setdefault(key, value)
+    if properties:
+        merged["properties"] = properties
+    if required:
+        merged["required"] = required
+    if nested:
+        merged["allOf"] = nested
+    return merged
+
+
+def _resolve_branch(
+    branch: Any, root: Mapping[str, Any], seen: frozenset[str],
+) -> tuple[Any, frozenset[str]]:
+    """One `allOf` branch with its own `$ref` chain inlined (bounded, recursion-safe), so
+    merging several branches never lets the first branch's reference hide the others'."""
+    for _ in range(GEMINI_MAX_DEPTH):
+        if not isinstance(branch, dict) or "$ref" not in branch:
+            return branch, seen
+        ref = branch.get("$ref")
+        rest = {key: value for key, value in branch.items() if key != "$ref"}
+        target = _resolve_pointer(ref, root) if isinstance(ref, str) and ref not in seen else None
+        if isinstance(target, dict):
+            branch, seen = _merge_all_of(rest, [target]), seen | {ref}
+        else:
+            branch = rest
+    return {key: value for key, value in branch.items() if key != "$ref"}, seen
+
+
+def _unwrap_for_gemini(
+    schema: dict[str, Any], root: Mapping[str, Any], seen: frozenset[str],
+) -> tuple[dict[str, Any] | None, frozenset[str]]:
+    """Inline `$ref`, `allOf` and a nullable union iteratively — a chain of references
+    never recurses — and give up (None) past `GEMINI_MAX_DEPTH` steps."""
+    for _ in range(GEMINI_MAX_DEPTH):
+        ref = schema.get("$ref")
+        if "$ref" in schema:
+            rest = {key: value for key, value in schema.items() if key != "$ref"}
+            target = (
+                _resolve_pointer(ref, root) if isinstance(ref, str) and ref not in seen else None
+            )
+            if isinstance(target, dict):
+                # The node's own keywords win; properties and required are unioned,
+                # so an `allOf` branch beside the reference keeps both halves.
+                schema, seen = _merge_all_of(rest, [target]), seen | {ref}
+            else:
+                # Unresolvable or recursive: what the node says beside the reference
+                # survives; the referenced shape is unconstrained.
+                schema = rest
+            continue
+        all_of = schema.get("allOf")
+        if "allOf" in schema:
+            # Each branch resolves its own reference from the same starting point (a
+            # diamond is not recursion); the references any of them followed are carried
+            # down, so a cycle through one of them still ends at `{}`.
+            resolved: list[Any] = []
+            followed = seen
+            for branch in all_of if isinstance(all_of, list) else []:
+                branch, branch_seen = _resolve_branch(branch, root, seen)
+                resolved.append(branch)
+                followed = followed | branch_seen
+            schema, seen = _merge_all_of(schema, resolved), followed
+            continue
+        for key in ("anyOf", "oneOf"):
+            variants = schema.get(key)
+            if not isinstance(variants, list) or len(variants) < 2:
+                continue
+            rest_variants = [variant for variant in variants if not _is_null_schema(variant)]
+            if (len(rest_variants) == 1 and len(rest_variants) < len(variants)
+                    and isinstance(rest_variants[0], dict)):
+                siblings = {k: v for k, v in schema.items() if k not in ("anyOf", "oneOf")}
+                schema = {**rest_variants[0], **siblings, "nullable": True}
+                break
+            if 2 <= len(rest_variants) < len(variants):
+                # `Optional[Union[A, B]] = None`: the null branches become Gemini's own
+                # `nullable` (a `{"type": "null"}` branch would project to `{}`), and the
+                # `default: null` goes with them.
+                siblings = {k: v for k, v in schema.items() if k != key}
+                if "default" in siblings and siblings["default"] is None:
+                    del siblings["default"]
+                schema = {**siblings, key: rest_variants, "nullable": True}
+                break
+        else:
+            return schema, seen
+    return None, seen
+
+
 def gemini_schema(schema: Any) -> dict[str, Any]:
     """Project a JSON Schema onto the OpenAPI subset Gemini accepts, recursively.
 
     Drops keywords Gemini rejects, folds `["string", "null"]` into `nullable`, `const` into a
     one-value `enum`, `oneOf` into `anyOf`, stringifies enum values, keeps only the formats the
-    API knows, and filters `required` to declared properties.
+    API knows, and filters `required` to declared properties. Gemini has no `$ref`, so a local
+    reference (`#/$defs/…`, legacy `#/definitions/…`, or a pointer to a nested definition) is
+    inlined from the root schema — it used to collapse to `{}`, deleting the shape — and so
+    is an `allOf` (merged) and a nullable union (its one non-null branch, `nullable`). The
+    expansion is bounded in depth and in total nodes; a recursive reference, or one past a
+    bound, becomes `{}`.
     """
     if not isinstance(schema, dict):
         return {}
+    return _gemini_node(schema, schema, frozenset(), 0, _Budget(GEMINI_MAX_NODES))
+
+
+def _gemini_node(
+    schema: Any, root: Mapping[str, Any], seen: frozenset[str], depth: int, budget: _Budget,
+) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {}
+    budget.nodes -= 1
+    if depth > GEMINI_MAX_DEPTH or budget.nodes < 0:
+        return {}
+    unwrapped, seen = _unwrap_for_gemini(schema, root, seen)
+    if unwrapped is None:
+        return {}
+    schema = unwrapped
     out: dict[str, Any] = {}
     nullable = bool(schema.get("nullable"))
     raw_type = schema.get("type")
@@ -462,6 +630,10 @@ def gemini_schema(schema: Any) -> dict[str, Any]:
         out["nullable"] = True
 
     enum = schema.get("enum")
+    if isinstance(enum, list) and None in enum:
+        # A null member is `nullable` on Gemini, not the string "None".
+        out["nullable"] = True
+        enum = [value for value in enum if value is not None]
     if isinstance(enum, list) and enum:
         out["enum"] = [str(value) for value in enum]
         out.setdefault("type", "string")
@@ -469,10 +641,13 @@ def gemini_schema(schema: Any) -> dict[str, Any]:
         out["enum"] = [str(schema["const"])]
         out.setdefault("type", "string")
 
+    def child(value: Any) -> dict[str, Any]:
+        return _gemini_node(value, root, seen, depth + 1, budget)
+
     properties = schema.get("properties")
     if isinstance(properties, dict):
         cleaned = {
-            name: gemini_schema(value)
+            name: child(value)
             for name, value in properties.items()
             if isinstance(name, str) and isinstance(value, dict)
         }
@@ -486,22 +661,68 @@ def gemini_schema(schema: Any) -> dict[str, Any]:
                     out["required"] = kept
     items = schema.get("items")
     if isinstance(items, dict):
-        out["items"] = gemini_schema(items)
+        out["items"] = child(items)
         out.setdefault("type", "array")
     variants = schema.get("anyOf", schema.get("oneOf"))
     if isinstance(variants, list):
-        cleaned_variants = [gemini_schema(variant) for variant in variants if isinstance(variant, dict)]
+        cleaned_variants = [
+            _gemini_required_branch(variant, out.get("properties")) or child(variant)
+            for variant in variants if isinstance(variant, dict)
+        ]
         if cleaned_variants:
             out["anyOf"] = cleaned_variants
+    note = _gemini_not_text(schema.get("not"))
+    if note:
+        # Gemini has no `not`; a required-only one is stated instead of dropped silently.
+        own = out.get("description")
+        out["description"] = f"{own} {note}" if own else note
     return out
 
 
+_REQUIRED_ONLY_KEYS = frozenset({"required", "type", "title", "description"})
+
+
+def _gemini_required_branch(variant: dict[str, Any], properties: Any) -> dict[str, Any] | None:
+    """A required-only alternative (`anyOf: [{"required": ["url"]}, …]`) as a Gemini
+    object branch. Gemini only accepts `required` beside the properties it names, so the
+    branch carries its parent's (already projected) properties; None for any other shape."""
+    required = variant.get("required")
+    if (not isinstance(properties, dict) or not properties or not isinstance(required, list)
+            or not set(variant) <= _REQUIRED_ONLY_KEYS
+            or variant.get("type", "object") != "object"):
+        return None
+    kept = [name for name in required if isinstance(name, str) and name in properties]
+    if not kept:
+        return None
+    return {"type": "object", "properties": copy.deepcopy(properties), "required": kept}
+
+
+def _gemini_not_text(schema: Any) -> str | None:
+    if not isinstance(schema, dict) or set(schema) != {"required"}:
+        return None
+    required = schema["required"]
+    names = [name for name in required if isinstance(name, str)] if isinstance(
+        required, list) else []
+    return "Do not provide all of: " + ", ".join(names) + "." if names else None
+
+
 def gemini_function_declarations(tools: Sequence[ToolSpec]) -> list[dict[str, Any]]:
-    """`functionDeclarations`; a tool without properties omits `parameters` (empty OBJECTs are a 400)."""
+    """`functionDeclarations`; a tool without properties omits `parameters` (empty OBJECTs are a 400).
+
+    Every schema goes through the same Gemini projection, built-in or third-party: the
+    provider-agnostic repair (H557) runs once, at MCP registration, never here, so a
+    built-in tool's schema is rewritten on no provider. One tool whose schema cannot be
+    projected is offered without parameters rather than failing the whole turn.
+    """
     declarations: list[dict[str, Any]] = []
     for tool in tools:
         declaration: dict[str, Any] = {"name": tool.name, "description": tool.description}
-        parameters = gemini_schema(tool.input_schema)
+        try:
+            parameters = gemini_schema(tool.input_schema)
+        except Exception:
+            logger.warning("Gemini schema projection failed for %s; offered without parameters",
+                           tool.name)
+            parameters = {}
         if parameters.get("properties"):
             parameters["type"] = "object"
             declaration["parameters"] = parameters

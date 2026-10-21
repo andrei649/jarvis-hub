@@ -5,8 +5,11 @@ Contains:
   - VectorStore / InMemoryVectorStore: vector similarity search (legacy / embeddings)
   - MemoryStore: structured, persistent key/value memory for user facts and preferences.
     Backed by SQLite with WAL mode. Semantic search is stubbed (H8.3 wires Qdrant).
+    H574: text search over CJK queries runs on a CJK-aware FTS5 index (``memory_fts``,
+    unicode61 over CJK unigrams + bigrams from ``cjk_fts``), not a LIKE scan.
 """
 import asyncio
+import contextlib
 import json
 import logging
 import math
@@ -15,6 +18,9 @@ import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional
+
+from agents.core.memory import cjk_fts
+from agents.core.memory.private_db import ensure_private
 
 logger = logging.getLogger("jarvis.memory.store")
 
@@ -291,9 +297,14 @@ class MemoryStore:
         self._init_db()
 
     def _conn(self) -> sqlite3.Connection:
+        # H574 review: facts (and memory_fts' segmented copy of each) stay owner-only,
+        # never 0o666 & ~umask; the -wal/-shm sidecars take the main file's mode.
+        ensure_private(self._path)
         conn = sqlite3.connect(str(self._path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        # H574: a deleted fact's cells and freed pages are zeroed, not left in the file.
+        conn.execute("PRAGMA secure_delete=ON")
         return conn
 
     def _init_db(self):
@@ -314,6 +325,146 @@ class MemoryStore:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category)"
                 )
+                self._fts = self._init_fts(conn)
+
+    # ── H574: the CJK-aware FTS5 index ──────────────────────────────────────
+
+    @staticmethod
+    def _segment(key: str, value: str) -> str:
+        return cjk_fts.index_text(f"{key}\n{value}")
+
+    _FTS_CREATE = (
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {name} USING fts5("
+        f"seg, tokenize='{cjk_fts.TOKENIZE}')"
+    )
+    _FTS_SHADOWS = ("data", "idx", "content", "docsize", "config")
+
+    def _init_fts(self, conn: sqlite3.Connection) -> bool:
+        """Create ``memory_fts`` and bring it in step with ``memory`` (the reindex migration).
+
+        A segmenter-version change rebuilds it; otherwise rows written before the index
+        existed (or by another writer) are backfilled and rows deleted behind the store are
+        dropped. False when this SQLite has no FTS5: search then stays on LIKE.
+
+        An index SQLite can no longer read — its shadow tables emptied behind its back, as
+        a per-table purge used to do ("invalid fts5 file format") — is dropped and rebuilt
+        from ``memory``: it is derived, and opening the store must never fail over it.
+        """
+        try:
+            conn.execute(self._FTS_CREATE.format(name="memory_fts"))
+        except sqlite3.OperationalError as exc:
+            if "no such module" in str(exc):
+                logger.warning("FTS5 unavailable, memory search stays on LIKE: %s", exc)
+                return False
+            return self._recover_fts(conn, exc)
+        except sqlite3.DatabaseError as exc:
+            return self._recover_fts(conn, exc)
+        try:
+            self._sync_fts(conn)
+        except sqlite3.DatabaseError as exc:
+            return self._recover_fts(conn, exc)
+        return True
+
+    def _sync_fts(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS memory_fts_meta (name TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        # Touch the FTS structure first, so a broken index fails here and is rebuilt.
+        conn.execute("SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'x'").fetchone()
+        row = conn.execute("SELECT value FROM memory_fts_meta WHERE name='segmenter'").fetchone()
+        if row is None or row[0] != cjk_fts.SEGMENTER_VERSION:
+            conn.execute("DELETE FROM memory_fts")
+            conn.execute(
+                "INSERT OR REPLACE INTO memory_fts_meta (name, value) VALUES ('segmenter', ?)",
+                (cjk_fts.SEGMENTER_VERSION,),
+            )
+        else:
+            conn.execute("DELETE FROM memory_fts WHERE rowid NOT IN (SELECT id FROM memory)")
+        missing = conn.execute(
+            "SELECT id, key, value FROM memory WHERE id NOT IN (SELECT rowid FROM memory_fts)"
+        ).fetchall()
+        conn.executemany(
+            "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
+            [(r[0], self._segment(r[1], r[2])) for r in missing],
+        )
+        # Erasure: a plain FTS5 DELETE leaves the deleted terms in memory_fts_data until
+        # segments merge. secure-delete removes them on every DELETE; without it (SQLite
+        # < 3.44) each delete path ends with an optimize (_purge_fts_deletes).
+        cjk_fts.enable_secure_delete(conn, "memory_fts")
+        conn.commit()
+        if missing:
+            logger.info("memory_fts: indexed %d row(s)", len(missing))
+
+    def _recover_fts(self, conn: sqlite3.Connection, failure: sqlite3.Error) -> bool:
+        """Drop the unreadable ``memory_fts`` and rebuild it from ``memory``. False (LIKE
+        search) only when even that fails."""
+        logger.warning("memory_fts unreadable (%s); rebuilding it", failure)
+        with contextlib.suppress(sqlite3.Error):
+            conn.rollback()
+        try:
+            try:
+                conn.execute("DROP TABLE IF EXISTS memory_fts")
+            except sqlite3.DatabaseError:
+                # FTS5 cannot even construct the table to drop it (its _config version row
+                # is gone). Give its shadow tables a fresh, empty index's content first.
+                conn.execute("DROP TABLE IF EXISTS memory_fts_template")
+                conn.execute(self._FTS_CREATE.format(name="memory_fts_template"))
+                for suffix in self._FTS_SHADOWS:
+                    # Fixed names: `suffix` comes from _FTS_SHADOWS, never from input.
+                    conn.execute(" ".join(("DELETE", "FROM", f"memory_fts_{suffix}")))
+                    conn.execute(" ".join(("INSERT", "INTO", f"memory_fts_{suffix}", "SELECT", "*",
+                                           "FROM", f"memory_fts_template_{suffix}")))
+                conn.execute("DROP TABLE memory_fts_template")
+                conn.commit()
+                conn.execute("DROP TABLE IF EXISTS memory_fts")
+            conn.execute("DROP TABLE IF EXISTS memory_fts_meta")
+            conn.execute(self._FTS_CREATE.format(name="memory_fts"))
+            self._sync_fts(conn)
+        except sqlite3.Error as exc:
+            with contextlib.suppress(sqlite3.Error):
+                conn.rollback()
+            logger.warning("memory_fts could not be rebuilt, search stays on LIKE: %s", exc)
+            return False
+        return True
+
+    def _purge_fts_deletes(self, conn: sqlite3.Connection) -> None:
+        """After a delete from ``memory_fts``: make sure the deleted terms leave the file.
+        Checked per delete, not cached, because a purge may have recreated the table
+        without the option: enabling it then rewrites the index once, and where FTS5
+        secure-delete is unavailable the index is rewritten (``optimize``) every time."""
+        if not self._fts:
+            return
+        try:
+            if not cjk_fts.enable_secure_delete(conn, "memory_fts"):
+                cjk_fts.purge_deleted(conn, "memory_fts")
+        except sqlite3.DatabaseError as exc:
+            self._fts_failed(exc)
+
+    def _fts_failed(self, exc: sqlite3.Error) -> None:
+        """The index broke under a live store: stop using it (LIKE answers); the next
+        open rebuilds it."""
+        logger.warning("memory_fts failed (%s); this store falls back to LIKE", exc)
+        self._fts = False
+
+    def _index_row(self, conn: sqlite3.Connection, category: str, key: str) -> None:
+        if not self._fts:
+            return
+        row = conn.execute(
+            "SELECT id, key, value FROM memory WHERE category=? AND key=?", (category, key)
+        ).fetchone()
+        if row is None:
+            return
+        try:
+            replaced = conn.execute("DELETE FROM memory_fts WHERE rowid=?", (row["id"],)).rowcount
+            conn.execute(
+                "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
+                (row["id"], self._segment(row["key"], row["value"])),
+            )
+        except sqlite3.DatabaseError as exc:
+            self._fts_failed(exc)
+            return
+        if replaced:
+            self._purge_fts_deletes(conn)   # the old value's terms go with it
 
     async def upsert(self, category: str, key: str, value: str, metadata: dict = None):
         meta_json = json.dumps(metadata or {})
@@ -322,15 +473,45 @@ class MemoryStore:
 
     def _upsert_sync(self, category: str, key: str, value: str, meta_json: str):
         with self._lock:
-            with self._conn() as conn:
-                conn.execute("""
-                    INSERT INTO memory (category, key, value, metadata)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(category, key) DO UPDATE SET
-                        value=excluded.value,
-                        metadata=excluded.metadata,
-                        updated_at=datetime('now')
-                """, (category, key, value, meta_json))
+            conn = self._conn()
+            try:
+                with conn:
+                    replaced = conn.execute(
+                        "SELECT 1 FROM memory WHERE category=? AND key=?", (category, key)
+                    ).fetchone() is not None
+                    conn.execute("""
+                        INSERT INTO memory (category, key, value, metadata)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(category, key) DO UPDATE SET
+                            value=excluded.value,
+                            metadata=excluded.metadata,
+                            updated_at=datetime('now')
+                    """, (category, key, value, meta_json))
+                    self._index_row(conn, category, key)
+                if replaced:
+                    # H574 review: the overwritten value's pages sit in the WAL until a
+                    # truncating checkpoint, exactly as a deleted fact's do.
+                    self._truncate_wal(conn)
+            finally:
+                conn.close()
+
+    @staticmethod
+    def _truncate_wal(conn: sqlite3.Connection) -> bool:
+        """After a commit that overwrote or deleted a fact: move the (zeroed) pages into
+        the file and empty the write-ahead log, so the old text is gone from both. False
+        (logged) when a reader kept the checkpoint from completing: the old frames then
+        stay in the log until the next truncating checkpoint."""
+        try:
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        except sqlite3.Error as exc:
+            logger.warning("memory.db checkpoint failed; old values may stay in the WAL: %s",
+                           exc)
+            return False
+        if row is not None and row[0]:
+            logger.warning("memory.db checkpoint busy; old values stay in the WAL until "
+                           "the next one")
+            return False
+        return True
 
     async def get(self, category: str, key: str) -> Optional[dict]:
         loop = asyncio.get_event_loop()
@@ -379,11 +560,32 @@ class MemoryStore:
 
     def _delete_sync(self, category: str, key: str) -> bool:
         with self._lock:
-            with self._conn() as conn:
-                cur = conn.execute(
-                    "DELETE FROM memory WHERE category=? AND key=?", (category, key)
-                )
-                return cur.rowcount > 0
+            conn = self._conn()
+            try:
+                with conn:
+                    if self._fts:
+                        try:
+                            conn.execute(
+                                "DELETE FROM memory_fts WHERE rowid IN "
+                                "(SELECT id FROM memory WHERE category=? AND key=?)",
+                                (category, key),
+                            )
+                        except sqlite3.DatabaseError as exc:
+                            self._fts_failed(exc)
+                    cur = conn.execute(
+                        "DELETE FROM memory WHERE category=? AND key=?", (category, key)
+                    )
+                    deleted = cur.rowcount > 0
+                    if deleted:
+                        self._purge_fts_deletes(conn)
+                if deleted:
+                    # H574: the pre-delete pages still sit in the write-ahead log until a
+                    # checkpoint; TRUNCATE moves the zeroed pages into the file and empties
+                    # the log, so the fact is gone from both.
+                    self._truncate_wal(conn)
+                return deleted
+            finally:
+                conn.close()
 
     async def search(self, query: str, limit: int = 10) -> list[dict]:
         """Basic text search — semantic search stubbed for H8.3."""
@@ -391,6 +593,12 @@ class MemoryStore:
         return await loop.run_in_executor(None, self._search_sync, query, limit)
 
     def _search_sync(self, query: str, limit: int) -> list[dict]:
+        match = cjk_fts.match_expression(query) if self._fts else None
+        if match is not None:
+            try:
+                return self._search_fts(query, match, limit)
+            except sqlite3.DatabaseError as exc:
+                self._fts_failed(exc)
         with self._lock:
             with self._conn() as conn:
                 pattern = f"%{query}%"
@@ -400,3 +608,26 @@ class MemoryStore:
                     (pattern, pattern, limit),
                 ).fetchall()
                 return [dict(r) for r in rows]
+
+    def _search_fts(self, query: str, match: str, limit: int) -> list[dict]:
+        """A CJK query through ``memory_fts``: the index narrows, the substring decides.
+
+        The n-gram ``MATCH`` is a superset of the substring hits, so each candidate is
+        re-checked for the whole query in its key or value — the same rows LIKE finds,
+        compared NFKC- and case-folded (so half-width and full-width forms meet).
+        """
+        needle = cjk_fts.normalize(query)
+        out: list[dict] = []
+        with self._lock:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    "SELECT m.* FROM memory_fts f JOIN memory m ON m.id = f.rowid"
+                    " WHERE memory_fts MATCH ? ORDER BY m.updated_at DESC, m.id DESC",
+                    (match,),
+                )
+                for row in rows:
+                    if needle in cjk_fts.normalize(row["key"]) or needle in cjk_fts.normalize(row["value"]):
+                        out.append(dict(row))
+                        if len(out) >= limit:
+                            break
+        return out

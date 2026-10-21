@@ -174,6 +174,9 @@ _MAX_ITERATIONS = 32
 _MAX_TOOL_CALLS_PER_TURN = MAX_PARSED_TOOL_CALLS - 1
 _EVENT_IDENTITY_BYTES = 256
 _EVENT_TIMEOUT_SECONDS = 0.1
+#: The MCP bridge sync (H557) is local bookkeeping plus, for a vanished server, the
+#: cancellation of its in-flight calls; this caps what a turn waits for it.
+_TOOL_SYNC_TIMEOUT_SECONDS = 5.0
 _MAX_JSON_DEPTH = 64
 _NO_CAPABILITY_REPLY = (
     "I can't use tools for this request because no live registered capability matches."
@@ -280,8 +283,12 @@ class AgentToolRuntime:
         context_window_tokens: Callable[[], int] | None = None,
         guidance_context: Callable[[str], Mapping[str, Any] | None] | None = None,
         heartbeat_seconds: float = _DEFAULT_HEARTBEAT_SECONDS,
+        tool_sync: Callable[[], Coroutine[Any, Any, Any]] | None = None,
     ) -> None:
         self._server = server
+        # H557 — brings dynamically sourced tools (the MCP client bridge) onto the
+        # allowlist before a turn reads its offer; a failure keeps what is registered.
+        self._tool_sync = tool_sync
         # H399 — 0 (or any non-positive value) turns in-flight heartbeats off.
         try:
             beat = float(heartbeat_seconds)
@@ -565,6 +572,8 @@ class AgentToolRuntime:
             logger.info("tool_loop_exit agent=%r reason=%s", _bounded_identity(agent_id), result.exit_reason.value)
         from .turn_stops import record_runtime_stop
         record_runtime_stop(result.exit_reason)
+        from . import trajectory  # H652: the turn's own exit, for its saved trajectory
+        trajectory.note_exit(result.exit_reason)
         return result
 
     async def _run_turn(
@@ -694,6 +703,7 @@ class AgentToolRuntime:
         inherited_clock = active_clock()
         if inherited_clock is not None and not inherited_clock.active:
             return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.TURN_REVOKED)
+        await self._sync_tools()
         registry_mode = self._registry_mode()
         metadata = self._server.tools()
         if registry_mode:
@@ -738,6 +748,9 @@ class AgentToolRuntime:
         # ends with it.
         from .skills.tools import bind_transcript
         bind_transcript(messages[0]["content"], prompt)
+        from . import trajectory  # H652: what the model saw, step by step (opt-in, never raises)
+        trajectory.note_system(messages[0]["content"])
+        trajectory.note_tools(tools)  # the definitions sent as the provider's ``tools=``
         limit = self._iteration_limit()
         budget = IterationBudget(limit)
         compacted: set[int] = set()
@@ -777,6 +790,8 @@ class AgentToolRuntime:
             from .steering import prepare_steering_rows
             steering = prepare_steering_rows(agent_id)
             messages.extend(steering.rows)
+            for row in steering.rows:
+                trajectory.note_message(row)
             folds_before = len(compacted)
             if (known_window is not None or len(messages) > 2) and not await self._compact_context(
                 messages,
@@ -834,6 +849,7 @@ class AgentToolRuntime:
                         )
                         return ToolLoopResult(_TOOLS_WITHDRAWN_REPLY, ToolLoopExitReason.TOOLS_WITHDRAWN)
                     tools, gated_tools, untrusted_tools = self._specs_for(metadata)
+                    trajectory.note_tools(tools)  # H652: the refreshed offer joins the record
                     schema_tokens = (
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
                         if known_window else 0
@@ -842,6 +858,7 @@ class AgentToolRuntime:
                                               metadata=metadata, backend=backend)
                 if rebuilt != messages[0]["content"]:
                     messages[0] = {**messages[0], "content": rebuilt}
+                    trajectory.note_system(rebuilt)
                     if not await self._compact_context(
                         messages, compacted, model=model, max_tokens=max_tokens,
                         effective_window=known_window, schema_tokens=schema_tokens,
@@ -929,6 +946,7 @@ class AgentToolRuntime:
             assistant_message = turn.as_assistant_message()
             assistant_message["tool_calls"] = [call.as_openai() for call in bounded_calls]
             messages.append(assistant_message)
+            trajectory.note_message(assistant_message)
             observations = await self._execute_turn_calls(
                 bounded_calls,
                 agent_id=agent_id,
@@ -1011,6 +1029,7 @@ class AgentToolRuntime:
                         "suspicious": False,
                     })
                 messages.append(message)
+                trajectory.note_message(message)
                 if risk.external_untrusted:
                     output_risks[id(message)] = risk
             for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
@@ -1440,6 +1459,17 @@ class AgentToolRuntime:
             for index, observation in zip(group.indices, results, strict=True):
                 observations[index] = observation
         return [observation for observation in observations if observation is not None]
+
+    async def _sync_tools(self) -> None:
+        """Run the tool-source sync (H557) under a bound; never fails the turn."""
+        if self._tool_sync is None:
+            return
+        try:
+            await asyncio.wait_for(self._tool_sync(), timeout=_TOOL_SYNC_TIMEOUT_SECONDS)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("tool source sync failed; the registered offer is unchanged")
 
     def _registry_mode(self) -> bool:
         try:

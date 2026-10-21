@@ -1324,6 +1324,136 @@ def register(skill):
             logger.info("Generated skill '%s' approved + activated", name)
         return True
 
+    # ── H331: the owner reads a quarantined skill whole, and can discard it ──────────
+
+    #: Bounds on one review answer: files listed, characters shown per file and in all.
+    REVIEW_MAX_FILES = 50
+    REVIEW_FILE_CHARS = 64 * 1024
+    REVIEW_TOTAL_CHARS = 512 * 1024
+
+    def _pending_skill_dir(self, name: str) -> Optional[Path]:
+        """The folder of the quarantined skill ``name`` (its registry name or its on-disk
+        slug), or None when no such skill awaits review. Only a real folder directly under
+        a discovery root (the shipped tree or the owner's) holding a plain ``PENDING_REVIEW``
+        qualifies, so neither a crafted name nor a symlink reaches outside the skills trees."""
+        name = str(name or "")
+        if not name or name in {".", ".."} or any(c in name for c in ("/", "\\", "\x00")):
+            return None
+        user_dir = _user_skills_dir()
+        roots = [SKILLS_DIR] + ([user_dir] if user_dir else [])
+        candidates: list[Path] = []
+        reg = self.skills.get(name)
+        if reg is not None and getattr(reg, "path", None):
+            candidates.append(Path(reg.path))
+        candidates += [root / name for root in roots]
+        for skill_dir in candidates:
+            try:
+                if skill_dir.is_symlink() or not skill_dir.is_dir():
+                    continue
+                marker = skill_dir / "PENDING_REVIEW"
+                if marker.is_symlink() or not marker.is_file():
+                    continue
+                parent = skill_dir.resolve().parent
+                if any(parent == root.resolve() for root in roots):
+                    return skill_dir
+            except OSError:
+                continue
+        return None
+
+    def pending_skill_detail(self, name: str) -> Optional[dict]:
+        """Everything a quarantined skill would run, as the owner reviews it before approval
+        (H331): every file of its folder with its text (SKILL.md first, then the code and
+        the rest), the quarantine note (who generated it, from which task) and the
+        code-guidance findings. Bounded per file and in all; a file cut short, binary, a
+        link or left out says so. None when ``name`` awaits no review."""
+        skill_dir = self._pending_skill_dir(name)
+        if skill_dir is None:
+            return None
+        files: list[dict] = []
+        shown = 0
+        more = 0
+        for path in sorted(skill_dir.rglob("*")):
+            rel = path.relative_to(skill_dir).as_posix()
+            if rel == "PENDING_REVIEW" or (path.is_dir() and not path.is_symlink()):
+                continue
+            if len(files) >= self.REVIEW_MAX_FILES:
+                more += 1
+                continue
+            entry: dict = {"path": rel, "text": None}
+            if path.is_symlink():
+                entry["symlink"] = True
+                files.append(entry)
+                continue
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                entry["unreadable"] = True
+                files.append(entry)
+                continue
+            entry["size"] = len(raw)
+            entry["sha256"] = hashlib.sha256(raw).hexdigest()
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                entry["binary"] = True
+                files.append(entry)
+                continue
+            room = max(0, min(self.REVIEW_FILE_CHARS, self.REVIEW_TOTAL_CHARS - shown))
+            entry["text"] = text[:room]
+            entry["truncated"] = len(text) > room
+            shown += len(entry["text"])
+            files.append(entry)
+        files.sort(key=lambda f: (f["path"] != "SKILL.md", f["path"]))
+        try:
+            note = (skill_dir / "PENDING_REVIEW").read_text(encoding="utf-8", errors="replace")[:4096]
+        except OSError:
+            note = ""
+        from ..code_guidance import scan_tree
+
+        try:
+            warnings = scan_tree(skill_dir)
+        except Exception:
+            logger.warning("code guidance for pending skill %s failed", skill_dir.name, exc_info=True)
+            warnings = []
+        registered = next((n for n, s in self.skills.items() if Path(getattr(s, "path", "")) == skill_dir), None)
+        skill = self.skills.get(registered) if registered else None
+        return {
+            "name": registered or skill_dir.name,
+            "folder": skill_dir.name,
+            "description": str(getattr(skill, "description", "") or "") if skill is not None else "",
+            "agents": list(getattr(skill, "agents", []) or []) if skill is not None else [],
+            "review_note": note,
+            "files": files,
+            "more_files": more,
+            "warnings": warnings,
+        }
+
+    def discard_generated_skill(self, name: str, archive_dir: Path) -> Optional[Path]:
+        """Reject a quarantined skill (H331): its folder leaves the skills tree for
+        ``archive_dir`` (kept outside every discovery root, so it never loads again while
+        the owner can still read what was refused); its registry entry and any approval
+        bound to its path go. Only a skill that awaits review is discarded — an approved or
+        shipped one is never touched. Returns where the folder went, or None."""
+        import shutil
+
+        skill_dir = self._pending_skill_dir(name)
+        if skill_dir is None:
+            return None
+        archive = Path(archive_dir)
+        archive.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        dest = archive / f"{skill_dir.name}-{stamp}"
+        suffix = 1
+        while dest.exists():
+            suffix += 1
+            dest = archive / f"{skill_dir.name}-{stamp}-{suffix}"
+        shutil.move(str(skill_dir), str(dest))
+        for key in [k for k, s in list(self.skills.items()) if Path(getattr(s, "path", "")) == skill_dir]:
+            del self.skills[key]
+        self.revoke_approval(skill_dir)
+        logger.info("Pending skill '%s' discarded by the owner (archived to %s)", skill_dir.name, dest)
+        return dest
+
     def sign_skill(self, name: str) -> Optional[str]:
         """Sign an already-discovered skill in place; re-verify it. (H12.1)"""
         skill = self.skills.get(name)

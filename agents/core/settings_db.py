@@ -352,6 +352,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="learning", key="review_max_facts", value=3, label="Facts a review may keep, per ring (0 = none; corrections are capped apart)", kind="number"),
     # Owner-authored media reminders: one deadline for the complete delivery.
     dict(category="jobs", key="media_send_timeout_seconds", value=300, label="Scheduled media total delivery deadline (1–300 seconds)", kind="number"),
+    # H288 (Hermes HERMES_CRON_TIMEOUT): one wall clock for a whole plain cron run.
+    dict(category="jobs", key="run_timeout_seconds", value=900, label="Scheduled job run deadline, delivery included (0 = unbounded, 1–86400 seconds)", kind="number"),
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
@@ -460,6 +462,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="daily_ceiling",   value=200,    label="Money daily ceiling",  kind="number"),
     dict(category="autonomy", key="interrupt_budget",value=4,      label="Urgent pushes per day", kind="number"),
     dict(category="autonomy", key="running_ttl_seconds", value=3600, label="Stuck-running reaper TTL (s)", kind="number"),
+    # H288: a queued in-process task's wall-clock budget (JARVIS_TASK_MAX_SECONDS overrides).
+    dict(category="autonomy", key="task_max_seconds", value=1800, label="Queued task wall-clock budget (1–86400 s, restart to apply)", kind="number"),
     dict(category="autonomy", key="night_shift",     value=False,  label="Night shift enabled",  kind="toggle"),
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
@@ -1007,6 +1011,10 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
             return f"{key}: expected an approved provider name or empty for the legacy command"
     if key == "media_send_timeout_seconds" and (type(value) is not int or not 1 <= value <= 300):
         return f"{key}: expected an integer between 1 and 300 seconds"
+    if key == "run_timeout_seconds" and (type(value) is not int or not 0 <= value <= 86_400):
+        return f"{key}: expected an integer between 0 (unbounded) and 86400 seconds"
+    if key == "task_max_seconds" and (type(value) is not int or not 1 <= value <= 86_400):
+        return f"{key}: expected an integer between 1 and 86400 seconds"
     if key == "sandbox_temp_dir":
         from .exec_cache import choice_problem
 

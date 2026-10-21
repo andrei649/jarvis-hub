@@ -57,8 +57,9 @@ def test_the_new_layers_come_after_the_owners_in_boot_order():
     assert safe_mode.LAYERS[7:11] == ("plugins", "outbound_webhooks", "memory_injection", "settings_overrides")
     assert safe_mode.LAYERS[11:12] == ("project_context",)                  # H594
     assert safe_mode.LAYERS[12:14] == ("voice_piper_binary", "voice_commands")  # H613
-    assert safe_mode.LAYERS[14:] == ("company_mode",)                        # H464c
-    assert len(set(safe_mode.LAYERS)) == len(safe_mode.LAYERS) == 15
+    assert safe_mode.LAYERS[14:15] == ("company_mode",)                      # H464c
+    assert safe_mode.LAYERS[15:] == ("personality_overlays",)                # H592
+    assert len(set(safe_mode.LAYERS)) == len(safe_mode.LAYERS) == 16
 
 
 # ── settings: the stricter of the owner's value and the shipped default ──────────
@@ -202,9 +203,10 @@ _NUMBERS_NOT_FORCED = {
     "learning.review_max_tokens", "learning.review_every_n", "learning.review_idle_gap_s",
     "learning.review_max_facts",
     # housekeeping, cadences and times of day
-    "security.sandbox_temp_max_age_hours", "jobs.media_send_timeout_seconds", "skills.max_skills",
+    "security.sandbox_temp_max_age_hours", "jobs.media_send_timeout_seconds", "jobs.run_timeout_seconds", "skills.max_skills",
     "system.poll_interval", "system.log_max_mb", "system.log_backups", "system.battery_defer_percent",
     "system.startup_warmup_timeout_seconds", "system.autonomy_tick", "autonomy.running_ttl_seconds",
+    "autonomy.task_max_seconds",
     "autonomy.night_start", "autonomy.night_end", "autonomy.calendar_lead_time",
     "autonomy.tech_scout_interval_hours", "ambient.generation", "ambient.quiet_hours_start",
     "ambient.quiet_hours_end",

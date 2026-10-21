@@ -21,8 +21,10 @@ def configure_parser(verbs) -> None:
     providers = auth.add_subparsers(dest='auth_provider', required=True)
     nous = providers.add_parser('nous', help='Nous account login, local status and logout')
     actions = nous.add_subparsers(dest='auth_action', required=True)
-    for name in ('status', 'login', 'logout'):
-        command = actions.add_parser(name)
+    for name, help_text in (('status', 'whether this Nous profile is signed in on the hub'),
+                            ('login', 'sign in to Nous Portal with a device code'),
+                            ('logout', 'forget the hub\'s Nous credentials for this profile')):
+        command = actions.add_parser(name, help=help_text)
         command.add_argument('--profile', default='default', type=_profile)
         if name != 'login':
             command.add_argument('--json', action='store_true')
