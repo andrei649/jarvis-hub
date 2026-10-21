@@ -4758,8 +4758,8 @@ class Orchestrator:
                 agent = self.agents[aid]
                 enriched = await self._build_agent_turn_text(aid, text, history=value,
                     plugin_block=plugin_block, recall_block=recall_block, runtime_block=runtime_block)
-                prompt = (self._build_agent_prompt(agent, enriched, context) if stream
-                          else agent.build_prompt(enriched, dict(context or {})))
+                # H326: stream or not, the same prompt context (skills index and carry).
+                prompt = self._build_agent_prompt(agent, enriched, context)
                 if stream:
                     checkpoint = self.checkpoints.load(aid, self.session_id)
                     if checkpoint:
@@ -4883,6 +4883,12 @@ class Orchestrator:
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float, str]:
             prepared = plan.routes[agent_id] if plan is not None else None
+            # H326: the context ``Agent.process`` builds its prompt from is the stream path's
+            # (``_build_agent_prompt``): the grouped skills index and the session's loaded
+            # skills, under the turn ``handle_input`` bound. A prepared route dispatches the
+            # prompt the plan built the same way.
+            prompt_context = (dict(context or {}) if prepared is not None
+                              else self._prompt_context(self.agents[agent_id], context))
             if prepared is not None:
                 enriched_text = plan.prompts[agent_id][2]
                 route_name, model = prepared.route, prepared.model
@@ -4898,7 +4904,7 @@ class Orchestrator:
                 # CDX-6 made the ceiling tunable; Hermes absorption 5c decides it per agent
                 # from the route and the model, so a thinking model on the deep slot gets
                 # the reasoning floor while a flat route keeps the flat value.
-                route_name, model = self._timeout_inputs_for(agent_id, enriched_text, context)
+                route_name, model = self._timeout_inputs_for(agent_id, enriched_text, prompt_context)
             seconds, floor = self._agent_call_timeout(route_name=route_name, model=model)
             self._last_timeout_floor[agent_id] = {"floor": floor, "seconds": seconds}
             # The model the router bound, kept for the cost meter — but only when the
@@ -4911,7 +4917,7 @@ class Orchestrator:
             self._last_models[agent_id] = model if route_name else ""
             # A per-agent copy: the tool loop reads its wall clock from here, and the
             # shared turn context must not carry one agent's budget into another's.
-            agent_context = dict(context or {})
+            agent_context = prompt_context
             agent_context["session_id"] = self.session_id
             agent_context["_clock_snapshot"] = clock_snapshot
             agent_context["wall_seconds"] = seconds

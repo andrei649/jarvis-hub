@@ -810,7 +810,7 @@ def _counting_builds(monkeypatch):
     return builds
 
 
-def _compressed_orchestrator(tmp_path, monkeypatch, skill, view_in):
+def _compressed_orchestrator(tmp_path, monkeypatch, skill, view_in, *, compression=True):
     """The route-compaction harness (tests/test_route_compaction.py) with one agent and the
     owner's ``memory.context_compression`` on: a stream turn plans its shared history by
     building the agent's prompt more than once, then dispatches the plan's prompt. The
@@ -830,7 +830,7 @@ def _compressed_orchestrator(tmp_path, monkeypatch, skill, view_in):
     orchestrator.memory.set_checkpoint_manager(orchestrator.checkpoints)
     orchestrator.checkpoints.create_session_record("s")
     orchestrator._session_id_default = "s"
-    settings = {"memory.context_compression": True, "memory.context_window": 20,
+    settings = {"memory.context_compression": compression, "memory.context_window": 20,
                 "memory.compression_max_tokens": 12000, "memory.compaction_protect_last": 1}
     orchestrator.get_setting = lambda key, default=None: settings.get(key, default)
     loader = _loader(skill)
@@ -874,8 +874,8 @@ def _compressed_orchestrator(tmp_path, monkeypatch, skill, view_in):
     return orchestrator, sent, views
 
 
-async def _turns(orchestrator, count, builds=()):
-    """Run ``count`` stream turns; the prompt builds each one made."""
+async def _turns(orchestrator, count, builds=(), *, stream=True):
+    """Run ``count`` turns (stream, or ``handle_input``); the prompt builds each one made."""
     from agents.core.orchestrator import _active_session
 
     token = _active_session.set("s")
@@ -883,7 +883,10 @@ async def _turns(orchestrator, count, builds=()):
     try:
         for n in range(count):
             before = len(builds)
-            await orchestrator.handle_input_stream(f"turn {n}", channel="web", session_id="s")
+            if stream:
+                await orchestrator.handle_input_stream(f"turn {n}", channel="web", session_id="s")
+            else:
+                await orchestrator.handle_input(f"turn {n}", channel="web", session_id="s")
             per_turn.append(len(builds) - before)
     finally:
         _active_session.reset(token)
@@ -976,3 +979,98 @@ async def test_on_the_gemini_cache_rebuild_a_load_lasts_its_real_turns(monkeypat
     # Carried in each of its turns, not half of them; the view after them serves it whole.
     assert [CARRY_HEADER in prompt for prompt in sent] == [False] + [True] * skill_tools.CARRY_TTL_TURNS + [False]
     assert "body" in views[last] and "already_loaded" not in views[last]
+
+
+# review-r4: ``handle_input`` (non-stream /chat, mcp, widget, webhook, rooms, workflows, run.py)
+# builds its prompt in ``Agent.process`` — it must carry the same index and loads.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("compression", [True, False])
+async def test_a_non_stream_turn_carries_the_load_and_points_at_it(tmp_path, monkeypatch, compression):
+    builds = _counting_builds(monkeypatch)
+    orchestrator, sent, views = _compressed_orchestrator(
+        tmp_path, monkeypatch, _skill("weather", **WEATHER), view_in={0, 1}, compression=compression)
+    await _turns(orchestrator, 3, builds, stream=False)
+
+    assert len(sent) == 3
+    assert "body" in views[0] and CARRY_HEADER not in sent[0]
+    assert CARRY_HEADER in sent[1] and views[0]["body"] in sent[1]
+    assert views[1]["already_loaded"] == "this_session" and "body" not in views[1]
+    assert CARRY_HEADER in sent[2] and views[0]["body"] in sent[2]
+    # One turn a handle_input, however many prompts it built.
+    assert LEDGER._sessions[("s", "athena")].turn == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("compression", [True, False])
+async def test_a_non_stream_load_lasts_its_turns_then_ages_out(tmp_path, monkeypatch, compression):
+    orchestrator, sent, views = _compressed_orchestrator(
+        tmp_path, monkeypatch, _skill("weather", **WEATHER), view_in={0}, compression=compression)
+    await _turns(orchestrator, skill_tools.CARRY_TTL_TURNS + 2, stream=False)
+
+    assert "body" in views[0]
+    carried = [CARRY_HEADER in prompt for prompt in sent]
+    assert carried == [False] + [True] * skill_tools.CARRY_TTL_TURNS + [False]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("compression", [True, False])
+async def test_a_non_stream_prompt_has_the_grouped_index_like_a_stream_one(tmp_path, monkeypatch, compression):
+    skill = _skill("weather", **WEATHER)
+    orchestrator, sent, _views = _compressed_orchestrator(
+        tmp_path, monkeypatch, skill, view_in=set(), compression=compression)
+    from agents.core.orchestrator import _active_session
+
+    token = _active_session.set("s")
+    try:
+        await orchestrator.handle_input_stream("turn 0", channel="web", session_id="s")
+        await orchestrator.handle_input("turn 1", channel="web", session_id="s")
+    finally:
+        _active_session.reset(token)
+        orchestrator.checkpoints.close()
+
+    assert len(sent) == 2
+    for prompt in sent:
+        assert "Available skills:" in prompt and skill.description in prompt
+
+
+@pytest.mark.asyncio
+async def test_the_image_turn_selection_renders_the_carry_without_counting_a_turn(tmp_path, monkeypatch):
+    """review-r4: the composer's image-turn selection is built to issue a review and again to
+    consume it; it previews the carry (same prompt both times), never ages the live ledger."""
+    import contextvars
+
+    from agents.core.checkpoint import CheckpointManager
+    from agents.core.llm.vision_turn import prepare_selected_image_turn
+    from agents.core.memory import conversation, persistence
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setattr(conversation, "MEMORY_DIR", tmp_path / "memory")
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path / "memory")
+    orchestrator = Orchestrator(JarvisConfig())
+    orchestrator.checkpoints = CheckpointManager(str(tmp_path / "cp.db"))
+    orchestrator.checkpoints.initialize()
+    orchestrator.memory.set_checkpoint_manager(orchestrator.checkpoints)
+    orchestrator.agents["jarvis"] = Agent("jarvis", {}, orchestrator.llm_router)
+    orchestrator._runtime_settings["llm.skills_in_prompt"] = True
+    loader = _loader(_skill("weather", **WEATHER))
+    orchestrator.skills = loader
+    orchestrator.llm_router.select_backend = lambda agent, prompt: (object(), "m", "local")
+    sid = await orchestrator.memory.new_session("image_carry")
+    loaded = await asyncio.create_task(
+        _server(loader, session=sid).handle({"tool": TOOL_VIEW, "args": {"name": "weather"}}, actor="jarvis"),
+        context=_in_transcript("s"))
+    assert "body" in loaded["result"], loaded
+    try:
+        before = _ledger_state(session=sid)
+        # Even inside a bound turn (a caller's), the selection is a preview.
+        outer = contextvars.copy_context()
+        outer.run(skill_tools.bind_carry_turn)
+        prompts = []
+        for _ in range(skill_tools.CARRY_TTL_TURNS + 2):
+            selected = await asyncio.create_task(prepare_selected_image_turn(
+                orchestrator, question="What is this?", agent_id="jarvis", session_id=sid), context=outer)
+            prompts.append(selected.prompt)
+    finally:
+        orchestrator.checkpoints.close()
+    assert len(set(prompts)) == 1 and CARRY_HEADER in prompts[0]
+    assert _ledger_state(session=sid) == before

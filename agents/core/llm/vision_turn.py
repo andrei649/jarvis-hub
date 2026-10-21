@@ -54,9 +54,14 @@ async def prepare_selected_image_turn(
     # Orchestrator's session is request-local. Restore both context variables even
     # when prompt construction or route selection raises.
     from agents.core.orchestrator import _active_session, _session_is_shared
+    from agents.core.skills.tools import bind_carry_preview, reset_carry_turn
 
     session_token = _active_session.set(session_id)
     shared_token = _session_is_shared.set(session_id == orch._session_id_default)
+    # H326: a selection, built once to issue the review and again to consume it, so the
+    # loaded-skills carry renders without counting a turn: both builds see the same carry
+    # and the prompt digests match, and the live session's ledger is left as it was.
+    carry_token = bind_carry_preview()
     try:
         history_digest = history_fingerprint(orch, session_id)
         window = int(orch.get_setting("memory.context_window", 6))
@@ -88,5 +93,6 @@ async def prepare_selected_image_turn(
             prompt=prompt,
         )
     finally:
+        reset_carry_turn(carry_token)
         _session_is_shared.reset(shared_token)
         _active_session.reset(session_token)
