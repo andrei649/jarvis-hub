@@ -6,8 +6,10 @@ store opens (``serve.apply_staged_restore``). This module is the seam between th
 code that wants the restart and the process that can do it:
 
 * ``serve.py`` installs a stopper for the uvicorn server it runs (``install``) and,
-  once the server has drained and returned, re-execs itself when a restart was
-  requested (``serve.run_server``).
+  once the server has drained and returned, starts again when a restart was requested
+  (``serve.run_server``): a same-pid re-exec on POSIX; on Windows an exit with
+  ``serve.RESTART_EXIT_CODE`` under the NSSM service (NSSM relaunches it), or a
+  successor process the standalone app spawns before it exits.
 * Anything else asks with ``request(reason)``. Without an installed stopper — the hub
   started some other way (``python -m uvicorn agents.web:app``, a test client) — the
   answer is ``False`` and the caller tells the owner to restart the hub themselves;
@@ -32,6 +34,12 @@ def install(stopper: Callable[[], None]) -> None:
     global _stopper
     with _lock:
         _stopper = stopper
+
+
+def available() -> bool:
+    """Whether this process can restart itself (a stopper is installed)."""
+    with _lock:
+        return _stopper is not None
 
 
 def request(reason: str) -> bool:
@@ -60,4 +68,4 @@ def reset() -> None:
         _requested = None
 
 
-__all__ = ["install", "request", "requested", "reset"]
+__all__ = ["available", "install", "request", "requested", "reset"]

@@ -479,7 +479,7 @@ def test_run_server_flags_the_reexec_and_serve_resumes_the_keepalive_first(monke
     import serve
 
     seen = []
-    monkeypatch.setattr(serve, "_SAME_PID_REEXEC", True)
+    monkeypatch.setattr(serve, "_restart_path", lambda environ=None: "exec")
     monkeypatch.setattr(serve.os, "execv",
                         lambda exe, argv: seen.append(os.environ.get(sd_notify.RESTART_ENV)))
     monkeypatch.delenv(sd_notify.RESTART_ENV, raising=False)

@@ -1406,6 +1406,12 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     task = (reply or {}).get("task") or {}
     ctx.say(f"#{ns.task_id} {ns.action}ed → {task.get('status', 'done')}")
+    result = task.get("result") if isinstance(task, Mapping) else None
+    if (task.get("kind") == "backup.restore" and isinstance(result, Mapping)
+            and result.get("restart") == "manual"):
+        # H010 review r5: the accept staged the restore but nothing restarts this hub.
+        ctx.say(f"  restore of {result.get('staged')} staged, NOT applied yet: "
+                f"{result.get('action_needed') or 'restart the hub/service to apply it'}")
     return EXIT_OK
 
 
@@ -1578,6 +1584,8 @@ def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
             else:
                 note = f"applied at the next hub start; expires {staged.get('expires_at')}"
             ctx.say(f"staged restore: {staged['name']} ({note}) — `nerva backup cancel` withdraws it")
+            if staged.get("action_needed"):
+                ctx.say(f"  ACTION NEEDED: the hub could not restart itself — {staged['action_needed']}")
             if staged.get("runtime_resumed_at"):
                 ctx.say(f"  not applied in time: jarvis-runtime resumed at {staged['runtime_resumed_at']} "
                         f"and stops again when the hub applies it")
@@ -1635,11 +1643,20 @@ def _backup_restore(ns: argparse.Namespace, ctx: Context, bk: Any, root: Path) -
             return EXIT_FAILED
         if ns.json:
             ctx.dump(reply)
+            return EXIT_OK
+        queued = (f"restore of {ns.name} queued at the irreversible tier as approval #{task_id}"
+                  + (" (already waiting)" if reply.get("existing") else "")
+                  + f". Accept it with `nerva approvals accept {task_id}`: the hub stages it")
+        if reply.get("restart") == "self":
+            ctx.say(queued + ", restarts itself and restores before any store opens.")
         else:
-            ctx.say(f"restore of {ns.name} queued at the irreversible tier as approval #{task_id}"
-                    + (" (already waiting)" if reply.get("existing") else "")
-                    + f". Accept it with `nerva approvals accept {task_id}`: the hub stages it, "
-                      "restarts itself and restores before any store opens.")
+            # H010 review r5: a hub without a self-restart (raw uvicorn, a Windows service
+            # without the NSSM marker), or one too old to say — never promise a restart.
+            ttl = bk.stage_ttl_seconds() / 3600.0
+            ctx.say(queued + ", but this hub cannot restart itself: after the accept, restart "
+                    "the hub/service yourself — the restore is applied at the next `python "
+                    "serve.py` (service, nerva.exe) start, before any store opens. The stage "
+                    f"expires {ttl:g} h after the accept (`nerva backup list` shows when).")
         return EXIT_OK
     # No hub: nothing holds the DBs open, so the restore can run now — but the approval
     # queue that would ask a human is not running either, so the human is asked here.

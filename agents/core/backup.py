@@ -49,7 +49,10 @@ backup needs:
   the one drilled; a rollback snapshot covering what
   the restore overwrites (full before full, quick before quick) is taken first. A running
   hub reaches it only through the approval queue's irreversible tier (``backup.restore``,
-  tier 3, ``apply_approved``) and then restarts itself (``agents.core.hub_restart``).
+  tier 3, ``apply_approved``) and then restarts itself (``agents.core.hub_restart``;
+  ``serve.run_server`` says how on each platform). A hub that cannot (raw uvicorn, a
+  Windows service without the NSSM marker) answers ``restart: "manual"``, and the stage
+  and the listing carry ``action_needed`` (``manual_restart_hint``).
   ``backups/restore-history.jsonl`` keeps the trace, deferrals and cancellations included.
   Process marks (``hub.lock``, ``runtime.pid``) are never archived or restored.
 
@@ -1137,11 +1140,33 @@ def staged_restore_view(source_root=None) -> Optional[dict]:
         view["deferred_at"] = last.get("applied_at")
     else:
         view["state"] = "waiting"
+    if view.get("restart") == "manual" and view["state"] != "expired":
+        # The hub that took the accept could not restart itself (H010 review r5).
+        view["action_needed"] = manual_restart_hint(staged.get("expires_at"))
     resumed = _runtime_resumed_at(default_backup_dir(root), staged)
     if resumed is not None:
         # Unapplied past the grace: jarvis-runtime runs again, and yields at the apply.
         view["runtime_resumed_at"] = resumed
     return view
+
+
+def manual_restart_hint(expires_at) -> str:
+    """What the owner must do when the hub cannot restart itself (``restart: "manual"``)."""
+    return (f"restart the hub/service (python serve.py, the Windows service, or nerva.exe) "
+            f"to apply it before {expires_at}; until then jarvis-runtime stays paused for "
+            f"its restore grace and the stage is discarded at that time")
+
+
+def _note_manual_restart(source_root, staged: dict) -> None:
+    """Record on the stage that nothing restarts the hub for it, so the listing says so."""
+    marker = default_backup_dir(_root_of(source_root)) / _PENDING_RESTORE
+    current = _read_json(marker)
+    if current is None or current.get("staged_at") != staged.get("staged_at"):
+        return                                   # applied, cancelled or restaged meanwhile
+    try:
+        _write_json(marker, {**current, "restart": "manual"})
+    except OSError:
+        logger.warning("could not record that the staged restore needs a manual restart")
 
 
 def unapplied_restore_warning(source_root=None) -> Optional[str]:
@@ -1496,8 +1521,14 @@ async def apply_approved(task, orch) -> dict:
     if not staged["ok"]:
         return {"status": "refused", "reason": "backup_failed_verify", "problem": staged["problem"]}
     restart = "requested" if hub_restart.request(APPROVAL_KIND) else "manual"
-    return {"status": "ok", "kind": APPROVAL_KIND, "staged": name, "restart": restart,
-            "expires_at": staged.get("expires_at")}
+    result = {"status": "ok", "kind": APPROVAL_KIND, "staged": name, "restart": restart,
+              "expires_at": staged.get("expires_at")}
+    if restart == "manual":
+        # Nothing restarts this hub (a raw uvicorn start, a Windows service without the
+        # NSSM marker): say so on the result and on the stage, never imply a restart.
+        await asyncio.to_thread(_note_manual_restart, None, staged)
+        result["action_needed"] = manual_restart_hint(staged.get("expires_at"))
+    return result
 
 
 # ── CLI (one-command) ─────────────────────────────────────────────

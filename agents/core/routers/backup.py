@@ -95,6 +95,8 @@ async def backup_restore(req: Request):
     archive already waiting is answered instead. 503 when no approval queue can take it
     — nothing is ever restored on this request alone.
     """
+    # H010 review r5: the 202 also carries ``restart`` — ``self`` when this hub restarts
+    # itself on the accept, ``manual`` when the owner must restart it (nerva backup restore).
     from agents.core.autonomy import irreversible
 
     try:
@@ -117,12 +119,20 @@ async def backup_restore(req: Request):
     orch = get_orch()
     for task in await asyncio.to_thread(irreversible.pending, orch, _backup.APPROVAL_KIND):
         if (getattr(task, "payload", None) or {}).get("name") == request["payload"]["name"]:
-            return nocache_json({"pending": int(task.id), "existing": True}, status_code=202)
+            return nocache_json({"pending": int(task.id), "existing": True,
+                                "restart": _restart_mode()}, status_code=202)
     queued = irreversible.enqueue(orch, _backup.APPROVAL_KIND, **request)
     if "pending" not in queued:
         return JSONResponse({"error": "restore needs the approval queue",
                              "reason": queued.get("refused")}, status_code=503)
-    return nocache_json(queued, status_code=202)
+    return nocache_json({**queued, "restart": _restart_mode()}, status_code=202)
+
+
+def _restart_mode() -> str:
+    """``self`` when this hub restarts itself on the accept, else ``manual`` (H010 r5)."""
+    from agents.core import hub_restart
+
+    return "self" if hub_restart.available() else "manual"
 
 
 @router.delete("/api/admin/backup/restore", dependencies=[Depends(admin_guard)])

@@ -361,11 +361,11 @@ def test_keepalive_pings_until_the_block_ends(notes):
 
 # ── Windows and raw uvicorn ───────────────────────────────────────────────────
 
-def test_without_a_same_pid_reexec_the_restart_is_manual(monkeypatch):
+def test_without_a_restart_path_the_restart_is_manual(monkeypatch):
     import serve
 
     calls = []
-    monkeypatch.setattr(serve, "_SAME_PID_REEXEC", False)
+    monkeypatch.setattr(serve, "_restart_path", lambda environ=None: None)
     monkeypatch.setattr(serve.os, "execv", lambda exe, argv: calls.append(exe))
 
     class _Server:

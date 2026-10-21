@@ -1207,6 +1207,28 @@ newcomer rather than killing a running cell.
 **Revert:** set it back to `false` and restart. The next call is a one-shot again, and
 says nothing about continuity — the fallback is named in the result shape, not silent.
 
+## H010 — in-place restore and the hub's self-restart
+
+An approved `backup.restore` is staged; the hub then restarts itself and `serve.py` applies
+the stage at boot, before any store opens. How the hub restarts depends on where it runs:
+
+| Where | How it restarts | Approval answers |
+|---|---|---|
+| POSIX `python serve.py` (systemd, docker compose, a terminal) | same-pid `os.execv` | `restart: "requested"` |
+| Windows service from `deploy/windows/install-service.ps1` (`NERVA_SERVICE_WRAPPER=nssm`) | exits `75`; NSSM `AppExit Default Restart` relaunches it (`AppExit 0 Exit` keeps a clean stop stopped) | `restart: "requested"` |
+| Windows, interactive session (packaged `nerva.exe`, `python serve.py` in a terminal) | spawns a successor in a new console and exits; the successor waits for the old pid (`JARVIS_RESTART_PREDECESSOR_WAIT_SECONDS`, default 60) | `restart: "requested"` |
+| Windows service without the NSSM marker (installed before it existed, or another wrapper), raw `uvicorn agents.web:app` | none | `restart: "manual"` |
+
+### `NERVA_SERVICE_WRAPPER` · `JARVIS_RESTART_PREDECESSOR_WAIT_SECONDS`
+
+`NERVA_SERVICE_WRAPPER=nssm` is set by `install-service.ps1`; only that value is read. With
+`restart: "manual"` nothing restarts the hub: `nerva backup list` and `GET /api/admin/backup`
+(`pending_restore.restart` / `action_needed`) say "restart the hub/service to apply it before
+<expires_at>", the jarvis-runtime coordinator stays paused for
+`JARVIS_RUNTIME_RESTORE_GRACE_SECONDS` (default 600) and then resumes, and the stage is
+discarded at `expires_at` (`JARVIS_RESTORE_STAGE_TTL_HOURS`, default 24) unless the hub was
+restarted with `python serve.py` (or the service / `nerva.exe`) before then.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |

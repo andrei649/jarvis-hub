@@ -279,7 +279,8 @@ def test_the_restore_route_queues_a_tier_three_card_and_stages_nothing(env, clie
     assert task.payload["preview"]["verify"]["ok"] is True
     assert bk.pending_restore(env.root) is None
     again = client.post("/api/admin/backup/restore", headers=ADMIN, json={"name": name})
-    assert again.status_code == 202 and again.json() == {"pending": body["pending"], "existing": True}
+    assert again.status_code == 202 and again.json() == {"pending": body["pending"], "existing": True,
+                                                    "restart": "manual"}
 
 
 def test_the_restore_route_refuses_unknown_names_and_needs_admin(env, client):
