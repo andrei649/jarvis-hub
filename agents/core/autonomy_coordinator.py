@@ -2022,11 +2022,11 @@ class AutonomyCoordinator:
             out = await self._orch.process(prompt, channel="autonomy")
             return {"status": "ok", "kind": task.kind, "output": out}
 
-        # K3: optional per-task wall-time budget (JARVIS_TASK_MAX_SECONDS, unset = unbounded).
-        from .env_config import env_float
+        # K3 + H288: a finite per-task wall-time budget out of the box (JARVIS_TASK_MAX_SECONDS
+        # > 0 overrides the validated autonomy.task_max_seconds setting; never unbounded).
+        from .autonomy.executor import resolve_task_budget
 
-        _task_budget_value = env_float("JARVIS_TASK_MAX_SECONDS", 0.0, minimum=0.0)
-        _task_budget = _task_budget_value if _task_budget_value > 0 else None
+        _task_budget = resolve_task_budget(getattr(self._orch, "get_setting", None))
         _budget_ledger = getattr(self._orch, "budget_ledger", None)
         executor = TaskExecutor(
             fallback=_llm,

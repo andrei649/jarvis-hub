@@ -60,6 +60,23 @@ MAX_RUNS_KEPT = 200
 MAX_GLOBAL_RUNS_KEPT = 10_000
 MAX_FAILURES = 3
 MAX_FIRES_PER_DAY = 288  # one firing per five minutes, at most
+# H288 (Hermes HERMES_CRON_TIMEOUT): one wall clock for a whole plain cron run (ask / brief /
+# remind, delivery included) and a shorter bound on each channel send, so a hung model call or
+# a hung Telegram/Discord adapter cannot hold the job's gate stripe and its scheduler slot.
+# An overrun is an ordinary failed run (``_failed``): the three-strike pause and the incident
+# still apply. The script lane keeps its own bounds (jobs_scripts.py).
+RUN_TIMEOUT_SETTING = "jobs.run_timeout_seconds"
+DEFAULT_RUN_TIMEOUT_SECONDS = 900
+MAX_RUN_TIMEOUT_SECONDS = 86_400
+SEND_TIMEOUT_SECONDS = 30.0
+
+
+class JobRunTimeout(TimeoutError):
+    """A plain cron run outlived ``jobs.run_timeout_seconds``."""
+
+
+def valid_run_timeout(value: Any) -> bool:
+    return type(value) is int and 1 <= value <= MAX_RUN_TIMEOUT_SECONDS
 ACTION_TYPES = ("remind", "ask", "brief", "task")
 _ACTION_KEYS = {
     "remind": {"type", "message", "channel", "urgent", "media_ids"},
@@ -764,9 +781,12 @@ class JobStore:
         self._path = Path(db_path) if db_path else data_path("autonomy", "jobs.db")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
+        # H288 (HERMES_CRON_SESSION_DB_TIMEOUT): wait for a busy writer as long as the task
+        # queue does — the WAL is shared by the gateway drain loop and cron firings.
+        self._conn = sqlite3.connect(str(self._path), check_same_thread=False, timeout=30.0)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
+            self._conn.execute("PRAGMA busy_timeout=30000")
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute(
                 """CREATE TABLE IF NOT EXISTS jobs (
@@ -1783,7 +1803,7 @@ class JobRunner:
             candidate = value
 
         try:
-            summary, notepad = await self._execute(job, publish_candidate=publish)
+            summary, notepad = await self._bounded_execute(job, publish)
         except JobSuppressed as suppressed:
             summary, notepad = f"Suppressed: {suppressed.reason}", suppressed.notepad
         except Exception as exc:
@@ -1802,6 +1822,27 @@ class JobRunner:
             if not updated.runnable:
                 self.unregister(job.id)
         return run
+
+    def run_timeout_seconds(self) -> int:
+        """The configured cron-run wall clock; a missing or invalid value uses the default."""
+        getter = getattr(self._orch, "get_setting", None)
+        value = getter(RUN_TIMEOUT_SETTING, DEFAULT_RUN_TIMEOUT_SECONDS) if callable(getter) else None
+        if valid_run_timeout(value):
+            return value
+        if value is not None:
+            logger.warning("%s is invalid; using %ds", RUN_TIMEOUT_SETTING, DEFAULT_RUN_TIMEOUT_SECONDS)
+        return DEFAULT_RUN_TIMEOUT_SECONDS
+
+    async def _bounded_execute(self, job: Job, publish: Callable[[str], None]) -> tuple[str, str | None]:
+        seconds = self.run_timeout_seconds()
+        deadline = asyncio.timeout(seconds)
+        try:
+            async with deadline:
+                return await self._execute(job, publish_candidate=publish)
+        except TimeoutError as exc:
+            if not deadline.expired():
+                raise               # an inner timeout keeps its own message
+            raise JobRunTimeout(f"run exceeded its {seconds}s deadline ({RUN_TIMEOUT_SETTING})") from exc
 
     def _failed(self, job: Job, started: str, exc: Exception, *, run_id: int | None = None) -> JobRun:
         finished = utc_now()
@@ -2081,7 +2122,11 @@ class JobRunner:
 
     async def _send_tracked(self, text: str, channel: str | None, job_id: str | None) -> str:
         try:
-            result = await self._send(text, channel)
+            try:
+                result = await asyncio.wait_for(self._send(text, channel), SEND_TIMEOUT_SECONDS)
+            except TimeoutError as exc:
+                name = (channel or "telegram").strip().lower()
+                raise TimeoutError(f"{name} send timed out after {SEND_TIMEOUT_SECONDS:g}s") from exc
         except Exception:
             if job_id is not None:
                 with contextlib.suppress(KeyError):

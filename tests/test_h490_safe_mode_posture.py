@@ -202,9 +202,10 @@ _NUMBERS_NOT_FORCED = {
     "learning.review_max_tokens", "learning.review_every_n", "learning.review_idle_gap_s",
     "learning.review_max_facts",
     # housekeeping, cadences and times of day
-    "security.sandbox_temp_max_age_hours", "jobs.media_send_timeout_seconds", "skills.max_skills",
+    "security.sandbox_temp_max_age_hours", "jobs.media_send_timeout_seconds", "jobs.run_timeout_seconds", "skills.max_skills",
     "system.poll_interval", "system.log_max_mb", "system.log_backups", "system.battery_defer_percent",
     "system.startup_warmup_timeout_seconds", "system.autonomy_tick", "autonomy.running_ttl_seconds",
+    "autonomy.task_max_seconds",
     "autonomy.night_start", "autonomy.night_end", "autonomy.calendar_lead_time",
     "autonomy.tech_scout_interval_hours", "ambient.generation", "ambient.quiet_hours_start",
     "ambient.quiet_hours_end",

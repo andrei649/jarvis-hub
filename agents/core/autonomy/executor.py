@@ -28,6 +28,32 @@ Handler = Callable[[object], Awaitable[dict]]
 #: The reason key on the executor's refusal when its execution guard said why it declined.
 GUARD_REASON_KEY = "guard_reason"
 
+#: H288: the shipped wall-clock budget for one queued in-process task. Finite and below the
+#: 3600 s stuck-running reaper TTL, so a hung handler is cancelled and recorded as a failed
+#: task long before the reaper has to reclaim the row.
+TASK_MAX_SECONDS_SETTING = "autonomy.task_max_seconds"
+DEFAULT_TASK_MAX_SECONDS = 1800
+MAX_TASK_MAX_SECONDS = 86_400
+
+
+def resolve_task_budget(get_setting: Optional[Callable[..., object]]) -> float:
+    """The per-task wall-time budget: a positive ``JARVIS_TASK_MAX_SECONDS`` wins, then the
+    validated ``autonomy.task_max_seconds`` setting, then the finite default. Never None."""
+    from ..env_config import env_float
+
+    override = env_float("JARVIS_TASK_MAX_SECONDS", 0.0, minimum=0.0)
+    if override > 0:
+        return float(override)
+    value = None
+    if callable(get_setting):
+        try:
+            value = get_setting(TASK_MAX_SECONDS_SETTING, DEFAULT_TASK_MAX_SECONDS)
+        except Exception:
+            logger.warning("%s could not be read; using the default", TASK_MAX_SECONDS_SETTING)
+    if type(value) is int and 1 <= value <= MAX_TASK_MAX_SECONDS:
+        return float(value)
+    return float(DEFAULT_TASK_MAX_SECONDS)
+
 
 class ExecutionGuardDeclined(Exception):
     """An execution guard declining for a reason it can name (review round 6, item 6).
@@ -55,8 +81,9 @@ class TaskExecutor:
         self._handlers: dict[str, Handler] = {}
         self.fallback = fallback
         # K3 (OWASP unbounded-consumption): a per-task wall-time budget. None = unbounded
-        # (the default → byte-identical behavior); set via JARVIS_TASK_MAX_SECONDS at the
-        # worker. A task that overruns is cancelled and returns a clean failed result.
+        # for a bare executor; the shipped worker always passes ``resolve_task_budget(...)``
+        # (H288: finite by default). A task that overruns is cancelled and returns a clean
+        # failed result.
         self.max_wall_seconds = max_wall_seconds
         self.budget_ledger = budget_ledger
         self.execution_guard = execution_guard
