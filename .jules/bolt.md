@@ -47,3 +47,7 @@
 ## 2026-04-11 - O(N) Array Scans in Shortcut Action Registry Lookups
 **Learning:** `ACTIONS` registry lookups using `ACTIONS.find((a) => a.id === id)` during keyboard shortcut dispatching, rebinding, and chord hint rendering trigger repetitive O(N) array scans across all hotkey actions.
 **Action:** Maintain an `ACTIONS_MAP = new Map(ACTIONS.map((a) => [a.id, a]))` in `shortcuts.ts` to execute O(1) Map lookups for hotkey validation, rebinding, and hint display.
+
+## 2026-04-12 - Premature Map Instantiations for Small Bounded Arrays
+**Learning:** Replacing `Array.prototype.find` array iterations on tiny, bounded arrays ($\le 8$ elements, like `activeImages` in `useComposerImages`) with `new Map()` instances creates unnecessary tuple array allocations and Map object instantiations, worsening GC pressure rather than improving performance.
+**Action:** Reserve Map index lookups for unbounded, high-frequency, or large collection accesses ($N > 20$ or 60 FPS animation loops) and keep small bounded array lookups simple to avoid premature object allocation overhead.
