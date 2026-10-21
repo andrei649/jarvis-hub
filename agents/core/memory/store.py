@@ -299,6 +299,8 @@ class MemoryStore:
         conn = sqlite3.connect(str(self._path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        # H574: a deleted fact's cells and freed pages are zeroed, not left in the file.
+        conn.execute("PRAGMA secure_delete=ON")
         return conn
 
     def _init_db(self):
@@ -381,6 +383,10 @@ class MemoryStore:
             "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
             [(r[0], self._segment(r[1], r[2])) for r in missing],
         )
+        # Erasure: a plain FTS5 DELETE leaves the deleted terms in memory_fts_data until
+        # segments merge. secure-delete removes them on every DELETE; without it (SQLite
+        # < 3.44) each delete path ends with an optimize (_purge_fts_deletes).
+        cjk_fts.enable_secure_delete(conn, "memory_fts")
         conn.commit()
         if missing:
             logger.info("memory_fts: indexed %d row(s)", len(missing))
@@ -417,6 +423,19 @@ class MemoryStore:
             return False
         return True
 
+    def _purge_fts_deletes(self, conn: sqlite3.Connection) -> None:
+        """After a delete from ``memory_fts``: make sure the deleted terms leave the file.
+        Checked per delete, not cached, because a purge may have recreated the table
+        without the option: enabling it then rewrites the index once, and where FTS5
+        secure-delete is unavailable the index is rewritten (``optimize``) every time."""
+        if not self._fts:
+            return
+        try:
+            if not cjk_fts.enable_secure_delete(conn, "memory_fts"):
+                cjk_fts.purge_deleted(conn, "memory_fts")
+        except sqlite3.DatabaseError as exc:
+            self._fts_failed(exc)
+
     def _fts_failed(self, exc: sqlite3.Error) -> None:
         """The index broke under a live store: stop using it (LIKE answers); the next
         open rebuilds it."""
@@ -432,13 +451,16 @@ class MemoryStore:
         if row is None:
             return
         try:
-            conn.execute("DELETE FROM memory_fts WHERE rowid=?", (row["id"],))
+            replaced = conn.execute("DELETE FROM memory_fts WHERE rowid=?", (row["id"],)).rowcount
             conn.execute(
                 "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
                 (row["id"], self._segment(row["key"], row["value"])),
             )
         except sqlite3.DatabaseError as exc:
             self._fts_failed(exc)
+            return
+        if replaced:
+            self._purge_fts_deletes(conn)   # the old value's terms go with it
 
     async def upsert(self, category: str, key: str, value: str, metadata: dict = None):
         meta_json = json.dumps(metadata or {})
@@ -505,20 +527,33 @@ class MemoryStore:
 
     def _delete_sync(self, category: str, key: str) -> bool:
         with self._lock:
-            with self._conn() as conn:
-                if self._fts:
-                    try:
-                        conn.execute(
-                            "DELETE FROM memory_fts WHERE rowid IN "
-                            "(SELECT id FROM memory WHERE category=? AND key=?)",
-                            (category, key),
-                        )
-                    except sqlite3.DatabaseError as exc:
-                        self._fts_failed(exc)
-                cur = conn.execute(
-                    "DELETE FROM memory WHERE category=? AND key=?", (category, key)
-                )
-                return cur.rowcount > 0
+            conn = self._conn()
+            try:
+                with conn:
+                    if self._fts:
+                        try:
+                            conn.execute(
+                                "DELETE FROM memory_fts WHERE rowid IN "
+                                "(SELECT id FROM memory WHERE category=? AND key=?)",
+                                (category, key),
+                            )
+                        except sqlite3.DatabaseError as exc:
+                            self._fts_failed(exc)
+                    cur = conn.execute(
+                        "DELETE FROM memory WHERE category=? AND key=?", (category, key)
+                    )
+                    deleted = cur.rowcount > 0
+                    if deleted:
+                        self._purge_fts_deletes(conn)
+                if deleted:
+                    # H574: the pre-delete pages still sit in the write-ahead log until a
+                    # checkpoint; TRUNCATE moves the zeroed pages into the file and empties
+                    # the log, so the fact is gone from both.
+                    with contextlib.suppress(sqlite3.Error):
+                        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                return deleted
+            finally:
+                conn.close()
 
     async def search(self, query: str, limit: int = 10) -> list[dict]:
         """Basic text search — semantic search stubbed for H8.3."""

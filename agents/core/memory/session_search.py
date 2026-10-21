@@ -13,8 +13,11 @@ through its ``unicode61`` words (the last one as a prefix), and every candidate 
 re-checked for each keyword as a substring of the turn, so the index never adds a hit the
 scan would not. Because the index matches non-CJK keywords from the start of a word, a
 keyword that begins inside a word (``ntist`` for ``dentist``) is found only by the scan.
-When this SQLite has no FTS5 (or the index cannot be opened), the bounded scan below
-answers instead; ``engine`` in the result says which ran.
+When this SQLite has no FTS5 (or the index cannot be opened, or another connection holds
+its lock past :data:`INDEX_BUSY_SECONDS`), the bounded scan below answers instead;
+``engine`` in the result says which ran. Bringing the index in step is bounded too
+(:data:`MAX_INDEX_SECONDS`): snapshots the sync did not reach are answered by the scan,
+and ``stopped_by="indexing"`` says when that scan could not cover them all.
 
 Containment, in the same spirit as the file tools:
 
@@ -71,6 +74,11 @@ MAX_INDEX_CANDIDATES = 5_000
 MAX_TERM_SCORE = 10
 SNIPPET_CHARS = 240
 MAX_SEARCH_SECONDS = 5.0
+#: The index path's share of :data:`MAX_SEARCH_SECONDS` for bringing the index in step
+#: (a first search over a large history); the snapshots it does not reach are scanned.
+MAX_INDEX_SECONDS = 2.0
+#: How long a search waits on another connection's index lock before it scans instead.
+INDEX_BUSY_SECONDS = 1.0
 ROLES = ("user", "assistant")
 
 INPUT_SCHEMA: dict[str, Any] = {
@@ -238,14 +246,17 @@ def _hit(sid: str, index: int, turn: Mapping, score: int, first: int, hay: str) 
 Ranked = list[tuple[int, int, int, dict]]
 
 
-def _scan(root: Path, terms: list[str], role: str | None,
-          session_id: str | None) -> tuple[Ranked, int, int, str | None]:
-    """The fallback when there is no FTS5: a bounded scan of the newest snapshots."""
-    deadline = time.monotonic() + MAX_SEARCH_SECONDS
+def _scan(root: Path, terms: list[str], role: str | None, session_id: str | None, *,
+          paths: list[Path] | None = None,
+          deadline: float | None = None) -> tuple[Ranked, int, int, str | None]:
+    """The bounded scan of the newest snapshots: the whole answer when there is no FTS5,
+    and the index path's answer for the snapshots its sync did not reach (*paths*)."""
+    if deadline is None:
+        deadline = time.monotonic() + MAX_SEARCH_SECONDS
     ranked: Ranked = []
     scanned = skipped = 0
     stopped_by: str | None = None
-    for path in _candidates(root, session_id):
+    for path in (_candidates(root, session_id) if paths is None else paths):
         if time.monotonic() > deadline:
             stopped_by = "deadline"
             break
@@ -292,19 +303,26 @@ def match_for_terms(terms: list[str]) -> str | None:
 def _search_index(root: Path, terms: list[str], role: str | None,
                   session_id: str | None) -> tuple[str, Ranked, int, int, str | None] | None:
     """The FTS5 path: ``(match, ranked, scanned, skipped, stopped_by)``, or None when the
-    index cannot answer (no FTS5, no matchable term, an SQLite error) and the scan must."""
+    index cannot answer (no FTS5, a busy lock, no matchable term, an SQLite error) and the
+    scan must.
+
+    The sync that brings the index in step is bounded by :data:`MAX_INDEX_SECONDS`: the
+    snapshots it did not reach (a first search over a large history) are answered by the
+    bounded scan within what is left of :data:`MAX_SEARCH_SECONDS`, never from their stale
+    rows, and ``stopped_by="indexing"`` says when even that scan could not cover them."""
     match = match_for_terms(terms)
     if match is None:
         return None
+    started = time.monotonic()
     try:
-        conn = session_index.open_index(root)
+        conn = session_index.open_index(root, timeout=INDEX_BUSY_SECONDS)
     except session_index.IndexUnavailable as exc:
         logger.info("session index unavailable, scanning instead: %s", exc)
         return None
     if conn is None:
         return None
     try:
-        session_index.sync(conn, root)
+        synced = session_index.sync(conn, root, deadline=started + MAX_INDEX_SECONDS)
         rows = conn.execute(
             "SELECT t.stem, t.session_id, t.turn_idx, t.role, t.content, t.ts, t.agent_id, t.media,"
             " s.mtime_ns FROM turn_fts JOIN turns t ON t.id = turn_fts.rowid"
@@ -313,16 +331,19 @@ def _search_index(root: Path, terms: list[str], role: str | None,
             " ORDER BY s.mtime_ns DESC, t.turn_idx DESC LIMIT ?",
             (match, session_id, session_id, role, role, MAX_INDEX_CANDIDATES + 1),
         ).fetchall()
-        counts = conn.execute(
-            "SELECT COALESCE(SUM(indexed), 0), COALESCE(SUM(1 - indexed), 0) FROM sessions"
-            " WHERE ? IS NULL OR stem = ?",
+        recorded = conn.execute(
+            "SELECT stem, indexed FROM sessions WHERE ? IS NULL OR stem = ?",
             (session_id, session_id),
-        ).fetchone()
+        ).fetchall()
     except sqlite3.Error as exc:
         logger.warning("session index query failed (%s); scanning instead", type(exc).__name__)
         return None
     finally:
         conn.close()
+    pending = [stem for stem in synced["pending"] if session_id is None or stem == session_id]
+    unsynced = set(pending)
+    scanned = sum(1 for row in recorded if row["indexed"] and row["stem"] not in unsynced)
+    skipped = sum(1 for row in recorded if not row["indexed"] and row["stem"] not in unsynced)
     stopped_by = None
     if len(rows) > MAX_INDEX_CANDIDATES:
         rows = rows[:MAX_INDEX_CANDIDATES]
@@ -331,6 +352,8 @@ def _search_index(root: Path, terms: list[str], role: str | None,
     present: dict[str, bool] = {}
     for row in rows:
         stem = row["stem"]
+        if stem in unsynced:
+            continue                       # stale rows: the scan below answers for it
         if stem not in present:
             # The rows were synced a moment ago; a snapshot removed since never answers.
             present[stem] = (root / f"{stem}.json").is_file()
@@ -345,7 +368,16 @@ def _search_index(root: Path, terms: list[str], role: str | None,
         index = int(row["turn_idx"])
         ranked.append((score, int(row["mtime_ns"]), index,
                        _hit(str(row["session_id"]), index, turn, score, first, hay)))
-    return match, ranked, int(counts[0]), int(counts[1]), stopped_by
+    if pending:
+        extra, extra_scanned, extra_skipped, scan_stop = _scan(
+            root, terms, role, session_id, paths=[root / f"{stem}.json" for stem in pending],
+            deadline=started + MAX_SEARCH_SECONDS)
+        ranked.extend(extra)
+        scanned += extra_scanned
+        skipped += extra_skipped
+        if scan_stop is not None:
+            stopped_by = "indexing"
+    return match, ranked, scanned, skipped, stopped_by
 
 
 def search_sessions(

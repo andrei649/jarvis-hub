@@ -128,7 +128,7 @@ def test_segmenter_version_change_rebuilds_the_index(root, monkeypatch):
     try:
         assert conn.execute("SELECT count(*) FROM turns").fetchone()[0] == 0   # dropped
         assert conn.execute("SELECT value FROM meta WHERE name='segmenter'").fetchone()[0] == "cjk-bigram-test"
-        assert session_index.sync(conn, root) == {"indexed": 2, "dropped": 0}  # backfilled
+        assert session_index.sync(conn, root) == {"indexed": 2, "dropped": 0, "pending": []}  # backfilled
     finally:
         conn.close()
     assert search_sessions("牙", directory=root)["hits"][0]["session_id"] == "session_a"
@@ -140,14 +140,14 @@ def test_changed_snapshots_are_reindexed_and_orphans_dropped(root):
     assert search_sessions("眼科", directory=root)["hits"]
     conn = session_index.open_index(root)
     try:
-        assert session_index.sync(conn, root) == {"indexed": 0, "dropped": 0}   # nothing changed
+        assert session_index.sync(conn, root) == {"indexed": 0, "dropped": 0, "pending": []}
     finally:
         conn.close()
     path.unlink()                                  # removed behind every hook
     _write(root, "session_a", [_turn("user", "牙医 again")])
     conn = session_index.open_index(root)
     try:
-        assert session_index.sync(conn, root) == {"indexed": 1, "dropped": 1}
+        assert session_index.sync(conn, root) == {"indexed": 1, "dropped": 1, "pending": []}
     finally:
         conn.close()
     assert _indexed_rows(root, "session_b") == 0

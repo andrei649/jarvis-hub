@@ -490,6 +490,8 @@ class MemoryManager:
                         self._rewind_inconsistent.add(sid)
                         raise RewindRefused("conversation rewind needs recovery") from exc
                     raise RewindRefused("conversation rewind not persisted") from exc
+            # H574: the rewound turns leave the session-search index, outside the locks.
+            persistence.reindex_session(sid)
             self.conversation.sessions[sid] = turns[:ticket.cut_index]
             self.conversation.revisions[sid] = ticket.revision + 1
             self.conversation.rewound_sessions.add(sid)

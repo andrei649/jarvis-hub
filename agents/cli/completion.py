@@ -376,6 +376,19 @@ def _fish(parser: argparse.ArgumentParser, base: str) -> str:
             "end",
             "complete -c nerva -n __nerva_complete_profile -a '(__nerva_profiles)' -d profile",
         ]
+        for option in longs:
+            # `--profile=<TAB>`: fish passes the whole token, so the candidates carry the
+            # option prefix. Only as the first word, where the root option is parsed.
+            fn = "__nerva_complete_profile_eq_" + option[2:].replace("-", "_")
+            lines += [
+                f"function {fn}",
+                "    test (count (commandline -opc)) -eq 1; or return 1",
+                f"    string match -q -- {quote(option + '=*')} (commandline -ct)",
+                "end",
+                f"complete -c nerva -n {fn}"
+                f" -a {quote('(__nerva_profiles | string replace -r -- ' + quote('^') + ' ' + quote(option + '=') + ')')}"
+                " -d profile",
+            ]
     root = _fish_quote("__nerva_complete_path")
     for option, text in root_options(parser):
         if option.startswith("--"):

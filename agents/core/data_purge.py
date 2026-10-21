@@ -235,8 +235,11 @@ def purge_contract_denial(*, source: str = "function", backup_first: bool = True
 # tables (``<name>_data``, ``_idx``, ``_content``, ``_docsize``, ``_config``; FTS3/4 and
 # R*Tree have their own). Deleting rows from those directly — as a plain per-table DELETE
 # did — wipes the FTS5 version row in ``_config`` and leaves an index every later open
-# rejects ("invalid fts5 file format"). The rows go through the virtual table instead,
-# which empties its shadow tables consistently.
+# rejects ("invalid fts5 file format"). Deleting through the virtual table is not enough
+# either: FTS5 records a DELETE as a delete marker and the terms stay in ``<name>_data``
+# until segments merge, which neither secure_delete nor VACUUM does. So a virtual table
+# is dropped (its shadow tables with it, their pages zeroed and then VACUUMed away) and
+# recreated empty from its own ``CREATE VIRTUAL TABLE`` statement.
 _SHADOW_SUFFIXES: frozenset[str] = frozenset({
     "data", "idx", "content", "docsize", "config",          # fts5
     "segments", "segdir", "stat",                            # fts3/4
@@ -253,19 +256,20 @@ def _is_shadow_table(name: str, virtual: set[str]) -> bool:
                for vt in virtual)
 
 
-def _delete_all_virtual_rows(conn: sqlite3.Connection, table: str, path: Path) -> None:
+def _delete_all_virtual_rows(conn: sqlite3.Connection, table: str, sql: str,
+                             path: Path) -> int:
+    """Empty virtual *table* by dropping and recreating it; returns the rows it held.
+    Any failure is an ``OSError`` — surfaced through the sweep's ``not_erased``, never
+    skipped silently."""
     quoted = '"' + table.replace('"', '""') + '"'
     try:
-        conn.execute(_delete_all_rows_sql(table))
-        return
-    except sqlite3.Error:
-        pass
-    try:
-        # A contentless / external-content FTS5 table refuses DELETE; this is its wipe.
-        conn.execute(" ".join(("INSERT", "INTO", f"{quoted}({quoted})", "VALUES('delete-all')")))
+        held = conn.execute(" ".join(("SELECT count(*) FROM", quoted))).fetchone()[0]
+        conn.execute(" ".join(("DROP TABLE", quoted)))
+        # The statement SQLite itself stored for this table (sqlite_master), not input.
+        conn.execute(sql)
     except sqlite3.Error as exc:
-        # Surfaced through the sweep's `not_erased`, never skipped silently.
         raise OSError(f"could not erase virtual table {table} in {path.name}: {exc}") from exc
+    return int(held)
 
 
 def _purge_db(path: Path) -> dict:
@@ -297,12 +301,14 @@ def _purge_db(path: Path) -> dict:
             "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         ).fetchall()
         virtual = {name for name, sql in catalog if _is_virtual_table_sql(sql)}
-        for table in (name for name, _sql in catalog if not _is_shadow_table(name, virtual)):
-            before = conn.total_changes
+        for table, sql in catalog:
+            if _is_shadow_table(table, virtual):
+                continue
             if table in virtual:
-                _delete_all_virtual_rows(conn, table, path)
-            else:
-                conn.execute(_delete_all_rows_sql(table))
+                deleted[table] = _delete_all_virtual_rows(conn, table, sql, path)
+                continue
+            before = conn.total_changes
+            conn.execute(_delete_all_rows_sql(table))
             deleted[table] = conn.total_changes - before
         conn.commit()
         # Must follow the commit: VACUUM cannot run inside a transaction. It rebuilds the

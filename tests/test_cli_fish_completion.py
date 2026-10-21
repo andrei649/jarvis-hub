@@ -130,6 +130,19 @@ def test_fish_completes_profile_names_then_the_command_path(fish, tmp_path):
     assert query(fish, tmp_path, parser, 'nerva -p work jobs doctor ', **env) == set()
 
 
+def test_fish_completes_the_profile_equals_form(fish, tmp_path):
+    # Review round 3: `nerva --profile=<TAB>` listed nothing in fish (bash handles it).
+    home = _profiles(tmp_path)
+    parser = build_parser()
+    env = {'JARVIS_HOME': str(home)}
+    assert query(fish, tmp_path, parser, 'nerva --profile=', **env) == {
+        '--profile=default', '--profile=lab-2', '--profile=work'}
+    assert query(fish, tmp_path, parser, 'nerva --profile=w', **env) == {'--profile=work'}
+    # only as the first word: after a verb it is not the root option
+    assert query(fish, tmp_path, parser, 'nerva jobs --profile=', **env) == set()
+    assert query(fish, tmp_path, parser, 'nerva -p work --profile=', **env) == set()
+
+
 def test_fish_profile_root_falls_back_to_the_generated_install_root(fish, tmp_path):
     home = _profiles(tmp_path)
     parser = build_parser()

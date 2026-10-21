@@ -24,6 +24,7 @@ change to it rebuilds that index.
 from __future__ import annotations
 
 import re
+import sqlite3
 import unicodedata
 
 #: Bump when :func:`index_text` changes shape; stored indexes rebuild on mismatch.
@@ -152,7 +153,60 @@ def split_script_boundaries(term: str) -> list[str]:
     return parts
 
 
+# ── erasure: deleted text must leave an FTS5 index, not only its rowid ─────────
+#
+# A plain FTS5 DELETE records a delete marker; the deleted row's terms stay in the
+# ``<table>_data`` segment b-tree until segments happen to merge, and neither
+# ``PRAGMA secure_delete`` nor VACUUM merges them — the text of a forgotten fact or
+# session is still in the file. FTS5's ``secure-delete`` option (SQLite 3.44+) removes
+# the entries themselves on every DELETE; where it is unavailable, ``optimize`` after
+# the delete rewrites the index into one segment without them.
+
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _ident(table: str) -> str:
+    if not _IDENT.match(table):
+        raise ValueError(f"not a plain FTS table name: {table!r}")
+    return table
+
+
+def secure_delete_enabled(conn: sqlite3.Connection, table: str) -> bool:
+    """Whether *table*'s FTS5 ``secure-delete`` option is on."""
+    try:
+        row = conn.execute(
+            " ".join(("SELECT v FROM", f"{_ident(table)}_config", "WHERE k='secure-delete'"))
+        ).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None and str(row[0]) == "1"
+
+
+def enable_secure_delete(conn: sqlite3.Connection, table: str) -> bool:
+    """Turn on FTS5 ``secure-delete`` for *table*. False when this SQLite lacks it (the
+    caller then runs :func:`purge_deleted` after its deletes). Turning it on for a table
+    that already saw deletes also rewrites the index once, so earlier residue goes too."""
+    if secure_delete_enabled(conn, table):
+        return True
+    name = _ident(table)
+    try:
+        conn.execute(" ".join(("INSERT INTO", f"{name}({name}, rank)",
+                               "VALUES('secure-delete', 1)")))
+    except sqlite3.Error:
+        return False
+    purge_deleted(conn, name)
+    return True
+
+
+def purge_deleted(conn: sqlite3.Connection, table: str) -> None:
+    """Merge *table*'s FTS index into one segment (``optimize``), dropping every entry a
+    DELETE only marked. Raises ``sqlite3.Error`` when it cannot."""
+    name = _ident(table)
+    conn.execute(" ".join(("INSERT INTO", f"{name}({name})", "VALUES('optimize')")))
+
+
 __all__ = [
-    "SEGMENTER_VERSION", "TOKENIZE", "cjk_runs", "has_cjk", "index_text", "is_cjk",
-    "match_expression", "normalize", "query_grams", "split_script_boundaries",
+    "SEGMENTER_VERSION", "TOKENIZE", "cjk_runs", "enable_secure_delete", "has_cjk",
+    "index_text", "is_cjk", "match_expression", "normalize", "purge_deleted", "query_grams",
+    "secure_delete_enabled", "split_script_boundaries",
 ]

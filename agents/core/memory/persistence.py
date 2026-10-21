@@ -41,13 +41,22 @@ logger = logging.getLogger("jarvis.persistence")
 def _reindex(session_id: str) -> None:
     """H574 — bring the session-search index in step with *session_id*'s snapshot, which
     was just written or removed. Best effort: the snapshot is the record, and the index's
-    own sync on the next search repairs anything this misses."""
+    own sync on the next search repairs anything this misses.
+
+    Callers run it *after* releasing the snapshot and checkpoint locks: the index update
+    is incremental (an append segments only the new turns) and skips a busy index after
+    ``session_index.HOOK_TIMEOUT``, but it is never paid while other sessions' saves wait
+    on ``checkpoint_mgr._lock``."""
     try:
         from agents.core.memory import session_index
 
         session_index.index_session(_memory_dir(), session_id)
     except Exception:   # noqa: BLE001 - an index miss must never fail a save
         logger.warning("session index update failed for one session", exc_info=True)
+
+
+#: Public name for the rewind path (``manager``), which reindexes once its commit landed.
+reindex_session = _reindex
 
 
 class RewindPersistenceError(RuntimeError):
@@ -141,7 +150,8 @@ def replace_memory_if_current(session_id: str, *, instance_id: str, revision: in
                 raise ValueError("foreign lineage changed")
             updated["foreign_history"] = marker
         atomic_write_json(path, updated)
-        _reindex(session_id)
+        # Not reindexed here: this runs under the rewind's locks and its SQLite half may
+        # still roll back. The rewind reindexes once it committed (manager.py).
         return current, snapshot_digest(updated)
 
 
@@ -159,7 +169,6 @@ def restore_memory_if_current(session_id: str, *, digest: str, previous: dict | 
                 path.unlink()
             else:
                 atomic_write_json(path, previous)
-            _reindex(session_id)
             return True
     except Exception:
         return False
@@ -275,7 +284,8 @@ def save_memory(session_id: str, turns: list[dict], *, instance_id: str | None =
                     raise RewindPersistenceError("conversation rewind not persisted") from exc
             else:
                 atomic_write_json(path, payload)
-            _reindex(session_id)
+        # H574: after the locks are released, never under them.
+        _reindex(session_id)
         logger.info(f"Memory saved: {path} ({len(turns)} turns)")
     except RewindPersistenceError:
         raise
