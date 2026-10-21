@@ -375,7 +375,9 @@ def _append_private(path: Path, data: bytes) -> None:
     with suppress(OSError):
         if directory.stat().st_mode & 0o777 != PRIVATE_DIR_MODE:
             os.chmod(directory, PRIVATE_DIR_MODE)
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    # O_BINARY: on Windows a low-level fd defaults to text mode (``\n`` -> ``\r\n``), which
+    # would break the LF format and the exact MAX_SESSION_BYTES accounting in save().
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     fd = os.open(path, flags, PRIVATE_FILE_MODE)
     try:
         if hasattr(os, "fchmod"):

@@ -203,6 +203,26 @@ def test_an_existing_world_readable_trajectory_file_is_narrowed():
     assert len(trajectory.load("sess-old")) == 1
 
 
+def test_trajectory_files_are_written_in_binary_mode(monkeypatch):
+    # Windows opens a low-level fd in text mode unless O_BINARY is passed, turning every
+    # "\n" into "\r\n": CRLF on disk and one byte per line past the MAX_SESSION_BYTES check.
+    monkeypatch.setattr(os, "O_BINARY", 0x8000, raising=False)
+    flags_seen: list[int] = []
+    real_open = os.open
+
+    def spy(path, flags, *args, **kwargs):
+        flags_seen.append(flags)
+        return real_open(path, flags & ~0x8000 if os.name == "posix" else flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", spy)
+    with session_scope("sess-bin"), trajectory.capture(agent_id="a", model="m", system="s", prompt="p") as rec:
+        rec.finish("r")
+    monkeypatch.setattr(os, "open", real_open)
+    assert flags_seen and all(flags & 0x8000 for flags in flags_seen)
+    raw = trajectory.path_for("sess-bin").read_bytes()
+    assert raw.endswith(b"\n") and b"\r\n" not in raw
+
+
 async def test_a_nested_turn_is_its_own_record():
     with session_scope("sess-6"), trajectory.capture(agent_id="outer", model="m", system="s", prompt="p") as outer:
         with trajectory.capture(agent_id="inner", model="m", system="s", prompt="q") as inner:
