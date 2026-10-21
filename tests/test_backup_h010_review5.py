@@ -112,7 +112,8 @@ def test_windows_under_nssm_requests_a_restart_and_exits_75_after_the_drain(root
     assert server.result["restart"] == "requested" and "action_needed" not in server.result
     assert server.should_exit is True                      # the stopper drained uvicorn
     assert events == ["released"] and no_exec == []         # lock released; no spawn, no exec
-    assert bk.pending_restore(root)["name"] == name and "restart" not in bk.pending_restore(root)
+    # Review r6: the stage carries its restart mode from its first byte.
+    assert bk.pending_restore(root)["name"] == name and bk.pending_restore(root)["restart"] == "self"
 
 
 def test_the_service_script_marks_nssm_and_restarts_only_on_a_non_zero_exit():
@@ -320,17 +321,21 @@ def test_nerva_backup_list_flags_a_stage_that_needs_a_manual_restart(root):
 
 
 def test_nerva_approvals_accept_says_a_manual_restore_is_not_applied_yet(root):
+    # Review r6: the real decision reply — ``approved``, no result yet (the loop runs the
+    # accept later); the CLI reads the stage from the backup listing.
     hint = bk.manual_restart_hint("2026-10-22T10:00:00+00:00")
-    task = {"id": 5, "kind": "backup.restore", "status": "done",
-            "result": {"status": "ok", "staged": "jarvis-backup-x.tar.gz", "restart": "manual",
-                       "action_needed": hint}}
-    hub = _Hub({"POST /autonomy/tasks/5/decision": {"ok": True, "task": task}})
+    task = {"id": 5, "kind": "backup.restore", "status": "approved", "result": None}
+    stage = {"name": "jarvis-backup-x.tar.gz", "task_id": 5, "state": "waiting",
+             "restart": "manual", "action_needed": hint}
+    hub = _Hub({"POST /autonomy/tasks/5/decision": {"ok": True, "task": task},
+                "GET /api/admin/backup": {"pending_restore": stage, "last_restore": None}})
     code, out, _ = _nerva(["approvals", "accept", "5"], root, hub=hub)
     assert code == 0
     assert "NOT applied yet" in out and "before 2026-10-22T10:00:00+00:00" in out
-    task["result"]["restart"] = "requested"
+    stage.update(restart="self")
+    stage.pop("action_needed")
     code, out, _ = _nerva(["approvals", "accept", "5"], root, hub=hub)
-    assert "NOT applied" not in out
+    assert "NOT applied" not in out and "restarts itself" in out
 
 
 # ── the restore route tells the CLI which it is ──────────────────────────────────

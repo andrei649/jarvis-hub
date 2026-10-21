@@ -1406,13 +1406,69 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     task = (reply or {}).get("task") or {}
     ctx.say(f"#{ns.task_id} {ns.action}ed → {task.get('status', 'done')}")
-    result = task.get("result") if isinstance(task, Mapping) else None
-    if (task.get("kind") == "backup.restore" and isinstance(result, Mapping)
-            and result.get("restart") == "manual"):
-        # H010 review r5: the accept staged the restore but nothing restarts this hub.
-        ctx.say(f"  restore of {result.get('staged')} staged, NOT applied yet: "
-                f"{result.get('action_needed') or 'restart the hub/service to apply it'}")
+    if (isinstance(task, Mapping) and task.get("kind") == "backup.restore"
+            and ns.action in ("accept", "edit") and task.get("status") == "approved"):
+        _follow_accepted_restore(ctx, ns.task_id)
     return EXIT_OK
+
+
+#: How long ``nerva approvals accept`` waits for an accepted restore to be staged, and
+#: how often it asks (H010 review r6). The hub's loop runs the accept after the reply.
+RESTORE_FOLLOW_SECONDS = 8.0
+RESTORE_FOLLOW_POLL_SECONDS = 0.5
+
+
+def _restore_of_task(reply: Any, task_id: int) -> tuple[str, Mapping[str, Any]] | None:
+    """What ``GET /api/admin/backup`` says about the restore task ``task_id`` accepted:
+    ``("staged", view)`` or ``("finished", last_restore)``, or None when nothing yet."""
+    if not isinstance(reply, Mapping):
+        return None
+    staged = reply.get("pending_restore")
+    if isinstance(staged, Mapping) and staged.get("task_id") == task_id:
+        return "staged", staged
+    last = reply.get("last_restore")
+    if (isinstance(last, Mapping) and last.get("task_id") == task_id
+            and last.get("status") != "deferred"):
+        return "finished", last
+    return None
+
+
+def _follow_accepted_restore(ctx: Context, task_id: int) -> None:
+    """H010 review r6: the decision route answers ``approved`` before the hub's loop
+    stages the restore, so wait a bounded few seconds for the stage and say what it is —
+    NOT applied yet when the hub cannot restart itself, never a restart nobody makes."""
+    end = time.monotonic() + RESTORE_FOLLOW_SECONDS
+    while True:
+        try:
+            found = _restore_of_task(ctx.client().get("/api/admin/backup"), task_id)
+        except HubUnavailable:
+            # The hub went away right after the accept: most likely restarting to apply it.
+            ctx.say("  the hub stopped answering (restarting to apply the restore?) — "
+                    "`nerva backup list` shows whether it was applied")
+            return
+        except HubError:
+            found = None
+        if found is not None:
+            break
+        if time.monotonic() >= end:
+            ctx.say("  the restore is not staged yet — `nerva backup list` shows when it is, "
+                    "and whether the hub must be restarted by hand")
+            return
+        time.sleep(RESTORE_FOLLOW_POLL_SECONDS)
+    state, view = found
+    if state == "finished":
+        ctx.say(f"  restore of {view.get('name')}: {view.get('status')}")
+    elif view.get("action_needed"):
+        # The accept staged the restore but nothing restarts this hub.
+        ctx.say(f"  restore of {view.get('name')} staged, NOT applied yet: {view['action_needed']}")
+    elif view.get("state") == "expired":
+        ctx.say(f"  restore of {view.get('name')} staged but expired: it will not be applied")
+    elif view.get("restart") == "self":
+        ctx.say(f"  restore of {view.get('name')} staged; the hub restarts itself to apply it "
+                f"(`nerva backup list` shows the outcome)")
+    else:
+        ctx.say(f"  restore of {view.get('name')} staged ({view.get('state')}) — "
+                f"`nerva backup list` shows when it is applied")
 
 
 _CHECKPOINT_NOTICE_CODES = frozenset({

@@ -1209,8 +1209,12 @@ def prune_quick_backups(keep: Optional[int] = None, out_dir: Optional[str] = Non
 
 
 def stage_restore(name: str, source_root=None, key: Optional[str] = None,
-                  requested_by: str = "", task_id: Optional[int] = None) -> dict:
+                  requested_by: str = "", task_id: Optional[int] = None,
+                  restart: Optional[str] = None) -> dict:
     """Drill backup *name* and, when it verifies, stage it for an in-place restore.
+
+    ``restart`` (``"self"`` / ``"manual"``, an approved task's apply only) is written on
+    the stage from its first byte, so no reader sees a stage whose restart is unknown.
 
     Touches no live data. Raises FileNotFoundError for a name not in the listing;
     a failed drill is ``{ok: False, problem}`` and stages nothing. The stage carries an
@@ -1240,6 +1244,8 @@ def stage_restore(name: str, source_root=None, key: Optional[str] = None,
                                                    timezone.utc).isoformat(),
               "requested_by": requested_by, "task_id": task_id,
               "file_count": report["file_count"]}
+    if restart in ("self", "manual"):
+        staged["restart"] = restart
     _write_json(out / _PENDING_RESTORE, staged)
     _append_history(out, "staged", staged)
     return {"ok": True, **staged}
@@ -1499,11 +1505,38 @@ def restore_request(name: str) -> dict:
     }
 
 
+def restore_held_here(task=None) -> Optional[str]:
+    """Why this process must leave an accepted ``backup.restore`` for another one, or None.
+
+    H010 review r6: the hub and jarvis-runtime (``scripts/coordinator.py``) both run the
+    autonomy loop over one queue and both register this kind. Only a process that can
+    restart the hub may stage it — or one with no hub to restart. A process with no
+    stopper (``hub_restart.available()`` False) while a live hub holds ``hub.lock``
+    leaves the task APPROVED for the hub's worker (``irreversible.held_here``): staging
+    it here would answer "manual" after the hub's 202 said "self", and nothing would
+    restart the hub."""
+    from agents.core import hub_restart, install_identity
+
+    if hub_restart.available():
+        return None
+    try:
+        elsewhere = install_identity.hub_lock_held_elsewhere()
+    except Exception:  # noqa: BLE001 — an unreadable probe is "no hub": the old behaviour
+        logger.warning("could not tell whether a hub holds the data root", exc_info=True)
+        return None
+    return "hub_applies_restore" if elsewhere else None
+
+
 async def apply_approved(task, orch) -> dict:
     """Stage a ``backup.restore`` task a human accepted (``irreversible.execute`` checked
     who decided) and ask the hub to restart, which applies it before any store opens."""
     from agents.core import hub_restart
 
+    held = restore_held_here(task)
+    if held is not None:
+        # The worker holds this kind for the hub (``irreversible.held_here``); reached
+        # only if a hub took the data root between that check and here. Nothing staged.
+        return {"status": "refused", "reason": held}
     payload = task.payload
     name = payload.get("name")
     if not isinstance(name, str) or not name:
@@ -1515,18 +1548,23 @@ async def apply_approved(task, orch) -> dict:
     if st.st_size != payload.get("bytes") or st.st_mtime != payload.get("mtime"):
         return {"status": "refused", "reason": "backup_changed"}
     task_id = getattr(task, "id", None)
+    # Known before the stage is written (review r6), so the stage never reads as waiting
+    # for a restart that is not coming.
+    planned = "self" if hub_restart.available() else "manual"
     staged = await asyncio.to_thread(stage_restore, name,
                                      requested_by=str(getattr(task, "decided_by", "") or ""),
-                                     task_id=task_id if isinstance(task_id, int) else None)
+                                     task_id=task_id if isinstance(task_id, int) else None,
+                                     restart=planned)
     if not staged["ok"]:
         return {"status": "refused", "reason": "backup_failed_verify", "problem": staged["problem"]}
-    restart = "requested" if hub_restart.request(APPROVAL_KIND) else "manual"
+    restart = "requested" if planned == "self" and hub_restart.request(APPROVAL_KIND) else "manual"
     result = {"status": "ok", "kind": APPROVAL_KIND, "staged": name, "restart": restart,
               "expires_at": staged.get("expires_at")}
     if restart == "manual":
         # Nothing restarts this hub (a raw uvicorn start, a Windows service without the
         # NSSM marker): say so on the result and on the stage, never imply a restart.
-        await asyncio.to_thread(_note_manual_restart, None, staged)
+        if planned != "manual":
+            await asyncio.to_thread(_note_manual_restart, None, staged)
         result["action_needed"] = manual_restart_hint(staged.get("expires_at"))
     return result
 

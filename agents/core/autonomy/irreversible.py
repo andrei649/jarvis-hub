@@ -45,6 +45,11 @@ BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     "backup.restore": ("agents.core.backup", "apply_approved"),   # H010: staged, then the hub restarts
 }
 _APPLY: dict[str, Apply] = {}
+#: Kinds some processes must leave for another one: kind → (module, function), the
+#: function answering ``task`` with a reason to leave it APPROVED here, or None.
+BUILTIN_HOLDS: dict[str, tuple[str, str]] = {
+    "backup.restore": ("agents.core.backup", "restore_held_here"),   # H010 review r6
+}
 
 
 def register(kind: str, apply_fn: Apply) -> None:
@@ -110,6 +115,21 @@ def pending(orch: Any, kind: str) -> list[Any]:
         return []
 
 
+def held_here(task: Any) -> str | None:
+    """Why this process's worker must not claim ``task`` (it stays APPROVED for a worker
+    in another process), or None. H010 review r6: an accepted ``backup.restore`` is left
+    for the hub, the one process that can restart itself to apply it."""
+    hold = BUILTIN_HOLDS.get(str(getattr(task, "kind", "") or ""))
+    if hold is None:
+        return None
+    try:
+        reason = getattr(importlib.import_module(hold[0]), hold[1])(task)
+    except Exception:  # noqa: BLE001 — a broken probe never strands the task: the apply rechecks
+        logger.warning("could not tell whether %s belongs to another process", hold[0], exc_info=True)
+        return None
+    return str(reason) if reason else None
+
+
 async def execute(task: Any, *, orch: Any) -> dict:
     """Apply an approved task of a registered kind — only on a human's accept or edit."""
     kind = str(getattr(task, "kind", "") or "")
@@ -131,4 +151,4 @@ async def execute(task: Any, *, orch: Any) -> dict:
         return {"status": "failed", "reason": "apply_failed"}
 
 
-__all__ = ["HUMAN_DECISIONS", "MACHINE_DECIDERS", "RISK_TIER", "enqueue", "execute", "kinds", "pending", "register"]
+__all__ = ["HUMAN_DECISIONS", "MACHINE_DECIDERS", "RISK_TIER", "enqueue", "execute", "held_here", "kinds", "pending", "register"]
