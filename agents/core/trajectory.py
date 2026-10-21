@@ -28,7 +28,8 @@ stops at :data:`MAX_STEPS`; a session's file stops growing at
 :data:`MAX_SESSION_BYTES` (the turn is skipped and logged once, never truncated
 mid-line). Images are never kept, only their count.
 
-**Where.** ``<data root>/trajectories/<session_id>.jsonl``, one JSON object per line. A
+**Where.** ``<data root>/trajectories/<session_id>.jsonl``, one JSON object per line, owner-only
+(directory ``0700``, file created ``0600`` before a byte is written; a wider one is narrowed). A
 permanent session delete (``session_archive``) backs the file up with the rest of the
 session and removes it.
 
@@ -56,6 +57,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import uuid
 from collections.abc import Iterator, Mapping
@@ -93,6 +95,8 @@ FORMATS = ("sharegpt", "messages")
 _active: ContextVar[TrajectoryRecorder | None] = ContextVar("nerva_trajectory", default=None)
 _write_lock = threading.Lock()
 _full_warned: set[str] = set()
+PRIVATE_DIR_MODE = 0o700
+PRIVATE_FILE_MODE = 0o600
 
 
 def capture_enabled() -> bool:
@@ -357,10 +361,32 @@ def save(session_id: str | None, recorder: TrajectoryRecorder) -> bool:
                 logger.warning("trajectory file for session %s is full (%d bytes); turns are not saved",
                                session_id, MAX_SESSION_BYTES)
             return False
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "ab") as handle:
-            handle.write(line)
+        _append_private(path, line)
     return True
+
+
+def _append_private(path: Path, data: bytes) -> None:
+    """Append *data* owner-only: the directory is ``0700`` and the file is created ``0600``
+    before a byte lands (a saved system prompt, conversation and tool results are as
+    private as the session snapshots ``atomic_write_json`` writes ``0600``). A file or
+    directory an earlier version left wider is narrowed; a symlink is never followed."""
+    directory = path.parent
+    directory.mkdir(mode=PRIVATE_DIR_MODE, parents=True, exist_ok=True)
+    with suppress(OSError):
+        if directory.stat().st_mode & 0o777 != PRIVATE_DIR_MODE:
+            os.chmod(directory, PRIVATE_DIR_MODE)
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, PRIVATE_FILE_MODE)
+    try:
+        if hasattr(os, "fchmod"):
+            with suppress(OSError):
+                if os.fstat(fd).st_mode & 0o777 != PRIVATE_FILE_MODE:
+                    os.fchmod(fd, PRIVATE_FILE_MODE)
+        view = memoryview(data)
+        while view:
+            view = view[os.write(fd, view):]
+    finally:
+        os.close(fd)
 
 
 def load(session_id: str, *, limit: int = MAX_EXPORT_RECORDS) -> list[dict[str, Any]]:

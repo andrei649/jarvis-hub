@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -164,6 +165,42 @@ def test_a_full_session_file_stops_growing(monkeypatch):
     size = trajectory.path_for("sess-5").stat().st_size
     assert size <= 600 and len(trajectory.load("sess-5")) >= 1
     assert all(line.endswith("}") for line in trajectory.path_for("sess-5").read_text().splitlines())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+def test_trajectory_files_are_owner_only_from_birth(monkeypatch):
+    seen: list[int] = []
+    real_write = os.write
+
+    def spy(fd, data):
+        seen.append(os.fstat(fd).st_mode & 0o777)
+        return real_write(fd, data)
+
+    monkeypatch.setattr(os, "write", spy)
+    old = os.umask(0o022)
+    try:
+        with session_scope("sess-perm"), trajectory.capture(agent_id="a", model="m", system="s", prompt="p") as rec:
+            rec.finish("r")
+    finally:
+        os.umask(old)
+    path = trajectory.path_for("sess-perm")
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+    assert seen and all(mode == 0o600 for mode in seen)  # no window: 0600 before any byte lands
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+def test_an_existing_world_readable_trajectory_file_is_narrowed():
+    path = trajectory.path_for("sess-old")
+    path.parent.mkdir(parents=True, mode=0o755)
+    path.parent.chmod(0o755)
+    path.write_text("")
+    path.chmod(0o644)
+    with session_scope("sess-old"), trajectory.capture(agent_id="a", model="m", system="s", prompt="p") as rec:
+        rec.finish("r")
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+    assert len(trajectory.load("sess-old")) == 1
 
 
 async def test_a_nested_turn_is_its_own_record():
