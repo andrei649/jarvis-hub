@@ -14,7 +14,7 @@ import { ChangeDiff, originLabel } from './skill-changes';
 export const SKILL_BATCHES_PATH = '/api/skills/batches';
 export const SKILL_BATCH_PATH = '/api/skills/batch';
 
-type FileChange = { file?: string; change?: string; diff?: string };
+type FileChange = { file?: string; change?: string; diff?: string; diff_truncated?: boolean; added_truncated?: boolean };
 type SkillChange = { name?: string; change?: string; files?: FileChange[]; lint?: { field?: string; message?: string }[] };
 
 /** What a decision on a batch's card did, from the decide route's answer. */
@@ -63,11 +63,33 @@ export function BatchLesson({ body }: { body: any }) {
   );
 }
 
+/** A diff this long opens on request, whole: the hub's ledger keeps every line. */
+export const LONG_DIFF_CHARS = 8000;
+
+/** One file's diff. A long one folds behind its line count and opens whole; a diff the hub
+    cut short (only past what any allowed file needs) says so. */
+export function BatchFileDiff({ f }: { f: FileChange }) {
+  const text = f.diff || `${f.change} ${f.file}`;
+  const note = f.diff_truncated && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 2 }}>
+    {f.added_truncated ? 'cut short · text this change adds is not all shown' : 'cut short · only removed or unchanged lines omitted'}
+  </div>;
+  if (text.length <= LONG_DIFF_CHARS) return <><ChangeDiff text={text} />{note}</>;
+  return (
+    <details data-testid="skill-batch-long-diff" style={{ marginTop: 6 }}>
+      <summary style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', cursor: 'pointer' }}>
+        {f.change} {f.file} · {text.split('\n').length.toLocaleString()} lines · show the whole diff
+      </summary>
+      <ChangeDiff text={text} />
+      {note}
+    </details>
+  );
+}
+
 function BatchDiffs({ skills }: { skills: SkillChange[] }) {
   return <>{skills.map((s, i) => (
     <div key={`${s.name}-${i}`} data-testid="skill-batch-skill" style={{ marginTop: 4 }}>
       <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>{s.name} · {s.change}</div>
-      {(s.files || []).map((f, j) => <ChangeDiff key={`${f.file}-${j}`} text={f.diff || `${f.change} ${f.file}`} />)}
+      {(s.files || []).map((f, j) => <BatchFileDiff key={`${f.file}-${j}`} f={f} />)}
     </div>
   ))}</>;
 }

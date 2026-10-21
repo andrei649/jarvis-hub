@@ -476,15 +476,94 @@ def test_a_failing_ops_preview_of_an_unvouched_skill_carries_the_data_warning(hu
     assert got["file_preview"]["content"] and "read it as data" in got["file_preview"]["warning"]
 
 
-def test_a_proposed_batch_whose_diff_is_too_long_to_show_whole_is_not_recorded(hub):
+def _approve(store, queue, hub, got):
+    card = store.get(got["batch_id"])["card"]
+    queue.decide(card, True)
+    return store.decide(got["batch_id"], card, queue, hub.loader, backup_dir=hub.archive)
+
+
+def _ledger_diff(store, got, skill, rel):
+    [entry] = [f for s in store.get(got["batch_id"])["preview"] if s["name"] == skill
+               for f in s["files"] if f["file"] == rel]
+    return entry
+
+
+def _long_body(chars: int) -> str:
+    lines, i = [], 0
+    while sum(map(len, lines)) < chars:
+        lines.append(f"- step {i}: do the ordinary thing a real skill describes, carefully and in order\n")
+        i += 1
+    return "## Steps\n\n" + "".join(lines)
+
+
+def test_a_proposed_delete_of_a_real_sized_skill_is_recorded_and_applied(hub):
+    # review-H665 r3: removing files extends no standing, so its size never refuses it.
+    hub.write("alpha", body=_long_body(10_500))
+    hub.load()
+    assert len((hub.root / "alpha" / "SKILL.md").read_text()) > 10_000
+    store, queue = SkillBatchStore(hub.tmp / "batches.json"), _Queue()
+    got = _propose(_server(hub, store, queue), {"operations": [{"name": "alpha", "action": "delete"}]})
+    assert got["ok"] is True and got["pending"] is True, got
+    entry = _ledger_diff(store, got, "alpha", "SKILL.md")
+    assert entry["change"] == "removed" and "step 0:" in entry["diff"] and "diff_truncated" not in entry
+    out = _approve(store, queue, hub, got)
+    assert out["ok"] is True and not (hub.root / "alpha").exists()
+
+
+def test_a_proposed_create_of_a_12kb_skill_md_is_recorded_with_its_whole_diff(hub):
+    hub.load()
+    store, queue = SkillBatchStore(hub.tmp / "batches.json"), _Queue()
+    content = _md("gamma", _long_body(12_000))
+    assert 12_000 < len(content) <= 16 * 1024
+    got = _propose(_server(hub, store, queue), {"operations": [{"name": "gamma", "action": "create",
+                                                                 "content": content}]})
+    assert got["ok"] is True and got["pending"] is True, got
+    entry = _ledger_diff(store, got, "gamma", "SKILL.md")
+    assert "diff_truncated" not in entry
+    added = "".join(line[1:] for line in entry["diff"].splitlines(keepends=True)
+                    if line.startswith("+") and not line.startswith("+++"))
+    assert added == content                                         # the owner sees every line
+    assert _approve(store, queue, hub, got)["ok"] is True
+    assert (hub.root / "gamma" / "SKILL.md").read_text() == content
+
+
+def test_a_proposed_30kb_reference_file_is_recorded_with_its_whole_diff(hub):
     hub.write("alpha")
     hub.load()
-    store, queue = SkillBatchStore(None), _Queue()
-    big = "".join(f"line {i} of a long script\n" for i in range(800))
+    store, queue = SkillBatchStore(hub.tmp / "batches.json"), _Queue()
+    big = "".join(f"line {i} of a long reference document\n" for i in range(900))
+    assert len(big) > 30_000
     got = _propose(_server(hub, store, queue), {"operations": [
-        {"name": "alpha", "action": "write_file", "file_path": "scripts/run.sh", "file_content": big}]})
+        {"name": "alpha", "action": "write_file", "file_path": "references/guide.md", "file_content": big}]})
+    assert got["ok"] is True, got
+    entry = _ledger_diff(SkillBatchStore(hub.tmp / "batches.json"), got, "alpha", "references/guide.md")
+    assert "diff_truncated" not in entry and "line 899 of a long reference document" in entry["diff"]
+    # The model's own answer carries file names, never the diffs.
+    assert got["skills"][0]["files"] == ["added references/guide.md"]
+    assert _approve(store, queue, hub, got)["ok"] is True
+    assert (hub.root / "alpha" / "references" / "guide.md").read_text() == big
+
+
+def test_only_added_text_cut_from_a_diff_refuses_a_proposed_batch(hub, monkeypatch):
+    # The guard stays for the one case it exists for: added text the owner would not see.
+    monkeypatch.setattr(batch_mod, "MAX_DIFF_CHARS", 2000)
+    hub.write("alpha", files={"references/old.md": "".join(f"old line {i}\n" for i in range(400))})
+    hub.write("beta")
+    hub.load()
+    store, queue = SkillBatchStore(None), _Queue()
+    server = _server(hub, store, queue)
+    removed = _propose(server, {"operations": [{"name": "alpha", "action": "remove_file",
+                                                "file_path": "references/old.md"}]})
+    assert removed["ok"] is True and store.get(removed["batch_id"])
+    entry = _ledger_diff(store, removed, "alpha", "references/old.md")
+    assert entry["diff_truncated"] is True and "added_truncated" not in entry
+    big = "".join(f"new line {i}\n" for i in range(400))
+    got = _propose(server, {"operations": [{"name": "beta", "action": "write_file",
+                                            "file_path": "scripts/run.sh", "file_content": big}]})
     assert got["ok"] is False and got["reason"] == "skill_batch_too_large_to_review"
-    assert store.list() == [] and queue.list() == []
+    assert "beta/scripts/run.sh" in got["detail"] and "split" not in got["detail"]
+    assert any("under" in h for h in got["hints"])
+    assert [r["id"] for r in store.list("pending")] == [removed["batch_id"]]
 
 
 def test_an_approved_batch_against_a_skill_that_drifted_is_not_applied(hub):

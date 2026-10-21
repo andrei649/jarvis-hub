@@ -975,12 +975,19 @@ def register_skill_tools(
                 if warning:
                     preview["warning"] = warning
             return checked
-        # The owner approves what the inbox shows: a diff cut short would extend the skill's
-        # standing over text nobody saw, so such a batch is not recorded (review-H665 #2).
-        cut = [f"{s['name']}/{f['file']}" for s in checked["skills"] for f in s["files"] if f.get("diff_truncated")]
+        # The owner approves what the inbox shows. The ledger keeps every diff whole up to
+        # MAX_DIFF_CHARS, room for any file the batch's validators allow; only added text cut
+        # past it would extend a skill's standing over text nobody saw, so only that refuses
+        # (review-H665 #2, r3). A removal (remove_file, delete) never does.
+        from .batch import MAX_DIFF_CHARS
+
+        cut = [f"{s['name']}/{f['file']}" for s in checked["skills"] for f in s["files"] if f.get("added_truncated")]
         if cut:
-            return _refuse("skill_batch_too_large_to_review", "the change to " + ", ".join(cut[:5]) + " is too long "
-                           "to show the owner whole: split it across smaller batches")
+            refused = _refuse("skill_batch_too_large_to_review", "the change to " + ", ".join(cut[:5]) + " is "
+                              f"longer than the {MAX_DIFF_CHARS:,} characters the owner's review shows whole")
+            refused["hints"] = [f"keep each file's change under {MAX_DIFF_CHARS:,} characters",
+                                "to replace a file that large, ask the owner to change it"]
+            return refused
         actor = _actor() or "agent"
         record = store.propose(operations, expect=expect, preview=checked["skills"], origin=f"agent:{actor}")
         queue = approvals()

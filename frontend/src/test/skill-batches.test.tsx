@@ -45,6 +45,26 @@ describe('SkillBatchesInbox', () => {
     expect(decided).toHaveBeenCalled();
   });
 
+  it('folds a long diff behind its line count and opens it whole (review-H665 r3)', () => {
+    const lines = Array.from({ length: 600 }, (_, i) => `+- step ${i}: an ordinary line of a real skill`);
+    const diff = ['--- SKILL.md (now)', '+++ SKILL.md (after)', '@@ -0,0 +1,600 @@', ...lines].join('\n');
+    const long = { ...batch, preview: [{ name: 'gamma', change: 'created',
+      files: [{ file: 'SKILL.md', change: 'added', diff }] }] };
+    render(<SkillBatchesInbox reply={{ batches: [long] }} />);
+    const fold = screen.getByTestId('skill-batch-long-diff');
+    expect(fold.textContent).toContain('added SKILL.md · 603 lines · show the whole diff');
+    const shown = screen.getByTestId('skill-change-diff').textContent;
+    expect(shown).toContain('+- step 0:');
+    expect(shown).toContain('+- step 599:');                      // every line, none cut
+  });
+
+  it('says when the hub cut a diff short, and whether added text is missing', () => {
+    const cut = { ...batch, preview: [{ name: 'alpha', change: 'deleted', files: [
+      { file: 'SKILL.md', change: 'removed', diff: '-old', diff_truncated: true }] }] };
+    render(<SkillBatchesInbox reply={{ batches: [cut] }} />);
+    expect(screen.getByText('cut short · only removed or unchanged lines omitted')).toBeTruthy();
+  });
+
   it('cannot be decided without a card, and a failed read says so', () => {
     const { rerender } = render(<SkillBatchesInbox reply={{ batches: [{ ...batch, card: null }] }} />);
     expect(screen.getByTitle('approve skill batch').disabled).toBe(true);

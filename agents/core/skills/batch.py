@@ -66,7 +66,10 @@ _FIELDS_BY_ACTION = {
 _SKILL_FILE = "SKILL.md"
 PREVIEW_LINES = 40
 PREVIEW_CHARS = 4000
-MAX_DIFF_CHARS = 8000
+#: The ledger keeps each file's diff whole up to this many characters: room for the change of
+#: any file the validators allow (old and new each up to MAX_FILE_BYTES, one marker a line).
+#: Past it only lines the change does not add may be cut unrefused (review-H665 r3).
+MAX_DIFF_CHARS = 4 * MAX_FILE_BYTES + 4096
 #: Batches never overlap within a process: one batch's swap is never another's base.
 _BATCH_LOCK = threading.Lock()
 #: The swap's rename; tests replace it to fail at a chosen step.
@@ -530,9 +533,22 @@ def _diffs(target: _Target) -> list[dict]:
         except UnicodeDecodeError:
             text = "(binary)"
         change = "added" if old is None else "removed" if new is None else "changed"
-        out.append({"file": rel, "change": change, "diff": text[:MAX_DIFF_CHARS],
-                    **({"diff_truncated": True} if len(text) > MAX_DIFF_CHARS else {})})
+        entry = {"file": rel, "change": change, "diff": text[:MAX_DIFF_CHARS]}
+        if len(text) > MAX_DIFF_CHARS:
+            entry["diff_truncated"] = True
+            if _adds_past(text, MAX_DIFF_CHARS):
+                # Text the change adds would go unseen: the governed path refuses this one.
+                entry["added_truncated"] = True
+        out.append(entry)
     return out
+
+
+def _adds_past(text: str, cut: int) -> bool:
+    """Whether any added line of a diff reaches past ``cut``. A removed or unchanged line
+    extends no skill's standing over text nobody saw, so only an added line counts."""
+    start = text.rfind("\n", 0, cut) + 1          # the line the cut falls in, whole
+    # The "+++" file header opens the diff, long before any cut: every "+" line here is added.
+    return any(line.startswith("+") for line in text[start:].splitlines())
 
 
 def _lint(target: _Target) -> list[dict]:
