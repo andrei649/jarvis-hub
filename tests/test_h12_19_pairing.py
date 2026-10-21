@@ -281,7 +281,7 @@ def test_clear_pending_endpoint_clears_and_audits(monkeypatch, tmp_path, enabled
     client.post("/api/channels/pairing/decide",
                 json={"channel": "telegram", "sender_id": "carol-9", "action": "approve"}, headers=hdr)
     r = client.post("/api/channels/pairing/clear-pending", headers=hdr)
-    assert r.status_code == 200 and r.json() == {"ok": True, "cleared": 2}
+    assert r.status_code == 200 and r.json() == {"ok": True, "cleared": 2, "audited": True}
     summary = client.get("/api/channels/pairing", headers=hdr).json()["summary"]
     assert summary["pending"] == 0 and summary["allowed"] == 1
     rows = _pairing_rows(events)
@@ -305,3 +305,90 @@ def test_clear_pending_endpoint_survives_a_broken_audit_log(monkeypatch, tmp_pat
     client.post("/api/channels/pairing/request", json={"channel": "telegram", "sender_id": "1"})
     r = client.post("/api/channels/pairing/clear-pending", headers=hdr)
     assert r.status_code == 200 and r.json()["cleared"] == 1
+    assert r.json()["audited"] is False     # the row was not written, and the reply says so
+
+
+# ── H154 review fixes: threading, audit honesty, the flood window ──
+
+def test_clear_pending_runs_on_the_same_thread_as_every_other_pairing_write(
+        monkeypatch, tmp_path, enabled):
+    """The store's writers (request/approve/reject/block/unpair, Telegram's
+    deeplink redeem) mutate ``_senders`` on the event loop without the lock. A clear
+    run on a worker thread would walk that dict while the loop inserts into it —
+    "dictionary changed size during iteration", a 500 on a flooded inbox. So the
+    clear must run where every other write runs."""
+    import threading
+    client, hdr = _client(monkeypatch, tmp_path)
+    seen = {}
+    real_request, real_clear = SenderPairing.request, SenderPairing.clear_pending
+
+    def spy_request(self, *a, **kw):
+        seen["request"] = threading.get_ident()
+        return real_request(self, *a, **kw)
+
+    def spy_clear(self):
+        seen["clear"] = threading.get_ident()
+        return real_clear(self)
+
+    monkeypatch.setattr(SenderPairing, "request", spy_request)
+    monkeypatch.setattr(SenderPairing, "clear_pending", spy_clear)
+    client.post("/api/channels/pairing/request", json={"channel": "telegram", "sender_id": "1"})
+    r = client.post("/api/channels/pairing/clear-pending", headers=hdr)
+    assert r.status_code == 200 and r.json()["cleared"] == 1
+    assert seen["clear"] == seen["request"]
+
+
+def test_clear_pending_survives_inserts_from_another_thread(reg, enabled):
+    """Defence in depth for a caller that does use a thread: the clear walks a
+    snapshot and the save serializes shallow copies, so a sender added mid-walk
+    or mid-save never raises."""
+    import sys
+    import threading
+    errors: list = []
+    stop = threading.Event()
+
+    def flood():
+        n = 0
+        while not stop.is_set():
+            reg._set("telegram", f"s{n % 300}", PENDING)
+            n += 1
+
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    worker = threading.Thread(target=flood)
+    worker.start()
+    try:
+        for _ in range(400):
+            try:
+                reg.clear_pending()
+            except RuntimeError as exc:   # "dictionary changed size during iteration"
+                errors.append(exc)
+    finally:
+        stop.set()
+        worker.join()
+        sys.setswitchinterval(old)
+    assert errors == []
+    reg.clear_pending()
+    assert reg.summary()[PENDING] == 0
+
+
+def test_clear_pending_endpoint_reports_when_no_audit_log_is_wired(monkeypatch, tmp_path, enabled):
+    """Without an orchestrator there is no audit log to write to. The clear still
+    happens, and the reply says it went unaudited instead of implying a row."""
+    client, hdr = _client(monkeypatch, tmp_path)
+    monkeypatch.setattr(web, "orch", None)
+    client.post("/api/channels/pairing/request", json={"channel": "telegram", "sender_id": "1"})
+    r = client.post("/api/channels/pairing/clear-pending", headers=hdr)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "cleared": 1, "audited": False}
+
+
+def test_clear_pending_keeps_the_flood_window(reg, enabled):
+    """Clearing is not an amnesty: a sender who spent its attempts before the clear
+    is still rate-limited after it, or the button would hand a flooder a fresh
+    budget every time the owner tidies the inbox."""
+    for _ in range(5):
+        reg.request("telegram", "spam")
+    assert reg.clear_pending() == 1
+    assert reg.request("telegram", "spam")["status"] == "rate_limited"
+    assert reg.status("telegram", "spam") == UNKNOWN

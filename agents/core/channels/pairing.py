@@ -385,9 +385,14 @@ class SenderPairing(JsonStore):
         return True
 
     def _serialize(self):
+        # Shallow copies (one C-level ``dict()`` each, atomic under the GIL): the
+        # JSON encoder walks what it is given in Python, and a writer that inserts
+        # a sender meanwhile must not make the save raise "dictionary changed size
+        # during iteration". Records are replaced, never edited in place, so a
+        # shallow copy is a consistent snapshot. (H154 review)
         return {
-            "senders": self._senders, "code": self._code_hash,
-            "attempts": self._attempts, "deeplinks": self._deeplinks,
+            "senders": dict(self._senders), "code": self._code_hash,
+            "attempts": dict(self._attempts), "deeplinks": dict(self._deeplinks),
         }
 
     def _deserialize(self, raw) -> None:
@@ -667,11 +672,21 @@ class SenderPairing(JsonStore):
         A bulk ``reject``: approved and blocked senders are untouched, and a
         cleared sender is not blocked — it may ask again. The owner's answer to a
         flooded inbox.
+
+        The flood counters (``_attempts``) are kept on purpose: clearing is not an
+        amnesty, so a sender that spent its attempts is still rate-limited after.
+
+        The route calls this on the event loop, like every other writer (none of
+        which take ``_lock`` around ``_senders``). The walk is still over a
+        snapshot, the delete tolerant and ``_serialize`` copies, so a caller on
+        another thread cannot
+        hit "dictionary changed size during iteration" mid-flood.
         """
         with self._lock:
-            dead = [k for k, r in self._senders.items() if r.get("status") == PENDING]
+            snapshot = list(self._senders.items())
+            dead = [k for k, r in snapshot if r.get("status") == PENDING]
             for key in dead:
-                del self._senders[key]
+                self._senders.pop(key, None)
             if dead:
                 self._save()
         return len(dead)

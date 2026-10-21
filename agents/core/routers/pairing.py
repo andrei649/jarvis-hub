@@ -86,14 +86,17 @@ async def pairing_decide(body: PairingDecisionBody):
         return nocache_json({"error": "unknown action"}, status_code=400)
 
 
-async def _audit_pairing(action: str, preview: str) -> None:
+async def _audit_pairing(action: str, preview: str) -> bool:
     """H154 — one audit row for a bulk owner action. Counts only, never sender ids
     (the precedent is webhooks._audit_webhook). A broken audit log never turns the
-    action itself into a 500: the change has already happened."""
+    action itself into a 500: the change has already happened.
+
+    Returns whether a row was written. Without an orchestrator (or one with no
+    audit log) there is nowhere to write it, and the caller says so."""
     orch = get_orch()
     audit = getattr(orch, "audit", None) if orch else None
     if audit is None:
-        return
+        return False
     from agents.core.security.types import SecurityEvent, SecurityEventType
 
     try:
@@ -105,6 +108,8 @@ async def _audit_pairing(action: str, preview: str) -> None:
         ))
     except Exception:
         logger.warning("pairing %s: the audit row could not be written", action, exc_info=True)
+        return False
+    return True
 
 
 @router.post("/api/channels/pairing/clear-pending", dependencies=[Depends(admin_guard)])
@@ -112,11 +117,18 @@ async def pairing_clear_pending():
     """Drop every pending request at once — a bulk reject (H154).
 
     Approved and blocked senders are untouched and nobody is blocked, so a real
-    contact caught in the sweep can simply ask again.
+    contact caught in the sweep can simply ask again. ``audited`` is False when
+    no audit row could be written (no audit log wired, or the write failed).
+
+    Runs on the event loop, not in a worker thread: every other writer of the
+    store (request/decide here, Telegram's deeplink redeem) mutates it on the
+    loop without the store lock, and the gateway's inbound gate reads it there,
+    so a threaded clear would race them.
     """
-    cleared = await asyncio.to_thread(_get_sender_pairing().clear_pending)
-    await _audit_pairing("clear_pending", f"pairing clear pending: cleared={cleared} pending senders")
-    return nocache_json({"ok": True, "cleared": cleared})
+    cleared = _get_sender_pairing().clear_pending()
+    audited = await _audit_pairing(
+        "clear_pending", f"pairing clear pending: cleared={cleared} pending senders")
+    return nocache_json({"ok": True, "cleared": cleared, "audited": audited})
 
 
 @router.post("/api/channels/pairing/code", dependencies=[Depends(admin_guard)])

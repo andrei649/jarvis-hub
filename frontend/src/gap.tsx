@@ -683,7 +683,10 @@ export function PairingPanel() {
   const pendingCount = d?.summary?.pending ?? senders.filter((s) => (s.status || 'pending') === 'pending').length;
   const clearPending = () => {
     if (!window.confirm(`Drop all ${pendingCount} pending request(s)? Nobody is blocked; they can ask again.`)) return;
-    actA('/api/channels/pairing/clear-pending', {}, (r) => { setCleared(r?.cleared ?? 0); reload(); });
+    // `audited: false` means the server had no audit log to write to (or the write
+    // failed) — said on screen, so a cleared inbox never implies a row that is not there.
+    actA('/api/channels/pairing/clear-pending', {}, (r) => {
+      setCleared(`${r?.cleared ?? 0} pending${r?.audited === false ? ' · not audited' : ''}`); reload(); });
   };
   return <Card title="SENDER PAIRING" live={asLive(d)} sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
     <State e={e} loading={loading} n={senders.length} />
@@ -700,7 +703,7 @@ export function PairingPanel() {
     {pendingCount > 0 && <div style={{ display: 'flex', marginTop: 6 }}>
       <button className="tool-btn" style={{ marginLeft: 'auto' }} title="drop every pending request at once" onClick={clearPending}>clear pending</button>
     </div>}
-    {cleared != null && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>cleared {cleared} pending</div>}
+    {cleared != null && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>cleared {cleared}</div>}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="pairing code (empty = clear)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={() => actA('/api/channels/pairing/code', { code: code || null }, () => { setCode(''); reload(); })}>set code</button>

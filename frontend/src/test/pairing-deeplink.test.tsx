@@ -140,6 +140,7 @@ describe('PairingPanel — clear pending', () => {
   });
 
   it('posts to the clear-pending route as admin after a confirm', async () => {
+    localStorage.setItem('hud.admin_token', 'admin-secret');
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fn = mockApi({ '/pairing/clear-pending': ok({ ok: true, cleared: 1 }) });
     render(<PairingPanel />);
@@ -149,9 +150,21 @@ describe('PairingPanel — clear pending', () => {
       const call = fn.mock.calls.find((c) => String(c[0]).includes('/api/channels/pairing/clear-pending'));
       expect(call).toBeTruthy();
       expect(call[1].method).toBe('POST');
+      expect(call[1].headers['X-Admin-Token']).toBe('admin-secret');
     });
+    localStorage.removeItem('hud.admin_token');
     expect(confirm).toHaveBeenCalled();
     await waitFor(() => expect(screen.getByText(/cleared 1 pending/)).toBeTruthy());
+    confirm.mockRestore();
+  });
+
+  it('says so when the server could not write the audit row', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockApi({ '/pairing/clear-pending': ok({ ok: true, cleared: 2, audited: false }) });
+    render(<PairingPanel />);
+    await waitFor(() => expect(screen.getByTitle(/drop every pending request/)).toBeTruthy());
+    fireEvent.click(screen.getByTitle(/drop every pending request/));
+    await waitFor(() => expect(screen.getByText(/cleared 2 pending · not audited/)).toBeTruthy());
     confirm.mockRestore();
   });
 
