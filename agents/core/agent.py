@@ -1076,6 +1076,7 @@ class Agent:
         steering = prepare_steering_rows(getattr(self, "id", ""))
         if steering.rows:
             prompt = "\n\n".join([prompt, *(row["content"] for row in steering.rows)])
+            trajectory.note_prompt(prompt)  # H652: the saved human turn is what was sent
 
         check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
         guard = (lambda: check(backend, model)) if callable(check) else None

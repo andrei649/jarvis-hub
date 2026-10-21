@@ -128,12 +128,21 @@ When the budget runs out: `ITERATION_LIMIT`, with a reply that says so.
 - **Usage**: every model request's provider-reported tokens, through the usage sink.
 - **The exit**: `logger.info("tool_loop_exit ...")` and `turn_stops.record_runtime_stop`.
 - **The whole turn**, when the owner opts in with `NERVA_SAVE_TRAJECTORIES=1`: the
-  loop notes its guided system prompt, each steering row, each assistant step with its
-  calls, each tool result as the model read it, and the exit reason into the active
-  `agents/core/trajectory.py::TrajectoryRecorder`; `Agent.generate_response` adds the
-  reply and saves one redacted record per turn under
-  `<data root>/trajectories/<session>.jsonl`. Export it as ShareGPT with
-  `nerva sessions export <session> --sharegpt` or `GET /sessions/{id}/trajectories`.
+  loop notes its guided system prompt (again when a fold rebuilds it), the tool
+  definitions it offered as the provider's `tools=` (`note_tools`, right after
+  `_specs_for` and again when a fold refreshes the offer — the union, a name's latest
+  definition winning), each steering row, each assistant step with its calls, each tool
+  result as the model read it, and the exit reason into the active
+  `agents/core/trajectory.py::TrajectoryRecorder`. On the plain path
+  `Agent._generate_response` re-notes the prompt after folding steering into it, so the
+  saved human turn is the one sent. `Agent.generate_response` adds the reply and saves
+  one redacted record per turn under `<data root>/trajectories/<session>.jsonl`. Export
+  it as ShareGPT with `nerva sessions export <session> --sharegpt` or
+  `GET /sessions/{id}/trajectories`: the system turn carries the tools as a Hermes
+  `<tools>[{name, description, parameters, required: null}]</tools>` block, every gpt
+  turn opens with a (empty) `<think>` block, and one step's parallel results share one
+  `tool` turn. `format=messages` adds a `tools` column next to `messages` for SFT chat
+  templates.
 
 ## 4. Invariants worth knowing before you change the loop
 

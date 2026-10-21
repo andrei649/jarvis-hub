@@ -216,14 +216,14 @@ async def test_sharegpt_matches_the_hermes_trajectory_shape():
     conv = row["conversations"]
     assert [m["from"] for m in conv] == ["system", "human", "gpt", "tool", "gpt"]
     assert conv[1]["value"] == "echo hi"
-    assert conv[2]["value"].startswith("let me echo\n<tool_call>\n")
+    assert conv[2]["value"].startswith("<think>\n</think>\nlet me echo\n<tool_call>\n")
     call = json.loads(conv[2]["value"].split("<tool_call>\n")[1].split("\n</tool_call>")[0])
     assert call == {"name": "echo", "arguments": {"value": "hi"}}
     assert conv[3]["value"].startswith("<tool_response>\n") and conv[3]["value"].endswith("\n</tool_response>")
     response = json.loads(conv[3]["value"][len("<tool_response>\n"):-len("\n</tool_response>")])
     assert response["name"] == "echo" and response["tool_call_id"] == "call-1"
     assert response["content"]["result"] == {"echo": "hi"}
-    assert conv[4] == {"from": "gpt", "value": "Echo completed"}
+    assert conv[4] == {"from": "gpt", "value": "<think>\n</think>\nEcho completed"}
     assert row["session_id"] == "sess-1" and row["completed"] is True and row["timestamp"]
 
 
@@ -235,6 +235,163 @@ async def test_messages_format_keeps_tool_calls_for_sft():
     assert roles == ["system", "user", "assistant", "tool", "assistant"]
     assert row["messages"][2]["tool_calls"][0]["function"] == {"name": "echo", "arguments": '{"value": "hi"}'}
     assert row["messages"][3]["tool_call_id"] == "call-1"
+
+
+# ── the offered tools (review r2) ────────────────────────────────────────────
+
+
+async def test_the_offered_tool_definitions_are_saved_and_exported():
+    """A tool-calling row without the tool definitions teaches the model to call tools it
+    was never shown: Hermes puts them in the system turn as a ``<tools>`` block."""
+    agent, backend = _agent(_tool_turns())
+    await _ask(agent, backend)
+    [record] = trajectory.load("sess-1")
+    [echo] = record["tools"]
+    assert echo["name"] == "echo" and echo["description"] == "Echo one value."
+    assert echo["parameters"]["properties"] == {"value": {"type": "string"}}
+
+    [row] = trajectory.export("sess-1")
+    system = row["conversations"][0]
+    assert system["from"] == "system" and system["value"].startswith("You are Jarvis.")
+    block = system["value"].split("<tools>\n")[1].split("\n</tools>")[0]
+    assert json.loads(block) == [{"name": "echo", "description": "Echo one value.",
+                                  "parameters": echo["parameters"], "required": None}]
+
+    [sft] = trajectory.export("sess-1", fmt="messages")
+    assert sft["tools"] == [{"type": "function", "function": {
+        "name": "echo", "description": "Echo one value.", "parameters": echo["parameters"]}}]
+
+
+def test_a_row_with_tools_and_no_system_prompt_still_gets_a_system_turn():
+    record = {"system": "", "prompt": "p", "steps": [], "reply": "r",
+              "tools": [{"name": "x", "description": "d", "parameters": {"type": "object"}}]}
+    conv = trajectory.to_sharegpt(record)["conversations"]
+    assert conv[0]["from"] == "system" and "<tools>\n" in conv[0]["value"]
+    # A v1 row written before tools were captured exports as "no tools", not a crash.
+    old = {"system": "s", "prompt": "p", "steps": [], "reply": "r"}
+    assert "<tools>" not in trajectory.to_sharegpt(old)["conversations"][0]["value"]
+    assert trajectory.to_messages(old)["tools"] == []
+
+
+async def test_a_tool_offer_refreshed_mid_turn_is_reflected(monkeypatch):
+    """H672 refreshes the offer at a compaction fold; a tool approved mid-turn must
+    have its definition in the row, and the ones offered earlier stay."""
+    from agents.core import agent_runtime
+
+    monkeypatch.setattr(agent_runtime, "estimate_messages",
+                        lambda messages: sum(len(str(m.get("content", ""))) for m in messages) // 4)
+    server = ToolRPCServer()
+    schema = {"type": "object", "properties": {"n": {"type": "integer"}}}
+
+    async def blob(args):
+        return {"blob": "y" * 4_000, "n": args.get("n")}
+
+    async def late(args):
+        return {"late": True}
+
+    server.register_tool("blob", blob, description="Return a large payload.", input_schema=schema)
+
+    class _Backend:
+        supports_tools = True
+
+        def __init__(self):
+            self.n = 0
+            self.offers = []
+
+        async def generate_tool_turn(self, **kwargs):
+            self.n += 1
+            self.offers.append([tool.name for tool in kwargs["tools"]])
+            if self.n == 3:
+                server.register_tool("late", late, description="Approved mid-turn.", input_schema=schema)
+            if self.n <= 3:
+                return ToolTurn(tool_calls=(ToolCall(id=f"c{self.n}", name="blob", raw_arguments=json.dumps({"n": self.n}),
+                                                     arguments={"n": self.n}),), finish_reason="tool_calls")
+            return ToolTurn(content="done", finish_reason="stop")
+
+    backend = _Backend()
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    agent.tool_runtime = AgentToolRuntime(server, enabled=lambda: True, context_budget_tokens=lambda: 2_400,
+                                          compaction_keep_recent=1)
+    assert await _ask(agent, backend) == "done"
+    assert backend.offers[0] == ["blob"] and "late" in backend.offers[-1]  # the refresh happened
+    [record] = trajectory.load("sess-1")
+    assert sorted(tool["name"] for tool in record["tools"]) == ["blob", "late"]
+
+
+# ── Hermes shape details (review r2) ─────────────────────────────────────────
+
+
+def test_parallel_tool_results_share_one_tool_turn_and_every_gpt_turn_has_a_think_block():
+    record = {"system": "s", "prompt": "p", "reply": "final", "steps": [
+        {"role": "assistant", "content": "two at once", "tool_calls": [
+            {"id": "a", "name": "x", "arguments": "{}"}, {"id": "b", "name": "y", "arguments": "{}"}]},
+        {"role": "tool", "tool_call_id": "a", "name": "x", "content": '{"ok": 1}'},
+        {"role": "tool", "tool_call_id": "b", "name": "y", "content": '{"ok": 2}'},
+    ]}
+    conv = trajectory.to_sharegpt(record)["conversations"]
+    assert [m["from"] for m in conv] == ["system", "human", "gpt", "tool", "gpt"]
+    assert conv[3]["value"].count("<tool_response>") == 2
+    assert conv[3]["value"].startswith("<tool_response>\n") and "</tool_response>\n<tool_response>" in conv[3]["value"]
+    assert all(m["value"].startswith("<think>\n</think>\n") for m in conv if m["from"] == "gpt")
+    assert conv[-1]["value"] == "<think>\n</think>\nfinal"
+    # The OpenAI rows keep one message per result: tool_call_id pairs them.
+    assert [m["role"] for m in trajectory.to_messages(record)["messages"]].count("tool") == 2
+
+
+async def test_a_plain_turn_saves_the_steering_text_the_model_actually_read():
+    """The tool-less path folds pending steering into the prompt it sends; the saved
+    human turn must be that prompt, not the one before the fold."""
+    from agents.core.steering import steering_scope
+    from agents.core.subagents import SteerChannel, SteerMessage
+
+    sent = {}
+
+    class _Text:
+        async def generate(self, **kwargs):
+            sent["prompt"] = kwargs["prompt"]
+            return "steered answer"
+
+    channel = SteerChannel("child-1")
+    channel.push(SteerMessage("child-1", "use metric units", "user"))
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    agent.tool_runtime = None
+    with steering_scope(channel, agent_id="jarvis"):
+        await agent.generate_response(backend=_Text(), model="m", prompt="how far is it", system="sys",
+                                      max_tokens=64, temperature=0.1, session_id="sess-10")
+    assert "use metric units" in sent["prompt"]
+    [record] = trajectory.load("sess-10")
+    assert record["prompt"] == sent["prompt"]
+    conv = trajectory.export("sess-10")[0]["conversations"]
+    assert "use metric units" in conv[1]["value"]
+
+
+def test_redaction_runs_on_bounded_text(monkeypatch):
+    seen = []
+    trajectory._scrub("warm up")
+    real = trajectory._redactor.redact_text
+    monkeypatch.setattr(trajectory._redactor, "redact_text", lambda text: seen.append(len(text)) or real(text))
+    monkeypatch.setattr(trajectory, "MAX_TEXT_CHARS", 100)
+    out = trajectory._scrub("z" * 1_000_000)
+    assert seen and max(seen) < 10_000
+    assert out.startswith("z" * 100) and "truncated 999900 chars" in out
+    # A secret inside the kept text is still redacted.
+    assert SECRET not in trajectory._scrub("a" * 50 + SECRET + "b" * 1_000)
+
+
+def test_a_full_warning_is_logged_again_once_the_file_was_removed(monkeypatch, caplog):
+    monkeypatch.setattr(trajectory, "MAX_SESSION_BYTES", 700)
+
+    def turn():
+        with session_scope("sess-11"), trajectory.capture(agent_id="a", model="m", system="s", prompt="p") as rec:
+            rec.finish("r" * 200)
+
+    with caplog.at_level("WARNING", logger="jarvis.trajectory"):
+        turn()
+        turn()
+        trajectory.path_for("sess-11").unlink()  # e.g. forget-me wiped the directory
+        turn()
+        turn()
+    assert sum("is full" in r.getMessage() for r in caplog.records) == 2
 
 
 # ── route ────────────────────────────────────────────────────────────────────
@@ -261,7 +418,7 @@ async def test_the_route_exports_sharegpt_and_jsonl(monkeypatch):
     body = got.json()
     assert got.status_code == 200 and "no-store" in got.headers["Cache-Control"]
     assert body["format"] == "sharegpt" and body["count"] == 1 and body["capture_enabled"] is True
-    assert body["trajectories"][0]["conversations"][-1] == {"from": "gpt", "value": "Echo completed"}
+    assert body["trajectories"][0]["conversations"][-1] == {"from": "gpt", "value": "<think>\n</think>\nEcho completed"}
     lines = client.get("/sessions/sess-1/trajectories", params={"jsonl": "true", "format": "messages"})
     assert lines.headers["content-type"].startswith("application/x-ndjson")
     assert json.loads(lines.text.splitlines()[0])["messages"][-1]["content"] == "Echo completed"

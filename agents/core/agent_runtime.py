@@ -750,6 +750,7 @@ class AgentToolRuntime:
         bind_transcript(messages[0]["content"], prompt)
         from . import trajectory  # H652: what the model saw, step by step (opt-in, never raises)
         trajectory.note_system(messages[0]["content"])
+        trajectory.note_tools(tools)  # the definitions sent as the provider's ``tools=``
         limit = self._iteration_limit()
         budget = IterationBudget(limit)
         compacted: set[int] = set()
@@ -848,6 +849,7 @@ class AgentToolRuntime:
                         )
                         return ToolLoopResult(_TOOLS_WITHDRAWN_REPLY, ToolLoopExitReason.TOOLS_WITHDRAWN)
                     tools, gated_tools, untrusted_tools = self._specs_for(metadata)
+                    trajectory.note_tools(tools)  # H652: the refreshed offer joins the record
                     schema_tokens = (
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
                         if known_window else 0
@@ -856,6 +858,7 @@ class AgentToolRuntime:
                                               metadata=metadata, backend=backend)
                 if rebuilt != messages[0]["content"]:
                     messages[0] = {**messages[0], "content": rebuilt}
+                    trajectory.note_system(rebuilt)
                     if not await self._compact_context(
                         messages, compacted, model=model, max_tokens=max_tokens,
                         effective_window=known_window, schema_tokens=schema_tokens,

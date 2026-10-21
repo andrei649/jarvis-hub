@@ -133,7 +133,8 @@ with a scripted backend that returns a `ToolTurn` carrying your `ToolCall`, as
   `nerva tools -n 20` for the loop's trail (requested, started, result or failed).
 - `nerva approvals list` for a gated tool's pending card.
 - With `NERVA_SAVE_TRAJECTORIES=1`, `nerva sessions export <session> --sharegpt` shows
-  the whole turn: your call's arguments, the result as the model read it, and the reply
+  the whole turn: your tool's definition in the system turn's `<tools>` block, your
+  call's arguments, the result as the model read it, and the reply
   (`agents/core/trajectory.py`).
 
 ## Checklist

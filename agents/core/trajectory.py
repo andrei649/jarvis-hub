@@ -8,17 +8,22 @@ that, for Nerva.
 
 **What is captured.** One record per model turn that :meth:`Agent.generate_response`
 completes on a bound session: the system prompt the model saw (the tool loop's guided
-one when the loop ran), the prompt, every assistant step with the tool calls it made,
-every steering message the owner sent mid-turn, every tool result the loop fed back (as the model read it: fenced, deduplicated, with
-its stall notice), the final reply and the loop's exit reason. A plain (tool-less) turn
-is captured too, as system / human / gpt.
+one when the loop ran, re-noted when a fold rebuilds it), the **tool definitions it was
+offered** (name, description, parameters — the union over the turn, since an H672
+compaction fold can refresh the offer mid-turn; a name's latest definition wins), the
+prompt, every assistant step with the tool calls it made, every steering message sent
+mid-turn, every tool result the loop fed back (as the model read it: fenced,
+deduplicated, with its stall notice), the final reply and the loop's exit reason. A
+plain (tool-less) turn is captured too, as system / human / gpt, with the prompt as it
+was sent — steering folded into it included.
 
 **Off by default.** ``NERVA_SAVE_TRAJECTORIES=1`` turns it on, as ``save_trajectories``
 is off by default in Hermes. Tool results can carry what the owner read through the
 hub, so keeping them is the owner's decision, not a side effect of chatting.
 
-**Bounded and scrubbed.** Every text is passed through the log redaction scanner (API
-keys, bearer tokens, private keys) and clipped to :data:`MAX_TEXT_CHARS`; a step list
+**Bounded and scrubbed.** Every text is cut to a bounded window first, passed through the
+log redaction scanner (API keys, bearer tokens, private keys) and clipped to
+:data:`MAX_TEXT_CHARS`; a tool list stops at :data:`MAX_TOOLS`; a step list
 stops at :data:`MAX_STEPS`; a session's file stops growing at
 :data:`MAX_SESSION_BYTES` (the turn is skipped and logged once, never truncated
 mid-line). Images are never kept, only their count.
@@ -28,10 +33,14 @@ permanent session delete (``session_archive``) backs the file up with the rest o
 session and removes it.
 
 **Export.** :func:`to_sharegpt` renders one record in the Hermes trajectory shape —
-``{"conversations": [{"from": "system"|"human"|"gpt"|"tool", "value": …}], …}`` with
-each call as ``<tool_call>{json}</tool_call>`` and each result as
-``<tool_response>{json}</tool_response>`` — and :func:`to_messages` in the OpenAI
-``{"messages": [...]}`` shape ``training/sft_grpo.py`` reads. ``GET
+``{"conversations": [{"from": "system"|"human"|"gpt"|"tool", "value": …}], …}``: the
+system value carries the offered tools as a ``<tools>[{name, description, parameters,
+required: null}]</tools>`` block (Hermes' ``format_tools_for_system_message`` shape),
+every gpt value starts with a ``<think>`` block (empty: reasoning text is not kept),
+each call is ``<tool_call>{json}</tool_call>``, and the results of one step's calls
+are joined by newlines in one ``tool`` value as ``<tool_response>{json}</tool_response>``
+blocks. :func:`to_messages` renders the OpenAI ``{"messages": [...], "tools": [...]}``
+row ``training/sft_grpo.py`` reads (``tools`` is what chat templates render). ``GET
 /sessions/{id}/trajectories`` (admin) and ``nerva sessions export <id> --sharegpt``
 serve them.
 
@@ -67,6 +76,12 @@ FORMAT_VERSION = 1
 MAX_TEXT_CHARS = 32_000
 #: Assistant + tool messages kept for one turn.
 MAX_STEPS = 400
+#: Tool definitions kept for one turn.
+MAX_TOOLS = 256
+#: Characters past MAX_TEXT_CHARS the redaction scanner still sees, so a secret that
+#: straddles the cut is redacted before the clip, and the scanner never walks an
+#: unbounded text on the event loop.
+_SCAN_MARGIN = 4_096
 #: A session's trajectory file stops growing here.
 MAX_SESSION_BYTES = 16 * 1024 * 1024
 #: Records one export returns at most.
@@ -108,10 +123,21 @@ def _scrub(value: Any) -> str:
         from .security.log_redaction import SecretRedactionFilter
 
         _redactor = SecretRedactionFilter()
-    text = _redactor.redact_text(text)
-    if len(text) > MAX_TEXT_CHARS:
-        text = text[:MAX_TEXT_CHARS] + f"\n…[truncated {len(text) - MAX_TEXT_CHARS} chars]"
+    original = len(text)
+    text = _redactor.redact_text(text[:MAX_TEXT_CHARS + _SCAN_MARGIN])
+    if original > MAX_TEXT_CHARS or len(text) > MAX_TEXT_CHARS:
+        text = text[:MAX_TEXT_CHARS] + f"\n…[truncated {max(original, len(text)) - MAX_TEXT_CHARS} chars]"
     return text
+
+
+def _scrub_schema(value: Any) -> dict[str, Any]:
+    """A tool's parameter schema, redacted and bounded; one that no longer parses after
+    the clip is kept as an empty object schema rather than as broken JSON."""
+    try:
+        parsed = json.loads(_scrub(json.dumps(value if isinstance(value, Mapping) else {}, ensure_ascii=False)))
+    except (TypeError, ValueError):
+        parsed = None
+    return parsed if isinstance(parsed, dict) else {"type": "object", "properties": {}}
 
 
 # ── the recorder ─────────────────────────────────────────────────────────────
@@ -127,6 +153,35 @@ class TrajectoryRecorder:
     reply: str | None = None
     exit_reason: str = ""
     dropped_steps: int = 0
+    #: OpenAI-shape specs (``{"type": "function", "function": {...}}``), one per name.
+    tools: list[dict[str, Any]] = field(default_factory=list)
+
+    def note_prompt(self, prompt: Any) -> None:
+        """The prompt the model was actually sent (the plain path folds steering into it)."""
+        if isinstance(prompt, str):
+            self.prompt = prompt
+
+    def note_tools(self, specs: Any) -> None:
+        """The tools offered on this request. Called at the top of the loop and again when
+        a compaction fold refreshes the offer: the union is kept (a tool withdrawn later
+        was still offered, and may have been called, earlier) and a name's latest
+        definition wins."""
+        for spec in specs or ():
+            as_openai = getattr(spec, "as_openai", None)
+            row = as_openai() if callable(as_openai) else spec
+            function = row.get("function") if isinstance(row, Mapping) else None
+            if not isinstance(function, Mapping) or not function.get("name"):
+                continue
+            entry = {"type": "function", "function": {
+                "name": str(function["name"]), "description": str(function.get("description") or ""),
+                "parameters": function.get("parameters") or {"type": "object", "properties": {}}}}
+            for index, existing in enumerate(self.tools):
+                if existing["function"]["name"] == entry["function"]["name"]:
+                    self.tools[index] = entry
+                    break
+            else:
+                if len(self.tools) < MAX_TOOLS:
+                    self.tools.append(entry)
 
     def note_system(self, system: Any) -> None:
         """The system prompt the model was actually sent (the tool loop's guided one)."""
@@ -187,6 +242,10 @@ class TrajectoryRecorder:
             "agent_id": str(self.agent_id or ""),
             "model": str(self.model or ""),
             "system": _scrub(self.system),
+            "tools": [{"name": _scrub(tool["function"]["name"]),
+                       "description": _scrub(tool["function"]["description"]),
+                       "parameters": _scrub_schema(tool["function"]["parameters"])}
+                      for tool in self.tools],
             "prompt": _scrub(self.prompt),
             "steps": steps,
             "dropped_steps": self.dropped_steps,
@@ -206,6 +265,24 @@ def note_system(system: Any) -> None:
     if recorder is not None:
         try:
             recorder.note_system(system)
+        except Exception:
+            logger.debug("trajectory note failed", exc_info=True)
+
+
+def note_tools(specs: Any) -> None:
+    recorder = _active.get()
+    if recorder is not None:
+        try:
+            recorder.note_tools(specs)
+        except Exception:
+            logger.debug("trajectory note failed", exc_info=True)
+
+
+def note_prompt(prompt: Any) -> None:
+    recorder = _active.get()
+    if recorder is not None:
+        try:
+            recorder.note_prompt(prompt)
         except Exception:
             logger.debug("trajectory note failed", exc_info=True)
 
@@ -272,6 +349,8 @@ def save(session_id: str | None, recorder: TrajectoryRecorder) -> bool:
     path = path_for(session_id)
     with _write_lock:
         size = path.stat().st_size if path.exists() else 0
+        if size == 0:  # removed (forget-me, a session delete) or never written: warn afresh
+            _full_warned.discard(session_id)
         if size + len(line) > MAX_SESSION_BYTES:
             if session_id not in _full_warned:
                 _full_warned.add(session_id)
@@ -340,6 +419,30 @@ def _response_json(step: Mapping[str, Any]) -> str:
                        "content": content}, ensure_ascii=False)
 
 
+def _tools(record: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The record's offered tools; a v1 row written before they were captured has none."""
+    tools = record.get("tools")
+    if not isinstance(tools, list):
+        return []
+    return [tool for tool in tools if isinstance(tool, Mapping) and tool.get("name")]
+
+
+#: Hermes' uniform-schema rule: every gpt value carries a think block, empty when no
+#: reasoning was kept (Nerva does not keep provider reasoning text).
+_EMPTY_THINK = "<think>\n</think>\n"
+
+
+def _tools_block(tools: list[Mapping[str, Any]]) -> str:
+    """Hermes' ``format_tools_for_system_message`` shape: ``required`` is ``null``."""
+    rows = [{"name": tool.get("name", ""), "description": tool.get("description", ""),
+             "parameters": tool.get("parameters") or {}, "required": None} for tool in tools]
+    return ("You may call one or more functions to assist with the user query. The function "
+            "signatures are within <tools></tools> XML tags:\n<tools>\n"
+            + json.dumps(rows, ensure_ascii=False)
+            + "\n</tools>\nFor each function call return a JSON object with the function name "
+            "and arguments within <tool_call></tool_call> XML tags.")
+
+
 def _metadata(record: Mapping[str, Any]) -> dict[str, Any]:
     return {key: record.get(key) for key in ("id", "session_id", "agent_id", "model", "exit_reason", "completed")} | {
         "timestamp": record.get("ts")}
@@ -348,25 +451,34 @@ def _metadata(record: Mapping[str, Any]) -> dict[str, Any]:
 def to_sharegpt(record: Mapping[str, Any]) -> dict[str, Any]:
     """One record in the Hermes trajectory shape (``conversations`` of from/value)."""
     conversations: list[dict[str, str]] = []
-    if record.get("system"):
-        conversations.append({"from": "system", "value": record["system"]})
+    system = [record["system"]] if record.get("system") else []
+    tools = _tools(record)
+    if tools:
+        system.append(_tools_block(tools))
+    if system:
+        conversations.append({"from": "system", "value": "\n\n".join(system)})
     conversations.append({"from": "human", "value": record.get("prompt", "")})
     for step in record.get("steps") or []:
         if step.get("role") == "assistant":
             parts = [step["content"]] if step.get("content") else []
             parts += [f"<tool_call>\n{_call_json(call)}\n</tool_call>" for call in step.get("tool_calls") or []]
-            conversations.append({"from": "gpt", "value": "\n".join(parts)})
+            conversations.append({"from": "gpt", "value": _EMPTY_THINK + "\n".join(parts)})
         elif step.get("role") == "tool":
-            conversations.append({"from": "tool", "value": f"<tool_response>\n{_response_json(step)}\n</tool_response>"})
+            response = f"<tool_response>\n{_response_json(step)}\n</tool_response>"
+            if conversations[-1]["from"] == "tool":  # one step's parallel results: one message
+                conversations[-1]["value"] += "\n" + response
+            else:
+                conversations.append({"from": "tool", "value": response})
         elif step.get("role") == "user":
             conversations.append({"from": "human", "value": step.get("content", "")})
-    conversations.append({"from": "gpt", "value": record.get("reply", "")})
+    conversations.append({"from": "gpt", "value": _EMPTY_THINK + (record.get("reply") or "")})
     return {"conversations": conversations, **_metadata(record)}
 
 
 def to_messages(record: Mapping[str, Any]) -> dict[str, Any]:
     """One record as OpenAI chat messages — the ``{"messages": [...]}`` SFT row
-    ``training/prepare_data.py`` writes and ``training/sft_grpo.py`` reads, tool calls kept."""
+    ``training/prepare_data.py`` writes and ``training/sft_grpo.py`` reads, tool calls kept,
+    plus the offered ``tools`` column TRL/HF chat templates render tool definitions from."""
     messages: list[dict[str, Any]] = []
     if record.get("system"):
         messages.append({"role": "system", "content": record["system"]})
@@ -383,7 +495,10 @@ def to_messages(record: Mapping[str, Any]) -> dict[str, Any]:
         elif step.get("role") == "user":
             messages.append({"role": "user", "content": step.get("content", "")})
     messages.append({"role": "assistant", "content": record.get("reply", "")})
-    return {"messages": messages, **_metadata(record)}
+    tools = [{"type": "function", "function": {"name": tool.get("name", ""), "description": tool.get("description", ""),
+                                               "parameters": tool.get("parameters") or {}}}
+             for tool in _tools(record)]
+    return {"messages": messages, "tools": tools, **_metadata(record)}
 
 
 def export(session_id: str, *, fmt: str = "sharegpt", completed_only: bool = False,
