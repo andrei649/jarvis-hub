@@ -31,6 +31,10 @@ executable comparison: a POSIX venv's ``bin/python`` is a symlink to the very ba
 wrappers run. On Windows, a run from inside ``.venv`` (``nerva uninstall``) that would remove
 the software is refused (exit 2, nothing touched) with a pointer to ``UNINSTALL.bat``, because
 Windows locks the running venv's files; ``--dry-run`` reports this as ``venv_locked_on_windows``.
+The one exception is ``UNINSTALL.bat``'s own fallback when no system Python exists: it runs
+from ``.venv\\Scripts\\python.exe`` and passes ``--allow-locked-venv``, so every other target is
+removed (and a purge runs in process, the venv having the dependencies) while ``.venv`` is
+left untouched and reported under ``not_removed`` / ``venv_left_behind`` to delete by hand.
 
 ``--gui`` also removes the Tauri desktop shell (``desktop/src-tauri``: productName ``Jarvis
 Hub``, identifier ``com.jarvis.hub``) from the per-OS places its bundles install to, plus the
@@ -305,8 +309,14 @@ def _running_in_venv(base: Path) -> bool:
 
 WINDOWS_VENV_LOCK_HINT = (
     "on Windows this process runs from the .venv it would delete, and Windows locks a running "
-    "interpreter's files; run UNINSTALL.bat instead (it uses the system Python, so .venv can "
-    "be removed)")
+    "interpreter's files; run UNINSTALL.bat instead - with a system Python on PATH (py -3 or "
+    "python) it removes .venv too; without one it removes everything else and leaves .venv "
+    "for you to delete by hand")
+
+VENV_LEFT_BEHIND_HINT = (
+    ".venv was left in place: this run uses .venv's own interpreter (no system Python was "
+    "found) and Windows locks a running interpreter's files; delete the .venv folder by hand "
+    "after this window closes")
 
 
 def purge_runnable(base: Path) -> dict:
@@ -477,7 +487,8 @@ def run_uninstall(root: Path | None = None, *, purge_data: bool = False,
                   data_source_root: str | None = None, gui: bool = False,
                   gui_only: bool = False,
                   desktop: dict | None = None,
-                  runner: Callable[[list[str]], int] | None = None) -> dict:
+                  runner: Callable[[list[str]], int] | None = None,
+                  keep_venv: bool = False) -> dict:
     """Remove every existing entry in :data:`UNINSTALL_TARGETS` under *root*.
 
     Best-effort per target, like ``data_purge.purge_data``: a target that exists but
@@ -492,7 +503,9 @@ def run_uninstall(root: Path | None = None, *, purge_data: bool = False,
     runs an NSIS ``uninstall.exe`` and ``update-desktop-database`` and is faked in tests);
     package-managed copies come back under ``desktop.manual`` with their removal command and
     do not make ``ok`` false. ``gui_only=True`` removes the desktop app and nothing else
-    (it cannot be combined with ``purge_data``).
+    (it cannot be combined with ``purge_data``). ``keep_venv=True`` (Windows, running from
+    ``.venv`` itself) never touches ``.venv`` — a recursive delete of a locked venv would
+    leave it half-gone — and reports it under ``not_removed`` with ``venv_left_behind``.
 
     The data purge, when requested, runs **before** any target is removed. Two reasons:
     a failed purge (``PurgeError`` — e.g. its own pre-forget backup won't verify) must
@@ -526,6 +539,10 @@ def run_uninstall(root: Path | None = None, *, purge_data: bool = False,
             p = base / rel
             if not (p.exists() or p.is_symlink()):
                 already_absent.append(rel)
+                continue
+            if keep_venv and rel == ".venv":
+                not_removed.append(rel)
+                report["venv_left_behind"] = VENV_LEFT_BEHIND_HINT
                 continue
             try:
                 if p.is_symlink() or p.is_file():
@@ -619,7 +636,7 @@ def _main_purge_handoff(args, root: Path | None, vpy: Path, out) -> int:
         if output:
             out.write(output + "\n")
         return 2 if rc == 2 else 1  # a refusal in the child stays a refusal
-    report = run_uninstall(root=root, gui=args.gui)
+    report = run_uninstall(root=root, gui=args.gui, keep_venv=_keep_venv(args, root))
     report["data_purge"] = purge_report["data_purge"]
     report["data_purge_interpreter"] = str(vpy)
     if report["data_purge"].get("ok") is False:
@@ -640,6 +657,12 @@ def _venv_locked(args, root: Path | None) -> bool:
     if args.gui_only or args.purge_only or not _platform().startswith("win"):
         return False
     return _running_in_venv(root if root is not None else _paths.app_root())
+
+
+def _keep_venv(args, root: Path | None) -> bool:
+    """UNINSTALL.bat's no-system-Python fallback (``--allow-locked-venv``) in the locked case:
+    proceed with everything else and leave ``.venv`` for the user to delete by hand."""
+    return bool(args.allow_locked_venv) and _venv_locked(args, root)
 
 
 def _main(argv=None, *, out=None, inp=None) -> int:
@@ -680,6 +703,10 @@ def _main(argv=None, *, out=None, inp=None) -> int:
                          "calling interpreter lacks the engine's dependencies)")
     ap.add_argument("--root", default=None,
                     help="app root to uninstall from (defaults to the detected app root)")
+    ap.add_argument("--allow-locked-venv", action="store_true",
+                    help="(UNINSTALL.bat's fallback when no system Python exists) on Windows, "
+                         "running from .venv: remove everything else and report .venv under "
+                         "not_removed instead of refusing")
     args = ap.parse_args(argv)
     root = Path(args.root) if args.root else None
 
@@ -704,7 +731,9 @@ def _main(argv=None, *, out=None, inp=None) -> int:
         plan = plan_uninstall(root, purge_data=args.purge_data, gui=args.gui,
                               gui_only=args.gui_only)
         plan["dry_run"] = True
-        if _venv_locked(args, root):
+        if _keep_venv(args, root):
+            plan["venv_left_behind"] = VENV_LEFT_BEHIND_HINT
+        elif _venv_locked(args, root):
             plan["venv_locked_on_windows"] = WINDOWS_VENV_LOCK_HINT
         out.write(json.dumps(plan, indent=2) + "\n")
         return 0
@@ -714,7 +743,8 @@ def _main(argv=None, *, out=None, inp=None) -> int:
                   "WorldView's node_modules/ + generated env files)\n")
         return 2
 
-    if _venv_locked(args, root):
+    keep_venv = _keep_venv(args, root)
+    if _venv_locked(args, root) and not keep_venv:
         out.write(f"refusing to uninstall: {WINDOWS_VENV_LOCK_HINT}; nothing was removed\n")
         return 2
 
@@ -762,12 +792,14 @@ def _main(argv=None, *, out=None, inp=None) -> int:
                 purge_data=True,
                 data_backup_first=not args.no_backup,
                 gui=args.gui,
+                keep_venv=keep_venv,
             )
         except PurgeError as e:
             out.write(f"uninstall aborted: {e}\n")
             return 1
     else:
-        report = run_uninstall(root=root, gui=args.gui, gui_only=args.gui_only)
+        report = run_uninstall(root=root, gui=args.gui, gui_only=args.gui_only,
+                               keep_venv=keep_venv)
     out.write(json.dumps(report, indent=2) + "\n")
     return 0 if report["ok"] else 1
 

@@ -34,6 +34,7 @@ set "GUIONLY="
 set "GUISUMMARY="
 set "NOBACKUP="
 set "YESPURGE="
+set "VENVFLAG="
 set "RC=0"
 REM Refuse, never just ignore: a mistyped "/DRYRN /CONFIRM" must not become a real
 REM uninstall (same rule as uninstall.sh). Nothing has been removed at this point.
@@ -87,9 +88,13 @@ py -3 -c "import sys" >nul 2>&1 && (set "PY=py -3" & goto :havepy)
 python -c "import sys" >nul 2>&1 && (set "PY=python" & goto :havepy)
 if exist ".venv\Scripts\python.exe" (
   set "PY=.venv\Scripts\python.exe"
+  REM Only here: the module would otherwise refuse (it cannot delete the venv it runs
+  REM from) and point back at this script. With the flag it removes everything else.
+  set "VENVFLAG=--allow-locked-venv"
   echo [WARNING] no system Python found - running from .venv\Scripts\python.exe.
-  echo           Windows locks a running interpreter, so .venv\ may be left behind
-  echo           ^(listed under not_removed^); delete it by hand afterwards.
+  echo           Windows locks a running interpreter, so .venv\ is left in place
+  echo           ^(listed under not_removed^); delete it by hand after this window
+  echo           closes, or install Python 3 ^(py -3^) and re-run to remove it too.
   goto :havepy
 )
 echo [ERROR] no Python found - cannot run the uninstall module.
@@ -103,13 +108,13 @@ if defined GUISUMMARY (
   goto :end
 )
 if defined DRYRUN (
-  !PY! -m agents.core.uninstall --dry-run !GUI! !PURGEDATA!
+  !PY! -m agents.core.uninstall --dry-run !GUI! !PURGEDATA! !VENVFLAG!
   set "RC=!errorlevel!"
   echo.
   echo   Dry run - nothing was removed. Re-run with /CONFIRM to proceed.
   goto :end
 )
-!PY! -m agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP!
+!PY! -m agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP! !VENVFLAG!
 set "RC=!errorlevel!"
 echo.
 if "!RC!"=="0" (

@@ -923,11 +923,14 @@ def test_bat_python_detection_never_uses_parse_time_errorlevel():
 
 def test_bat_warns_when_only_the_venv_interpreter_is_available():
     """Running from .venv\\Scripts\\python.exe locks it on Windows: the user must be told
-    that .venv may be left behind (the module then reports it in not_removed)."""
+    that .venv is left behind, and the bat passes --allow-locked-venv so the module removes
+    everything else and reports .venv in not_removed (instead of refusing outright)."""
     bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
     det = _bat_python_detection(bat)
     venv_at = det.index(r'set "PY=.venv\Scripts\python.exe"')
+    assert 'set "VENVFLAG=--allow-locked-venv"' in det[venv_at:]
     assert "[WARNING]" in det[venv_at:]
+    assert "not_removed" in det[venv_at:] and "by hand" in det[venv_at:]
     assert "no Python found" in det[venv_at:]
 
 
@@ -1185,3 +1188,96 @@ def test_posix_in_venv_removal_still_runs(app_root, monkeypatch):
     out = io.StringIO()
     assert un._main(["--confirm", "--root", str(app_root)], out=out) == 0
     assert not (app_root / ".venv").exists()
+
+
+# --- H014 round 5: UNINSTALL.bat's own .venv fallback must agree with the Windows lock ------
+#
+# With no system Python (py -3 / python both fail) UNINSTALL.bat runs the module from
+# .venv\Scripts\python.exe. The round-4 lock refused every such run (exit 2, nothing removed)
+# and told the user to "run UNINSTALL.bat instead" — the script they were already running.
+# The bat now passes --allow-locked-venv in that branch only: everything except .venv is
+# removed, and .venv is reported under not_removed to delete by hand.
+
+def _bat_fallback_branch(bat: str) -> str:
+    det = _bat_python_detection(bat)
+    return det[det.index(r'if exist ".venv\Scripts\python.exe"'):]
+
+
+def test_windows_bat_venv_fallback_removes_everything_but_the_venv(app_root, monkeypatch):
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: True)
+    monkeypatch.setattr(un, "_platform", lambda: "win32")
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--allow-locked-venv", "--root", str(app_root)], out=out)
+    report = json.loads(out.getvalue())
+    assert rc == 1  # partial: .venv stays, and the bat's "[WARNING] ... problems" line shows
+    assert report["not_removed"] == [".venv"]
+    assert ".venv" not in report["removed"]
+    assert "delete" in report["venv_left_behind"] and "by hand" in report["venv_left_behind"]
+    assert (app_root / ".venv" / "bin" / "python").exists()  # never half-deleted
+    assert not (app_root / "worldview" / "node_modules").exists()
+    assert not (app_root / "worldview" / ".env").exists()
+    assert not (app_root / "worldview" / "frontend" / ".env.local").exists()
+    assert (app_root / "memory_logs" / "settings.db").exists()
+
+
+def test_windows_bat_venv_fallback_purges_in_process(app_root, monkeypatch):
+    """Inside .venv the engine's dependencies import, so the purge runs here (no hand-off)."""
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: True)
+    monkeypatch.setattr(un, "_platform", lambda: "win32")
+    monkeypatch.setattr(un, "_purge_import_error", lambda: None)
+    calls = []
+    monkeypatch.setattr("agents.core.data_purge.purge_data", _fake_purge(calls))
+    out = io.StringIO()
+    rc = un._main(["--confirm", "--allow-locked-venv", "--purge-data",
+                   f"--yes-purge={_data_path()}", "--root", str(app_root)], out=out)
+    report = json.loads(out.getvalue())
+    assert rc == 1 and calls == [True]
+    assert report["data_purge"]["ok"] is True
+    assert report["not_removed"] == [".venv"]
+    assert not (app_root / "worldview" / "node_modules").exists()
+    assert (app_root / ".venv").exists()
+
+
+def test_windows_bat_venv_fallback_dry_run_reports_leftover_not_refusal(app_root, monkeypatch):
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: True)
+    monkeypatch.setattr(un, "_platform", lambda: "win32")
+    out = io.StringIO()
+    assert un._main(["--dry-run", "--allow-locked-venv", "--root", str(app_root)], out=out) == 0
+    plan = json.loads(out.getvalue())
+    assert "venv_locked_on_windows" not in plan
+    assert "by hand" in plan["venv_left_behind"]
+
+
+def test_allow_locked_venv_is_a_no_op_outside_the_locked_case(app_root, monkeypatch):
+    monkeypatch.setattr(un, "_running_in_venv", lambda base: False)
+    monkeypatch.setattr(un, "_platform", lambda: "win32")
+    out = io.StringIO()
+    assert un._main(["--confirm", "--allow-locked-venv", "--root", str(app_root)], out=out) == 0
+    assert not (app_root / ".venv").exists()
+    assert "venv_left_behind" not in json.loads(out.getvalue())
+
+
+def test_bat_passes_allow_locked_venv_only_in_its_venv_fallback():
+    bat = (REPO_ROOT / "UNINSTALL.bat").read_text(encoding="utf-8")
+    branch = _bat_fallback_branch(bat)
+    assert 'set "VENVFLAG=--allow-locked-venv"' in branch
+    # set nowhere else: a system-Python run must still remove .venv
+    assert bat.count("--allow-locked-venv") == 1
+    assert 'set "VENVFLAG="' in bat[:bat.index("REM --- Find Python")]
+    assert "!PY! -m agents.core.uninstall --dry-run !GUI! !PURGEDATA! !VENVFLAG!" in bat
+    assert "!PY! -m agents.core.uninstall --confirm !GUI! !PURGEDATA! !YESPURGE! !NOBACKUP! !VENVFLAG!" in bat
+    # the warning describes what the module now does, and never loops back to UNINSTALL.bat
+    assert "not_removed" in branch and "by hand" in branch
+    assert "run UNINSTALL.bat" not in branch
+
+
+def test_windows_lock_hint_says_the_bat_needs_a_system_python():
+    hint = un.WINDOWS_VENV_LOCK_HINT
+    assert "UNINSTALL.bat" in hint and "py -3" in hint
+    assert "it uses the system Python" not in hint
+
+
+def test_nerva_uninstall_verb_does_not_expose_allow_locked_venv():
+    """The opt-in is the bat fallback's alone; `nerva uninstall` keeps the refusal."""
+    src = (REPO_ROOT / "agents" / "cli" / "nerva.py").read_text(encoding="utf-8")
+    assert "allow-locked-venv" not in src and "allow_locked_venv" not in src
