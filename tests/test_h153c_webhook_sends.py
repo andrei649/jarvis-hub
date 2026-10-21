@@ -29,7 +29,6 @@ They also pin the minors:
 The rest pin the guards the review's mutants showed were untested.
 """
 import threading
-import time
 from types import SimpleNamespace
 
 import pytest
@@ -47,8 +46,12 @@ CHANNELS = ("telegram", "voice", "ntfy")
 
 
 def _at(hour: int) -> float:
-    """Today at *hour* o'clock, local time."""
-    return time.mktime((2026, 9, 24, hour, 0, 0, 0, 0, -1))
+    """Today at *hour* o'clock in the app zone quiet hours are read in (H450)."""
+    from datetime import datetime
+
+    from agents.core.autonomy.schedule_timezone import app_schedule_timezone
+
+    return datetime(2026, 9, 24, hour, tzinfo=app_schedule_timezone()).timestamp()
 
 
 class _Recorder:
@@ -72,7 +75,7 @@ class _Recorder:
 
 @pytest.fixture
 def clock(monkeypatch):
-    """The router's clock at 3 pm local time, outside the default quiet hours (22 to 7)."""
+    """The router's clock at 3 pm in the app zone, outside the default quiet hours (22 to 7)."""
     from agents.core.routers import webhooks as router
 
     now = {"t": _at(15)}

@@ -42,7 +42,7 @@ import logging
 from typing import Any, Optional
 
 from ..log_safe import log_safe
-from .base import LLMBackend, cloud_cap, strip_thinking
+from .base import LLMBackend, cloud_cap
 from .egress import llm_async_client
 from .provider_errors import note_provider_failure
 from .provider_routing import SETTINGS_KEYS, build_provider_block
@@ -213,8 +213,10 @@ class OpenRouterBackend(LLMBackend):
             self._explain_routing_refusal(resp, block)
             resp.raise_for_status()
             data = resp.json()
-            content = (data["choices"][0]["message"].get("content", "") or "")
-            answer = strip_thinking(content)
+            choice = data["choices"][0]
+            content = (choice["message"].get("content", "") or "")
+            # H393: a reply cut at the output cap that is a repetition loop is dropped.
+            answer = self._finalize_cloud(content, choice.get("finish_reason"), model)
             if self.profile.backend_kind == "openai-compatible":
                 report_text_usage(compatible_usage(data))
             return answer
@@ -255,7 +257,9 @@ class OpenRouterBackend(LLMBackend):
             choice = data["choices"][0]
             message = choice.get("message") or {}
             return ToolTurn(
-                content=strip_thinking(message.get("content", "") or ""),
+                content=self._finalize_cloud(
+                    message.get("content", "") or "", choice.get("finish_reason"), model
+                ),
                 tool_calls=parse_openai_tool_calls(message.get("tool_calls") or []),
                 finish_reason=choice.get("finish_reason"),
                 usage=(compatible_usage(data) if self.profile.backend_kind == "openai-compatible"

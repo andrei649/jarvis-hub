@@ -99,7 +99,7 @@ def test_a_per_turn_pass_that_enters_during_refine_is_skipped_and_labels_stay_it
     assert skills.made == ["refine", "background_review"]
 
 
-def test_the_orchestrators_per_turn_task_is_refused_while_refine_runs():
+def test_the_orchestrators_per_turn_task_is_refused_while_refine_runs(monkeypatch):
     """The P1 path: _background_review_task reads history, then calls run()."""
     from agents.core.orchestrator import Orchestrator
 
@@ -117,6 +117,8 @@ def test_the_orchestrators_per_turn_task_is_refused_while_refine_runs():
 
     orch = Orchestrator.__new__(Orchestrator)
     orch.memory = Memory()
+    from tests.h441_native_fixture import bind_native
+    bind_native(orch, monkeypatch, session_ids=("web-1",))
     orch.reviewer = reviewer
     orch._session_id_default = "web-1"
 

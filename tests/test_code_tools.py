@@ -139,6 +139,8 @@ def test_switched_on_it_registers_ungated_and_declares_untrusted_output(tmp_path
     assert row["untrusted_output"] is True
     assert row["capability_id"] == "tool:execute_code"
     assert "jarvis_tool_call" in row["description"]
+    # H399 — a cell is a barrier in a batched step: it never overlaps another call.
+    assert server.declares_parallel_safe(TOOL) is False
 
 
 # ── the arguments ────────────────────────────────────────────────────────────

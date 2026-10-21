@@ -151,14 +151,36 @@ async def test_real_terminal_delivered_timeout_has_distinct_handback(runtime, mo
     async with _owner_runtime(runtime, monkeypatch, tmp_path) as state:
         (queue, worker, _channel, _sandbox, delivered, _finished, _cards, _acks,
          spawns, answers, _turns, _owners, _env, _requests, invocation) = state
-        prompts = worker._owner_once_prompts
-        original = prompts.request
+        from datetime import datetime, timedelta
 
-        async def short_request(*args, **kwargs):
-            return await original(*args, **{**kwargs, 'timeout': 0.04})
+        from agents.core.autonomy import owner_once_prompts
 
-        monkeypatch.setattr(prompts, 'request', short_request)
+        # The mock's delivered event fires before sendMessage returns. Wait for
+        # the durable receipt so this tests expiry of a delivered owner wait.
+        acknowledged = asyncio.Event()
+        mark_delivered = queue.mark_owner_once_delivered
+
+        def capture_ack(*args, **kwargs):
+            result = mark_delivered(*args, **kwargs)
+            if result:
+                acknowledged.set()
+            return result
+
+        monkeypatch.setattr(queue, 'mark_owner_once_delivered', capture_ack)
         await _wait_for_offer(delivered, asyncio.Event(), answers)
+        await asyncio.wait_for(acknowledged.wait(), 2)
+        assert not invocation.done()
+        [prompt] = worker._owner_once_prompts._pending.values()
+        expired_at = datetime.fromisoformat(prompt.offer.deadline_at) + timedelta(microseconds=1)
+
+        # Move only this request's wall clock beyond its recorded deadline;
+        # the real request loop, outcome validator and terminal handback run.
+        class ExpiredDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return expired_at
+
+        monkeypatch.setattr(owner_once_prompts, 'datetime', ExpiredDateTime)
         await asyncio.wait_for(invocation, 2)
         assert answers[0]['reason'] == 'approval_timed_out'
         assert answers[0]['approval_outcome'] == 'expired_unanswered'

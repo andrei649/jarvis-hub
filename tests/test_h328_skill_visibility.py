@@ -100,11 +100,22 @@ def test_the_host_platform_names(platform, names):
     assert visibility.host_platforms(platform) == frozenset(names)
 
 
+def _host(monkeypatch, env=None, present=()):
+    """H283: Termux, container and s6 now come from the one host detector
+    (``host_identity``), so the gates and the prompt agree; this pins what it sees."""
+    from agents.core import host_identity
+
+    seen = host_identity.detect(dict(env or {}), exists=lambda p: p in present, read_text=lambda p: "",
+                                platform="linux", isatty=lambda: False, stderr_id=lambda: None,
+                                files=("/.dockerenv", "/run/.containerenv"), cgroup="/nonexistent/h328")
+    monkeypatch.setattr(host_identity, "identity", lambda: seen)
+
+
 def test_termux_counts_as_linux_and_android(monkeypatch):
     monkeypatch.setattr(visibility.sys, "platform", "linux")
-    monkeypatch.setattr(visibility, "Path", lambda p: SimpleNamespace(is_dir=lambda: False, exists=lambda: False))
+    _host(monkeypatch)
     assert visibility.host_platforms() == frozenset({"linux"})
-    monkeypatch.setenv("PREFIX", "/data/data/com.termux/files/usr")
+    _host(monkeypatch, {"PREFIX": "/data/data/com.termux/files/usr"})
     assert visibility.host_platforms() == frozenset({"linux", "android"})
     monkeypatch.setattr(visibility.sys, "platform", "darwin")
     assert visibility.host_platforms() == frozenset({"macos", "linux", "android"})
@@ -123,25 +134,17 @@ def test_readiness(tmp_path):
 
 
 def test_host_environments(monkeypatch):
-    present: set[str] = set()
-
-    def fake_path(p):
-        return SimpleNamespace(exists=lambda: p in present, is_dir=lambda: p in present)
-
-    monkeypatch.setattr(visibility, "Path", fake_path)
+    _host(monkeypatch)
     assert visibility.host_environments() == frozenset()
-    present.add("/.dockerenv")
+    _host(monkeypatch, present=("/.dockerenv",))
     assert visibility.host_environments() == frozenset({"docker", "container"})
-    present.clear()
-    present.add("/run/.containerenv")
+    _host(monkeypatch, present=("/run/.containerenv",))
     assert visibility.host_environments() == frozenset({"docker", "container"})
-    present.clear()
-    present.add("/run/s6")
+    _host(monkeypatch, present=("/run/s6",))
     assert visibility.host_environments() == frozenset({"s6"})
-    present.clear()
-    present.add("/command/s6-svscan")
+    _host(monkeypatch, present=("/command/s6-svscan",))
     assert visibility.host_environments() == frozenset({"s6"})
-    present.clear()
+    _host(monkeypatch)
     monkeypatch.setenv(visibility.ENV_OVERRIDE, " Lab , ,gpu")
     assert visibility.host_environments() == frozenset({"lab", "gpu"})
 
@@ -341,6 +344,72 @@ def test_session_platforms_hide_a_skill_off_its_channels(tmp_path):
 def test_the_tool_gates(tmp_path, hermes, offer, shown):
     loader = _loader(_skill(tmp_path, "s", hermes=hermes))
     assert _catalog(loader, offer=offer) == (["s"] if shown else [])
+
+
+@pytest.mark.parametrize("toolset,tool", [
+    ("kanban", "kanban_attach"), ("kanban", "kanban_attach_url"),
+    ("kanban", "kanban_attachments"), ("kanban", "kanban_block"),
+    ("kanban", "kanban_comment"), ("kanban", "kanban_complete"),
+    ("kanban", "kanban_create"), ("kanban", "kanban_heartbeat"),
+    ("kanban", "kanban_link"), ("kanban", "kanban_list"),
+    ("kanban", "kanban_request_changes"), ("kanban", "kanban_request_review"),
+    ("kanban", "kanban_show"), ("kanban", "kanban_unblock"),
+    ("memory", "search_memory"), ("skills", "skill_propose"),
+    ("computer_use", "desktop_run"),
+    ("coding", "file_write"), ("coding", "terminal_run"), ("coding", "execute_code"),
+])
+def test_registered_toolset_members_control_both_gates(tmp_path, toolset, tool):
+    required = _loader(_skill(tmp_path, "required", hermes={"requires_toolsets": [toolset]}))
+    fallback = _loader(_skill(tmp_path, "fallback", hermes={"fallback_for_toolsets": [toolset]}))
+    assert _catalog(required, offer=set()) == []
+    assert _catalog(fallback, offer=set()) == ["fallback"]
+    assert _catalog(required, offer={tool}) == ["required"]
+    assert _catalog(fallback, offer={tool}) == []
+
+
+@pytest.mark.parametrize("toolset,unrelated", [
+    ("kanban", "kanban_misspelled"), ("computer_use", "desktop_plan"),
+    ("coding", "file_read"), ("browser", "web_extract"),
+    ("homeassistant", "web_search"), ("delegation", "kanban_create"),
+    ("warp_drive", "echo"),
+])
+def test_unrelated_and_absent_toolsets_keep_both_gates_closed(tmp_path, toolset, unrelated):
+    required = _loader(_skill(tmp_path, "required", hermes={"requires_toolsets": [toolset]}))
+    fallback = _loader(_skill(tmp_path, "fallback", hermes={"fallback_for_toolsets": [toolset]}))
+    assert _catalog(required, offer={unrelated}) == []
+    assert _catalog(fallback, offer={unrelated}) == ["fallback"]
+
+
+def test_new_toolset_mappings_name_only_registered_tools(tmp_path, monkeypatch):
+    from agents.core.autonomy_coordinator import AutonomyCoordinator
+    from agents.core.kanban.tool_compat import registry
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("JARVIS_FILE_TOOLS", "1")
+    orch = SimpleNamespace(agents={}, config=SimpleNamespace(agents={}),
+                           get_setting=lambda key, default=None: True if key == "llm.execute_code" else default)
+    runtime = AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+    registered = {tool["name"] for tool in runtime._server.tools()}
+    for toolset in ("kanban", "memory", "skills", "computer_use", "coding"):
+        assert set(visibility.TOOLSETS[toolset]) <= registered
+    assert set(visibility.TOOLSETS["kanban"]) == set(registry.entries)
+    assert "browser" not in visibility.TOOLSETS
+    assert "homeassistant" not in visibility.TOOLSETS
+    assert "delegation" not in visibility.TOOLSETS
+
+
+def test_kanban_toolset_soft_gate_allows_explicit_loading(tmp_path):
+    calls = []
+    board = _skill(tmp_path, "board", hermes={"requires_toolsets": ["kanban"]}, calls=calls)
+    loader = _loader(board)
+    token = visibility.bind_offer(set())
+    try:
+        assert loader.prompt_catalog() == []
+        assert _tools(loader)("skill_view", {"name": "board"})["ok"] is True
+        assert asyncio.run(board.execute("board", "show", {"channel": "web"})) == "board ran"
+    finally:
+        visibility.reset_offer(token)
+    assert calls == [("board", "show")]
 
 
 def test_the_tool_loops_own_offer_is_used_inside_it(tmp_path):

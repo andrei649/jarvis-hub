@@ -93,6 +93,24 @@ def _text(message: Mapping[str, Any]) -> str:
     return content if isinstance(content, str) else ""
 
 
+#: H297 — the image types a tool result may carry to a provider.
+_TOOL_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+
+
+def _tool_images(message: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """A tool message's ``images`` as ``(media_type, base64)`` pairs; malformed ones dropped."""
+    raw = message.get("images")
+    if not isinstance(raw, list):
+        return []
+    return [
+        (item["media_type"], item["data"])
+        for item in raw
+        if isinstance(item, Mapping)
+        and item.get("media_type") in _TOOL_IMAGE_TYPES
+        and isinstance(item.get("data"), str) and item["data"]
+    ]
+
+
 def _parse_arguments(value: Any) -> dict[str, Any]:
     """Replay-side: an OpenAI JSON-string argument blob back into an object, `{}` if it never was one."""
     if isinstance(value, dict):
@@ -350,7 +368,15 @@ def anthropic_messages(messages: Sequence[Mapping[str, Any]]) -> tuple[str, list
             queued = replacements.get(raw_id)
             use_id = queued.pop(0) if queued else _safe_id(raw_id)
             block: dict[str, Any] = {"type": "tool_result", "tool_use_id": use_id}
-            if text:
+            images = _tool_images(message)
+            if images:
+                # H297: a multimodal result — the text, then each image, in one block.
+                block["content"] = ([{"type": "text", "text": text}] if text else []) + [
+                    {"type": "image",
+                     "source": {"type": "base64", "media_type": media_type, "data": data}}
+                    for media_type, data in images
+                ]
+            elif text:
                 block["content"] = text
             previous = converted[-1] if converted else None
             if (

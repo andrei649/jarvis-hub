@@ -147,14 +147,13 @@ async def test_exact_terminal_branches(case, reason, reply, monkeypatch):
     elif case == "tools":
         options["tool_profile"] = lambda _agent, _rows: ([], None)
     elif case == "repeat":
-        options["repeat_limit"] = 1
-        turns = [ToolTurn(tool_calls=(_call(1),)), ToolTurn(tool_calls=(_call(2),))]
-        # Same tool and arguments are required for the repeated-call breaker.
-        turns[1] = ToolTurn(tool_calls=(_call(1),))
+        options["stall_halt_enabled"] = True
+        turns = [ToolTurn(tool_calls=(_call(1),)) for _ in range(5)]
     elif case == "approval":
         turns = [ToolTurn(tool_calls=(_call(),))]
     elif case == "failing":
         options["failure_limit"] = 1
+        options["stall_halt_enabled"] = True
         turns = [ToolTurn(tool_calls=(_call(),))]
     elif case == "limit":
         options["max_iterations"] = lambda: 1

@@ -217,5 +217,7 @@ async def test_escaping_handler_error_uses_legacy_tool_error_without_receipt(
     monkeypatch.setattr(registered.tools, "_record", crash_after_effect)
     task = _task("file_write", {"path": "notes.txt", "content": "after"})
     result = await registered.server.execute(task, execution_context=registered.token)
-    assert result == {"status": "failed", "reason": "tool_error", "tool": "file_write"}
+    # H297: a bounded, sanitised cause rides beside the reason; still no receipt.
+    assert result == {"status": "failed", "reason": "tool_error", "tool": "file_write",
+                      "error": "RuntimeError: synthetic post-effect bookkeeping failure"}
     assert registered.target.read_text(encoding="utf-8") == "after"

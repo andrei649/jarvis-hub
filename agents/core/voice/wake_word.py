@@ -8,6 +8,8 @@ import asyncio
 import logging
 from typing import Callable
 
+import numpy as np
+
 from . import listening
 
 logger = logging.getLogger("jarvis.voice.wake_word")
@@ -43,7 +45,9 @@ class WakeWordDetector:
             logger.warning("pyaudio not installed. Install: pip install pyaudio")
             return
 
-        self._owl = openwakeword.OWWModel()
+        # openwakeword exports `Model` (there is no OWWModel); with no arguments it loads
+        # the bundled pretrained models, e.g. hey_jarvis.
+        self._owl = openwakeword.Model()
         self._audio = pyaudio.PyAudio()
         self._stream = self._audio.open(
             format=pyaudio.paInt16,
@@ -62,19 +66,31 @@ class WakeWordDetector:
         while self._running:
             try:
                 pcm = await loop.run_in_executor(None, self._stream.read, 1280)
-                prediction = await loop.run_in_executor(None, self._owl.predict, pcm)
-                for ww in self.WAKE_WORDS:
-                    if ww in prediction and prediction[ww] > 0.5:
-                        logger.info(f"Wake word detected: {ww}")
-                        if self.callback:
-                            # Call on THIS (loop) thread, not a pool worker: the
-                            # callback (VoicePipeline._on_wake_word) only schedules
-                            # a task via asyncio.create_task, which needs a running
-                            # loop — from an executor thread it raises RuntimeError.
-                            self.callback(ww)
+                # Model.predict takes 16-bit samples, not the raw byte buffer pyaudio returns.
+                frame = np.frombuffer(pcm, dtype=np.int16)
+                prediction = await loop.run_in_executor(None, self._owl.predict, frame)
+                ww = self._matched(prediction)
+                if ww:
+                    logger.info(f"Wake word detected: {ww}")
+                    if self.callback:
+                        # Call on THIS (loop) thread, not a pool worker: the
+                        # callback (VoicePipeline._on_wake_word) only schedules
+                        # a task via asyncio.create_task, which needs a running
+                        # loop — from an executor thread it raises RuntimeError.
+                        self.callback(ww)
             except Exception as e:
                 logger.error(f"Wake word error: {e}")
                 await asyncio.sleep(0.1)
+
+    def _matched(self, prediction: dict) -> str | None:
+        """The wake word whose model fired: prediction keys are model names such as
+        `hey_jarvis` or `hey_jarvis_v0.1`, so a configured word matches by containment."""
+        for name, score in (prediction or {}).items():
+            if score > 0.5:
+                for ww in self.WAKE_WORDS:
+                    if ww in str(name).lower():
+                        return ww
+        return None
 
     @property
     def running(self) -> bool:

@@ -8,6 +8,7 @@ from starlette.requests import Request
 from agents.core.commands import ADMIN, CommandRegistry, Principal, SlashCommand
 from agents.core.memory.conversation import ConversationMemory, Turn
 from agents.core.orchestrator import Orchestrator, bind_turn_principal, reset_turn_principal
+from tests.h441_native_fixture import bind_native
 
 
 @pytest.fixture
@@ -23,6 +24,7 @@ def context(monkeypatch):
     ]
     orch = Orchestrator.__new__(Orchestrator)
     orch.session_id = "h011_entry"
+    bind_native(orch, monkeypatch, session_ids=("h011_entry",))
 
     async def add_turn(sid, role, content, agent_id=None, *, channel=None, **kwargs):
         await conversation.add_turn(sid, role, content, agent_id, **kwargs)

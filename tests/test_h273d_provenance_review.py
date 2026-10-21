@@ -121,7 +121,8 @@ def test_the_start_reads_nothing_of_its_own_before_the_env_files_are_loaded(tmp_
     the data root set either way (without JARVIS_HOME the import reads the data home's
     names instead). Every entry of READ_BEFORE_LOAD must be read before the load in one of
     the two, or it is stale."""
-    classified = ep.READ_BEFORE_LOAD | ep.READ_AGAIN_AFTER_LOAD | set(ep.SPLIT_NOTES) | {"PYTHON_DOTENV_DISABLED"}
+    classified = (ep.READ_BEFORE_LOAD | ep.READ_AGAIN_AFTER_LOAD | set(ep.SPLIT_NOTES)
+                  | set(ep.OPTIONAL_SPLIT_NOTES) | {"PYTHON_DOTENV_DISABLED"})
     seen_before: set[str] = set()
     for data_root in ("JARVIS_HOME", "JARVIS_USER_HOME"):
         before, _after = _reads_before_the_load(tmp_path, data_root)

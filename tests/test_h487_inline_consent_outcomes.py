@@ -32,7 +32,8 @@ async def _delivered(h, runtime):
     await h.channel._deliver_turn(-500, 42, 'Synthetic native inline request')
     await asyncio.wait_for(h.ready.wait(), 2)
     for _ in range(100):
-        if any(p.message_id is not None for p in runtime.worker._consent_prompts._pending.values()):
+        if any(p.source is not None and p.message_id is not None
+               for p in runtime.worker._consent_prompts._pending.values()):
             return runtime.q.list()[0]
         await asyncio.sleep(0.01)
     raise AssertionError('the actual native receipt was not registered')
@@ -88,12 +89,20 @@ async def test_native_inline_timeout_and_withdrawal_are_distinct_from_denial(con
         'tool_timeout_seconds': 2, 'max_wall_seconds': 3,
     })
     try:
-        task = await _delivered(h, runtime)
-        if ending == 'withdrawal':
-            runtime.worker._consent_prompts.stop(h.channel._owner_once_generation)
-        elif ending == 'owner_revoked':
-            h.settings['autonomy.owner_user_ids'] = [99]
-        await asyncio.sleep(0.3)
+        if ending == 'silence':
+            # A 0.1-second prompt may expire before a separate observer sees it
+            # in _pending. The settled native reply is the evidence under test.
+            await h.channel._deliver_turn(-500, 42, 'Synthetic native inline request')
+            await asyncio.wait_for(h.finished.wait(), 3)
+            assert h.cards
+            task = runtime.q.list()[0]
+        else:
+            task = await _delivered(h, runtime)
+            if ending == 'withdrawal':
+                runtime.worker._consent_prompts.stop(h.channel._owner_once_generation)
+            else:
+                h.settings['autonomy.owner_user_ids'] = [99]
+            await asyncio.sleep(0.3)
         assert h.finished.is_set(), 'lost or expired native request must settle promptly'
         reply = h.replies[0]
         expected = 'timeout' if ending == 'silence' else 'withdrawn'
@@ -104,6 +113,57 @@ async def test_native_inline_timeout_and_withdrawal_are_distinct_from_denial(con
         assert h.effects == [] and runtime.q.get(task.id).human_decision is None
         assert not runtime.worker._consent_prompts._pending
     finally:
+        await h.channel.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('retirement', ['expired_prune', 'early_withdrawal'])
+async def test_inline_wait_preserves_first_retirement_outcome(
+    consent_runtime, monkeypatch, retirement,
+):
+    import time
+
+    runtime = consent_runtime
+    h = await _telegram(runtime, monkeypatch, via_model=True, model_options={
+        'tool_timeout_seconds': 2, 'max_wall_seconds': 3,
+    })
+    loop = asyncio.get_running_loop()
+    original_schedule = loop.call_soon_threadsafe
+    delayed_wakes = []
+    try:
+        task = await _delivered(h, runtime)
+        prompts = runtime.worker._consent_prompts
+        prompt = next(p for p in prompts._pending.values()
+                      if p.source is not None and p.message_id is not None)
+        if retirement == 'expired_prune':
+            # A concurrently scheduled notifier prunes after the inline deadline.
+            prompt.deadline = time.monotonic() - 1
+            prompts._prune_dead()
+        else:
+            # Withdrawal happens while live. Even if the waiter resumes after
+            # the deadline, the first retirement was a withdrawal.
+            def delay_wake(fn, *args, **kwargs):
+                if getattr(fn, '__name__', None) == 'wake':
+                    delayed_wakes.append((fn, args))
+                    return None
+                return original_schedule(fn, *args, **kwargs)
+
+            monkeypatch.setattr(loop, 'call_soon_threadsafe', delay_wake)
+            prompts.stop(h.channel._owner_once_generation)
+            prompt.deadline = time.monotonic() - 1
+        await asyncio.wait_for(h.finished.wait(), 2)
+        expected = 'timeout' if retirement == 'expired_prune' else 'withdrawn'
+        assert h.replies[0]['ok'] is False
+        assert h.replies[0]['reason'] == (
+            'approval_timed_out' if retirement == 'expired_prune' else 'approval_withdrawn'
+        )
+        assert h.replies[0]['approval_outcome'] == expected
+        assert runtime.q.get(task.id).human_decision is None
+        assert h.effects == []
+    finally:
+        monkeypatch.setattr(loop, 'call_soon_threadsafe', original_schedule)
+        for fn, args in delayed_wakes:
+            fn(*args)
         await h.channel.stop()
 
 
@@ -231,8 +291,9 @@ async def test_committed_choice_is_not_misreported_while_native_wake_is_delayed(
             monkeypatch.setattr(prompts, 'decision_committed', lambda *args: None)
         response = await _post(app, task.id, revision=offer.revision, choice=choice)
         assert response.status_code == 200
-        await asyncio.sleep(0.4)
-        assert h.finished.is_set(), 'a committed exact choice cannot be lost behind a delayed wake'
+        # Completion depends on the native waiter, not a particular amount of
+        # scheduler time after the HTTP commit.
+        await asyncio.wait_for(h.finished.wait(), 2)
         assert h.replies[0]['ok'] is (choice != 'deny')
         if choice == 'deny':
             assert h.replies[0]['reason'] == 'owner_denied' and h.effects == []
@@ -249,6 +310,7 @@ async def test_committed_choice_is_not_misreported_while_native_wake_is_delayed(
 @pytest.mark.parametrize('choice', ['session', 'deny'])
 async def test_choice_after_native_wait_ended_is_reported_without_reviving_execution(consent_runtime, monkeypatch, choice):
     from agents.core.autonomy import consent_prompts
+    from agents.core.autonomy.consent_types import ConsentWaitOutcome
 
     runtime = consent_runtime
     monkeypatch.setattr(consent_prompts, '_REPLY_SECONDS', 0.1)
@@ -257,18 +319,23 @@ async def test_choice_after_native_wait_ended_is_reported_without_reviving_execu
     prompts = runtime.worker._consent_prompts
     original_request = prompts.request
     ended, release = asyncio.Event(), asyncio.Event()
+    observed = []
 
     async def delayed_return(*args, **kwargs):
         outcome = await original_request(*args, **kwargs)
+        observed.append(outcome)
         ended.set()
         await release.wait()
         return outcome
 
     monkeypatch.setattr(prompts, 'request', delayed_return)
     try:
-        task = await _delivered(h, runtime)
-        offer = runtime.q.pending_consent_offer(task.id)
+        await h.channel._deliver_turn(-500, 42, 'Synthetic native inline request')
+        await asyncio.wait_for(h.ready.wait(), 2)
         await asyncio.wait_for(ended.wait(), 2)
+        assert type(observed[0]) is ConsentWaitOutcome
+        task = runtime.q.list()[0]
+        offer = runtime.q.pending_consent_offer(task.id)
         response = await _post(app, task.id, revision=offer.revision, choice=choice, reason='Late human choice')
         assert response.status_code == 200
         release.set()

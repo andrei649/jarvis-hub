@@ -2,14 +2,35 @@
 
 import asyncio
 
+import pytest
+
 from agents.core.agent import Agent
+from agents.core.checkpoint import CheckpointManager
 from agents.core.config import JarvisConfig
 from agents.core.llm.vision_turn import prepare_selected_image_turn
+from agents.core.memory import conversation, persistence
 from agents.core.orchestrator import Orchestrator
 
 
-async def test_image_route_uses_prior_session_history_without_persisting_preview():
+@pytest.fixture
+def native_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setattr(conversation, "MEMORY_DIR", tmp_path / "memory")
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path / "memory")
+    checkpoints = CheckpointManager(str(tmp_path / "checkpoints.db"))
+    checkpoints.initialize()
+
+    def bind(orch):
+        orch.checkpoints = checkpoints
+        orch.memory.set_checkpoint_manager(checkpoints)
+
+    yield bind
+    checkpoints.close()
+
+
+async def test_image_route_uses_prior_session_history_without_persisting_preview(native_store):
     orch = Orchestrator(JarvisConfig())
+    native_store(orch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     sid = await orch.memory.new_session("image_route_history")
     await orch.memory.add_turn(sid, "user", "Earlier project context")
@@ -41,8 +62,9 @@ async def test_image_route_uses_prior_session_history_without_persisting_preview
     assert changed.prompt_digest != preview.prompt_digest
 
 
-async def test_concurrent_image_previews_do_not_cross_session_or_call_model():
+async def test_concurrent_image_previews_do_not_cross_session_or_call_model(native_store):
     orch = Orchestrator(JarvisConfig())
+    native_store(orch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     sid_a = await orch.memory.new_session("image_route_A")
     sid_b = await orch.memory.new_session("image_route_B")

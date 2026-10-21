@@ -65,6 +65,37 @@ def selection_scope(options):
         _selection.reset(token)
 
 
+def _without_images(messages, counted):
+    """*messages* with each row's ``images`` removed; their number goes into *counted*."""
+    if not isinstance(messages, list):
+        return messages
+    rows = []
+    for row in messages:
+        if isinstance(row, dict) and isinstance(row.get('images'), list):
+            counted.append(len(row['images']))
+            row = {key: value for key, value in row.items() if key != 'images'}
+        rows.append(row)
+    return rows
+
+
+def _prompt_estimate(args, kwargs):
+    """Token estimate of one scoped request, attached images at their flat cost (H297).
+
+    An image's base64 is not text the model reads: tokenizing it charged one ordinary
+    screenshot ~143K tokens and refused the job, while the tool loop budgets the same
+    image at :data:`~.tokenizer.IMAGE_TOKEN_COST`. Both accountings now agree.
+    """
+    from .tokenizer import IMAGE_TOKEN_COST, estimate_tokens
+    counted: list[int] = []
+    kwargs = dict(kwargs)
+    if 'messages' in kwargs:
+        kwargs['messages'] = _without_images(kwargs['messages'], counted)
+    args = list(args)
+    if len(args) > 1:   # (model, messages, ...) — a prompt string passes through as is
+        args[1] = _without_images(args[1], counted)
+    return estimate_tokens(json.dumps([args, kwargs], default=str)) + IMAGE_TOKEN_COST * sum(counted)
+
+
 class _ScopedBackend:
     def __init__(self, backend, model, selection):
         self._backend = backend
@@ -83,12 +114,11 @@ class _ScopedBackend:
                 raise SelectionError('job model changed during execution')
             resolved = self._selection.lifetime.resolved
             if resolved is not None:
-                from .tokenizer import estimate_tokens
                 window = resolved[2]
                 reserve = kwargs.get('max_tokens', window // 4)
                 if type(reserve) is not int or reserve <= 0 or reserve > window // 4:
                     raise SelectionError('job completion budget exceeds resolved window')
-                if estimate_tokens(json.dumps([args, kwargs], default=str)) + reserve > window:
+                if _prompt_estimate(args, kwargs) + reserve > window:
                     raise SelectionError('job prompt exceeds resolved context window')
             result = await value(*args, **kwargs)
             self._selection.check()

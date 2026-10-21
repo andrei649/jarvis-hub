@@ -13,12 +13,14 @@ from PIL import Image
 from agents import web
 from agents.core import settings_db
 from agents.core.agent import Agent
+from agents.core.checkpoint import CheckpointManager
 from agents.core.config import JarvisConfig
 from agents.core.llm.base import LMStudioBackend
 from agents.core.llm.egress import llm_async_client
 from agents.core.llm.openrouter import OpenRouterBackend
 from agents.core.llm.providers import DEFAULT_REGISTRY
 from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
+from agents.core.memory import conversation, persistence
 from agents.core.orchestrator import Orchestrator
 from tests.test_composer_vision import PNG
 from tests.test_h277_vision_auto_consumer import approved, route  # noqa: F401
@@ -26,8 +28,26 @@ from tests.test_h277_vision_auto_consumer import approved, route  # noqa: F401
 IMAGE_DIGEST = hashlib.sha256(PNG.encode("utf-8")).hexdigest()
 
 
-def _bind_local(monkeypatch, agent="jarvis"):
+def _bind_native_store(orch, monkeypatch, tmp_path, *session_ids):
+    """Give selected native turns a real, private lineage store."""
+    root = tmp_path / "memory"
+    monkeypatch.setattr(conversation, "MEMORY_DIR", root)
+    monkeypatch.setattr(persistence, "MEMORY_DIR", root)
+    checkpoints = CheckpointManager(str(tmp_path / "checkpoints.db"))
+    checkpoints.initialize()
+    orch.checkpoints = checkpoints
+    orch.memory.set_checkpoint_manager(checkpoints)
+    for sid in session_ids:
+        checkpoints.create_session_record(sid)
+    return checkpoints
+
+
+def _bind_local(monkeypatch, tmp_path, agent="jarvis"):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setattr(conversation, "MEMORY_DIR", tmp_path / "memory")
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path / "memory")
     orch = Orchestrator(JarvisConfig())
+    _bind_native_store(orch, monkeypatch, tmp_path)
     orch.agents[agent] = Agent(agent, {}, orch.llm_router)
     backend = LMStudioBackend("http://127.0.0.1:1234", trust_env=False)
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, "local/vision", "local")
@@ -54,8 +74,8 @@ def _local_model_metadata(backend, *, vision: bool, requests=None):
     )
 
 
-def test_selected_review_requires_image_digests_before_issuing_token(route, monkeypatch):
-    _orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_review_requires_image_digests_before_issuing_token(route, monkeypatch, tmp_path):
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
@@ -67,8 +87,8 @@ def test_selected_review_requires_image_digests_before_issuing_token(route, monk
         asyncio.run(backend.aclose())
 
 
-def test_selected_review_refuses_a_different_image_after_preflight(route, monkeypatch):
-    _orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_review_refuses_a_different_image_after_preflight(route, monkeypatch, tmp_path):
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     image_digest = hashlib.sha256(PNG.encode("utf-8")).hexdigest()
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
@@ -96,8 +116,8 @@ def test_selected_review_refuses_a_different_image_after_preflight(route, monkey
         asyncio.run(backend.aclose())
 
 
-def test_selected_review_refuses_reordered_images(route, monkeypatch):
-    _orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_review_refuses_reordered_images(route, monkeypatch, tmp_path):
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     changed = io.BytesIO()
     Image.new("RGB", (1, 1), (255, 0, 0)).save(changed, format="PNG")
     another = "data:image/png;base64," + base64.b64encode(changed.getvalue()).decode()
@@ -124,8 +144,8 @@ def test_selected_review_refuses_reordered_images(route, monkeypatch):
         asyncio.run(backend.aclose())
 
 
-def test_selected_image_turn_sends_to_main_local_model(route, monkeypatch):
-    orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_image_turn_sends_to_main_local_model(route, monkeypatch, tmp_path):
+    orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
@@ -153,8 +173,8 @@ def test_selected_image_turn_sends_to_main_local_model(route, monkeypatch):
         asyncio.run(backend.aclose())
 
 
-def test_selected_image_turn_refuses_changed_history_before_egress(route, monkeypatch):
-    orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_image_turn_refuses_changed_history_before_egress(route, monkeypatch, tmp_path):
+    orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
@@ -174,8 +194,8 @@ def test_selected_image_turn_refuses_changed_history_before_egress(route, monkey
         asyncio.run(backend.aclose())
 
 
-def test_selected_image_turn_skips_explicitly_text_only_main(route, monkeypatch):
-    _orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_image_turn_skips_explicitly_text_only_main(route, monkeypatch, tmp_path):
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     _local_model_metadata(backend, vision=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
     try:
@@ -193,8 +213,8 @@ def test_selected_image_turn_skips_explicitly_text_only_main(route, monkeypatch)
         asyncio.run(backend.aclose())
 
 
-def test_selected_image_turn_uses_local_model_vision_metadata(route, monkeypatch):
-    _orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_image_turn_uses_local_model_vision_metadata(route, monkeypatch, tmp_path):
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     metadata = []
     _local_model_metadata(backend, vision=False, requests=metadata)
     monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
@@ -213,8 +233,8 @@ def test_selected_image_turn_uses_local_model_vision_metadata(route, monkeypatch
         asyncio.run(backend.aclose())
 
 
-def test_changed_local_vision_capability_invalidates_image_review(route, monkeypatch):
-    _orch, backend, sid = _bind_local(monkeypatch)
+def test_changed_local_vision_capability_invalidates_image_review(route, monkeypatch, tmp_path):
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     asyncio.run(backend.client.aclose())
     verdicts = iter((True, False))
     metadata = []
@@ -249,8 +269,8 @@ def test_changed_local_vision_capability_invalidates_image_review(route, monkeyp
         asyncio.run(backend.aclose())
 
 
-def test_changed_owner_model_declaration_invalidates_image_review(route, monkeypatch):
-    _orch, backend, sid = _bind_local(monkeypatch)
+def test_changed_owner_model_declaration_invalidates_image_review(route, monkeypatch, tmp_path):
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     rows = [{"backend": "lmstudio", "base_url": "http://127.0.0.1:1234/v1",
              "model": "local/vision", "supports_vision": True}]
     original_read = settings_db.read_setting
@@ -281,10 +301,10 @@ def test_changed_owner_model_declaration_invalidates_image_review(route, monkeyp
         asyncio.run(backend.aclose())
 
 
-def test_owner_declaration_change_after_consume_refuses_physical_request(route, monkeypatch):
+def test_owner_declaration_change_after_consume_refuses_physical_request(route, monkeypatch, tmp_path):
     from agents.core.llm.vlm import VLMBackend
 
-    _orch, backend, sid = _bind_local(monkeypatch)
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     rows = [{"backend": "lmstudio", "base_url": "http://127.0.0.1:1234/v1",
              "model": "local/vision", "supports_vision": True}]
     original_read = settings_db.read_setting
@@ -320,8 +340,8 @@ def test_owner_declaration_change_after_consume_refuses_physical_request(route, 
         asyncio.run(backend.aclose())
 
 
-def test_unselected_composer_status_does_not_probe_main_metadata(route, monkeypatch):
-    _orch, backend, _sid = _bind_local(monkeypatch)
+def test_unselected_composer_status_does_not_probe_main_metadata(route, monkeypatch, tmp_path):
+    _orch, backend, _sid = _bind_local(monkeypatch, tmp_path)
     asyncio.run(backend.client.aclose())
     metadata = []
     backend.client = llm_async_client(
@@ -340,8 +360,8 @@ def test_unselected_composer_status_does_not_probe_main_metadata(route, monkeypa
         asyncio.run(backend.aclose())
 
 
-def test_strict_local_agent_never_discovers_remote_image_fallback(route, monkeypatch):
-    _orch, backend, sid = _bind_local(monkeypatch, agent="frigga")
+def test_strict_local_agent_never_discovers_remote_image_fallback(route, monkeypatch, tmp_path):
+    _orch, backend, sid = _bind_local(monkeypatch, tmp_path, agent="frigga")
     _local_model_metadata(backend, vision=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
     try:
@@ -356,8 +376,8 @@ def test_strict_local_agent_never_discovers_remote_image_fallback(route, monkeyp
         asyncio.run(backend.aclose())
 
 
-def test_selected_review_cannot_change_agent_before_image_egress(route, monkeypatch):
-    orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_review_cannot_change_agent_before_image_egress(route, monkeypatch, tmp_path):
+    orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     orch.agents["athena"] = Agent("athena", {}, orch.llm_router)
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
@@ -389,8 +409,12 @@ def test_selected_review_fingerprint_binds_agent_with_identical_route():
         store.consume(token, agent_id="jarvis", **claim)
 
 
-def test_selected_remote_model_uses_only_its_backend_key_and_origin(route, monkeypatch):
+def test_selected_remote_model_uses_only_its_backend_key_and_origin(route, monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setattr(conversation, "MEMORY_DIR", tmp_path / "memory")
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path / "memory")
     orch = Orchestrator(JarvisConfig())
+    _bind_native_store(orch, monkeypatch, tmp_path)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = OpenRouterBackend(
         api_key="selected-private-key", base_url="https://selected.example/api/v1",
@@ -432,8 +456,8 @@ def test_selected_remote_model_uses_only_its_backend_key_and_origin(route, monke
     assert "Earlier private conversation context" in str(payload["messages"])
 
 
-def test_selected_route_change_after_review_refuses_before_image_egress(route, monkeypatch):
-    orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_route_change_after_review_refuses_before_image_egress(route, monkeypatch, tmp_path):
+    orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
@@ -452,8 +476,8 @@ def test_selected_route_change_after_review_refuses_before_image_egress(route, m
         asyncio.run(backend.aclose())
 
 
-def test_selected_review_cannot_cross_sessions(route, monkeypatch):
-    orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_review_cannot_cross_sessions(route, monkeypatch, tmp_path):
+    orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     other = asyncio.run(orch.memory.new_session("selected_other_session"))
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
@@ -472,8 +496,8 @@ def test_selected_review_cannot_cross_sessions(route, monkeypatch):
         asyncio.run(backend.aclose())
 
 
-def test_selected_review_refuses_when_shared_chat_moves_to_another_session(route, monkeypatch):
-    orch, backend, sid = _bind_local(monkeypatch)
+def test_selected_review_refuses_when_shared_chat_moves_to_another_session(route, monkeypatch, tmp_path):
+    orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
@@ -493,10 +517,10 @@ def test_selected_review_refuses_when_shared_chat_moves_to_another_session(route
         asyncio.run(backend.aclose())
 
 
-def test_selected_session_switch_after_review_consume_refuses_at_physical_guard(route, monkeypatch):
+def test_selected_session_switch_after_review_consume_refuses_at_physical_guard(route, monkeypatch, tmp_path):
     from agents.core.llm.vlm import VLMBackend
 
-    orch, backend, sid = _bind_local(monkeypatch)
+    orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     other = asyncio.run(orch.memory.new_session("new_shared_chat"))
     original = VLMBackend.generate_vision_checked
 
@@ -524,10 +548,10 @@ def test_selected_session_switch_after_review_consume_refuses_at_physical_guard(
         asyncio.run(backend.aclose())
 
 
-def test_selected_route_switch_after_review_consume_refuses_at_physical_guard(route, monkeypatch):
+def test_selected_route_switch_after_review_consume_refuses_at_physical_guard(route, monkeypatch, tmp_path):
     from agents.core.llm.vlm import VLMBackend
 
-    orch, backend, sid = _bind_local(monkeypatch)
+    orch, backend, sid = _bind_local(monkeypatch, tmp_path)
     original = VLMBackend.generate_vision_checked
 
     async def switch_before_request(self, *args, **kwargs):

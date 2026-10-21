@@ -75,13 +75,18 @@ Write-Host "Installing service '$ServiceName' → $python $serve"
     "JARVIS_HOST=$BindHost" `
     "JARVIS_PORT=$Port" `
     "JARVIS_SHUTDOWN_TIMEOUT=$ShutdownTimeout" `
-    "JARVIS_HOME=$DataRoot"
+    "JARVIS_HOME=$DataRoot" `
+    "NERVA_SERVICE_WRAPPER=nssm"
 
 # Graceful stop: send Ctrl-C (→ SIGINT → uvicorn drains), give it a margin over
 # the app's own shutdown timeout before NSSM force-kills.
 & $nssm set $ServiceName AppStopMethodConsole ([int](($ShutdownTimeout + 5) * 1000))
-# Restart on unexpected exit, with backoff so a crash-loop doesn't thrash.
+# Restart on unexpected exit, with backoff so a crash-loop doesn't thrash. H010: the hub
+# exits 75 to restart itself (an approved in-place restore is applied at the next boot;
+# NERVA_SERVICE_WRAPPER=nssm above tells serve.py to do that instead of spawning a
+# successor), so Default stays Restart; a clean exit (0) is a stop and stays stopped.
 & $nssm set $ServiceName AppExit Default Restart
+& $nssm set $ServiceName AppExit 0 Exit
 & $nssm set $ServiceName AppRestartDelay 5000
 
 Write-Host "Starting '$ServiceName'…"

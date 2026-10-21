@@ -137,8 +137,9 @@ def test_the_prompt_finally_carries_the_skills_block(orch):
     prompt = orch._build_agent_prompt(orch.agents["jarvis"], "hello", context)
 
     assert "Available skills:" in prompt
-    assert "  - weather <location>: current conditions" in prompt
-    assert "  - forecast <location>: Live weather data from wttr.in." in prompt
+    # H326: one row a skill, name and description, grouped by category (none declared here).
+    assert ("Available skills:\n  general:\n    - weather: Live weather data from wttr.in. "
+            "(commands: weather <location>, forecast <location>)") in prompt
     # The intent context is shared across agents and traced; it must not be mutated.
     assert "skills" not in context
 

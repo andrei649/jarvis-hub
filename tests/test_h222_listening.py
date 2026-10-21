@@ -199,7 +199,7 @@ def test_the_wake_word_detector_marks_the_mic_open_while_it_runs(monkeypatch):
 
     monkeypatch.setattr(wake_word, "HAS_OWW", True)
     monkeypatch.setattr(wake_word, "HAS_PYAUDIO", True)
-    monkeypatch.setattr(wake_word, "openwakeword", SimpleNamespace(OWWModel=lambda: object()), raising=False)
+    monkeypatch.setattr(wake_word, "openwakeword", SimpleNamespace(Model=lambda: object()), raising=False)
     monkeypatch.setattr(wake_word, "pyaudio", SimpleNamespace(PyAudio=_Audio, paInt16=8), raising=False)
     seen = []
 

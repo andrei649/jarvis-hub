@@ -26,6 +26,12 @@
    questions renders as STALE rather than as a current score. Never-run renders as
    never-run, not as a zero.
 
+   HOST IDENTITY (H283) is the same probe's `identity` object: what kind of machine
+   the hub runs on — container, WSL, Termux, supervisor, the hub process's own terminal —
+   in the backend's closed words, the machine id only as the backend's hash prefix, and
+   the one line the model is told, verbatim (or that it is told nothing). An identity
+   that could not be detected renders its reason, never as a bare host.
+
    NOTE: never spell a route path in this comment unless the panel calls it —
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
 import React, { useState } from 'react';
@@ -75,6 +81,80 @@ const PERMISSION_ORDER = [
 ];
 
 const isPlain = (v: any) => typeof v === 'string' || typeof v === 'number';
+
+const WSL_LABEL: Record<string, string> = { wsl1: 'WSL 1', wsl2: 'WSL 2', wsl: 'WSL' };
+
+/* The probe's `identity` (H283), in the backend's own closed words. */
+function HostIdentity({ ident }: { ident: any }) {
+  if (!ident || typeof ident !== 'object') return null;
+  if (ident.detected === false) {
+    return (
+      <>
+        <Head k="HOST IDENTITY" />
+        <Row>
+          <span style={mono}>identity</span>
+          <span style={{ marginLeft: 'auto' }}>
+            <Tag c="var(--red)">{String(ident.reason || 'identity_failed')}</Tag>
+          </span>
+        </Row>
+      </>
+    );
+  }
+  const terminal = [ident.terminal || 'none', ident.multiplexer && ident.multiplexer !== 'none' ? ident.multiplexer : '']
+    .filter(Boolean).join(' · ');
+  const supervisor = String(ident.supervisor || 'none');
+  return (
+    <>
+      <Head k="HOST IDENTITY" />
+      <Row>
+        <span style={mono}>container</span>
+        <span style={{ marginLeft: 'auto' }}>
+          {ident.container ? <Tag>{String(ident.container)}</Tag> : <Tag c="var(--ink-2)">none detected</Tag>}
+        </span>
+      </Row>
+      <Row>
+        <span style={mono}>WSL</span>
+        <span style={{ marginLeft: 'auto' }}>
+          {ident.wsl
+            ? <Tag>{WSL_LABEL[ident.wsl] || String(ident.wsl)}{ident.wsl_distro ? ` · ${ident.wsl_distro}` : ''}</Tag>
+            : <Tag c="var(--ink-2)">no</Tag>}
+        </span>
+      </Row>
+      <Row>
+        <span style={mono}>Termux</span>
+        <span style={{ marginLeft: 'auto' }}>
+          <Tag c={ident.termux ? undefined : 'var(--ink-2)'}>{ident.termux ? 'yes' : 'no'}</Tag>
+        </span>
+      </Row>
+      <Row>
+        <span style={mono}>supervisor</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+          <Tag c={supervisor === 'none' ? 'var(--ink-2)' : undefined}>{supervisor}</Tag>
+          {ident.journal && <Tag c="var(--green)">journal</Tag>}
+          {ident.watchdog_s ? <Tag c="var(--green)">watchdog {String(ident.watchdog_s)}s</Tag> : null}
+        </span>
+      </Row>
+      <Row>
+        <span style={mono}>terminal (hub process)</span>
+        <span style={{ marginLeft: 'auto' }}>
+          <Tag c="var(--ink-2)">{terminal}</Tag>
+        </span>
+      </Row>
+      <Row>
+        <span style={mono}>machine id</span>
+        <span style={{ ...mono, marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>
+          {ident.machine_id ? `${String(ident.machine_id).slice(0, 16)} · ${String(ident.machine_id_source || '')}` : EM}
+        </span>
+      </Row>
+      {/* The backend's sentence, verbatim: exactly what every agent's prompt carries. */}
+      {ident.prompt_line ? (
+        <Note>The model is told (detected by Nerva, not the operator): <i>{String(ident.prompt_line)}</i></Note>
+      ) : (
+        <Note>Nothing worth saying was detected, so the model is told nothing about this host.</Note>
+      )}
+    </>
+  );
+}
 
 export function HostReadinessPanel() {
   const { d, e, loading, reload } = useApi(PROBE_PATH);
@@ -154,6 +234,8 @@ export function HostReadinessPanel() {
           {warnings.map((w, i) => (
             <Note key={i} c="var(--amber)">{w}</Note>
           ))}
+
+          <HostIdentity ident={raw.identity} />
 
           {permKeys.length > 0 && <Head k="PERMISSIONS" />}
           {permKeys.map((k) => (

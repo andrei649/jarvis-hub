@@ -8,9 +8,15 @@ All three are unguarded, exactly as inline. H227 adds the admin-only inspector
 `/status` leans on web.py's `_sys_info()`, `_enrich_agents()`, and late-bound
 `_list_local_models()` compatibility seam.  The latter delegates to the shared
 local-model inventory, keeping `/status` and `/api/models/local` on one truth source.
+
+H133 — the live status chrome: `/status` also answers `gateway` (which channels run, so
+the HUD can light a gateway dot even on the collapsed rail) and `sessions` (how many
+unarchived sessions saw activity in the last `ACTIVE_SESSION_WINDOW_S`; `None` with
+`state: "unknown"` when the session store cannot answer — never a guessed zero).
 """
 
 import sys
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -21,6 +27,9 @@ from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["status"])
+
+#: H133 — a session counts as active when its last turn (or keep) is this recent.
+ACTIVE_SESSION_WINDOW_S = 900
 
 
 def _web():
@@ -51,6 +60,29 @@ def _channel_rows(orch):
             "held_senders": _held_count(gateway, str(channel_id)),
         })
     return rows
+
+
+def _gateway_state(rows: list[dict]) -> dict:
+    """H133 — the gateway summary the chrome shows: ``running`` when any channel runs,
+    ``stopped`` when channels are registered but none runs, ``none`` when there are none."""
+    running = sorted(row["id"] for row in rows if row["running"])
+    state = "running" if running else ("stopped" if rows else "none")
+    return {"state": state, "running": running, "running_count": len(running), "total": len(rows)}
+
+
+def _session_counts(orch) -> dict:
+    """H133 — active sessions in the last ``ACTIVE_SESSION_WINDOW_S``, or an honest unknown."""
+    counter = getattr(getattr(orch, "checkpoints", None), "active_session_count", None)
+    active = None
+    if callable(counter):
+        since = (datetime.now(UTC) - timedelta(seconds=ACTIVE_SESSION_WINDOW_S)).isoformat()
+        try:
+            value = counter(since)
+            active = value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+        except Exception:
+            active = None
+    return {"active": active, "window_s": ACTIVE_SESSION_WINDOW_S,
+            "state": "known" if active is not None else "unknown"}
 
 
 def _held_count(gateway, channel_id: str) -> int:
@@ -88,6 +120,7 @@ async def status():
     ready = project_llm_status(inventory)
     lm_online = any(provider.get("online") for provider in inventory.get("providers", []))
     from agents import __version__
+    channels = _channel_rows(orch)
     return nocache_json({
         "version": __version__,
         "sys": web._sys_info(),
@@ -104,7 +137,9 @@ async def status():
         "agents": [{"id": a["id"], "status": a["status"]} for a in enriched],
         "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
         "agents_total": len(enriched),
-        "channels": _channel_rows(orch),
+        "channels": channels,
+        "gateway": _gateway_state(channels),          # H133: the chrome's gateway dot
+        "sessions": _session_counts(orch),            # H133: the status strip's count
         # H275: the HUD shows a banner while the hub runs in safe mode.
         "safe_mode": _safe_mode_status(),
     })
