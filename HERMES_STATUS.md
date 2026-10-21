@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**120 / 697 = 17.2% echivalente complet în evaluarea documentată.**
+**118 / 697 = 16.9% echivalente complet în evaluarea documentată.**
 
-Din acestea, **120** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **118** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,15 +10,15 @@ Din acestea, **120** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 120 | 17.2% |
-| Parțial | 437 | 62.7% |
+| Echivalent | 118 | 16.9% |
+| Parțial | 433 | 62.1% |
 | Lipsă | 121 | 17.4% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 19 | 2.7% |
+| De reverificat | 25 | 3.6% |
 
-**Ținta acceptată în produs:** 697 rânduri; progres 120/697 = **17.2%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 697 rânduri; progres 118/697 = **16.9%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 623/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 617/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -29,7 +29,7 @@ Din acestea, **120** au fost reevaluate pe cod în această livrare; **0** păst
 | cli | 56 | 7 | 37 | 8 | 0 | 4 |
 | gateway | 33 | 2 | 21 | 6 | 0 | 4 |
 | platforms | 39 | 3 | 26 | 10 | 0 | 0 |
-| web | 40 | 13 | 21 | 6 | 0 | 0 |
+| web | 40 | 12 | 20 | 6 | 0 | 2 |
 | desktop | 54 | 2 | 42 | 10 | 0 | 0 |
 | tui | 25 | 2 | 17 | 5 | 0 | 1 |
 | config | 18 | 7 | 7 | 3 | 0 | 1 |
@@ -38,12 +38,12 @@ Din acestea, **120** au fost reevaluate pe cod în această livrare; **0** păst
 | skills | 33 | 9 | 16 | 5 | 0 | 3 |
 | providers | 27 | 5 | 15 | 6 | 0 | 1 |
 | agent-core | 36 | 7 | 20 | 7 | 0 | 2 |
-| memory | 27 | 5 | 19 | 3 | 0 | 0 |
+| memory | 27 | 5 | 18 | 3 | 0 | 1 |
 | automation | 32 | 6 | 24 | 2 | 0 | 0 |
-| security | 34 | 7 | 24 | 3 | 0 | 0 |
-| media | 27 | 7 | 17 | 3 | 0 | 0 |
+| security | 34 | 6 | 24 | 3 | 0 | 1 |
+| media | 27 | 7 | 16 | 3 | 0 | 1 |
 | acp-mcp-dev | 33 | 3 | 13 | 17 | 0 | 0 |
-| docs-features | 48 | 2 | 34 | 10 | 0 | 2 |
+| docs-features | 48 | 2 | 33 | 10 | 0 | 3 |
 | rest-api | 33 | 3 | 25 | 5 | 0 | 0 |
 | delta | 42 | 17 | 18 | 7 | 0 | 0 |
 
