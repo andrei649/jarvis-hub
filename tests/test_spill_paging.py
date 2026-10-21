@@ -41,6 +41,17 @@ from agents.core.tool_result_store import ToolResultStore, preview_envelope
 from agents.core.tool_rpc import ToolRPCServer, ToolRPCValidationError
 
 
+def _named(source):
+    """The path a parser stream was read from (file_read parses admitted bytes, H444)."""
+    from pathlib import Path as _Path
+    return _Path(getattr(source, "name", source))
+
+
+def _extraction(pages):
+    from agents.core.local_docs import DocumentExtraction
+    return None if pages is None else DocumentExtraction.from_pages(list(pages))
+
+
 def _tools(root: Path, tmp_path: Path, *, max_bytes: int = 1_000) -> FileTools:
     return FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"),
                      max_bytes=max_bytes)
@@ -137,7 +148,7 @@ async def test_a_document_pages_through_its_extracted_text(tmp_path, monkeypatch
     (root / "report.pdf").write_bytes(b"%PDF-1.4 not really")
     text = "Quarterly report: " + "revenue up, costs down; " * 30
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: True)
-    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: [text])
+    monkeypatch.setattr(file_tools, "extract_pdf_document", lambda source: _extraction([text]))
     tools = _tools(root, tmp_path)
 
     second = await tools.read_file({"path": "report.pdf", "offset": 18, "max_bytes": 12})

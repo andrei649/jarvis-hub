@@ -21,6 +21,17 @@ from agents.core.file_tools import (  # noqa: E402
 from agents.core.tool_rpc import ToolRPCValidationError  # noqa: E402
 
 
+def _named(source):
+    """The path a parser stream was read from (file_read parses admitted bytes, H444)."""
+    from pathlib import Path as _Path
+    return _Path(getattr(source, "name", source))
+
+
+def _extraction(pages):
+    from agents.core.local_docs import DocumentExtraction
+    return None if pages is None else DocumentExtraction.from_pages(list(pages))
+
+
 @pytest.fixture
 def tools(tmp_path):
     root = tmp_path / "workspace"
@@ -35,8 +46,8 @@ def tools(tmp_path):
 async def test_a_document_comes_back_as_bounded_text(tools, monkeypatch):
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: True)
     text = "Quarterly report: " + "revenue up " * 20
-    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: [text])
-    monkeypatch.setattr(file_tools, "extract_text", lambda path: text)
+    monkeypatch.setattr(file_tools, "extract_pdf_document", lambda source: _extraction([text]))
+    monkeypatch.setattr(file_tools, "extract_docx_document", lambda source: _extraction([text]))
     out = await tools.read_file({"path": "report.pdf"})
     assert out["ok"] is True and out["extracted"] is True and out["format"] == "pdf"
     assert out["content"].startswith("Quarterly report: revenue up")
@@ -55,15 +66,15 @@ async def test_missing_parser_and_failed_extraction_are_named(tools, monkeypatch
     out = await tools.read_file({"path": "memo.docx"})
     assert out["reason"] == "parser_missing" and "docx" in out["detail"]
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: True)
-    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: None)
+    monkeypatch.setattr(file_tools, "extract_pdf_document", lambda source: None)
     out = await tools.read_file({"path": "report.pdf"})
     assert out == {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
 
 
 @pytest.mark.asyncio
 async def test_raw_returns_the_bytes_and_text_files_are_untouched(tools, monkeypatch):
-    monkeypatch.setattr(file_tools, "extract_text", lambda path: pytest.fail("must not extract"))
-    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: pytest.fail("must not extract"))
+    monkeypatch.setattr(file_tools, "extract_docx_document", lambda source: pytest.fail("must not extract"))
+    monkeypatch.setattr(file_tools, "extract_pdf_document", lambda source: pytest.fail("must not extract"))
     out = await tools.read_file({"path": "report.pdf", "raw": True})
     assert out["ok"] is True and "extracted" not in out and out["content"].startswith("%PDF-1.4")
     out = await tools.read_file({"path": "notes.txt"})

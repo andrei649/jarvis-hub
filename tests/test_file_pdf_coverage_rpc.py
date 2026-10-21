@@ -62,7 +62,7 @@ def _fake_pdf(monkeypatch, registered, pages):
 
     class Reader:
         def __init__(self, path):
-            registered.calls.append(("reader", path))
+            registered.calls.append(("reader", getattr(path, "name", path)))
             self.pages = [Page(i, text) for i, text in enumerate(pages, 1)]
 
     module.PdfReader = Reader
@@ -112,9 +112,9 @@ async def test_registered_pdf_warning_is_nested_and_paging_hash_stays_text_only(
     assert later["result"]["sha256"] == hashlib.sha256(
         "Résumé end".encode()).hexdigest()
     assert later["result"]["coverage_warning"] == _warning("Café")
-    assert registered.calls[4:] == [
-        ("reader", str(registered.path)), ("page", 1), ("page", 2), ("page", 3),
-    ]
+    # H444 — the unchanged document is not parsed again for its next page.
+    assert page["cached"] is False and later["result"]["cached"] is True
+    assert registered.calls[4:] == []
 
 
 async def test_registered_pdf_raw_and_legacy_refusals_do_not_grow_a_warning(

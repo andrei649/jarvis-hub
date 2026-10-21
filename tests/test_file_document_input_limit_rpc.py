@@ -13,6 +13,17 @@ DETAIL = (
 )
 
 
+def _named(source):
+    """The path a parser stream was read from (file_read parses admitted bytes, H444)."""
+    from pathlib import Path as _Path
+    return _Path(getattr(source, "name", source))
+
+
+def _extraction(pages):
+    from agents.core.local_docs import DocumentExtraction
+    return None if pages is None else DocumentExtraction.from_pages(list(pages))
+
+
 @pytest.fixture
 def registered(tmp_path):
     root = tmp_path / "workspace"
@@ -46,10 +57,10 @@ async def test_oversized_document_is_nested_refusal_before_parser_probe(
         return False
 
     monkeypatch.setattr(file_tools, "_parser_available", parser_available)
-    monkeypatch.setattr(file_tools, "extract_text",
-                        lambda path: pytest.fail("oversized document must not be extracted"))
-    monkeypatch.setattr(file_tools, "extract_pdf_pages",
-                        lambda path: pytest.fail("oversized PDF must not be extracted"))
+    monkeypatch.setattr(file_tools, "extract_docx_document",
+                        lambda source: pytest.fail("oversized document must not be extracted"))
+    monkeypatch.setattr(file_tools, "extract_pdf_document",
+                        lambda source: pytest.fail("oversized PDF must not be extracted"))
     response = await _read(server, path=name, offset=11)
     assert response["ok"] is True and response["tool"] == "file_read"
     assert "task_id" not in response
@@ -81,7 +92,7 @@ async def test_exact_boundary_still_extracts_and_pages_utf8_text(registered, mon
         return ["alpha beta gamma"]
 
     monkeypatch.setattr(file_tools, "_parser_available", parser_available)
-    monkeypatch.setattr(file_tools, "extract_pdf_pages", extract)
+    monkeypatch.setattr(file_tools, "extract_pdf_document", lambda source: _extraction(extract(_named(source))))
     response = await _read(server, path=path.name, offset=6, max_bytes=4)
     assert response["ok"] is True and response["tool"] == "file_read"
     result = response["result"]
@@ -107,10 +118,10 @@ async def test_raw_oversized_document_and_plain_file_stay_bounded_pages(
         assert path.stat().st_size == LIMIT + 1
     monkeypatch.setattr(file_tools, "_parser_available",
                         lambda suffix: pytest.fail("raw/plain read must not probe parser"))
-    monkeypatch.setattr(file_tools, "extract_text",
-                        lambda path: pytest.fail("raw/plain read must not extract"))
-    monkeypatch.setattr(file_tools, "extract_pdf_pages",
-                        lambda path: pytest.fail("raw/plain read must not extract PDF"))
+    monkeypatch.setattr(file_tools, "extract_docx_document",
+                        lambda source: pytest.fail("raw/plain read must not extract"))
+    monkeypatch.setattr(file_tools, "extract_pdf_document",
+                        lambda source: pytest.fail("raw/plain read must not extract PDF"))
 
     for name, raw in (("large.docx", True), ("large.txt", False)):
         first = (await _read(server, path=name, raw=raw, offset=LIMIT - 3,

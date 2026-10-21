@@ -28,6 +28,9 @@ def root(tmp_path):
     return path
 
 
+GARBLED_KEYS = {"pages_with_garbled_text", "garbled_ranges", "omitted_garbled_range_count"}
+
+
 def install_pdf(monkeypatch, values, *, reader_error=None, iteration_error=None):
     """Install a real importable optional-parser stand-in, observing every visit."""
     calls = []
@@ -52,7 +55,7 @@ def install_pdf(monkeypatch, values, *, reader_error=None, iteration_error=None)
 
     class Reader:
         def __init__(self, filename):
-            calls.append(("reader", filename))
+            calls.append(("reader", getattr(filename, "name", filename)))  # parsed from admitted bytes
             if reader_error is not None:
                 raise reader_error
             self.pages = (
@@ -71,10 +74,11 @@ def read_tools(root, *, max_bytes=64):
 
 def warning(result):
     value = result["coverage_warning"]
-    assert set(value) == {
+    assert set(value) - GARBLED_KEYS == {
         "reason", "detail", "total_pages", "pages_without_text", "gap_count",
         "gaps", "omitted_gap_count", "gaps_truncated",
     }
+    assert not set(value) & GARBLED_KEYS or set(value) >= GARBLED_KEYS
     assert value["reason"] == "pdf_text_layer_gaps" and value["detail"] == DETAIL
     return value
 
@@ -145,8 +149,9 @@ async def test_unicode_paging_hash_and_warning_repeat_without_text_changes(root,
     assert second["sha256"] == hashlib.sha256(joined[5:]).hexdigest()
     assert second["text_size"] == first["text_size"] == len(joined)
     assert warning(first) == warning(second)
+    # H444 — the second page of an unchanged document comes from the parse cache.
+    assert first["cached"] is False and second["cached"] is True
     assert calls == [
-        ("reader", str(root / "report.PDF")), ("page", 0), ("page", 1), ("page", 2),
         ("reader", str(root / "report.PDF")), ("page", 0), ("page", 1), ("page", 2),
     ]
 
@@ -167,6 +172,14 @@ async def test_first_sixteen_ranges_exact_counts_and_unicode_snippet_cap(
     assert (item["total_pages"], item["pages_without_text"], item["gap_count"]) == (34, 17, 17)
     assert len(item["gaps"]) == 16
     assert item["omitted_gap_count"] == 1 and item["gaps_truncated"] is True
+    # H444 — a page of NULs is text no reader can use: it is named as garbled.
+    if snippet_char == "\x00":
+        assert item["pages_with_garbled_text"] == 17
+        assert item["garbled_ranges"][0] == {"start_page": 1, "end_page": 1}
+        assert len(item["garbled_ranges"]) == 16
+        assert item["omitted_garbled_range_count"] == 1
+    else:
+        assert not set(item) & GARBLED_KEYS
     for i, gap in enumerate(item["gaps"]):
         assert gap == {
             "start_page": 2 * i + 2, "end_page": 2 * i + 2,
@@ -245,7 +258,8 @@ async def test_raw_plain_docx_and_parser_missing_have_no_pdf_warning(root, monke
     assert raw["ok"] is True and plain["ok"] is True and calls == []
     assert "coverage_warning" not in raw and "coverage_warning" not in plain
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: True)
-    monkeypatch.setattr(file_tools, "extract_text", lambda path: "docx text")
+    monkeypatch.setattr(file_tools, "extract_docx_document",
+                        lambda source: local_docs.DocumentExtraction.from_pages(["docx text"]))
     docx = await tools.read_file({"path": "memo.docx"})
     assert docx["ok"] is True and docx["content"] == "docx text"
     assert "coverage_warning" not in docx
