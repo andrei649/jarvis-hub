@@ -15,6 +15,7 @@ import re
 import shlex
 import sys
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1045,14 +1046,24 @@ def _shown(row: Mapping[str, Any], *, reveal: bool) -> Any:
     return row.get("value")
 
 
-def _resolve_name(settings: Any, name: str) -> tuple[str, str, list[Any]] | None:
+def _resolve_name(settings: Any, name: str, *, stored: bool = False) -> tuple[str, str, list[Any]] | None:
     """H688 — ``(category, key, path below the key)`` for a setting name, or None when no
     declared setting matches. Keys whose name contains a dot are matched greedily; a
-    malformed or ambiguous name is a usage error (exit 2) naming how to spell it."""
+    malformed or ambiguous name is a usage error (exit 2) naming how to spell it.
+
+    With *stored* (``config get``), a name no declared setting matches is matched next
+    against the rows stored in its category, as ``config list`` shows them: rows nothing
+    declares (``cache.entries``, a removed declaration's leftover) stay readable. Writes
+    never pass it — they stay limited to declared settings."""
     from agents.core import settings_path
 
     try:
-        return settings_path.resolve_setting(name, settings._SPEC.keys())
+        resolved = settings_path.resolve_setting(name, settings._SPEC.keys())
+        if resolved is None and stored:
+            category = settings_path.parse(name)[0].text
+            rows = settings.get_category(category)
+            resolved = settings_path.resolve_setting(name, {(category, str(r["key"])) for r in rows})
+        return resolved
     except settings_path.PathError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
@@ -1109,7 +1120,7 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "get":
         from agents.core import settings_path
 
-        resolved = _resolve_name(settings, ns.name)
+        resolved = _resolve_name(settings, ns.name, stored=True)
         row = None
         if resolved is not None:
             category, key, path = resolved
@@ -1189,6 +1200,10 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             except guards.ConsentNotRecorded as exc:
                 ctx.err.write(f"{ns.name}: {exc}\n")
                 return EXIT_FAILED
+        if (category, key) == ("appearance", "preferences") and isinstance(value, dict):
+            # review-H688 r2: the HUD syncs appearance across devices on this revision; a CLI
+            # write moves it as `appearance.update_appearance` does, or no other device sees it.
+            value = {**value, "_revision": uuid.uuid4().hex}
         settings.put_category(category, {key: value})
         if f"{category}.{key}" in retention.RETENTION_KEYS:
             # H262 review — a narrowing is a human decision too: the approval is lowered to it,

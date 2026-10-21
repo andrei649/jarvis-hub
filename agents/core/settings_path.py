@@ -28,9 +28,12 @@ Pure functions over plain JSON values: no storage, no I/O. The CLI resolves the 
 from __future__ import annotations
 
 import copy
+import re
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from typing import Any
+
+_INDEX = re.compile(r"[0-9]+")
 
 
 class PathError(ValueError):
@@ -163,7 +166,9 @@ def _step(node: Any, segments: list[Segment], i: int, where: list[Segment]) -> t
         return key, stop
     if isinstance(node, list):
         seg = segments[i]
-        if not seg.text.isdigit():
+        # ASCII digits only: str.isdigit() accepts '²' or '٣', which int() then rejects or
+        # reads as another number.
+        if not _INDEX.fullmatch(seg.text):
             raise PathError(f"{render(where) or 'the value'} is a list; {seg.text!r} is not an index")
         index = int(seg.text)
         if index >= len(node):

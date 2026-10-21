@@ -131,7 +131,7 @@ python scripts/nerva.py doctor                 # the check-up above, same reason
 python scripts/nerva.py status                 # backend, model, runnable route, agents, channels, e-stop
 python scripts/nerva.py config list llm        # settings, secrets masked (--reveal shows them)
 python scripts/nerva.py config set llm.tool_loop_enabled on   # validated; the hub reloads in ≤30 s
-python scripts/nerva.py config set appearance.preferences.ui\\.theme dark   # a path into a json setting; \\. or "quotes" keep a dot inside one key
+python scripts/nerva.py config set appearance.preferences.accent amber   # a path into a json setting (other devices pick it up); \\. or "quotes" keep a dot inside one key name
 python scripts/nerva.py config unset llm.tool_loop_max_iterations   # back to its declared value (or remove one key inside a json setting)
 python scripts/nerva.py approvals list         # the approval queue (needs JARVIS_ADMIN_TOKEN)
 python scripts/nerva.py approvals accept 7

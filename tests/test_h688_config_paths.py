@@ -128,6 +128,11 @@ def _run(argv):
     return main(argv, context=ctx), out.getvalue(), err.getvalue()
 
 
+def _prefs():
+    # The sync revision the CLI moves on every appearance write (review r2) is not content.
+    return {k: v for k, v in settings_db.get_value("appearance", "preferences").items() if k != "_revision"}
+
+
 def test_cli_reads_and_writes_a_dotted_key_inside_a_json_setting(temp_settings):
     settings_db.put_category("appearance", {"preferences": {"ui.theme": "dark", "panel": {"w.px": 3}}})
 
@@ -140,18 +145,18 @@ def test_cli_reads_and_writes_a_dotted_key_inside_a_json_setting(temp_settings):
     assert code == EXIT_OK and 'appearance.preferences.ui.theme = "light"' in out
     code, _, _ = _run(["config", "set", "appearance.preferences.panel.w.px", "7"])
     assert code == EXIT_OK
-    assert settings_db.get_value("appearance", "preferences") == {"ui.theme": "light", "panel": {"w.px": 7}}
+    assert _prefs() == {"ui.theme": "light", "panel": {"w.px": 7}}
 
     code, _, err = _run(["config", "set", "appearance.preferences.ui.font", "mono"])
     assert code == EXIT_FAILED and "refusing to create" in err and '"ui.theme"' in err
-    assert settings_db.get_value("appearance", "preferences") == {"ui.theme": "light", "panel": {"w.px": 7}}
+    assert _prefs() == {"ui.theme": "light", "panel": {"w.px": 7}}
 
     code, _, _ = _run(["config", "set", r"appearance.preferences.ui\.font", "mono"])
     assert code == EXIT_OK and settings_db.get_value("appearance", "preferences")["ui.font"] == "mono"
 
     code, out, _ = _run(["config", "unset", "appearance.preferences.ui.theme"])
     assert code == EXIT_OK and "removed" in out
-    assert settings_db.get_value("appearance", "preferences") == {"panel": {"w.px": 7}, "ui.font": "mono"}
+    assert _prefs() == {"panel": {"w.px": 7}, "ui.font": "mono"}
 
     code, _, err = _run(["config", "unset", "appearance.preferences.ui.theme"])
     assert code == EXIT_FAILED and "no " in err
@@ -204,3 +209,82 @@ def test_cli_masks_a_secret_even_when_read_by_path(temp_settings, monkeypatch):
     assert code == EXIT_OK and "sk-live-9" not in out and "••" in out
     code, out, _ = _run(["config", "get", "appearance.api_token.x.y", "--reveal"])
     assert code == EXIT_OK and "sk-live-9" in out
+
+
+# ── review r2: undeclared stored rows, non-ASCII digits, appearance revision ──
+
+
+def _put_undeclared(category, key, value):
+    import json
+
+    settings_db.ensure_initialized()
+    conn = settings_db.get_conn()
+    try:
+        conn.execute("INSERT OR REPLACE INTO settings (category, key, value, label, kind, opts) "
+                     "VALUES (?,?,?,?,?,?)", (category, key, json.dumps(value), key, "json", "[]"))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_cli_get_still_reads_a_stored_row_nothing_declares(temp_settings):
+    # gemini_cache writes cache.entries outside the declared spec; `config list` shows it,
+    # so `config get` must read it too (it did before H688).
+    assert ("cache", "entries") not in settings_db._SPEC
+    _put_undeclared("cache", "entries", {"s.1": {"name": "c"}})
+    code, out, _ = _run(["config", "list", "cache"])
+    assert code == EXIT_OK and "cache.entries" in out
+    code, out, err = _run(["config", "get", "cache.entries"])
+    assert code == EXIT_OK, err
+    assert out.strip() == '{"s.1": {"name": "c"}}'
+    code, out, _ = _run(["config", "get", "cache.entries.s.1.name"])
+    assert code == EXIT_OK and out.strip() == '"c"'
+    # writes stay restricted to declared settings
+    code, _, err = _run(["config", "set", "cache.entries", "{}"])
+    assert code == EXIT_FAILED and "not a declared setting" in err
+    code, _, err = _run(["config", "unset", "cache.entries.s.1"])
+    assert code == EXIT_FAILED and "not a declared setting" in err
+    code, _, err = _run(["config", "get", "cache.nope"])
+    assert code == EXIT_FAILED and "no setting cache.nope" in err
+
+
+def test_cli_get_refuses_an_ambiguous_undeclared_name_as_usage(temp_settings):
+    _put_undeclared("zz", "a", 1)
+    _put_undeclared("zz", "a.b", 2)
+    code, _, err = _run(["config", "get", "zz.a.b"])
+    assert code == EXIT_USAGE and '"a.b"' in err
+    code, out, _ = _run(["config", "get", r"zz.a\.b"])
+    assert code == EXIT_OK and out.strip() == "2"
+
+
+@pytest.mark.parametrize("digit", ["²", "٣", "１"])
+def test_a_non_ascii_digit_is_not_a_list_index(digit):
+    value = {"l": [1, 2, 3, 4]}
+    path = sp.parse(f"l.{digit}")
+    with pytest.raises(sp.PathError):
+        sp.get_in(value, path)
+    with pytest.raises(sp.PathError):
+        sp.set_in(value, path, 9)
+    with pytest.raises(sp.PathError):
+        sp.unset_in(value, path)
+
+
+def test_cli_get_with_a_non_ascii_index_fails_cleanly(temp_settings):
+    settings_db.put_category("appearance", {"preferences": {"l": [1, 2, 3]}})
+    code, _, err = _run(["config", "get", "appearance.preferences.l.²"])
+    assert code == EXIT_FAILED and "not an index" in err
+
+
+def test_cli_appearance_write_moves_the_revision_other_devices_sync_on(temp_settings):
+    from agents.core import appearance
+
+    before = appearance.read_appearance()
+    code, _, err = _run(["config", "set", "appearance.preferences.accent", "amber"])
+    assert code == EXIT_OK, err
+    after = appearance.read_appearance()
+    assert after["preferences"]["accent"] == "amber"
+    assert after["revision"] != before["revision"]
+    code, _, _ = _run(["config", "unset", "appearance.preferences.accent"])
+    assert code == EXIT_OK
+    again = appearance.read_appearance()
+    assert again["preferences"]["accent"] == "cyan" and again["revision"] != after["revision"]
