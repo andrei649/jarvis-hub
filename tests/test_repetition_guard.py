@@ -1042,3 +1042,241 @@ def test_rule_length_low_variety_runs_stay_exempt():
     text = ("\n" + "=" * 80 + "\n").join([body, body.upper(), body.lower(), body.title()])
     assert _hermes_dominated(text) is True
     assert is_repetition_dominated(text) is False
+
+
+# ── H393 review round 5: loops the 4000-char tail cannot see ──
+#
+# The onset detector caps the period at len(tail) // 5 = 800 and the short-loop
+# hold at 60, so (a) a paragraph line repeated with a period over 800 and (b) a
+# low-variety row (fewer than 8 distinct characters) with a period of 61..800
+# were painted live in full while the finalizer dropped the truncated answer.
+
+_R5_PROSE_PREFIX = (
+    "Sure, here is a summary of the incident report together with the main follow-up actions "
+    "we agreed on during the review meeting.\n"
+)
+
+
+def _paragraph_line(period: int, seed: int = 7) -> str:
+    import random
+
+    rng = random.Random(seed * 10007 + period)  # nosec B311
+    words = ("system", "review", "network", "storage", "latency", "budget", "report", "update",
+             "service", "cluster", "deploy", "config", "monitor", "rollback", "release", "metric")
+    out = ""
+    while len(out) < period:
+        out += rng.choice(words) + (", " if rng.random() < 0.15 else " ")
+    return out[: period - 1] + "."
+
+
+def _paragraph_loop(period: int, total: int = 30000) -> str:
+    line = _paragraph_line(period)
+    assert len(line) == period and "\n" not in line
+    body = ""
+    while len(_R5_PROSE_PREFIX) + len(body) < total:
+        body += line + "\n"
+    return _R5_PROSE_PREFIX + body
+
+
+@pytest.mark.parametrize("period", (500, 900, 1200, 2000, 3000))
+def test_long_period_paragraph_loop_is_not_painted_live(period):
+    text = _paragraph_loop(period)
+    assert is_repetition_dominated(text) is True          # what the finalizer drops
+    assert LLMBackend._finalize_stream(text, "", "length", "m") == ""
+    guard, live = _stream_through(text, step=7)
+    assert guard.withholding is True
+    assert text.startswith(live)
+    assert len(live) <= len(_R5_PROSE_PREFIX) + 6 * period, (len(live), period)
+    assert guard.release("") == ""
+
+
+@pytest.mark.parametrize("period", (900, 2000))
+def test_long_period_paragraph_loop_with_blank_lines_is_not_painted_live(period):
+    line = _paragraph_line(period, seed=3)
+    text = _R5_PROSE_PREFIX + (line + "\n\n") * (30000 // period)
+    assert is_repetition_dominated(text) is True
+    guard, live = _stream_through(text, step=7)
+    assert guard.withholding is True
+    assert len(live) <= len(_R5_PROSE_PREFIX) + 6 * (period + 2)
+    assert guard.release("") == ""
+
+
+def test_long_period_loop_is_released_when_the_answer_is_kept():
+    text = _paragraph_loop(1200)
+    guard, live = _stream_through(text, step=7)
+    assert len(live) < len(text)
+    assert live + guard.release(text) == text
+
+
+@pytest.mark.parametrize("period", (900, 2000))
+def test_ollama_stream_long_period_truncated_loop_never_painted(period):
+    text = _paragraph_loop(period)
+    out, shown = _ollama_stream(text, "length")
+    assert out == ""
+    assert len(shown) <= len(_R5_PROSE_PREFIX) + 6 * period
+
+
+@pytest.mark.parametrize("period", (900, 2000))
+def test_lmstudio_stream_long_period_truncated_loop_never_painted(period):
+    text = _paragraph_loop(period)
+    out, shown = _lmstudio_stream(text, "length")
+    assert out == ""
+    assert len(shown) <= len(_R5_PROSE_PREFIX) + 6 * period
+
+
+@pytest.mark.parametrize("copies", (2, 3, 4))
+def test_long_line_repeated_a_few_times_streams_in_full(copies):
+    line = _paragraph_line(900, seed=11)
+    # Back to back, and spread through a varied answer.
+    for text in (
+        _R5_PROSE_PREFIX + (line + "\n") * copies + "That is all.",
+        _LEGIT[:2000] + "\n" + ("\n" + _LEGIT[2000:2600] + "\n").join([line] * copies) + "\nEnd.",
+    ):
+        guard, live = _stream_through(text, step=7)
+        assert guard.tripped is False and guard.withholding is False
+        assert live == text
+
+
+def test_long_line_repeated_inside_a_code_fence_streams_in_full():
+    line = "    " + _paragraph_line(900, seed=5).replace(".", ";")
+    text = _LEGIT[:6000] + "\n```text\n" + (line + "\n") * 6 + "```\n" + _LEGIT[6000:9000]
+    assert is_repetition_dominated(text) is False
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+# Low-variety rows (< 8 distinct chars) with a period over 60.
+_R5_LOW_VARIETY_ROWS = (
+    "[" + ", ".join(["0"] * 22) + "],\n",
+    "| 0 |" * 16 + "\n",
+    "ha " * 23 + "\n",
+    "-" * 79 + "\n",
+)
+_R5_SHORT_PROSE = "Here is the result you asked for, computed from the inputs shown above:\n"
+
+
+def _low_variety_row_loop(row: str, total: int = 8000) -> str:
+    return _R5_SHORT_PROSE + row * ((total - len(_R5_SHORT_PROSE)) // len(row) + 1)
+
+
+@pytest.mark.parametrize("row", _R5_LOW_VARIETY_ROWS)
+def test_low_variety_row_loop_is_not_painted_live(row):
+    period = len(row)
+    assert period > 60 and len(set(row)) < 8
+    text = _low_variety_row_loop(row)
+    assert is_repetition_dominated(text) is True
+    assert LLMBackend._finalize_stream(text, "", "length", "m") == ""
+    guard, live = _stream_through(text, step=4)
+    assert guard.withholding is True
+    assert text.startswith(live)
+    assert len(live) <= len(_R5_SHORT_PROSE) + 5 * period + 8, (len(live), period)
+    assert guard.release("") == ""
+
+
+@pytest.mark.parametrize("row", _R5_LOW_VARIETY_ROWS)
+def test_low_variety_row_hold_is_released_when_kept(row):
+    text = _low_variety_row_loop(row)
+    guard, live = _stream_through(text, step=4)
+    assert live + guard.release(text) == text
+
+
+def test_thirty_row_zero_matrix_followed_by_prose_streams_in_full():
+    row = _R5_LOW_VARIETY_ROWS[0]
+    text = _R5_SHORT_PROSE + row * 30 + "\nEach row is one sensor; all of them read zero today. " + _PROSE[:1500]
+    guard, live = _stream_through(text, step=4)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+@pytest.mark.parametrize("row", (_R5_LOW_VARIETY_ROWS[0], _R5_LOW_VARIETY_ROWS[1]))
+def test_ollama_stream_low_variety_row_loop_never_painted(row):
+    text = _low_variety_row_loop(row)
+    out, shown = _ollama_stream(text, "length")
+    assert out == ""
+    assert len(shown) <= len(_R5_SHORT_PROSE) + 5 * len(row) + 8
+
+
+@pytest.mark.parametrize("row", (_R5_LOW_VARIETY_ROWS[2], _R5_LOW_VARIETY_ROWS[3]))
+def test_lmstudio_stream_low_variety_row_loop_never_painted(row):
+    text = _low_variety_row_loop(row)
+    out, shown = _lmstudio_stream(text, "length")
+    assert out == ""
+    assert len(shown) <= len(_R5_SHORT_PROSE) + 5 * len(row) + 32
+
+
+def test_lmstudio_stream_zero_matrix_then_prose_is_shown_in_full():
+    row = _R5_LOW_VARIETY_ROWS[0]
+    text = _R5_SHORT_PROSE + row * 30 + "\nAll sensors read zero. " + _PROSE[:800]
+    out, shown = _lmstudio_stream(text, "stop")
+    assert out == text and shown == text
+
+
+def _bit_line(length: int, seed: int) -> str:
+    import random
+
+    rng = random.Random(seed)  # nosec B311
+    return "".join(rng.choice("01 ") for _ in range(length))
+
+
+def test_long_low_variety_line_loop_is_held_not_painted():
+    # A low-variety line longer than the tail can see (period > 800), with no
+    # short internal period: the long-line HOLD keeps it off the bubble.
+    line = _bit_line(1100, 4)
+    assert len(set(line)) < 8
+    text = _R5_SHORT_PROSE + (line + "\n") * 25
+    assert is_repetition_dominated(text) is True
+    guard, live = _stream_through(text, step=5)
+    assert guard.tripped is False and guard.withholding is True
+    assert len(live) <= len(_R5_SHORT_PROSE) + 5 * (len(line) + 1) + 5
+    assert guard.release("") == ""
+    guard, live = _stream_through(text, step=5)
+    assert live + guard.release(text) == text
+
+
+@pytest.mark.parametrize("after", ("\nA short note.\n", "\nThat is the dump of every register in the device, as requested.\n"))
+def test_long_low_variety_line_hold_lifts_when_a_different_line_completes(after):
+    line = _bit_line(1100, 9)
+    text = _R5_SHORT_PROSE + (line + "\n") * 6 + after
+    guard, live = _stream_through(text, step=5)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+def test_line_detector_judges_each_line_with_its_own_fence_state():
+    # The chunk that completes the 6th fenced copy also closes the fence: that
+    # line is still inside the fence, so it is not a loop onset.
+    line = _paragraph_line(900, seed=5)
+    text = _LEGIT[:6000] + "\n```\n" + (line + "\n") * 6 + "```\n" + _LEGIT[6000:9000]
+    from agents.core.llm.repetition_guard import RepetitionStreamGuard
+
+    head = text.index("```\n" + _LEGIT[6000:6010], 6010)
+    guard = RepetitionStreamGuard()
+    live = guard.feed(text[:head - 2]) + guard.feed(text[head - 2:head + 6]) + guard.feed(text[head + 6:])
+    assert guard.tripped is False and live == text
+
+
+def test_line_detector_handles_crlf_and_memory_stays_bounded(monkeypatch):
+    from agents.core.llm import repetition_guard as rg
+
+    line = _paragraph_line(900, seed=2)
+    text = _R5_SHORT_PROSE + (line + "\r\n") * 10
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is True and len(live) <= len(_R5_SHORT_PROSE) + 6 * 902
+
+    assert rg._STREAM_LINE_SLOTS == 4096
+    monkeypatch.setattr(rg, "_STREAM_LINE_SLOTS", 64)
+    guard = rg.RepetitionStreamGuard()
+    for i in range(300):
+        guard.feed(f"{i}: " + _paragraph_line(70, seed=i) + "\n")
+    assert len(guard._lines.counts) == 64 and guard.tripped is False
+
+
+def test_long_varied_answer_with_repeated_boilerplate_streams_in_full():
+    # The same 70-char disclaimer under every section (never back to back, never
+    # half the output) is ordinary formatting.
+    note = "Note: figures in this section are estimates and may change later on."
+    sections = [f"## Section {i}\n" + _LEGIT[i * 900:(i + 1) * 900] + "\n" + note + "\n" for i in range(12)]
+    text = "".join(sections)
+    guard, live = _stream_through(text, step=6)
+    assert guard.tripped is False and live == text
