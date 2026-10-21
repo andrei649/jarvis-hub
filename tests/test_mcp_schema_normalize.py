@@ -1119,3 +1119,176 @@ def test_coordinator_wiring_offers_mcp_to_the_owner_and_not_to_a_job(monkeypatch
     asyncio.run(_turn(runtime, job))
     assert "mcp__docs__search" not in [spec.name for spec in job.calls[0]["tools"]]
     assert len(calls) == 1  # the job's call never reached the server
+
+
+# ── round 4: required-only branches, root combinators, multi-branch nullables ────
+
+
+def _five_paths(schema: dict, tool: str = "t") -> dict[str, dict]:
+    """The parameters each of the five provider paths ships for one bridged MCP tool."""
+    mgr = MCPManager()
+    mgr.register(_docs_server([{"name": tool, "description": "d", "inputSchema": schema}]))
+    runtime, _rpc, _bridge = _bridged_runtime(mgr)
+    backend = _CapturingBackend()
+    asyncio.run(_turn(runtime, backend))
+    spec = {s.name: s for s in backend.calls[0]["tools"]}[f"mcp__docs__{tool}"]
+    [responses] = ResponsesBackend("k")._payload(
+        "gpt-4.1", [{"role": "user", "content": "hi"}], 100, 0.2, tools=[spec])["tools"]
+    [xai] = XAIBackend("k")._payload(
+        XAI_PROFILE.fallback_models[0], [{"role": "user", "content": "hi"}], 100, 0.2,
+        tools=[spec])["tools"]
+    [decl] = gemini_function_declarations([spec])
+    return {
+        "anthropic": anthropic_tools([spec])[0]["input_schema"],
+        "openai_chat": spec.as_openai()["function"]["parameters"],
+        "responses": responses["parameters"],
+        "xai": xai["parameters"],
+        "gemini": decl.get("parameters", {}),
+    }
+
+
+URL_OR_PATH = {
+    "type": "object",
+    "properties": {"url": {"type": "string"}, "path": {"type": "string"}},
+    "anyOf": [{"required": ["url"]}, {"required": ["path"]}],
+}
+A_OR_B = {
+    "type": "object",
+    "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+    "oneOf": [{"required": ["a"]}, {"required": ["b"]}],
+}
+NOT_BOTH = {
+    "type": "object",
+    "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+    "not": {"required": ["a", "b"]},
+}
+
+
+@pytest.mark.parametrize("schema, key, expected", [
+    (URL_OR_PATH, "anyOf", [{"required": ["url"]}, {"required": ["path"]}]),
+    (A_OR_B, "oneOf", [{"required": ["a"]}, {"required": ["b"]}]),
+    (NOT_BOTH, "not", {"required": ["a", "b"]}),
+], ids=["anyOf", "oneOf", "not"])
+def test_required_only_subschema_keeps_its_constraint(schema, key, expected):
+    out = normalize_mcp_input_schema({"type": "object", "properties": {"src": schema}})
+    assert out["properties"]["src"][key] == expected
+    assert normalize_mcp_input_schema(out) == out
+
+
+def test_typed_required_only_branch_keeps_its_constraint():
+    typed = normalize_mcp_input_schema({"type": "object", "properties": {"src": {
+        "type": "object", "properties": {"a": {"type": "string"}},
+        "anyOf": [{"type": "object", "required": ["a"]}, {"type": "object"}]}}})
+    assert typed["properties"]["src"]["anyOf"][0]["required"] == ["a"]
+    assert normalize_mcp_input_schema(typed) == typed
+
+
+@pytest.mark.parametrize("schema, key", [
+    (URL_OR_PATH, "anyOf"), (A_OR_B, "oneOf"), (NOT_BOTH, "not"),
+], ids=["anyOf", "oneOf", "not"])
+def test_required_only_branches_survive_on_all_five_paths(schema, key):
+    shipped = _five_paths({"type": "object", "properties": {"src": schema}})
+    for name in ("anthropic", "openai_chat", "responses", "xai"):
+        assert shipped[name]["properties"]["src"][key] == schema[key], name
+    gem = shipped["gemini"]["properties"]["src"]
+    if key == "not":
+        # Gemini has no `not`: the constraint is stated in the description instead.
+        assert "not" not in gem and "a, b" in gem["description"]
+        return
+    # Gemini only accepts `required` beside the properties it names, so each branch
+    # carries the parent's properties; the alternative is still enforced.
+    assert [b["required"] for b in gem["anyOf"]] == [r["required"] for r in schema[key]]
+    for branch in gem["anyOf"]:
+        assert branch["type"] == "object"
+        assert set(branch["properties"]) == set(schema["properties"])
+
+
+ZOD_UNION = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "anyOf": [
+        {"type": "object", "properties": {"kind": {"type": "string", "const": "url"},
+                                          "url": {"type": "string"}},
+         "required": ["kind", "url"], "additionalProperties": False},
+        {"type": "object", "properties": {"kind": {"type": "string", "const": "file"},
+                                          "path": {"type": "string"},
+                                          "encoding": {"type": "string"}},
+         "required": ["kind", "path"], "additionalProperties": False},
+    ],
+}
+
+ZOD_ROOT_REF = {
+    "$ref": "#/definitions/Args",
+    "definitions": {"Args": {"type": "object", "properties": {
+        "q": {"type": "string"}, "n": {"type": "integer"}}, "required": ["q"],
+        "additionalProperties": False}},
+    "$schema": "http://json-schema.org/draft-07/schema#",
+}
+
+ROOT_ALLOF_REFS = {
+    "allOf": [{"$ref": "#/$defs/A"}, {"$ref": "#/$defs/B"}],
+    "$defs": {"A": {"type": "object", "properties": {"a": {"type": "string"}},
+                    "required": ["a"]},
+              "B": {"type": "object", "properties": {"b": {"type": "integer"}},
+                    "required": ["b"]}},
+}
+
+_ROOT_FORBIDDEN = ("anyOf", "oneOf", "allOf", "$ref", "enum", "not")
+
+
+@pytest.mark.parametrize("schema", [ZOD_UNION, ZOD_ROOT_REF, ROOT_ALLOF_REFS, URL_OR_PATH],
+                         ids=["union", "root_ref", "root_allof", "root_required_only"])
+def test_root_combinators_are_flattened_on_all_five_paths(schema):
+    out = normalize_mcp_input_schema(schema)
+    assert normalize_mcp_input_schema(out) == out
+    shipped = _five_paths(schema)
+    for name, params in shipped.items():
+        assert not any(k in params for k in _ROOT_FORBIDDEN), (name, params)
+        assert params["type"] == "object", name
+        assert params["properties"], name
+
+
+def test_root_union_merges_properties_and_spells_out_alternatives():
+    out = normalize_mcp_input_schema(ZOD_UNION)
+    assert set(out["properties"]) == {"kind", "url", "path", "encoding"}
+    assert out["properties"]["kind"] == {"type": "string", "enum": ["url", "file"]}
+    assert out["required"] == ["kind"]  # the intersection
+    assert 'kind="url"' in out["description"] and "path" in out["description"]
+
+
+def test_root_ref_and_root_allof_are_inlined():
+    ref = normalize_mcp_input_schema(ZOD_ROOT_REF)
+    assert ref["properties"] == {"q": {"type": "string"}, "n": {"type": "integer"}}
+    assert ref["required"] == ["q"]
+    both = normalize_mcp_input_schema(ROOT_ALLOF_REFS)
+    assert both["properties"] == {"a": {"type": "string"}, "b": {"type": "integer"}}
+    assert both["required"] == ["a", "b"]
+    # A root-level required-only alternative becomes prose, not a top-level anyOf.
+    alt = normalize_mcp_input_schema(URL_OR_PATH)
+    assert "anyOf" not in alt and "required" not in alt
+    assert "url" in alt["description"] and "path" in alt["description"]
+
+
+def test_root_flattening_terminates_on_a_self_referencing_root():
+    out = normalize_mcp_input_schema({"$ref": "#", "properties": {"a": {"type": "string"}}})
+    assert out["properties"] == {"a": {"type": "string"}} and "$ref" not in out
+    loop = normalize_mcp_input_schema({"$ref": "#/$defs/A", "$defs": {
+        "A": {"$ref": "#/$defs/B"}, "B": {"allOf": [{"$ref": "#/$defs/A"}]}}})
+    assert not any(k in loop for k in _ROOT_FORBIDDEN)
+    assert loop["type"] == "object"
+
+
+def test_root_type_list_with_object_keeps_its_properties():
+    out = normalize_mcp_input_schema({"type": ["object", "null"],
+                                      "properties": {"a": {"type": "string"}}})
+    assert out["type"] == "object"
+    assert out["properties"] == {"a": {"type": "string"}}
+
+
+def test_gemini_multi_branch_nullable_union_becomes_nullable():
+    gem = gemini_schema({"type": "object", "properties": {"v": {
+        "anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}],
+        "default": None}}})
+    v = gem["properties"]["v"]
+    assert v["nullable"] is True
+    assert v["anyOf"] == [{"type": "string"}, {"type": "integer"}]
+    assert "default" not in v

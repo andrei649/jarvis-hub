@@ -17,6 +17,7 @@ Hermes absorption, wave 0.1 — see docs/HERMES_ABSORPTION.md.
 
 from __future__ import annotations
 
+import copy
 import itertools
 import json
 import logging
@@ -557,6 +558,15 @@ def _unwrap_for_gemini(
                 siblings = {k: v for k, v in schema.items() if k not in ("anyOf", "oneOf")}
                 schema = {**rest_variants[0], **siblings, "nullable": True}
                 break
+            if 2 <= len(rest_variants) < len(variants):
+                # `Optional[Union[A, B]] = None`: the null branches become Gemini's own
+                # `nullable` (a `{"type": "null"}` branch would project to `{}`), and the
+                # `default: null` goes with them.
+                siblings = {k: v for k, v in schema.items() if k != key}
+                if "default" in siblings and siblings["default"] is None:
+                    del siblings["default"]
+                schema = {**siblings, key: rest_variants, "nullable": True}
+                break
         else:
             return schema, seen
     return None, seen
@@ -655,10 +665,45 @@ def _gemini_node(
         out.setdefault("type", "array")
     variants = schema.get("anyOf", schema.get("oneOf"))
     if isinstance(variants, list):
-        cleaned_variants = [child(variant) for variant in variants if isinstance(variant, dict)]
+        cleaned_variants = [
+            _gemini_required_branch(variant, out.get("properties")) or child(variant)
+            for variant in variants if isinstance(variant, dict)
+        ]
         if cleaned_variants:
             out["anyOf"] = cleaned_variants
+    note = _gemini_not_text(schema.get("not"))
+    if note:
+        # Gemini has no `not`; a required-only one is stated instead of dropped silently.
+        own = out.get("description")
+        out["description"] = f"{own} {note}" if own else note
     return out
+
+
+_REQUIRED_ONLY_KEYS = frozenset({"required", "type", "title", "description"})
+
+
+def _gemini_required_branch(variant: dict[str, Any], properties: Any) -> dict[str, Any] | None:
+    """A required-only alternative (`anyOf: [{"required": ["url"]}, …]`) as a Gemini
+    object branch. Gemini only accepts `required` beside the properties it names, so the
+    branch carries its parent's (already projected) properties; None for any other shape."""
+    required = variant.get("required")
+    if (not isinstance(properties, dict) or not properties or not isinstance(required, list)
+            or not set(variant) <= _REQUIRED_ONLY_KEYS
+            or variant.get("type", "object") != "object"):
+        return None
+    kept = [name for name in required if isinstance(name, str) and name in properties]
+    if not kept:
+        return None
+    return {"type": "object", "properties": copy.deepcopy(properties), "required": kept}
+
+
+def _gemini_not_text(schema: Any) -> str | None:
+    if not isinstance(schema, dict) or set(schema) != {"required"}:
+        return None
+    required = schema["required"]
+    names = [name for name in required if isinstance(name, str)] if isinstance(
+        required, list) else []
+    return "Do not provide all of: " + ", ".join(names) + "." if names else None
 
 
 def gemini_function_declarations(tools: Sequence[ToolSpec]) -> list[dict[str, Any]]:
