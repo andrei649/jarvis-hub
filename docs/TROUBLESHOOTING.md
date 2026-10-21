@@ -83,6 +83,7 @@ that fails and fix that one; the later steps would only report its consequences.
 | `runtime_resolves` = `inventory_unavailable` / `residency_unknown` | the runtime would not list its loaded models | see [Ollama](#ollama) / [LM Studio](#lm-studio) |
 | replies say "LLM unavailable" / degraded bubble | the local server stopped or the model was unloaded | [local model servers](#local-model-servers) |
 | answers got worse, shorter or forgetful | wrong model, truncated context, or a fallback | the ["feels dumber" checklist](#my-agent-feels-dumber) |
+| forgot what I told it last week | memory is off (it is by default), the fact was never written, or it was written after this session started | step 11 of the ["feels dumber" checklist](#my-agent-feels-dumber) |
 | `voice` = `voice_command_not_ready` | a TTS/STT command provider is configured but not armed, changed since approval, missing, or safe mode is on | the row names which; re-approve it in **Admin → settings** |
 | `voice` = `capabilities_status:401` / `capabilities_status:403` | the hub refused the voice read: a hub reached from another machine may want a token, and the doctor sends `JARVIS_ADMIN_TOKEN` only to a hub on this machine | set `JARVIS_USER_TOKEN` (or `JARVIS_ADMIN_TOKEN` for a hub on this machine) |
 | `voice` = `capabilities_status:500` (any other code) / `hub_unreachable` / `malformed_reply` | the hub failed the voice read, died mid-reply, or something else listens on its port | `nerva logs -n 100`; restart with `python serve.py` |
@@ -118,7 +119,10 @@ this order — the first ones are the most common and the cheapest to rule out:
    `llm.reasoning_effort` (empty asks for nothing; cloud models only).
 7. **Are its tools and skills there?** `nerva inspect jarvis --section tools` and
    `nerva inspect jarvis --section skills`; a skill switched off shows in
-   `nerva skills list`. The agent tool loop is opt-in: `llm.tool_loop_enabled`.
+   `nerva skills list`. The agent tool loop is opt-in: `llm.tool_loop_enabled`. With it on,
+   a reply that shows a tool call as text (`{"name": …, "arguments": …}`) instead of
+   running it means the model has no native tool calling — see the "tool calls appear as
+   text" rows under [local model servers](#local-model-servers).
 8. **Is it in safe mode?** Safe mode drops your skills, overlays and the memory a turn is
    given. `GET /healthz` says so; restart without `--safe-mode`.
 9. **Is a role pointed somewhere unexpected?** The doctor's `model_roles` row lists which
@@ -131,6 +135,20 @@ this order — the first ones are the most common and the cheapest to rule out:
     `/new` (the `sessions.reset_triggers` setting), or
     `nerva sessions continue SESSION_ID --request-id REQUEST_ID` to carry the retained
     context into a new session.
+11. **Did it forget something you told it?** Memory is a few selected facts, not a
+    transcript: two bounded rings — the agent's notes and your profile, 20 facts each —
+    shown to every turn. Both need `cognition.enabled` (the cognition master switch, off
+    by default) and `cognition.memory_enabled`. A fact gets in only when it is written:
+    by the model's `memory` tool (your own turns in the HUD or the voice loop, with
+    `llm.tool_loop_enabled` on; a full ring refuses the add rather than dropping the
+    oldest fact), or by the per-turn review (`cognition.review_enabled`, off by default).
+    The rings a turn sees are frozen for the session and the day, so a fact written now
+    reaches the prompt at the next session (`/new`) or the next day. `GET /api/memory/core`
+    lists both rings — check the fact is there. Older conversations are a separate,
+    searched store: `memory.recall_enabled` (off by default) adds the
+    `memory.recall_top_k` best hits to a turn, and only what was stored is found —
+    `MEMORY_EMBED_TURNS=true` stores every turn, `POST /api/memory/remember` one fact;
+    `GET /api/memory/search` (with `q`) shows what a recall would find.
 
 ## Local model servers
 
@@ -164,6 +182,7 @@ setting is right — trust `runtime_resolves` then. And a wrong `llm.*_url` show
 | no model list | `inventory_unavailable` / `residency_unknown` | an old Ollama, or a proxy in the way; update Ollama |
 | context silently truncated | the agent forgets the start of the conversation | `nerva config set llm.ollama_num_ctx 32768` (0 = the model's own `num_ctx`) |
 | slow first reply after idle | the model was evicted to make room | Nerva pins its model on warm-up; keep other Ollama clients from loading models next to it |
+| tool calls appear as text instead of running | with `llm.tool_loop_enabled` on, the reply holds JSON like `{"name": …, "arguments": …}` and nothing ran | the model has no native tool calling: `ollama show MODEL` lists `tools` under its capabilities when it does — pull one that does, or switch the loop off: `nerva config set llm.tool_loop_enabled false` |
 
 ### LM Studio
 
@@ -176,6 +195,7 @@ setting is right — trust `runtime_resolves` then. And a wrong `llm.*_url` show
 | no model loaded | `configured_not_resident` / `residency_unknown` | load the model named by `llm.default_model`; a model unloaded mid-turn is retried once so LM Studio can load it on demand |
 | context length too small | short memory, cut-off answers | reload the model with a larger context length; keep `llm.max_tokens` at 0 so answers use it |
 | two models fighting for VRAM | slow turns, out-of-memory | `JARVIS_ROLE_APPROVAL_JUDGE_MODEL=active` reuses the loaded model for the approval judge |
+| tool calls appear as text instead of running | with `llm.tool_loop_enabled` on, the reply holds JSON like `{"name": …, "arguments": …}` and nothing ran | the model has no native tool calling: update LM Studio and load a model it marks as tool-capable, or switch the loop off: `nerva config set llm.tool_loop_enabled false` |
 
 ## Scheduled jobs
 
@@ -212,6 +232,10 @@ job's configuration and its last attempts.
   first slot. `--first-run` on `nerva jobs create` fires a recurring job once now — never a
   one-shot job, which runs only at the time it was given. `nerva jobs run JOB_ID` fires an
   existing one.
+- **A one-shot job stopped counting as runnable after it fired** — expected, not a failure:
+  a one-shot runs once. It stays in `nerva jobs list` with its last run, leaves the header's
+  runnable count and the scheduler, and `nerva jobs doctor` no longer checks it; running it
+  again is skipped with "one-shot already ran". Create a new one for another time.
 - **Paused itself** — after 3 consecutive failures a job pauses: `nerva jobs incidents`
   lists them; fix the cause, then `nerva jobs resume JOB_ID`.
 
@@ -222,6 +246,12 @@ job's configuration and its last attempts.
   `nerva jobs edit JOB_ID --options '{"deliver":["ntfy"]}'` (`[]` disables delivery).
 - `last_delivery_failed` — the channel refused or the transport failed: test the channel
   with `nerva send --channel telegram "test"` and read `nerva logs -n 100`.
+- **Delivered but never seen** — the channel accepted the message and the target dropped
+  it: the Telegram bot must be allowed to post in the target group or channel (in a
+  channel, an admin with permission to post; in a group, not muted or restricted).
+  `nerva send --channel telegram "test"` posts to the configured Telegram destination
+  (`nerva send --list telegram` shows it) with no model call: if the test does not arrive
+  either, the bot cannot post there, or the destination is not the chat you read.
 - **Ran but nothing arrived at night** — during quiet hours (`ambient.quiet_hours_start` to
   `ambient.quiet_hours_end`) a job's message is held and delivered after; `nerva jobs list`
   says how many are held.
@@ -255,6 +285,12 @@ job's configuration and its last attempts.
 - **The skill the job needs is not used** — a job cannot pin skills (`skills` is listed under
   `unsupported_options`); it gets the skills its agent has with no human present:
   `nerva inspect jarvis --as internal --section skills`.
+- **The job cannot use a tool the chat can** — a job runs with no human present (the
+  `internal` posture): approval-bound tools — `file_write`, `file_delete`, `terminal_run`,
+  `video_analyze`, desktop control — are offered only when `llm.internal_actuation` is on;
+  the `memory` tool is never offered (only your own turns write memory). A job's toolsets
+  are picked from a fixed list — `basic`, `files`, `terminal`, `video` — with no
+  execute_code, delegation or plugin groups, and they only narrow what the posture allows.
 - **The skill is switched off** — `nerva skills list` shows where each is off;
   `nerva skills on SKILL_NAME` switches it back.
 - **The skill does not load at all** — a malformed `SKILL.md` is refused at discovery:

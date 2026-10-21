@@ -416,3 +416,95 @@ def test_first_run_claim_matches_the_policy():
     text = " ".join(_section("Scheduled jobs").split())
     assert "fires any new job" not in text
     assert "one-shot" in text and "--first-run" in text
+
+
+# ── the failure modes Hermes names are covered (review round 2) ─────
+def _subsection(parent: str, sub: str) -> str:
+    """One ``### `` subsection of a ``## `` section, flattened to single spaces."""
+    body = _section(parent).split(f"\n### {sub}\n", 1)[1]
+    return " ".join(body.split("\n### ", 1)[0].split())
+
+
+def _table_rows(text: str) -> list[list[str]]:
+    rows = [line for line in text.splitlines() if line.startswith("| ") and "---" not in line]
+    return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in rows]
+
+
+def test_local_servers_name_tool_calls_that_come_back_as_text():
+    """Both local backends declare tools and the loop offers them to any model once
+    ``llm.tool_loop_enabled`` is on; a model without native tool calling then writes the
+    call out as text."""
+    from agents.core.llm.base import LMStudioBackend, OllamaBackend
+
+    assert LMStudioBackend.supports_tools is True and OllamaBackend.supports_tools is True
+    runtime = (REPO / "agents" / "core" / "agent_runtime.py").read_text(encoding="utf-8")
+    assert 'getattr(backend, "supports_tools", False)' in runtime
+    for server, check in (("Ollama", "ollama show"), ("LM Studio", "tool")):
+        body = _section("Local model servers").split(f"\n### {server}\n", 1)[1].split("\n### ", 1)[0]
+        rows = [r for r in _table_rows(body) if "as text" in r[0]]
+        assert rows, f"{server}: no 'tool calls appear as text' failure mode"
+        _mode, seen, fix = rows[0]
+        assert "llm.tool_loop_enabled" in seen + fix, server
+        assert check in fix and "nerva config set llm.tool_loop_enabled false" in fix, server
+    step7 = re.search(r"^7\. .*?(?=^8\. )", _section('"My agent feels dumber"'), re.S | re.M).group(0)
+    assert "as text" in step7 and "#local-model-servers" in step7
+
+
+def test_checklist_has_a_memory_step_that_matches_the_code():
+    from agents.core.cognition.memory import CoreMemory
+    from agents.core.memory_tool import TARGETS, TOOL_NAME
+    from agents.core.settings_db import DEFAULTS
+    from agents.core.tool_profiles import OWNER_OPERATOR_TOOLS
+
+    steps = re.split(r"^\d+\. ", _section('"My agent feels dumber"'), flags=re.M)[1:]
+    memory = [" ".join(s.split()) for s in steps if "forget" in s.lower() and "memory" in s.lower()]
+    assert memory, "no checklist step about memory"
+    step = memory[0]
+    # what is stored: selected facts in two bounded rings, not a transcript
+    assert "not a transcript" in step
+    assert f"{CoreMemory().cap} facts" in step
+    assert set(TARGETS) == {"memory", "user"}
+    # who writes it: the model's memory tool on owner turns, or the off-by-default review
+    assert TOOL_NAME in OWNER_OPERATOR_TOOLS and "`memory` tool" in step
+    settings = {(r["category"], r["key"]): r["value"] for r in DEFAULTS}
+    for name in ("cognition.enabled", "cognition.memory_enabled", "cognition.review_enabled",
+                 "memory.recall_enabled"):
+        assert f"`{name}`" in step, name
+    assert settings[("cognition", "enabled")] is False
+    assert settings[("cognition", "review_enabled")] is False
+    assert settings[("memory", "recall_enabled")] is False
+    assert "off by default" in step
+    # when a turn sees it: the core block is frozen per session and day
+    orch = (REPO / "agents" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    assert 'cache_key = (session, time.strftime("%Y-%m-%d"))' in orch
+    assert "next session" in step
+    # how to check one was stored
+    for route in ("GET /api/memory/core", "GET /api/memory/search", "POST /api/memory/remember"):
+        assert f"`{route}`" in step, route
+    rows = _table_rows(_section("Symptom, cause, fix"))
+    assert any("last week" in r[0] and "#my-agent-feels-dumber" in r[2] for r in rows)
+
+
+def test_jobs_tree_covers_channel_permissions_spent_one_shots_and_unattended_tools():
+    from agents.core import job_toolsets
+    from agents.core.autonomy import jobs
+
+    delivery = _subsection("Scheduled jobs", "Delivery")
+    assert "allowed to post" in delivery and 'nerva send --channel telegram "test"' in delivery
+    # a one-shot runs once: it stops being runnable, and the jobs doctor skips it
+    class _Spent:
+        enabled, paused_reason, options, attempts = True, None, {}, 1
+        cron = jobs.ONE_SHOT_PREFIX + "2099-01-01T00:00:00+00:00"
+
+    assert jobs.Job.runnable.fget(_Spent()) is False
+    health = (REPO / "agents" / "core" / "autonomy" / "jobs_health.py").read_text(encoding="utf-8")
+    assert "if not job.runnable:\n            continue" in health
+    timing = _subsection("Scheduled jobs", "Timing")
+    assert "one-shot" in timing and "runnable" in timing and "expected" in timing
+    assert jobs.ONE_SHOT_SPENT in timing
+    # unattended turns: the internal posture, the fixed toolset catalog, no memory tool
+    skills = _subsection("Scheduled jobs", "Skill loading")
+    assert "`llm.internal_actuation`" in skills
+    for group in job_toolsets.CATALOG:
+        assert f"`{group}`" in skills, group
+    assert "`memory`" in skills and "execute_code" in skills
