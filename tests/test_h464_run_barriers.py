@@ -20,6 +20,7 @@ probe, the task queue and the webhook store. No process is spawned.
 
 from __future__ import annotations
 
+import itertools
 import os
 import types
 from datetime import UTC, datetime
@@ -365,10 +366,15 @@ def test_registration_refuses_init_the_hub_itself_and_a_dead_pid(ledger, clock):
 def test_the_number_of_registered_processes_is_bounded(ledger, clock):
     run = ledger.open_run(_goal())
     barriers = _barriers(ledger, clock)
-    for pid in range(1000, 1000 + MAX_PROCS_PER_RUN):
-        barriers.register_process(run.id, pid)
+    # Skip the pids registration refuses before it counts: an xdist worker (or its
+    # parent) can sit inside this range, and would read as pid_forbidden.
+    forbidden = {os.getpid(), os.getppid()}
+    pids = (pid for pid in itertools.count(1000) if pid not in forbidden)
+    for _ in range(MAX_PROCS_PER_RUN):
+        barriers.register_process(run.id, next(pids))
+    assert len(ledger.processes(run.id)) == MAX_PROCS_PER_RUN
     with pytest.raises(RunBarriersError) as exc:
-        barriers.register_process(run.id, 5000)
+        barriers.register_process(run.id, next(pids))
     assert exc.value.reason == "proc_limit"
 
 
