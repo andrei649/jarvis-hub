@@ -17,7 +17,7 @@ ollama>=0.6.3
 # Pin <0.137: 0.137.0 regressed app.include_router (mounted routers add 0 routes
 # -> app loses the core/routers/* domains). See requirements-beta.txt + the
 # fastapi 0.137 route-introspection change handled by tests/_route_introspect.py;
-# starlette pinned below the untested 1.x major. See
+# starlette pinned below the untested 2.x major. See
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
 fastapi>=0.143.3,<0.144
 starlette>=1.8.0,<2.0
