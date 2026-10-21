@@ -894,6 +894,30 @@ class, and is overridden per install by `<data home>/souls/IDENTITY.local.md` (o
 gitignored `agents/_identity/IDENTITY.local.md`). The repo-root `SOUL.md` mirrors it. Personas keep
 the character; the contract keeps the behaviour.
 
+### Switch personality per conversation (`/personality`, H592)
+
+A **personality preset** is a short style overlay, not a new identity. Built-ins live in
+`agents/core/cognition/personality_presets.py` (`concise`, `teacher`, `technical`,
+`creative`, `formal`, `skeptic`); owner-defined ones are `<data home>/personalities/<name>.md`
+(lowercase `[a-z0-9_-]`, ≤ 4,000 chars, may shadow a built-in, scanned like a SOUL —
+a blocked file is never applied, re-checked every turn). The owner command
+`/personality` lists them; `/personality <name>` switches *this conversation* mid-session;
+`/personality none` runs it on the plain SOUL even when a hub-wide default is set;
+`/personality default` (or `reset`) forgets the conversation's choice; `/personality global
+<name|none>` sets or clears the hub-wide default. Choices persist in
+`<data home>/personality_overlays.json`; nothing writes a SOUL file or a `soul_versioning` commit.
+
+**Prompt-stack order** (top to bottom, as the model reads it):
+
+1. System prompt: `IDENTITY.md` contract → the agent's SOUL (`Agent.system_prompt()`), unchanged
+   by a preset, so the cached system prefix survives a switch.
+2. Per-turn text (`Orchestrator._build_agent_turn_text`): SOUL-derived persona trait block →
+   **session personality overlay** (`[SESSION PERSONALITY: …]`) → agent context → core memory →
+   project convention files (`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, H594) → plugin data →
+   recall → runtime truth → chat outcomes → the user's message.
+
+So the overlay layers after the SOUL and before project convention files.
+
 ### Add a new agent (active)
 
 1. Create `agents/<agent_id>/SOUL.md` — start from `agents/_templates/SOUL.template.md` (Identity / Mission / Voice & Tone sections). Keep it generic; personal details go in `SOUL.local.md` (above). Fill in the `personality` front-matter block: without it the agent inherits the shared default traits and has no character of its own, and `tests/test_persona_roster.py` fails. Traits derive from the Voice & Tone prose — μ ≤ 0.3 or ≥ 0.7 becomes a behavioral directive in the per-turn persona block, mid-band traits stay silent, and every agent must sit ≥ 0.1 from every other in trait space.

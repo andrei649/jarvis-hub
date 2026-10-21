@@ -3818,6 +3818,16 @@ class Orchestrator:
             logger.debug("persona prompt block skipped for %s", agent_id, exc_info=True)
             return ""
 
+    def _personality_overlay_block(self) -> str:
+        """H592 — this conversation's ``/personality`` preset, or ``""``. Never fails a turn."""
+        try:
+            from .cognition.personality_presets import overlay_block
+
+            return overlay_block(self.session_id or "default")
+        except Exception:
+            logger.debug("personality overlay skipped", exc_info=True)
+            return ""
+
     def _begin_chat_outcomes(self):
         """Freeze authoritative observations only after accepting a real user turn."""
         from .approval_outcomes import bind_approval_turn, open_approval_turn
@@ -3906,6 +3916,9 @@ class Orchestrator:
         persona_block = self._persona_prompt_block(agent_id)
         if persona_block:
             parts.append(persona_block)
+        overlay = self._personality_overlay_block()   # H592: after the SOUL, before project files
+        if overlay:
+            parts.append(overlay)
 
         agent_context = await self.memory.get_agent_context(agent_id)
         if agent_context:
