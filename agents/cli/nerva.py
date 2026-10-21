@@ -17,7 +17,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -116,12 +116,40 @@ def _guarded_job_call(ctx: Context, call) -> dict | None:
 # ── parser ────────────────────────────────────────────────────────────────────
 
 
+def _profile_arg(value: str) -> str:
+    """A profile name ``agents.core.paths`` accepts, else a usage error (exit 2)."""
+    from agents.core.paths import PROFILE_ENV, profile_error
+
+    refused = profile_error({PROFILE_ENV: value})
+    if refused:
+        raise argparse.ArgumentTypeError(refused)
+    return value
+
+
+def _verb_index(raw: list[str]) -> int:
+    """Where the verb sits in *raw*: after any leading ``-p NAME`` / ``--profile[=]NAME``."""
+    i = 0
+    while i < len(raw):
+        word = raw[i]
+        if word in ("-p", "--profile"):
+            i += 2
+        elif word.startswith("--profile=") or (word.startswith("-p") and not word.startswith("--")):
+            i += 1
+        else:
+            break
+    return i
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nerva",
         description="One command for the whole product. Online verbs talk to the running hub "
         "over the same routes the HUD uses; offline verbs read the same data root.",
     )
+    # H574 — the H689 profile for this invocation, before the verb (`nerva -p work doctor`).
+    parser.add_argument("-p", "--profile", metavar="NAME", type=_profile_arg,
+                        help="use this profile's data root, as JARVIS_PROFILE=NAME would "
+                             "('default' is the main one); online verbs still reach NERVA_HUB_URL")
     verbs = parser.add_subparsers(dest="verb", required=True, metavar="verb")
 
     from .nous_auth import configure_parser as configure_nous_auth
@@ -413,8 +441,9 @@ def build_parser() -> argparse.ArgumentParser:
     edit_context.add_argument("--clear-context-from", action="store_true",
                               help="clear external context sources without replacing other options")
     _selection_flags(jobs_edit)
-    for verb in ("doctor", "tick"):
-        sub = jobs_verbs.add_parser(verb)
+    for verb, help_text in (("doctor", "scheduler health; exit 1 when it reports a problem"),
+                            ("tick", "run one scheduler pass now")):
+        sub = jobs_verbs.add_parser(verb, help=help_text)
         sub.add_argument("--json", action="store_true")
     incidents = jobs_verbs.add_parser("incidents", help="list or acknowledge durable job failures")
     incidents.add_argument("operation", nargs="?", choices=("list", "ack"), default="list")
@@ -4024,139 +4053,15 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK if queued else EXIT_FAILED
 
 
-def _fish_completion(parser: argparse.ArgumentParser) -> str:
-    """Complete command paths only; do not execute the CLI while completing."""
-    def quote(value: str) -> str:
-        # fish single quotes recognize only escaped backslashes and single quotes.
-        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+def completion_script(shell: str, parser: argparse.ArgumentParser | None = None, *,
+                      profiles_base: str | None = None) -> str:
+    """H004/H574 — command paths, help text and profile names; see ``agents.cli.completion``."""
+    from .completion import SHELLS
+    from .completion import completion_script as generate
 
-    lines = [
-        "# nerva fish completion — generated from the live parser tree",
-        "# Current session: nerva completion fish | source",
-        "function __nerva_complete_path",
-        "    set -l words (commandline -opc)",
-        "    set -e words[1]",
-        "    test (count $words) -eq (count $argv); or return 1",
-        "    for word in $argv",
-        '        test "$words[1]" = "$word"; or return 1',
-        "        set -e words[1]",
-        "    end",
-        "    return 0",
-        "end",
-        "complete -c nerva -f",
-    ]
-
-    def walk(node: argparse.ArgumentParser, path: tuple[str, ...]) -> None:
-        condition = "__nerva_complete_path" + "".join(" " + quote(part) for part in path)
-        for action in node._actions:
-            if not isinstance(action, argparse._SubParsersAction):
-                continue
-            for name, child in sorted(action.choices.items()):
-                # -a and -n are evaluated by fish later; quote metadata at both
-                # the definition and completion stages, never as shell code.
-                lines.append(f"complete -c nerva -n {quote(condition)} -a {quote(quote(name))}")
-                walk(child, (*path, name))
-
-    walk(parser, ())
-    return "\n".join(lines) + "\n"
-
-
-def _completion_paths(parser: argparse.ArgumentParser) -> dict[tuple[str, ...], tuple[str, ...]]:
-    """Each parser node's exact command path and its immediate child names."""
-    paths = {}
-
-    def walk(node: argparse.ArgumentParser, path: tuple[str, ...]) -> None:
-        children = {
-            name: child
-            for action in node._actions if isinstance(action, argparse._SubParsersAction)
-            for name, child in action.choices.items()
-        }
-        if children:
-            paths[path] = tuple(sorted(children))
-            for name, child in sorted(children.items()):
-                walk(child, (*path, name))
-
-    walk(parser, ())
-    return paths
-
-
-def _shell_candidates(names: tuple[str, ...]) -> str:
-    """An array of literal shell words, never code or a split completion string."""
-    return " ".join(shlex.quote(name) for name in names)
-
-
-def completion_script(shell: str, parser: argparse.ArgumentParser | None = None) -> str:
-    if shell not in {"bash", "zsh", "fish"}:
+    if shell not in SHELLS:
         raise ValueError(f"unsupported completion shell: {shell!r}")
-    if shell == "fish":
-        return _fish_completion(parser or build_parser())
-    paths = _completion_paths(parser or build_parser())
-    root = _shell_candidates(paths.get((), ()))
-    if shell == "bash":
-        lines = [
-            '# nerva bash completion — generated from the parser tree; eval "$(nerva completion bash)"',
-            "_nerva() {",
-            '    local cur="${COMP_WORDS[COMP_CWORD]}" candidate',
-            "    local -a candidates=()",
-            "    COMPREPLY=()",
-            "    if (( COMP_CWORD == 1 )); then",
-            f"        candidates=({root})",
-            "    elif (( COMP_CWORD == 2 )); then",
-            '        case "${COMP_WORDS[1]}" in',
-        ]
-        for path, names in sorted(paths.items()):
-            if len(path) == 1:
-                lines.append(f"            {shlex.quote(path[0])}) COMPREPLY=(); candidates=({_shell_candidates(names)}) ;;")
-        lines.append("        esac")
-        for path, names in sorted(paths.items()):
-            if len(path) < 2:
-                continue
-            checks = " && ".join(
-                f'[[ "${{COMP_WORDS[{i}]}}" == {shlex.quote(part)} ]]'
-                for i, part in enumerate(path, 1)
-            )
-            lines.extend([
-                f"    elif (( COMP_CWORD == {len(path) + 1} )) && {checks}; then",
-                f"        candidates=({_shell_candidates(names)})",
-            ])
-        lines.extend([
-            "    fi",
-            '    for candidate in "${candidates[@]}"; do',
-            '        [[ "$candidate" == "$cur"* ]] && COMPREPLY+=("$candidate")',
-            "    done",
-            "}",
-            "complete -F _nerva nerva",
-        ])
-        return "\n".join(lines) + "\n"
-    lines = [
-        "#compdef nerva",
-        "# nerva zsh completion — generated from the parser tree",
-        "_nerva() {",
-        "    local -a candidates=()",
-        "    if (( CURRENT == 2 )); then",
-        f"        candidates=({root})",
-    ]
-    for path, names in sorted(paths.items()):
-        if not path:
-            continue
-        checks = " && ".join(
-            f'[[ "${{words[{i}]}}" == {shlex.quote(part)} ]]'
-            for i, part in enumerate(path, 2)
-        )
-        lines.extend([
-            f"    elif (( CURRENT == {len(path) + 2} )) && {checks}; then",
-            f"        candidates=({_shell_candidates(names)})",
-        ])
-    lines.extend([
-        "    fi",
-        '    if (( ${#candidates[@]} )); then',
-        '        compadd -- "${candidates[@]}"',
-        '    fi',
-        "    return 0",
-        "}",
-        '_nerva "$@"',
-    ])
-    return "\n".join(lines) + "\n"
+    return generate(shell, parser or build_parser(), profiles_base=profiles_base)
 
 
 def cmd_completion(ns: argparse.Namespace, ctx: Context) -> int:
@@ -4345,11 +4250,18 @@ def main(argv: list[str] | None = None, *, context: Context | None = None) -> in
         ns = parser.parse_args(raw)
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE
+    profile = getattr(ns, "profile", None)
+    if profile is not None and context is None:
+        # Offline verbs resolve the data root from this process's environment.
+        os.environ.update({"JARVIS_PROFILE": profile})
     ctx = context or Context(environ=os.environ)
+    if profile is not None and context is not None:
+        ctx = replace(ctx, environ={**ctx.environ, "JARVIS_PROFILE": profile}, _client=None)
+    verb_at = _verb_index(raw) + 1
     if ns.verb == "kanban":
-        ns._kanban_argv = raw[1:]
+        ns._kanban_argv = raw[verb_at:]
     elif ns.verb == "project":
-        ns._project_argv = raw[1:]
+        ns._project_argv = raw[verb_at:]
     try:
         return _VERBS[ns.verb](ns, ctx)
     except HubUnavailable as exc:

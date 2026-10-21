@@ -33,6 +33,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from agents.core.memory.cjk_fts import normalize, split_script_boundaries
 from agents.core.memory.persistence import memory_dir
 from agents.core.security.quarantine import detect_injection
 from agents.core.security.rag_guard import REDACTION
@@ -83,7 +84,14 @@ def _terms(query: object) -> list[str]:
         raise ToolRPCValidationError("bad_query")
     if "\x00" in query:
         raise ToolRPCValidationError("bad_query")
-    terms = list(dict.fromkeys(part for part in query.lower().split() if part))
+    # H574: CJK is written without spaces between scripts, so a keyword is also split
+    # where CJK meets non-CJK (``明天dentist`` → ``明天``, ``dentist``); both sides are
+    # NFKC- and case-folded, as in the memory store's CJK index.
+    terms = list(dict.fromkeys(
+        piece
+        for part in normalize(query).split() if part
+        for piece in split_script_boundaries(part) if piece.strip()
+    ))
     if not terms or len(terms) > MAX_TERMS:
         raise ToolRPCValidationError("bad_query")
     return terms
@@ -166,7 +174,7 @@ def _match_turn(turn: object, terms: list[str], role: str | None) -> tuple[int, 
     if role is not None and str(turn.get("role") or "") != role:
         return None
     hay = content[:MAX_TURN_CHARS]
-    low = hay.lower()
+    low = normalize(hay)
     score = 0
     first = len(low)
     for term in terms:
@@ -175,6 +183,9 @@ def _match_turn(turn: object, terms: list[str], role: str | None) -> tuple[int, 
             return None
         first = min(first, index)
         score += min(MAX_TERM_SCORE, low.count(term))
+    if len(low) != len(hay):
+        # NFKC can change the length; the snippet only needs to land near the hit.
+        first = first * len(hay) // max(1, len(low))
     return score, first, hay
 
 

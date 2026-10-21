@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+from agents.cli.completion import completion_nodes, help_line
 from agents.cli.nerva import Context, build_parser, completion_script, main
 
 
@@ -30,17 +31,23 @@ def fish():
     return binary
 
 
-def query(fish, tmp_path, parser, line):
+def raw_query(fish, tmp_path, parser, line, profiles_base=None, **env):
+    """``complete -C`` output lines (``name<TAB>help``) for *line*."""
     script = tmp_path / 'nerva.fish'
-    script.write_text(completion_script('fish', parser))
+    script.write_text(completion_script('fish', parser, profiles_base=profiles_base))
     syntax = subprocess.run([fish, '--no-config', '--no-execute', str(script)], capture_output=True, text=True, timeout=5)
     assert syntax.returncode == 0, syntax.stderr
+    base = {k: v for k, v in os.environ.items() if k not in ('JARVIS_HOME', 'JARVIS_MEMORY_DIR', 'JARVIS_PROFILE')}
     result = subprocess.run([fish, '--no-config', '-c',
                             'source "$argv[1]"; source "$argv[1]"; complete -C "$argv[2]"',
                             str(script), line], capture_output=True, text=True, timeout=5,
-                            env={**os.environ, 'HOME': str(tmp_path), 'XDG_CONFIG_HOME': str(tmp_path)})
+                            env={**base, 'HOME': str(tmp_path), 'XDG_CONFIG_HOME': str(tmp_path), **env})
     assert result.returncode == 0, result.stderr
-    return {word.split('\t', 1)[0] for word in result.stdout.splitlines()}
+    return result.stdout.splitlines()
+
+
+def query(fish, tmp_path, parser, line, profiles_base=None, **env):
+    return {word.split('\t', 1)[0] for word in raw_query(fish, tmp_path, parser, line, profiles_base, **env)}
 
 
 def nodes(parser, path=()):
@@ -74,3 +81,59 @@ def test_fish_command_names_cannot_execute_substitutions(fish, tmp_path):
     parser.add_subparsers().add_parser(f"literal'(touch {marker})")
     query(fish, tmp_path, parser, 'nerva ')
     assert not marker.exists()
+
+
+# ── H574: help text and profile names ────────────────────────────────────────
+
+def test_fish_shows_each_commands_help_text(fish, tmp_path):
+    parser = build_parser()
+    lines = raw_query(fish, tmp_path, parser, 'nerva jobs ')
+    helps = dict(completion_nodes(parser)[('jobs',)])
+    assert {line.split('\t', 1)[0]: line.split('\t', 1)[1] for line in lines} == helps
+    root = dict(line.split('\t', 1) for line in raw_query(fish, tmp_path, parser, 'nerva --pro'))
+    assert 'JARVIS_PROFILE' in root['--profile']
+
+
+def test_fish_help_text_cannot_execute_substitutions(fish, tmp_path):
+    marker = tmp_path / 'injected'
+    hostile = f"it's (touch {marker}) $(touch {marker}) \\"
+    parser = argparse.ArgumentParser()
+    parser.add_subparsers().add_parser('alpha', help=hostile)
+    lines = raw_query(fish, tmp_path, parser, 'nerva al')
+    assert lines == [f'alpha\t{help_line(hostile)}']
+    assert not marker.exists()
+
+
+def _profiles(tmp_path):
+    home = tmp_path / 'home'
+    home.mkdir()
+    root = tmp_path / 'home-profiles'
+    for name in ('work', 'lab-2', 'Bad!', 'default'):
+        (root / name).mkdir(parents=True)
+    (root / 'a-file').write_text('not a profile')
+    (root / 'link').symlink_to(root / 'work')
+    return home
+
+
+def test_fish_completes_profile_names_then_the_command_path(fish, tmp_path):
+    home = _profiles(tmp_path)
+    parser = build_parser()
+    env = {'JARVIS_HOME': str(home)}
+    assert query(fish, tmp_path, parser, 'nerva -p ', **env) == {'default', 'lab-2', 'work'}
+    assert query(fish, tmp_path, parser, 'nerva --profile wo', **env) == {'work'}
+    (tmp_path / 'home-profiles' / 'later').mkdir()
+    assert 'later' in query(fish, tmp_path, parser, 'nerva -p ', **env)
+    root = {name for name, _ in completion_nodes(parser)[()]}
+    assert query(fish, tmp_path, parser, 'nerva -p work ', **env) == root
+    assert query(fish, tmp_path, parser, 'nerva --profile work jobs doc', **env) == {'doctor'}
+    assert query(fish, tmp_path, parser, 'nerva --profile=work jobs doc', **env) == {'doctor'}
+    assert query(fish, tmp_path, parser, 'nerva -p work jobs doctor ', **env) == set()
+
+
+def test_fish_profile_root_falls_back_to_the_generated_install_root(fish, tmp_path):
+    home = _profiles(tmp_path)
+    parser = build_parser()
+    assert query(fish, tmp_path, parser, 'nerva -p ', profiles_base=str(home)) == {'default', 'lab-2', 'work'}
+    (tmp_path / 'other-profiles' / 'solo').mkdir(parents=True)
+    assert query(fish, tmp_path, parser, 'nerva -p ', profiles_base=str(home),
+                 JARVIS_MEMORY_DIR=str(tmp_path / 'other')) == {'default', 'solo'}

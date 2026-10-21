@@ -33,8 +33,11 @@ def __getattr__(name: str):
 def register_parser(subparsers) -> None:
     parent = subparsers.add_parser("secrets", help="manage external password-manager sources")
     providers = parent.add_subparsers(dest="provider", required=True)
-    for provider, aliases in (("bitwarden", ("bw",)), ("onepassword", ("op", "1password"))):
-        p = providers.add_parser(provider, aliases=list(aliases))
+    for provider, aliases, help_text in (
+        ("bitwarden", ("bw",), "Bitwarden Secrets Manager as a secret source"),
+        ("onepassword", ("op", "1password"), "1Password service account as a secret source"),
+    ):
+        p = providers.add_parser(provider, aliases=list(aliases), help=help_text)
         verbs = p.add_subparsers(dest="action", required=True)
         setup = verbs.add_parser("setup", help="configure and enable this source")
         setup.add_argument("--binary-path", default="", help="existing helper executable")

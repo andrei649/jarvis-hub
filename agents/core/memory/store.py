@@ -5,6 +5,8 @@ Contains:
   - VectorStore / InMemoryVectorStore: vector similarity search (legacy / embeddings)
   - MemoryStore: structured, persistent key/value memory for user facts and preferences.
     Backed by SQLite with WAL mode. Semantic search is stubbed (H8.3 wires Qdrant).
+    H574: text search over CJK queries runs on a CJK-aware FTS5 index (``memory_fts``,
+    unicode61 over CJK unigrams + bigrams from ``cjk_fts``), not a LIKE scan.
 """
 import asyncio
 import json
@@ -15,6 +17,8 @@ import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional
+
+from agents.core.memory import cjk_fts
 
 logger = logging.getLogger("jarvis.memory.store")
 
@@ -314,6 +318,65 @@ class MemoryStore:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category)"
                 )
+                self._fts = self._init_fts(conn)
+
+    # ── H574: the CJK-aware FTS5 index ──────────────────────────────────────
+
+    @staticmethod
+    def _segment(key: str, value: str) -> str:
+        return cjk_fts.index_text(f"{key}\n{value}")
+
+    def _init_fts(self, conn: sqlite3.Connection) -> bool:
+        """Create ``memory_fts`` and bring it in step with ``memory`` (the reindex migration).
+
+        A segmenter-version change rebuilds it; otherwise rows written before the index
+        existed (or by another writer) are backfilled and rows deleted behind the store are
+        dropped. False when this SQLite has no FTS5: search then stays on LIKE.
+        """
+        try:
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5("
+                f"seg, tokenize='{cjk_fts.TOKENIZE}')"
+            )
+        except sqlite3.OperationalError as exc:
+            logger.warning("FTS5 unavailable, memory search stays on LIKE: %s", exc)
+            return False
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS memory_fts_meta (name TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        row = conn.execute("SELECT value FROM memory_fts_meta WHERE name='segmenter'").fetchone()
+        if row is None or row[0] != cjk_fts.SEGMENTER_VERSION:
+            conn.execute("DELETE FROM memory_fts")
+            conn.execute(
+                "INSERT OR REPLACE INTO memory_fts_meta (name, value) VALUES ('segmenter', ?)",
+                (cjk_fts.SEGMENTER_VERSION,),
+            )
+        else:
+            conn.execute("DELETE FROM memory_fts WHERE rowid NOT IN (SELECT id FROM memory)")
+        missing = conn.execute(
+            "SELECT id, key, value FROM memory WHERE id NOT IN (SELECT rowid FROM memory_fts)"
+        ).fetchall()
+        conn.executemany(
+            "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
+            [(r[0], self._segment(r[1], r[2])) for r in missing],
+        )
+        if missing:
+            logger.info("memory_fts: indexed %d row(s)", len(missing))
+        return True
+
+    def _index_row(self, conn: sqlite3.Connection, category: str, key: str) -> None:
+        if not self._fts:
+            return
+        row = conn.execute(
+            "SELECT id, key, value FROM memory WHERE category=? AND key=?", (category, key)
+        ).fetchone()
+        if row is None:
+            return
+        conn.execute("DELETE FROM memory_fts WHERE rowid=?", (row["id"],))
+        conn.execute(
+            "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
+            (row["id"], self._segment(row["key"], row["value"])),
+        )
 
     async def upsert(self, category: str, key: str, value: str, metadata: dict = None):
         meta_json = json.dumps(metadata or {})
@@ -331,6 +394,7 @@ class MemoryStore:
                         metadata=excluded.metadata,
                         updated_at=datetime('now')
                 """, (category, key, value, meta_json))
+                self._index_row(conn, category, key)
 
     async def get(self, category: str, key: str) -> Optional[dict]:
         loop = asyncio.get_event_loop()
@@ -380,6 +444,12 @@ class MemoryStore:
     def _delete_sync(self, category: str, key: str) -> bool:
         with self._lock:
             with self._conn() as conn:
+                if self._fts:
+                    conn.execute(
+                        "DELETE FROM memory_fts WHERE rowid IN "
+                        "(SELECT id FROM memory WHERE category=? AND key=?)",
+                        (category, key),
+                    )
                 cur = conn.execute(
                     "DELETE FROM memory WHERE category=? AND key=?", (category, key)
                 )
@@ -391,6 +461,9 @@ class MemoryStore:
         return await loop.run_in_executor(None, self._search_sync, query, limit)
 
     def _search_sync(self, query: str, limit: int) -> list[dict]:
+        match = cjk_fts.match_expression(query) if self._fts else None
+        if match is not None:
+            return self._search_fts(query, match, limit)
         with self._lock:
             with self._conn() as conn:
                 pattern = f"%{query}%"
@@ -400,3 +473,26 @@ class MemoryStore:
                     (pattern, pattern, limit),
                 ).fetchall()
                 return [dict(r) for r in rows]
+
+    def _search_fts(self, query: str, match: str, limit: int) -> list[dict]:
+        """A CJK query through ``memory_fts``: the index narrows, the substring decides.
+
+        The n-gram ``MATCH`` is a superset of the substring hits, so each candidate is
+        re-checked for the whole query in its key or value — the same rows LIKE finds,
+        compared NFKC- and case-folded (so half-width and full-width forms meet).
+        """
+        needle = cjk_fts.normalize(query)
+        out: list[dict] = []
+        with self._lock:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    "SELECT m.* FROM memory_fts f JOIN memory m ON m.id = f.rowid"
+                    " WHERE memory_fts MATCH ? ORDER BY m.updated_at DESC, m.id DESC",
+                    (match,),
+                )
+                for row in rows:
+                    if needle in cjk_fts.normalize(row["key"]) or needle in cjk_fts.normalize(row["value"]):
+                        out.append(dict(row))
+                        if len(out) >= limit:
+                            break
+        return out
