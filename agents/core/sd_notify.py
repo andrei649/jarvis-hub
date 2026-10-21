@@ -42,7 +42,7 @@ from contextlib import contextmanager
 
 import uvicorn
 
-from .env_config import env_str
+from .env_config import env_flag, env_str
 
 logger = logging.getLogger("jarvis.sd_notify")
 
@@ -283,7 +283,9 @@ def continue_restart_keepalive(*, interval: float | None = None,
     """In the image a self-restart exec'd (``RESTART_ENV`` set, then removed here): feed
     the watchdog and extend the timeout from serve.py's first lines until READY=1
     (:meth:`Notifier.ready` ends it), bounded by ``RESTART_KEEPALIVE_MAX_SECONDS``."""
-    if os.environ.pop(RESTART_ENV, None) != "1":
+    restarted = env_flag(RESTART_ENV)
+    os.environ.pop(RESTART_ENV, None)    # one boot only: the next exec starts clean
+    if not restarted:
         return False
     return _start_restart_pinger(
         "restarting: booting the new image", interval=interval,
