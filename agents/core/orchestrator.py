@@ -3938,7 +3938,8 @@ class Orchestrator:
         merged = dict(context or {})
         if "skills" in merged or not self.get_setting("llm.skills_in_prompt", True):
             return merged
-        catalog = getattr(getattr(self, "skills", None), "prompt_catalog", None)
+        loader = getattr(self, "skills", None)
+        catalog = getattr(loader, "prompt_catalog", None)
         if not callable(catalog):
             return merged
         from .skills import visibility as skill_visibility
@@ -3952,8 +3953,17 @@ class Orchestrator:
         except Exception:
             offer = None                                   # unknown: the tool gates stand aside
         token = skill_visibility.bind_offer(offer)
+        index = ""
         try:
             rows = catalog(agent_id)
+            # H326: the category-grouped name-and-description index, cached by the loader.
+            build_index = getattr(loader, "prompt_index", None)
+            if callable(build_index):
+                try:
+                    index = build_index(agent_id)
+                except Exception:
+                    logger.warning("skills index for the prompt failed; the flat rows stand", exc_info=True)
+                    index = ""
         except Exception:
             logger.warning("skills catalog for the prompt failed closed", exc_info=True)
             return merged
@@ -3961,6 +3971,18 @@ class Orchestrator:
             skill_visibility.reset_offer(token)
         if rows:
             merged["skills"] = rows
+        if isinstance(index, str) and index:
+            merged["skills_index"] = index
+        # H326: the skills this session's agent loaded in earlier turns, carried once.
+        try:
+            from .skills.tools import LEDGER
+
+            carried = LEDGER.carry_block(str(self.session_id or ""), str(agent_id or ""), loader)
+        except Exception:
+            logger.warning("loaded-skills carry failed; none carried", exc_info=True)
+            carried = ""
+        if carried:
+            merged["skills_loaded"] = carried
         return merged
 
     def _agent_default_model(self, agent_id: str, agent) -> str:

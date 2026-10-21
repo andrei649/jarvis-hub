@@ -13,6 +13,8 @@ import logging
 import re
 import stat
 import tempfile
+import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -90,6 +92,45 @@ def _catalog_text(value: object, chars: int) -> str:
     from ..security import quarantine
 
     return " ".join(quarantine.strip_invisible(str(value)).split())[:chars]
+
+# H326 — the model-facing skills index (Hermes ``build_skills_system_prompt``): one row a
+# skill, name and description, grouped by category, rendered once per distinct input and
+# kept in a small in-process LRU plus a disk snapshot validated by the skills' manifest hash.
+INDEX_FORMAT = "nerva-skills-index/1"
+INDEX_LRU_SIZE = 16
+INDEX_SNAPSHOT_NAME = "skills_prompt_index.json"
+#: A snapshot file larger than this is not read at all (it holds at most INDEX_LRU_SIZE blocks).
+INDEX_SNAPSHOT_MAX_BYTES = 512 * 1024
+INDEX_HEADER = "Available skills:"
+INDEX_DEFAULT_CATEGORY = "general"
+INDEX_MAX_COMMANDS = 8
+_INDEX_LRU: "OrderedDict[str, str]" = OrderedDict()
+_INDEX_LOCK = threading.Lock()
+
+
+def _index_snapshot_path() -> Path:
+    """Where the index snapshot lives: the profile's runtime-data root, never the repo."""
+    from agents.core.paths import data_path
+
+    return data_path(INDEX_SNAPSHOT_NAME)
+
+
+def clear_index_cache() -> None:
+    """Forget every in-process index block (the disk snapshot stays, still validated)."""
+    with _INDEX_LOCK:
+        _INDEX_LRU.clear()
+
+
+def _skill_category(skill: "Skill") -> str:
+    """The category a skill declares (``metadata.hermes.category``, or a top-level
+    ``category``), lower-cased and one-lined; ``general`` when it declares none."""
+    meta = getattr(skill, "hermes_meta", None) or {}
+    raw = meta.get("category") if isinstance(meta, dict) else ""
+    if not raw:
+        manifest = getattr(skill, "manifest", None) or {}
+        raw = manifest.get("category") if isinstance(manifest, dict) else ""
+    return _catalog_text(raw if isinstance(raw, str) else "", 40).lower() or INDEX_DEFAULT_CATEGORY
+
 
 # Product-owned identity of the exact skill sources shipped with this build.
 # Unknown names, extra files, or changed bytes are external even when placed
@@ -1555,3 +1596,205 @@ def register(skill):
                 ", ".join(sorted(dropped_untrusted)),
             )
         return rows
+
+    # ── H326: the category-grouped index, cached ────────────────────────────────
+
+    def index_manifest(self) -> str:
+        """A hash of everything about the loaded skills that the index reads: each skill's
+        name, path, the SKILL.md bytes its trust checks ran on, its parsed manifest and its
+        trust state. Any change to one of them is a different hash, so a cached block never
+        outlives the skills it describes (Hermes validates its snapshot by a file manifest)."""
+        rows = []
+        for name in sorted(self.skills):
+            skill = self.skills[name]
+            files = getattr(skill, "view_files", None) or {}
+            source = files.get("SKILL.md")
+            digest = (hashlib.sha256(source).hexdigest() if isinstance(source, bytes)
+                      else str(getattr(skill, "source_fingerprint", "") or ""))
+            rows.append([
+                name, str(getattr(skill, "path", "")), digest,
+                json.dumps(getattr(skill, "manifest", {}), sort_keys=True, default=str),
+                bool(getattr(skill, "trusted", False)), str(getattr(skill, "signature_reason", "") or ""),
+                bool(getattr(skill, "sandboxed", False)),
+            ])
+        return hashlib.sha256(json.dumps([INDEX_FORMAT, rows], sort_keys=True).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _index_key(manifest: str, agent_id: Optional[str], switched: dict, seen: dict,
+                   limit: int, chars: int) -> str:
+        offered = seen.get("offered_tools")
+        context = {
+            "channel": str(seen.get("channel") or ""),
+            "environments": sorted(str(e) for e in (seen.get("environments") or ())),
+            "offered_tools": None if offered is None else sorted(str(t) for t in offered),
+            "host": sorted(str(h) for h in (seen.get("host") or ())),
+        }
+        payload = [INDEX_FORMAT, manifest, agent_id or "", switched, context, limit, chars]
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+    def prompt_index(
+        self,
+        agent_id: Optional[str] = None,
+        *,
+        limit: int = 40,
+        description_chars: int = 120,
+    ) -> str:
+        """The model-facing skills index: one row a skill (name and description, then its
+        commands), grouped under its category — what Hermes' ``build_skills_system_prompt``
+        renders, where ``prompt_catalog`` gives flat command rows.
+
+        It shows what ``prompt_catalog`` and ``skills_list`` would: the same
+        :meth:`catalog_gate` (switched off, sandboxed, a signature that fails here, another
+        agent's skill, another OS, a soft H328 gate), and a row whose text — category,
+        name, description and commands, as rendered — is injection-flagged is dropped, as
+        the catalog drops it. A skill with no command is listed too: its instructions are
+        what ``skill_view`` reads.
+
+        Cached (H326): a block is kept in an in-process LRU of :data:`INDEX_LRU_SIZE` and
+        in a disk snapshot, both keyed by :meth:`index_manifest` and everything else the
+        gates read (the agent, the switches, the turn's channel, environments, offered
+        tools and host, the bounds). A snapshot is used only when its manifest hash is
+        this loader's, and its text is scanned again before it reaches a prompt. A cache
+        hit skips the per-skill hide notes; the first build of each key logs them."""
+        from . import switches as skill_switches
+        from . import visibility as skill_visibility
+
+        cap = max(0, int(limit))
+        chars = max(0, int(description_chars))
+        try:
+            switched = skill_switches.state()
+        except Exception:
+            logger.warning("skill switches unreadable; nonessential skills hidden", exc_info=True)
+            switched = {"__unavailable__": True}
+        seen = skill_visibility.context()
+        manifest = self.index_manifest()
+        key = self._index_key(manifest, agent_id, switched, seen, cap, chars)
+        with _INDEX_LOCK:
+            cached = _INDEX_LRU.get(key)
+            if cached is not None:
+                _INDEX_LRU.move_to_end(key)
+                return cached
+        text = self._read_index_snapshot(manifest, key)
+        if text is None:
+            text = self._build_prompt_index(agent_id, switched=switched, seen=seen, limit=cap, chars=chars)
+            self._write_index_snapshot(manifest, key, text)
+        with _INDEX_LOCK:
+            _INDEX_LRU[key] = text
+            _INDEX_LRU.move_to_end(key)
+            while len(_INDEX_LRU) > INDEX_LRU_SIZE:
+                _INDEX_LRU.popitem(last=False)
+        return text
+
+    def _build_prompt_index(self, agent_id: Optional[str], *, switched: dict, seen: dict,
+                            limit: int, chars: int) -> str:
+        from ..security import quarantine
+        from . import visibility as skill_visibility
+
+        grouped: dict[str, list[str]] = {}
+        shown = 0
+        for name in sorted(self.skills):
+            if shown >= limit:
+                break
+            skill = self.skills[name]
+            gate = self.catalog_gate(skill, agent_id, switches=switched, visibility=seen)
+            if gate in skill_visibility.SOFT_GATES or gate in skill_visibility.HARD_GATES:
+                skill_visibility.note_hidden(skill, gate)
+            if gate:
+                continue
+            label = _catalog_text(skill.name, 64)
+            description = _catalog_text(skill.description, chars)
+            category = _skill_category(skill)
+            commands = []
+            for meta in skill.commands_meta:
+                command = meta.get("command") if isinstance(meta, dict) else None
+                if not isinstance(command, str) or not re.fullmatch(r"\w+", command):
+                    continue
+                args = meta.get("args") if isinstance(meta.get("args"), str) else ""
+                args = _catalog_text(args, chars)
+                commands.append(f"{command[:chars]} <{args}>" if args else command[:chars])
+                if len(commands) >= INDEX_MAX_COMMANDS:
+                    break
+            row = f"{label}: {description}" if description else label
+            if commands:
+                row += f" (commands: {', '.join(commands)})"
+            flags = quarantine.detect_injection_normalized(f"{category}: {row}")
+            if not label or flags:
+                logger.warning("Skill '%s' is NOT in the model's skills index — its row is "
+                               "injection-flagged: %s", skill.name, quarantine.injection_flag_names(flags))
+                continue
+            grouped.setdefault(category, []).append(row)
+            shown += 1
+        if not grouped:
+            return ""
+        lines = [INDEX_HEADER]
+        for category in sorted(grouped):
+            lines.append(f"  {category}:")
+            lines.extend(f"    - {row}" for row in grouped[category])
+        return "\n".join(lines)
+
+    @staticmethod
+    def _index_text_clean(text: object) -> bool:
+        """A snapshot block is used only if it still reads as an index this build would
+        write: the header, category and row lines only, and nothing injection-flagged."""
+        from ..security import quarantine
+
+        if not isinstance(text, str):
+            return False
+        if text == "":
+            return True
+        lines = text.split("\n")
+        if lines[0] != INDEX_HEADER:
+            return False
+        for line in lines[1:]:
+            if not (re.fullmatch(r"  \S[^\n]*:", line) or line.startswith("    - ")):
+                return False
+            if quarantine.detect_injection_normalized(line):
+                return False
+        return True
+
+    def _read_index_snapshot(self, manifest: str, key: str) -> Optional[str]:
+        try:
+            path = _index_snapshot_path()
+            if not path.is_file() or path.stat().st_size > INDEX_SNAPSHOT_MAX_BYTES:
+                return None
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if (not isinstance(data, dict) or data.get("format") != INDEX_FORMAT
+                or data.get("manifest") != manifest or not isinstance(data.get("entries"), dict)):
+            return None
+        text = data["entries"].get(key)
+        if text is None or not self._index_text_clean(text):
+            return None
+        return text
+
+    def _write_index_snapshot(self, manifest: str, key: str, text: str) -> None:
+        """Keep ``text`` in the snapshot; a write that fails costs a rebuild, never a turn."""
+        try:
+            path = _index_snapshot_path()
+            entries: dict = {}
+            try:
+                if path.is_file() and path.stat().st_size <= INDEX_SNAPSHOT_MAX_BYTES:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    if (isinstance(data, dict) and data.get("format") == INDEX_FORMAT
+                            and data.get("manifest") == manifest and isinstance(data.get("entries"), dict)):
+                        entries = {k: v for k, v in data["entries"].items()
+                                   if isinstance(k, str) and isinstance(v, str)}
+            except Exception:
+                entries = {}
+            entries.pop(key, None)
+            entries[key] = text
+            while len(entries) > INDEX_LRU_SIZE:
+                entries.pop(next(iter(entries)))
+            payload = json.dumps({"format": INDEX_FORMAT, "manifest": manifest, "entries": entries},
+                                 ensure_ascii=False)
+            if len(payload.encode("utf-8")) > INDEX_SNAPSHOT_MAX_BYTES:
+                return
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False,
+                                             prefix=".skills_index.", suffix=".tmp") as handle:
+                handle.write(payload)
+                temp = Path(handle.name)
+            temp.replace(path)
+        except Exception:
+            logger.warning("skills index snapshot could not be written", exc_info=True)

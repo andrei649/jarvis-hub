@@ -857,10 +857,18 @@ class Agent:
             agent_block = f"Agent memory: {agent_context}\n"
 
         skills = context.get("skills", [])
+        index = context.get("skills_index")
         skills_block = ""
-        if skills:
+        if isinstance(index, str) and index.strip():
+            # H326: the category-grouped name-and-description index (SkillLoader.prompt_index).
+            skills_block = f"{index.strip()}\n\n"
+        elif skills:
             skill_descs = "\n".join(f"  - {s['command']}: {s['description']}" for s in skills)
             skills_block = f"Available skills:\n{skill_descs}\n\n"
+        loaded = context.get("skills_loaded")
+        if isinstance(loaded, str) and loaded.strip():
+            # H326: skills this session loaded in earlier turns (skills.tools.LoadedSkillLedger).
+            skills_block += f"{loaded.strip()}\n\n"
 
         rag_block = ""
         from . import safe_mode

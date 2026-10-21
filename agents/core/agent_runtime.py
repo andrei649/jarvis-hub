@@ -671,6 +671,12 @@ class AgentToolRuntime:
                 system, model=model, agent_id=agent_id, metadata=metadata, backend=backend)},
             {"role": "user", "content": prompt},
         ]
+        # H326 — what this loop put before the model, so a skill already loaded (earlier in
+        # this loop, or carried in the prompt from an earlier turn) answers with a pointer.
+        # The loop runs in its own copy of the turn's context (_run_turn), so this binding
+        # ends with it.
+        from .skills.tools import bind_transcript
+        bind_transcript(messages[0]["content"], prompt)
         limit = self._iteration_limit()
         budget = IterationBudget(limit)
         compacted: set[int] = set()
@@ -1143,6 +1149,8 @@ class AgentToolRuntime:
                 _active_clock.set(replace(binding, snapshot=committed))
             original_messages[:] = messages
             original_compacted.update(compacted)
+            from .skills.tools import note_compacted
+            note_compacted()            # H326: a folded skill load is no longer provably there
             if output_risks is not None:
                 retained = {
                     id(message): replacement_risks.get(id(message), output_risks.get(id(message)))

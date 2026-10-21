@@ -154,8 +154,16 @@ def environment_hint_component() -> Component:
     return Component.of("environment-hint", hint_block(), detail=ENV_NAME)
 
 
-def skills_index_component(skills: Iterable[Mapping[str, Any]]) -> Component:
-    """The `Available skills:` block, rendered exactly as `build_prompt` renders it."""
+def skills_index_component(skills: Iterable[Mapping[str, Any]] | str) -> Component:
+    """The `Available skills:` block, rendered exactly as `build_prompt` renders it: the
+    category-grouped index (``SkillLoader.prompt_index``, H326) when given as text, the flat
+    command rows otherwise."""
+    if isinstance(skills, str):
+        text = skills.strip()
+        if not text:
+            return Component(name="skills-index", chars=0, tokens=0, detail="no skills registered")
+        count = sum(1 for line in text.split("\n") if line.startswith("    - "))
+        return Component.of("skills-index", f"{text}\n\n", detail=f"{count} skill(s)")
     rows = list(skills or [])
     if not rows:
         return Component(name="skills-index", chars=0, tokens=0, detail="no skills registered")
