@@ -104,7 +104,13 @@ from agents.core.local_docs import DOC_EXTS, extract_pdf_pages, extract_text, pd
 from agents.core.paths import data_path
 from agents.core.tool_result_store import SPILL_DIRNAME as _SPILL_DIRNAME
 from agents.core.tool_result_store import is_reference as _is_spill_reference
-from agents.core.tool_rpc import ToolRPCValidationError, current_tool_turn
+from agents.core.tool_rpc import (
+    MAX_IMAGE_BYTES,
+    ToolContent,
+    ToolRPCValidationError,
+    current_tool_turn,
+    image_signature_ok,
+)
 
 logger = logging.getLogger("jarvis.file_tools")
 
@@ -129,6 +135,15 @@ MAX_LIST_ENTRIES = 2000
 # characters. ``raw=true`` still returns the bytes.
 DOCUMENT_SUFFIXES = frozenset(DOC_EXTS)
 _DOCUMENT_PARSERS = {".pdf": "pypdf", ".docx": "docx"}
+# H297 — an image inside the roots is read as the image itself: a ToolContent result
+# (a one-line summary plus the image part), which a model whose tool results carry
+# images sees as a picture and any other model reads as its descriptor. Bytes that do
+# not carry their suffix's signature are not an image and page like any other file;
+# ``raw=true`` (or an offset) always returns bytes.
+IMAGE_SUFFIXES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp",
+}
 DEFAULT_LIST_ENTRIES = 500
 # file_search bounds. Each is a ceiling the result reports hitting (``truncated``
 # plus ``stopped_by``) rather than a silent edge of the workspace.
@@ -841,6 +856,10 @@ class FileTools:
             size = target.stat().st_size
             if not raw and target.suffix.lower() in DOCUMENT_SUFFIXES:
                 return _read_document(target, size, limit, offset)
+            if not raw and offset == 0 and target.suffix.lower() in IMAGE_SUFFIXES:
+                image = _read_image(target, size)
+                if image is not None:
+                    return image
             data = b""
             if offset < size:
                 with target.open("rb") as handle:
@@ -856,6 +875,10 @@ class FileTools:
             result = await asyncio.to_thread(_read)
         except (OSError, ValueError, OverflowError) as exc:
             return {"ok": False, "reason": "io_error", "detail": exc.__class__.__name__}
+        if isinstance(result, ToolContent):
+            self._record("file.read", str(target), ok=True)
+            result.structured = await _with_project_context(result.structured, target)
+            return result
         self._record("file.read", str(target), ok=result.get("ok") is True)
         return await _with_project_context(result, target)   # H594
 
@@ -1429,6 +1452,36 @@ def _page(data: bytes, *, offset: int, total: int) -> dict:
     return fields
 
 
+def _read_image(target: Path, size: int) -> ToolContent | dict | None:
+    """An image file as a multimodal result (H297), a bounded refusal, or ``None``.
+
+    ``None`` means the bytes are not the image the suffix names, so the caller pages
+    them as an ordinary file. Over :data:`~agents.core.tool_rpc.MAX_IMAGE_BYTES` the
+    read is refused by name rather than cut: half an image is a corrupt image.
+    """
+    media_type = IMAGE_SUFFIXES[target.suffix.lower()]
+    too_large = {
+        "ok": False, "reason": "image_too_large", "size": size,
+        "max_image_bytes": MAX_IMAGE_BYTES,
+        "detail": "images are read whole up to max_image_bytes; raw=true returns a bounded byte page",
+    }
+    if size > MAX_IMAGE_BYTES:
+        return too_large
+    with target.open("rb") as handle:
+        data = handle.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
+        return too_large
+    if not data or not image_signature_ok(data, media_type):
+        return None
+    digest = hashlib.sha256(data).hexdigest()
+    return ToolContent(
+        [ToolContent.text(f"{target.name}: {media_type} image, {len(data)} bytes."),
+         ToolContent.image(data, media_type)],
+        structured={"ok": True, "path": str(target), "image": True, "media_type": media_type,
+                    "bytes": len(data), "size": size, "sha256": digest},
+    )
+
+
 def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict:
     """Extract a bounded text page from an admitted .pdf / .docx input.
 
@@ -1663,7 +1716,9 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "starts the read at that byte; a read that stops early returns next_offset — "
             "pass it back as offset to page through a large file or a spilled tool result. "
             "PDF/DOCX extraction accepts at most 50 MB (50,000,000 bytes); raw=true pages bytes. "
-            "PDF page gaps without extracted text are reported separately from content."
+            "PDF page gaps without extracted text are reported separately from content. "
+            "A .png/.jpg/.gif/.webp image (up to 3,750,000 bytes) is returned as the image "
+            "itself; raw=true returns its bytes."
         ),
         "gated": False,
         "trusted_execution": False,
@@ -1865,7 +1920,7 @@ def register_file_tools(
 
 
 __all__ = [
-    "KIND", "FLAG", "ROOTS_ENV", "MAX_BYTES_ENV", "DEFAULT_MAX_BYTES", "MAX_OFFSET",
+    "KIND", "FLAG", "ROOTS_ENV", "MAX_BYTES_ENV", "DEFAULT_MAX_BYTES", "MAX_OFFSET", "IMAGE_SUFFIXES",
     "FILE_WRITE_CONTRACT", "FILE_TOOL_SPECS", "GATED_TOOL_KINDS",
     "FileScope", "FileScopeError", "FileTools", "Snapshot", "SnapshotStore",
     "SECRET_NAME_TOKENS", "looks_secret_name", "restore_snapshot", "register_file_tools",

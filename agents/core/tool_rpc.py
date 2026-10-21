@@ -25,7 +25,8 @@ This module is the **governed RPC surface** — the security-critical core:
     credentials host-side, and every response is run through the secret-scrubber
     (defense-in-depth) before it crosses back.
   * **Bounded, well-formed results (H297):** a handler may be a coroutine or a
-    plain function (run on a worker thread); a failure answers ``tool_error`` with
+    plain function (run on the server's bounded worker pool; a sync call cannot be
+    cancelled, so its thread outlives a timeout or a revoke); a failure answers ``tool_error`` with
     a sanitised, length-bounded ``error`` line; a :class:`ToolContent` result
     becomes a validated ``content`` envelope of text and image parts.
 
@@ -39,12 +40,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import contextvars
 import functools
 import inspect
 import logging
+import threading
 import time
 import uuid
 from collections.abc import Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextvars import ContextVar
 from copy import deepcopy
 from typing import Awaitable, Callable, Optional
@@ -219,8 +223,17 @@ MAX_ERROR_CHARS = 240
 MAX_CONTENT_PARTS = 16
 MAX_IMAGE_PARTS = 4
 MAX_TEXT_PART_CHARS = 200_000
-#: Per decoded image; the strictest common provider ceiling (5 MiB).
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
+#: Per image, as base64 — the form a provider measures: Anthropic refuses an image
+#: whose base64 data passes 5 MB, so the decoded cap is three quarters of that
+#: (3,750,000 bytes encode to exactly 5,000,000 characters).
+MAX_IMAGE_B64_CHARS = 5_000_000
+MAX_IMAGE_BYTES = MAX_IMAGE_B64_CHARS // 4 * 3
+#: Worker threads a server's sync handlers may occupy at once. A sync handler cannot
+#: be cancelled — a timed-out or revoked call keeps its thread until it returns — so
+#: the pool is the server's own (never the loop's default executor, which DNS and
+#: every ``run_in_executor(None)`` share) and a call past the bound is refused as
+#: ``tool_busy`` instead of queueing behind threads that may never come back.
+SYNC_HANDLER_WORKERS = 4
 #: The only image types a part may claim, each with the leading bytes it must carry:
 #: a part whose bytes are not what it says it is never reaches a provider.
 _IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
@@ -261,11 +274,19 @@ class ContentError(ValueError):
     """A :class:`ToolContent` part is malformed or over its bounds."""
 
 
+def image_signature_ok(raw: bytes, media_type: str) -> bool:
+    """Do *raw*'s leading bytes carry the signature of the allowed *media_type*?"""
+    signatures = _IMAGE_SIGNATURES.get(media_type) if isinstance(media_type, str) else None
+    if signatures is None or not raw.startswith(signatures):
+        return False
+    return media_type != "image/webp" or raw[8:12] == b"WEBP"
+
+
 def _image_bytes(data) -> bytes:
     if isinstance(data, (bytes, bytearray, memoryview)):
         return bytes(data)
     if isinstance(data, str):
-        if len(data) > (MAX_IMAGE_BYTES * 4) // 3 + 8:
+        if len(data) > MAX_IMAGE_B64_CHARS:
             raise ContentError("image_too_large")
         try:
             return base64.b64decode(data.encode("ascii"), validate=True)
@@ -312,8 +333,7 @@ def normalize_content_parts(parts) -> list[dict]:
                 raise ContentError("image_empty")
             if len(raw) > MAX_IMAGE_BYTES:
                 raise ContentError("image_too_large")
-            if not raw.startswith(signatures) or (
-                    media_type == "image/webp" and raw[8:12] != b"WEBP"):
+            if not image_signature_ok(raw, media_type):
                 raise ContentError("image_signature_mismatch")
             out.append({
                 "type": "image",
@@ -357,6 +377,15 @@ def sanitize_error(exc: BaseException, *, scrub: Callable[[str], str] | None = N
     if len(text) > limit:
         text = text[: max(1, limit - 1)].rstrip() + "…"
     return text
+
+
+def _live(futures) -> set:
+    """The futures in *futures* whose thread has not returned yet."""
+    return {future for future in tuple(futures or ()) if not future.done()}
+
+
+class SyncHandlerBusy(RuntimeError):
+    """Every sync-handler worker of this server is still running a call (H297)."""
 
 
 def _is_async_callable(handler) -> bool:
@@ -428,6 +457,15 @@ class ToolRPCServer:
         self.agent = agent
         self._kernel = kernel   # ORIZONT-24 K1 wave-3: bound kernel.authorize (default-off)
         self._execution_context_check = execution_context_check
+        # H297: sync handlers run on this server's own bounded pool (created on the
+        # first sync call); `_sync_slots` counts threads still running, including a
+        # call whose caller timed out or was cancelled, and `_sync_threads` keeps each
+        # name's running threads — registered or revoked — so a name cannot be
+        # re-registered while an old handler under it can still act. Kept beside the
+        # spec, not in it: the spec's keys are the consent registration's contract.
+        self._sync_executor: ThreadPoolExecutor | None = None
+        self._sync_slots = threading.BoundedSemaphore(SYNC_HANDLER_WORKERS)
+        self._sync_threads: dict[str, set[Future]] = {}
 
     # ── registration (the allowlist) ─────────────────────────────────────────
 
@@ -535,6 +573,11 @@ class ToolRPCServer:
         existing = self._tools.get(name)
         if existing is not None and existing.get("active_tasks"):
             raise RuntimeError(f"tool has in-flight calls: {name}")
+        if _live(self._sync_threads.get(name)):
+            # H297: a sync handler still running on its thread (a revoked one too)
+            # can still act; a new handler under the same name waits until it returns.
+            raise RuntimeError(f"tool has in-flight calls: {name}")
+        self._sync_threads.pop(name, None)
         spec = {
             "handler": handler,
             "_grouping_epoch": uuid.uuid4().hex,
@@ -564,8 +607,15 @@ class ToolRPCServer:
         cancel_inflight: bool = False,
         timeout: float = 5.0,
     ) -> bool:
-        """Deny new calls immediately, then drain or cancel calls already running."""
-        spec = self._tools.pop(str(name or ""), None)
+        """Deny new calls immediately, then drain or cancel calls already running.
+
+        A sync handler (H297) cannot be cancelled: its thread runs until the function
+        returns. Its call is waited for up to ``timeout`` like any other; a thread
+        still alive after that is kept under the name, so :meth:`register_tool`
+        refuses the same name until it has returned (:meth:`inflight_threads`).
+        """
+        key = str(name or "")
+        spec = self._tools.pop(key, None)
         if spec is None:
             return False
         current = asyncio.current_task()
@@ -583,7 +633,23 @@ class ToolRPCServer:
                 for task in tasks:
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
+        threads = _live(self._sync_threads.get(key))
+        if threads:
+            _done, pending = await asyncio.wait(
+                [asyncio.wrap_future(future) for future in threads],
+                timeout=max(0.01, min(30.0, float(timeout))),
+            )
+            for waiter in pending:
+                waiter.cancel()
+            alive = _live(threads)
+            if alive:
+                logger.warning("tool-rpc: %d sync call(s) of revoked tool %s still running",
+                               len(alive), key)
         return True
+
+    def inflight_threads(self, name: str) -> int:
+        """Sync-handler threads of *name* still running, registered or revoked (H297)."""
+        return len(_live(self._sync_threads.get(str(name or ""))))
 
     def tools(self, *, live: bool = True) -> "list[dict]":
         """The registered tools as the model is offered them. ``live=False`` leaves the
@@ -807,7 +873,9 @@ class ToolRPCServer:
             return answer
 
         try:
-            result = await self._invoke_handler(spec, args, effective_actor)
+            result = await self._invoke_handler(spec, args, effective_actor, name=name)
+        except SyncHandlerBusy:
+            return {"ok": False, "reason": "tool_busy", "tool": name}
         except Exception as exc:
             logger.warning("tool-rpc handler failed: %s", name, exc_info=True)
             # H297: the model is told what went wrong, in one bounded, secret-free line.
@@ -900,7 +968,9 @@ class ToolRPCServer:
                     "detail": denied,
                 }
         try:
-            result = await self._invoke_handler(spec, args, effective_actor)
+            result = await self._invoke_handler(spec, args, effective_actor, name=name)
+        except SyncHandlerBusy:
+            return {"status": "failed", "reason": "tool_busy", "tool": name}
         except Exception as exc:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
             return {"status": "failed", "reason": "tool_error", "tool": name,
@@ -936,8 +1006,7 @@ class ToolRPCServer:
 
     # ── internals ────────────────────────────────────────────────────────────
 
-    @staticmethod
-    async def _invoke_handler(spec: dict, args: dict, actor: str = ""):
+    async def _invoke_handler(self, spec: dict, args: dict, actor: str = "", *, name: str = ""):
         task = asyncio.current_task()
         active = spec["active_tasks"]
         if task is not None:
@@ -947,11 +1016,9 @@ class ToolRPCServer:
             handler = spec["handler"]
             if _is_async_callable(handler):
                 return await handler(args)
-            # H297: a plain function runs on a worker thread so a blocking handler
-            # never stalls the loop; to_thread copies this context, so the actor and
-            # turn bindings are what the handler reads. A sync callable that hands
-            # back an awaitable (a lambda over a coroutine) is awaited here, on the loop.
-            result = await asyncio.to_thread(handler, args)
+            result = await self._run_sync_handler(name, handler, args)
+            # A sync callable that hands back an awaitable (a lambda over a
+            # coroutine) is awaited here, on the loop.
             if inspect.isawaitable(result):
                 result = await result
             return result
@@ -959,6 +1026,41 @@ class ToolRPCServer:
             _tool_actor.reset(token)
             if task is not None:
                 active.discard(task)
+
+    async def _run_sync_handler(self, name: str, handler, args: dict):
+        """H297: a plain-function handler, on this server's bounded worker pool.
+
+        The call's context is copied, so the actor and turn bindings are what the
+        handler reads, and a blocking handler never stalls the loop. The thread
+        cannot be interrupted: when the awaiting call is cancelled (``tool_timeout``
+        in the tool loop, ``unregister_tool(cancel_inflight=True)``) the caller stops
+        waiting, but the function runs to its end and any side effect it makes still
+        happens. Its slot and its entry under the tool's name are released
+        only when it returns, so a pool full of such threads refuses new sync calls
+        (:class:`SyncHandlerBusy`, answered as ``tool_busy``) and a revoked name stays
+        reserved until they finish. A handler that must stop with its caller has to be
+        a coroutine.
+        """
+        if not self._sync_slots.acquire(blocking=False):
+            raise SyncHandlerBusy("sync handler pool saturated")
+        try:
+            if self._sync_executor is None:
+                self._sync_executor = ThreadPoolExecutor(
+                    max_workers=SYNC_HANDLER_WORKERS, thread_name_prefix="toolrpc-sync")
+            context = contextvars.copy_context()
+            future = self._sync_executor.submit(context.run, handler, args)
+        except BaseException:
+            self._sync_slots.release()
+            raise
+        threads = self._sync_threads.setdefault(name, set())
+        threads.add(future)
+
+        def _finished(done: Future) -> None:
+            threads.discard(done)
+            self._sync_slots.release()
+
+        future.add_done_callback(_finished)
+        return await asyncio.wrap_future(future)
 
     def _classify(self, spec: dict, args: dict):
         """H506: the registrar's labels for this call, or a bounded denial.
