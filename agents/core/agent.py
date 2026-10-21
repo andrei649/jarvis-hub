@@ -973,16 +973,25 @@ class Agent:
                 usage_sink=observer if sink is not None else None,
                 effective_window=effective_window,
             )
-            from .llm.base import THINKING_EXHAUSTED_REPLY, is_degraded_reply
+            from .llm.base import (
+                THINKING_EXHAUSTED_REPLY,
+                is_backend_failure_reply,
+                is_degraded_reply,
+            )
             if response == THINKING_EXHAUSTED_REPLY:
                 from .turn_stops import record_runtime_stop
                 record_runtime_stop("thinking_exhausted")
             if recorded is not None:
                 if response == THINKING_EXHAUSTED_REPLY:
                     recorded.note_exit("thinking_exhausted")
-                elif recorded.exit_reason in trajectory.COMPLETED_EXITS and is_degraded_reply(response):
+                elif not recorded.exit_reason and is_degraded_reply(response):
+                    recorded.note_exit("degraded")
+                elif recorded.exit_reason == "model_response" and is_backend_failure_reply(
+                        response.lstrip() if isinstance(response, str) else response):
                     # A failed tool-capable adapter returns its degraded reply as a plain
-                    # ToolTurn, so the loop's normal model_response exit must not keep it completed.
+                    # ToolTurn, so the loop's normal model_response exit must not keep it
+                    # completed — but only the fixed failure texts count (H681), never a
+                    # real answer that happens to open with "[".
                     recorded.note_exit("degraded")
                 recorded.finish(response)
             return response

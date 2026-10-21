@@ -132,16 +132,32 @@ async def test_a_degraded_plain_reply_is_saved_as_not_completed():
     assert trajectory.export("sess-3", completed_only=True) == []
 
 
-async def test_a_degraded_tool_loop_reply_is_saved_as_not_completed():
+_LM_STUDIO_FAILURE = "⚠️ The local LM Studio model hit an error and couldn't answer. Check the server log."
+
+
+@pytest.mark.parametrize("failure", ["gemini", "lm-studio"])
+async def test_a_degraded_tool_loop_reply_is_saved_as_not_completed(failure):
     # A tool-capable adapter that fails returns its degraded reply as a ToolTurn with no
     # tool calls; the loop records its normal model_response exit, which must not win.
     from agents.core.llm.gemini import GEMINI_DEGRADED_REPLY
 
-    agent, backend = _agent([ToolTurn(content=GEMINI_DEGRADED_REPLY)])
-    assert await _ask(agent, backend, session="sess-5") == GEMINI_DEGRADED_REPLY
+    reply = GEMINI_DEGRADED_REPLY if failure == "gemini" else _LM_STUDIO_FAILURE
+    agent, backend = _agent([ToolTurn(content=reply)])
+    assert await _ask(agent, backend, session="sess-5") == reply
     [record] = trajectory.load("sess-5")
     assert record["completed"] is False and record["exit_reason"] == "degraded"
     assert trajectory.export("sess-5", completed_only=True) == []
+
+
+@pytest.mark.parametrize("answer", ['["a", "b"] are the files.', "[1] Paris"])
+async def test_a_bracketed_tool_loop_answer_stays_completed(answer):
+    # Only a backend's fixed failure reply is degraded — a real answer that happens to
+    # open with "[" (a JSON array, a citation list) is still a completed trajectory.
+    agent, backend = _agent([ToolTurn(content=answer)])
+    assert await _ask(agent, backend, session="sess-6") == answer
+    [record] = trajectory.load("sess-6")
+    assert record["completed"] is True and record["exit_reason"] == "model_response"
+    assert len(trajectory.export("sess-6", completed_only=True)) == 1
 
 
 async def test_a_turn_without_a_session_or_that_raises_writes_nothing(data_home):
