@@ -38,6 +38,7 @@ import secrets
 import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from contextlib import suppress
+from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
@@ -189,6 +190,57 @@ _CAPABILITY_ACTION_RE = re.compile(
 )
 
 
+#: H399 — a tool call still running after this many seconds reports that it is alive
+#: (``tool_heartbeat``) and keeps doing so at this cadence until its result lands, so a
+#: long shell, crawl or browser step reads as "still running" rather than as a hang.
+_DEFAULT_HEARTBEAT_SECONDS = 5.0
+_MIN_HEARTBEAT_SECONDS = 0.01
+#: A ceiling on beats per call: the tool timeout already bounds a call, but a native
+#: human-wait window can extend that deadline, and a trail must never grow unbounded.
+_MAX_HEARTBEATS_PER_CALL = 240
+
+
+@dataclass(frozen=True)
+class ToolBatchGroup:
+    """One step of a planned batch: calls that may overlap, or one call run alone."""
+
+    mode: str  # "concurrent" | "sequential"
+    indices: tuple[int, ...]
+
+
+def plan_tool_batch(
+    calls: tuple[ToolCall, ...],
+    is_parallel_safe: Callable[[ToolCall], bool],
+) -> tuple[ToolBatchGroup, ...]:
+    """H399 — split one model step's calls into ordered execution groups.
+
+    Consecutive parallel-safe calls form one concurrent group; a call that is not
+    parallel-safe is a barrier and forms a sequential group of its own, so it never
+    overlaps any other call of the step and every call before it has finished. The
+    plan keeps provider order (it partitions, it never reorders), so a write the
+    model asked for after a read still sees that read done. A safety check that
+    raises fails closed: that call runs alone.
+    """
+    groups: list[ToolBatchGroup] = []
+    run: list[int] = []
+    for index, call in enumerate(calls):
+        try:
+            safe = is_parallel_safe(call) is True
+        except Exception:
+            logger.warning("parallel-safety check failed closed; running the call alone")
+            safe = False
+        if safe:
+            run.append(index)
+            continue
+        if run:
+            groups.append(ToolBatchGroup("concurrent", tuple(run)))
+            run = []
+        groups.append(ToolBatchGroup("sequential", (index,)))
+    if run:
+        groups.append(ToolBatchGroup("concurrent", tuple(run)))
+    return tuple(groups)
+
+
 class _OwnedTimeout(Exception):
     """An owned coroutine exceeded its response-time deadline."""
 
@@ -227,8 +279,17 @@ class AgentToolRuntime:
         result_thresholds: Callable[[], Mapping[str, object]] | None = None,
         context_window_tokens: Callable[[], int] | None = None,
         guidance_context: Callable[[str], Mapping[str, Any] | None] | None = None,
+        heartbeat_seconds: float = _DEFAULT_HEARTBEAT_SECONDS,
     ) -> None:
         self._server = server
+        # H399 — 0 (or any non-positive value) turns in-flight heartbeats off.
+        try:
+            beat = float(heartbeat_seconds)
+        except (TypeError, ValueError, OverflowError):
+            beat = _DEFAULT_HEARTBEAT_SECONDS
+        self._heartbeat_seconds = (
+            max(_MIN_HEARTBEAT_SECONDS, beat) if math.isfinite(beat) and beat > 0 else 0.0
+        )
         self._tool_profile = tool_profile
         self._guidance_context = guidance_context
         # Separate from the offer hook: the coordinator's offer wrapper writes
@@ -1329,8 +1390,10 @@ class AgentToolRuntime:
 
         approval_lock = asyncio.Lock()
         approval_state = {"required": False, "guardian_stopped": False}
-        pending = [
-            self._execute_one(
+
+        def dispatch(index: int) -> Coroutine[Any, Any, tuple[dict[str, Any], str]]:
+            call = calls[index]
+            return self._execute_one(
                 call,
                 overflow=index >= self._max_tool_calls_per_turn,
                 gated=gated_tools.get(call.name, False),
@@ -1342,9 +1405,35 @@ class AgentToolRuntime:
                 capped_at=capped.get(call.id, 0),
                 spent=spent,
             )
-            for index, call in enumerate(calls)
-        ]
-        return list(await asyncio.gather(*pending))
+
+        def parallel_safe(call: ToolCall) -> bool:
+            # A call that is not offered is refused locally and touches nothing; an
+            # offered tool is serialized only by its registrar's explicit False.
+            if call.name not in gated_tools:
+                return True
+            reader = getattr(self._server, "declares_parallel_safe", None)
+            return reader is None or reader(call.name) is not False
+
+        plan = plan_tool_batch(calls, parallel_safe)
+        sequential = sum(len(group.indices) for group in plan if group.mode == "sequential")
+        if sequential:
+            await self._emit(event_sink, {
+                "event": "tool_batch_planned",
+                "agent_id": _bounded_identity(agent_id),
+                "groups": len(plan),
+                "concurrent_calls": len(calls) - sequential,
+                "sequential_calls": sequential,
+            })
+        observations: list[tuple[dict[str, Any], str] | None] = [None] * len(calls)
+        for group in plan:
+            if group.mode == "sequential":
+                for index in group.indices:
+                    observations[index] = await dispatch(index)
+                continue
+            results = await asyncio.gather(*(dispatch(index) for index in group.indices))
+            for index, observation in zip(group.indices, results, strict=True):
+                observations[index] = observation
+        return [observation for observation in observations if observation is not None]
 
     def _registry_mode(self) -> bool:
         try:
@@ -1537,6 +1626,10 @@ class AgentToolRuntime:
             handle_kwargs["_execution_check"] = (
                 lambda name, row: self._profile_allows_execution(agent_id, name, row)
             )
+        heartbeat = (
+            asyncio.create_task(self._heartbeat(call, agent_id, event_sink))
+            if self._heartbeat_seconds > 0 and event_sink is not None else None
+        )
         try:
             raw_result = await self._await_owned(
                 self._server.handle(
@@ -1559,6 +1652,12 @@ class AgentToolRuntime:
                 "reason": "tool_error",
                 "tool": call.name,
             }
+        finally:
+            if heartbeat is not None:
+                heartbeat.cancel()
+                # wait() never re-raises the beat's own cancellation, so a cancel aimed
+                # at this call (the wall deadline) still propagates from here.
+                await asyncio.wait({heartbeat})
 
         raw_result, images = _split_images(raw_result)
         if images and spent is not None:
@@ -1566,6 +1665,21 @@ class AgentToolRuntime:
         result, content = self._prepare_result(raw_result, call.name, spent)
         await self._emit_result(event_sink, call, agent_id, result)
         return result, content
+
+    async def _heartbeat(
+        self, call: ToolCall, agent_id: str, event_sink: ToolEventSink | None,
+    ) -> None:
+        """H399 — report a call that is still running, at a fixed cadence, until the
+        caller cancels this task when the call's result (or timeout) lands. A beat
+        carries the bounded identities and the elapsed time only — never arguments,
+        never partial output — and it marks the session active, so a long tool call
+        is not mistaken for an idle session."""
+        started = time.monotonic()
+        for _ in range(_MAX_HEARTBEATS_PER_CALL):
+            await asyncio.sleep(self._heartbeat_seconds)
+            event = self._event(call, agent_id, "tool_heartbeat", "running")
+            event["elapsed_seconds"] = round(time.monotonic() - started, 3)
+            await self._emit(event_sink, event)
 
     async def _local_failure(
         self,

@@ -451,6 +451,11 @@ class ToolRPCServer:
                  audit=None, agent: str = "jarvis", kernel=None,
                  execution_context_check: Optional[Callable] = None) -> None:
         self._tools: dict[str, dict] = {}
+        # H399 — the registrar's word on whether calls to a tool may overlap other
+        # calls of the same model step. Kept beside the spec, not in it: the spec is
+        # hashed for consent registration and the offer rows are snapshotted, and a
+        # scheduling hint must move neither.
+        self._parallel_safe: dict[str, bool] = {}
         self._secrets = secret_broker
         self._enqueue = enqueue
         self._audit = audit
@@ -486,6 +491,7 @@ class ToolRPCServer:
         schema_overrides: SchemaOverrides | None = None,
         gated_review: GatedReview | None = None,
         consent_revision: str | None = None,
+        parallel_safe: bool | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -522,7 +528,15 @@ class ToolRPCServer:
         :func:`advertised_schema`); a hook that raises or answers something
         malformed is logged and the static schema is advertised instead. It narrows
         what is advertised; the handler's own checks still decide every call.
+
+        ``parallel_safe`` (H399) says whether a call to this tool may overlap other
+        calls of the same model step. ``False`` makes every call to it a barrier the
+        tool loop runs alone, in provider order (a writer that two concurrent calls
+        could interleave on). ``None`` (undeclared) and ``True`` keep the concurrent
+        default. Like ``max_result_bytes`` it is not part of :meth:`tools`.
         """
+        if parallel_safe is not None and type(parallel_safe) is not bool:
+            raise ValueError("parallel_safe must be a bool or None")
         if max_result_bytes is not None:
             try:
                 max_result_bytes = int(max_result_bytes)
@@ -598,6 +612,10 @@ class ToolRPCServer:
         }
         spec["_consent_registration_key"] = trusted_registration_key(name, spec)
         self._tools[name] = spec
+        if parallel_safe is None:
+            self._parallel_safe.pop(name, None)
+        else:
+            self._parallel_safe[name] = parallel_safe
         return self
 
     async def unregister_tool(
@@ -618,6 +636,7 @@ class ToolRPCServer:
         spec = self._tools.pop(key, None)
         if spec is None:
             return False
+        self._parallel_safe.pop(str(name or ""), None)
         current = asyncio.current_task()
         tasks = [task for task in tuple(spec.get("active_tasks", ())) if task is not current]
         if cancel_inflight:
@@ -684,6 +703,10 @@ class ToolRPCServer:
         """
         spec = self._tools.get(str(name or ""))
         return None if spec is None else spec.get("max_result_bytes")
+
+    def declares_parallel_safe(self, name: str) -> bool | None:
+        """H399 — the tool's declared parallel safety, or None when it said nothing."""
+        return getattr(self, "_parallel_safe", {}).get(str(name or ""))
 
     def declares_untrusted_output(self, name: str) -> bool:
         """Whether this tool said what it returns comes from outside the box."""

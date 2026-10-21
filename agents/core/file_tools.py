@@ -1989,6 +1989,9 @@ def register_file_tools(
             trusted_execution=spec["trusted_execution"],
             classifier=classifiers.get(name),
             gated_intake=_gated_intake(name) if mutation_intake is not None and spec["gated"] else None,
+            # H399 — a mutation runs alone: a read of the same path in the same step
+            # must see it either wholly before or wholly after, never mid-write.
+            parallel_safe=False if spec["gated"] else None,
         )
         registered.append(name)
     return registered

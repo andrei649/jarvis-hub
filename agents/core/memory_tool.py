@@ -699,6 +699,8 @@ def register_memory_tool(
         input_schema=INPUT_SCHEMA,
         capability_id=CAPABILITY_ID,
         schema_overrides=schema_overrides,
+        # H399 — a write to the owner's memory file; never overlapped with another call.
+        parallel_safe=False,
     )
     return TOOL_NAME
 

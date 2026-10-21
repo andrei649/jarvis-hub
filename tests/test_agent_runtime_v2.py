@@ -2556,3 +2556,244 @@ async def test_build_executor_uses_specific_trusted_desktop_toolrpc_handler():
         "reason": "trusted_execution_required",
         "tool": "desktop_run",
     }
+
+
+# ── H399 — parallel-safety planning and in-flight heartbeats ──────────────────
+
+
+def test_h399_planner_splits_a_batch_into_ordered_concurrent_and_sequential_groups():
+    from agents.core.agent_runtime import plan_tool_batch
+
+    calls = tuple(
+        _call(name, call_id=f"c{index}")
+        for index, name in enumerate(["read", "read", "write", "read", "write", "write", "read"])
+    )
+    plan = plan_tool_batch(calls, lambda call: call.name != "write")
+
+    assert [(group.mode, group.indices) for group in plan] == [
+        ("concurrent", (0, 1)),
+        ("sequential", (2,)),
+        ("concurrent", (3,)),
+        ("sequential", (4,)),
+        ("sequential", (5,)),
+        ("concurrent", (6,)),
+    ]
+    # Every call is planned exactly once, in provider order.
+    assert [index for group in plan for index in group.indices] == list(range(len(calls)))
+
+
+def test_h399_planner_fails_closed_to_sequential_when_the_safety_check_raises():
+    from agents.core.agent_runtime import plan_tool_batch
+
+    def broken(call):
+        raise RuntimeError("no metadata")
+
+    plan = plan_tool_batch((_call(call_id="a"), _call(call_id="b")), broken)
+    assert [(group.mode, group.indices) for group in plan] == [
+        ("sequential", (0,)),
+        ("sequential", (1,)),
+    ]
+    assert plan_tool_batch((), lambda call: True) == ()
+
+
+def test_h399_tool_rpc_records_the_parallel_safety_declaration_outside_the_offer():
+    server = ToolRPCServer()
+
+    async def handler(args):
+        return {}
+
+    server.register_tool("reader", handler)
+    server.register_tool("writer", handler, parallel_safe=False)
+    server.register_tool("explicit", handler, parallel_safe=True)
+
+    assert server.declares_parallel_safe("reader") is None
+    assert server.declares_parallel_safe("writer") is False
+    assert server.declares_parallel_safe("explicit") is True
+    assert server.declares_parallel_safe("missing") is None
+    # The offer the model sees (and the pinned allowlists) does not move.
+    assert all("parallel_safe" not in row for row in server.tools())
+    with pytest.raises(ValueError):
+        server.register_tool("bad", handler, parallel_safe="yes")
+    # Re-registering without the declaration clears it.
+    server.register_tool("writer", handler)
+    assert server.declares_parallel_safe("writer") is None
+
+
+@pytest.mark.asyncio
+async def test_h399_unregistering_a_tool_forgets_its_parallel_safety():
+    server = ToolRPCServer()
+
+    async def handler(args):
+        return {}
+
+    server.register_tool("writer", handler, parallel_safe=False)
+    assert await server.unregister_tool("writer")
+    assert server.declares_parallel_safe("writer") is None
+
+
+@pytest.mark.asyncio
+async def test_h399_unsafe_tools_run_alone_while_safe_neighbours_overlap():
+    server = ToolRPCServer()
+    active = 0
+    timeline = []
+    overlaps = {}
+
+    async def handler(args):
+        nonlocal active
+        active += 1
+        overlaps[args["value"]] = max(overlaps.get(args["value"], 0), active)
+        timeline.append(("start", args["value"]))
+        await asyncio.sleep(0.02)
+        overlaps[args["value"]] = max(overlaps[args["value"]], active)
+        timeline.append(("end", args["value"]))
+        active -= 1
+        return {"value": args["value"]}
+
+    server.register_tool("read", handler)
+    server.register_tool("write", handler, parallel_safe=False)
+    calls = (
+        _call("read", call_id="r1", arguments={"value": "r1"}),
+        _call("read", call_id="r2", arguments={"value": "r2"}),
+        _call("write", call_id="w1", arguments={"value": "w1"}),
+        _call("write", call_id="w2", arguments={"value": "w2"}),
+        _call("read", call_id="r3", arguments={"value": "r3"}),
+    )
+    backend = _ScriptedBackend([ToolTurn(tool_calls=calls), ToolTurn(content="done")])
+    events = []
+    runtime = AgentToolRuntime(server, enabled=lambda: True, tool_timeout_seconds=1.0)
+
+    answer = await asyncio.wait_for(_run(runtime, backend, event_sink=events.append), timeout=2)
+
+    assert answer == "done"
+    # The two leading reads overlap; each write is alone; the trailing read waits
+    # for the writes (a barrier, not a reorder).
+    assert overlaps["r1"] == 2 and overlaps["r2"] == 2
+    assert overlaps["w1"] == 1 and overlaps["w2"] == 1 and overlaps["r3"] == 1
+    assert timeline.index(("start", "w1")) > max(
+        timeline.index(("end", "r1")), timeline.index(("end", "r2")))
+    assert timeline.index(("start", "w2")) > timeline.index(("end", "w1"))
+    assert timeline.index(("start", "r3")) > timeline.index(("end", "w2"))
+    # Observations still come back in provider order.
+    tool_messages = backend.calls[1]["messages"][-5:]
+    assert [message["tool_call_id"] for message in tool_messages] == ["r1", "r2", "w1", "w2", "r3"]
+    planned = [event for event in events if event["event"] == "tool_batch_planned"]
+    assert len(planned) == 1
+    assert planned[0]["concurrent_calls"] == 3
+    assert planned[0]["sequential_calls"] == 2
+    assert planned[0]["groups"] == 4
+
+
+@pytest.mark.asyncio
+async def test_h399_an_all_safe_batch_keeps_the_single_concurrent_group_and_emits_no_plan():
+    server = ToolRPCServer()
+
+    async def echo(args):
+        return {"value": args["value"]}
+
+    server.register_tool("echo", echo)
+    backend = _ScriptedBackend([
+        ToolTurn(tool_calls=(_call(call_id="a"), _call(call_id="b", arguments={"value": "x"}))),
+        ToolTurn(content="ok"),
+    ])
+    events = []
+    answer = await _run(AgentToolRuntime(server, enabled=lambda: True), backend,
+                        event_sink=events.append)
+    assert answer == "ok"
+    assert not [event for event in events if event["event"] == "tool_batch_planned"]
+
+
+@pytest.mark.asyncio
+async def test_h399_long_tool_calls_emit_bounded_in_flight_heartbeats():
+    server = ToolRPCServer()
+
+    async def slow(args):
+        await asyncio.sleep(0.13)
+        return {"done": True}
+
+    async def quick(args):
+        return {"done": True}
+
+    server.register_tool("slow", slow)
+    server.register_tool("quick", quick)
+    backend = _ScriptedBackend([
+        ToolTurn(tool_calls=(_call("slow", call_id="s"), _call("quick", call_id="q"))),
+        ToolTurn(content="finished"),
+    ])
+    events = []
+    runtime = AgentToolRuntime(
+        server, enabled=lambda: True, tool_timeout_seconds=1.0, heartbeat_seconds=0.03,
+    )
+
+    answer = await asyncio.wait_for(_run(runtime, backend, event_sink=events.append), timeout=2)
+
+    assert answer == "finished"
+    beats = [event for event in events if event["event"] == "tool_heartbeat"]
+    assert beats, "a long call must report that it is still running"
+    assert {event["call_id"] for event in beats} == {"s"}
+    assert all(event["status"] == "running" and event["tool"] == "slow" for event in beats)
+    elapsed = [event["elapsed_seconds"] for event in beats]
+    assert elapsed == sorted(elapsed) and elapsed[0] > 0
+    # Heartbeats stop at the result: none after the slow call's terminal event.
+    terminal = next(i for i, event in enumerate(events)
+                    if event["event"] == "tool_result" and event["call_id"] == "s")
+    assert all(events.index(event) < terminal for event in beats)
+    # The beat carries no arguments and no result.
+    assert set(beats[0]) == {"event", "agent_id", "tool", "call_id", "status", "elapsed_seconds"}
+
+
+@pytest.mark.asyncio
+async def test_h399_heartbeats_stop_on_timeout_and_can_be_disabled():
+    server = ToolRPCServer()
+
+    async def hang(args):
+        await asyncio.sleep(5)
+
+    server.register_tool("hang", hang)
+
+    async def run_with(heartbeat):
+        backend = _ScriptedBackend([
+            ToolTurn(tool_calls=(_call("hang", call_id="h"),)), ToolTurn(content="gave up"),
+        ])
+        events = []
+        runtime = AgentToolRuntime(server, enabled=lambda: True, tool_timeout_seconds=0.1,
+                                   heartbeat_seconds=heartbeat)
+        assert await asyncio.wait_for(_run(runtime, backend, event_sink=events.append),
+                                      timeout=2) == "gave up"
+        await asyncio.sleep(0.08)  # a leaked heartbeat task would keep emitting here
+        return events
+
+    events = await run_with(0.02)
+    beats = [event for event in events if event["event"] == "tool_heartbeat"]
+    assert beats
+    failed = next(i for i, event in enumerate(events) if event["event"] == "tool_failed")
+    assert events[failed]["status"] == "tool_timeout"
+    assert all(events.index(event) < failed for event in beats)
+
+    disabled = await run_with(0)
+    assert not [event for event in disabled if event["event"] == "tool_heartbeat"]
+
+
+def test_h399_production_mutators_declare_themselves_not_parallel_safe(tmp_path):
+    from agents.core.file_tools import FileScope, FileTools, SnapshotStore, register_file_tools
+    from agents.core.memory_tool import register_memory_tool
+    from agents.core.todo_tool import TodoStore, register_todo_tool
+
+    server = ToolRPCServer(enqueue=lambda *a, **k: 1, execution_context_check=lambda c, t: True)
+    register_todo_tool(server, store=TodoStore(), session_id=lambda: "s")
+    register_memory_tool(server, living=lambda: None, audit=lambda: None)
+    root = tmp_path / "root"
+    root.mkdir()
+    register_file_tools(
+        server,
+        FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"), max_bytes=65536),
+        enabled=True,
+    )
+
+    assert server.declares_parallel_safe("todo") is False
+    assert server.declares_parallel_safe("memory") is False
+    assert server.declares_parallel_safe("file_write") is False
+    assert server.declares_parallel_safe("file_delete") is False
+    # Readers keep the concurrent default.
+    assert server.allows("file_read") and server.allows("file_search")
+    assert server.declares_parallel_safe("file_read") is None
+    assert server.declares_parallel_safe("file_search") is None
