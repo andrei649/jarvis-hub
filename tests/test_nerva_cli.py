@@ -109,9 +109,10 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["skills"] == ["config", "lint", "list", "off", "on"]
     # H464: read the runs, and let a parked one go. Nothing here starts a run.
     assert tree["company"] == ["clear-wait", "list"]
+    # H473: `discover` scans the file roots into the repo cache; `repos` lists that cache.
     assert tree["project"] == [
-        "add-folder", "archive", "bind-board", "create", "list", "ls", "remove-folder",
-        "rename", "restore", "set-primary", "show", "use",
+        "add-folder", "archive", "bind-board", "create", "discover", "list", "ls", "remove-folder",
+        "rename", "repos", "restore", "set-primary", "show", "use",
     ]
 
 

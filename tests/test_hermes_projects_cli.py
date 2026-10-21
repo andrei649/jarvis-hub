@@ -382,3 +382,103 @@ async def test_restore_active_project_keeps_existing_board_binding(tmp_path, mon
         meta = kb.read_board_metadata("work")
         assert meta["project_id"] == project_id
         assert meta["default_workdir"] == str(workdir)
+
+
+def _repo(path, *, worktree=False):
+    path.mkdir(parents=True)
+    if worktree:
+        (path / ".git").write_text("gitdir: /elsewhere/.git/worktrees/x\n")
+    else:
+        (path / ".git").mkdir()
+    return path
+
+
+@pytest.mark.asyncio
+async def test_discover_scans_file_roots_into_the_repo_cache(tmp_path, monkeypatch):
+    """H473: `project discover` fills discovered_repos from a scan bounded to the file roots."""
+    roots = tmp_path / "roots"
+    alpha = _repo(roots / "alpha")
+    _repo(alpha / "vendored" / "inner")       # a repo is not descended into
+    beta = _repo(roots / "group" / "beta", worktree=True)
+    _repo(roots / "a" / "b" / "c" / "d" / "e" / "too-deep")
+    _repo(roots / ".hidden" / "skip")
+    _repo(roots / "node_modules" / "skip")
+    outside = _repo(tmp_path / "outside")
+    (roots / "link").symlink_to(outside, target_is_directory=True)  # never followed
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(roots))
+    home = tmp_path / "home"
+    with kanban_scope(KanbanContext(home, "owner", can_mutate=True)):
+        empty = await execute_command(_orch(), ["repos"], OWNER)
+        assert empty["ok"] and "No discovered repos cached" in empty["output"]
+        created = await execute_command(_orch(), ["create", "Alpha", str(alpha)], OWNER)
+        assert created["ok"], created
+        found = await execute_command(_orch(), ["discover"], OWNER)
+        assert found["ok"], found
+        assert "Discovered 2 repo(s) under 1 file root(s) (depth 4)" in found["output"]
+        assert f"{alpha}  [project: alpha]" in found["output"] and str(beta) in found["output"]
+        with pdb.connect_closing() as conn:
+            assert sorted(row["root"] for row in pdb.list_discovered_repos(conn)) == [str(alpha), str(beta)]
+            assert pdb.get_discovery_policy_key(conn).startswith("v1:depth=4:roots=")
+        listed = await execute_command(_orch(), ["repos"], OWNER)
+        assert listed["ok"] and "2 discovered repo(s):" in listed["output"]
+        assert str(alpha) in listed["output"] and str(beta) in listed["output"]
+        deeper = await execute_command(_orch(), ["discover", "--depth", "8"], OWNER)
+        assert deeper["ok"] and "Discovered 3 repo(s)" in deeper["output"]
+        assert "previous discovery cache cleared" in deeper["output"]
+        assert "too-deep" in deeper["output"]
+        assert (await execute_command(_orch(), ["discover", "--depth", "9"], OWNER))["reason"] == "usage"
+
+
+@pytest.mark.asyncio
+async def test_repos_drops_a_cache_from_old_file_roots(tmp_path, monkeypatch):
+    """Changing JARVIS_FILE_ROOTS reconciles the cache policy instead of listing stale roots."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    _repo(first / "one")
+    _repo(second / "two")
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(first))
+    with kanban_scope(KanbanContext(tmp_path / "home", "owner", can_mutate=True)):
+        assert (await execute_command(_orch(), ["discover"], OWNER))["ok"]
+        monkeypatch.setenv("JARVIS_FILE_ROOTS", str(second))
+        listed = await execute_command(_orch(), ["repos"], OWNER)
+        assert listed["ok"], listed
+        assert "stale cache cleared" in listed["output"] and "No discovered repos cached" in listed["output"]
+        assert str(first / "one") not in listed["output"]
+        rescanned = await execute_command(_orch(), ["discover"], OWNER)
+        assert rescanned["ok"] and str(second / "two") in rescanned["output"]
+
+
+@pytest.mark.asyncio
+async def test_discover_is_owner_only(tmp_path, monkeypatch):
+    roots = tmp_path / "roots"
+    _repo(roots / "repo")
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(roots))
+    home = tmp_path / "home"
+    guest = SimpleNamespace(channel="web", admin=False)
+    with kanban_scope(KanbanContext(home, "owner", can_mutate=True)):
+        assert (await execute_command(_orch(), ["discover"], guest))["reason"] == "owner_required"
+        with delegate_scope():
+            assert (await execute_command(_orch(), ["discover"], OWNER))["reason"] == "delegated_scope"
+    with kanban_scope(KanbanContext(home, "owner", task_id="t1", can_mutate=True)):
+        assert not (await execute_command(_orch(), ["discover"], OWNER))["ok"]
+    assert not (home / "projects.db").exists()
+
+
+def test_scan_is_bounded_by_budgets_and_scope(tmp_path, monkeypatch):
+    from agents.core.file_tools import FileScope
+
+    roots = tmp_path / "roots"
+    for name in ("a", "b", "c"):
+        _repo(roots / name)
+    _repo(roots / "secrets" / "repo")          # secret-looking path: refused by the scope
+    scope = FileScope([str(roots)])
+    repos, truncated = pdb.scan_repo_roots(scope, depth=2)
+    assert [label for _, label in repos] == ["a", "b", "c"] and not truncated
+    limited, truncated = pdb.scan_repo_roots(scope, depth=2, max_repos=2)
+    assert len(limited) == 2 and truncated
+    _, truncated = pdb.scan_repo_roots(scope, depth=2, max_dirs=1)
+    assert truncated
+    assert pdb.scan_repo_roots(scope, depth=0) == ([], False)
+    for bad in (-1, 9, True, "2"):
+        with pytest.raises(ValueError):
+            pdb.scan_repo_roots(scope, depth=bad)
+    assert pdb.scan_repo_roots(FileScope([str(tmp_path / "missing")])) == ([], False)

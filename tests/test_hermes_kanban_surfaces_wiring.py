@@ -161,7 +161,38 @@ def test_real_project_and_kanban_commands_create_linked_worktree_card(active, tm
     assert not __import__("pathlib").Path(task["workspace_path"]).exists()
 
 
-OWNER = {"X-Admin-Token": "synthetic-kanban-owner"}
+def test_nerva_project_discover_and_repos_run_through_the_owner_route(active, tmp_path, monkeypatch):
+    """H473: the host CLI verb and the owner HTTP route run the discovery scan and list the cache."""
+    import io
+
+    from agents.cli.nerva import Context, main
+
+    client, _ = active
+    root = tmp_path / "repos"
+    repo = root / "service"
+    (repo / ".git").mkdir(parents=True)
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(root))
+    assert client.post("/api/kanban/projects/command", json={"argv": ["discover"]}).status_code == 401
+    calls = []
+
+    class LocalClient:
+        def post(self, path, body=None):
+            calls.append((path, body["argv"]))
+            response = client.post(path, headers=OWNER, json=body)
+            assert response.status_code == 200, response.text
+            return response.json()
+
+    output = io.StringIO()
+    ctx = Context(environ={}, out=output, err=io.StringIO(), client_factory=lambda _: LocalClient())
+    assert main(["project", "discover", "--depth", "2"], context=ctx) == 0
+    assert calls == [("/api/kanban/projects/command", ["discover", "--depth", "2"])]
+    assert "Discovered 1 repo(s)" in output.getvalue() and str(repo) in output.getvalue()
+    listed = client.post("/api/kanban/projects/command", headers=OWNER, json={"argv": ["repos", "--depth", "2"]})
+    assert listed.status_code == 200 and listed.json()["ok"], listed.text
+    assert "1 discovered repo(s):" in listed.json()["output"] and str(repo) in listed.json()["output"]
+
+
+OWNER ={"X-Admin-Token": "synthetic-kanban-owner"}
 
 
 @pytest.fixture

@@ -10,11 +10,13 @@ Ported from pinned Hermes 59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import re
 import secrets
 import sqlite3
 import time
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import wraps
@@ -734,3 +736,91 @@ def branch_name_for(project: Project, task_id: str, *, title: str = "") -> str:
     base = f"{project.slug or _slugify(project.name)}/{task_id}"
     tslug = _BRANCH_SAFE_RE.sub("-", str(title).strip().lower()).strip("-")[:40].strip("-") if title else ""
     return f"{base}-{tslug}" if tslug else base
+
+
+# --- Repo discovery scan (bounded to the owner's file roots) ------------------
+
+DISCOVERY_DEFAULT_DEPTH = 4
+DISCOVERY_MAX_DEPTH = 8
+DISCOVERY_MAX_DIRS = 20_000
+DISCOVERY_MAX_REPOS = 500
+# Heavy / generated trees a repo scan never needs to enter.
+_DISCOVERY_SKIP_DIRS = frozenset({
+    "node_modules", "__pycache__", "venv", "site-packages", "dist", "build", "target",
+})
+
+
+def discovery_policy_key(scope: FileScope, depth: int) -> str:
+    """Stable identity of one scan policy: the resolved roots plus the depth bound. When the owner
+    changes ``JARVIS_FILE_ROOTS`` (or the depth), cached rows of the old policy are dropped."""
+    digest = hashlib.sha256("\n".join(sorted(map(str, scope.roots))).encode("utf-8")).hexdigest()[:16]
+    return f"v1:depth={int(depth)}:roots={digest}"
+
+
+def scan_repo_roots(
+    scope: FileScope, *, depth: int = DISCOVERY_DEFAULT_DEPTH, max_dirs: int = DISCOVERY_MAX_DIRS,
+    max_repos: int = DISCOVERY_MAX_REPOS,
+) -> tuple[list[tuple[str, str]], bool]:
+    """Walk the scope roots breadth-first, at most ``depth`` levels below each root, for git repos.
+
+    A directory is a repo when it holds a ``.git`` directory or file (worktrees, submodules). Symlinks
+    are never followed, hidden and generated directories are skipped, a repo is not descended into,
+    and every hit is re-resolved through ``scope`` so secret-looking or escaping paths stay out.
+    Returns ``(repos, truncated)``; ``truncated`` says a directory/repo budget stopped the walk.
+    """
+    if isinstance(depth, bool) or not isinstance(depth, int) or not 0 <= depth <= DISCOVERY_MAX_DEPTH:
+        raise ValueError(f"discovery depth must be an integer between 0 and {DISCOVERY_MAX_DEPTH}")
+    found: dict[str, str] = {}
+    queue: deque[tuple[Path, int]] = deque((root, 0) for root in scope.roots)
+    visited = 0
+    truncated = False
+    while queue:
+        if visited >= max_dirs or len(found) >= max_repos:
+            truncated = True
+            break
+        directory, level = queue.popleft()
+        visited += 1
+        try:
+            with os.scandir(directory) as iterator:
+                entries = sorted(iterator, key=lambda e: e.name)
+        except OSError:
+            continue
+        if any(e.name == ".git" and (e.is_dir(follow_symlinks=False) or e.is_file(follow_symlinks=False))
+               for e in entries):
+            try:
+                resolved = str(scope.resolve(str(directory)))
+            except FileScopeError:
+                continue
+            found.setdefault(resolved, os.path.basename(resolved) or resolved)
+            continue
+        if level >= depth:
+            continue
+        queue.extend(
+            (Path(entry.path), level + 1) for entry in entries
+            if not entry.name.startswith(".") and entry.name not in _DISCOVERY_SKIP_DIRS
+            and entry.is_dir(follow_symlinks=False)
+        )
+    return sorted(found.items()), truncated
+
+
+@_scoped_write
+def discover_repos(conn: sqlite3.Connection, *, depth: int = DISCOVERY_DEFAULT_DEPTH,
+                   scope: FileScope | None = None) -> dict:
+    """Run one authoritative scan of the file roots and replace the ``discovered_repos`` cache."""
+    scope = scope or FileScope.from_env()
+    key = discovery_policy_key(scope, depth)
+    repos, truncated = scan_repo_roots(scope, depth=depth)
+    policy_reset = reconcile_discovered_repos_policy(conn, key)
+    count = record_discovered_repos(conn, repos, replace=True, policy_key=key)
+    return {"policy": key, "count": count, "truncated": truncated, "policy_reset": policy_reset,
+            "roots": [str(root) for root in scope.roots]}
+
+
+@_scoped_write
+def cached_repos_for_current_policy(conn: sqlite3.Connection, *, depth: int = DISCOVERY_DEFAULT_DEPTH,
+                                    scope: FileScope | None = None) -> tuple[list[dict], bool]:
+    """The cached repos after dropping rows recorded under a different roots/depth policy.
+    Returns ``(rows, cleared)``."""
+    scope = scope or FileScope.from_env()
+    cleared = reconcile_discovered_repos_policy(conn, discovery_policy_key(scope, depth))
+    return list_discovered_repos(conn), cleared
