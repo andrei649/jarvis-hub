@@ -630,7 +630,11 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
     whose try is its last statement returns None to a caller that carries on, and a
     `finally:` runs after the swallow — so a refusing WebSocket handler must leave
     explicitly (`await ws.close(code=1008); return`). What a handler does before it
-    leaves (closing the socket, logging) is not judged."""
+    leaves (closing the socket, logging) is not judged, except that a broad handler
+    returning awaited work (`return await act(r)`) is a swallow. Round 5: a name bound
+    to several watched names means all of them (the scan always terminates), and
+    `with contextlib.suppress(<broad>)` (or an alias of `suppress`) around a guard is
+    a swallow just like the try form."""
     import ast
 
     root = root or repo_root / "agents"
@@ -639,6 +643,7 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
     awaited_only = _GUARD_CALLS | {"owner_web_principal"}
     guard_sites, tier_sites, suspicious = set(), set(), []
     callee_funcs = set()   # ids of Call.func nodes, so a call is not also counted as a reference
+    file_state = {"suppressors": set()}   # per-file: names that mean contextlib.suppress
     module = "<module>"
     base_refusals = {"Exception", "BaseException", "HTTPException"}   # what a guard raises
 
@@ -646,26 +651,47 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
         return node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else ""
 
     def rebindings(tree, base):
-        """name -> base name, for `from x import B as n` and any `n = <ref to B or to
-        another such n>` (plain, annotated or walrus), resolved to a fixed point."""
-        out = {a.asname: a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
-               for a in n.names if a.asname and a.name in base}
+        """name -> set of base names it may mean, for `from x import B as n` and any
+        `n = <ref to B or to another such n>` (plain, annotated or walrus). The map is
+        file-global, so one name bound to two bases (`g = web._admin_guard` in one
+        handler, `g = web._user_guard` in another) means both: sets only grow, so the
+        fixed point is reached; the pass cap is a backstop (round 5)."""
+        out = {}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ImportFrom):
+                for a in n.names:
+                    if a.asname and a.name in base:
+                        out.setdefault(a.asname, set()).add(a.name)
         pairs = []
         for n in ast.walk(tree):
             if isinstance(n, ast.Assign):
                 pairs += [(t, n.value) for t in n.targets]
             elif isinstance(n, (ast.AnnAssign, ast.NamedExpr)) and n.value is not None:
                 pairs.append((n.target, n.value))
-        changed = True
-        while changed:
+        for _ in range(len(pairs) + 1):
             changed = False
             for target, value in pairs:
                 src, dst = ref_name(value), ref_name(target)
-                resolved = src if src in base else out.get(src)
-                if resolved and dst and dst not in base and out.get(dst) != resolved:
-                    out[dst] = resolved
+                resolved = {src} if src in base else out.get(src, set())
+                if resolved and dst and dst not in base and not resolved <= out.get(dst, set()):
+                    out.setdefault(dst, set()).update(resolved)
                     changed = True
+            if not changed:
+                break
         return out
+
+    def resolve(aliases, raw):
+        return aliases.get(raw) or {raw}
+
+    def suppressing(with_node, refusals, suppressors):
+        """`with contextlib.suppress(<broad>)` (or an alias of `suppress`) swallows a
+        refusal raised in its body exactly like `try/except <broad>: pass` (round 5)."""
+        for item in with_node.items:
+            ctx = item.context_expr
+            if isinstance(ctx, ast.Call) and ref_name(ctx.func) in suppressors \
+                    and any(ref_name(a) in refusals for a in ctx.args):
+                return True
+        return False
 
     def stmt_exits(s):
         """Every path through statement `s` ends in a raise or a return."""
@@ -690,7 +716,14 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
                 return True
             kinds = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
             return any(ref_name(k) in refusals for k in kinds)
-        return any(catches_refusal(h) and not must_exit(h.body) for h in try_node.handlers)
+
+        def returns_work(handler):
+            # `return await act(r)` in the handler turns the refusal into the
+            # privileged result (round 5). A plain `return <response>` is a refusal.
+            return any(isinstance(n, ast.Return) and isinstance(n.value, ast.Await)
+                       for stmt in handler.body for n in ast.walk(stmt))
+        return any(catches_refusal(h) and (not must_exit(h.body) or returns_work(h))
+                   for h in try_node.handlers)
 
     def visit(node, owner, rel, aliases, refusals, dead, awaited):
         for child in ast.iter_child_nodes(node):
@@ -713,29 +746,39 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
                 for part in (*child.handlers, *child.orelse, *child.finalbody):
                     visit_stmt(part, owner, rel, aliases, refusals, dead)
                 continue
-            name = ""
+            if isinstance(child, (ast.With, ast.AsyncWith)) \
+                    and suppressing(child, refusals, file_state["suppressors"]):
+                for item in child.items:
+                    visit_stmt(ast.Expr(value=item.context_expr), owner, rel, aliases, refusals, dead)
+                for stmt in child.body:
+                    visit_stmt(stmt, owner, rel, aliases, refusals, True)
+                continue
+            names = set()
             if isinstance(child, ast.Call):
                 fn = child.func
                 raw = ref_name(fn)
-                name = aliases.get(raw, raw)
+                names = resolve(aliases, raw)
                 callee_funcs.add(id(fn))
                 if raw in _DEPENDENCY_WRAPPERS:
                     continue   # Depends(admin_guard): a declared dependency, not an in-body call
             elif owner != module and isinstance(child, ast.Constant) and child.value in watched:
-                name = child.value   # getattr(module, "<name>") lookup
+                names = {child.value}   # getattr(module, "<name>") lookup
             elif isinstance(child, (ast.Name, ast.Attribute)) \
                     and isinstance(child.ctx, ast.Load) and id(child) not in callee_funcs:
                 # A bare reference (`g = web._admin_guard`, a guard passed as a callback)
                 # is a site too — at module/class scope as "<module>" (round 4).
-                raw = ref_name(child)
-                name = aliases.get(raw, raw)
-            if name in watched:
+                names = resolve(aliases, ref_name(child))
+            hits = names & watched
+            if hits:
                 site = f"{rel}:{owner}"
-                (guard_sites if name in _GUARD_CALLS else tier_sites).add(site)
-                line = f"{rel}:{child.lineno} {name}"
+                if hits & _GUARD_CALLS:
+                    guard_sites.add(site)
+                if hits - _GUARD_CALLS:
+                    tier_sites.add(site)
+                line = f"{rel}:{child.lineno} {'|'.join(sorted(hits))}"
                 if child_dead:
                     suspicious.append(line + " (dead or swallowed)")
-                elif isinstance(child, ast.Call) and name in awaited_only and not awaited:
+                elif isinstance(child, ast.Call) and hits & awaited_only and not awaited:
                     suspicious.append(line + " (not awaited)")
             visit(child, owner, rel, aliases, refusals, child_dead, isinstance(child, ast.Await))
 
@@ -753,6 +796,7 @@ def _scan_in_body_guard_calls(root=None, rel_to=None):
             continue
         aliases = rebindings(tree, watched)
         refusals = base_refusals | set(rebindings(tree, base_refusals))
+        file_state["suppressors"] = {"suppress"} | set(rebindings(tree, {"suppress"}))
         callee_funcs.clear()    # node ids are only meaningful while this tree is alive
         visit(tree, module, rel, aliases, refusals, False, False)
     return guard_sites, tier_sites, suspicious
@@ -906,6 +950,98 @@ def test_guard_scan_sees_module_aliases_and_every_swallowing_path(tmp_path):
         "partial_return", "all_paths_leave", "ws_endpoint")}
     assert tier == set()
     flagged = {f"agents/mod.py:{n}" for n, line in enumerate(src.splitlines(), 1) if "# FLAG" in line}
+    assert {s.split()[0] for s in suspicious} == flagged, suspicious
+
+
+def _scan_with_deadline(pkg, rel_to, seconds=20):
+    """Run the scan in a daemon thread so a non-terminating scan fails the test instead
+    of hanging the suite (independent of whether pytest-timeout is configured)."""
+    import threading
+
+    box = {}
+
+    def run():
+        box["out"] = _scan_in_body_guard_calls(pkg, rel_to)
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    assert not worker.is_alive(), f"guard scan did not terminate within {seconds}s"
+    return box["out"]
+
+
+def test_guard_scan_terminates_when_one_name_binds_two_guards(tmp_path):
+    """H511 review (round 5): one local name bound to two different watched names in a
+    file (`g = web._admin_guard` in one handler, `g = web._user_guard` in another) used
+    to flip the file-global rebinding map forever. The map now unions every base a name
+    can mean, so the scan ends and reports both sites; a name that may mean a guard is
+    classified as a guard site (and, if it may also mean a tier primitive, a tier site)."""
+    pkg = tmp_path / "agents"
+    pkg.mkdir()
+    (pkg / "m.py").write_text(
+        "from agents import web\n"
+        "async def a(r):\n    g = web._admin_guard\n    await g(r)\n    return 1\n"
+        "async def b(r):\n    g = web._user_guard\n    await g(r)\n    return 2\n"
+        # A rebinding cycle through two names must also terminate.
+        "x = y\ny = x\nx = web._admin_guard\n"
+        "async def c(r):\n    await y(r)\n"
+        # A name that may be a guard or a tier primitive.
+        "async def d(web, r):\n    h = web._request_is_authed\n    h = web._admin_guard\n"
+        "    await h(r)\n")
+    guard, tier, suspicious = _scan_with_deadline(pkg, tmp_path)
+    assert guard == {f"agents/m.py:{f}" for f in ("a", "b", "c", "d", "<module>")}
+    assert tier == {"agents/m.py:d"}
+    assert suspicious == []
+
+
+def test_guard_scan_flags_suppress_and_returning_the_work(tmp_path):
+    """H511 review (round 5): `with contextlib.suppress(Exception):` around a guard is
+    the same swallow as `try/except Exception: pass` and is flagged (also through an
+    import alias of `suppress` or of the exception); a broad handler that returns the
+    awaited work itself (`return await act(r)`) turns the refusal into the privileged
+    result and is flagged too. Lines marked `# FLAG` must be reported; nothing else."""
+    pkg = tmp_path / "agents"
+    pkg.mkdir()
+    src = (
+        "import contextlib\n"
+        "from contextlib import suppress as quiet\n"
+        "from fastapi import HTTPException as HE\n"
+        "from agents import web\n"
+        "async def c(r):\n"
+        "    with contextlib.suppress(Exception):\n"
+        "        await web._admin_guard(r)  # FLAG\n"
+        "    return 1\n"
+        "async def aliased(r):\n"
+        "    async with quiet(ValueError, HE):\n"
+        "        await web._admin_guard(r)  # FLAG\n"
+        "    return await act(r)\n"
+        "async def narrow(r):\n"
+        "    with contextlib.suppress(ValueError):\n"
+        "        await web._admin_guard(r)\n"
+        "    return 1\n"
+        "async def other_ctx(r):\n"
+        "    with open('x') as fh, contextlib.suppress(OSError):\n"
+        "        await web._admin_guard(r)\n"
+        "    return fh\n"
+        "async def d(r):\n"
+        "    try:\n"
+        "        await web._admin_guard(r)  # FLAG\n"
+        "    except Exception:\n"
+        "        return await act(r)\n"
+        "    return await act(r)\n"
+        "async def refuse_with_response(r):\n"
+        "    try:\n"
+        "        await web._admin_guard(r)\n"
+        "    except HE as e:\n"
+        "        return JSONResponse({'error': e.detail}, status_code=e.status_code)\n"
+        "    return await act(r)\n"
+    )
+    (pkg / "s.py").write_text(src)
+    guard, tier, suspicious = _scan_with_deadline(pkg, tmp_path)
+    assert guard == {f"agents/s.py:{f}" for f in
+                     ("c", "aliased", "narrow", "other_ctx", "d", "refuse_with_response")}
+    assert tier == set()
+    flagged = {f"agents/s.py:{n}" for n, line in enumerate(src.splitlines(), 1) if "# FLAG" in line}
     assert {s.split()[0] for s in suspicious} == flagged, suspicious
 
 
