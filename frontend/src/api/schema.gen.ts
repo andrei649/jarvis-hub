@@ -11050,6 +11050,12 @@ export interface paths {
          *
          *     ``pending_restore.state`` is ``waiting`` (applied at the next hub start), ``deferred``
          *     (``deferred_reason`` says why the last attempt was put off) or ``expired``.
+         *
+         *     H010 review r7: an accepted restore is staged by this hub's worker on its next tick, so
+         *     the listing also says how it will be applied without waiting for that: ``restart``
+         *     (``self``/``manual``, as the restore request's 202), ``stage_within_seconds`` (the
+         *     worker's tick) and ``refused_restore`` (the newest accept the apply refused, if no
+         *     restore was staged since).
          */
         get: operations["backup_list_api_admin_backup_get"];
         put?: never;
