@@ -139,6 +139,7 @@ class PressureMonitor:
         self.clock = clock
         self.memory = _Held()
         self.disk = _Held()
+        self._disk_held: dict[str, _Held] = {}
         self.memory_percent: float | None = None
         self.disks: dict[str, float] = {}
         self.dismissed: set[str] = set()
@@ -208,9 +209,21 @@ class PressureMonitor:
         if sample.memory is not None:
             self.memory_percent = sample.memory
             memory_changed = self.memory.update(sample.memory, t["ram_warn"], t["ram_critical"], now)
-        if sample.disks:
-            self.disks = dict(sample.disks)
-            self.disk.update(max(sample.disks.values()), t["disk_warn"], t["disk_critical"], now)
+        # A failed probe omits only that path. Keep its last reading and raised
+        # level, but break its recovery streak: another healthy volume cannot
+        # prove this one recovered. Readable volumes still escalate at once.
+        for path, held in self._disk_held.items():
+            if path not in sample.disks:
+                held.quiet = 0
+        for path, percent in sample.disks.items():
+            self.disks[path] = percent
+            self._disk_held.setdefault(path, _Held()).update(
+                percent, t["disk_warn"], t["disk_critical"], now,
+            )
+        disk_level = max((held.level for held in self._disk_held.values()), default=0)
+        if disk_level != self.disk.level:
+            self.disk.level = disk_level
+            self.disk.since = now
         cleared = before - self._active()
         if cleared & self.dismissed:
             self.dismissed -= cleared          # recovery re-arms: a new episode is a new warning

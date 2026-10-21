@@ -263,11 +263,32 @@ def test_surface_is_exact_literal_only_and_existing_events_omit_it(rig):
     auth_audit.record_auth_event(
         "token_issued", tier="user", reason="issue", surface="mcp",
     )
+    auth_audit.submit_auth_event(
+        "token_issued", tier="user", reason="issue", surface="mcp",
+    )
+    auth_audit.submit_auth_event(
+        "token_issued", tier="user", reason="issue", surface=Poison(),
+    )
+    auth_audit.record_auth_event(
+        "token_issued", tier="user", reason="issue", surface="MCP",
+    )
+    auth_audit.record_auth_event("token_issued", tier="user", reason="issue")
+    auth_audit.record_auth_event(
+        "token_rotated", tier="user", reason="rotate", surface="mcp",
+    )
+    auth_audit.record_auth_event(
+        "token_revoked", tier="user", reason="revoke", surface="mcp",
+    )
     auth_audit.flush_pending()
-    previews = [json.loads(row.content_preview) for row in rig.audit.query(limit=100)]
-    assert len(previews) == 4
-    assert sum(item.get("surface") == "mcp" for item in previews) == 1
-    assert "surface" not in next(item for item in previews if item["reason"] == "issue")
+    rows = rig.audit.query(limit=100)
+    previews = [json.loads(row.content_preview) for row in rows]
+    assert len(previews) == 10
+    assert sum(item.get("surface") == "mcp" for item in previews) == 3
+    issued = [json.loads(row.content_preview) for row in rows
+              if row.event_type.value == "token_issued"]
+    assert sum(item.get("surface") == "mcp" for item in issued) == 2
+    assert all("surface" not in item for item in previews
+               if item["reason"] in ("rotate", "revoke"))
     assert rig.audit.verify_chain() == (True, None)
     stored = rig.audit._db_path.read_bytes()
     for secret in (b"queued-token-secret", b"queued-payload-secret", b"direct-token-secret"):

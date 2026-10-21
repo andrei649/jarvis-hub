@@ -246,10 +246,12 @@ async def websocket_rpc(ws: WebSocket):
             await _handle_frame(ws, service, raw, send_lock, seen_ids, active_rpc)
     except (HTTPException, ValueError, UnicodeError, json.JSONDecodeError):
         await ws.close(code=1008)
+        return   # leave explicitly: nothing past a refused guard runs (H511)
     except WebSocketDisconnect:
         pass
     except Exception:
         await ws.close(code=1011)
+        return   # leave explicitly: nothing past a refused guard runs (H511)
     finally:
         for task in active_rpc:
             task.cancel()

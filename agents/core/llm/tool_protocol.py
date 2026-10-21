@@ -96,6 +96,15 @@ class TokenUsage:
                 "cache_read": self.cache_read, "cache_write": self.cache_write}
 
 
+#: H297 — the finish reason of a turn whose request the provider refused as invalid
+#: (HTTP 400 ``invalid_request_error`` or 413 ``request_too_large``; the turn's content
+#: is the provider's error text). A backend that carries tool-result images sets it so
+#: the tool loop can detach the images and resend once instead of ending the turn with
+#: the error. A transient failure (429, 5xx/529, timeout, network, auth, exhausted
+#: profiles) is never marked: resending without the images would answer blind.
+PROVIDER_REJECTED_FINISH = "provider_rejected"
+
+
 @dataclass(frozen=True)
 class ToolTurn:
     content: str = ""

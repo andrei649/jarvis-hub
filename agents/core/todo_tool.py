@@ -594,6 +594,9 @@ def register_todo_tool(
         description=DESCRIPTION,
         input_schema=INPUT_SCHEMA,
         capability_id=CAPABILITY_ID,
+        # H399 — each call rewrites the one plan and restates it; two in the same step
+        # would interleave and one would restate a plan the other already changed.
+        parallel_safe=False,
     )
     return TOOL_NAME
 

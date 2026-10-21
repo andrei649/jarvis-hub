@@ -1,0 +1,4 @@
+{
+  "WS /api/hermes/ws": "open",
+  "WS /api/kanban/events": "open"
+}

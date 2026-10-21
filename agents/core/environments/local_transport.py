@@ -15,7 +15,8 @@ hardline itself so a direct caller can never skip it.
 Default-off. ``from_env()`` reads:
 
 - ``JARVIS_TERMINAL_LOCAL_ROOTS`` — comma-separated cwd roots the child may run
-  in (default: ``data_path("workspace")``).
+  in (default: ``data_path("workspace")``). A root that is, contains or lies inside the
+  Nerva Workspace data directory is dropped with one warning (NWS-17).
 - ``JARVIS_TERMINAL_TIMEOUT_S`` — default timeout in seconds (60, capped at
   ``MAX_TIMEOUT_S``).
 
@@ -88,9 +89,31 @@ def destructive_argv(argv: Sequence[str]) -> bool:
     return False
 
 
+ROOTS_ENV = "JARVIS_TERMINAL_LOCAL_ROOTS"
+
+
+def _configured_roots() -> list[str]:
+    """``JARVIS_TERMINAL_LOCAL_ROOTS`` without any root that reaches company data (NWS-17).
+
+    A root that is, contains or lies inside the Nerva Workspace data directory is dropped
+    with one warning (``workspace.config.hub_roots_without_workspace``, imported only when
+    roots are configured); every other root is kept unchanged and in order.
+    """
+    configured = env_list(ROOTS_ENV)
+    if not configured:
+        return configured
+    from agents.core.workspace import config as workspace_config
+
+    return workspace_config.hub_roots_without_workspace(ROOTS_ENV, configured)
+
+
 def default_roots() -> list[str]:
-    """Roots from the env, else the workspace under the runtime-data root."""
-    configured = env_list("JARVIS_TERMINAL_LOCAL_ROOTS")
+    """Roots from the env, else the workspace under the runtime-data root.
+
+    A configured root that would reach the Nerva Workspace's company data is dropped (with
+    one warning); when none is left, the default applies.
+    """
+    configured = _configured_roots()
     if configured:
         return configured
     from agents.core.paths import data_path
@@ -147,7 +170,7 @@ class LocalHostTransport:
     def from_env(cls, **kwargs: Any) -> LocalHostTransport:
         """Build from ``JARVIS_TERMINAL_LOCAL_ROOTS`` / ``JARVIS_TERMINAL_TIMEOUT_S``."""
         roots = kwargs.pop("roots", None) or default_roots()
-        if not env_list("JARVIS_TERMINAL_LOCAL_ROOTS"):
+        if not _configured_roots():
             # The default workspace lives under the runtime-data root; create it
             # so the very first owner command has a jail to run in.
             with contextlib.suppress(OSError):

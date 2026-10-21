@@ -15,6 +15,11 @@ const THINK_TAGS = 'think|thinking|reasoning';
 const THINK_CLOSED = new RegExp(`<(${THINK_TAGS})\\b[^>]*>[\\s\\S]*?</\\1\\s*>`, 'gi');
 const THINK_OPEN = new RegExp(`<(?:${THINK_TAGS})\\b[^>]*>[\\s\\S]*$`, 'i');
 const THINK_STRAY_CLOSE = new RegExp(`^[\\s\\S]*</(?:${THINK_TAGS})\\s*>`, 'i');
+const VERIFIER_PREFIX = 'File-mutation verifier: ';
+const VERIFIER_SUFFIX = ' file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.';
+// The pinned producer appends this exact warning and at least one indented bullet.
+// A header alone and ordinary discussion of file verification remain audible.
+const VERIFIER_FOOTER = /^⚠\uFE0F? File-mutation verifier: [1-9][0-9]{0,19} file edit\(s\) FAILED this turn despite any wording above that may suggest otherwise\. Run `git status` or `read_file` to confirm what actually landed\.(?:\n  • [^\n]+)+/gm;
 const FENCE = /(```|~~~)[\s\S]*?(?:\1|$)/g;
 const AUTOLINK = /<https?:\/\/[^<>\s]+>/g;
 const HTML_TAG = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>/g;
@@ -104,6 +109,7 @@ function oneLine(raw: string, w: Words): string {
 /** `text` as it should be heard, or "" when nothing in it is worth saying. */
 export function speechText(text: unknown, lang?: unknown): string {
   let raw = String(text ?? '').replace(/\r\n?/g, '\n');
+  raw = raw.replace(VERIFIER_FOOTER, ' ');
   raw = raw.replace(THINK_CLOSED, ' ').replace(THINK_OPEN, '').replace(THINK_STRAY_CLOSE, '');
   raw = raw.replace(FENCE, '\n').replace(AUTOLINK, 'link').replace(HTML_TAG, ' ');
   raw = raw.replace(IMAGE, '$1').replace(LINK, '$1');
@@ -121,6 +127,26 @@ const THINK_CLOSERS: Record<string, RegExp> = {
 // A tail that may still become an opener once the next delta arrives.
 const MAYBE_OPENER = /(`{1,2}|~{1,2}|<[A-Za-z]{0,9}|<(?:think|thinking|reasoning)\b[^>]*)$/i;
 
+/** A bounded lookahead for the same exact footer recognized by speechText. */
+function verifierCandidate(text: string): 'partial' | 'complete' | 'invalid' {
+  const starts = [`⚠ ${VERIFIER_PREFIX}`, `⚠️ ${VERIFIER_PREFIX}`];
+  if (starts.some((start) => start.startsWith(text))) return 'partial';
+  for (const start of starts) {
+    if (!text.startsWith(start)) continue;
+    const rest = text.slice(start.length);
+    if (!rest) return 'partial';
+    const count = /^[1-9][0-9]{0,19}/.exec(rest);
+    if (!count) return 'invalid';
+    const tail = rest.slice(count[0].length);
+    if (/^[0-9]/.test(tail)) return 'invalid';
+    const ending = VERIFIER_SUFFIX + '\n  • ';
+    if (ending.startsWith(tail)) return 'partial';
+    return tail.startsWith(ending) && tail.length === ending.length + 1 && !tail.endsWith('\n')
+      ? 'complete' : 'invalid';
+  }
+  return 'invalid';
+}
+
 /**
  * Drops fenced code and reasoning from a live token stream, however its markers are
  * split across deltas. `push()` returns the text that is safe to speak so far; a tail
@@ -129,9 +155,96 @@ const MAYBE_OPENER = /(`{1,2}|~{1,2}|<[A-Za-z]{0,9}|<(?:think|thinking|reasoning
 export class SpeechStreamFilter {
   private pending = '';
   private closer: RegExp | string | null = null;   // what ends the block we are inside
+  private footerMode: 'normal' | 'candidate' | 'bullet' | 'next-bullet' = 'normal';
+  private footerProbe = '';
+  private footerLineStart = true;
+  private footerCR = false;
+
+  private footerChar(char: string): string {
+    if (this.footerMode === 'bullet') {
+      if (char === '\n') this.footerMode = 'next-bullet';
+      return '';
+    }
+    if (this.footerMode === 'next-bullet') {
+      this.footerProbe += char;
+      const marker = '  • ';
+      if (marker === this.footerProbe) {
+        this.footerMode = 'bullet';
+        this.footerProbe = '';
+        return '';
+      }
+      if (marker.startsWith(this.footerProbe)) return '';
+      const replay = this.footerProbe;
+      this.footerProbe = '';
+      this.footerMode = 'normal';
+      this.footerLineStart = true;
+      let out = '\n';
+      for (const next of replay) out += this.footerChar(next);
+      return out;
+    }
+    if (this.footerMode === 'candidate') {
+      this.footerProbe += char;
+      const state = verifierCandidate(this.footerProbe);
+      if (state === 'partial') return '';
+      if (state === 'complete') {
+        this.footerProbe = '';
+        this.footerMode = 'bullet';
+        return '';
+      }
+      // Replay the failed candidate after its first warning glyph. Replaying
+      // the whole candidate would enter the same failed candidate forever.
+      const replay = this.footerProbe.slice(1);
+      this.footerProbe = '';
+      this.footerMode = 'normal';
+      this.footerLineStart = false;
+      let out = '⚠';
+      for (const next of replay) out += this.footerChar(next);
+      return out;
+    }
+    if (this.footerLineStart && char === '⚠') {
+      this.footerMode = 'candidate';
+      this.footerProbe = char;
+      return '';
+    }
+    this.footerLineStart = char === '\n';
+    return char;
+  }
+
+  private filterFooter(delta: string, final = false): string {
+    let normalized = '';
+    for (const char of String(delta || '')) {
+      if (this.footerCR) {
+        normalized += '\n';
+        this.footerCR = false;
+        if (char === '\n') continue;
+      }
+      if (char === '\r') this.footerCR = true;
+      else normalized += char;
+    }
+    if (final && this.footerCR) {
+      normalized += '\n';
+      this.footerCR = false;
+    }
+    let out = '';
+    for (const char of normalized) out += this.footerChar(char);
+    if (final && this.footerMode === 'candidate') {
+      out += this.footerProbe;
+      this.footerProbe = '';
+      this.footerMode = 'normal';
+    } else if (final && this.footerMode === 'next-bullet') {
+      out += '\n' + this.footerProbe;
+      this.footerProbe = '';
+      this.footerMode = 'normal';
+    }
+    return out;
+  }
 
   push(delta: string): string {
-    this.pending += String(delta || '');
+    return this.feedBlocks(this.filterFooter(delta));
+  }
+
+  private feedBlocks(text: string): string {
+    this.pending += text;
     let out = '';
     for (;;) {
       if (this.closer !== null) {
@@ -165,9 +278,14 @@ export class SpeechStreamFilter {
 
   /** The end of the stream: a held tail is text; an unclosed block is never spoken. */
   flush(): string {
+    const prefix = this.feedBlocks(this.filterFooter('', true));
     const rest = this.closer === null ? this.pending : '';
     this.pending = '';
     this.closer = null;
-    return rest;
+    this.footerMode = 'normal';
+    this.footerProbe = '';
+    this.footerLineStart = true;
+    this.footerCR = false;
+    return prefix + rest;
   }
 }

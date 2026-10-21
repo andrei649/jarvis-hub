@@ -491,6 +491,12 @@ async def lifespan(application: FastAPI):
     from core.paths import ensure_user_home
     scaffolded_home = ensure_user_home()
     setup_logging()
+    # H010: only serve.py applies a staged in-place restore (at boot, before this module
+    # is imported); a raw-uvicorn start, or one where it was deferred, says it still waits.
+    from agents.core import backup as _backup
+    restore_waiting = _backup.unapplied_restore_warning()
+    if restore_waiting:
+        logger.warning(restore_waiting)
     # H501: say once, in the log, when the host itself is set up dangerously (root,
     # sshd passwords, a container's data root not on a volume). Read-only, never blocks.
     from agents.core import host_posture
@@ -673,12 +679,28 @@ async def lifespan(application: FastAPI):
     # restart) and mark this run as not yet cleanly stopped.
     from agents.core import resource_pressure
     resource_pressure.monitor().start()
+    # Nerva Workspace: say now, not at the first sign-in, when this hub's audit key is not
+    # the trail's (it then refuses every write with 503; reads the database read-only).
+    from agents.core.workspace import audit as workspace_audit
+    try:
+        workspace_audit.startup_key_check()
+    except Exception:  # a diagnostic must never keep the hub from starting
+        logger.exception("Nerva Workspace audit key check failed")
+    # Nerva Workspace: scheduled reports + housekeeping (a no-op tick while the workspace
+    # is off; NERVA_WORKSPACE_SCHEDULER=0 keeps it from starting at all).
+    from agents.core.workspace import scheduler as workspace_scheduler
+    workspace_scheduler.start_background()
     # H283: systemd's READY/STOPPING are not sent from here — uvicorn binds the port
     # only after this startup returns; serve.py's NotifyingServer sends them.
     yield
     # H161: the clean-shutdown mark first — a later step that hangs must not make this
     # stop look like an out-of-memory kill to the next start.
     resource_pressure.monitor().stop()
+    # Before the orchestrator closes: in-flight workspace report runs use its model router.
+    try:
+        await workspace_scheduler.stop_background()
+    except Exception:  # a workspace fault must not keep the hub from closing and unlocking
+        logger.exception("Nerva Workspace scheduler did not stop cleanly")
     from agents.core.hermes_runtime.service import get_service as get_hermes_runtime
     await get_hermes_runtime().stop()
     from agents.core import power
@@ -730,9 +752,11 @@ if _cors_configured and not _cors_origins:
         "Origins must look like https://host[:port] with no path or trailing slash."
     )
 if _cors_origins:
-    from fastapi.middleware.cors import CORSMiddleware
+    # Path-scoped: /api/workspace* and /workspace* never get CORS headers (Nerva Workspace
+    # spec §6) — its cookie is SameSite=Lax, so a listed same-site origin could read it.
+    from agents.core.workspace.http import WorkspaceExemptCORSMiddleware
     app.add_middleware(
-        CORSMiddleware,
+        WorkspaceExemptCORSMiddleware,
         allow_origins=_cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
@@ -761,10 +785,22 @@ async def security_block_handler(request: Request, exc: SecurityBlockError):
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
     log_error(logger, E_INTERNAL_UNEXPECTED, component="web", detail=str(exc), exc=exc)
+    if _workspace_errors.is_workspace_path(request):
+        # The workspace UI reads every failure as {"error", "message"} (spec §7).
+        return _workspace_errors.error_response(
+            _workspace_errors.WorkspaceError("internal_error", "Internal server error", 500))
     return _nocache_json(
         {"code": "JARVIS-INTERNAL-001", "category": "internal", "severity": "error", "message": "Internal server error"},
         status_code=500,
     )
+
+
+# Nerva Workspace: WorkspaceError → {"error", "message", ...}, and FastAPI's request
+# validation reshaped to 422 invalid_request on /api/workspace/* only — every other path
+# keeps FastAPI's default {"detail": [...]} body (agents/core/workspace/errors.py).
+from agents.core.workspace import errors as _workspace_errors  # noqa: E402
+
+_workspace_errors.register_handlers(app)
 
 
 HERE = Path(__file__).parent / "web"
@@ -799,11 +835,22 @@ async def _no_store_for_polling(request: Request, call_next):
 # perfectly healthy instance (the opposite of the operability goal).
 _PROBE_PATHS = {"/healthz", "/readyz", "/metrics"}
 
+# Nerva Workspace (/api/workspace/*, /workspace*) is not counted here: it serves many
+# people of one company, often behind one NAT address, and enforces its own per-account
+# and per-IP throttles (docs/business/WORKSPACE_PILOT_SPEC.md §6 "Rate limits").
+_WORKSPACE_PREFIXES = ("/api/workspace", "/workspace")
+
+
+def _is_workspace_path(path: str) -> bool:
+    """True for the workspace app and API (logical path: the root path is stripped)."""
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in _WORKSPACE_PREFIXES)
+
 
 @app.middleware("http")
 async def _rate_limit(request: Request, call_next):
     """HF-2: throttle unauthenticated network clients (DoS / token brute-force)."""
-    if RATE_LIMIT_PER_MIN > 0 and request.url.path not in _PROBE_PATHS:
+    if (RATE_LIMIT_PER_MIN > 0 and request.url.path not in _PROBE_PATHS
+            and not _is_workspace_path(request.url.path)):
         ip = _client_ip(request)
         # The exemption follows the localhost gate's origin, not the bucket key (H691):
         # an unlisted same-box proxy connects from 127.0.0.1 for every client it
@@ -1128,6 +1175,8 @@ class TurnOutcome(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     session_id: str | None = None
+    usage: dict | None = None
+    runtime_stops: list[str] = []
     # The turn's reply is prose ("…this action requires approval"), which names
     # nothing the client can show, poll or link to. These are the queue ids the
     # turn pushed onto the approval queue — a report, not a grant: every one of
@@ -1153,6 +1202,19 @@ if static_dir.is_dir():
 v2_assets = HERE / "v2" / "assets"
 if v2_assets.is_dir():
     app.mount("/v2/assets", StaticFiles(directory=str(v2_assets)), name="v2-assets")
+
+# Nerva Workspace bundle (agents/web/workspace, built by vite.workspace.config.ts). Mounted
+# before the workspace_ui router is included so the hashed assets win over its catch-all.
+# The stylesheet loads its fonts relative to itself; with nosniff and font-src 'self' they
+# must be served as font/woff2, which not every platform's MIME table knows.
+import mimetypes  # noqa: E402
+
+mimetypes.add_type("font/woff2", ".woff2")
+from agents.core.routers import workspace_ui as _workspace_ui  # noqa: E402
+
+_workspace_assets = _workspace_ui.assets_app()
+if _workspace_assets is not None:
+    app.mount(_workspace_ui.ASSETS_MOUNT, _workspace_assets, name="workspace-assets")
 
 
 # ── HTML ─────────────────────────────────────────────────────────
@@ -1271,6 +1333,15 @@ def _selected_turn_outcome(orchestrator, measured: dict | None) -> dict | None:
 async def chat(req: ChatRequest, request: Request):
     if not orch:
         return ChatResponse(reply="Jarvis not initialized.")
+    from agents.core.turn_usage import turn_usage_scope
+    from agents.core.turn_stops import turn_stops_scope
+    with turn_usage_scope() as collector, turn_stops_scope() as stops:
+        return await _chat_with_usage(req, request, collector, stops)
+
+
+async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops):
+    from agents.core.foreign_history import http_owner_guard
+    await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
     # Declared before the try so the failure branch can report it too: a turn that
     # queued an action and *then* raised still left those rows on the queue, and
     # answering "Internal error." with an empty list would hide them.
@@ -1282,7 +1353,8 @@ async def chat(req: ChatRequest, request: Request):
             try:
                 await prepare_session(orch, req.session_id)
             except ContinuationRefused as exc:
-                return JSONResponse({"error": exc.reason}, status_code=exc.status)
+                return JSONResponse({"error": exc.reason, "usage": collector.snapshot(),
+                                     "runtime_stops": stops.snapshot()}, status_code=exc.status)
         from agents.core import code_interruptions
         code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
         # H579: @file:path references in the owner's own message are attached for this turn:
@@ -1319,7 +1391,8 @@ async def chat(req: ChatRequest, request: Request):
             with reasoning_scope(req.reasoning):
                 async with _turn_lease(orch, req.session_id) as acquired:
                     if not acquired:
-                        return ChatResponse(reply=TURN_BUSY_REPLY)
+                        return ChatResponse(reply=TURN_BUSY_REPLY, usage=collector.snapshot(),
+                                            runtime_stops=stops.snapshot())
                     if req.session_id is not None:
                         await prepare_session(orch, req.session_id)
                     from agents.core.routers.chat_pending import http_chat_binding
@@ -1343,12 +1416,15 @@ async def chat(req: ChatRequest, request: Request):
             session_titles.reset_own_words(words_token)
         return ChatResponse(reply=reply, session_id=orch.session_id if isinstance(orch.session_id, str) else None,
                             pending_approvals=queued_approvals, warming=warming, notices=turn_notices,
-                            outcome=_selected_turn_outcome(orch, measured_outcome))
+                            outcome=_selected_turn_outcome(orch, measured_outcome), usage=collector.snapshot(),
+                            runtime_stops=stops.snapshot())
     except Exception:
         # Constant reply — exception text in the client body is an
         # information-exposure pattern; the log line above keeps the specifics.
         logger.exception("chat error")
-        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals, notices=turn_notices)
+        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals,
+                            notices=turn_notices, usage=collector.snapshot(),
+                            runtime_stops=stops.snapshot())
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
@@ -1379,6 +1455,12 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         return await acknowledged
 
     async def runner():
+        from agents.core.turn_usage import turn_usage_scope
+        from agents.core.turn_stops import turn_stops_scope
+        with turn_usage_scope() as collector, turn_stops_scope() as stops:
+            await run_in_scope(collector, stops)
+
+    async def run_in_scope(collector, stops):
         # The principal is bound inside the task: a ContextVar set on the endpoint would
         # not reliably reach a generator Starlette drives later. The approval collector
         # is bound here for the same reason.
@@ -1399,7 +1481,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             session = orch.session_id
             measured = outcome_sink.close()
             await queue.put(("end", (text, session if isinstance(session, str) else None,
-                                     _selected_turn_outcome(orch, measured))))
+                                     _selected_turn_outcome(orch, measured), collector.snapshot(),
+                                     stops.snapshot())))
 
         try:
             with reasoning_scope(reasoning):
@@ -1437,7 +1520,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             # queued before it raised is still sitting on the approval queue.
             queued_approvals[:] = sink
             turn_notices[:] = notices
-            await queue.put(("error", ""))
+            await queue.put(("error", (collector.snapshot(), stops.snapshot())))
         finally:
             outcome_sink.close()
             reset_turn_outcome(outcome_token)
@@ -1463,14 +1546,15 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 if not acknowledged.done():
                     acknowledged.set_result(True)
             elif kind == "end":
-                full, actual_session, outcome = data
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome})}\n\n"
+                full, actual_session, outcome, usage, stops = data
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome, 'usage': usage, 'runtime_stops': stops})}\n\n"
                 break
             elif kind == "error":
                 # Same shape on the error end event — a client that always reads the
                 # field should never have to special-case the failure branch, and a
                 # turn that queued something before failing still has to name it.
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'session_id': None, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': None})}\n\n"
+                usage, stops = data
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'session_id': None, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': None, 'usage': usage, 'runtime_stops': stops})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting
@@ -1490,6 +1574,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
 async def chat_stream(req: ChatRequest, request: Request):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.foreign_history import http_owner_guard
+    await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
 
     if req.session_id is not None:
         from agents.core.session_continuation import ContinuationRefused, prepare_session
@@ -1815,6 +1901,25 @@ app.include_router(_pressure_router)   # H161: GET /api/system/pressure + dismis
 app.include_router(_model_setup_router)
 app.include_router(_permissions_router)
 app.include_router(_report_router)
+
+# Nerva Workspace — the B2B pilot app (docs/business/WORKSPACE_PILOT_SPEC.md). Every
+# /api/workspace route answers 404 workspace_disabled while NERVA_WORKSPACE is off and
+# authenticates with its own session cookie (ws_user_guard / ws_admin_guard), never the
+# hub tokens. Importing the domain routers registers their approval effects.
+from agents.core.routers.workspace_admin import router as _workspace_admin_router  # noqa: E402
+from agents.core.routers.workspace_approvals import router as _workspace_approvals_router  # noqa: E402
+from agents.core.routers.workspace_auth import router as _workspace_auth_router  # noqa: E402
+from agents.core.routers.workspace_chat import router as _workspace_chat_router  # noqa: E402
+from agents.core.routers.workspace_documents import router as _workspace_documents_router  # noqa: E402
+from agents.core.routers.workspace_reports import router as _workspace_reports_router  # noqa: E402
+
+app.include_router(_workspace_auth_router)
+app.include_router(_workspace_admin_router)
+app.include_router(_workspace_documents_router)
+app.include_router(_workspace_chat_router)
+app.include_router(_workspace_reports_router)
+app.include_router(_workspace_approvals_router)
+app.include_router(_workspace_ui.router)   # /workspace shell; after the assets mount
 
 
 # /api/digest/run (+ DigestRunBody) and /api/schedule/parse extracted to routers/tools.py (CLN-3)

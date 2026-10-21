@@ -604,8 +604,12 @@ def test_the_restore_reachability_scan_ignores_docs_and_other_verbs():
 
 
 def test_restore_is_not_reachable_from_any_route_or_tool():
-    """Restore overwrites live data; it stays an operator CLI action (governance note).
+    """Restore overwrites live data; no route or tool calls it directly (governance note).
 
+    H010's in-place restore goes around this on purpose and only one way: a route queues
+    a ``backup.restore`` card at the irreversible tier, a human's accept stages it, and
+    the boot hook (serve.py) or the offline ``nerva backup restore`` applies it through
+    ``apply_pending_restore`` — whose callers ``test_backup_inplace_restore`` pins.
     If this ever fails, the new caller must make restore a file.write-class effect that
     crosses the Action Kernel — not just call it.
     """

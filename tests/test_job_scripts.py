@@ -1,5 +1,6 @@
 """Scheduled scripts retain exact proposed bytes and await real task outcomes."""
 import asyncio
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,9 +49,14 @@ def make_runtime(tmp_path, scripts, *, no_agent=True, delivery=None):
 
 
 def complete(task, stdout='ready\n', ok=True):
+    raw = stdout.encode('utf-8')
     task.status = 'done'
     task.result = {'status': 'ok' if ok else 'failed', 'tool': 'terminal_run',
-                   'result': {'ok': ok, 'stdout': stdout, 'exit_code': 0 if ok else 1}}
+                   'result': {'ok': ok, 'stdout': stdout, 'exit_code': 0 if ok else 1,
+                              'stdout_capture': {'version': 1, 'sha256': hashlib.sha256(raw).hexdigest(),
+                                                 'byte_count': len(raw), 'complete': ok,
+                                                 'utf8_valid': True,
+                                                 'snapshot_complete': ok and len(raw) <= 16000}}}
 
 
 def test_source_snapshot_binds_bytes_not_mutable_path(scripts):
@@ -150,6 +156,48 @@ async def test_pending_task_survives_restart_without_requeue(tmp_path, scripts):
         await restarted.reconcile_scripts()
         assert outputs == ['ready\n']
         assert reopened.get(job.id).attempts == 1
+    finally:
+        reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_old_attempt_resume_does_not_fetch_newer_context_or_own_output(tmp_path, scripts):
+    import json
+
+    store, runner, job, tasks, outputs, prompts = make_runtime(
+        tmp_path, scripts, no_agent=False, delivery=[])
+    source = store.create(name='source', schedule_text='0 8 * * *',
+                          action={'type': 'ask', 'prompt': 'source'}, options={})
+    store.edit(job.id, context_from=source.id)
+    store.update(job.id, notepad='note saved at reservation')
+    await runner.fire(job.id)
+    with store._lock:
+        row = store._conn.execute('SELECT id,data FROM job_script_attempts WHERE job_id=?',
+                                  (job.id,)).fetchone()
+        data = json.loads(row['data'])
+        for field in ('created_at', '_frozen_self_output', '_frozen_context'):
+            data['job'].pop(field)
+        store._conn.execute('UPDATE job_script_attempts SET data=? WHERE id=?',
+                            (json.dumps(data), row['id']))
+        store._conn.commit()
+    store.close()
+
+    reopened = JobStore(tmp_path / 'jobs.db')
+    restarted = JobRunner(reopened, orch=runner._orch, scheduler=lambda: None, quiet=lambda: False)
+    restarted.bind_scripts(submit=lambda *a: pytest.fail('must not requeue'), get=tasks.get,
+                           find=lambda origin: [t for t in tasks.values() if t.origin == origin])
+    try:
+        for producer, content in ((source, 'later source output'), (job, 'later own output')):
+            pending = reopened.start_direct_run(producer.id, 'started')
+            reopened.finish_direct_run(pending.id, producer.id, status='ok', summary='complete',
+                                       publish_content=content,
+                                       expected_created_at=producer.created_at)
+        complete(tasks[1], 'script context')
+        await restarted.reconcile_scripts()
+        assert len(prompts) == 1
+        assert 'later source output' not in prompts[0]
+        assert 'later own output' not in prompts[0]
+        assert 'note saved at reservation' in prompts[0]
     finally:
         reopened.close()
 
@@ -319,7 +367,7 @@ async def test_model_wait_rechecks_job_and_estop_before_delivery(tmp_path, scrip
     stopped = False
     monkeypatch.setattr(estop, 'check_paused', lambda *a: stopped)
 
-    async def blocked_ask(*args):
+    async def blocked_ask(*args, **kwargs):
         entered.set()
         await release.wait()
         return 'answer', ''
@@ -495,7 +543,7 @@ async def test_intake_failure_never_automatically_resubmits(tmp_path, scripts, m
 async def test_model_failure_finishes_without_delivery(tmp_path, scripts, monkeypatch):
     store, runner, job, tasks, outputs, _ = make_runtime(tmp_path, scripts, no_agent=False)
 
-    async def fail(*args):
+    async def fail(*args, **kwargs):
         raise RuntimeError('model unavailable')
 
     monkeypatch.setattr(runner, '_ask', fail)
@@ -594,7 +642,7 @@ async def test_script_model_turn_carries_scoped_untrusted_origin(tmp_path, scrip
     store, runner, job, tasks, _, _ = make_runtime(tmp_path, scripts, no_agent=False)
     before, observed = current_action_origin(), []
 
-    async def inspect(*args):
+    async def inspect(*args, **kwargs):
         observed.append(current_action_origin())
         return 'answer', ''
 

@@ -1,5 +1,5 @@
 /* HUD v2 · SHELL — topbar, nav, ticker, right column, ambient, palette */
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph, Reactor, Meter, statusClass, fmtTime, fmtTimeShort, fmtDate } from './primitives';
 import { Bubble } from './cockpit';
 import { isExecutingAgent, NeuralMesh } from './mesh';
@@ -8,6 +8,58 @@ import { BriefingWall } from './wall';
 import { runningTasks } from './task-state';
 import { V2 } from './data';
 import { bindings as shortcutBindings, chordOf, displayChord, matchAction } from './shortcuts';
+import { STATUS_CHROME_UNKNOWN, type StatusChrome } from './api/status-chrome';
+
+/* H133 — the gateway readout, shared by the top-bar badge and the rail dot. */
+function gatewayView(gw: StatusChrome['gateway'] = STATUS_CHROME_UNKNOWN.gateway){
+  const list = gw.running.length ? gw.running.join(', ') : 'none';
+  if(gw.state === 'running') return { v:'● ' + gw.running.length + (gw.total != null ? '/' + gw.total : ''), c:'var(--green)', t:'gateway running · channels: ' + list };
+  if(gw.state === 'stopped') return { v:'○ STOPPED', c:'var(--amber)', t:'gateway: ' + (gw.total ?? 0) + ' channel(s) registered, none running' };
+  if(gw.state === 'none') return { v:'○ NONE', c:'var(--ink-2)', t:'gateway: no channel registered' };
+  return { v:'○ —', c:'var(--ink-2)', t:'gateway state unknown (status not answered)' };
+}
+
+/* H133 — the brand strip sheds WHOLE badges in priority order instead of letting
+   `overflow:hidden` + `justify-content:flex-end` clip whatever happens to sit leftmost.
+   Each badge carries `data-keep` (higher = kept longer): LLM, DATA and GATEWAY outlast the
+   trust pair (EGRESS, MIC), which outlast AGENTS and LOCAL. The active-session count is
+   not a badge: it rides inside GATEWAY, so it is shed only when GATEWAY is. Widths depend on live
+   state ("○ NO MODEL" is wider than "● READY") and the strip's box on the viewport, so
+   the fit is measured, not guessed from breakpoints: show everything, then shed the lowest
+   keep until the visible badges fit the strip's box. Re-run on every render (a state change
+   can widen a badge) and whenever `.brand` resizes (the viewport changed). Without layout
+   (jsdom) every width reads 0, so nothing is shed. */
+export function fitBadgeStrip(strip: HTMLElement | null){
+  if(!strip) return;
+  const kids = Array.from(strip.children) as HTMLElement[];
+  kids.forEach(k => k.removeAttribute('data-shed'));
+  const gap = parseFloat(getComputedStyle(strip).columnGap) || 0;
+  const order = kids.map((k, i) => ({ k, i, keep: Number(k.dataset.keep) || 0 }))
+    .sort((a, b) => a.keep - b.keep || a.i - b.i);
+  const used = () => {
+    const shown = kids.filter(k => !k.hasAttribute('data-shed'));
+    return shown.reduce((sum, k) => sum + k.getBoundingClientRect().width, 0) + gap * Math.max(0, shown.length - 1);
+  };
+  // keep at least one badge. The box does not depend on how many badges show (styles.css:
+  // the strip is `flex:1 1 0` beside a capped brand line), so shedding cannot chase itself.
+  for(const { k } of order.slice(0, -1)){
+    if(used() <= strip.clientWidth + 0.5) break;
+    k.setAttribute('data-shed', '');
+  }
+}
+
+function useBadgeStrip(){
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { fitBadgeStrip(ref.current); });
+  useEffect(() => {
+    const host = ref.current?.parentElement;
+    if(!host || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => fitBadgeStrip(ref.current));
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, []);
+  return ref;
+}
 
 const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; sep?: boolean; locked?: boolean }> = [
   { id:'cockpit', icon:'cockpit', tkey:'cockpit', live:true },
@@ -31,8 +83,15 @@ const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; 
   { id:'admin', icon:'admin', tkey:'admin' },
 ];
 
-function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, onJobs = () => {}, shortcutOverrides = {}, t }){
+function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, onJobs = () => {}, shortcutOverrides = {}, chrome = STATUS_CHROME_UNKNOWN, t }: any){
   const tr = trust || { mic:'on', strict_local:false };
+  const ch: StatusChrome = chrome || STATUS_CHROME_UNKNOWN;
+  const GW = gatewayView(ch.gateway);
+  const win = ch.sessions.windowS != null ? Math.round(ch.sessions.windowS / 60) + ' min' : 'the recent window';
+  const SESS = ch.sessions.active != null
+    ? { v:String(ch.sessions.active), t:ch.sessions.active + (ch.sessions.active === 1 ? ' session' : ' sessions') + ' active in the last ' + win }
+    : { v:'—', t:'active sessions unknown (session store not answering)' };
+  const strip = useBadgeStrip();
   const lm = llm || { state:'unknown', model:null };
   const enabled = agents.length;
   const running = agents.filter(isExecutingAgent).length;
@@ -49,14 +108,18 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
     <div className="topbar">
       <div className="brand">
         <Reactor/>
-        <div className="brand-tx"><div className="l1">JARVIS</div><div className="l2">{t.sub}</div></div>
-        <div className="badges" style={{marginLeft:18}}>
-          <div className="badge" title="agents enabled · actually running"><div className="k">AGENTS</div><div className="v">{enabled} en{running>0 ? ' · '+running+' ▶' : ''}</div></div>
-          <div className="badge" title={LLM.t}><div className="k">LLM</div><div className="v" style={{color:LLM.c}}>{LLM.v}</div></div>
-          <div className="badge" title={DATA.t}><div className="k">DATA</div><div className="v" style={{color:DATA.c}}>{DATA.v}</div></div>
-          {localPct!=null && <div className={'badge' + (localPct===100 ? ' ok' : '')} title="share of processing kept on-device"><div className="k">{t.local}</div><div className="v">{localPct}%</div></div>}
-          <div className={'badge' + (tr.strict_local ? ' ok' : '')} title={tr.strict_local ? 'strict-local — no cloud egress path; nothing leaves the machine' : 'hybrid — a cloud backend is reachable'}><div className="k">EGRESS</div><div className="v">{tr.strict_local ? '⊘ SEALED' : '↗ HYBRID'}</div></div>
-          <div className={'badge' + (tr.mic === 'off' ? ' ok' : '')} title={tr.mic === 'off' ? 'microphone muted (JARVIS_MIC_MUTED)' : 'microphone live'}><div className="k">MIC</div><div className="v">{tr.mic === 'off' ? '⊘ MUTED' : '● ON'}</div></div>
+        <div className="brand-tx"><div className="l1">JARVIS</div><div className="l2">{t.sub}{ch.version && <span className="ver" data-chrome="version" title="Nerva hub version"> · v{ch.version}</span>}</div></div>
+        <div className="badges" ref={strip} style={{marginLeft:18}}>
+          <div className="badge" data-keep="3" title="agents enabled · actually running"><div className="k">AGENTS</div><div className="v">{enabled} en{running>0 ? ' · '+running+' ▶' : ''}</div></div>
+          <div className="badge" data-keep="8" title={LLM.t}><div className="k">LLM</div><div className="v" style={{color:LLM.c}}>{LLM.v}</div></div>
+          <div className="badge" data-keep="7" title={DATA.t}><div className="k">DATA</div><div className="v" style={{color:DATA.c}}>{DATA.v}</div></div>
+          {/* H133 — the active-session count rides INSIDE the GATEWAY badge (never shed), not in a
+              badge of its own: a separate SESSIONS badge had the lowest keep and was shed at every
+              laptop width from 1600 down, and it was the only place the count appeared. */}
+          <div className="badge" data-keep="6" data-chrome="gateway" data-state={ch.gateway.state} title={GW.t + ' · ' + SESS.t}><div className="k">GATEWAY</div><div className="v"><span style={{color:GW.c}}>{GW.v}</span><span className="gw-sess" data-chrome="sessions">· {SESS.v}S</span></div></div>
+          {localPct!=null && <div className={'badge' + (localPct===100 ? ' ok' : '')} data-keep="2" title="share of processing kept on-device"><div className="k">{t.local}</div><div className="v">{localPct}%</div></div>}
+          <div className={'badge' + (tr.strict_local ? ' ok' : '')} data-keep="5" title={tr.strict_local ? 'strict-local — no cloud egress path; nothing leaves the machine' : 'hybrid — a cloud backend is reachable'}><div className="k">EGRESS</div><div className="v">{tr.strict_local ? '⊘ SEALED' : '↗ HYBRID'}</div></div>
+          <div className={'badge' + (tr.mic === 'off' ? ' ok' : '')} data-keep="4" title={tr.mic === 'off' ? 'microphone muted (JARVIS_MIC_MUTED)' : 'microphone live'}><div className="k">MIC</div><div className="v">{tr.mic === 'off' ? '⊘ MUTED' : '● ON'}</div></div>
         </div>
       </div>
       <div className="clock">
@@ -100,7 +163,9 @@ function Ticker({ items, t, hidden }){
   );
 }
 
-function Rail({ mode, setMode, t }){
+function Rail({ mode, setMode, gateway = STATUS_CHROME_UNKNOWN.gateway, t }: any){
+  const gw = gateway || STATUS_CHROME_UNKNOWN.gateway;
+  const GW = gatewayView(gw);
   return (
     <div className="rail">
       {MODES.map((m,i)=> m.sep
@@ -110,6 +175,13 @@ function Rail({ mode, setMode, t }){
             <Icon d={ICONS[m.icon]} size={19}/><span className="rl">{t[m.tkey]}</span>
           </button>
       )}
+      <div className="rail-spacer"></div>
+      {/* H133: the dot sits outside `.rl`, so the collapsed (icon-only) rail keeps it, and it is
+          pinned to the bottom of the scrolling rail (sticky), so a short screen cannot push it
+          below the fold. */}
+      <div className="rail-gw" data-chrome="rail-gateway" data-state={gw.state} title={GW.t}>
+        <span className="rail-gw-dot" style={{background:GW.c}}></span><span className="rl">GW {gw.state === 'running' ? gw.running.length : '—'}</span>
+      </div>
     </div>
   );
 }

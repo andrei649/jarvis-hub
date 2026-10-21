@@ -95,6 +95,38 @@ describe('PairingPanel (H12.19) — sender approvals are live', () => {
       expect(JSON.parse(post[1].body)).toMatchObject({ channel: 'telegram', sender_id: '12345', action: 'approve' });
     });
   });
+
+  it('H051: an approved sender (store status "allowed") shows as approved and can be revoked', async () => {
+    // The store writes ALLOWED = "allowed" (agents/core/channels/pairing.py); the panel
+    // once keyed on 'paired', so an approved sender kept its approve button and could
+    // only be "rejected" — a no-op for a non-pending record. Revoke must send `unpair`.
+    const fn = mockFetch({
+      '/api/channels/pairing': {
+        senders: [
+          { channel: 'telegram', sender_id: '777', name: 'ion', status: 'allowed' },
+          { channel: 'slack', sender_id: 'U9', name: 'spam', status: 'pending' },
+          { channel: 'sms', sender_id: '+40', name: 'troll', status: 'blocked' },
+        ],
+        summary: { allowed: 1, pending: 1, blocked: 1 },
+      },
+    });
+    render(<PairingPanel />);
+    await waitFor(() => expect(screen.getByText('ion')).toBeTruthy());
+    const allowedTag = screen.getByText('allowed');
+    expect(allowedTag.style.color || allowedTag.getAttribute('style') || '').toMatch(/green/);
+    // Approve shows for pending and blocked, never for the allowed sender; reject only
+    // for the pending one; allowed and blocked are revoked (unpair → unknown).
+    expect(screen.getAllByTitle('approve')).toHaveLength(2);
+    expect(screen.getAllByTitle('reject')).toHaveLength(1);
+    const revoke = screen.getAllByTitle('unpair');
+    expect(revoke).toHaveLength(2);
+    fireEvent.click(revoke[0]);
+    await waitFor(() => {
+      const post = fn.mock.calls.find((c) => String(c[0]).includes('/api/channels/pairing/decide') && c[1]?.method === 'POST');
+      expect(post).toBeTruthy();
+      expect(JSON.parse(post[1].body)).toMatchObject({ channel: 'telegram', sender_id: '777', action: 'unpair' });
+    });
+  });
 });
 
 describe('DataSpacesPanel (H10.26) — per-agent scope controls are live', () => {

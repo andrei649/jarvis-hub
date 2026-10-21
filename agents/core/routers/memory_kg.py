@@ -25,6 +25,7 @@ domain and are moved here verbatim (they now resolve the orchestrator through
 import asyncio
 import contextlib
 import logging
+import math
 import time
 from typing import Optional
 
@@ -623,7 +624,7 @@ async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
     return nocache_json({"entities": entities[:limit], "total": len(entities)})
 
 
-@router.get("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
+@router.get("/api/kg/entities/{name:path}", dependencies=[Depends(user_guard)])
 async def kg_entity(name: str):
     """Get one entity plus its relations."""
     g = _kg()
@@ -633,6 +634,43 @@ async def kg_entity(name: str):
     if ent is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"entity": ent, "relations": await _kg_call(g.get_relations, name)})
+
+
+_KG_MAP_MAX = 1000
+_KG_TIME_MAX = 8.64e12     # the largest |epoch seconds| a JavaScript Date can show
+_KG_FACT_TEXT_MAX = 1000   # subject / predicate / object of a bi-temporal fact
+
+
+@router.get("/api/kg/map", dependencies=[Depends(user_guard)])
+async def kg_map(limit: int = 500):
+    """H206 — bounded whole-map read for the memory explorer's canvas.
+
+    Names, types, relation edges and the time each name first appeared in the
+    bi-temporal store. Never property values: the map carries structure, so a map
+    code or a screenshot cannot leak what an entity's properties hold.
+    """
+    g = _kg()
+    if g is None:
+        return JSONResponse({"error": "graph not available"}, status_code=503)
+    limit = max(1, min(int(limit), _KG_MAP_MAX))
+    listed = await _kg_call(g.list_entities, limit + 1)
+    clipped = len(listed) > limit
+    listed = [e for e in listed[:limit] if e.get("name")]
+    names = {e["name"] for e in listed}
+    rel_cap = min(limit * 4, 4000)
+    # Only relations among the listed entities: a global LIMIT on a big graph samples edges
+    # whose ends are mostly not on the map, and the map would draw almost none.
+    rels = await _kg_call(g.list_relations, rel_cap + 1, names=sorted(names))
+    bt = getattr(get_orch(), "bitemporal", None)
+    first_seen = await _kg_call(bt.first_seen) if bt is not None else {}
+    return nocache_json({
+        "entities": [{"name": e["name"], "type": e.get("type") or "unknown",
+                      "first_seen": first_seen.get(e["name"])} for e in listed],
+        "relations": [{"source": r["source"], "relation": r["relation"], "target": r["target"]}
+                      for r in rels[:rel_cap] if r.get("source") in names and r.get("target") in names],
+        "clipped": clipped,
+        "relations_clipped": len(rels) > rel_cap,
+    })
 
 
 @router.post("/api/kg/entities", dependencies=[Depends(user_guard)])
@@ -645,7 +683,13 @@ async def kg_upsert_entity(req: Request):
         body = await req.json()
     except Exception:
         body = {}
-    name = (body or {}).get("name", "").strip()
+    name = (body or {}).get("name", "")
+    if not isinstance(name, str):
+        return JSONResponse({"error": "name must be text"}, status_code=400)
+    # An edit is addressed by the exact stored name. Stripping it here used to write 'Foo '
+    # over a different entity called 'Foo' while the client reported success for 'Foo '.
+    if name != name.strip():
+        return JSONResponse({"error": "name must not start or end with whitespace"}, status_code=400)
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
     entity_type = body.get("type") or "unknown"
@@ -662,7 +706,10 @@ async def kg_upsert_entity(req: Request):
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     existed = await _kg_call(g.get_entity, name) is not None
     try:
-        ok = await _kg_call(g.add_entity, name, entity_type, body.get("properties") or {})
+        # An edit REPLACES the property map (a removed property must go); backends that
+        # predate replace_entity fall back to their own add_entity.
+        write = getattr(g, "replace_entity", None) or g.add_entity
+        ok = await _kg_call(write, name, entity_type, body.get("properties") or {})
     finally:
         if existed:
             # An edit replaces the entity's properties: a fact edited out must not
@@ -671,7 +718,14 @@ async def kg_upsert_entity(req: Request):
     return nocache_json({"ok": bool(ok), "entity": await _kg_call(g.get_entity, name)})
 
 
-@router.delete("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
+def _lookup(g, name: str):
+    """``(is the entity in the graph, why the graph could not be asked)`` — both from the
+    same worker thread, because the backend's error flag is per thread."""
+    present = g.get_entity(name) is not None
+    return present, (None if present else g.last_error() if hasattr(g, "last_error") else None)
+
+
+@router.delete("/api/kg/entities/{name:path}", dependencies=[Depends(user_guard)])
 async def kg_delete_entity(name: str, req: Request = None):
     """Delete an entity and any relations that touch it."""
     g = _kg()
@@ -694,9 +748,29 @@ async def kg_delete_entity(name: str, req: Request = None):
     finally:
         if deleted is not False:
             _recall_forget(get_orch())
+    bt = getattr(get_orch(), "bitemporal", None)
     if not deleted:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return nocache_json({"ok": True, "deleted": name})
+        # Nothing left the graph. Either the graph backend failed on an entity that is
+        # still there (404, and the timeline is NOT touched: never half-apply), or the
+        # entity is not in the graph at all. The second case is the default install after
+        # a restart: the in-memory graph is empty while the persisted timeline still
+        # names the entity. Closing those facts is then the whole delete.
+        present, error = await _kg_call(_lookup, g, name)
+        if error:
+            # The graph could not be asked (Neo4j down): the entity may well still be there, so
+            # closing its timeline facts would half-apply a delete that did not happen.
+            return JSONResponse({"error": f"graph backend unavailable: {error}"}, status_code=503)
+        if bt is None or present:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        retracted = await _kg_call(bt.retract_entity, name)
+        if not retracted:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return nocache_json({"ok": True, "deleted": name, "graph_deleted": False, "facts_retracted": retracted})
+    # H206: the timeline must stop asserting what the owner just deleted. The facts
+    # naming the entity are closed (history before now is kept) in this same, already
+    # authorised handler. Per-turn ingestion may still re-create the entity later.
+    retracted = await _kg_call(bt.retract_entity, name) if bt is not None else 0
+    return nocache_json({"ok": True, "deleted": name, "graph_deleted": True, "facts_retracted": retracted})
 
 
 @router.post("/api/kg/relations", dependencies=[Depends(user_guard)])
@@ -777,6 +851,20 @@ async def kg_add_fact(req: Request):
     for k in ("subject", "predicate", "object"):
         if not (body or {}).get(k):
             return JSONResponse({"error": "subject, predicate, object required"}, status_code=400)
+    # H206: the names are text. A list or a dict stored here made every reader that keys on a
+    # name (the explorer's map) fail for good; an unbounded one cannot be drawn either.
+    for k, cap in (("subject", _KG_FACT_TEXT_MAX), ("predicate", _KG_FACT_TEXT_MAX), ("object", _KG_FACT_TEXT_MAX)):
+        v = body[k]
+        if not isinstance(v, str) or len(v) > cap:
+            return JSONResponse({"error": f"{k} must be text of at most {cap} characters"}, status_code=400)
+    # H206: a timestamp the explorer cannot print (and no calendar can hold) would be stored
+    # for good and break every view that reads the timeline. Seconds since the epoch, finite,
+    # within what JavaScript's Date can show (+-8.64e12 s).
+    for k in ("valid_from", "ingested_at"):
+        v = body.get(k)
+        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))
+                              or not math.isfinite(v) or abs(v) > _KG_TIME_MAX):
+            return JSONResponse({"error": f"{k} must be a number of seconds within +-8.64e12"}, status_code=400)
     payload = {"op": "add_fact", "subject": body["subject"], "predicate": body["predicate"]}
     denied = _kg_contract_denial(payload)
     if denied is not None:
@@ -795,14 +883,40 @@ async def kg_add_fact(req: Request):
 
 
 @router.get("/api/kg/facts/as-of", dependencies=[Depends(user_guard)])
-async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = ""):
-    """Valid-time recall: facts true in the world at time `at` (default now)."""
+async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = "",
+                         axis: Optional[str] = None, limit: Optional[int] = None):
+    """Bi-temporal recall at time `at` (default now).
+
+    Without `axis` and `limit` this is the original route, unchanged: facts true in
+    the world at `at`, unsorted and unbounded (the mobile Memory graph reads it so).
+    H206 explorer options: ``axis=valid`` is the same valid-time answer, ``axis=known``
+    is what the store BELIEVED at `at` (ingested by then and not yet superseded or
+    retracted by then). ``limit`` keeps the newest facts (``clipped`` says so) and a
+    response to either option carries ``bounds``, the timeline's extent for the scrubber."""
+    if at is not None and (not math.isfinite(at) or abs(at) > _KG_TIME_MAX):
+        return JSONResponse({"error": "at must be a number of seconds within +-8.64e12"}, status_code=422)
+    explorer = axis is not None or limit is not None
+    if axis is not None and axis not in ("valid", "known"):
+        return JSONResponse({"error": "axis must be 'valid' or 'known'"}, status_code=422)
+    if limit is not None and not 1 <= limit <= _KG_MAP_MAX:
+        return JSONResponse({"error": f"limit must be 1..{_KG_MAP_MAX}"}, status_code=422)
     _, bt, err = require_component("bitemporal", "bi-temporal KG not available")
     if err is not None:
         return err
     # Store reads share the writer's threading.Lock — keep the wait off the loop.
-    facts = await _kg_call(bt.as_of, at, subject, predicate)
-    return nocache_json({"at": at, "facts": facts})
+    if axis == "known":
+        facts = await _kg_call(bt.believed_as_of, time.time() if at is None else at,
+                               subject, predicate)
+        facts.sort(key=lambda f: (f["ingested_at"], f["id"]))
+    else:
+        facts = await _kg_call(bt.as_of, at, subject, predicate)
+        if explorer:
+            facts.sort(key=lambda f: (f["valid_from"], f["id"]))
+    if not explorer:
+        return nocache_json({"at": at, "facts": facts})
+    clipped = limit is not None and len(facts) > limit
+    return nocache_json({"at": at, "axis": axis or "valid", "facts": facts[-limit:] if limit else facts,
+                         "clipped": clipped, "bounds": await _kg_call(bt.bounds)})
 
 
 @router.get("/api/kg/facts/history", dependencies=[Depends(user_guard)])
@@ -878,9 +992,22 @@ async def memory_core():
     living = _living_memory()
     if living is None:
         return nocache_json({"enabled": False, "memory": [], "user": [], "undoable": []})
+    from agents.core.memory_tool import MemoryToolError, _read_rings
+
+    # H423 review: reread the rings from their files first (another process's write, a
+    # hand edit), off the event loop, so the refs listed are the ones undo accepts. A
+    # hand edit that cannot be read back is named, and nothing is undoable over it.
+    drift = None
+    try:
+        await asyncio.to_thread(_read_rings, living)
+    except MemoryToolError as exc:
+        drift = exc.detail
     memory, user = living.core.list(), living.user_core.list()
-    return nocache_json({"enabled": True, "memory": memory, "user": user,
-                         "undoable": UNDO.recent(rings={"memory": memory, "user": user})})
+    body = {"enabled": True, "memory": memory, "user": user,
+            "undoable": [] if drift else UNDO.recent(rings={"memory": memory, "user": user})}
+    if drift:
+        body["drift"] = drift
+    return nocache_json(body)
 
 
 @router.post("/api/memory/core/undo", dependencies=[Depends(admin_guard)])
@@ -890,8 +1017,10 @@ async def memory_core_undo(body: dict):
 
     orch = get_orch()
     try:
-        result = undo(str((body or {}).get("ref") or ""), living=_living_memory(),
-                      audit=getattr(orch, "intent_log", None) if orch else None)
+        # H423: undo waits for the ring files' cross-process lock; off the event loop.
+        result = await asyncio.to_thread(
+            undo, str((body or {}).get("ref") or ""), living=_living_memory(),
+            audit=getattr(orch, "intent_log", None) if orch else None)
     except MemoryToolError as exc:
         status = 404 if exc.reason == "memory_undo_unknown" else 409
         return nocache_json({"ok": False, "reason": exc.reason, "detail": exc.detail}, status_code=status)

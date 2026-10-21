@@ -46,12 +46,105 @@ if missing:
 if importlib.util.find_spec("numpy") is None:
     warnings.warn("numpy not installed — vector store will be slower")
 
+# H010 review r2: an image a self-restart exec'd is still in systemd's reload state with the
+# watchdog armed; keep it fed from here (before the app's slow imports) until READY=1.
+from agents.core.sd_notify import continue_restart_keepalive  # noqa: E402
+
+continue_restart_keepalive()
+
 # H689: a refused JARVIS_PROFILE stops the start here, named, before the hub is imported
 # (its stores open under the data root at import, and data_root() refuses the name).
 from agents.core.paths import profile_error  # noqa: E402
 
 if profile_error():
     sys.exit(profile_error())
+
+
+#: H010 (Windows): the env var a hub sets for the successor it spawns — its own pid. The
+#: successor waits for that pid to be gone before it applies a staged restore: until the
+#: predecessor exits it still holds the stores' SQLite files (and hub.lock names its pid).
+RESTART_PREDECESSOR_ENV = "NERVA_RESTART_PREDECESSOR"
+PREDECESSOR_WAIT_DEFAULT = 60.0
+
+
+def wait_for_predecessor(environ=None, *, alive=None, timeout=None, poll=0.2, sleep=None) -> bool:
+    """Block until the hub that spawned this one (``RESTART_PREDECESSOR_ENV``) has exited,
+    at most ``JARVIS_RESTART_PREDECESSOR_WAIT_SECONDS`` (default 60). The variable is
+    removed so a later restart of this hub does not inherit it. True when there is no
+    predecessor or it is gone; False when it outlived the wait (the apply then defers,
+    recorded, because hub.lock still names a live pid)."""
+    import time
+
+    env = os.environ if environ is None else environ
+    raw = env.pop(RESTART_PREDECESSOR_ENV, "")
+    if not raw.isdigit() or int(raw) <= 0 or int(raw) == os.getpid():
+        return True
+    if alive is None:
+        from agents.core.install_identity import _pid_alive as alive
+    if timeout is None:
+        try:
+            timeout = max(0.0, float(env.get("JARVIS_RESTART_PREDECESSOR_WAIT_SECONDS", "")
+                                     or PREDECESSOR_WAIT_DEFAULT))
+        except ValueError:
+            timeout = PREDECESSOR_WAIT_DEFAULT
+    sleep = sleep or time.sleep
+    pid, waited = int(raw), 0.0
+    while alive(pid):
+        if waited >= timeout:
+            print(f"The hub this one replaces (pid {pid}) is still running after {timeout:g}s",
+                  file=sys.stderr)
+            return False
+        sleep(poll)
+        waited += poll
+    return True
+
+
+wait_for_predecessor()
+
+
+def apply_staged_restore():
+    """H010: apply an in-place restore staged by an approved ``backup.restore`` (or left
+    by an offline ``nerva backup restore`` another process deferred), before ``agents.web``
+    is imported and its lifespan builds the orchestrator — the hub's stores would hold the
+    DBs open, and a restore under them would be written over. It waits for the
+    jarvis-runtime coordinator to release the root (it does once it sees the stage), defers
+    while another hub holds it, discards an expired stage, and reports a restore an earlier
+    boot was killed in the middle of. Under systemd the watchdog and the timeout are fed
+    while it runs. Nothing staged: a no-op that loads nothing. Returns the outcome."""
+    from agents.core import backup
+
+    if not backup.boot_restore_due():
+        return None
+    from agents.core.env_provenance import load_hub_env
+    from agents.core.sd_notify import keepalive
+
+    load_hub_env()   # an encrypted archive's key may live in .env (main() loads it anyway)
+    with keepalive("applying a staged restore"):
+        result = backup.apply_pending_restore()
+    if result is None:
+        return None
+    if result["status"] == "restored":
+        print(f"Restored backup {result['name']} in place"
+              + ("" if result.get("ok") else f" — the drill found a problem: {result.get('problem')}")
+              + f" (rollback point: {result.get('rollback')})")
+    elif result["status"] == "deferred":
+        print(f"Staged restore of {result['name']} deferred: {result['reason']} "
+              f"(recorded in backups/last-restore.json)")
+    elif result["status"] == "cancelled":
+        print(f"Staged restore of {result['name']} was cancelled before it was applied")
+    elif result["status"] == "interrupted":
+        print(f"Staged restore of {result['name']} was INTERRUPTED partway at an earlier boot: "
+              f"the data root may be half-restored. Rollback point: {result.get('rollback')} "
+              f"(details in backups/last-restore.json)", file=sys.stderr)
+    else:
+        print(f"Staged restore of {result['name']} FAILED ({result.get('reason')}); details in "
+              f"backups/last-restore.json"
+              + (f", rollback point: {result['rollback']}" if result.get("rollback") else ""),
+              file=sys.stderr)
+    return result
+
+
+apply_staged_restore()
 
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
 # raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
@@ -277,7 +370,135 @@ def main():
     from agents.core.routers.ops import readiness_snapshot
     from agents.core.sd_notify import NotifyingServer
 
-    NotifyingServer(config, readiness_snapshot).run()
+    run_server(NotifyingServer(config, readiness_snapshot))
+
+
+#: H010: how this hub restarts itself to apply an approved, staged restore at boot.
+#:
+#: * ``exec`` — POSIX: os.execv replaces the process image in place (same pid), so
+#:   systemd / docker / a terminal keep the same process.
+#: * ``service`` — Windows under the NSSM service (``deploy/windows/install-service.ps1``
+#:   sets ``NERVA_SERVICE_WRAPPER=nssm``): exit with ``RESTART_EXIT_CODE``; NSSM
+#:   (``AppExit Default Restart``) starts the hub again once this process is gone.
+#: * ``spawn`` — Windows, an interactive session (the packaged nerva.exe from the Start
+#:   Menu, or ``python serve.py`` in a terminal): start a successor in a new console
+#:   and exit; the successor waits for this pid to be gone before it applies.
+#: * None — no self-restart (a Windows service without the NSSM marker, where a spawned
+#:   successor would run outside the service and race the wrapper's own relaunch): an
+#:   approved restore answers restart="manual" and says to restart the hub/service.
+RESTART_EXIT_CODE = 75
+SERVICE_WRAPPER_ENV = "NERVA_SERVICE_WRAPPER"
+_OS_NAME = os.name
+
+
+def _windows_session_id():
+    """The Windows session of this process (0 = services), or None when unknown."""
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32   # type: ignore[attr-defined]
+        session = ctypes.c_ulong()
+        if kernel32.ProcessIdToSessionId(kernel32.GetCurrentProcessId(), ctypes.byref(session)):
+            return int(session.value)
+    except (AttributeError, OSError, ImportError):
+        return None
+    return None
+
+
+def _restart_path(environ=None):
+    """``exec`` | ``service`` | ``spawn`` | None — see ``RESTART_EXIT_CODE`` above."""
+    if _OS_NAME != "nt":
+        return "exec"
+    env = os.environ if environ is None else environ
+    if env.get(SERVICE_WRAPPER_ENV, "").strip().lower() == "nssm":
+        return "service"
+    session = _windows_session_id()
+    if session is not None and session != 0:
+        return "spawn"
+    return None
+
+
+def _successor_argv() -> list:
+    """The command that starts this hub again: the packaged app's own exe and arguments,
+    else this interpreter with the options and script it was started with."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, *sys.argv[1:]]
+    return [sys.executable, *list(sys.orig_argv)[1:]]
+
+
+def _spawn_successor():
+    """Start the next hub in its own console and process group (it outlives this one)."""
+    import subprocess  # nosec B404 - this process's own command line, nothing from a request
+
+    flags = (getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
+             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
+    env = {**os.environ, RESTART_PREDECESSOR_ENV: str(os.getpid())}
+    return subprocess.Popen(_successor_argv(), env=env, cwd=os.getcwd(),  # nosec B603
+                            close_fds=True, creationflags=flags)
+
+
+def _close_on_exec_all() -> list[int]:
+    """Mark every descriptor above stdio close-on-exec before the self-restart re-exec, and
+    return the ones that were inheritable. Nothing the new image needs crosses the exec:
+    uvicorn has closed its listening socket, the hub lock was released, and systemd's notify
+    socket is a path in the environment. A handle that did cross it — a SQLite DB under the
+    data root opened without O_CLOEXEC — would keep pointing at the inode the staged restore
+    then replaces (H010 review r4); the apply also refuses to run while it holds one."""
+    for fd_dir in ("/proc/self/fd", "/dev/fd"):
+        try:
+            fds = [int(entry) for entry in os.listdir(fd_dir) if entry.isdigit()]
+        except OSError:
+            continue
+        flipped = []
+        for fd in fds:
+            if fd <= 2:
+                continue
+            try:
+                if os.get_inheritable(fd):
+                    os.set_inheritable(fd, False)
+                    flipped.append(fd)
+            except OSError:
+                continue                       # the listdir's own fd, closed meanwhile
+        return flipped
+    return []
+
+
+def run_server(server) -> None:
+    """Run *server*; when the hub asked to restart itself (H010: an approved restore was
+    staged), start again once it has drained, so the staged restore is applied at boot
+    before any store opens. How depends on ``_restart_path()``: a same-pid re-exec on
+    POSIX (under systemd the shutdown says RELOADING=1, not STOPPING=1 —
+    ``agents.core.sd_notify`` — so the unit is not stopped under the re-exec); on Windows
+    an exit with ``RESTART_EXIT_CODE`` the NSSM service relaunches, or a spawned successor.
+    Without a path no stopper is installed and an approved restore answers "manual"."""
+    from agents.core import hub_restart, install_identity
+
+    path = _restart_path()
+    if path is not None:
+        hub_restart.install(lambda: setattr(server, "should_exit", True))
+    server.run()
+    reason = hub_restart.requested()
+    hub_restart.reset()
+    if reason is None or path is None:
+        return
+    print(f"Nerva restarting ({reason})…", flush=True)
+    install_identity.release_hub_lock()   # the next hub takes it again in main()
+    if path == "service":
+        raise SystemExit(RESTART_EXIT_CODE)  # NSSM: AppExit Default Restart
+    if path == "spawn":
+        try:
+            _spawn_successor()
+        except OSError as exc:
+            print(f"Could not start the next hub ({exc}): start Nerva again yourself — the "
+                  f"staged restore is applied at that start", file=sys.stderr)
+        return                                # this process exits; the successor waits for it
+    from agents.core.sd_notify import RESTART_ENV
+
+    # The new image keeps systemd's watchdog fed from its first lines (sd_notify).
+    os.environ.update({RESTART_ENV: "1"})
+    _close_on_exec_all()
+    # The interpreter and argv this process was started with; nothing from a request.
+    os.execv(sys.executable, list(sys.orig_argv))  # nosec B606 - this process's own argv
 
 
 if __name__ == "__main__":

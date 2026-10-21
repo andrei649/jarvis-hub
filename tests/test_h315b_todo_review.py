@@ -397,14 +397,15 @@ async def test_text_copied_from_an_untrusted_page_taints_the_later_turn_that_rea
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("per_tool_limit", [0, 2])
-async def test_updating_the_plan_between_steps_never_ends_the_turn(per_tool_limit):
+async def test_updating_the_plan_remains_uncapped_while_act_obeys_its_cap(per_tool_limit):
     """Each step marks its item in the plan (a status merge), so the plan changes between
-    calls and none repeats the one before it (the H315 second review keys a repeat on the
-    plan). Reading an unchanged plan again is a repeat, and the detector stops it."""
+    calls. Todo is exempt from per-tool caps; act still obeys an owner-configured cap."""
     store = TodoStore()
     server = _server(store)
+    acted = []
 
     async def act(args):
+        acted.append(args.get("step"))
         return {"did": args.get("step")}
 
     server.register_tool("act", act, description="do a step",
@@ -415,13 +416,20 @@ async def test_updating_the_plan_between_steps_never_ends_the_turn(per_tool_limi
     backend = _Backend(script)
     runtime = AgentToolRuntime(server, enabled=lambda: True, max_iterations=lambda: 8,
                                per_tool_limit=per_tool_limit)
-    reply = await runtime.run(agent_id="nerva", backend=backend, model="m", prompt="p", system="s",
-                              max_tokens=64, temperature=0.1)
-    assert reply == "done"
-    todo_results = [json.loads(m["content"]) for m in backend.calls[-1]
-                    if m.get("role") == "tool" and '"todo"' in m["content"]]
-    assert len(todo_results) == 5 and all(r.get("ok") is True for r in todo_results)
-    assert all(r["result"]["ok"] is True for r in todo_results)
+    events = []
+    result = await runtime.run_result(agent_id="nerva", backend=backend, model="m", prompt="p",
+                                      system="s", max_tokens=64, temperature=0.1,
+                                      event_sink=events.append)
+    if per_tool_limit:
+        assert result.exit_reason == "tool_call_limit" and "limit (2)" in result.reply
+        assert acted == [1, 2]
+        expected_statuses = ["completed", "completed", "completed", "pending"]
+    else:
+        assert result.reply == "done" and result.exit_reason == "model_response"
+        assert acted == [1, 2, 3, 4]
+        expected_statuses = ["completed"] * 4
+    assert [row["status"] for row in store.read("s")["todos"]] == expected_statuses
+    assert not [e for e in events if e["event"] == "tool_failed" and e["tool"] == "todo"]
 
 
 def test_the_advice_no_longer_asks_for_bare_re_reads():

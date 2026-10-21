@@ -42,7 +42,15 @@ _NEEDS: dict[str, list[str]] = {
     "whatsapp-bridge": ["WHATSAPP_BRIDGE_URL"],
     "apple-health": ["APPLE_HEALTH_BRIDGE_URL"],
     "homebridge": ["HOMEBRIDGE_URL", "HOMEBRIDGE_TOKEN"],
-    "websearch": ["TAVILY_API_KEY", "or beautifulsoup4 for the keyless DuckDuckGo fallback"],
+    # H310: the backend is picked per call by JARVIS_WEB_BACKEND / _PROVIDER_TIER, so
+    # "configured" means the *selected* backend can answer (plugins/web_providers.py;
+    # `python -m agents.core.plugins.web_providers` prints why). PDFs need pypdf.
+    "websearch": [
+        "TAVILY_API_KEY or SEARXNG_URL (JARVIS_WEB_BACKEND picks one; "
+        "python -m agents.core.plugins.web_providers checks it)",
+        "or beautifulsoup4 for the keyless DuckDuckGo fallback",
+        "pypdf (optional) to read PDF pages",
+    ],
     "n8n": ["N8N_BASE_URL", "N8N_API_KEY"],
     "meta-ads": ["META_ADS_ACCESS_TOKEN"],
     "postiz": ["POSTIZ_API_KEY"],

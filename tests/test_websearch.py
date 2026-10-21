@@ -39,12 +39,15 @@ async def test_search_duckduckgo_httpx_error(monkeypatch):
     assert results == []
 
 
+# H310: search() dispatches through the provider registry (plugins/web_providers.py),
+# so these patch the registered provider rather than the per-backend legacy wrapper.
+
 @pytest.mark.asyncio
 async def test_search_uses_tavily_when_key_set(monkeypatch):
-    async def fake_tavily(self, q, m):
+    async def fake_tavily(self, client, plugin, q, m):
         return [{"title": "result"}]
-    monkeypatch.setattr("core.plugins.websearch.WebSearchPlugin._search_tavily",
-                        fake_tavily)
+    monkeypatch.setattr("core.plugins.web_providers.TavilyProvider.search", fake_tavily)
+    monkeypatch.delenv("JARVIS_WEB_BACKEND", raising=False)
     wp = WebSearchPlugin(tavily_api_key="test-key")
     results = await wp.search("test", 3)
     assert len(results) == 1
@@ -53,10 +56,10 @@ async def test_search_uses_tavily_when_key_set(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_search_uses_searxng_when_url_set(monkeypatch):
-    async def fake_searxng(self, q, m):
+    async def fake_searxng(self, client, plugin, q, m):
         return [{"title": "searxng-result"}]
-    monkeypatch.setattr("core.plugins.websearch.WebSearchPlugin._search_searxng",
-                        fake_searxng)
+    monkeypatch.setattr("core.plugins.web_providers.SearxngProvider.search", fake_searxng)
+    monkeypatch.delenv("JARVIS_WEB_BACKEND", raising=False)
     wp = WebSearchPlugin(searxng_url="http://searxng:8888")
     results = await wp.search("test", 3)
     assert len(results) == 1
@@ -103,9 +106,10 @@ async def test_close_is_noop():
 
 @pytest.mark.asyncio
 async def test_search_results_are_tainted(monkeypatch):
-    async def fake_tavily(self, q, m):
+    async def fake_tavily(self, client, plugin, q, m):
         return [{"title": "result", "url": "http://x", "snippet": "s"}]
-    monkeypatch.setattr("core.plugins.websearch.WebSearchPlugin._search_tavily", fake_tavily)
+    monkeypatch.setattr("core.plugins.web_providers.TavilyProvider.search", fake_tavily)
+    monkeypatch.delenv("JARVIS_WEB_BACKEND", raising=False)
     wp = WebSearchPlugin(tavily_api_key="test-key")
     results = await wp.search("test", 3)
     assert results and all(taint.is_tainted(r) and r["taint_source"] == "websearch" for r in results)
