@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from collections import deque
 
 # A fragment must be at least this long before the repetition check runs at
 # all.  Short truncations (a sentence cut mid-word) can trivially contain
@@ -298,21 +299,42 @@ def _low_variety_loop_period(tail: str) -> int:
     return 0
 
 
+# The line-sequence loop detector considers repeating units of 1..this many
+# lines; it keeps the last ``_MIN_REPEAT_COUNT`` times as many line records, so
+# its memory and per-line cost are bounded.
+_STREAM_UNIT_LINES_MAX = 16
+
+# Per-line verdicts of ``_LineRepeatTracker.feed``.
+_LOOP_NONE, _LOOP_TRIP, _LOOP_HOLD = 0, 1, 2
+
+
 class _LineRepeatTracker:
     """Whole-stream counterpart of ``_line_repetition_dominated``.
 
     Hashes each completed, ``strip()``-normalized line incrementally (memory per
-    line is O(1), however long the line), counts hashes in a bounded LRU map and
-    tracks the current back-to-back run of one line (blank lines in between do
-    not break a run). Lines shorter than ``_REPEAT_WINDOW`` are ignored and break
-    a run, as any other different line does.
+    line is O(1), however long the line), counts the hashes of lines of
+    ``_REPEAT_WINDOW``+ characters in a bounded LRU map, and keeps the last
+    ``_MIN_REPEAT_COUNT * _STREAM_UNIT_LINES_MAX`` non-blank line records (hash,
+    length, "rich"). Blank lines are transparent everywhere.
+
+    After each completed non-blank line it looks for the smallest unit of
+    ``k`` = 1..``_STREAM_UNIT_LINES_MAX`` lines such that the stream ends in
+    ``_MIN_REPEAT_COUNT`` back-to-back copies of it (``seq[-i] == seq[-i-k]`` for
+    i in 1..4k) — a single repeated line, a heading + paragraph, a paragraph +
+    ``---`` rule, two alternating paragraphs. Such a unit is a loop
+    (``_LOOP_TRIP``) when it contains a rich line (``_REPEAT_WINDOW``+ chars and
+    ``_STREAM_MIN_DISTINCT``+ distinct chars) and is either one line or longer
+    than ``_STREAM_TAIL_PERIOD_MAX`` in total (shorter multi-line units are the
+    tail detectors' job); a unit with no rich line longer than
+    ``_STREAM_TAIL_PERIOD_MAX`` may be formatting and is ``_LOOP_HOLD``.
     """
 
     def __init__(self) -> None:
         self.total = 0                       # characters streamed so far
         self.counts: dict[bytes, int] = {}   # line hash -> occurrences (LRU order)
-        self.run_key: bytes | None = None
-        self.run = 0
+        self._seq: deque[tuple[bytes, int, bool]] = deque(
+            maxlen=_MIN_REPEAT_COUNT * _STREAM_UNIT_LINES_MAX
+        )
         self._new_line()
 
     def _new_line(self) -> None:
@@ -346,16 +368,32 @@ class _LineRepeatTracker:
             self._len_full += len(trail)
             self._pending_ws.update(trail)
 
-    def feed(self, chunk: str) -> list[tuple[bytes | None, int, int, int, bool, int]]:
-        """Consume ``chunk``; one ``(key, length, count, run, low_variety, end)`` per completed line.
+    def _loop_verdict(self) -> int:
+        """``_LOOP_*`` for the smallest unit the line sequence now ends repeating."""
+        seq = list(self._seq)
+        n = len(seq)
+        for k in range(1, _STREAM_UNIT_LINES_MAX + 1):
+            if _MIN_REPEAT_COUNT * k > n:
+                break
+            if all(seq[-i][0] == seq[-i - k][0] for i in range(1, (_MIN_REPEAT_COUNT - 1) * k + 1)):
+                unit = seq[-k:]
+                size = sum(length for _, length, _ in unit)
+                if any(rich for _, _, rich in unit):
+                    return _LOOP_TRIP if k == 1 or size > _STREAM_TAIL_PERIOD_MAX else _LOOP_NONE
+                return _LOOP_HOLD if size > _STREAM_TAIL_PERIOD_MAX else _LOOP_NONE
+        return _LOOP_NONE
 
-        ``end`` is the offset in ``chunk`` just past the line's break. A
-        non-blank line shorter than ``_REPEAT_WINDOW`` is reported with
-        ``key=None`` (it is not counted, but it ends any run); blank lines are
-        not reported.
+    def feed(self, chunk: str) -> list[tuple[bytes | None, int, int, bool, int, int]]:
+        """Consume ``chunk``; one ``(key, length, count, low_variety, end, loop)`` per completed line.
+
+        ``end`` is the offset in ``chunk`` just past the line's break and
+        ``loop`` the ``_LOOP_*`` verdict after that line. A non-blank line
+        shorter than ``_REPEAT_WINDOW`` is reported with ``key=None`` and
+        ``count=0`` (not counted, but still part of the line sequence); blank
+        lines are not reported.
         """
         self.total += len(chunk)
-        done: list[tuple[bytes | None, int, int, int, bool, int]] = []
+        done: list[tuple[bytes | None, int, int, bool, int, int]] = []
         pos = 0
         for m in _LINE_BREAKS.finditer(chunk):
             self._extend(chunk[pos:m.start()])
@@ -364,20 +402,17 @@ class _LineRepeatTracker:
             key, low = self._h_kept.digest(), len(self._distinct) < _STREAM_MIN_DISTINCT
             self._new_line()
             if not started:
-                continue   # a blank line: transparent to the back-to-back run
+                continue   # a blank line: transparent to the line sequence
+            self._seq.append((key, length, length >= _REPEAT_WINDOW and not low))
+            loop = self._loop_verdict()
             if length < _REPEAT_WINDOW:
-                self.run_key, self.run = None, 0
-                done.append((None, length, 0, 0, low, pos))
+                done.append((None, length, 0, low, pos, loop))
                 continue
             count = self.counts.pop(key, 0) + 1
             self.counts[key] = count
             if len(self.counts) > _STREAM_LINE_SLOTS:
                 del self.counts[next(iter(self.counts))]
-            if key == self.run_key:
-                self.run += 1
-            else:
-                self.run_key, self.run = key, 1
-            done.append((key, length, count, self.run, low, pos))
+            done.append((key, length, count, low, pos, loop))
         self._extend(chunk[pos:])
         return done
 
@@ -398,20 +433,25 @@ class RepetitionStreamGuard:
 
     Loops whose period is too long for the 4000-char tail are caught over the
     WHOLE stream by a line detector (``_LineRepeatTracker``, the live twin of
-    the finalizer's line path): outside an open fence, a normalized line of
+    the finalizer's line path). Outside an open fence it trips once the stream
+    completes ``_MIN_REPEAT_COUNT`` back-to-back copies of a unit of 1..16
+    non-blank lines (blank lines are ignored; short lines such as a heading or a
+    ``---`` rule are part of the unit) that contains a normalized line of
     ``_REPEAT_WINDOW``+ characters and ``_STREAM_MIN_DISTINCT``+ distinct
-    characters trips the guard once it completes ``_MIN_REPEAT_COUNT``
-    back-to-back copies (blank lines between them allowed), or — fence or not —
-    once its ``_MIN_REPEAT_COUNT``+ copies cover half of everything streamed.
+    characters — any such single line, or a multi-line unit over 800 characters
+    in total. Fence or not, it also trips once one such line's
+    ``_MIN_REPEAT_COUNT``+ copies cover half of everything streamed.
 
     Outside those trips, a stream that ends in a short-period run
     (``_short_loop_period``: a unit of at most 60 characters repeated over the
     last 300), in a low-variety run of a longer period
     (``_low_variety_loop_period``: a unit of fewer than 8 distinct characters,
-    period 61..800, repeated five times) or in five back-to-back copies of one
-    low-variety line longer than 800 characters is HELD rather than tripped:
+    period 61..800, repeated five times) or in five back-to-back copies of a
+    unit of 1..16 lines over 800 characters with no such rich line is HELD
+    rather than tripped:
     chunks are withheld while the run continues, and the moment the stream stops
-    repeating (for the long-line hold: once a different line completes) the
+    repeating (for the line-unit hold: once a line completes that breaks the
+    unit's repetition) the
     held text is returned with the chunk that broke the run, so a zero matrix,
     a table or a rule in a normal answer is only delayed. A degenerate loop
     never stops before the output cap, so it stays held to the end.
@@ -434,7 +474,7 @@ class RepetitionStreamGuard:
         self._fence_carry = ""
         self._holding = False
         self._lines = _LineRepeatTracker()
-        self._line_hold: bytes | None = None
+        self._line_hold = False
 
     @property
     def withholding(self) -> bool:
@@ -478,7 +518,7 @@ class RepetitionStreamGuard:
             ):
                 return self._trip(chunk)
         if (
-            self._line_hold is not None
+            self._line_hold
             or _short_loop_period(self._tail)
             or _low_variety_loop_period(self._tail)
         ):
@@ -501,19 +541,17 @@ class RepetitionStreamGuard:
         """
         trip = False
         scan = carry_before + chunk
-        for key, length, count, run, low, end in self._lines.feed(chunk):
-            if self._line_hold is not None and key != self._line_hold:
-                self._line_hold = None   # a different line completed: the run ended
-            if key is None:
+        for key, length, count, low, end, loop in self._lines.feed(chunk):
+            # Any completed non-blank line re-judges the hold: it stays only
+            # while the low-variety unit keeps repeating.
+            self._line_hold = loop == _LOOP_HOLD
+            if loop == _LOOP_TRIP:
+                fence_open = fence_before ^ bool(scan.count(_FENCE, 0, len(carry_before) + end) % 2)
+                trip = trip or not fence_open
+            if key is None or low:
                 continue
-            if low:
-                if run >= _MIN_REPEAT_COUNT and length > _STREAM_TAIL_PERIOD_MAX:
-                    self._line_hold = key   # may be formatting: hold, never trip
-                continue
-            fence_open = fence_before ^ bool(scan.count(_FENCE, 0, len(carry_before) + end) % 2)
-            onset = run >= _MIN_REPEAT_COUNT and not fence_open
             dominant = count >= _MIN_REPEAT_COUNT and count * length >= self._lines.total * _DOMINANCE_RATIO
-            trip = trip or onset or dominant
+            trip = trip or dominant
         return trip
 
     def _trip(self, chunk: str) -> str:

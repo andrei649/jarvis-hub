@@ -1280,3 +1280,122 @@ def test_long_varied_answer_with_repeated_boilerplate_streams_in_full():
     text = "".join(sections)
     guard, live = _stream_through(text, step=6)
     assert guard.tripped is False and live == text
+
+
+# ── H393 review round 6: multi-line loop units with a period over 800 ──
+#
+# The round-5 line detector only knew single-line runs: any other non-blank
+# line between two copies (a "**Note:**" heading, a "---" rule, a second line
+# of the unit) reset the run, so after a long legitimate prefix only the
+# whole-stream dominance trip fired — once the loop had painted roughly as much
+# text as the prefix (10k-40k chars) live, although the finalizer drops it.
+
+
+def _r6_prefix(n: int) -> str:
+    return _LEGIT[:n].rsplit("\n", 1)[0] + "\n"
+
+
+def _r6_units():
+    a, b = _paragraph_line(700, seed=21), _paragraph_line(150, seed=22)
+    units = [(f"note+{p}", "**Note:**\n" + _paragraph_line(p, seed=p) + "\n") for p in (900, 1500, 3000)]
+    units.append(("A700+B150", a + "\n" + b + "\n"))
+    line = _paragraph_line(1000, seed=31)
+    for name, sep in (("rule", "\n\n---\n\n"), ("heading", "\n\n## Summary\n\n"), ("stars", "\n* * *\n")):
+        units.append((name, line + sep))
+    return units
+
+
+def _r6_loop(prefix_len: int, unit: str) -> tuple[str, str]:
+    prefix = _r6_prefix(prefix_len)
+    return prefix, prefix + unit * (3 * len(prefix) // len(unit) + 6)
+
+
+@pytest.mark.parametrize("name,unit", _r6_units(), ids=[u[0] for u in _r6_units()])
+@pytest.mark.parametrize("prefix_len", (8000, 10000, 20000))
+def test_multi_line_long_period_loop_after_long_prefix_is_not_painted_live(name, unit, prefix_len):
+    prefix, text = _r6_loop(prefix_len, unit)
+    assert is_repetition_dominated(text) is True                      # the finalizer drops it
+    assert LLMBackend._finalize_stream(text, "", "length", "m") == ""
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is True and guard.withholding is True
+    assert text.startswith(live) and live.startswith(prefix)
+    assert len(live) - len(prefix) <= 6 * len(unit), (name, len(live) - len(prefix), len(unit))
+    assert guard.release("") == ""
+
+
+def test_multi_line_loop_is_released_when_the_answer_is_kept():
+    prefix, text = _r6_loop(10000, _r6_units()[0][1])
+    guard, live = _stream_through(text, step=7)
+    assert len(live) < len(text)
+    assert live + guard.release(text) == text
+
+
+@pytest.mark.parametrize("name,unit", (_r6_units()[0], _r6_units()[3], _r6_units()[4]))
+def test_ollama_stream_multi_line_truncated_loop_never_painted(name, unit):
+    prefix, text = _r6_loop(10000, unit)
+    out, shown = _ollama_stream(text, "length")
+    assert out == ""
+    assert shown.startswith(prefix) and len(shown) - len(prefix) <= 6 * len(unit)
+
+
+@pytest.mark.parametrize("name,unit", (_r6_units()[1], _r6_units()[3], _r6_units()[5]))
+def test_lmstudio_stream_multi_line_truncated_loop_never_painted(name, unit):
+    prefix, text = _r6_loop(10000, unit)
+    out, shown = _lmstudio_stream(text, "length")
+    assert out == ""
+    assert shown.startswith(prefix) and len(shown) - len(prefix) <= 6 * len(unit)
+
+
+def test_per_section_boilerplate_repeated_with_varied_content_streams_in_full():
+    # A long disclaimer + heading repeated under 4 sections, with different
+    # content between the copies: never a back-to-back multi-line unit.
+    note = "**Note:**\n" + _paragraph_line(900, seed=41) + "\n"
+    text = "".join(f"## Section {i}\n" + _LEGIT[i * 700:(i + 1) * 700] + "\n" + note for i in range(4))
+    text += "That is the full report."
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+@pytest.mark.parametrize("copies", (2, 3, 4))
+def test_multi_line_unit_repeated_a_few_times_streams_in_full(copies):
+    unit = "**Note:**\n" + _paragraph_line(900, seed=43) + "\n"
+    text = _r6_prefix(10000) + unit * copies + "That is all."
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+def test_multi_line_unit_inside_a_code_fence_streams_in_full():
+    a = "    " + _paragraph_line(700, seed=51).replace(".", ";")
+    b = "    " + _paragraph_line(150, seed=52).replace(".", ";")
+    text = _LEGIT[:12000] + "\n```text\n" + (a + "\n" + b + "\n") * 6 + "```\n" + _LEGIT[12000:15000]
+    assert is_repetition_dominated(text) is False
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+def test_long_line_interleaved_with_distinct_short_lines_inside_fence_streams_in_full():
+    line = "    " + _paragraph_line(900, seed=53).replace(".", ";")
+    body = "".join(f"# step {i}\n{line}\n" for i in range(5))
+    text = _LEGIT[:12000] + "\n```text\n" + body + "```\n" + _LEGIT[12000:15000]
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+def test_multi_line_low_variety_loop_is_held_not_tripped():
+    # A low-variety two-line unit (no line with 8+ distinct chars) over 800
+    # chars: may be formatting, so it is HELD (recoverable), never tripped.
+    a, b = _bit_line(700, 61), _bit_line(200, 62)
+    unit = a + "\n" + b + "\n"
+    text = _R5_SHORT_PROSE + unit * 20
+    assert is_repetition_dominated(text) is True
+    guard, live = _stream_through(text, step=5)
+    assert guard.tripped is False and guard.withholding is True
+    assert len(live) <= len(_R5_SHORT_PROSE) + 6 * len(unit)
+    assert live + guard.release(text) == text
+    text2 = _R5_SHORT_PROSE + unit * 6 + "And that is the register dump you asked for, in full.\n"
+    guard, live = _stream_through(text2, step=5)
+    assert guard.withholding is False and live == text2
