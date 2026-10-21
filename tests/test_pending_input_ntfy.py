@@ -244,7 +244,7 @@ async def test_live_prompt_revoked_during_dns_wait_never_reaches_http(tmp_path, 
 @pytest.mark.parametrize("command", ["/new", "/undo"])
 @pytest.mark.parametrize("choice", ["!cancel", "Approve Once", "!always", "changed"])
 async def test_ntfy_owner_commands_preserve_history_and_govern_permanence(
-    tmp_path, context, prompt_broker, command, choice,
+    tmp_path, context, prompt_broker, governed, command, choice,
 ):
     orch, cap, _gateway, _ready, _pairing, _base = command_host(tmp_path, context)
     broker, queue, worker, _sent, _state, _inbound, _calls, manager = prompt_broker
@@ -253,7 +253,7 @@ async def test_ntfy_owner_commands_preserve_history_and_govern_permanence(
     broker._inbox, broker._channel_manager = inbox, manager
     orch.channel_manager, orch.channel_replies = manager, broker
     orch.autonomy, orch.autonomy_queue = worker, queue
-    orch.permission_ledger = worker.executor.__self__.resolve("permission.grant").__self__
+    orch.permission_ledger = governed[1]
     orch._runtime_settings["channels.owner_senders"] = {"ntfy": ["home"]}
     gateway = Gateway(orch.channel_handler, pairing=channel.pairing, inbox_store=inbox,
                       pending_handler=orch.channel_pending_handler)

@@ -39,3 +39,11 @@
 ## 2026-04-09 - Per-Render Provenance Array and Closure Allocations in BriefingWall
 **Learning:** Helper functions evaluated multiple times per render (such as `cardStamp` and provenance aggregations in `frontend/src/wall.tsx`) that perform `array.filter(Boolean)` and `.some()`/`.every()` predicate closures allocate intermediate arrays and iterator closures on every tick/render of high-frequency components.
 **Action:** Use a single indexed `for` loop over input arrays to compute state flags in one pass, avoiding array filtering and closure allocations during component render cycles.
+
+## 2026-04-10 - O(N) Array Scans in Console Panel Route Parsing
+**Learning:** `CONSOLE_PANELS` contains 120+ panel definitions. Repeatedly calling `CONSOLE_PANELS.find(p => p.id === panelId)` during `parseHudRoute` and `ConsoleOverlay` renders performs O(120) array scans on every route resolution.
+**Action:** Export `CONSOLE_PANEL_MAP = new Map(CONSOLE_PANELS.map(p => [p.id, p]))` in `console-routes.ts` to perform O(1) Map lookups for console routes and overlay panels.
+
+## 2026-04-11 - O(N) Array Scans in Shortcut Action Registry Lookups
+**Learning:** `ACTIONS` registry lookups using `ACTIONS.find((a) => a.id === id)` during keyboard shortcut dispatching, rebinding, and chord hint rendering trigger repetitive O(N) array scans across all hotkey actions.
+**Action:** Maintain an `ACTIONS_MAP = new Map(ACTIONS.map((a) => [a.id, a]))` in `shortcuts.ts` to execute O(1) Map lookups for hotkey validation, rebinding, and hint display.

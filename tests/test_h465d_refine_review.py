@@ -141,7 +141,7 @@ def test_a_budget_of_zero_says_reviews_are_off():
     assert "is 0" in _REFINE_REFUSALS["reviews_off"] and "tomorrow" not in _REFINE_REFUSALS["reviews_off"]
 
 
-def test_a_per_turn_skip_leaves_a_log_line(caplog):
+def test_a_per_turn_skip_leaves_a_log_line(caplog, monkeypatch):
     from agents.core.orchestrator import Orchestrator
 
     class Memory:
@@ -150,6 +150,8 @@ def test_a_per_turn_skip_leaves_a_log_line(caplog):
 
     orch = Orchestrator.__new__(Orchestrator)
     orch.memory = Memory()
+    from tests.h441_native_fixture import bind_native
+    bind_native(orch, monkeypatch, session_ids=("web-1",))
     orch.reviewer = _reviewer(_LLM())
     orch.reviewer._on_demand = True                     # a /refine is running
     orch._session_id_default = "web-1"

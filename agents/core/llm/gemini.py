@@ -21,6 +21,7 @@ from .egress import llm_async_client
 from .gemini_context import CachedContentRejected, GeminiRequestBinding
 from .provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
 from .quota import ProviderRateLimited
+from .repetition_guard import RepetitionStreamGuard
 from .tool_dialects import (
     gemini_usage,
     GEMINI_FINISH_REASONS,
@@ -182,6 +183,15 @@ class GeminiBackend(LLMBackend):
         texts = [p.get("text", "") for p in parts]
         return "".join(texts)
 
+    @staticmethod
+    def _finish_reason(data: Any) -> str | None:
+        """Candidate zero's ``finishReason`` (``MAX_TOKENS`` on a truncation), if any."""
+        candidates = data.get("candidates") if isinstance(data, dict) else None
+        if isinstance(candidates, list) and candidates and isinstance(candidates[0], dict):
+            reason = candidates[0].get("finishReason")
+            return reason if isinstance(reason, str) else None
+        return None
+
     def _next_auth_binding(self, binding: GeminiRequestBinding) -> GeminiRequestBinding:
         """Rotate auth without carrying a cache created under the old credential."""
         lease = self.acquire_lease()
@@ -237,7 +247,9 @@ class GeminiBackend(LLMBackend):
                     raise CachedContentRejected(exc.response.status_code) from None
                 raise
             data = response.json()
-            text = self._extract_text(data)
+            # H393: the finish reason never leaves this function, so a truncated
+            # repetition loop is judged here, by the same cloud finalizer.
+            text = self._finalize_cloud(self._extract_text(data), self._finish_reason(data), model)
             report_text_usage(gemini_usage(data))
             return text
 
@@ -354,7 +366,7 @@ class GeminiBackend(LLMBackend):
             payload["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO"}}
         return self._fit_effort(payload, model or self.model)
 
-    def _tool_turn_from_response(self, data: Any) -> ToolTurn:
+    def _tool_turn_from_response(self, data: Any, model: str = "") -> ToolTurn:
         usage = gemini_usage(data)
         candidates = data.get("candidates") if isinstance(data, dict) else None
         if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict):
@@ -367,7 +379,7 @@ class GeminiBackend(LLMBackend):
         raw_calls, signatures = gemini_tool_calls(parts)
         remember_thought_signatures(self._thought_signatures, signatures)
         return ToolTurn(
-            content=self._finalize_cloud(gemini_text(parts)),
+            content=self._finalize_cloud(gemini_text(parts), candidate.get("finishReason"), model),
             usage=usage,
             tool_calls=parse_openai_tool_calls(raw_calls),
             finish_reason=normalize_finish_reason(
@@ -408,7 +420,7 @@ class GeminiBackend(LLMBackend):
                     json=payload,
                 )
                 response.raise_for_status()
-                turn = self._tool_turn_from_response(response.json())
+                turn = self._tool_turn_from_response(response.json(), actual_model)
                 self._report_success(binding)
                 return turn
             except ReasoningEffortRefused:
@@ -441,6 +453,8 @@ class GeminiBackend(LLMBackend):
         on_token: Callable[[str], None] | None,
     ) -> str:
         full = ""
+        finish = None
+        rg = RepetitionStreamGuard()   # H393: never paint a loop live
         pending_usage = None
         invalid_usage = False
         exhausted = False
@@ -492,18 +506,23 @@ class GeminiBackend(LLMBackend):
                         if not isinstance(current_id, str) or not current_id or (response_id is not None and response_id != current_id):
                             invalid_usage = True
                         response_id = current_id
+                    if isinstance(data, dict):
+                        finish = self._finish_reason(data) or finish
                     text = self._extract_text(data)
                     if text:
                         full += text
                         if on_token:
-                            await _emit(on_token, text)
+                            await _emit(on_token, rg.feed(text))
                 else:
                     exhausted = True
         # EOF and successful context-manager close are both required. A later frame
         # replaces eligibility; an earlier snapshot is never a final-count fallback.
         if exhausted and not invalid_usage and pending_usage is not None:
             report_text_usage(pending_usage)
-        return full
+        answer = self._finalize_cloud(full, finish, model)
+        if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
+            await _emit(on_token, rg.release(answer))
+        return answer
 
     async def generate_stream(
         self,

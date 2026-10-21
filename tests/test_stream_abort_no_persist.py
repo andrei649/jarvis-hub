@@ -26,6 +26,7 @@ from agents.core.agent import Agent
 from agents.core.config import JarvisConfig
 from agents.core.llm.providers import get_profile
 from agents.core.orchestrator import Orchestrator
+from tests.h441_native_fixture import bind_native
 
 
 class _Intent:
@@ -43,8 +44,10 @@ class _FakeAgent(Agent):
 
 
 @pytest.fixture
-def orch():
-    return Orchestrator(JarvisConfig())
+def orch(monkeypatch):
+    instance = Orchestrator(JarvisConfig())
+    bind_native(instance, monkeypatch)
+    return instance
 
 
 async def test_cancel_mid_generation_persists_user_turn_only(orch):

@@ -146,16 +146,33 @@ def identity_component(root: Path) -> Component:
     return Component.of("identity", text, detail=str(path.relative_to(root.parent)))
 
 
+def host_detected_component() -> Component:
+    """What Nerva detected about this host (H283, ``host_identity``): in every system
+    prompt, after the contract, whenever there is something to say (a container, WSL,
+    Termux or a supervisor)."""
+    from .environment_hint import detected_block
+
+    return Component.of("host-detected", detected_block(), detail="host_identity")
+
+
 def environment_hint_component() -> Component:
     """The operator's description of this machine (H283): in every system prompt, after
-    the contract, whenever ``JARVIS_ENVIRONMENT_HINT`` is set in this environment."""
-    from .environment_hint import ENV_NAME, hint_block
+    the contract and the detected facts, whenever ``JARVIS_ENVIRONMENT_HINT`` is set."""
+    from .environment_hint import ENV_NAME, operator_block
 
-    return Component.of("environment-hint", hint_block(), detail=ENV_NAME)
+    return Component.of("environment-hint", operator_block(), detail=ENV_NAME)
 
 
-def skills_index_component(skills: Iterable[Mapping[str, Any]]) -> Component:
-    """The `Available skills:` block, rendered exactly as `build_prompt` renders it."""
+def skills_index_component(skills: Iterable[Mapping[str, Any]] | str) -> Component:
+    """The `Available skills:` block, rendered exactly as `build_prompt` renders it: the
+    category-grouped index (``SkillLoader.prompt_index``, H326) when given as text, the flat
+    command rows otherwise."""
+    if isinstance(skills, str):
+        text = skills.strip()
+        if not text:
+            return Component(name="skills-index", chars=0, tokens=0, detail="no skills registered")
+        count = sum(1 for line in text.split("\n") if line.startswith("    - "))
+        return Component.of("skills-index", f"{text}\n\n", detail=f"{count} skill(s)")
     rows = list(skills or [])
     if not rows:
         return Component(name="skills-index", chars=0, tokens=0, detail="no skills registered")
@@ -164,6 +181,17 @@ def skills_index_component(skills: Iterable[Mapping[str, Any]]) -> Component:
     )
     return Component.of("skills-index", f"Available skills:\n{body}\n\n",
                         detail=f"{len(rows)} skill(s)")
+
+
+def skills_loaded_component(carried: str) -> Component:
+    """H326 — the skills a session carries from earlier turns (``LoadedSkillLedger.carry_block``),
+    rendered as ``build_prompt`` renders it. Not part of a fresh session's floor (it is empty
+    there), but a turn after a skill load pays it, so it is costed when given."""
+    text = (carried or "").strip()
+    if not text:
+        return Component(name="skills-loaded", chars=0, tokens=0, detail="none carried")
+    count = text.count("<loaded-skill digest=")
+    return Component.of("skills-loaded", f"{text}\n\n", detail=f"{count} skill(s) carried")
 
 
 def tool_schema_components(specs: Iterable[Mapping[str, Any]]) -> list[Component]:
@@ -204,17 +232,20 @@ def breakdown(
     *,
     agents_root: Path,
     tool_specs: Iterable[Mapping[str, Any]] = (),
-    skills: Iterable[Mapping[str, Any]] = (),
+    skills: Iterable[Mapping[str, Any]] | str = (),
     agent_name: str = "Jarvis",
+    skills_loaded: str = "",
 ) -> Breakdown:
     """Assemble the fixed floor. Every input is passed in but the environment hint, which
     is read from this process's environment; nothing is booted."""
     report = Breakdown()
     report.components.extend(soul_components(agents_root))
     report.components.append(identity_component(agents_root))
+    report.components.append(host_detected_component())
     report.components.append(environment_hint_component())
     report.components.extend(tool_schema_components(tool_specs))
     report.components.append(skills_index_component(skills))
+    report.components.append(skills_loaded_component(skills_loaded))
     report.components.append(scaffold_component(agent_name))
     report.components = [c for c in report.components if c.chars or c.name == "skills-index"]
     report.notes.append(
@@ -270,6 +301,7 @@ __all__ = [
     "render",
     "scaffold_component",
     "skills_index_component",
+    "skills_loaded_component",
     "soul_components",
     "tool_schema_components",
 ]

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -9,6 +10,7 @@ import httpx
 from agents.core.validation import (
     coerce_kg_label,
     coerce_kg_rel_type,
+    is_safe_kg_label,
     is_safe_kg_rel_type,
     is_safe_property_key,
 )
@@ -56,6 +58,34 @@ class KnowledgeGraph(ABC):
     def delete_entity(self, name: str) -> bool:
         ...
 
+    # ── H206 explorer surface (non-abstract: older backends keep working) ──
+    def replace_entity(self, name: str, entity_type: str, properties: dict = None) -> bool:
+        """Write the entity with EXACTLY these properties (an owner edit: a removed
+        property must go). ``add_entity`` is the merge-style writer other callers use;
+        backends whose ``add_entity`` already replaces need not override this."""
+        return self.add_entity(name, entity_type, properties)
+
+    def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
+        """Create the entity if it does not exist; NEVER touch an existing one.
+
+        Per-turn ingestion names entities it has only seen in a sentence. It used to
+        call ``add_entity(name, "unknown")``, which replaced the type and properties
+        of an entity the owner had typed or edited in the memory explorer."""
+        if self.get_entity(name) is not None:
+            return True
+        return self.add_entity(name, entity_type)
+
+    def list_relations(self, limit: int = 500, names: Optional[list] = None) -> list[dict]:
+        """Up to *limit* relations as ``{source, relation, target}`` (no properties).
+        With *names*, only relations whose BOTH ends are in that list: on a big graph a
+        global ``LIMIT`` returns an arbitrary sample whose edges mostly leave the set."""
+        return []
+
+    def last_error(self) -> Optional[str]:
+        """Why the last call on THIS thread could not ask the backend (``None`` = it could).
+        Lets a caller tell "no such entity" from "the graph did not answer"."""
+        return None
+
     @abstractmethod
     def delete_relation(self, source: str, relation: str, target: str) -> bool:
         ...
@@ -95,6 +125,17 @@ class InMemoryGraph(KnowledgeGraph):
             "properties": props,
         }
         return True
+
+    def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
+        if name not in self.entities:
+            self.add_entity(name, entity_type)
+        return True
+
+    def list_relations(self, limit: int = 500, names: Optional[list] = None) -> list[dict]:
+        wanted = set(names) if names is not None else None
+        rels = [r for r in self.relations if wanted is None or (r["source"] in wanted and r["target"] in wanted)]
+        return [{"source": r["source"], "relation": r["relation"], "target": r["target"]}
+                for r in rels[:max(1, limit)]]
 
     def add_relation(self, source: str, relation: str, target: str, properties: dict = None) -> bool:
         if source not in self.entities:
@@ -189,6 +230,10 @@ class Neo4jGraph(KnowledgeGraph):
         self._auth = httpx.BasicAuth(self.user, self.password)
         self._tx_url = f"{self.url}/db/neo4j/tx/commit"
         self._connected = None  # lazy check
+        # Why the last _call_neo4j on THIS thread degraded to [] (None = it did not).
+        # Lets a caller tell "no rows" from "could not ask" without changing the
+        # swallow-and-return-[] contract every read here relies on.
+        self._tls = threading.local()
         logger.info(f"Neo4jGraph configured at {self.url} (user={self.user})")
 
     def _check_connection(self) -> bool:
@@ -225,7 +270,9 @@ class Neo4jGraph(KnowledgeGraph):
         return self._connected
 
     def _call_neo4j(self, statements: list[dict]) -> list[dict]:
+        self._tls.error = None
         if not self._check_connection():
+            self._tls.error = "unreachable"
             return []
         try:
             with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
@@ -240,9 +287,11 @@ class Neo4jGraph(KnowledgeGraph):
                 # `errors` array, so without this the caller only sees "no results".
                 errors = body.get("errors") or []
                 if errors:
+                    self._tls.error = "rejected"
                     logger.warning("Neo4j rejected the statement(s): %s", errors)
                 return body.get("results", [])
         except Exception as e:
+            self._tls.error = str(e) or "failed"
             logger.warning(f"Neo4j query failed: {e}")
             return []
 
@@ -259,6 +308,16 @@ class Neo4jGraph(KnowledgeGraph):
         return rows
 
     def add_entity(self, name: str, entity_type: str, properties: dict = None) -> bool:
+        return self._write_entity(name, entity_type, properties, replace=False)
+
+    def replace_entity(self, name: str, entity_type: str, properties: dict = None) -> bool:
+        """The explorer's edit: ``SET n = {...}`` so a removed property really goes."""
+        return self._write_entity(name, entity_type, properties, replace=True)
+
+    def last_error(self) -> Optional[str]:
+        return getattr(self._tls, "error", None)
+
+    def _write_entity(self, name: str, entity_type: str, properties: dict, replace: bool) -> bool:
         # AUD-12 (F11): the label is interpolated into Cypher (Neo4j can't
         # parameterise it), so coerce it to a safe identifier — a legitimate
         # type passes through unchanged (mirrors the old ``capitalize()``); only
@@ -284,10 +343,97 @@ class Neo4jGraph(KnowledgeGraph):
                 "is structural and cannot be overridden by a property", name)
             props.pop("name")
         pairs = ["name: $name"] + [f"{k}: $p_{k}" for k in props]
-        cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{', '.join(pairs)}}} RETURN n"
         params = {"name": name, **{f"p_{k}": v for k, v in props.items()}}
+        # `replace` (the explorer's edit only) must make a removed property really go, which
+        # `+=` alone does not do. It is `+=` plus an explicit REMOVE of each stored property
+        # the edit left out, NOT `SET n = {...}`: that would also wipe every stored property
+        # whose key cannot be interpolated (`event-id`, `geo.lat`), which the dialog can show
+        # but never write back. Those keys are left alone. Every other writer
+        # (manager.add_fact, house projection, seed) keeps merging with `+=`.
+        # A type edit must RELABEL the node. `MERGE (n:<new label> {name})` matches only
+        # nodes that already carry the new label, so changing Unknown -> Person created
+        # a second node with the same name next to the first.
+        try:
+            existing, stored_keys = self._node_shape(name)
+        except RuntimeError as exc:
+            # Could not ask: writing now could MERGE a duplicate next to a node that
+            # exists under another label. Refuse instead.
+            logger.warning("add_entity(%r) not written: label lookup failed (%s)", name, exc)
+            return False
+        if existing is not None:
+            # Labels compare case-insensitively: get_entity reports labels lower-cased and
+            # coerce_kg_label capitalises, so an edit that keeps the type must not turn a
+            # node labelled `ReconWindow` into `Reconwindow`.
+            keep = any(lb.lower() == label.lower() for lb in existing)
+            stale = [] if keep else [lb for lb in existing if is_safe_kg_label(lb)]
+            clauses = []
+            if stale:
+                clauses.append(f"REMOVE n:{':'.join(f'`{lb}`' for lb in stale)}")
+            if replace:
+                gone = [k for k in stored_keys if k != "name" and k not in props and is_safe_property_key(k)]
+                if gone:
+                    clauses.append("REMOVE " + ", ".join(f"n.`{k}`" for k in gone))
+            if not keep:
+                clauses.append(f"SET n:`{label}`")
+            clauses.append(f"SET n += {{{', '.join(pairs)}}}")
+            cypher = f"MATCH (n {{name: $name}}) {' '.join(clauses)} RETURN n"
+        else:
+            cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{', '.join(pairs)}}} RETURN n"
         results = self._call_neo4j([{"statement": cypher, "parameters": params}])
         return len(results) > 0
+
+    def _labels_of(self, name: str) -> Optional[list[str]]:
+        """Labels of the node called *name*; ``None`` when there is no such node.
+
+        Raises ``RuntimeError`` when Neo4j could not be asked (unreachable / rejected),
+        which is not the same answer as "no such node"."""
+        return self._node_shape(name)[0]
+
+    def _node_shape(self, name: str) -> tuple[Optional[list[str]], list[str]]:
+        """``(labels, stored property keys)`` of the node called *name*; labels are ``None``
+        when there is no such node. Raises ``RuntimeError`` like ``_labels_of``."""
+        results = self._call_neo4j([{
+            "statement": "MATCH (n {name: $name}) RETURN labels(n) AS labels, keys(n) AS keys",
+            "parameters": {"name": name},
+        }])
+        error = getattr(self._tls, "error", None)
+        if error:
+            raise RuntimeError(error)
+        found = False
+        labels: list[str] = []
+        keys: list[str] = []
+        for result in results:
+            for row_data in result.get("data", []):
+                row = row_data.get("row") or [[]]
+                if isinstance(row[0], list):
+                    found = True
+                    labels.extend(str(lb) for lb in row[0])
+                    if len(row) > 1 and isinstance(row[1], list):
+                        keys.extend(k for k in row[1] if isinstance(k, str))
+        return (labels if found else None), keys
+
+    def ensure_entity(self, name: str, entity_type: str = "unknown") -> bool:
+        # Bare MERGE on the name matches the node whatever its labels are, so it can
+        # never duplicate an entity the owner re-typed; the label only applies on create.
+        label = coerce_kg_label(entity_type)
+        results = self._call_neo4j([{
+            "statement": f"MERGE (n {{name: $name}}) ON CREATE SET n:{label} RETURN n",
+            "parameters": {"name": name},
+        }])
+        return len(results) > 0
+
+    def list_relations(self, limit: int = 500, names: Optional[list] = None) -> list[dict]:
+        if names is not None:
+            return self.query(
+                "MATCH (a)-[r]->(b) WHERE a.name IN $names AND b.name IN $names "
+                "RETURN a.name AS source, type(r) AS relation, b.name AS target LIMIT $limit",
+                {"limit": max(1, limit), "names": list(names)},
+            )
+        return self.query(
+            "MATCH (a)-[r]->(b) RETURN a.name AS source, type(r) AS relation, "
+            "b.name AS target LIMIT $limit",
+            {"limit": max(1, limit)},
+        )
 
     def add_relation(self, source: str, relation: str, target: str, properties: dict = None) -> bool:
         # AUD-12 (F11): the relationship type is interpolated into Cypher, so
@@ -428,7 +574,14 @@ class Neo4jGraph(KnowledgeGraph):
             "statement": "MATCH (n {name: $name}) DETACH DELETE n RETURN count(n) AS deleted",
             "parameters": {"name": name},
         }])
-        return len(results) > 0
+        # The aggregate answers one row even when nothing matched (count 0): True only when
+        # a node really left the graph, so the route can tell "deleted" from "never there".
+        for result in results:
+            for row_data in result.get("data", []):
+                row = row_data.get("row") or []
+                if row and isinstance(row[0], int) and not isinstance(row[0], bool) and row[0] > 0:
+                    return True
+        return False
 
     def delete_relation(self, source: str, relation: str, target: str) -> bool:
         # AUD-12 (F11): refuse a non-identifier relationship type rather than

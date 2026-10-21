@@ -12,7 +12,254 @@
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 
+## Nerva Workspace — pilot B2B (2026-10-17)
+
+> **Directiva owner-ului, 2026-10-17:** *„avansează, pregătește interfața B2B pentru un pilot … produsul să
+> fie de nota 9/10 chiar și pentru pilot, toate funcțiile trebuie să funcționeze"*. Contractul:
+> [`docs/business/WORKSPACE_PILOT_SPEC.md`](docs/business/WORKSPACE_PILOT_SPEC.md) (v3.3) · instalare și operare:
+> [`docs/business/PILOT_GUIDE.md`](docs/business/PILOT_GUIDE.md) · întrebările de business, D1–D7 încă deschise:
+> [`docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md`](docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md).
+> Cinci felii construite și revizuite independent (fiecare cu propriul review adversarial și fix-urile lui),
+> apoi integrarea S6. Flag `NERVA_WORKSPACE`, default off. Numărul de teste de mai jos este cel de la
+> review-ul fiecărei felii; contorul repo-ului se regenerează cu `scripts/status_sync.py`.
+
+- [x] ✅ **NWS-1 — S1 Foundation: accounts, sessions, CSRF, throttling, departments, admin API, keyed audit.**
+  `agents/core/workspace/` `config` · `db` · `errors` · `http` · `identity` · `auth` · `audit` · `notifications`
+  · `effects_api` · `cli` + `agents/core/routers/workspace_auth.py` / `workspace_admin.py`. One SQLite schema
+  migrated through `PRAGMA user_version`; scrypt passwords with a policy; httpOnly `nerva_ws_session` (only its
+  SHA-256 stored); synchronizer CSRF token plus a same-origin rule; login throttling per email and per IP with
+  the attempt reserved before the hash runs, so a parallel burst cannot outrun 5 failures / 15 min; single-use
+  72 h invites carried in the URL fragment; SSO through a trusted proxy (email header + `X-Nerva-Proxy-Secret`);
+  admin users, departments, organisation, audit list / CSV export / chain verification, usage stats; HMAC-SHA256
+  audit chain whose key lives outside the data root; operator CLI `setup-code` · `reset-link` · `promote`.
+  489 tests at review (`tests/test_workspace_foundation_*.py`, route-inventory isolation included); the review
+  fixed 4 major and 6 minor findings (the login race, ids beyond SQLite's range, lone surrogates, nested-JSON
+  recursion, open-redirect notification links, nested secret keys in audit details).
+- [x] ✅ **NWS-2 — S2 Knowledge: uploads, extraction, chunking, FTS5 retrieval, company-wide publishing.**
+  `extract.py` · `documents.py` · `retrieval.py` + `agents/core/routers/workspace_documents.py`; dependencies
+  `pypdf` and an unconditional `tzdata`. Raw-body streamed upload (25 MiB default, 60 per hour per user with
+  re-index included, 3 in flight), extension plus content check, PDF ≤ 500 pages, OOXML only through
+  `archive_safe` and a bounded `defusedxml` iterparse, a dedicated 2-thread extraction pool under 60 s, BM25
+  search scoped in SQL, the `document.company_publish` effect pinned to `{document_id, created_at}`. 437 tests
+  at review, the isolation matrix included; the review fixed 2 critical findings (a cross-department leak
+  through rowid reuse; a GIL-holding ReDoS in text cleaning) and 6 major ones.
+- [x] ✅ **NWS-3 — S3 Assistant: governed chat over company documents, with citations.** `llm.py` ·
+  `assistant.py` + `agents/core/routers/workspace_chat.py` + `tests/support/fake_openai_server.py`. The hub
+  router under `local_only` / `allow_cloud` (never the personal pipeline), the data-handling gate, guardrails
+  binding, one process-wide model semaphore, a 64-character hold-back so a backend failure string is never
+  streamed; SSE `start` / `sources` / `token` / `done` / `error` with pings; only the citations actually used
+  are kept; 30 questions per minute per user counted from the audit; orphaned answers end as `interrupted`.
+  251 tests at review; the review fixed 1 critical finding (a cross-user leak through message-id reuse) and 4
+  major ones.
+- [x] ✅ **NWS-4 — S4 Automation: reports, schedules, exports, four-eyes approvals, SMTP.** `reports.py` ·
+  `scheduler.py` · `approvals.py` · `mailer.py` + `agents/core/routers/workspace_reports.py` /
+  `workspace_approvals.py` + `tests/support/smtp_sink.py`. Manual, daily and weekly runs in IANA time zones
+  (2 at a time, 300 s), Markdown and standalone HTML export, delivery approvals, the `report.share_company`
+  and `email.send` effects, compare-and-set decisions re-validated before execution, 7-day expiry, a 10-minute
+  `executing` sweep, SMTP through the hub's TLS trust store with exact allowed domains and an encrypted
+  password. 261 tests at review, 1,464 across every workspace module; the review fixed 3 major and 5 minor
+  findings (quadratic Markdown regexes, non-ASCII SMTP logins, a run limit reset by deleting reports).
+- [x] ✅ **NWS-5 — S5 Frontend: the Nerva Workspace web app.** `frontend/src/workspace/` +
+  `frontend/workspace.html` + `frontend/vite.workspace.config.ts`, built to `agents/web/workspace/`. React 19
+  with no new runtime dependency; every screen of spec §10 (login, setup, invite / reset, assistant with
+  streaming and a citation drawer, documents, reports with run view and export, shared reports, approvals,
+  notifications, profile, admin users / departments / organisation / email / audit / usage); a typed RO/EN
+  dictionary with identical keys; latin-ext font slices for ă, ș, ț. 159 vitest tests in `src/workspace`
+  (2,336 across the frontend), `tsc --noEmit` clean; the review fixed 1 critical and 7 major findings.
+- [x] ✅ **NWS-6 — S6 documentation: pilot guide, Caddy proxy, flags, module index, contract v3.**
+  [`docs/business/PILOT_GUIDE.md`](docs/business/PILOT_GUIDE.md) (Romanian, from an empty server to a working
+  pilot), [`deploy/workspace/Caddyfile.example`](deploy/workspace/Caddyfile.example) (workspace paths only,
+  HSTS, upload body cap, plus an oauth2-proxy SSO variant; both pass `caddy validate` on Caddy v2.11),
+  `docs/FLAGS.md` (the ten `NERVA_WORKSPACE*` variables), the `docs/ARCHITECTURE.md` module index, the
+  `CLAUDE.md` routing line, and the spec amended to v3 so it matches the code.
+- [x] ✅ **NWS-7 — S6 hub integration and the end-to-end journey.** `agents/web.py` (the six routers plus
+  `workspace_ui`, the `/workspace/assets` mount with `font/woff2`, scheduler start/stop in the lifespan, the
+  per-IP rate-limit exemption, the workspace error and validation handlers),
+  `agents/core/routers/workspace_ui.py`, the workspace directory in `data_purge.KEEP_DIRS` (`business` since
+  NWS-14), AUTOINCREMENT on the tables
+  whose ids leave the row, the cloud-only `provider_may_train` rule, the route-auth matrix and parity
+  snapshots, the `mobile/PARITY.md` row. The Playwright lane `frontend/playwright.workspace.config.ts` runs
+  `frontend/e2e/workspace-journey.spec.ts` (19 serial steps) against the real hub, the fake model server and
+  the SMTP sink, started through a sealed launcher (a fresh `JARVIS_HOME` and key folder, no cloud keys, no
+  `.env`); axe finds no violation on 26 pages at 1280 and 390 px. The journey fixed six product bugs: usage
+  counted from the audit trail, `can_open` on the citations of a shared run, the shared-reports department
+  column, theme and language controls that update at once, badge overflow and split table headers. Final
+  gate run: 27,037 backend tests, 2,340 vitest, the journey 19/19, status files regenerated with
+  `scripts/status_sync.py`. The lane runs in CI since NWS-15 (`e2e.yml`, a control-plane file: owner merges).
+- [x] ✅ **NWS-14 — separate the company data directory from the hub's file-tool root.** The workspace
+  used `data_path("workspace")`, which is also the default root of `JARVIS_FILE_TOOLS` (`JARVIS_FILE_ROOTS`),
+  of `JARVIS_TERMINAL_LOCAL_ROOTS` and of the tool-result spill directory (`workspace/tool_results/`): with
+  file tools on and default roots the owner's personal assistant could read the company database and
+  documents, and `workspace` in `data_purge.KEEP_DIRS` kept the owner's spilled tool results through a
+  forget. **Delivered 2026-10-17:** the workspace moved to its own `data_path("business")`
+  (`agents/core/workspace/config.py` `DATA_DIRNAME`, used by `workspace_dir()`, `setup_code_path()` and the
+  SMTP secret store); `KEEP_DIRS` keeps `business`, so the owner's `workspace/` (spills included) is purged
+  by a forget again. `tests/test_workspace_integration_purge.py` proves the directory is disjoint from the
+  three default roots, that nothing under `agents/` outside the workspace names `business`, that nothing
+  the workspace writes lands in `workspace/`, and that a forget empties the spill directory and the file
+  root while the company database, index, files and secrets survive. The pilot never shipped from
+  `workspace/`, so there is no migration; spec §3, pilot guide §13 / §14 / §19, `docs/FLAGS.md` and
+  `docs/ARCHITECTURE.md` updated. Explicit `JARVIS_FILE_ROOTS` / `JARVIS_TERMINAL_LOCAL_ROOTS` pointed at
+  the data root still reach `business/` — the guide's checklist says not to (a hub-side refusal belongs to
+  the file-tools owner).
+- [x] ✅ **NWS-15 — the known-issues pass before the pilot assessment.** (1) NWS-14 above. (2)
+  `scheduler.py` and `reports.spawn_run` / `cancel_runs` are loop-aware: each loop task records its owning
+  event loop, `start()` starts one on a loop that has none even while another loop's runs, and `stop()` /
+  `stop_background()` / `cancel_runs()` touch only the running loop's scheduler task and report runs, so a
+  nested lifespan never cancels or awaits a foreign-loop task (two-loop tests in
+  `tests/test_workspace_scheduler.py`). (3) Chat citations carry `can_open` for the reader at read time
+  (`GET /conversations/{id}`, the `done` event, the JSON answer, the feedback `{message}`;
+  `documents.visible_ids`, like report runs); the source drawer takes a `context` and in the assistant
+  hides the document/file links of a citation the reader may no longer open and says why
+  (`source.notOpenableAnswer`, RO/EN; run views keep `source.notOpenable` and get a report-specific note).
+  (4) `tests/support/fake_openai_server.py` no longer writes „Raport: Raport: …" (the prompt's own
+  „Raport:" / „Report:" label is stripped from the heading, deterministically). (5) CI: `e2e.yml` runs the
+  workspace journey after the HUD lane (`npx playwright test -c playwright.workspace.config.ts`,
+  `E2E_PYTHON=python`) and uploads `frontend/e2e/.results/workspace-screens/` on failure; `npm run
+  e2e:workspace` in `frontend/package.json`. (6) Spec v3.1: §1/§13 the lane, §3 the data directory, §5/§9
+  the loop rule, §7 `/admin/stats` counted from the `chat.asked` / `report.run_started` audit rows and
+  `can_open` on run and conversation citations, §10 the source-drawer rule, the shared-reports
+  `department_name` and the optimistic theme/language save with revert. The journey grew to 21 steps: a
+  cited document deleted since (the stored answer keeps the excerpt, `can_open: false`, the drawer explains
+  and offers no link) and the company data found only under `home/business/`; the run view's heading is
+  pinned to „Raport: <name>". Gate run: 1,529 workspace backend tests, 2,341 vitest, the journey 21/21,
+  status files regenerated (27,048 backend tests).
+- [x] ✅ **NWS-16 — the first two assessment rounds (2026-10-18): findings fixed before the pilot.**
+  Backend: the audit key guard — a key file is minted only for an empty trail, and a process whose key
+  is not the newest row's never writes (`503 audit_key_missing` / `audit_key_mismatch`, said once at hub
+  start), with the read-only CLI `check` and the audited `audit-rekey` for a key that is truly lost; the
+  CLI preflight (exit 2, nothing changed, outside the service's environment) and `--base-url`
+  normalisation; `invalid_identifier` sign-ins kept out of the audit; `/admin/stats?tz=` with local-day
+  buckets; `ready_document_count`; `share_pending`; the withdrawal reason on superseded approvals;
+  localized delivery-failure notices; `model_unreachable` from what the backend noted, plus a 2 s / 30 s
+  liveness probe of the local model server; the sweep that fails documents an interrupted extraction left
+  `processing`; no CORS headers on the workspace's paths. Frontend: unsent drafts in `sessionStorage`, the
+  „Primii pași" card, table excerpts and previews rendered through `CitedMarkdown`, tables as cards below
+  768 px, the run view's h1 = the report's name. Round 2 (frontend; written into spec §10 in v3.3,
+  DOC-03): drafts on every other form (`email.<type>.<id>`, `invite.new`, `user.<id>`,
+  `department.<id>|new`, `org`, `smtp` without the password), kept only while the form differs from
+  its prefilled values, with „Renunță la modificări" on the two page forms; `LocalityChip` (locality
+  in words, „Pe serverul companiei") and model ids for admins only; audit values translated through
+  `audit.value.<key>[<code>]`, `from`/`to` as „Înainte"/„După", the scheduler actor named; approval
+  preview headings by status („Acțiunea cerută", „Ce s-ar fi întâmplat la aprobare"); 24 × 24 lead
+  citation chips (`ws-cite--lead`); the verify sentence for rows a re-key left unverified;
+  `.ws-dl` labels at `fit-content(45%)`; `WS_E2E_RESULTS_DIR` for the e2e lane. Test support: the
+  fake model quotes each source's `gist()` (its first prose sentence, or a table's first data row
+  „Lună: Iulie — Județ: Sibiu …") instead of raw Markdown. Docs: spec v3.2; pilot guide §2 (`UMask=0077`, a git
+  checkout or bundle, `python3.12` on Ubuntu with 3.13 present), §14 (the archive name, restore on a new
+  server, the `check` step), §16 (refusals, `check`, `audit-rekey`), §17 (audit-key and backup rows), §18,
+  §20 (every key in the handover); `docs/FLAGS.md` and `docs/ARCHITECTURE.md`.
+- [x] ✅ **NWS-17 — hub-side refusal of explicit file roots that reach the company data.** **Delivered
+  2026-10-19:** `workspace.config.hub_roots_without_workspace`, applied by `FileScope.from_env()` and
+  `local_transport.default_roots()` / `LocalHostTransport.from_env()`, drops a `JARVIS_FILE_ROOTS` /
+  `JARVIS_TERMINAL_LOCAL_ROOTS` entry whose real path is, contains or lies inside `<data root>/business`
+  (one warning, the default root when none is left; `tests/test_workspace_hub_root_guard.py`, 18
+  tests). Still outside it: roots passed in code, and absolute paths in an approved terminal argv —
+  which the warning itself now says for the terminal (REV-POLISH-03).
+- [x] ✅ **NWS-18 — backup CLI ergonomics.** **Delivered 2026-10-19:** `verify` / `restore` take the
+  name from `list` or a path whose real location is in `<data root>/backups/` (`resolve_backup_arg`),
+  and every failure is one line, exit 1 (wrong key, non-empty target, …) or 2 (names no backup), never
+  a traceback (`tests/test_backup_cli.py`, 17 tests); pilot guide §14 / §15 / §17 / §20 simplified.
+  A failed decryption names the key it actually tried (`JARVIS_BACKUP_KEY`, `JARVIS_SECRET_KEY` or
+  the key file) and `verify` / `restore` never make a key file or salt (REV-POLISH-04); a `list` name
+  that links to another archive of the directory names no backup (REV-POLISH-05).
+- [x] ✅ **NWS-19 — the polish pass (2026-10-19): the round-2 residual minors.** The scheduler pauses
+  its four audited steps (five since NWS-22) while the audit key is not the trail's — one WARNING per state change, no
+  traceback, nothing written, catch-up on the first good tick (OPS2-08,
+  `tests/test_workspace_scheduler_audit_key.py`); `workspace.db` created 0600 whatever the umask and
+  `<data root>/business` made private at each process's first connect — a symlinked `business/` at
+  the folder it links to (OPS2-05, REV-POLISH-02, `tests/test_workspace_file_modes.py`; `deploy/systemd` still sets no `UMask`, the guide's drop-in
+  does); every operator hint names `nerva-run` (OPS2-07, `tests/test_workspace_operator_hints.py`);
+  NWS-17 and NWS-18 above; the run view's export group captioned „Exportă" with short labels below
+  480 px (UX-21); two journey steps with the SMTP sink stopped — an approved email that fails
+  honestly and an approved report delivery that cannot be sent, then delivered with the sink back
+  (T-GAP-1; `frontend/e2e/support/workspace_smtp.py`; the journey has 28 steps). Docs: spec v3.3
+  (DOC-03 and this pass), pilot guide §2 / §12–§20, `docs/FLAGS.md`, `docs/ARCHITECTURE.md`. Gate
+  run: 1,658 workspace backend tests (serial, alphabetical, and `-n 6`: no test depends on the
+  order or on `--log-level` any more, REV-POLISH-01), 239 vitest in `src/workspace`, the journey
+  28/28 twice.
+- [x] ✅ **NWS-20 — the run view learns the delivery outcome without a reload.** **Delivered
+  2026-10-19:** schema v2 adds `report_runs.delivery_state` (`pending` → `sent` | `failed`, set with
+  `succeeded` in one statement), the run API returns it, and `RunView` / the report history keep
+  polling while it is `pending`, then show „Trimis pe email către …" or why it was not sent; a
+  shutdown mid-send ends `delivery_interrupted`, and the scheduler resolves a delivery a stopped hub
+  left `pending` at the first tick after a restart (`tests/test_workspace_reports_delivery_state.py`,
+  13 tests; `reports-round4.test.tsx`; journey step 24). Pilot guide §18 no longer lists it.
+- [x] ✅ **NWS-22 — the third assessment round (2026-10-19): last functional gaps.** One line each:
+  - NWS-20 above (backend and frontend halves).
+  - UX-23 — a failed run says why in the chat's own sentence and next step: `error_reason`
+    (`model_unreachable` …) stored next to `error_code`, `describeCode` + the shared `hintKey`
+    (`tests/test_workspace_reports_model_reason.py`, 20 tests).
+  - T-GAP-2 — journey step 27 stops the model server (`frontend/e2e/support/workspace_model.py`):
+    the chat and a report run explain it, the chip reads „Indisponibil", and both recover with the
+    first answer once it is back (`ChatPane` / `RunView` re-read the posture).
+  - UX-22 — locality chips never wrap (short „Local" / „Cloud" in tables), the run history has four
+    columns and fits 1024 px, long source pills stay in their card (journey step 25; `checkPage`
+    layout pass at 1024 px).
+  - SEC-EDGE-1 — a `business/` linked to a folder shared with other data gets only the workspace's
+    own entries made private (`db.own_entry`), with one warning (`tests/test_workspace_file_modes.py`).
+  - OPS3-01 — `nerva-run -m agents.core.backup --help` names `nerva-run` and the service's
+    environment (`backup.PROG`, `tests/test_backup_cli.py`).
+  - DOC-04 — `config.workspace_dir`'s docstring states the rule `secure_storage` applies.
+  - Round-4 review fixes R4-01 … R4-08: a run or report that answers 404 while its page follows
+    it stops polling and shows the not-found state (`RunView`, `ReportDetail`;
+    `reports-gone.test.tsx`, 5 tests); outside its department a shared run's failed delivery
+    hides `error` / `error_code` / `error_reason` with `delivery_state` and `delivered_to`; schema
+    v3 `report_runs.delivery_attempted`, so the restart sweep audits the count the email was
+    addressed to; the shared-folder WARNING's verb agrees with its count; tests that pin the
+    one-commit `succeeded` + `pending`, the shutdown guard, the failed branch's compare-and-set
+    and the `files/` symlink guard (`tests/test_workspace_reports_delivery_state.py` +7,
+    `tests/test_workspace_file_modes.py` +4; each killed its mutation).
+  - Docs: spec v3.4, pilot guide §10 / §12 / §13 / §15 / §17 / §18, `docs/FLAGS.md`,
+    `docs/ARCHITECTURE.md`, `docs/OWNER_TASKS.md` (NWS-21).
+  - Gate run: 1,696 workspace backend tests (+38) and 87 backup tests (1,783 together, `-n 4`), 253
+    vitest in `src/workspace` (23 files), the journey 31/31 twice.
+
+**Open follow-ups**
+
+- [ ] ⬜ **NWS-8 — native OIDC sign-in.** SSO works only through a trusted proxy today (oauth2-proxy in front
+  of Caddy, pilot guide §11). An in-app OIDC client (discovery, PKCE, ID-token validation, group → role
+  mapping) removes the extra hop. Gated on D3 in the kickoff record.
+- [ ] ⬜ **NWS-9 — MCP-first business connectors.** Knowledge comes only from uploaded documents. ERP, CRM,
+  accounting and e-Factura through MCP servers are the next slice (spec §0, D4); gated on the owner's answers
+  to D1–D4.
+- [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** A PDF without a text layer fails with `no_text`; the original is
+  kept, so a re-index works once text exists. Needs a local OCR engine with its own time and memory bounds.
+- [ ] ⬜ **NWS-11 — a killable extraction subprocess.** pypdf has no checkpoint inside a page, so one
+  pathological page keeps a pool thread busy past the 60 s bound (the document is still marked `timeout`).
+  Run extraction in a subprocess with `RLIMIT_AS` and a hard kill.
+- [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
+  lazy-load the admin console and reports to cut the first load.
+- [ ] ⬜ **NWS-21 — the pilot tag (owner).** No release tag holds the workspace yet (`v1.0.0` is older);
+  pilot guide §2 installs from `<eticheta-pilotului>` (§15 upgrades from tag to tag) and says the
+  owner cuts it after approving the pilot work, without naming it. Owner lane: merge PR #1256, tag,
+  and give the tag's name to the installer — the row „NWS-21 — merge the Nerva Workspace pilot PR
+  (#1256) and cut the pilot tag" in `docs/OWNER_TASKS.md` (owner gates).
+- [ ] ⬜ **NWS-23 — round-3 residual minors (found while fixing NWS-22, not yet fixed).** One line each:
+  - The reports list („Rapoarte", `ReportsList.tsx`) scrolls sideways inside its frame between 768
+    and 1180 px (at 1024 „Următoarea rulare" and „Livrare pe email" sit behind the scroll; the sticky
+    actions column keeps the row menu reachable). Needs a small design call (icon-only run button,
+    or merged columns in that range).
+  - At 320 px the run view's „Vizibilitate" badge „Partajat în companie" wraps inside its pill (the
+    `ws-run-meta__wide` row treatment would fix it).
+  - A run page opened on a run that has already failed announces nothing to a screen reader (the
+    notice is the page); with the model server down a run fails in milliseconds, so after „Rulează
+    acum" the outcome is usually not spoken. Announce it when the page was reached from „Rulează
+    acum" / „Rulează din nou".
+  - `backup restore <archive> <target>` with a dangling-symlink target says `target … is not empty`
+    (`mkdir` → `FileExistsError` → that line); nothing is restored, only the wording is wrong
+    (documented in pilot guide §17; any `agents/core/backup.py` edit re-opens Hermes H503's review).
+  - In a shared `business/` target, a foreign file whose name starts with `workspace.db-` or
+    `secrets.enc.` matches `db.own_entry` and is tightened to 0600 (narrow the sibling patterns to
+    the exact `-wal`/`-shm`/`-journal` and the secret store's own temp names).
+- [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
+  `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
+  contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.
+
+
 ## Current sprint: Hermes capability equivalence — 2026-09-09
+
+- 2026-10-20 build lane (#1251, stacked on #1249): H283 host identity (one detector for container/WSL/Termux/supervisor/terminal/machine-id feeding the prompt, the skill gate, the readiness panel and `/api/host/probe`), H310 and H537 web search/extract (call-level 22 s/26 s budgets under the 30 s tool wall, DNS-failure rescue classification, site policy) are recorded equivalent; H607 and H206 (memory graph explorer, `GET /api/kg/map`) and H605 stay partial. The 33 rows those edits made stale were re-read against the code and restamped (H363 and H605 stay partial after a skeptic check); equivalent now 101/697. Honest narrowings: the web backend selector is the env var `JARVIS_WEB_BACKEND`, not a `web.backend` setting; `web_search` declares 50,000 bytes while `web_extract` declares 100,000. Not live-proven: systemd READY/WATCHDOG on a real manager, WSL2/Termux/launchd identities on real hosts.
 
 - 2026-10-08 local continuation (H18.30): native mobile History now binds subsequent turns to the exact selected session; streaming adopts the server's returned ID. ID and settled transcript are stored together under an opaque connection scope, rotated on URL/user/admin credential changes. Hydration, cancelled streams and late History responses cannot replace a newer conversation. New uses the existing owner-governed `/new` command; `/new` and `/reset` clear the view only after confirmed ID rollover, while `/undo` reloads the returned transcript. Chat and History forward configured owner credentials; no authority is inferred. Native device/live-Hub acceptance remains open, and H063 stays partial for its existing server-side gaps. Local evidence: `mobile/docs/h1830-session-continuity.md`.
 
@@ -2205,6 +2452,48 @@
 - 2026-10-09 H477 cloud generated-ID continuation: newly approved cloud PNGs now use the same reserved-ID, sidecar-first publisher as local providers. Raw delivery and edit references verify their stored expected digest; task recovery retains its independent completion SHA. The final storage and live authority checks preserve existing unknown/withheld/failure outcomes without another provider request. Legacy sidecar-free IDs remain unbound on raw reads and are not migrated. See [cloud standalone image proof](docs/plans/2026-10-09-cloud-generated-artifact-digest.md).
 
 - 2026-10-09 H672 execution-admission continuation: the production agent loop now rechecks current tool profile permissions inside ToolRPC dispatch, after any event-sink await and before preflight, approval intake or handler admission. Revoked tools and resolver failures refuse locally between folds, while schemas, taint/gate views and H661 turn-offer bookkeeping stay unchanged. Direct/script calls, already-running handlers and queued approvals retain their existing contracts. This closes the tested admission gap without completing the persona/compaction row. See [profile execution proof](docs/plans/2026-10-09-profile-execution-recheck.md).
+
+- 2026-10-10 H512 MCP token audit continuation: successful `/api/mcp/token` signing submits one fixed-field `token_issued` event with literal `surface=mcp`, separate from its admin authorization event. The existing bounded queue keeps sink I/O off the response path; credentials, subjects, scopes and request metadata are omitted. Failed issuance produces no issuance event. Full login/session/WebSocket/native authentication coverage and guaranteed delivery remain open. See [scope and verification](docs/plans/2026-10-10-mcp-token-audit.md).
+
+- 2026-10-10 full-contract closure batch: H161 now confirms disk recovery independently for each watched volume; missing probes cannot clear or re-arm its warning. H328 now recognizes the native Kanban and other supported toolset members in both required-tool and fallback-skill gates, without granting execution authority. H450 now anchors preview, create/edit, cron triggers and fallback tick to one active application timezone, with saved zone changes taking effect after restart. H004 now completes the exact recursive command path in Bash/Zsh with literal names and no sibling suggestions after a leaf. Twenty-two stale rows were re-reviewed against their frozen contracts, including H661 spill/paging: the local ledger is 127 equivalent, 234 partial, 56 missing and 280 needing review (697 accepted). Eleven old equivalent claims remain partial where the accepted behavior is incomplete; six previously reviewed partial jobs rows retain their verdicts after collateral review. Unrelated stale evidence is preserved. See [implementation and review](docs/plans/2026-10-10-hermes-closure-01.md).
+
+- 2026-10-10 full-contract closure batch 02 (local): H413 now defaults cosmetic naming to the dedicated small local model, preserving the instant title if it is unavailable. H689 shares one durable installation identity across profiles, conservatively migrates legacy IDs and refuses unbound grants/links; profile credentials and hub locks stay isolated. H256 provider/role consent writes now refuse a corrupt settings store before audit or mutation, including corruption between initial preflight and the write lock. H298/H671/H679 are re-reviewed as equivalent; H296 remains partial because its named dynamic-schema producers are missing. Current assessment: 133 equivalent, 233 partial, 56 missing, 275 needing review, 697 accepted; unrelated stale pins and the frozen inventory are preserved. No push, merge or deployment. See [contracts, regressions and integration evidence](docs/plans/2026-10-10-hermes-closure-02.md).
+
+- 2026-10-10 full-contract closure batch 03 (local): H299/H397 now observe actual tool results, provide bounded recovery guidance and keep stall halts opt-in. H329 binds re-enable to exact human-approved tasks with atomic state, receipt and audit; CLI/HUD show pending, while malformed runtime switch state refuses nonessential skills. H315 full-result checklist and owner visibility were re-reviewed. Assessment: 137 equivalent, 230 partial, 56 missing, 274 needing review; 697 accepted. The frozen backend run exposed stale fixture/CLI assumptions; test-only repairs pass all affected cases, alongside 2,177 frontend tests, typecheck/build and an actual disposable approval/worker smoke. No green full-run or native-host claim. No push, merge or deployment. See [contracts, regressions and integration evidence](docs/plans/2026-10-10-hermes-closure-03.md).
+
+- 2026-10-10 full-contract closure batch 04 (local): H398 preserves upstream-completeness notices and advisory output risk through runtime folds; H441 adds owner CLI resume/import with durable private lineage and untrusted-history framing; H667 restores standard temp-environment precedence. H130/H135/H666 whole contracts were re-reviewed. Assessment: 143 equivalent, 229 partial, 56 missing, 269 needing review; 697 accepted, 554 unfinished. The frozen backend run had 194 failures; all passed after compatibility fixes in clean focused runs totaling 825 cases. Actual disposable CLI/API smoke and browser checks are recorded; no green full-run or native-host claim. No push, merge or deployment. See [contracts, review and verification](docs/plans/2026-10-10-hermes-closure-04.md).
+
+- 2026-10-10 full-contract closure batch 05 (local): H002 now attributes generation usage to its own chat turn and preserves source-assigned terminal stops through synthesis. One-shot receipts retain observed usage/session/approval details on failures and Ctrl-C; unknown usage stays unknown, and approvals remain queued. Assessment: 144 equivalent, 229 partial, 56 missing, 268 needing review; 697 accepted, 553 unfinished. The frozen backend run completed 25,820 cases with 32 failures/errors; all original failed nodes pass after fixture/report repairs. Integrated CLI regressions, real disposable lifespan/CLI smoke and frontend typecheck pass; no green full-run or live-provider claim. No push, merge or deployment. See [contract, review and verification](docs/plans/2026-10-10-hermes-closure-05.md).
+
+- 2026-10-10 full-contract closure batch 06 (local): H015 adds durable attempts/history/incidents, owner acknowledgement, separate KV notes, explicit continuity and governed scheduled-task intake. H049 adds exact redacted log/rotation selection; H145 Logs UI and H684 read-only doctor were wholly re-reviewed. Assessment: 148 equivalent, 229 partial, 56 missing, 264 needing review; 697 accepted, 549 unfinished. The frozen backend run completed 25,875 cases with six failures; every original failed node passes after one-shot, inline-consent, parity/inventory and generated-report repairs. Disposable actual CLI/API smoke, focused backend checks, 14 Logs panel tests and TypeScript pass. No green full-run, live-provider or native-host claim. No push, merge or deployment. See [contracts, review and verification](docs/plans/2026-10-10-hermes-closure-06.md).
+
+- 2026-10-10 full-contract closure batch 07 (local): H453 delivers complete permitted script stdout, checks emptiness/wake gates before excerpts, and preserves monitor detection semantics. H454 adds bounded latest-output continuity/chaining, atomic CLI/API source edits, source-identity checks and frozen delayed contexts. Assessment: 150 equivalent, 228 partial, 56 missing, 263 needing review; 697 accepted, 547 unfinished. Frozen backend: 25,909 cases, one stale roadmap-count failure, 59 skipped/xfail; all 22 document/parity cases pass after the count repair. Final core delta, actual local subprocess pipeline, disposable CLI/API/orchestrator smoke, route/typegen and TypeScript checks pass. No green full-run, live-provider or native-host claim. No push, merge or deployment. See [contracts, review and verification](docs/plans/2026-10-10-hermes-closure-07.md).
+
+- 2026-10-10 full-contract closure batch 08 (local): H456 implements job/cron/legacy toolset precedence, operator restrictions, mandatory interactive-tool exclusions and canonical per-job reasoning with transport enforcement; CLI/HUD/doctor expose controls. Assessment: 151 equivalent, 228 partial, 56 missing, 262 needing review; 697 accepted, 546 unfinished. Frozen backend: 25,935 cases, one approval-test timing failure, 59 skipped/xfail; the repaired fixture and all 46 adjacent owner-once cases pass. All 2,181 frontend tests, build/typecheck, built-browser, nested-code restriction and actual offline CLI/API/model proofs pass. No green full-run, live-provider or native-host claim. No push, merge or deployment. See [contracts and verification](docs/plans/2026-10-10-hermes-closure-08.md).
+
+- 2026-10-10 full-contract closure batch 09 (local): H067 restores enabled clarification registration at fresh startup and canonical numeric/label/multiselect answers after Other; the complete pending-input/confirmation/ephemeral-notice contract is re-reviewed. Assessment: 152 equivalent, 228 partial, 56 missing, 261 needing review; 697 accepted, 545 unfinished. Frozen backend: 25,951 cases, five failures, 40 skipped/xfail; all original failures pass after three fixture repairs and optional TLS-import provenance annotation, with 375 affected-module cases green. Actual offline fresh-app HTTP/model/ToolRPC clarification and all formerly skipped channel checks pass. No green full-run, live-provider or native-host claim. No push, merge or deployment. See [contract and verification](docs/plans/2026-10-10-hermes-closure-09.md).
+
+- 2026-10-11 HEQ-1 drift re-read, batch 1 (PR #1249, head `f9e130b5`): 25 of the 40 rows that had been recorded `equivalent` with a content-audited review and then lost credit only because a pinned file changed under the Codex sprint and `main` (#1219, #1225–#1228, #1233, #1247) were re-read against the current code: H034, H099, H117, H156, H157, H165, H168, H200, H209, H242, H247, H259, H285, H309, H314, H318, H368, H428, H433, H490, H507, H579, H594, H670, H677. For each, every drifted pin was diffed from the version its hash names, every `path:line` citation was opened at HEAD and moved or corrected by content, and every pinned test file was run (2,191 backend and 230 frontend cases, 0 failures). Sixteen were restamps (no claim touched); nine had a claim reworded from what the code does now (H034 the installer's bounded zip extraction; H117 and H677 the pending-input lane ahead of batching and the fifth fast-task set in `stop`; H200 the admin guard's own audit row; H318 the JSON-field test count and four re-mapped `skills/tools.py` lines; H490 the five Kanban keys safe mode now forces; H579 the `/rollback`/`/checkpoints` carve-out from `@file` expansion; H594 `terminal_run` taking the gated intake path; H670 `model_system_prompt` on both agent prompt sites). Drifted high-churn pins whose only claim a pinned test carries (`agents/web.py`, `orchestrator.py`, `settings_db.py`, `gap.tsx`, `autonomy_coordinator.py`) were dropped where no sentence cites them. No status moved. **Headline 155 → 180/697; `needs_review` 258 → 233.** The remaining 15 of the 40 (H078, H153, H262, H273, H275, H313, H378, H465, H513, H518, H523, H586, H681, H687 and H674) and the independent skeptic pass over these 25 follow in the next batch.
+
+- 2026-10-12 HEQ-1 drift re-read, batch 2 (PR #1249, head `0221c075` after the `main` sync for #1252): six more of the 40 stale closed rows re-read the same way — H262, H273, H275, H518, H681, H687 — with every drifted pin diffed from its pinned version, every citation re-opened at HEAD (H687 alone carries 136, all remapped by content) and every pinned test re-run (1,173 backend and 45 frontend cases, 0 failures). Two are restamps (H262, H275); four had a claim reworded from the current code: H518 the 4096-px Krea Enhance path beside the unchanged 2048-px default, H681 the subagent runner's `steer` kwarg and steering scopes, H273 the `env_str` reads in `serve.py` the doctor's scan still matches, H687 the direct-run reservation moving from `reserve_attempt` to `start_direct_run` with the first-run contract intact. High-churn pins without a cited claim were dropped (`gap.tsx` for H518). No status moved. **Headline 180 → 186/697; `needs_review` 233 → 227.** Nine stale closed rows remain (H078, H153, H313, H378, H465, H513, H523, H586, H674).
+
+- 2026-10-12 HEQ-1 Codex review fixes + drift re-read, batch 3 (PR #1249, head `b339672c`): three of the four Codex review findings on #1249 were real and are fixed red-first. (1) Quiet hours read the host clock while triggers fire in the pinned app zone (H450): `JobRunner.quiet_hours` and the webhook route's hold now share `jobs.quiet_hour`, which reads `general.timezone` and falls back to the host clock only when the saved zone is unusable, so a bad setting never raises on the delivery path. (2) `GET /sessions` for a guest dropped hidden foreign imports *after* the 20-row LIMIT, so a guest could see an empty or short page (H441): `get_sessions(native_only=True)` now filters them in the query. (3) A re-enable grant consumed and then refused as stale (`stale_switch_request`, `stale_skill_source`, `stale_skill_category`) stayed live in the permission ledger (H329): it is now revoked. The fourth (stdout attestation) is not a bug: the capture attests the raw bytes, `stdout` is the redacted projection. 6 new tests (8 cases); backend tests 25,979 → 25,987. Then 29 closed rows were re-read and restamped: the 19 rows these fixes drifted (H015, H262, H275, H315, H329, H413, H441, H450, H453, H454, H456, H671, H684, H687, H115, H451, H452, H455, H676; H262 and H687 citations remapped, dated notes on H450, H441, H329, H687), H200/H490/H659 (webhooks.py moved, no claim touched), and seven stale equivalent rows (H078, H153, H313, H378, H465, H513, H674; H153 gains a note on the shared quiet-hours zone). Every pinned test re-run on the head: 4,180 + 240 backend, 30 + 187 + 75 frontend and 40 root-HUD cases, 0 failures. No status moved. **Headline 186 → 193/697; needs_review 227 → 220.** Then the last two stale closed rows (2026-10-12, head `70498f88`, closure verifier + adversarial hunter): **H523** restamped equivalent (drift paragraph trimmed to what the pinned evidence shows; 212 backend + 22 frontend cases); **H586 demoted equivalent → partial**: chat-prepared and selected-chat commit image-derived answers to the conversation without marking the turn untrusted, so the frozen taint/ASK clause is not met (remaining names the fix and its test; 486 backend + 50 frontend cases). **Headline 193 → 194/697 net of the demotion; needs_review 218.** The independent skeptic pass over batches 1–3 is still owed.
+
+- 2026-10-12 HEQ-1 drift re-read, batch 4 (PR #1249, head `ccb33675`): all 112 rows recorded `partial` with a content-audited review that had gone `needs_review` only because pinned files drifted were re-read, 12 per assessor: every drifted pin diffed from its pinned version, every citation re-opened at HEAD and remapped by content, every pinned test re-run. 60 were restamps; 52 had a claim, citation or `remaining` corrected against the current code — several `remaining` lists narrowed where later work closed part of the gap (e.g. H114's platform hint via `operating_guidance.py`, H387's project-context scan via H594) and dated "Drift re-read" notes added. No row was promoted or demoted (none was proposed, so the skeptic stage had nothing to judge). Coordinator re-run of the union of pinned tests on the head: 10,709 backend passed / 14 skipped (469 files; the kanban worktree tests need `commit.gpgsign=false` in this sandbox, where git signs with SSH), 474 frontend, 40 root-HUD and 73 mobile cases, 0 failures. Headline unchanged at **194/697; needs_review 218 → 106** (the 105 reopened rows plus H468). An independent skeptic pass over the 52 reworded rows is still owed.
+
+- 2026-10-12 H586 closed — image readings are untrusted input (PR #1249, c9f67240 … 307b33eb): the row had been demoted to `partial` because the chat-prepared and selected-chat composer routes commit an image-derived answer into the conversation and nothing tainted it. Fixed red-first and driven through six rounds of an adversarial skeptic, each round's reproduced bypass closed before the next: (1) both turn entries run `_guard_media_history`, so a turn whose history holds a committed image turn runs with a tainted origin and a side-effecting action is queued (ASK); (2) image turns are embedded tainted (`external:image`), and a session holding one is not promoted by the learning review, LivingMemory or `/refine` (`image_history_not_promotable`); (3) one-shot `process()`/`process_detailed()` completions (autonomy `_llm`, nightly reflection, summarize, subagents) run the guard under a call-scoped origin; (4) `/undo` on the web and on channels keeps the media provenance on the copied turns (an undo had laundered it), and nightly reflection skips a window holding an image turn; (5)–(6) a `session_search` hit on an image turn is flagged `image_derived` and the tool handler declares `tainted` on its result so the mark survives the worker-thread seam into the tool loop (verified end to end through `AgentToolRuntime.run`). 13 new cases in `tests/test_h586_image_history_taint.py`; full backend suite green apart from two environment-only failures (socket guard behind the sandbox proxy; reports regenerated in the same commit). Stated limits: a media turn aged out of the 100-turn held window no longer marks later turns (its embedding stays tainted), and the opt-in compression-summary cache can carry image text past it. The 52 rows whose orchestrator/manager/session_search pins these commits moved were re-read and restamped (citations remapped by content, dated note). **H586 partial → equivalent; headline 194 → 195/697**; backend tests 25,987 → 26,000.
+
+- 2026-10-13 HEQ-1 reopened rows assessed (PR #1249): the 105 former-skip rows the owner readmitted on 2026-09-27 (full functional parity) had sat at `needs_review` with no code review. Each was assessed fresh against current source at 9f92d937 by seven parallel assessors (requirement = the Hermes capability, not the old skip rationale), every verdict citing code and tests, then attacked by a skeptic: **53 partial, 52 missing, 0 equivalent**. The skeptic demoted H473 (`nerva project` tree, 87 tests green) to partial — the repo-discovery cache has no caller outside tests — fixed a swapped pair (H419 MoA ↔ H420 terminal display), applied one rule across the MoA rows (cabinet fan-out + synthesis is a reachable part of the runtime, not of presets: H032 missing, H375/H419/H599 partial), and moved H233 (canvas widgets) and H239 (billing) to missing. Policy recorded: the opt-in embedded upstream Hermes runtime (`JARVIS_HERMES_ENABLED`, admin `/api/hermes/rpc`) earns no credit without Nerva code and tests proving the capability through it. **needs_review 106 → 0**: H468, whose stale review said missing, is now partial (the kanban port carries request-review/request-changes/reopen-review, reachable by CLI route, PATCH and agent tools, 67 tests green; missing an owner force path, a comment on request-changes, HUD review controls and tests for the guard, reopen and handoff metadata); headline unchanged at 195/697.
+
+- 2026-10-13 HEQ-1 baseline-partial rows assessed (PR #1249): the 193 rows still carrying only the 2026-09-07 baseline `partial` (147 M, 43 L, 3 XL) were each assessed fresh against current source at ff8641a7 by ten parallel assessors, every verdict citing code and tests, then attacked by a skeptic: **2 equivalent, 178 partial, 13 missing**. Equivalent: H521 (`video_analyze`, 247 tests; the extension-only MIME and opt-in toolset match Hermes) and H265 (config writes from route and CLI with validation, selection guards, retention approval and audit — Hermes records nothing). Missing where the baseline overstated: H023, H040, H173, H306, H424 (no memory write is staged for approval), H533, H538, H543, H597, H602, H616, H658, H668. The skeptic restored a three-way content rotation (H415/H423/H424) and a swapped pair (H641/H643), lifted five over-eager downgrades back to partial (H035, H101, H185, H225, H469), aligned H538/H602 with their sibling rows and rewrote an understated H311. Two real defects surfaced and are fixed red-first in 87b6ebc8 and c8a7a554: the OAuth provider redirect hit a POST-only callback (405) — GET /api/oauth/callback now runs the same state-gated exchange; and the wake-word detector called a non-existent `openwakeword.OWWModel` with raw bytes — it now builds `Model()` on int16 frames, so H533/H602 move from missing to partial (works on an owner-prepared host; nothing installs the models or passes the configured words). The 23 rows pinning the touched files were re-read and restamped. H488 (hold a memory or skill write for review) was then re-read from its inherited baseline `equivalent`: the skill half holds (skill_propose stages a durable, diffed proposal the owner decides), but no memory write is ever staged — **equivalent → partial**. **Headline 195 → 197 → 196/697** (H488 demoted).
+
+- 2026-10-14 HEQ-1 inherited equivalents re-read (PR #1249): the last 107 rows that counted as `equivalent` only by inheritance from the 2026-09-07 baseline — never code-reviewed — were assessed fresh against current source at 3d688255 in a workflow: ten assessors, then every `equivalent` attacked by two independent skeptics (requirement completeness; owner reachability and test proof) and every downgrade by an understatement check; any refutation won with its validated replacement. **10 hold as equivalent** (H131, H251, H252, H263, H333, H383, H407, H446, H531, H644; 1,207 pinned tests green), **95 are partial**, **2 missing** (H086, H430). Most inherited verdicts credited a Nerva-native mechanism for a Hermes capability whose owner-facing parts (CLI verbs, routes, share/export paths, provider breadth) were never built. Skeptic changes: H353, H354, H486 equivalent → partial; H382 raised then demoted again (keyed local endpoints, aliases); H383 raised and held. **Headline 196 → 99/697** — an honest correction, not a regression in code: `inherited equivalent` is now 0, so every equivalent in the ledger carries a current code review.
+- 2026-10-20 H009 closed (PR #1249): `nerva support bundle [--json] [--offline] [--logs N] [--out FILE]` prints a pasteable diagnostic report. The allow-listed bundle (GET /api/support/bundle, opt-in `?log_lines=N`) now names the build commit, model ids, set credential variable names (provider/tool/platform/hub), non-default settings (values only when they cannot carry a credential or free text) and an opt-in redacted, e-mail-masked WARNING+ log tail. Hosted share stays refused (local-first). Two adversarial review rounds found leaks (free-text model rows, schemeless `user:pw@host`, unchecked select values, a widenable --out file) and an always-`off` posture; all fixed and pinned (26 tests). 113 rows citing the changed files were re-read by content. **100/697.**
+- 2026-10-21 Hermes batch 1, first three closed (PR #1249): **H694** — one ESTOP at the install root that every profile obeys; legacy profile-local sentinels fold into it, a forget keeps it and backups never carry it (18 estop tests, incl. an unpatched profiled heartbeat + ops route). **H631** — symptom-first `docs/TROUBLESHOOTING.md` (recovery order, symptom→cause→fix table, 'feels dumber' checklist, Ollama/LM Studio failure modes, scheduled-jobs tree); every red `nerva doctor` row links to its section; Ollama 'model has no tool support' gets its own degraded reply. **H154** — bulk clear-pending (admin + audited route, store method, two-step ConfirmAction in PairingPanel). Each passed two adversarial skeptics after review fixes; the cherry-pick onto this branch surfaced and fixed a window.confirm (now ConfirmAction), a jobs-guide mismatch and a flaky thread-id test. 109 rows re-read. **103/697.** H393, H423, H511, H014, H010 are still in review rounds.
+- 2026-10-21 Hermes batch 1b closed (PR #1249): **H423** — the `memory` tool checks a batch's budget on its final state, holds a cross-process lock with a strict reread and compare-and-set, refuses to overwrite a hand-edited ring (owner-only `.bak`, CoreMemoryDrift naming both files), and ends a turn after 3 failed at-capacity attempts. **H511** — the route-auth matrix walks WebSocket upgrade routes (incl. mounted and Host sub-apps) and pins them to a snapshot; every mount is pinned; in-handler guards are proved by behaviour probes and an AST scan flags dead, swallowed or un-awaited guard calls. **H014** — `uninstall --dry-run` (module, wrappers, `nerva uninstall`), a typed purge confirmation, and desktop-app removal with honest per-path results. Each took 4–6 adversarial review rounds; integration fixed an undeclared orchestrator attribute. 186 rows re-read (H001, H060, H174, H314, H424, H428, H488, H586, H594 by hand). **106/697.**
+- 2026-10-21 Hermes batch 1c closed (PR #1249): **H393** — every cloud backend passes its finish reason to `_finalize_cloud`, which drops a length-truncated repetition loop, and a live `RepetitionStreamGuard` in every streaming backend withholds a loop (line-sequence, counter-heading and in-fence shapes) so at most ~5 units are painted before it trips; kept answers are released in full. **H010** — `nerva backup create --quick` state snapshots, the `nerva backup` tree (create/list/verify/restore/cancel), an irreversible-tier restore card, and an in-place restore staged for the next boot with a hub self-restart (re-exec under systemd with RELOADING, NSSM exit 75, spawned successor) and a rollback snapshot first; docker-compose now runs serve.py so the staged restore applies there too. Integration fixed the binding-writer inventory and one ad-hoc env flag. 245 rows re-read. **Batch 1 (8 rows) complete: 108/697.**
+- 2026-10-21 Hermes batch 2 closed (PR #1249), 8 rows built on the PR tip with 1–4 implement/skeptic rounds each: **H051** (pairing HUD reads `allowed`, revoke sends `unpair`; `nerva pairing list|approve|revoke|clear-pending`), **H133** (gateway/sessions/version in the status chrome), **H297** (multimodal tool-result content parts, sanitised bounded error messages), **H326** (category-grouped skill index with LRU + manifest-validated snapshot, per-session loaded-skill tracking), **H399** (parallel-safety tool planner, in-flight heartbeats), **H473** (bounded repo discovery, `nerva project discover`), **H688** (escaped/dotted config paths into JSON values, phantom-key refusal), **H665** (atomic multi-skill batch with rollback and an owner approval ledger; a removed binary file reads `(binary)`). The ledger re-read script was fixed (chained citation rewrites) and every earlier stamp this week audited clean. 384 rows re-read. **116/697.**
+- 2026-10-21 #1251 (Hermes build lane) merged into #1249: **H283** host identity (container/WSL/Termux/supervisor detection feeding the prompt, skill visibility, `GET /api/host/probe` and the readiness panel), **H310/H537** web search and extract inside the tool-loop wall (22 s soft / 26 s hard, DNS-failure rescue, site policy), H206 memory graph explorer (`GET /api/kg/map`, partial). The ledger was reconciled row by row (31 rows changed on both branches). **119/697.** At the owner's request (2026-10-21) #1249 is merged into `main` as incremental progress rather than at 697/697; the Hermes work continues on a new branch.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.

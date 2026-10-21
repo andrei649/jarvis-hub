@@ -15,6 +15,7 @@ from agents.core.llm.auxiliary_recovery import (
 )
 from agents.core.llm.base import LMStudioBackend, is_degraded_reply
 from agents.core.llm.egress import llm_async_client
+from agents.core.llm.model_config import DEFAULT_LOCAL_MODEL
 from agents.core.llm.router import LLMRouter
 from agents.core.orchestrator import Orchestrator
 
@@ -97,7 +98,8 @@ async def test_real_producer_repairs_typed_temperature_rejection_once(
         assert first["temperature"] == (0 if task in {"session_title", "query_rewrite"} else 0.2)
         assert "temperature" not in second
         assert [body["max_tokens"] for body in (first, second)] == [max_tokens, max_tokens]
-        assert [body["model"] for body in (first, second)] == ["selected-local", "selected-local"]
+        expected_model = DEFAULT_LOCAL_MODEL if task == "session_title" else "selected-local"
+        assert [body["model"] for body in (first, second)] == [expected_model, expected_model]
         assert first["messages"] == second["messages"]
     finally:
         await backend.client.aclose()

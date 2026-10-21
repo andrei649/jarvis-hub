@@ -19,9 +19,10 @@ singleton remains.
 """
 
 import asyncio
+import html
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from agents.core.app_state import get_orch
@@ -87,28 +88,50 @@ class OAuthCodeBody(BaseModel):
     state: str = ""
 
 
-@router.post("/api/oauth/callback")
-async def oauth_callback(body: OAuthCodeBody):
-    state = body.state
+async def _complete(code: str, state: str):
+    """Exchange a provider's authorization code; (ok, service or error, has_refresh)."""
     service_id = verify_state(state)
     if service_id is None:
-        return JSONResponse({"ok": False, "error": "Invalid or expired state"}, status_code=400)
-
+        return False, "Invalid or expired state", False
     if service_id.startswith("google:"):
         service = service_id.split(":")[1]
-        result = await exchange_google_code(body.code, state)
+        result = await exchange_google_code(code, state)
     elif service_id == "spotify":
         service = "spotify"
-        result = await exchange_spotify_code(body.code, state)
+        result = await exchange_spotify_code(code, state)
     else:
-        return JSONResponse({"ok": False, "error": f"Unknown service: {service_id}"}, status_code=400)
+        return False, f"Unknown service: {service_id}", False
+    if not result:
+        return False, "Token exchange failed", False
+    # Flow completed — drop the cached auth URL so the next status poll
+    # mints a fresh state if the service ever disconnects again.
+    _cached_auth_urls.pop(service, None)
+    return True, service, "refresh_token" in result
 
-    if result:
-        # Flow completed — drop the cached auth URL so the next status poll
-        # mints a fresh state if the service ever disconnects again.
-        _cached_auth_urls.pop(service, None)
-        return {"ok": True, "service": service, "has_refresh": "refresh_token" in result}
-    return JSONResponse({"ok": False, "error": "Token exchange failed"}, status_code=400)
+
+@router.post("/api/oauth/callback")
+async def oauth_callback(body: OAuthCodeBody):
+    ok, detail, has_refresh = await _complete(body.code, body.state)
+    if ok:
+        return {"ok": True, "service": detail, "has_refresh": has_refresh}
+    return JSONResponse({"ok": False, "error": detail}, status_code=400)
+
+
+_CALLBACK_PAGE = ("<!doctype html><meta charset=\"utf-8\"><title>Nerva</title>"
+                  "<body style=\"font-family:sans-serif;padding:2rem\"><p>{}</p></body>")
+
+
+@router.get("/api/oauth/callback", response_class=HTMLResponse)
+async def oauth_callback_redirect(code: str = "", state: str = "", error: str = ""):
+    """The provider's redirect lands here as a GET (REDIRECT_URI): the same
+    state-gated exchange as the POST, answered with a page the owner can close."""
+    if error or not code:
+        return HTMLResponse(_CALLBACK_PAGE.format("Sign-in was not completed. You can close this tab."),
+                            status_code=400)
+    ok, detail, _ = await _complete(code, state)
+    if ok:
+        return HTMLResponse(_CALLBACK_PAGE.format(f"{html.escape(detail)} is connected. You can close this tab."))
+    return HTMLResponse(_CALLBACK_PAGE.format(f"Sign-in failed: {html.escape(detail)}."), status_code=400)
 
 
 @router.get("/api/oauth/auth-url")

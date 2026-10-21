@@ -118,7 +118,7 @@ async def test_stream_cache_and_real_agent_generation_share_one_prepared_prefix(
             cache_name="cachedContents/synthetic", cached_prefix_count=1)
 
     cache = _FakeCache(hit)
-    orch, backend, _, _ = _orchestrator(("[user]: synthetic prior",), cache=cache)
+    orch, backend, _, _ = _orchestrator(("[user]: synthetic prior",), cache=cache, monkeypatch=monkeypatch)
     orch.agents = {"jarvis": agent_for(monkeypatch, runtime)}
     manager = None
     if managed_clock:

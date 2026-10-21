@@ -4,7 +4,8 @@ from datetime import UTC, datetime
 
 
 def inspect_jobs(runner) -> dict:
-    from ..job_toolsets import catalog, resolve
+    from ..job_toolsets import catalog, resolve_job_policy
+    from ..settings_db import SettingsUnreadable, read_job_tool_policy
     server = getattr(runner._orch, "tool_rpc", None)
     now = datetime.fromtimestamp(runner._now(), UTC)
     jobs = runner.store.list()
@@ -16,6 +17,12 @@ def inspect_jobs(runner) -> dict:
 
     def problem(job_id, code, reason):
         problems.append({"job_id": job_id, "code": code, "reason": reason})
+
+    try:
+        policy_settings = read_job_tool_policy()
+    except SettingsUnreadable:
+        policy_settings = None
+        problem(None, "tool_policy_unreadable", "Scheduled tool policy store is unavailable")
 
     scheduler = None
     registered = {}
@@ -47,11 +54,18 @@ def inspect_jobs(runner) -> dict:
     for job in jobs:
         row = {"job_id": job.id, "active": bool(job.runnable), "next_run_at": None}
         rows.append(row)
+        row['requested_reasoning_effort'] = job.options.get('reasoning_effort')
         try:
-            names = resolve(job.options.get('enabled_toolsets'), server)
-            row['toolset_upper_bound'] = sorted(names) if names is not None else None
-        except ValueError as exc:
+            if policy_settings is None:
+                raise ValueError('scheduled tool policy store is unavailable')
+            policy = resolve_job_policy(job.options, server, settings=policy_settings)
+            row['toolset_upper_bound'] = sorted(policy.allowed_names)
+            row['toolset_source'] = policy.source
+            row['toolset_removed'] = sorted(policy.removed_names)
+        except (ValueError, KeyError, TypeError) as exc:
             row['toolset_upper_bound'] = []
+            row['toolset_source'] = 'unavailable'
+            row['toolset_removed'] = []
             problem(job.id, 'toolsets_unavailable', str(exc))
         outcome = outcomes.get(f"job-{job.id}")
         row["last_outcome"] = outcome
@@ -110,10 +124,11 @@ def inspect_jobs(runner) -> dict:
             "held": runner.store.held_count(), "quiet_hours": runner.quiet_hours(),
         },
         "channels": channels, "problems": problems,
-        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets"],
+        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "reasoning_effort", "continuity", "context_from"],
         "model_pin_contract": "Configured providers only; cloud must match policy route. Changed local models require loaded context metadata; other changes require known windows. Current defaults retain existing window estimates; completion caps at 25%. Recent conversation and agent context remain; compression is deterministic and embedding recall is omitted.",
         "script_contract": "Bounded Python, fresh approval each run; no shell. Optional approved workdir only with script and no_agent true; no model workspace context",
         "toolsets": catalog(server),
-        "toolset_contract": "Model-bearing ask only. Missing/null uses defaults; [] no tools. Selected installed groups are an upper bound, intersected with posture and approvals. No execute_code, delegation or dynamic plugin groups.",
+        "toolset_contract": "Model-bearing ask only. Job list, then cron platform list, then registered legacy tools; operator groups and live interactive tools are removed. Selected installed groups are an upper bound, intersected with posture and approvals. No dynamic plugin groups.",
+        "reasoning_contract": "A canonical per-job rung overrides the global effort request; cloud transports clamp by selected model. LM Studio and Ollama refuse explicit job rungs before generation because no verified local wire control exists.",
         "unsupported_options": ["model_workdir", "skills"],
     }

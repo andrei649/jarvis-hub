@@ -256,6 +256,8 @@ async def test_handler_error_is_caught():
     s.register_tool("boom", boom)
     out = await s.handle({"tool": "boom", "args": {}})
     assert out["ok"] is False and out["reason"] == "tool_error"
+    # H297: the model reads a bounded, sanitised cause beside the reason.
+    assert out["error"] == "RuntimeError: kaboom"
 
 
 @pytest.mark.asyncio

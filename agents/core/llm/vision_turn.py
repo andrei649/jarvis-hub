@@ -43,13 +43,25 @@ async def prepare_selected_image_turn(
         raise ValueError("invalid image session")
     if agent_id not in orch.agents:
         raise ValueError("unknown image agent")
+    from agents.core.foreign_history import render_turn, status
+    origin = status(orch.checkpoints, session_id)
+    if origin.tainted:
+        # Image selection has a separate binding/approval flow. Until it carries
+        # foreign ancestry end to end, refuse rather than rely on a missing
+        # orchestrator principal bind in the admin-guarded composer route.
+        raise ValueError("foreign image history is unavailable")
 
     # Orchestrator's session is request-local. Restore both context variables even
     # when prompt construction or route selection raises.
     from agents.core.orchestrator import _active_session, _session_is_shared
+    from agents.core.skills.tools import bind_carry_preview, reset_carry_turn
 
     session_token = _active_session.set(session_id)
     shared_token = _session_is_shared.set(session_id == orch._session_id_default)
+    # H326: a selection, built once to issue the review and again to consume it, so the
+    # loaded-skills carry renders without counting a turn: both builds see the same carry
+    # and the prompt digests match, and the live session's ledger is left as it was.
+    carry_token = bind_carry_preview()
     try:
         history_digest = history_fingerprint(orch, session_id)
         window = int(orch.get_setting("memory.context_window", 6))
@@ -57,9 +69,7 @@ async def prepare_selected_image_turn(
         # last N turns, then removes that turn from the rendered prompt.
         prior_turns = max(0, window - 1)
         rows = await orch.memory.get_history(session_id, last_n=prior_turns) if prior_turns else []
-        history = "\n".join(
-            f"[{row.get('agent_id') or row['role']}]: {row['content']}" for row in rows
-        )
+        history = "\n".join(render_turn(row, tainted=origin.tainted) for row in rows)
         intent = await orch.router.classify_deterministic(question, orch.agents)
         runtime = orch._runtime_state_block() + orch._language_block() + orch._data_grounding_block({})
         turn_text = await orch._build_agent_turn_text(
@@ -83,5 +93,6 @@ async def prepare_selected_image_turn(
             prompt=prompt,
         )
     finally:
+        reset_carry_turn(carry_token)
         _session_is_shared.reset(shared_token)
         _active_session.reset(session_token)

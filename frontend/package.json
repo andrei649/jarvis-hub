@@ -6,13 +6,16 @@
   "description": "Jarvis Hub HUD v2 — Vite + React + TS. Built output is committed to ../agents/web/v2 and served by FastAPI at /v2.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "dev:workspace": "vite -c vite.workspace.config.ts",
+    "build": "vite build && vite build -c vite.workspace.config.ts",
+    "build:workspace": "vite build -c vite.workspace.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "test": "vitest run",
     "typegen:openapi": "npx --yes openapi-typescript@7.13.0 http://127.0.0.1:8765/openapi.json -o src/api/schema.gen.ts",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:workspace": "playwright test -c playwright.workspace.config.ts"
   },
   "dependencies": {
     "react": "^19.3.0",

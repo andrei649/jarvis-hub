@@ -1,0 +1,1257 @@
+{
+ "unit": "H206",
+ "code_commit": "27a83b95",
+ "base": "8b61904b",
+ "method": "one mutant at a time on the guards, bounds and branches H206 added (git diff 8b61904b); each mutant applied, relevant tests run, file restored from a byte copy under run/H206/mut and checked clean with git diff --quiet; python: tests/test_h206_memory_explorer.py -x; frontend: vitest on memory-graph-api, memory-map-code, memory-graph-explorer, memory-graph-mount (+ memory-graph-layout after it was added)",
+ "totals": {
+  "mutants": 146,
+  "killed": 143,
+  "survived_final": 0,
+  "equivalent": 3,
+  "killed_by_tests_that_existed_at_the_code_commit": 75,
+  "survived_until_tests_were_added_then_killed": 68
+ },
+ "tests_added": {
+  "tests/test_h206_memory_explorer.py": "mutation hardening section (legacy-row transaction ends, boundary, persistence, first_seen, predicate filter, base-class defaults, Neo4j error flag, map limit clamps, relation cap, NaN time, axis/limit/sort, route guard, ingestion fallbacks)",
+  "frontend/src/test/memory-graph-api.test.ts": "mutation hardening block (read limits, entity/axis mismatch, type length, admin 401, 409/502 mapping)",
+  "frontend/src/test/memory-map-code.test.ts": "mutation hardening block (limits with valid checksum, edge index, row length, time range, part count, bidi isolates, encode size)",
+  "frontend/src/test/memory-graph-layout.test.ts": "new file (zoom clamp, ring capacity, focus neighbours, empty fit, type colour)",
+  "frontend/src/test/memory-graph-explorer.test.tsx": "mutation hardening blocks (end-of-play tick, single-instant scrubber, valid-axis start, no facts read while imported, imported position boundary, single-instant code, empty copy, editor validation, superseded read)"
+ },
+ "not_covered": "clipboard timing, pointer drag and wheel anchor arithmetic, CSS/visual output, Neo4j beyond statement shapes (no live service); the mutants cover logic guards and bounds only",
+ "mutants": [
+  {
+   "id": "M01",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 76,
+   "mutation": "f[\"invalidated_tx\"] = ingested_at  ->  f[\"invalidated_tx\"] = valid_from",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_believed_as_of_drops_a_fact_superseded_before_t",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M02",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 99,
+   "mutation": "tx = at if ingested_at is None else float(ingested_at) with self._lock: for f in self._facts: if (f[\"subject\"]  ->  tx = at if ingested_at is None else float(ingested_at) + 1 with self._lock: for f in self._facts: if (f[\"subje",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_bounds_report_the_transaction_span",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M03",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 125,
+   "mutation": "if (f[\"subject\"] == name or f[\"object\"] == name) and ends[f[\"id\"]] is None:  ->  if (f[\"subject\"] == name) and ends[f[\"id\"]] is None:",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_retract_entity_closes_facts_naming_it_on_either_side",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M04",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 125,
+   "mutation": "if (f[\"subject\"] == name or f[\"object\"] == name) and ends[f[\"id\"]] is None:  ->  if (f[\"subject\"] == name or f[\"object\"] == name):",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_retract_entity_closes_facts_naming_it_on_either_side",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M05",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 126,
+   "mutation": "if f[\"valid_to\"] is None: f[\"valid_to\"] = at f[\"invalidated_at\"] = at f[\"invalidated_tx\"] = tx closed += 1  ->  f[\"valid_to\"] = at f[\"invalidated_at\"] = at f[\"invalidated_tx\"] = tx closed += 1",
+   "equivalent_reason": "In retract_entity the `if f[\"valid_to\"] is None` guard is always true when `ends[id] is None`: _tx_ends returns None only for rows with no invalidated_tx, no invalidated_at and no valid_to (add_fact never writes a valid_to on its own; it is only set together with invalidated_at). Unconditional assignment writes the same value."
+  },
+  {
+   "id": "M06",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 131,
+   "mutation": "if closed: self._save()  ->  if False: self._save()",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_retract_entity_is_persisted_across_a_reload",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M07",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 181,
+   "mutation": "if f.get(\"invalidated_at\") is None and f.get(\"valid_to\") is None: ends[f[\"id\"]] = None  ->  if f.get(\"invalidated_at\") is None: ends[f[\"id\"]] = None",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_legacy_row_with_a_valid_end_but_no_stamp_is_not_believed_forever",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M08",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 191,
+   "mutation": "if g[\"id\"] > f[\"id\"] and g[\"object\"] != f[\"object\"]:  ->  if g[\"id\"] > f[\"id\"]:",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_legacy_superseder_must_have_a_different_object",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M09",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 192,
+   "mutation": "end = g[\"ingested_at\"] if end is None else min(end, g[\"ingested_at\"])  ->  end = g[\"ingested_at\"] if end is None else max(end, g[\"ingested_at\"])",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_legacy_end_is_the_earliest_superseder",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M10",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 193,
+   "mutation": "if end is None: end = f.get(\"invalidated_at\") if f.get(\"invalidated_at\") is not None else f.get(\"valid_to\")  ->  if end is None: end = f.get(\"valid_to\")",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_legacy_closed_without_superseder_ends_at_its_invalidation_stamp",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M11",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 210,
+   "mutation": "if f[\"ingested_at\"] > at: continue end = ends[f[\"id\"]] if end is not None and end <= at:  ->  if f[\"ingested_at\"] >= at + 1e9: continue end = ends[f[\"id\"]] if end is not None and end <= at:",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_believed_as_of_drops_a_fact_superseded_before_t",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M12",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 213,
+   "mutation": "if end is not None and end <= at: continue  ->  if end is not None and end < at: continue",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_believed_boundary_is_exclusive_at_the_moment_of_retraction",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M13",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 218,
+   "mutation": "row.pop(\"invalidated_tx\", None) if end is not None: # closed later than *at*: not yet visible then row[\"valid_  ->  row.pop(\"invalidated_tx\", None)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_believed_as_of_drops_a_fact_superseded_before_t",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M14",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 218,
+   "mutation": "row.pop(\"invalidated_tx\", None) if end  ->  if end",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_believed_rows_hide_the_internal_transaction_stamp",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M15",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 215,
+   "mutation": "if (subject and f[\"subject\"] != subject) or (predicate and f[\"predicate\"] != predicate): continue row  ->  if (subject and f[\"subject\"] != subject): continue row",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_believed_filters_by_predicate_and_by_subject",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M16",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 232,
+   "mutation": "if n not in seen or f[\"ingested_at\"] < seen[n]:  ->  if n not in seen or f[\"ingested_at\"] > seen[n]:",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_first_seen_is_the_earliest_ingestion_on_either_side",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M17",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 231,
+   "mutation": "for n in (f[\"subject\"], f[\"object\"]): if n not in seen  ->  for n in (f[\"subject\"],): if n not in seen",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_first_seen_is_the_earliest_ingestion_on_either_side",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M18",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 248,
+   "mutation": "\"last_change\": max(ingested + ends)}  ->  \"last_change\": max(ingested)}",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_bounds_report_the_transaction_span",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M19",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 245,
+   "mutation": "\"first_ingested\": min(ingested),  ->  \"first_ingested\": max(ingested),",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_bounds_report_the_transaction_span",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M20",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 247,
+   "mutation": "\"first_valid\": min(f[\"valid_from\"] for f in facts),  ->  \"first_valid\": max(f[\"valid_from\"] for f in facts),",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_bounds_report_the_transaction_span",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M21",
+   "file": "agents/core/memory/graph.py",
+   "line": 74,
+   "mutation": "if self.get_entity(name) is not None: return True return self.add_entity(name, entity_type)  ->  return self.add_entity(name, entity_type)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_knowledge_graph_defaults_ensure_and_replace_delegate",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M22",
+   "file": "agents/core/memory/graph.py",
+   "line": 123,
+   "mutation": "if name not in self.entities: self.add_entity(name, entity_type) return True  ->  self.add_entity(name, entity_type) return True",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_ingestion_does_not_reset_an_edited_type",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M23",
+   "file": "agents/core/memory/graph.py",
+   "line": 129,
+   "mutation": "for r in self.relations[:max(1, limit)]]  ->  for r in self.relations]",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_in_memory_list_relations_is_bounded",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M24",
+   "file": "agents/core/memory/graph.py",
+   "line": 338,
+   "mutation": "assign = \"n = \" if replace else \"n += \"  ->  assign = \"n += \"",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_edit_replaces_the_property_map",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M25",
+   "file": "agents/core/memory/graph.py",
+   "line": 338,
+   "mutation": "assign = \"n = \" if replace else \"n += \"  ->  assign = \"n = \"",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_other_neo4j_writers_keep_merging_properties",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M26",
+   "file": "agents/core/memory/graph.py",
+   "line": 347,
+   "mutation": "logger.warning(\"add_entity(%r) not written: label lookup failed (%s)\", name, exc) return False  ->  logger.warning(\"add_entity(%r) not written: label lookup failed (%s)\", name, exc) existing = None",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_failed_label_lookup_writes_nothing_instead_of_duplicating",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M27",
+   "file": "agents/core/memory/graph.py",
+   "line": 350,
+   "mutation": "stale = [lb for lb in existing if lb != label and is_safe_kg_label(lb)]  ->  stale = []",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_type_edit_relabels_the_existing_node_instead_of_merging_a_new_one",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M28",
+   "file": "agents/core/memory/graph.py",
+   "line": 350,
+   "mutation": "if lb != label and is_safe_kg_label(lb)]  ->  if lb != label]",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_type_edit_relabels_the_existing_node_instead_of_merging_a_new_one",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M29",
+   "file": "agents/core/memory/graph.py",
+   "line": 368,
+   "mutation": "error = getattr(self._tls, \"error\", None) if error: raise RuntimeError(error)  ->  pass",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_failed_label_lookup_writes_nothing_instead_of_duplicating",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M30",
+   "file": "agents/core/memory/graph.py",
+   "line": 386,
+   "mutation": "MERGE (n {{name: $name}}) ON CREATE SET n:{label} RETURN n  ->  MERGE (n:{label} {{name: $name}}) RETURN n",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_ensure_entity_only_labels_on_create",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M31",
+   "file": "agents/core/memory/graph.py",
+   "line": 394,
+   "mutation": "\"b.name AS target LIMIT $limit\", {\"limit\": max(1, limit)},  ->  \"b.name AS target LIMIT 500\", {\"limit\": max(1, limit)},",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_list_relations_is_bounded_and_parameterised",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M32",
+   "file": "agents/core/memory/graph.py",
+   "line": 264,
+   "mutation": "self._tls.error = None if not self._check_connection():  ->  if not self._check_connection():",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_error_flag_is_reset_by_every_call",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M33",
+   "file": "agents/core/memory/graph.py",
+   "line": 302,
+   "mutation": "return self._write_entity(name, entity_type, properties, replace=False)  ->  return self._write_entity(name, entity_type, properties, replace=True)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_other_neo4j_writers_keep_merging_properties",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M34",
+   "file": "agents/core/memory/graph.py",
+   "line": 378,
+   "mutation": "labels.extend(str(lb) for lb in row[0])  ->  pass",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_type_edit_relabels_the_existing_node_instead_of_merging_a_new_one",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M35",
+   "file": "agents/core/memory/graph.py",
+   "line": 379,
+   "mutation": "return labels if found else None  ->  return labels",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_new_entity_still_merges_with_its_label",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M36",
+   "file": "agents/core/memory/graph.py",
+   "line": 66,
+   "mutation": "return self.add_entity(name, entity_type, properties) def ensure_entity(self, name: str, entity_type: str = \"u  ->  return False def ensure_entity(self, name: str, entity_type: str = \"unknown\") -> bool: \"\"\"Create",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_knowledge_graph_defaults_ensure_and_replace_delegate",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M40",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 654,
+   "mutation": "limit = max(1, min(int(limit), _KG_MAP_MAX))  ->  limit = max(1, int(limit))",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_clamps_limit_both_ways",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M41",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 654,
+   "mutation": "limit = max(1, min(int(limit), _KG_MAP_MAX))  ->  limit = min(int(limit), _KG_MAP_MAX)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_clamps_limit_both_ways",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M42",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 656,
+   "mutation": "clipped = len(listed) > limit  ->  clipped = len(listed) >= limit",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_clamps_limit_both_ways",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M43",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 659,
+   "mutation": "rel_cap = min(limit * 4, 4000)  ->  rel_cap = min(limit * 4, 4000000)",
+   "equivalent_reason": "rel_cap = min(limit * 4, 4000): limit is already clamped to _KG_MAP_MAX (1000) on the line above, so limit * 4 <= 4000 and the second bound can never be the smaller one. Raising it changes nothing reachable."
+  },
+  {
+   "id": "M44",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 667,
+   "mutation": "if r.get(\"source\") in names and r.get(\"target\") in names]  ->  if r.get(\"source\") in names or r.get(\"target\") in names]",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_clips_and_drops_relations_to_unlisted_nodes",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M45",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 669,
+   "mutation": "\"relations_clipped\": len(rels) > rel_cap,  ->  \"relations_clipped\": len(rels) >= rel_cap,",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_flags_clipped_relations_only_past_the_cap",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M46",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 657,
+   "mutation": "for e in listed[:limit] if e.get(\"name\")]  ->  for e in listed if e.get(\"name\")]",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_clips_and_drops_relations_to_unlisted_nodes",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M47",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 702,
+   "mutation": "write = getattr(g, \"replace_entity\", None) or g.add_entity  ->  write = g.add_entity",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_upsert_route_replaces_through_replace_entity",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M48",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 742,
+   "mutation": "if bt is None or await _kg_call(g.get_entity, name) is not None: return JSONResponse({\"error\": \"not found\"}, s  ->  if bt is None: return JSONResponse({\"error\": \"not found\"}, status_code=404)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_delete_does_not_report_success_when_the_graph_delete_failed",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M49",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 745,
+   "mutation": "if not retracted: return JSONResponse({\"error\": \"not found\"}, status_code=404)  ->  if False: return JSONResponse({\"error\": \"not found\"}, status_code=404)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_delete_entity_retracts_its_bitemporal_facts",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M50",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 747,
+   "mutation": "\"graph_deleted\": False, \"facts_retracted\": retracted})  ->  \"graph_deleted\": True, \"facts_retracted\": retracted})",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_delete_reaches_timeline_only_entities",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M51",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 751,
+   "mutation": "retracted = await _kg_call(bt.retract_entity, name) if bt is not None else 0  ->  retracted = 0",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_delete_entity_retracts_its_bitemporal_facts",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M52",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 839,
+   "mutation": "or not math.isfinite(v) or abs(v) > _KG_TIME_MAX):  ->  or abs(v) > _KG_TIME_MAX):",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_add_fact_refuses_nan_and_the_exact_limit_is_allowed",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M53",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 839,
+   "mutation": "or not math.isfinite(v) or abs(v) > _KG_TIME_MAX):  ->  or not math.isfinite(v) or abs(v) >= _KG_TIME_MAX * 2):",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_add_fact_refuses_times_the_ui_cannot_show",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M54",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 838,
+   "mutation": "if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))  ->  if v is not None and (not isinstance(v, (int, float))",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_add_fact_refuses_times_the_ui_cannot_show",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M55",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 836,
+   "mutation": "for k in (\"valid_from\", \"ingested_at\"): v = body.get(k)  ->  for k in (\"valid_from\",): v = body.get(k)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_add_fact_refuses_times_the_ui_cannot_show",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M56",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 872,
+   "mutation": "if limit is not None and not 1 <= limit <= _KG_MAP_MAX:  ->  if limit is not None and not 1 <= limit:",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_limit_upper_bound_and_sorting",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M57",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 872,
+   "mutation": "if limit is not None and not 1 <= limit <= _KG_MAP_MAX:  ->  if limit is not None and not 0 <= limit <= _KG_MAP_MAX:",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_rejects_an_unknown_axis_and_bounds_the_page",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M59",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 881,
+   "mutation": "facts.sort(key=lambda f: (f[\"ingested_at\"], f[\"id\"]))  ->  pass",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_limit_upper_bound_and_sorting",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M60",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 885,
+   "mutation": "facts.sort(key=lambda f: (f[\"valid_from\"], f[\"id\"]))  ->  pass",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_limit_upper_bound_and_sorting",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M61",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 888,
+   "mutation": "clipped = limit is not None and len(facts) > limit  ->  clipped = False",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_rejects_an_unknown_axis_and_bounds_the_page",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M62",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 889,
+   "mutation": "facts[-limit:] if limit else facts  ->  facts[:limit] if limit else facts",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_rejects_an_unknown_axis_and_bounds_the_page",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M63",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 886,
+   "mutation": "if not explorer: return nocache_json({\"at\": at, \"facts\": facts})  ->  if False: return nocache_json({\"at\": at, \"facts\": facts})",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_default_is_the_legacy_unbounded_shape",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M64",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 869,
+   "mutation": "explorer = axis is not None or limit is not None  ->  explorer = axis is not None",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_limit_upper_bound_and_sorting",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M65",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 878,
+   "mutation": "if axis == \"known\":  ->  if axis != \"valid\":",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_without_axis_stays_valid_time",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M66",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 870,
+   "mutation": "if axis is not None and axis not in (\"valid\", \"known\"): return JSONResponse({\"error\": \"axis must be 'valid' or  ->  pass",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_as_of_route_rejects_an_unknown_axis_and_bounds_the_page",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M67",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 666,
+   "mutation": "\"relations\": [{\"source\": r[\"source\"]  ->  \"relations\": [{\"source\": r[\"target\"]",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_returns_entities_relations_and_first_seen",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M68",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 665,
+   "mutation": "\"first_seen\": first_seen.get(e[\"name\"])} for e in listed]  ->  \"first_seen\": None} for e in listed]",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_returns_entities_relations_and_first_seen",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M69",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 643,
+   "mutation": "@router.get(\"/api/kg/map\", dependencies=[Depends(user_guard)])  ->  @router.get(\"/api/kg/map\")",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_is_registered_behind_the_user_guard",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M70",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 657,
+   "mutation": "listed = [e for e in listed[:limit] if e.get(\"name\")]  ->  listed = [e for e in listed[:limit]]",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_default_limit_and_nameless_entities",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M71",
+   "file": "agents/core/memory/seed_graph.py",
+   "line": 71,
+   "mutation": "if graph.get_entity(name) is None: graph.add_entity(name, entity_type, props)  ->  graph.add_entity(name, entity_type, props)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_seed_does_not_overwrite_an_entity_the_owner_edited",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M72",
+   "file": "agents/core/memory/incremental.py",
+   "line": 87,
+   "mutation": "ensure = getattr(self._graph, \"ensure_entity\", None) or self._graph.add_entity  ->  ensure = self._graph.add_entity",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_ingestion_does_not_reset_an_edited_type",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M73",
+   "file": "agents/core/memory/incremental.py",
+   "line": 42,
+   "mutation": "return \" \".join(tok.split()).strip(\".,;:!?'\\\"\")  ->  return tok.strip().strip(\".,;:!?'\\\"\")",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_ingestion_never_stores_a_name_with_a_line_break",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M74",
+   "file": "agents/core/memory/incremental.py",
+   "line": 87,
+   "mutation": "ensure = getattr(self._graph, \"ensure_entity\", None) or self._graph.add_entity  ->  ensure = self._graph.ensure_entity",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_ingestion_works_with_a_graph_that_has_no_ensure_entity",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M75",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 644,
+   "mutation": "limit: int = 500): \"\"\"H206  ->  limit: int = 5): \"\"\"H206",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_default_limit_and_nameless_entities",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M76",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 639,
+   "mutation": "_KG_MAP_MAX = 1000  ->  _KG_MAP_MAX = 2000",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_map_route_clamps_limit_both_ways",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M77",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 640,
+   "mutation": "_KG_TIME_MAX = 8.64e12  ->  _KG_TIME_MAX = 8.64e13",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_add_fact_refuses_times_the_ui_cannot_show",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M79",
+   "file": "agents/core/memory/bitemporal.py",
+   "line": 111,
+   "mutation": "def retract_entity(self, name: str, at: Optional[float] = None, ingested_at: Optional[float] = None) -> int:  ->  def retract_entity(self, name: str, at: Optional[float] = None, ingested_at: Optional[float] = None) -> int: i",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_retract_entity_keeps_valid_time_and_transaction_time_apart",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M80",
+   "file": "agents/core/memory/graph.py",
+   "line": 285,
+   "mutation": "self._tls.error = str(e) or \"failed\"  ->  pass",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_error_flag_is_reset_by_every_call",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M81",
+   "file": "agents/core/memory/graph.py",
+   "line": 281,
+   "mutation": "self._tls.error = \"rejected\"  ->  (removed)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_error_flag_is_reset_by_every_call",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "M82",
+   "file": "agents/core/memory/graph.py",
+   "line": 266,
+   "mutation": "self._tls.error = \"unreachable\"  ->  (removed)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_neo4j_failed_label_lookup_writes_nothing_instead_of_duplicating",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M83",
+   "file": "agents/core/routers/memory_kg.py",
+   "line": 744,
+   "mutation": "retracted = await _kg_call(bt.retract_entity, name) if not retracted:  ->  retracted = 0 if not retracted:",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_delete_reaches_timeline_only_entities",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "M84",
+   "file": "agents/core/memory/graph.py",
+   "line": 74,
+   "mutation": "if self.get_entity(name) is not None: return True return self.add_entity(name, entity_type)  ->  if self.get_entity(name) is not None: return False return self.add_entity(name, entity_type)",
+   "killed_by": "tests/test_h206_memory_explorer.py::test_knowledge_graph_defaults_ensure_and_replace_delegate",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F01",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 52,
+   "mutation": "export const isAddressable = (name: string): boolean => name !== '.' && name !== '..' && !/[/\\\\]/.test(name);  ->  export const isAddressable = (name: string): boolean => name !== '.' && !/[/\\\\]/.test(name);",
+   "killed_by": "src/test/memory-graph-api.test.ts > memory graph writes use only the mediated routes > never sends a name the path route cannot carry (slash, dot segments)",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F02",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 52,
+   "mutation": "export const isAddressable = (name: string): boolean => name !== '.' && name !== '..' && !/[/\\\\]/.test(name);  ->  export const isAddressable = (name: string): boolean => name !== '.' && name !== '..' && !/[/]/.test(name);",
+   "killed_by": "src/test/memory-graph-api.test.ts > memory graph writes use only the mediated routes > never sends a name the path route cannot carry (slash, dot segments)",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F03",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 48,
+   "mutation": "const sane = (value: unknown): value is number => num(value) && Math.abs(value) <= MAX_TIME;  ->  const sane = (value: unknown): value is number => num(value) && Math.abs(value) <= MAX_TIME * 2;",
+   "killed_by": "src/test/memory-graph-api.test.ts > fix round 2: times a calendar cannot hold > leaves out an entity or fact whose time Date cannot show, and counts it",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F04",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 48,
+   "mutation": "const sane = (value: unknown): value is number => num(value) && Math.abs(value) <= MAX_TIME;  ->  const sane = (value: unknown): value is number => num(value);",
+   "killed_by": "src/test/memory-graph-api.test.ts > fix round 2: times a calendar cannot hold > leaves out an entity or fact whose time Date cannot show, and counts it",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F05",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 60,
+   "mutation": "if (/^(kernel|contract) denied/i.test(message)) return new MemoryGraphError('denied', message);  ->  if (/^(kernel) denied/i.test(message)) return new MemoryGraphError('denied', message);",
+   "killed_by": "src/test/memory-graph-api.test.ts > memory graph writes use only the mediated routes > maps 403 to { \u2026(1) } keeping the server message",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F06",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 58,
+   "mutation": "if (status === 401) return new MemoryGraphError(admin ? 'admin' : 'auth');  ->  if (status === 401) return new MemoryGraphError('auth');",
+   "killed_by": "src/test/memory-graph-api.test.ts > mutation hardening: bounds and gates of the client > maps a 401 on the admin-guarded skill switch to the admin code, not auth",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F07",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 64,
+   "mutation": "if (status === 400 || status === 409 || status === 422) {  ->  if (status === 400 || status === 422) {",
+   "killed_by": "src/test/memory-graph-api.test.ts > memory graph writes use only the mediated routes > switches a skill off through the admin-guarded switch route",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F08",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 197,
+   "mutation": "if (known.code === 'unavailable' && error.status !== 503) throw new MemoryGraphError('unknown', known.detail);  ->  if (false) throw new MemoryGraphError('unknown', known.detail);",
+   "killed_by": "src/test/memory-graph-api.test.ts > memory graph writes use only the mediated routes > does not call a lost reply or a 500 \"nothing changed\": the result is unknown",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F09",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 75,
+   "mutation": "if (length !== null && (!/^\\d+$/.test(length) || Number(length) > limit)) fail();  ->  if (length !== null && (!/^\\d+$/.test(length))) fail();",
+   "killed_by": "src/test/memory-graph-api.test.ts > mutation hardening: bounds and gates of the client > refuses a reply that declares or streams more than the read limit",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F10",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 87,
+   "mutation": "if (value.byteLength > limit - size) fail();  ->  if (value.byteLength > limit * 2 - size) fail();",
+   "killed_by": "src/test/memory-graph-api.test.ts > mutation hardening: bounds and gates of the client > refuses a reply that declares or streams more than the read limit",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F11",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 126,
+   "mutation": "|| value.entities.length > 1000 || value.relations.length > 4000) fail();  ->  || value.entities.length > 100000 || value.relations.length > 4000) fail();",
+   "killed_by": "src/test/memory-graph-api.test.ts > mutation hardening: bounds and gates of the client > refuses a map with more than 1000 entities or 4000 relations",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F12",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 139,
+   "mutation": "if (!kept.has(item.source) || !kept.has(item.target)) continue;  ->  if (false) continue;",
+   "killed_by": "src/test/memory-graph-api.test.ts > memory graph reads > leaves one odd entry out and counts it, instead of failing the whole map",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F13",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 218,
+   "mutation": "return { factsRetracted: num(body?.facts_retracted) ? body.facts_retracted : 0, graphDeleted: body?.graph_dele  ->  return { factsRetracted: num(body?.facts_retracted) ? body.facts_retracted : 0, graphDeleted: true };",
+   "killed_by": "src/test/memory-graph-api.test.ts > fix round 2: times a calendar cannot hold > reports whether the delete reached the live graph",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F14",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 207,
+   "mutation": "if (!SAFE_TYPE.test(type.trim())) return fail('invalid', 'invalid entity type');  ->  (removed)",
+   "killed_by": "src/test/memory-graph-api.test.ts > memory graph writes use only the mediated routes > refuses an unsafe type locally, mirroring the server, without a request",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F15",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 150,
+   "mutation": "if (value?.error || value?.axis !== axis ||  ->  if (value?.error ||",
+   "killed_by": "src/test/memory-graph-api.test.ts > mutation hardening: bounds and gates of the client > refuses a facts page that answers another axis, and a non-finite instant",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F16",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 148,
+   "mutation": "if (at !== null && !num(at)) return fail();  ->  (removed)",
+   "killed_by": "src/test/memory-graph-api.test.ts > mutation hardening: bounds and gates of the client > refuses a facts page that answers another axis, and a non-finite instant",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F17",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 39,
+   "mutation": "export const SAFE_TYPE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;  ->  export const SAFE_TYPE = /^[A-Za-z][A-Za-z0-9_]{0,127}$/;",
+   "killed_by": "src/test/memory-graph-api.test.ts > mutation hardening: bounds and gates of the client > accepts a 64 character type and refuses a 65 character one",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F19",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 185,
+   "mutation": "if (value?.error || !e || e.name !== name || !text(e.type, 80)) fail();  ->  if (value?.error || !e || !text(e.type, 80)) fail();",
+   "killed_by": "src/test/memory-graph-api.test.ts > mutation hardening: bounds and gates of the client > refuses an entity reply that names another entity",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F20",
+   "file": "frontend/src/api/memory-graph.ts",
+   "line": 197,
+   "mutation": "if (known.code === 'unavailable' && error.status !== 503)  ->  if (known.code === 'unavailable' && error.status !== 502)",
+   "killed_by": "src/test/memory-graph-api.test.ts > memory graph writes use only the mediated routes > maps 503 to { error: 'graph not available' } keeping the server message",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F21",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 76,
+   "mutation": "if (fnv1a(bytes) !== parts[1]) bad('the checksum does not match');  ->  (removed)",
+   "killed_by": "src/test/memory-map-code.test.ts > map code (H206): bounded, versioned, content-only > rejects checksum mismatch with a message",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F22",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 81,
+   "mutation": "if (raw.n.length > MAP_CODE_LIMITS.nodes) bad('too many nodes');  ->  (removed)",
+   "killed_by": "src/test/memory-map-code.test.ts > mutation hardening: the importer and encoder gates > refuses more nodes or edges than the limits, even with a valid checksum",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F23",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 96,
+   "mutation": "|| (from as number) >= nodes.length || (to as number) >= nodes.length) bad('an edge points at a missing node')  ->  || (from as number) > nodes.length || (to as number) > nodes.length) bad('an edge points at a missing node');",
+   "killed_by": "src/test/memory-map-code.test.ts > mutation hardening: the importer and encoder gates > refuses an edge whose index is exactly the node count",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F24",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 88,
+   "mutation": "if (t !== null && !(Number.isInteger(t) && (t as number) >= 0 && (t as number) <= MAP_CODE_LIMITS.timeSteps))   ->  if (t !== null && !(Number.isInteger(t) && (t as number) >= 0)) bad('a node time is out of range');",
+   "killed_by": "src/test/memory-map-code.test.ts > map code (H206): bounded, versioned, content-only > rejects time out of range",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F25",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 59,
+   "mutation": "if (code.length > MAP_CODE_LIMITS.chars) throw new Error('Too large for a map code.');  ->  (removed)",
+   "killed_by": "src/test/memory-map-code.test.ts > mutation hardening: the importer and encoder gates > refuses to encode a map whose code would exceed the character limit, and accepts the largest that fits",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F26",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 25,
+   "mutation": "const UNSAFE_RANGES: [number, number][] = [[0, 31], [127, 159], [0x2028, 0x2029], [0x202a, 0x202e], [0x2066, 0  ->  const UNSAFE_RANGES: [number, number][] = [[0, 31], [127, 159], [0x2028, 0x2029], [0x202a, 0x202e]];",
+   "killed_by": "src/test/memory-map-code.test.ts > mutation hardening: the importer and encoder gates > replaces bidi isolate marks and controls in labels when encoding",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F27",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 73,
+   "mutation": "if (parts.length !== 3 || parts[0] !== PREFIX ||  ->  if (parts.length < 3 || parts[0] !== PREFIX ||",
+   "killed_by": "src/test/memory-map-code.test.ts > mutation hardening: the importer and encoder gates > refuses a code with more than three parts and a payload without the inner version",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F28",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 84,
+   "mutation": "if (!Array.isArray(row) || row.length !== 5) bad('a node row is malformed');  ->  if (!Array.isArray(row)) bad('a node row is malformed');",
+   "killed_by": "src/test/memory-map-code.test.ts > mutation hardening: the importer and encoder gates > refuses a node row of the wrong length",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F29",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 79,
+   "mutation": "if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.v !== 1) bad('unsupported version');  ->  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) bad('unsupported version');",
+   "killed_by": "src/test/memory-map-code.test.ts > map code (H206): bounded, versioned, content-only > rejects wrong inner version",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F30",
+   "file": "frontend/src/api/memory-map-code.ts",
+   "line": 50,
+   "mutation": "if (content.edges.length > MAP_CODE_LIMITS.edges) throw  ->  if (content.edges.length > MAP_CODE_LIMITS.edges * 2) throw",
+   "killed_by": "src/test/memory-map-code.test.ts > mutation hardening: the importer and encoder gates > refuses to encode a map whose code would exceed the character limit, and accepts the largest that fits",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F31",
+   "file": "frontend/src/panels/memory-graph-layout.ts",
+   "line": 68,
+   "mutation": "export const zoomBy = (cam: Camera, factor: number): Camera => ({ ...cam, k: clampK(cam.k * factor) });  ->  export const zoomBy = (cam: Camera, factor: number): Camera => ({ ...cam, k: cam.k * factor });",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > camera > never zooms beyond its clamp",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F32",
+   "file": "frontend/src/panels/memory-graph-layout.ts",
+   "line": 67,
+   "mutation": "const clampK = (k: number) => Math.min(ZOOM.max, Math.max(ZOOM.min, k));  ->  const clampK = (k: number) => Math.min(ZOOM.max, k);",
+   "killed_by": "src/test/memory-graph-layout.test.ts > memory graph layout (H206) > clamps the zoom at both ends",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F33",
+   "file": "frontend/src/panels/memory-graph-layout.ts",
+   "line": 20,
+   "mutation": "const ringCapacity = (ring: number) => 6 + 6 * ring;  ->  const ringCapacity = (ring: number) => 6 + 5 * ring;",
+   "killed_by": "src/test/memory-graph-layout.test.ts > memory graph layout (H206) > fills ring 0 with 6 nodes and ring 1 with 12, then starts ring 2",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F34",
+   "file": "frontend/src/panels/memory-graph-layout.ts",
+   "line": 51,
+   "mutation": "if (e.from === focus.id) near.add(e.to); else if (e.to === focus.id) near.add(e.from); } const ring1  ->  if (e.from === focus.id) near.add(e.to); } const ring1",
+   "killed_by": "src/test/memory-graph-layout.test.ts > memory graph layout (H206) > puts the neighbours of a focus on the first ring whichever way the edge points",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F35",
+   "file": "frontend/src/panels/memory-graph-layout.ts",
+   "line": 74,
+   "mutation": "if (!Number.isFinite(minX)) return { x: 0, y: 0, k: 1 };  ->  (removed)",
+   "killed_by": "src/test/memory-graph-layout.test.ts > memory graph layout (H206) > fits an empty set to the origin at scale one, never NaN",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F36",
+   "file": "frontend/src/panels/memory-graph-layout.ts",
+   "line": 87,
+   "mutation": "if (!type || type === 'unknown') return 'var(--ink-2)';  ->  (removed)",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > legend > gives an untyped entity the neutral swatch",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F40",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 30,
+   "mutation": "if (!Number.isFinite(seconds) || Math.abs(seconds) > MAX_TIME) return 'unknown time';  ->  if (!Number.isFinite(seconds)) return 'unknown time';",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > fix round 2: honest limits > does not crash on a time Date cannot show",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F41",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 135,
+   "mutation": "const next = value + Math.max(1, Math.ceil((b - a) / PLAY_STEPS));  ->  const next = value + Math.ceil((b - a) / PLAY_STEPS);",
+   "equivalent_reason": "Math.max(1, ceil((hi - lo) / 40)): hi >= lo + 1 on every path (hi = max(ceil(last), lo + 1), or lo=0/hi=1 with no bounds, or 0..4095 for an imported map), so ceil((hi - lo) / 40) is already >= 1; the max() is a defensive floor."
+  },
+  {
+   "id": "F42",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 137,
+   "mutation": "if (next >= b) { positionSetter.current(b); setPlaying(false); } else positionSetter.current(next);  ->  if (next > b) { positionSetter.current(b); setPlaying(false); } else positionSetter.current(next);",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > stops playing on the very tick that reaches the end",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F43",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 144,
+   "mutation": "if (tl.value >= tl.hi) positionSetter.current(tl.lo);  ->  (removed)",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > timeline scrubber > plays the history forward and pauses",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F44",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 125,
+   "mutation": "const setPosition = (value: number) => { if (imported) setImportPos(value); else setAt(value >= hi ? null : va  ->  const setPosition = (value: number) => { if (imported) setImportPos(value); else setAt(value); };",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > timeline scrubber > returns to the live graph at the right end of the scrubber",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F45",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 316,
+   "mutation": "if (isAddressable(node.label)) { if (canWrite) items.push(['edit', 'Edit\u2026']);  ->  if (true) { if (canWrite) items.push(['edit', 'Edit\u2026']);",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > fix round 2: honest limits > hides Edit and Delete for a name the path route cannot carry, and says why",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F46",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 318,
+   "mutation": "if (canWrite || view.mode === 'timeline') items.push(['delete', 'Delete\u2026']);  ->  if (canWrite) items.push(['delete', 'Delete\u2026']);",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > fix round 2: honest limits > offers Delete (not Edit) on a timeline node, and says when the live graph never held it",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F47",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 317,
+   "mutation": "if (canWrite) items.push(['edit', 'Edit\u2026']);  ->  items.push(['edit', 'Edit\u2026']);",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > delete memory > does not offer Edit while looking at a past moment (Delete is covered in fix round 2)",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F48",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 322,
+   "mutation": "else if (!node.essential) items.push(['disable', 'Disable skill']);  ->  else items.push(['disable', 'Disable skill']);",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > skills on the map > offers nothing to disable on an essential skill or an entity",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F49",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 287,
+   "mutation": "const canWrite = view.mode === 'live';  ->  const canWrite = view.mode !== 'imported';",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > delete memory > does not offer Edit while looking at a past moment (Delete is covered in fix round 2)",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F50",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 306,
+   "mutation": "if (!ownCode) { setShareMsg(''); setShareError(own.error || 'There is nothing on the map to copy.'); return; }  ->  void",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > fix round 2: honest limits > refuses to report \"copied\" for a map too large for a map code, and says why",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F51",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 266,
+   "mutation": "const code = codeText || ownCode; if (!code) { setShareMsg(''); setShareError(own.error || 'There is nothing o  ->  const code = codeText || ownCode;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > fix round 2: honest limits > refuses to report \"copied\" for a map too large for a map code, and says why",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F52",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 259,
+   "mutation": "if (view.nodes.length === 0) return { code: '', error: '' };  ->  (removed)",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > says there is nothing to copy for an empty map, and copies no code for it",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F53",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 291,
+   "mutation": "if (result.pending) setNote(`Switching  ->  if (false) setNote(`Switching",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > skills on the map > says re-enabling needs the owner when the hub answers pending",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F54",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 345,
+   "mutation": "const isEmptyLive = phase === 'ready' && view.mode === 'live' && !view.nodes.some(n => n.kind === 'memory');  ->  const isEmptyLive = phase === 'ready' && view.mode === 'live' && view.nodes.length === 0;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > fix round 1: honest states > shows \"Nothing learned yet\" on an empty graph even though skills are installed",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F55",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 107,
+   "mutation": "if (at === null || imported) { setFacts(null); setFactsFor(''); return; }  ->  if (at === null) { setFacts(null); setFactsFor(''); return; }",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > does not re-read facts for a past moment once an imported map is showing",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F56",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 76,
+   "mutation": "if (controller.signal.aborted) return; hasData.current = true;  ->  hasData.current = true;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: a superseded read never overwrites a newer one > ignores a map reply that arrives after its reload was superseded",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F57",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 151,
+   "mutation": "const shown = new Set(imported.nodes.filter(n => n.rel === null || n.rel <= importPos).map(n => n.id));  ->  const shown = new Set(imported.nodes.filter(n => n.rel === null || n.rel < importPos).map(n => n.id));",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > shows an imported node at exactly its own position on the span",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F58",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 194,
+   "mutation": "const factor = event.deltaY < 0 ? 1.1 : 0.9;  ->  const factor = event.deltaY < 0 ? 0.9 : 1.1;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > camera > zooms with the wheel and resets on double click",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F59",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 52,
+   "mutation": "t: n.ts !== null ? (span > 0 ? Math.round(((n.ts - lo) / span) * MAP_CODE_LIMITS.timeSteps) : 0) : n.rel,  ->  t: n.ts !== null ? (span > 0 ? Math.round(((n.ts - lo) / span) * MAP_CODE_LIMITS.timeSteps) : 1) : n.rel,",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > puts a single-instant map at position zero in its code",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F60",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 122,
+   "mutation": "const hi = last !== null && first !== null ? Math.max(Math.ceil(last), lo + 1) : 1;  ->  const hi = last !== null && first !== null ? Math.ceil(last) : 1;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > gives a single-instant timeline a scrubber that can move",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F61",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 123,
+   "mutation": "const timelineOff = !imported && (!bounds || bounds.count === 0);  ->  const timelineOff = !imported && !bounds;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > timeline scrubber > is disabled with an explanation when the store holds no facts",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F62",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 119,
+   "mutation": "const first = bounds ? (axis === 'valid' ? bounds.firstValid : bounds.firstIngested) ?? bounds.firstIngested :  ->  const first = bounds ? bounds.firstIngested : null;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > starts the \"what was true\" axis at the first valid time, not the first ingestion",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F63",
+   "file": "frontend/src/panels/memory-graph.tsx",
+   "line": 120,
+   "mutation": "const last = bounds ? Math.max(bounds.lastChange ?? 0, bounds.lastIngested ?? 0) : null;  ->  const last = bounds ? (bounds.lastIngested ?? 0) : null;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > timeline scrubber > spans the store bounds and starts on the live graph",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F70",
+   "file": "frontend/src/panels/memory-graph-dialogs.tsx",
+   "line": 77,
+   "mutation": "if (newKey.trim() in properties) { setError(`${newKey.trim()} already exists.`); return; }  ->  (removed)",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > editor validation > refuses a new property that repeats an existing name",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F71",
+   "file": "frontend/src/panels/memory-graph-dialogs.tsx",
+   "line": 80,
+   "mutation": "if (Object.keys(properties).length > 50) { setError('At most 50 properties.'); return; }  ->  (removed)",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > editor validation > refuses more than 50 properties",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F72",
+   "file": "frontend/src/panels/memory-graph-dialogs.tsx",
+   "line": 130,
+   "mutation": "if (err?.code === 'notfound') setGone(true);  ->  if (false) setGone(true);",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > fix round 1: a delete that did not happen is never reported as done > shows a 404 in the dialog, keeps the node, and offers a refresh instead of \"Deleted\"",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F73",
+   "file": "frontend/src/panels/memory-graph-dialogs.tsx",
+   "line": 131,
+   "mutation": "else if (err?.code === 'unknown') onRefresh?.(); } }; return <Modal title={`Delete  ->  else if (false) onRefresh?.(); } }; return <Modal title={`Delete",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > fix round 1: a delete that did not happen is never reported as done > does not claim \"nothing was changed\" after a lost reply: it says the result is unknown and reloads",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F74",
+   "file": "frontend/src/panels/memory-graph-dialogs.tsx",
+   "line": 73,
+   "mutation": "properties[row.key] = row.value === String(row.original) ? row.original : row.value;  ->  properties[row.key] = row.value;",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > node editor > saves type and properties through the mediated route, keeping non-text values",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F75",
+   "file": "frontend/src/panels/memory-graph-dialogs.tsx",
+   "line": 74,
+   "mutation": "for (const [key, value] of kept) properties[key] = value;  ->  (removed)",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > node editor > saves type and properties through the mediated route, keeping non-text values",
+   "killed_by_original_tests": true
+  },
+  {
+   "id": "F76",
+   "file": "frontend/src/panels/memory-graph-dialogs.tsx",
+   "line": 76,
+   "mutation": "if (!SAFE_PROPERTY_KEY.test(newKey.trim())) {  ->  if (false) {",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > mutation hardening: scrubber, editor and share edge cases > editor validation > refuses a property name the server would not accept",
+   "killed_by_original_tests": false,
+   "test_added": true
+  },
+  {
+   "id": "F77",
+   "file": "frontend/src/panels/memory-graph-dialogs.tsx",
+   "line": 71,
+   "mutation": "if (!SAFE_TYPE.test(type.trim())) { setError(TYPE_RULE); return; }  ->  (removed)",
+   "killed_by": "src/test/memory-graph-explorer.test.tsx > node editor > shows the server message for an invalid type and blocks an unsafe one locally",
+   "killed_by_original_tests": true
+  }
+ ]
+}

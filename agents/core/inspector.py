@@ -261,7 +261,15 @@ async def _prompt(orch, agent_id: str, agent) -> dict:
     system = _system_prompt_of(agent) or ""
     rails = orch._runtime_state_block() + orch._language_block() + orch._data_grounding_block({})
     text = await orch._build_agent_turn_text(agent_id, "", runtime_block=rails, freeze_core=False)
-    turn = orch._build_agent_prompt(agent, text, {})
+    # H326: a preview, not a turn — the session's loaded-skills carry renders what the ledger
+    # holds now, but no turn is counted, no load aged and nothing marked carried.
+    from .skills.tools import bind_carry_preview, reset_carry_turn
+
+    carry_token = bind_carry_preview()
+    try:
+        turn = orch._build_agent_prompt(agent, text, {})
+    finally:
+        reset_carry_turn(carry_token)
     route_info: dict[str, Any] = {"resolved": False}
     preview = getattr(getattr(orch, "llm_router", None), "preview_backend", None)
     if callable(preview):

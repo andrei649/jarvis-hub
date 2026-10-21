@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 
 from agents.core.commands import CommandContext
@@ -104,7 +105,12 @@ async def execute_command(orch, argv, principal, session_id=None, profile="owner
                                 can_mutate=True)
         with kanban_scope(context):
             try:
-                code = projects_command(args)
+                if getattr(args, "project_action", None) == "discover":
+                    # The bounded filesystem walk can take seconds on large or network roots:
+                    # run it in a worker thread (to_thread copies the scope and sink contextvars).
+                    code = await asyncio.to_thread(projects_command, args)
+                else:
+                    code = projects_command(args)
                 return _result(code, out.getvalue(), err.getvalue(), "command_failed" if code else None)
             except (ValueError, PermissionError, RuntimeError, NotImplementedError, OSError) as exc:
                 return _refused("command_failed", f"project: {exc}")

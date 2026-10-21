@@ -877,6 +877,9 @@ def register_code_tools(
         # Stdout is whatever the script printed, which is where a fetched page or a
         # search hit ends up. The fence follows the tool, so it is declared once here.
         untrusted_output=True,
+        # H399 — a script can call other tools and a session kernel carries state from
+        # cell to cell, so a cell runs alone, after everything the model asked first.
+        parallel_safe=False,
     )
     return [TOOL]
 

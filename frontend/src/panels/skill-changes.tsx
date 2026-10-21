@@ -64,7 +64,7 @@ export function decisionOutcome(reply: any, proposalId: string, approved: boolea
   return `not applied · ${why[mine.reason] || mine.reason || 'refused'}`;
 }
 
-function ChangeDiff({ text }: { text: string }) {
+export function ChangeDiff({ text }: { text: string }) {
   const color = (l: string) => l.startsWith('@@') ? 'var(--accent-light)'
     : (l.startsWith('+') && !l.startsWith('+++')) ? 'var(--green)'
     : (l.startsWith('-') && !l.startsWith('---')) ? 'var(--red)' : 'var(--ink-2)';

@@ -11,6 +11,9 @@ crash-and-recover is visible in the run-log the morning brief reads, not just in
 stderr — apart from a path only a named-pipe .env names, which this process never
 reads: its own events then stay in the default file (H273's Known limits).
 
+A coordinator that exits with ``RESTORE_YIELD_EXIT`` (75) left so that a staged restore
+can run (H010): it is respawned at once, without backoff (see the constant).
+
 This is what ``deploy/systemd/jarvis-runtime.service`` and the
 ``runtime-coordinator`` docker-compose service both run. Layering systemd/
 docker's own ``restart`` policy on top of this respawn loop is intentional
@@ -52,6 +55,15 @@ MAX_BACKOFF_SECONDS = 60.0
 # loop (delay keeps growing) from an operator's one-off `kill -9` during an
 # otherwise long, healthy run.
 BACKOFF_RESET_SECONDS = 30.0
+# H010 review r3: the exit status of a coordinator that stopped so a staged restore can
+# run (scripts/coordinator.py RESTORE_YIELD_EXIT, inlined like the run-log default). Its
+# process had an orchestrator whose stores keep SQLite handles open, so it leaves rather
+# than rebuilding in place; the fresh one is spawned at once, without backoff, and waits
+# for the restore without opening a store. A child that exits with it faster than
+# YIELD_MIN_UPTIME_SECONDS (it never ran an orchestrator) gets the ordinary backoff, so
+# no exit status can make this loop spin.
+RESTORE_YIELD_EXIT = 75
+YIELD_MIN_UPTIME_SECONDS = 1.0
 
 
 SAFE_MODE_SWITCH = "--safe-mode"
@@ -151,11 +163,17 @@ def main() -> int:
             if stopping:
                 _append_supervisor_event("stopped", pid=child.pid, exit_code=exit_code)
                 return 0
-            _append_supervisor_event("child_exited", pid=child.pid, exit_code=exit_code)
-            if time.monotonic() - started_at >= BACKOFF_RESET_SECONDS:
+            uptime = time.monotonic() - started_at
+            if exit_code == RESTORE_YIELD_EXIT and uptime >= YIELD_MIN_UPTIME_SECONDS:
+                _append_supervisor_event("child_exited", pid=child.pid, exit_code=exit_code,
+                                         restore_yield=True)
                 backoff = starting_delay
-            time.sleep(backoff)
-            backoff = min(MAX_BACKOFF_SECONDS, backoff * 2)
+            else:
+                _append_supervisor_event("child_exited", pid=child.pid, exit_code=exit_code)
+                if uptime >= BACKOFF_RESET_SECONDS:
+                    backoff = starting_delay
+                time.sleep(backoff)
+                backoff = min(MAX_BACKOFF_SECONDS, backoff * 2)
             child = _spawn()
             started_at = time.monotonic()
             _append_supervisor_event("respawned", pid=child.pid)

@@ -11,6 +11,7 @@ import type {
   LlmLiveState, LocalModelRef, ModelState,
 } from './types';
 import { runningTasks } from '../task-state';
+import { STATUS_CHROME_UNKNOWN, readStatusChrome, type StatusChrome } from './status-chrome';
 // data.ts is the prototype's (untyped) mock — used ONLY as the opt-in demo corpus.
 import { V2 } from '../data';
 
@@ -38,6 +39,7 @@ export interface JarvisData {
   trust: { mic: string; strict_local: boolean; cloud_available?: boolean; claude_available?: boolean };
   sources: LiveSources;   // per-tile: did REAL data arrive in this load cycle?
   safeMode: SafeModeState; // H275: the hub was started in safe mode
+  chrome: StatusChrome;    // H133: gateway / sessions / version for the top bar and rail
 }
 
 /* A pending approval, projected into the shape the cockpit's decision cards read.
@@ -86,6 +88,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     decisions: [],
     trust: { mic: 'on', strict_local: false },
     sources: { tasks: false, trust: false },
+    chrome: STATUS_CHROME_UNKNOWN,
   };
 
   // 1) full enriched roster (real registry)
@@ -113,6 +116,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     const d = await apiGet<any>('/status');
     out.serverUp = true;
     out.safeMode = readSafeMode(d.safe_mode);
+    out.chrome = readStatusChrome(d);
     if (d.sys) out.sys = d.sys;
     const residents: LocalModelRef[] = Array.isArray(d.resident_models)
       ? d.resident_models.flatMap((pair: unknown) => {
@@ -131,9 +135,11 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
   // Registry-only agents (ids the seed corpus never knew) must still appear —
   // the seed roster lags the backend registry by design, /status is live truth.
   if (agents.length === 0 && statusAgents.length) {
+    // Bolt Optimization: Maintain O(1) statusAgentMap lookup to avoid O(N^2) array search during fallback roster construction
+    const statusAgentMap = new Map(statusAgents.map((x) => [x.id, x]));
     const ids = new Set([...Object.keys(META), ...statusAgents.map((x) => x.id)]);
     agents = [...ids].map((id) => {
-      const sa = statusAgents.find((x) => x.id === id);
+      const sa = statusAgentMap.get(id);
       const m = META[id];
       return { id, name: (m && m.name) || cap(id), tier: m ? m.tier : 'FND', role: m ? m.role : '', status: sa ? sa.status : 'idle', model: m ? m.model : '', glyph: glyphFor(id) };
     });

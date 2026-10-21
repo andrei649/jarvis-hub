@@ -66,7 +66,10 @@ def seed_graph(graph) -> int:
         try:
             if action == "add_entity":
                 _, name, entity_type, props = fact
-                graph.add_entity(name, entity_type, props)
+                # An entity the owner already typed or edited is theirs now: only
+                # create what is missing (a restart must not undo an explorer edit).
+                if graph.get_entity(name) is None:
+                    graph.add_entity(name, entity_type, props)
             elif action == "add_relation":
                 _, source, relation, target, props = fact
                 graph.add_relation(source, relation, target, props)

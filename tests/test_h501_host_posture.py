@@ -262,7 +262,11 @@ def test_container_markers(tmp_path):
 
 
 def test_the_container_check_detects_by_default(monkeypatch, tmp_path):
-    monkeypatch.setattr(hp, "in_container", lambda: "/run/.containerenv")
+    # H283: the default detection is host_identity's, which reads these markers through
+    # in_container (with its paths as keywords) after the env-only signals.
+    for name in ("JARVIS_CONTAINER", "KUBERNETES_SERVICE_HOST"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(hp, "in_container", lambda **_paths: "/run/.containerenv")
     got = _storage(tmp_path, "/app/x", marker=True)
     assert got["status"] == "warn" and "/run/.containerenv" in got["detail"]
 

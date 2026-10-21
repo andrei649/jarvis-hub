@@ -8,16 +8,19 @@ Exit codes: 0 ok · 1 the verb failed (the hub said no, or a check is red) · 2 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
 import shlex
 import sys
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from .client import HubClient, HubError, HubUnavailable, hub_url
 
@@ -138,6 +141,17 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_mode.add_argument("--local-pilot", action="store_true",
                              help="read-only local model and MCP memory prerequisite check")
 
+    support = verbs.add_parser("support", help="a pasteable, non-sensitive diagnostic report")
+    support_verbs = support.add_subparsers(dest="action", required=True, metavar="action")
+    bundle = support_verbs.add_parser(
+        "bundle", help="version, model, which key names are set, changed settings, posture (admin)")
+    bundle.add_argument("--json", action="store_true", help="the full allow-listed bundle as JSON")
+    bundle.add_argument("--offline", action="store_true",
+                        help="build it from the data root without the hub (no audit or route count)")
+    bundle.add_argument("--out", metavar="FILE", help="also write it to FILE (owner-only permissions)")
+    bundle.add_argument("--logs", type=int, default=0, metavar="N",
+                        help="also include the newest N redacted warning/error log records (max 500)")
+
     prompt_size = verbs.add_parser(
         "prompt-size",
         help="what a fresh turn costs before anybody has said anything (offline)",
@@ -172,13 +186,20 @@ def build_parser() -> argparse.ArgumentParser:
     config_list.add_argument("category", nargs="?")
     config_list.add_argument("--json", action="store_true")
     config_list.add_argument("--reveal", action="store_true", help="print secret values instead of masking them")
-    config_get = config_verbs.add_parser("get", help="print one setting: category.key")
-    config_get.add_argument("name")
+    # H688 — a name may go on below the key into a json value; `\\.` or "quotes" keep a dot
+    # inside one key (agents/core/settings_path.py has the grammar).
+    path_help = 'category.key[.path] — escape a dot inside a key as \\. or quote the key: "a.b"'
+    config_get = config_verbs.add_parser("get", help="print one setting: category.key[.path]")
+    config_get.add_argument("name", help=path_help)
     config_get.add_argument("--reveal", action="store_true")
-    config_set = config_verbs.add_parser("set", help="change one setting: category.key value")
-    config_set.add_argument("name")
+    config_set = config_verbs.add_parser("set", help="change one setting: category.key[.path] value")
+    config_set.add_argument("name", help=path_help)
     config_set.add_argument("value")
     _selection_flags(config_set)
+    config_unset = config_verbs.add_parser(
+        "unset", help="put a setting back to its declared value, or remove one key inside a json setting")
+    config_unset.add_argument("name", help=path_help)
+    _selection_flags(config_unset)
     config_verbs.add_parser("check", help="validate every stored value against its declared schema")
 
     approvals = verbs.add_parser("approvals", help="the approval queue (admin)")
@@ -226,6 +247,30 @@ def build_parser() -> argparse.ArgumentParser:
         change.add_argument("--force", action="store_true",
                             help="forward force intent; never bypass owner approval")
 
+    backup = verbs.add_parser("backup", help="back up and restore the whole install (H010)")
+    backup_verbs = backup.add_subparsers(dest="action", required=True, metavar="action")
+    backup_create = backup_verbs.add_parser("create", help="snapshot the data root (offline, same data root)")
+    backup_create.add_argument("--quick", action="store_true",
+                               help="only the state DBs: a small, fast rollback point")
+    backup_create.add_argument("--encrypt", action="store_true",
+                               help="encrypt at rest ($JARVIS_BACKUP_KEY, else a generated key in $JARVIS_KEY_DIR)")
+    backup_create.add_argument("--label", default="")
+    backup_create.add_argument("--json", action="store_true")
+    backup_list = backup_verbs.add_parser("list", help="snapshots, a staged restore and the last one applied (offline)")
+    backup_list.add_argument("--json", action="store_true")
+    backup_verify = backup_verbs.add_parser("verify", help="restore-drill a snapshot without touching live data (offline)")
+    backup_verify.add_argument("name", nargs="?", help="backup file name (default: the newest)")
+    backup_verify.add_argument("--json", action="store_true")
+    backup_restore = backup_verbs.add_parser(
+        "restore", help="restore a snapshot over the live data root (irreversible tier)")
+    backup_restore.add_argument("name", help="backup file name (see `nerva backup list`)")
+    backup_restore.add_argument("--confirm", metavar="RESTORE", default="",
+                                help="with no hub running: type RESTORE to restore in place now")
+    backup_restore.add_argument("--json", action="store_true")
+    backup_cancel = backup_verbs.add_parser(
+        "cancel", help="withdraw a staged restore before it is applied (offline, same data root)")
+    backup_cancel.add_argument("--json", action="store_true")
+
     kernel = verbs.add_parser("kernel", help="the Action Kernel")
     kernel_verbs = kernel.add_subparsers(dest="action", required=True, metavar="action")
     explain = kernel_verbs.add_parser(
@@ -257,6 +302,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     logs = verbs.add_parser("logs", help="the newest records of the hub log, read from the end "
                             "and redacted (offline; -n counts records, a traceback is one)")
+    logs.add_argument("name", nargs="?", help="exact configured log basename or numbered rotation; "
+                      "'list' shows available files (use --name to read a file named 'list')")
+    logs.add_argument("--name", dest="exact_name", help="exact configured log basename, including 'list'")
     logs.add_argument("-n", "--lines", type=int, default=50)
 
     skills = verbs.add_parser("skills", help="skill authoring tools (offline)")
@@ -267,11 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
                              help="a SKILL.md, a skill folder, or a folder of skill folders")
     skills_lint.add_argument("--strict", action="store_true", help="advice fails the run too")
     skills_lint.add_argument("--json", action="store_true")
-    # H329 — switched off, not uninstalled (admin; applies at once).
+    # H329 — switched off, not uninstalled; enabling waits for approval.
     skills_verbs.add_parser("list", help="installed skills and where each is switched off").add_argument(
         "--json", action="store_true")
+    skills_verbs.add_parser("config", help="interactively switch a skill or category on/off")
     for verb, text in (("off", "switch a skill off without uninstalling it (admin)"),
-                       ("on", "switch a skill back on (admin; recorded in the intent log)")):
+                       ("on", "request owner approval to switch a skill back on (admin)")):
         switch = skills_verbs.add_parser(verb, help=text)
         switch.add_argument("name", nargs="?", help="the skill's name or folder")
         switch.add_argument("--category", help="every skill of this category instead of one skill")
@@ -294,6 +343,26 @@ def build_parser() -> argparse.ArgumentParser:
     clear_wait.add_argument("run_id")
     clear_wait.add_argument("--json", action="store_true")
 
+    pairing = verbs.add_parser("pairing", help="who may talk to the agent over a DM channel (admin, H051)")
+    pairing_verbs = pairing.add_subparsers(dest="action", required=True, metavar="action")
+    pairing_list = pairing_verbs.add_parser("list", help="every sender the pairing store knows, and its status")
+    pairing_list.add_argument("--status", choices=_PAIRING_STATUSES, help="only senders with this status")
+    pairing_list.add_argument("--json", action="store_true")
+    pairing_approve = pairing_verbs.add_parser("approve", help="let one sender through (pending, blocked or new)")
+    pairing_approve.add_argument("channel")
+    pairing_approve.add_argument("sender_id")
+    pairing_approve.add_argument("--name", default="", help="a label for the sender")
+    pairing_approve.add_argument("--json", action="store_true")
+    pairing_revoke = pairing_verbs.add_parser(
+        "revoke", help="forget one sender: an approved one loses access, a blocked one may ask again")
+    pairing_revoke.add_argument("channel")
+    pairing_revoke.add_argument("sender_id")
+    pairing_revoke.add_argument("--json", action="store_true")
+    pairing_clear = pairing_verbs.add_parser(
+        "clear-pending", help="drop every pending request (nobody is blocked); a preview without --confirm")
+    pairing_clear.add_argument("--confirm", action="store_true", help="actually drop them")
+    pairing_clear.add_argument("--json", action="store_true")
+
     jobs = verbs.add_parser("jobs", help="your scheduled jobs (admin)")
     jobs_verbs = jobs.add_subparsers(dest="action", required=True, metavar="action")
     jobs_list = jobs_verbs.add_parser("list", help="every job and whether the scheduler is alive")
@@ -311,9 +380,18 @@ def build_parser() -> argparse.ArgumentParser:
                                   "interval job fires at once")
     jobs_create.add_argument("--json", action="store_true")
     jobs_create.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
+    jobs_create.add_argument("--reasoning-effort", choices=("default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+                             help="model ask: one canonical reasoning effort or default; requires complete --options")
     jobs_create.add_argument("--workdir", help="script-only cwd; requires complete --options with script and no_agent true")
     jobs_create.add_argument("--media-id", action="append", help="opaque artifact ID for an explicit reminder action; repeat up to 8 times")
     jobs_create.add_argument("--options", help='JSON options: repeat, deliver ([] disables delivery); ask jobs accept model/provider pins (configured route only; deterministic compression, no embedding recall)')
+    create_continuity = jobs_create.add_mutually_exclusive_group()
+    create_continuity.add_argument("--continuity", dest="continuity", action="store_true", default=None,
+                                   help="include previous model output on later runs")
+    create_continuity.add_argument("--no-continuity", dest="continuity", action="store_false",
+                                   help="omit previous model output on later runs")
+    jobs_create.add_argument("--context-from", action="append", metavar="ID",
+                             help="include the latest eligible output of this job; repeat for up to eight IDs or self")
     _selection_flags(jobs_create)
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
@@ -322,25 +400,46 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_edit.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_edit.add_argument("--json", action="store_true")
     jobs_edit.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
+    jobs_edit.add_argument("--reasoning-effort", choices=("default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+                           help="model ask: one canonical reasoning effort or default; requires complete --options")
     jobs_edit.add_argument("--workdir", help="script-only cwd; requires complete --options; empty clears the field")
     jobs_edit.add_argument("--media-id", action="append", help="replace reminder attachments; requires --action and explicitly reauthorizes content/owner")
     jobs_edit.add_argument("--options", help="replace advanced options as JSON; model/provider pins use deterministic compression and omit embedding recall")
+    edit_continuity = jobs_edit.add_mutually_exclusive_group()
+    edit_continuity.add_argument("--continuity", dest="continuity", action="store_true", default=None,
+                                 help="include previous model output on later runs")
+    edit_continuity.add_argument("--no-continuity", dest="continuity", action="store_false",
+                                 help="omit previous model output on later runs")
+    edit_context = jobs_edit.add_mutually_exclusive_group()
+    edit_context.add_argument("--context-from", action="append", metavar="ID",
+                              help="replace external context sources; repeat for up to eight IDs or self")
+    edit_context.add_argument("--clear-context-from", action="store_true",
+                              help="clear external context sources without replacing other options")
     _selection_flags(jobs_edit)
-    for verb in ("doctor", "incidents", "tick"):
+    for verb in ("doctor", "tick"):
         sub = jobs_verbs.add_parser(verb)
         sub.add_argument("--json", action="store_true")
-    notepad = jobs_verbs.add_parser("notepad", help="read or replace a job's bounded notes")
+    incidents = jobs_verbs.add_parser("incidents", help="list or acknowledge durable job failures")
+    incidents.add_argument("operation", nargs="?", choices=("list", "ack"), default="list")
+    incidents.add_argument("incident_id", nargs="?", type=int)
+    incidents.add_argument("--state", choices=("detected", "alerted", "closed"))
+    incidents.add_argument("--job-id")
+    incidents.add_argument("--limit", type=int)
+    incidents.add_argument("--json", action="store_true")
+    notepad = jobs_verbs.add_parser("notepad", help="read legacy note or manage named job notes")
     notepad.add_argument("job_id")
+    notepad.add_argument("operation", nargs="?", choices=("list", "get", "set", "delete"), default="list")
+    notepad.add_argument("key", nargs="?")
+    notepad.add_argument("value", nargs="?")
     notepad.add_argument("--text", help="replacement text; an empty string clears notes")
     notepad.add_argument("--json", action="store_true")
     for name, help_text in (
         ("status", "job configuration and recent runs"),
-        ("remove", "remove a job and its history"),
+        ("remove", "remove a job but retain its run history"),
         ("pause", "stop a job from firing"),
         ("resume", "let a paused job fire again"),
         ("run", "fire a job now, even if paused"),
-        ("delete", "remove a job and its history"),
-        ("runs", "the last attempts of a job"),
+        ("delete", "remove a job but retain its run history"),
     ):
         sub = jobs_verbs.add_parser(name, help=help_text)
         sub.add_argument("job_id")
@@ -349,6 +448,10 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("--reason", default="")
         if name == "status":
             sub.add_argument("--request", help="durable manual-run receipt id")
+    runs = jobs_verbs.add_parser("runs", help="recent attempts, including deleted jobs")
+    runs.add_argument("job_id", nargs="?")
+    runs.add_argument("--limit", type=int)
+    runs.add_argument("--json", action="store_true")
 
     todo = verbs.add_parser("todo", help="the checklists the agent keeps while it works")
     todo.add_argument("session", nargs="?", help="one session's plan (else the recent ones)")
@@ -361,6 +464,10 @@ def build_parser() -> argparse.ArgumentParser:
     continuation.add_argument("source_session_id")
     continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
     continuation.add_argument("--json", action="store_true")
+    imported = session_verbs.add_parser("import", help="import a local Claude Code/Codex JSONL conversation")
+    imported.add_argument("--from", dest="foreign_source", choices=("claude", "codex"), required=True)
+    imported.add_argument("path", help="owner-selected local JSONL path")
+    imported.add_argument("--json", action="store_true")
 
     chat = verbs.add_parser(
         "chat",
@@ -396,7 +503,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Keep CLI help/completion stdlib-only; test parity with the runtime ladder.
     chat.add_argument("--reasoning", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
                       help="reasoning effort for this invocation only")
-    chat.add_argument("--session", help="explicit existing conversation session")
+    selection = chat.add_mutually_exclusive_group()
+    selection.add_argument("--session", help="explicit existing conversation session")
+    selection.add_argument("-r", "--resume", metavar="SELECTOR", help="exact ID, unique prefix, title, latest, or @claude/@codex")
+    selection.add_argument("-c", "--continue", dest="continue_latest", action="store_true",
+                           help="use the latest unarchived conversation and print a free recap")
     chat.add_argument("--json", action="store_true")
     chat.add_argument("--image", action="append", metavar="PATH",
                       help="ask the vision model about this PNG/JPEG/GIF/WebP file (up to 8, 4 MiB "
@@ -449,6 +560,27 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_grant = desktop_verbs.add_parser(
         "grant", help="open the OS pane where you award a permission (owner; grants nothing itself)")
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
+
+    # H014 — the same module uninstall.sh / UNINSTALL.bat run; nothing is decided here.
+    # On Windows the verb runs from the .venv it would delete (locked), so the module refuses
+    # the software removal there and points to UNINSTALL.bat; --dry-run/--gui-only still work.
+    uninstall = verbs.add_parser(
+        "uninstall", help="remove the installed software (offline; your data stays unless --purge-data;"
+                          " on Windows use UNINSTALL.bat for the engine — the running .venv is locked)")
+    uninstall.add_argument("--dry-run", action="store_true",
+                           help="print what would be removed and whether data would be purged")
+    uninstall.add_argument("--confirm", action="store_true", help="required to actually remove anything")
+    uninstall.add_argument("--purge-data", action="store_true",
+                           help="also erase the data root (backup-first; needs the folder name typed back)")
+    uninstall.add_argument("--yes-purge", metavar="PATH",
+                           help="the data root's absolute path, for --purge-data without a prompt")
+    uninstall.add_argument("--no-backup", action="store_true", help="with --purge-data, skip the backup")
+    uninstall.add_argument("--gui", action="store_true", help="also remove the desktop app")
+    uninstall.add_argument("--gui-only", action="store_true",
+                           help="remove only the desktop app; keep the engine and your data")
+    uninstall.add_argument("--gui-summary", action="store_true",
+                           help="JSON probe of the desktop app (installed, paths); removes nothing")
+    uninstall.add_argument("--root", help="app root to uninstall from")
 
     security = verbs.add_parser(
         "security", help="checks you can run on this box: known vulnerabilities in what is installed")
@@ -556,6 +688,40 @@ def cmd_desktop(ns: argparse.Namespace, ctx: Context) -> int:
         f"opened {result['opened']}\n"
         "Grant it there, then run `nerva desktop status` again — the re-probe is the proof.\n"
     )
+    return EXIT_OK
+
+
+def cmd_support(ns: argparse.Namespace, ctx: Context) -> int:
+    """H009 — the report a support thread asks for. Online it is the hub's own
+    ``/api/support/bundle`` (what the HUD Support panel copies); ``--offline`` builds the
+    same allow-listed bundle from this data root when the hub is down."""
+    from datetime import UTC, datetime
+
+    from agents.core import support_bundle
+
+    lines = ns.logs
+    if not 0 <= lines <= support_bundle.MAX_LOG_LINES:
+        ctx.err.write(f"--logs takes 0..{support_bundle.MAX_LOG_LINES}\n")
+        return EXIT_USAGE
+    if ns.offline:
+        bundle = support_bundle.build_bundle(now_iso=datetime.now(UTC).isoformat(),
+                                             environ=ctx.environ, log_lines=lines)
+    else:
+        query = f"?{urlencode({'log_lines': lines})}" if lines else ""
+        bundle = ctx.client().get(f"/api/support/bundle{query}")
+        if not isinstance(bundle, dict):
+            ctx.err.write("support bundle request returned a malformed response\n")
+            return EXIT_FAILED
+    text = (json.dumps(bundle, indent=2, ensure_ascii=False, default=str) + "\n" if ns.json
+            else support_bundle.render_text(bundle))
+    ctx.out.write(text)
+    if ns.out:
+        path = Path(ns.out)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)          # the create mode does not narrow a file that exists
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        ctx.err.write(f"written to {path}\n")
     return EXIT_OK
 
 
@@ -885,11 +1051,26 @@ def _shown(row: Mapping[str, Any], *, reveal: bool) -> Any:
     return row.get("value")
 
 
-def _split_name(name: str) -> tuple[str, str]:
-    category, sep, key = name.partition(".")
-    if not sep or not category or not key:
-        raise argparse.ArgumentTypeError(f"setting names are category.key, got {name!r}")
-    return category, key
+def _resolve_name(settings: Any, name: str, *, stored: bool = False) -> tuple[str, str, list[Any]] | None:
+    """H688 — ``(category, key, path below the key)`` for a setting name, or None when no
+    declared setting matches. Keys whose name contains a dot are matched greedily; a
+    malformed or ambiguous name is a usage error (exit 2) naming how to spell it.
+
+    With *stored* (``config get``), a name no declared setting matches is matched next
+    against the rows stored in its category, as ``config list`` shows them: rows nothing
+    declares (``cache.entries``, a removed declaration's leftover) stay readable. Writes
+    never pass it — they stay limited to declared settings."""
+    from agents.core import settings_path
+
+    try:
+        resolved = settings_path.resolve_setting(name, settings._SPEC.keys())
+        if resolved is None and stored:
+            category = settings_path.parse(name)[0].text
+            rows = settings.get_category(category)
+            resolved = settings_path.resolve_setting(name, {(category, str(r["key"])) for r in rows})
+        return resolved
+    except settings_path.PathError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _coerce(value: str, kind: str) -> Any:
@@ -909,6 +1090,15 @@ def _coerce(value: str, kind: str) -> Any:
     if kind == "json":
         return json.loads(value)
     return value
+
+
+def _coerce_inner(value: str) -> Any:
+    """H688 — a value written inside a json setting: JSON when it parses (a number, true,
+    an object), else the text as typed."""
+    try:
+        return json.loads(value)
+    except ValueError:
+        return value
 
 
 def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
@@ -933,28 +1123,54 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
                 ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay})")
         return EXIT_OK
     if ns.action == "get":
-        category, key = _split_name(ns.name)
-        row = next((r for r in settings.get_category(category) if r["key"] == key), None)
+        from agents.core import settings_path
+
+        resolved = _resolve_name(settings, ns.name, stored=True)
+        row = None
+        if resolved is not None:
+            category, key, path = resolved
+            row = next((r for r in settings.get_category(category) if r["key"] == key), None)
         if row is None:
             ctx.err.write(f"no setting {ns.name}\n")
             return EXIT_FAILED
-        ctx.say(json.dumps(_shown(row, reveal=ns.reveal), ensure_ascii=False))
+        try:
+            # A secret stays masked whole, wherever inside it the name points.
+            value = settings_path.get_in(row.get("value"), path)
+        except settings_path.PathError as exc:
+            ctx.err.write(f"{ns.name}: {exc}\n")
+            return EXIT_FAILED
+        ctx.say(json.dumps(_shown({**row, "value": value}, reveal=ns.reveal), ensure_ascii=False))
         return EXIT_OK
-    if ns.action == "set":
-        category, key = _split_name(ns.name)
-        spec = settings._SPEC.get((category, key))
-        if spec is None:
+    if ns.action in ("set", "unset"):
+        from agents.core import settings_path
+
+        resolved = _resolve_name(settings, ns.name)
+        spec = settings._SPEC.get(resolved[:2]) if resolved is not None else None
+        if resolved is None or spec is None:
             ctx.err.write(f"{ns.name} is not a declared setting (see `nerva config list`)\n")
             return EXIT_FAILED
+        category, key, path = resolved
         if (category, key) in settings.ROUTE_ONLY:
             # review-H329 F1: a route-only row has one writer (the skill switches, which record a
             # switch-on; H613 the voice command providers, which ask for approval).
             hint = " — use `nerva skills on|off`" if category == "skills" else ""
             ctx.err.write(f"{ns.name} is changed only in {settings.ROUTE_ONLY[(category, key)]}{hint}\n")
             return EXIT_FAILED
+        kind = str(spec.get("kind", "text"))
         try:
-            value = _coerce(ns.value, str(spec.get("kind", "text")))
-        except ValueError as exc:
+            if path:
+                # H688 — inside a json value: the rest of the name is a path, the new whole
+                # value goes through the same validation and guards as any other write.
+                current = settings.get_value(category, key, spec.get("value"))
+                if ns.action == "unset":
+                    value = settings_path.unset_in(current, path)
+                else:
+                    value = settings_path.set_in(current, path, _coerce_inner(ns.value))
+            elif ns.action == "unset":
+                value = copy.deepcopy(spec.get("value"))
+            else:
+                value = _coerce(ns.value, kind)
+        except ValueError as exc:  # settings_path.PathError is a ValueError
             ctx.err.write(f"{ns.name}: {exc}\n")
             return EXIT_FAILED
         errors = settings.validate_category(category, {key: value})
@@ -989,6 +1205,10 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             except guards.ConsentNotRecorded as exc:
                 ctx.err.write(f"{ns.name}: {exc}\n")
                 return EXIT_FAILED
+        if (category, key) == ("appearance", "preferences") and isinstance(value, dict):
+            # review-H688 r2: the HUD syncs appearance across devices on this revision; a CLI
+            # write moves it as `appearance.update_appearance` does, or no other device sees it.
+            value = {**value, "_revision": uuid.uuid4().hex}
         settings.put_category(category, {key: value})
         if f"{category}.{key}" in retention.RETENTION_KEYS:
             # H262 review — a narrowing is a human decision too: the approval is lowered to it,
@@ -996,9 +1216,14 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             retention.lower_approval_offline()
         # A stored secret is echoed back masked, as `config get` shows it (review-H465e
         # nit 3); the value typed on this command line is the shell's to keep or not.
-        shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": value}, reveal=False)
         when = ("restart the hub to apply it" if _applies_at_restart(category, key, str(spec.get("kind", "")))
                 else "a running hub picks it up within 30 s")
+        if ns.action == "unset":
+            what = "removed" if path else "back to its declared value"
+            ctx.say(f"{ns.name} {what}  ({when})")
+            return EXIT_OK
+        written = settings_path.get_in(value, path) if path else value
+        shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": written}, reveal=False)
         ctx.say(f"{ns.name} = {json.dumps(shown, ensure_ascii=False)}  ({when})")
         return EXIT_OK
     if ns.action == "check":
@@ -1274,7 +1499,101 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     task = (reply or {}).get("task") or {}
     ctx.say(f"#{ns.task_id} {ns.action}ed → {task.get('status', 'done')}")
+    if (isinstance(task, Mapping) and task.get("kind") == "backup.restore"
+            and ns.action in ("accept", "edit") and task.get("status") == "approved"):
+        _follow_accepted_restore(ctx, ns.task_id)
     return EXIT_OK
+
+
+#: How long ``nerva approvals accept`` waits for an accepted restore to be staged, and
+#: how often it asks (H010 review r6). The hub's loop runs the accept after the reply, on
+#: its next tick — so the answer never depends on the stage showing up in this window (r7).
+RESTORE_FOLLOW_SECONDS = 8.0
+RESTORE_FOLLOW_POLL_SECONDS = 0.5
+
+
+def _restore_of_task(reply: Any, task_id: int) -> tuple[str, Mapping[str, Any]] | None:
+    """What ``GET /api/admin/backup`` says about the restore task ``task_id`` accepted:
+    ``("staged", view)``, ``("finished", last_restore)`` or ``("refused", row)``, or None
+    when nothing yet."""
+    if not isinstance(reply, Mapping):
+        return None
+    staged = reply.get("pending_restore")
+    if isinstance(staged, Mapping) and staged.get("task_id") == task_id:
+        return "staged", staged
+    last = reply.get("last_restore")
+    if (isinstance(last, Mapping) and last.get("task_id") == task_id
+            and last.get("status") != "deferred"):
+        return "finished", last
+    refused = reply.get("refused_restore")
+    if isinstance(refused, Mapping) and refused.get("task_id") == task_id:
+        return "refused", refused
+    return None
+
+
+def _say_accepted_restore(ctx: Context, reply: Any) -> bool:
+    """H010 review r7: say at once how the hub applies the accept — the hub's worker stages
+    it only on its next tick (60 s by default), far past the follow window. True when said."""
+    if not isinstance(reply, Mapping) or reply.get("restart") not in ("self", "manual"):
+        return False                                      # a hub that predates r7
+    tick = reply.get("stage_within_seconds")
+    when = (f"on its next autonomy tick (within ~{tick} s)"
+            if isinstance(tick, int) and not isinstance(tick, bool) else "on its next autonomy tick")
+    if reply["restart"] == "manual":
+        ctx.say(f"  restore accepted, NOT applied yet: the hub stages it {when}, and nothing "
+                f"restarts this hub — restart the hub/service yourself once `nerva backup list` "
+                f"shows it staged (it says by when)")
+    else:
+        ctx.say(f"  restore accepted: the hub stages it {when} and restarts itself to apply it "
+                f"(`nerva backup list` shows the outcome)")
+    return True
+
+
+def _follow_accepted_restore(ctx: Context, task_id: int) -> None:
+    """H010 review r6/r7: the decision route answers ``approved`` before the hub's loop
+    stages the restore. Say right away what happens (NOT applied yet when the hub cannot
+    restart itself), then wait a bounded few seconds for the stage, an outcome or a refusal
+    and add it — never a restart nobody makes, never a stage that will not come."""
+    end = time.monotonic() + RESTORE_FOLLOW_SECONDS
+    announced = False
+    while True:
+        try:
+            reply = ctx.client().get("/api/admin/backup")
+        except HubUnavailable:
+            # The hub went away right after the accept: most likely restarting to apply it.
+            ctx.say("  the hub stopped answering (restarting to apply the restore?) — "
+                    "`nerva backup list` shows whether it was applied")
+            return
+        except HubError:
+            reply = None
+        found = _restore_of_task(reply, task_id)
+        if found is None and not announced:
+            announced = _say_accepted_restore(ctx, reply)
+        if found is not None:
+            break
+        if time.monotonic() >= end:
+            if not announced:
+                ctx.say("  the restore is not staged yet — `nerva backup list` shows when it is, "
+                        "and whether the hub must be restarted by hand")
+            return
+        time.sleep(RESTORE_FOLLOW_POLL_SECONDS)
+    state, view = found
+    if state == "refused":
+        ctx.say(f"  restore of {view.get('name')} refused ({view.get('reason')}): it will not "
+                f"be applied — request it again with `nerva backup restore`")
+    elif state == "finished":
+        ctx.say(f"  restore of {view.get('name')}: {view.get('status')}")
+    elif view.get("action_needed"):
+        # The accept staged the restore but nothing restarts this hub.
+        ctx.say(f"  restore of {view.get('name')} staged, NOT applied yet: {view['action_needed']}")
+    elif view.get("state") == "expired":
+        ctx.say(f"  restore of {view.get('name')} staged but expired: it will not be applied")
+    elif view.get("restart") == "self":
+        ctx.say(f"  restore of {view.get('name')} staged; the hub restarts itself to apply it "
+                f"(`nerva backup list` shows the outcome)")
+    else:
+        ctx.say(f"  restore of {view.get('name')} staged ({view.get('state')}) — "
+                f"`nerva backup list` shows when it is applied")
 
 
 _CHECKPOINT_NOTICE_CODES = frozenset({
@@ -1398,6 +1717,171 @@ def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_FAILED
 
 
+#: What an offline in-place restore must be told, typed (the forget route's "FORGET" shape).
+_RESTORE_WORD = "RESTORE"
+
+
+def _backup_row(row: Mapping[str, Any]) -> str:
+    tags = [tag for tag, on in (("quick", row.get("quick")), ("encrypted", row.get("encrypted"))) if on]
+    return f"  {row['name']}  {row['bytes']:>12,d} B  {row['modified_at']}" + (f"  [{', '.join(tags)}]" if tags else "")
+
+
+def cmd_backup(ns: argparse.Namespace, ctx: Context) -> int:
+    """H010 — back up and restore the install. create/list/verify read the data root the
+    hub uses (a DB snapshot is consistent while the hub runs); restore crosses the
+    irreversible tier: with a hub running it is a ``backup.restore`` approval card the
+    hub applies by restarting itself, and with none running it needs RESTORE typed."""
+    from agents.core import backup as bk
+    from agents.core.paths import data_root
+
+    root = data_root(ctx.environ)
+    out = bk.default_backup_dir(root)
+    if ns.action == "create":
+        made = bk.create_backup(source_root=str(root), out_dir=str(out), label=ns.label,
+                                encrypt=True if ns.encrypt else None, quick=ns.quick)
+        if ns.json:
+            ctx.dump(made)
+        else:
+            ctx.say(f"{made['mode']} backup {Path(made['archive']).name}: {made['file_count']} file(s), "
+                    f"{len(made['dbs'])} DB(s), {made['bytes']:,d} B"
+                    + (" (encrypted)" if made["encrypted"] else ""))
+        return EXIT_OK
+    if ns.action == "list":
+        payload = {"backups": bk.list_backups(str(out)), "pending_restore": bk.staged_restore_view(root),
+                   "last_restore": bk.last_restore(root),
+                   "refused_restore": bk.last_refused_restore(root)}
+        if ns.json:
+            ctx.dump(payload)
+            return EXIT_OK
+        if not payload["backups"]:
+            ctx.say("no backup has ever been made — `nerva backup create`")
+        for row in payload["backups"]:
+            ctx.say(_backup_row(row))
+        staged = payload["pending_restore"]
+        if staged:
+            if staged.get("state") == "deferred":
+                note = f"deferred: {staged.get('deferred_reason')}"
+            elif staged.get("state") == "expired":
+                note = "expired: it is discarded, never applied — stage it again"
+            else:
+                note = f"applied at the next hub start; expires {staged.get('expires_at')}"
+            ctx.say(f"staged restore: {staged['name']} ({note}) — `nerva backup cancel` withdraws it")
+            if staged.get("action_needed"):
+                ctx.say(f"  ACTION NEEDED: the hub could not restart itself — {staged['action_needed']}")
+            if staged.get("runtime_resumed_at"):
+                ctx.say(f"  not applied in time: jarvis-runtime resumed at {staged['runtime_resumed_at']} "
+                        f"and stops again when the hub applies it")
+        if payload["last_restore"]:
+            last = payload["last_restore"]
+            ctx.say(f"last restore: {last.get('name')} {last.get('status')} at {last.get('applied_at')}")
+        if payload["refused_restore"]:
+            # H010 review r7: an accept the apply refused staged nothing; it must be asked again.
+            refused = payload["refused_restore"]
+            ctx.say(f"refused restore: {refused.get('name')} ({refused.get('reason')}) at "
+                    f"{refused.get('at')} — not applied; `nerva backup restore` asks again")
+        return EXIT_OK
+    if ns.action == "verify":
+        name = ns.name
+        if not name:
+            listing = bk.list_backups(str(out))
+            if not listing:
+                ctx.err.write("no backups to verify\n")
+                return EXIT_FAILED
+            name = listing[0]["name"]
+        path = bk.resolve_backup(name, out_dir=str(out))
+        if path is None:
+            ctx.err.write(f"no such backup: {name}\n")
+            return EXIT_FAILED
+        try:
+            report = bk.verify_backup(str(path))
+        except (ValueError, OSError) as exc:   # ArchiveRejected is a ValueError
+            ctx.err.write(f"archive rejected: {exc}\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(report)
+        else:
+            ctx.say(f"{path.name}: {'ok' if report['ok'] else 'FAILED'} — {report['file_count']} file(s), "
+                    + ", ".join(f"{db} {verdict}" for db, verdict in report["dbs"].items())
+                    + (f"; {report['problem']}" if report["problem"] else ""))
+        return EXIT_OK if report["ok"] else EXIT_FAILED
+    if ns.action == "cancel":
+        result = bk.cancel_staged_restore(root, cancelled_by="nerva-cli")
+        if ns.json:
+            ctx.dump(result)
+        elif result["ok"]:
+            ctx.say(f"cancelled the staged restore of {result['cancelled']}")
+        elif result.get("reason") == "applying":
+            ctx.err.write("the restore is being applied right now and can no longer be cancelled\n")
+        else:
+            ctx.err.write("no staged restore to cancel\n")
+        return EXIT_OK if result["ok"] else EXIT_FAILED
+    return _backup_restore(ns, ctx, bk, root)
+
+
+def _backup_restore(ns: argparse.Namespace, ctx: Context, bk: Any, root: Path) -> int:
+    try:
+        reply = ctx.client().post("/api/admin/backup/restore", {"name": ns.name})
+    except HubUnavailable:
+        reply = None
+    if reply is not None:
+        task_id = (reply or {}).get("pending") if isinstance(reply, Mapping) else None
+        if type(task_id) is not int:
+            ctx.err.write("restore result unavailable: malformed hub reply\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        queued = (f"restore of {ns.name} queued at the irreversible tier as approval #{task_id}"
+                  + (" (already waiting)" if reply.get("existing") else "")
+                  + f". Accept it with `nerva approvals accept {task_id}`: the hub stages it")
+        if reply.get("restart") == "self":
+            ctx.say(queued + ", restarts itself and restores before any store opens.")
+        else:
+            # H010 review r5: a hub without a self-restart (raw uvicorn, a Windows service
+            # without the NSSM marker), or one too old to say — never promise a restart.
+            ttl = bk.stage_ttl_seconds() / 3600.0
+            ctx.say(queued + ", but this hub cannot restart itself: after the accept, restart "
+                    "the hub/service yourself — the restore is applied at the next `python "
+                    "serve.py` (service, nerva.exe) start, before any store opens. The stage "
+                    f"expires {ttl:g} h after the accept (`nerva backup list` shows when).")
+        return EXIT_OK
+    # No hub: nothing holds the DBs open, so the restore can run now — but the approval
+    # queue that would ask a human is not running either, so the human is asked here.
+    tier = f"tier 3 ({_TIER_NAMES[3]})"
+    if ns.confirm != _RESTORE_WORD:
+        typed = ""
+        if _is_tty(ctx.inp):
+            ctx.err.write(f"backup.restore is {tier}: it overwrites the live data root at {root}. "
+                          f"Type {_RESTORE_WORD} to continue: ")
+            typed = (ctx.inp.readline() or "").strip()
+        if typed != _RESTORE_WORD:
+            ctx.err.write(f"not restored: backup.restore is {tier} — no hub is running to queue it for "
+                          f"approval, so rerun with --confirm {_RESTORE_WORD} to restore in place now\n")
+            return EXIT_USAGE
+    try:
+        staged = bk.stage_restore(ns.name, source_root=str(root), requested_by="nerva-cli")
+    except FileNotFoundError:
+        ctx.err.write(f"no such backup: {ns.name}\n")
+        return EXIT_FAILED
+    if not staged["ok"]:
+        ctx.err.write(f"not restored: {staged['name']} failed its restore drill: {staged['problem']}\n")
+        return EXIT_FAILED
+    result = bk.apply_pending_restore(root) or {}
+    if ns.json:
+        ctx.dump(result)
+    elif result.get("status") == "restored":
+        ctx.say(f"restored {result['name']} in place: {result['file_count']} file(s); "
+                f"rollback point {result.get('rollback')}"
+                + ("" if result.get("ok") else f"; the drill found a problem: {result.get('problem')}"))
+    elif result.get("status") == "deferred":
+        ctx.say(f"staged {staged['name']}, deferred: {result['reason']} — it is applied at the next "
+                f"hub start (python serve.py) once no other process has the data root open, unless "
+                f"it expires first ({staged.get('expires_at')}); `nerva backup cancel` withdraws it")
+    else:
+        ctx.err.write(f"restore of {ns.name} failed ({result.get('reason')}): {result.get('detail', '')}\n")
+    return EXIT_OK if result.get("status") in ("restored", "deferred") and result.get("ok", True) else EXIT_FAILED
+
+
 def explain_action(
     kind: str,
     *,
@@ -1501,6 +1985,20 @@ def log_path(environ: Mapping[str, str]) -> Path:
     return data_path("logs", "jarvis.log")
 
 
+def _log_display(value: Any, width: int = 200, *, keep_tail: bool = False) -> str:
+    """Printable log filename/error text, including bidi and surrogate-safe names."""
+    visible = re.sub(r"[\u202a-\u202e\u2066-\u2069]", "", str(value))
+    visible = visible.encode("utf-8", "backslashreplace").decode("utf-8")
+    return _plain(visible, width, keep_tail=keep_tail)
+
+
+def _job_note_display(value: str) -> str:
+    """Preserve a bounded note's line breaks while removing terminal controls and bidi marks."""
+    visible = re.sub(r"[\u202a-\u202e\u2066-\u2069]", "", value)
+    visible = visible.encode("utf-8", "backslashreplace").decode("utf-8")
+    return "\n".join(_plain(line, len(line) + 1) for line in visible.split("\n"))
+
+
 def _skill_files(raw: str) -> list[Path] | None:
     """The SKILL.md files *raw* names: itself, a skill folder's, or each skill folder's."""
     path = Path(raw)
@@ -1515,8 +2013,8 @@ def _skill_files(raw: str) -> list[Path] | None:
 
 def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
-    H329 — ``nerva skills list | off | on``: the skill switches on the running hub."""
-    if ns.action in ("list", "off", "on"):
+    H329 — ``nerva skills list | off | on | config``: running-hub skill switches."""
+    if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
@@ -1571,36 +2069,67 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
+    positional_name = getattr(ns, "name", None)
+    exact_name = getattr(ns, "exact_name", None)
+    if positional_name is not None and exact_name is not None:
+        ctx.err.write("choose one log name: positional NAME or --name NAME\n")
+        return EXIT_USAGE
+    name = exact_name if exact_name is not None else positional_name
     path = log_path(ctx.environ)
-    if not path.exists():
+    from agents.core import log_tail
+
+    files = log_tail.list_files(path)
+    if positional_name == "list":
+        if not files:
+            ctx.say("no log files for the configured hub log")
+        else:
+            for item in files:
+                ctx.say(f"{_log_display(item['name'], 120)}  {item['size']} bytes  "
+                        f"modified {item['modified']}")
+        return EXIT_OK
+    if not files:
+        if path.exists():
+            ctx.err.write(f"{_log_display(path, 200, keep_tail=True)} could not be read "
+                          "(not a regular log file)\n")
+            return EXIT_FAILED
         ctx.err.write(
-            f"no log file at {path} — file logging is off unless system.log_to_file is on "
+            f"no log file at {_log_display(path, 200, keep_tail=True)} — file logging is off unless system.log_to_file is on "
             "(`nerva config set system.log_to_file on`) or JARVIS_LOG_FILE is set\n"
         )
         return EXIT_FAILED
+    allowed = {item["name"] for item in files}
+    if name is not None and name not in allowed:
+        available = ", ".join(_log_display(item["name"], 120) for item in files[:10])
+        more = " …" if len(files) > 10 else ""
+        ctx.err.write(f"no configured log named {_log_display(name, 120)}; available: {available}{more}\n")
+        return EXIT_FAILED
+    chosen = files[0]["name"] if name is None else name
+    selected = path.parent / chosen
     # H145: read from the end within a byte budget and redacted again, as the HUD's log
     # page reads it; a multi-gigabyte log costs the same as a small one.
-    from agents.core import log_tail
-
     if ns.lines <= 0:
         return EXIT_OK
     try:
-        tail = log_tail.read_path(path, lines=ns.lines, cap=max(ns.lines, 1))
+        tail = log_tail.read_path(selected, lines=ns.lines, cap=max(ns.lines, 1))
     except log_tail.RedactionUnavailable as exc:
-        ctx.err.write(f"the secret redactor could not be loaded ({exc}); the log is not shown\n")
+        ctx.err.write(f"the secret redactor could not be loaded ({_log_display(exc)}); the log is not shown\n")
         return EXIT_FAILED
     except OSError as exc:
-        ctx.err.write(f"{path} could not be read ({exc.strerror or exc.__class__.__name__})\n")
+        ctx.err.write(f"{_log_display(selected, 200, keep_tail=True)} could not be read "
+                      f"({_log_display(exc.strerror or exc.__class__.__name__)})\n")
         return EXIT_FAILED
     for entry in tail["entries"]:
         ctx.say(entry["text"])
     if tail["truncated"] and len(tail["entries"]) < ns.lines:
-        ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of {path} were read)\n")
+        ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of "
+                      f"{_log_display(selected, 200, keep_tail=True)} were read)\n")
     return EXIT_OK
 
 
 def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
+    if ns.action == "config":
+        return _skill_switch_config(ctx, client)
     if ns.action == "list":
         reply = client.get("/skills")
         skills = reply.get("skills") if isinstance(reply, dict) else None
@@ -1627,6 +2156,12 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.json:
         ctx.dump(reply)
         return EXIT_OK
+    if isinstance(reply, dict) and reply.get("status") == "pending":
+        ctx.say(f"pending owner approval: task {reply.get('task_id')} · "
+                f"{', '.join(reply.get('pending') or [])}")
+        for name in reply.get("off_everywhere") or []:
+            ctx.say(f"{name}: still off everywhere after a channel-only approval")
+        return EXIT_OK
     changed = reply.get("changed") or [] if isinstance(reply, dict) else []
     where = f"on {ns.channel}" if ns.channel else "everywhere"
     if changed:
@@ -1641,6 +2176,83 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"{name}: essential, stays on")
     if changed and isinstance(reply, dict) and not reply.get("audited"):
         ctx.say("note: the intent log could not record this switch")
+    return EXIT_OK
+
+
+def _skill_switch_config(ctx: Context, client: HubClient) -> int:
+    """A literal terminal picker using the same owner route as the HUD."""
+    if not callable(getattr(ctx.inp, "isatty", None)) or not ctx.inp.isatty():
+        ctx.err.write("skills config requires an interactive terminal\n")
+        return EXIT_USAGE
+    reply = client.get("/skills")
+    skills = reply.get("skills") if isinstance(reply, dict) else None
+    if not isinstance(skills, dict):
+        ctx.err.write("skill list unavailable\n")
+        return EXIT_FAILED
+    choices = [("skill", name) for name in sorted(skills, key=str.casefold)]
+    categories = sorted({row.get("category") for row in skills.values()
+                         if isinstance(row, dict) and isinstance(row.get("category"), str)
+                         and row.get("category")}, key=str.casefold)
+    choices.extend(("category", name) for name in categories)
+    def where(row: dict) -> str:
+        if row.get("disabled"):
+            return "off everywhere"
+        channels = row.get("disabled_channels")
+        if isinstance(channels, list) and channels:
+            return "off on " + ", ".join(str(item) for item in channels)
+        return "on"
+
+    for number, (kind, name) in enumerate(choices, 1):
+        if kind == "skill":
+            state = where(skills[name] if isinstance(skills[name], dict) else {})
+        else:
+            members = [where(row) for row in skills.values()
+                       if isinstance(row, dict) and row.get("category") == name]
+            state = members[0] if len(set(members)) == 1 else "mixed"
+        ctx.say(f"{number}. {kind}: {name} ({state})")
+    try:
+        ctx.out.write("Choose number (Enter cancels): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        selected = line.strip()
+        if not selected:
+            return EXIT_OK
+        if not selected.isdigit() or not 1 <= int(selected) <= len(choices):
+            ctx.err.write("invalid choice\n")
+            return EXIT_USAGE
+        kind, name = choices[int(selected) - 1]
+        ctx.out.write("Switch on or off (Enter cancels): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        action = line.strip().casefold()
+        if not action:
+            return EXIT_OK
+        if action not in ("on", "off"):
+            ctx.err.write("choose on or off\n")
+            return EXIT_USAGE
+        if action == "off" and kind == "skill" and isinstance(skills[name], dict) and skills[name].get("essential"):
+            ctx.err.write("essential skill stays on\n")
+            return EXIT_FAILED
+        ctx.out.write("Channel (Enter means everywhere): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        channel = line.strip()
+    except (EOFError, KeyboardInterrupt):
+        return EXIT_OK
+    if channel and not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,31}", channel):
+        ctx.err.write("invalid channel\n")
+        return EXIT_USAGE
+    body = {kind: name, "enabled": action == "on"}
+    if channel:
+        body["channel"] = channel
+    result = client.post("/api/skills/switch", body)
+    if isinstance(result, dict) and result.get("status") == "pending":
+        ctx.say(f"pending owner approval: task {result.get('task_id')}")
+    else:
+        ctx.say(f"switched {action}: {', '.join(result.get('changed') or [])}")
     return EXIT_OK
 
 
@@ -1705,6 +2317,83 @@ def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+_PAIRING_STATUSES = ("allowed", "pending", "blocked")
+
+
+def cmd_pairing(ns: argparse.Namespace, ctx: Context) -> int:
+    """H051 — approve or revoke who may talk to the agent over a DM channel.
+
+    The same admin routes the HUD's SENDER PAIRING card uses
+    (agents/core/routers/pairing.py). ``revoke`` is the store's ``unpair``: the
+    record goes, so an approved sender is back to unknown (held for approval on its
+    next message) and a blocked one may ask again. ``clear-pending`` is a bulk
+    reject and only previews unless ``--confirm`` is given — the CLI's counterpart
+    of the HUD's two-step confirm.
+    """
+    client = ctx.client()
+    if ns.action == "list":
+        path = "/api/channels/pairing"
+        if ns.status:
+            path += "?" + urlencode({"status": ns.status})
+        reply = client.get(path)
+        senders = reply.get("senders") if isinstance(reply, dict) else None
+        if not isinstance(senders, list):
+            ctx.err.write("unexpected reply from the hub: no list of senders in it\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        summary = reply.get("summary") if isinstance(reply.get("summary"), dict) else {}
+        if summary:
+            state = "on" if summary.get("enabled") else "off (every sender passes)"
+            ctx.say(f"pairing {state} · " + " · ".join(
+                f"{int(summary.get(name) or 0)} {name}" for name in _PAIRING_STATUSES))
+        if not senders:
+            ctx.say("no senders" + (f" with status {ns.status}" if ns.status else ""))
+        for sender in senders:
+            if not isinstance(sender, dict):
+                continue
+            name = sender.get("name") or ""
+            label = f"  {name}" if name and name != sender.get("sender_id") else ""
+            ctx.say(f"{sender.get('channel')}  {sender.get('sender_id')}  {sender.get('status')}{label}")
+        return EXIT_OK
+    if ns.action == "clear-pending":
+        if not ns.confirm:
+            reply = client.get("/api/channels/pairing?" + urlencode({"status": "pending"}))
+            senders = reply.get("senders") if isinstance(reply, dict) else None
+            count = len(senders) if isinstance(senders, list) else 0
+            ctx.say(f"would drop {count} pending request(s); nobody is blocked and they may ask again. "
+                    "Rerun with --confirm to drop them.")
+            return EXIT_OK
+        reply = client.post("/api/channels/pairing/clear-pending")
+        reply = reply if isinstance(reply, dict) else {}
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            # ``audited: false`` is said, so a cleared inbox never implies an audit row.
+            ctx.say(f"cleared {int(reply.get('cleared') or 0)} pending"
+                    + (" · not audited" if reply.get("audited") is False else ""))
+        return EXIT_OK
+    body = {"channel": ns.channel, "sender_id": ns.sender_id,
+            "action": "approve" if ns.action == "approve" else "unpair"}
+    if ns.action == "approve" and ns.name:
+        body["name"] = ns.name
+    reply = client.post("/api/channels/pairing/decide", body)
+    reply = reply if isinstance(reply, dict) else {}
+    who = f"{ns.channel}:{ns.sender_id}"
+    if ns.action == "revoke" and not reply.get("unpaired"):
+        ctx.err.write(f"no pairing record for {who}; nothing to revoke\n")
+        return EXIT_FAILED
+    if ns.action == "approve" and reply.get("status") != "allowed":
+        ctx.err.write(f"the hub did not approve {who}: {reply}\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+    else:
+        ctx.say(f"approved {who}" if ns.action == "approve" else f"revoked {who}")
+    return EXIT_OK
+
+
 def _params(pairs: list[str]) -> dict[str, str]:
     out: dict[str, str] = {}
     for pair in pairs:
@@ -1733,19 +2422,109 @@ def _job_cli_options(ns):
             value.pop('enabled_toolsets', None)
         else:
             value['enabled_toolsets'] = [] if ns.toolsets == 'none' else ns.toolsets.split(',')
+    if ns.reasoning_effort is not None:
+        if ns.options is None:
+            raise ValueError('--reasoning-effort requires complete --options')
+        if ns.reasoning_effort == 'default':
+            value.pop('reasoning_effort', None)
+        else:
+            value['reasoning_effort'] = ns.reasoning_effort
+    if ns.continuity is not None:
+        value['continuity'] = ns.continuity
+    if getattr(ns, 'clear_context_from', False):
+        value['context_from'] = []
+    elif ns.context_from is not None:
+        value['context_from'] = ns.context_from
     return value
 
 
 def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
-    if ns.action in ("doctor", "incidents", "tick", "status", "notepad"):
+    def machine(payload: Any) -> None:
+        ctx.out.write(json.dumps(payload, indent=2, ensure_ascii=True, default=str) + "\n")
+
+    if ns.action == "incidents":
+        if ns.operation == "ack":
+            if ns.incident_id is None or ns.incident_id <= 0 or ns.state or ns.job_id or ns.limit is not None:
+                ctx.err.write("ack requires one positive incident ID and no list filters\n")
+                return EXIT_USAGE
+            reply = client.post(f"/api/jobs/incidents/{ns.incident_id}/ack", {})
+            if ns.json:
+                machine(reply)
+            else:
+                ctx.say(f"acknowledged incident {ns.incident_id}; job remains unchanged")
+            return EXIT_OK
+        if ns.incident_id is not None or (ns.limit is not None and not 1 <= ns.limit <= 100):
+            ctx.err.write("list accepts filters and a limit from 1 to 100, not an incident ID\n")
+            return EXIT_USAGE
+        params = {key: value for key, value in (("state", ns.state), ("job_id", ns.job_id),
+                                                ("limit", ns.limit)) if value is not None}
+        reply = client.get("/api/jobs/incidents" + ("?" + urlencode(params) if params else ""))
+        if ns.json:
+            machine(reply)
+        else:
+            for row in reply.get("incidents") or []:
+                ctx.say(f"#{row.get('id')}  {_log_display(row.get('state'), 20)}  "
+                        f"{_log_display(row.get('job_id'), 80)}  {_log_display(row.get('safe_error'), 160)}")
+            if not reply.get("incidents"):
+                ctx.say("no incidents")
+        return EXIT_OK
+    if ns.action == "notepad":
+        job_path = f"/api/jobs/{quote(ns.job_id, safe='')}"
+        if ns.text is not None and (ns.operation != "list" or ns.key is not None or ns.value is not None):
+            ctx.err.write("--text replaces the legacy note and cannot be combined with a key operation\n")
+            return EXIT_USAGE
+        if ns.text is not None:
+            reply = client.request("PUT", job_path + "/notepad", {"text": ns.text})
+        else:
+            path = job_path + "/notepad/keys"
+            if ns.operation == "list":
+                if ns.key is not None or ns.value is not None:
+                    ctx.err.write("notepad list takes no key or value\n")
+                    return EXIT_USAGE
+                entries = client.get(path).get("entries") or []
+                legacy = (client.get(job_path).get("job") or {}).get("notepad") or ""
+                reply = {"entries": entries, "notepad": legacy}
+            elif ns.operation == "get":
+                if ns.key is None or ns.value is not None:
+                    ctx.err.write("notepad get requires one key\n")
+                    return EXIT_USAGE
+                reply = client.get(path + "?" + urlencode({"key": ns.key}))
+            elif ns.operation == "set":
+                if ns.key is None or ns.value is None:
+                    ctx.err.write("notepad set requires a key and value\n")
+                    return EXIT_USAGE
+                reply = client.request("PUT", path, {"key": ns.key, "value": ns.value})
+            else:
+                if ns.key is None or ns.value is not None:
+                    ctx.err.write("notepad delete requires one key\n")
+                    return EXIT_USAGE
+                reply = client.request("DELETE", path + "?" + urlencode({"key": ns.key}))
+        if ns.json:
+            machine(reply)
+        elif ns.operation == "list" and ns.text is None:
+            for row in reply["entries"]:
+                ctx.say(f"{_log_display(row.get('key'), 128)}  {_log_display(row.get('value'), 200)}")
+            if reply["notepad"]:
+                ctx.say(f"previous output: {_log_display(reply['notepad'], 200)}")
+            elif not reply["entries"]:
+                ctx.say("no notes")
+        elif ns.operation == "get" and ns.text is None:
+            value = (reply.get("entry") or {}).get("value")
+            if not isinstance(value, str):
+                ctx.err.write("unexpected note reply from hub\n")
+                return EXIT_FAILED
+            shown = _job_note_display(value)
+            ctx.out.write(shown + ("" if shown.endswith("\n") else "\n"))
+        else:
+            ctx.say("note updated" if ns.operation == "set" or ns.text is not None else "note deleted")
+        return EXIT_OK
+    if ns.action in ("doctor", "tick", "status"):
         if ns.action == "tick":
             reply = client.post("/api/jobs/tick", {})
-        elif ns.action == "notepad" and ns.text is not None:
-            reply = client.request("PUT", f"/api/jobs/{ns.job_id}/notepad", {"text":ns.text})
         elif ns.action == "status" and ns.request:
             reply = client.get(f"/api/jobs/{ns.job_id}/requests/{ns.request}")
-        elif ns.action in ("status", "notepad"):
+        elif ns.action == "status":
             reply = client.get(f"/api/jobs/{ns.job_id}")
         else:
             reply = client.get(f"/api/jobs/{ns.action}")
@@ -1781,7 +2560,9 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "create":
         body: dict[str, Any] = {}
         try:
-            if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
+            if (ns.options is not None or ns.workdir is not None or ns.toolsets is not None
+                    or ns.reasoning_effort is not None
+                    or ns.continuity is not None or ns.context_from is not None):
                 body["options"] = _job_cli_options(ns)
             if ns.media_id and ns.blueprint:
                 raise ValueError("--media-id requires an explicit --action reminder, not a blueprint")
@@ -1824,12 +2605,20 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write("--media-id requires --action to explicitly reauthorize the reminder\n")
             return EXIT_USAGE
         body = {}
-        if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
+        if (ns.options is not None or ns.workdir is not None or ns.toolsets is not None
+                or ns.reasoning_effort is not None):
             try:
                 body["options"] = _job_cli_options(ns)
             except ValueError as exc:
                 ctx.err.write(f"{exc}\n")
                 return EXIT_USAGE
+        else:
+            if ns.continuity is not None:
+                body["continuity"] = ns.continuity
+            if ns.context_from is not None:
+                body["context_from"] = ns.context_from
+            elif ns.clear_context_from:
+                body["context_from"] = []
         if ns.name:
             body["name"] = ns.name
         if ns.when:
@@ -1860,15 +2649,20 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"edited {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
         return EXIT_OK
     if ns.action == "runs":
-        reply = client.get(f"/api/jobs/{ns.job_id}/runs") or {}
+        if ns.limit is not None and not 1 <= ns.limit <= 100:
+            ctx.err.write("run limit must be 1-100\n")
+            return EXIT_USAGE
+        path = (f"/api/jobs/{quote(ns.job_id, safe='')}/runs" if ns.job_id else "/api/jobs/runs")
+        reply = client.get(path + ("?" + urlencode({"limit": ns.limit}) if ns.limit is not None else "")) or {}
         if ns.json:
-            ctx.dump(reply)
+            machine(reply)
             return EXIT_OK
         runs = reply.get("runs") or []
         if not runs:
             ctx.say("no runs yet")
         for run in runs:
-            ctx.say(f"{run.get('started_at')}  {run.get('status'):7s} {run.get('summary', '')[:100]}")
+            ctx.say(f"{_log_display(run.get('job_id'), 80)}  {_log_display(run.get('started_at'), 40)}  "
+                    f"{_log_display(run.get('status'), 20):7s} {_log_display(run.get('summary'), 100)}")
         return EXIT_OK
     if ns.action in ("delete", "remove"):
         reply = client.request("DELETE", f"/api/jobs/{ns.job_id}") or {}
@@ -1901,6 +2695,25 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.dump(reply)
         else:
             ctx.say(f"Created {reply['session_id']}; continue with nerva chat --session {reply['session_id']} MESSAGE")
+        return EXIT_OK
+    if getattr(ns, "session_action", None) == "import":
+        from .client import is_loopback_url
+        from .foreign_sessions import ForeignSourceError, read_file
+
+        if not is_loopback_url(hub_url(ctx.environ)):
+            ctx.err.write("foreign transcripts can only be imported to a local hub\n")
+            return EXIT_AUTH
+        try:
+            parsed = read_file(ns.foreign_source, ns.path)
+        except ForeignSourceError as exc:
+            ctx.err.write(f"{exc}\n")
+            return EXIT_FAILED
+        import uuid
+        reply = ctx.client().post("/sessions/import", {**parsed, "request_id": str(uuid.uuid4())})
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            ctx.say(f"Imported {reply['session_id']}; resume with nerva chat -r {reply['session_id']} MESSAGE")
         return EXIT_OK
     reply = ctx.client().get("/sessions")
     sessions = (reply or {}).get("sessions") or []
@@ -2080,9 +2893,9 @@ def _not_an_answer(answer: str) -> str | None:
     exactly the Hermes behaviour this verb exists to invert.
 
     Containment survives the wrapper. It does NOT survive the other synthesis branch,
-    where `jarvis.synthesize` re-writes the text through a model — nothing in a reply
-    string can survive that, which is why the hub reporting `pending_approvals` is the
-    real fix and why this row stays partial until that lands. The trade is deliberate:
+    where `jarvis.synthesize` re-writes the text through a model. The hub's source-assigned
+    ``runtime_stops`` and ``pending_approvals`` fields cover those paths; this table is
+    the fallback for older hubs. The trade is deliberate:
     a model that quotes one of these sentences verbatim makes the verb exit non-zero
     with a stated reason, which is the safe direction to be wrong in.
     """
@@ -2174,10 +2987,9 @@ def _elapsed_ms(started: str, finished: str) -> int | None:
 def _usage_report(**fields: Any) -> dict[str, Any]:
     """The run report, with `null` wherever the value was not actually obtained.
 
-    Never 0 for "unknown": a spend report that prints $0.00 because nobody measured is
-    the exact lie this file exists to avoid. `cost_basis` says which it is, and today it
-    is always "unavailable" — see the H002 row's remainder for why the hub cannot yet
-    attribute one turn's spend.
+    Never 0 for "unknown": a spend report that prints $0.00 because nobody measured
+    is the exact lie this file exists to avoid. A validated server snapshot can fill
+    these fields; a missing or malformed one leaves the original null values.
     """
     report: dict[str, Any] = {
         "schema": "nerva.chat.usage.v1",
@@ -2186,11 +2998,123 @@ def _usage_report(**fields: Any) -> dict[str, Any]:
         "session_id": None, "requested_session_id": None,
         "agent": None, "model": None, "provider": None,
         "api_calls": None, "input_tokens": None, "output_tokens": None,
-        "estimated_cost_usd": None, "cost_basis": "unavailable",
+        "estimated_cost_usd": None, "usage_basis": "unavailable", "cost_basis": "unavailable",
+        "runtime_stops": [],
         "pending_approvals": [], "reason": None,
     }
     report.update(fields)
     return report
+
+
+def _validated_turn_usage(value: Any) -> dict[str, Any] | None:
+    """Copy only the bounded, internally consistent v1 telemetry object.
+
+    The CLI cannot infer spend from prose, a model display name, or a legacy hub.
+    Treat any malformed field as an unavailable snapshot instead of writing a
+    plausible looking partial bill to the atomic receipt.
+    """
+    import math
+
+    if not isinstance(value, dict) or value.get("schema") != "nerva.turn.usage.v1":
+        return None
+    usage_bases = {"measured_zero", "provider_complete", "unknown"}
+    cost_bases = {"measured_zero", "local_zero", "price_table", "unknown"}
+
+    def count(item: Any, limit: int) -> bool:
+        return item is None or (type(item) is int and 0 <= item <= limit)
+
+    def cost(item: Any) -> bool:
+        return item is None or (type(item) in (int, float) and 0 <= item <= 1_000_000_000
+                                and math.isfinite(item))
+
+    def identity(item: Any, limit: int) -> bool:
+        return item is None or (isinstance(item, str) and 0 < len(item) <= limit
+                                and re.fullmatch(r"[A-Za-z0-9._/+:-]+", item) is not None
+                                and "://" not in item)
+
+    def row(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        if not {"api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+                "model", "provider", "usage_basis", "cost_basis"} <= item.keys():
+            return False
+        calls, inp, out = (item.get(key) for key in ("api_calls", "input_tokens", "output_tokens"))
+        amount = item.get("estimated_cost_usd")
+        usage, basis = item.get("usage_basis"), item.get("cost_basis")
+        if not (count(calls, 1_000_000) and count(inp, 1_000_000_000_000)
+                and count(out, 1_000_000_000_000) and cost(amount)
+                and identity(item.get("model"), 120) and identity(item.get("provider"), 64)
+                and isinstance(usage, str) and usage in usage_bases
+                and isinstance(basis, str) and basis in cost_bases):
+            return False
+        if usage == "measured_zero":
+            return (calls == inp == out == 0 and amount == 0 and basis == "measured_zero"
+                    and item.get("model") is None and item.get("provider") is None)
+        if usage == "provider_complete" and (calls is None or calls < 1 or inp is None or out is None):
+            return False
+        if usage == "unknown" and (inp is not None or out is not None):
+            return False
+        if basis == "unknown":
+            return amount is None
+        if basis == "local_zero":
+            return usage == "provider_complete" and amount == 0
+        if basis == "price_table":
+            return usage == "provider_complete" and amount is not None
+        return False
+
+    if not row(value):
+        return None
+    breakdown = value.get("breakdown")
+    if not isinstance(breakdown, list) or len(breakdown) > 16 or not all(row(entry) for entry in breakdown):
+        return None
+    if value.get("usage_basis") == "measured_zero" and breakdown:
+        return None
+    truncated = value.get("breakdown_truncated", False)
+    if type(truncated) is not bool:
+        return None
+    date = value.get("price_verified_at")
+    if (value.get("cost_basis") == "price_table") != (date is not None):
+        return None
+    if date is not None:
+        from datetime import date as calendar_date
+
+        if not isinstance(date, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) is None:
+            return None
+        try:
+            calendar_date.fromisoformat(date)
+        except ValueError:
+            return None
+    fields = {key: value[key] for key in (
+        "api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+        "model", "provider", "usage_basis", "cost_basis",
+    )}
+    fields["breakdown"] = [{key: entry.get(key) for key in (
+        "api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+        "model", "provider", "usage_basis", "cost_basis",
+    )} for entry in breakdown]
+    if "breakdown_truncated" in value:
+        fields["breakdown_truncated"] = truncated
+    if date is not None:
+        fields["price_verified_at"] = date
+    return fields
+
+
+# Keep this stdlib-only CLI list aligned with agents.core.turn_stops.STOP_REASONS.
+TURN_STOP_REASONS = frozenset({
+    "window_invalid", "context_refused", "turn_revoked", "replay_refused",
+    "tool_call_limit", "no_capability", "no_tools", "tools_withdrawn",
+    "guardian_denied", "repeated_call", "approval_required", "failing_tool",
+    "iteration_limit", "deadline", "thinking_exhausted", "generation_failed",
+    "generation_refused", "continuation_refused",
+})
+
+
+def _validated_runtime_stops(value: Any) -> list[str] | None:
+    if (not isinstance(value, list) or len(value) > len(TURN_STOP_REASONS)
+            or any(type(reason) is not str or reason not in TURN_STOP_REASONS for reason in value)
+            or value != sorted(set(value))):
+        return None
+    return list(value)
 
 
 def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
@@ -2251,9 +3175,17 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     # A request names intent; only a decoded /chat response can establish the session
     # actually used. The vision branch and every pre-response failure leave this unknown.
     observed_session_id: str | None = None
+    observed_usage: dict[str, Any] | None = None
+    observed_stops: list[str] = []
+    observed_pending: list[Any] = []
+    stops_unreadable = False
+    interrupted_receipt_written = False
 
     def finish(code: int, *, status: str, reason: str | None = None,
                pending: list[Any] | None = None, completed: bool | None = None) -> int:
+        nonlocal interrupted_receipt_written
+        if code == EXIT_INTERRUPTED and interrupted_receipt_written:
+            return code
         if usage_file:
             finished = _utc_now()
             _write_usage(usage_file, _usage_report(
@@ -2269,113 +3201,168 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
                 session_id=observed_session_id,
                 requested_session_id=getattr(ns, "session", None) or None,
                 agent=getattr(ns, "agent", None) or None,
+                runtime_stops=list(observed_stops),
                 pending_approvals=list(pending or []), reason=reason,
+                **(observed_usage or {}),
             ), ctx)
+        if code == EXIT_INTERRUPTED:
+            interrupted_receipt_written = True
         return code
 
-    if oneshot and ns.json:
-        ctx.err.write("-z and --json both own stdout; pick one\n")
-        return finish(EXIT_USAGE, status="usage", reason="-z and --json are mutually exclusive")
-    message, why = _send_body(ns, ctx, verb="nerva chat", bound=CHAT_MAX_CHARS)
-    if message is None:
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
-    if len(message) > CHAT_MAX_CHARS:
-        # _send_body bounds what it *reads* from a file or stdin; an argument arrives
-        # whole. `ChatRequest.message` is max_length=4096, so the hub would answer 422 —
-        # which a script reads as "the turn failed". It is a usage error, and it is one
-        # before the request rather than after it.
-        why = (f"the prompt is {len(message):,} characters, and one chat turn carries up to "
-               f"{CHAT_MAX_CHARS:,} — trim it, or split the turn")
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
+    def perform() -> int:
+        nonlocal observed_session_id, observed_usage, observed_stops, observed_pending, stops_unreadable
+        if oneshot and ns.json:
+            ctx.err.write("-z and --json both own stdout; pick one\n")
+            return finish(EXIT_USAGE, status="usage", reason="-z and --json are mutually exclusive")
+        message, why = _send_body(ns, ctx, verb="nerva chat", bound=CHAT_MAX_CHARS)
+        if message is None:
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+        if len(message) > CHAT_MAX_CHARS:
+            # _send_body bounds what it *reads* from a file or stdin; an argument arrives
+            # whole. `ChatRequest.message` is max_length=4096, so the hub would answer 422 —
+            # which a script reads as "the turn failed". It is a usage error, and it is one
+            # before the request rather than after it.
+            why = (f"the prompt is {len(message):,} characters, and one chat turn carries up to "
+                   f"{CHAT_MAX_CHARS:,} — trim it, or split the turn")
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
 
-    if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
-        return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
-    if getattr(ns, "remote_vision", None) is not None:
-        why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
-    if getattr(ns, "acknowledge_training", False) or getattr(ns, "confirm_expensive", False):
-        why = "selection confirmation flags on chat apply only to an image turn (--image or --clipboard-image)"
-        ctx.err.write(f"{why}\n")
-        return finish(EXIT_USAGE, status="usage", reason=why)
+        selected_session = getattr(ns, "session", None)
+        selector = getattr(ns, "resume", None)
+        latest_mode = bool(getattr(ns, "continue_latest", False))
+        if selector or latest_mode:
+            from .foreign_sessions import ForeignSourceError
+            try:
+                if selector and selector.startswith(("@claude", "@codex")):
+                    from .client import is_loopback_url
+                    from .foreign_sessions import discover, read_file
 
-    body: dict[str, Any] = {"message": message}
-    if ns.agent:
-        body["agent"] = ns.agent
-    if getattr(ns, "reasoning", None) is not None:
-        body["reasoning"] = ns.reasoning
-    if getattr(ns, "session", None):
-        body["session_id"] = ns.session
+                    if not is_loopback_url(hub_url(ctx.environ)):
+                        raise ForeignSourceError("foreign transcripts can only be imported to a local hub")
+                    source, _, external_id = selector[1:].partition(":")
+                    if source not in {"claude", "codex"}:
+                        raise ForeignSourceError("invalid foreign selector")
+                    parsed = read_file(source, discover(source, external_id or None))
+                    import uuid
+                    imported = ctx.client().post("/sessions/import", {**parsed, "request_id": str(uuid.uuid4())})
+                    selector = imported["session_id"]
+                resolved = ctx.client().post("/sessions/resolve", {
+                    "selector": selector or "latest", "latest_mode": latest_mode})
+                selected_session = resolved["session_id"]
+                recap = resolved.get("recap")
+                if recap:
+                    ctx.err.write(str(recap.get("text", "") if isinstance(recap, dict) else recap).rstrip() + "\n")
+            except ForeignSourceError as exc:
+                ctx.err.write(f"{exc}\n")
+                return finish(EXIT_FAILED, status="failed", reason=str(exc))
+            except HubError as exc:
+                ctx.err.write(f"{exc}\n")
+                return finish(EXIT_AUTH if exc.status in {401, 403} else EXIT_FAILED,
+                              status="unauthorised" if exc.status in {401, 403} else "failed", reason=str(exc))
+        if selected_session:
+            ns.session = selected_session
+
+        if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
+            return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
+        if getattr(ns, "remote_vision", None) is not None:
+            why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+        if getattr(ns, "acknowledge_training", False) or getattr(ns, "confirm_expensive", False):
+            why = "selection confirmation flags on chat apply only to an image turn (--image or --clipboard-image)"
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_USAGE, status="usage", reason=why)
+
+        body: dict[str, Any] = {"message": message}
+        if ns.agent:
+            body["agent"] = ns.agent
+        if getattr(ns, "reasoning", None) is not None:
+            body["reasoning"] = ns.reasoning
+        if selected_session:
+            body["session_id"] = selected_session
+        try:
+            reply = ctx.client().post("/chat", body)
+        except HubUnavailable:
+            finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
+            raise
+        except HubError as exc:
+            observed_usage = _validated_turn_usage(getattr(exc, "usage", None))
+            if getattr(exc, "runtime_stops", None) is not None:
+                parsed_stops = _validated_runtime_stops(exc.runtime_stops)
+                stops_unreadable = parsed_stops is None
+                observed_stops = parsed_stops or []
+            status = "unauthorised" if exc.status in (401, 403) else "failed"
+            finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
+                   status=status, reason=("the hub returned invalid runtime-stop metadata"
+                                          if stops_unreadable else str(exc)))
+            raise
+
+        if isinstance(reply, dict):
+            observed_usage = _validated_turn_usage(reply.get("usage"))
+            if "runtime_stops" in reply:
+                parsed_stops = _validated_runtime_stops(reply["runtime_stops"])
+                stops_unreadable = parsed_stops is None
+                observed_stops = parsed_stops or []
+            returned_session = reply.get("session_id")
+            if isinstance(returned_session, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", returned_session):
+                observed_session_id = returned_session
+
+        raw = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
+        # Sanitise BEFORE judging, not after. The verdict used to read the raw reply while
+        # the printer read the cleaned one, so a reply made only of control characters was
+        # "not empty" to the guard and an empty line to stdout — exit 0 over nothing — and
+        # a sentinel padded with control bytes slipped the table entirely.
+        answer = _answer_text(raw)
+        # A hub that reports what the turn queued (ChatResponse.pending_approvals) lets this
+        # name the ids; an older one does not, and then the refusal is reported without them.
+        pending, pending_unreadable = _pending_ids(
+            (reply or {}).get("pending_approvals") if isinstance(reply, dict) else None)
+        observed_pending = list(pending)
+        refusal = _not_an_answer(answer)
+        queued = bool(pending or pending_unreadable or "approval_required" in observed_stops
+                      or (refusal and "approval" in refusal))
+        incomplete = bool(refusal or queued or not answer.strip() or observed_stops or stops_unreadable)
+        stop_reason = ("the hub returned invalid runtime-stop metadata" if stops_unreadable else
+                       f"model turn stopped: {', '.join(observed_stops)}" if observed_stops else None)
+
+        if not oneshot:
+            # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
+            # that need the verdict use -z; changing this would break every existing caller.
+            # The receipt is new surface, so it is allowed to say what the exit code cannot.
+            if ns.json:
+                ctx.dump(reply)
+            else:
+                ctx.say(str(raw))
+            status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
+            return finish(EXIT_OK, status=status, reason=stop_reason or refusal, pending=pending,
+                          completed=not incomplete)
+
+        if incomplete:
+            reason = stop_reason or refusal or ("the turn queued an action for approval and was not executed"
+                                 if queued else "the hub returned an empty answer")
+            if pending:
+                ids = ", ".join(_plain(i, 40) for i in pending)
+                reason = f"{reason} (approval {ids})"
+                ctx.err.write(f"{reason}; decide it with `nerva approvals`\n")
+            elif pending_unreadable:
+                ctx.err.write(f"{reason}; this hub reported the approval in a shape this "
+                              "version cannot read — run `nerva approvals` to find it\n")
+            elif queued:
+                ctx.err.write(f"{reason}; this hub did not report the id — run `nerva approvals` to find it\n")
+            else:
+                ctx.err.write(f"{reason}\n")
+            status = "queued_for_approval" if queued else "refused"
+            return finish(EXIT_FAILED, status=status, reason=reason, pending=pending)
+
+        _write_answer(ctx, answer)
+        return finish(EXIT_OK, status="completed", pending=pending)
+
     try:
-        reply = ctx.client().post("/chat", body)
+        return perform()
     except KeyboardInterrupt:
-        # The receipt is promised on every path, and an interrupt is the path a cron
-        # wrapper most needs one for — it is what a timeout kill looks like from in
-        # here. main() still prints the one line and returns 130; this only makes sure
-        # the run leaves a record behind saying so.
-        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted", pending=observed_pending)
         raise
-    except HubUnavailable:
-        finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
-        raise
-    except HubError as exc:
-        status = "unauthorised" if exc.status in (401, 403) else "failed"
-        finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
-               status=status, reason=str(exc))
-        raise
-
-    if isinstance(reply, dict):
-        returned_session = reply.get("session_id")
-        if isinstance(returned_session, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", returned_session):
-            observed_session_id = returned_session
-
-    raw = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
-    # Sanitise BEFORE judging, not after. The verdict used to read the raw reply while
-    # the printer read the cleaned one, so a reply made only of control characters was
-    # "not empty" to the guard and an empty line to stdout — exit 0 over nothing — and
-    # a sentinel padded with control bytes slipped the table entirely.
-    answer = _answer_text(raw)
-    # A hub that reports what the turn queued (ChatResponse.pending_approvals) lets this
-    # name the ids; an older one does not, and then the refusal is reported without them.
-    pending, pending_unreadable = _pending_ids(
-        (reply or {}).get("pending_approvals") if isinstance(reply, dict) else None)
-    refusal = _not_an_answer(answer)
-    queued = bool(pending or pending_unreadable or (refusal and "approval" in refusal))
-    incomplete = bool(refusal or queued or not answer.strip())
-
-    if not oneshot:
-        # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
-        # that need the verdict use -z; changing this would break every existing caller.
-        # The receipt is new surface, so it is allowed to say what the exit code cannot.
-        if ns.json:
-            ctx.dump(reply)
-        else:
-            ctx.say(str(raw))
-        status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
-        return finish(EXIT_OK, status=status, reason=refusal, pending=pending,
-                      completed=not incomplete)
-
-    if incomplete:
-        reason = refusal or ("the turn queued an action for approval and was not executed"
-                             if queued else "the hub returned an empty answer")
-        if pending:
-            ids = ", ".join(_plain(i, 40) for i in pending)
-            reason = f"{reason} (approval {ids})"
-            ctx.err.write(f"{reason}; decide it with `nerva approvals`\n")
-        elif pending_unreadable:
-            ctx.err.write(f"{reason}; this hub reported the approval in a shape this "
-                          "version cannot read — run `nerva approvals` to find it\n")
-        elif queued:
-            ctx.err.write(f"{reason}; this hub did not report the id — run `nerva approvals` to find it\n")
-        else:
-            ctx.err.write(f"{reason}\n")
-        status = "queued_for_approval" if queued else "refused"
-        return finish(EXIT_FAILED, status=status, reason=reason, pending=pending)
-
-    _write_answer(ctx, answer)
-    return finish(EXIT_OK, status="completed", pending=pending)
 
 
 #: What one vision turn carries (agents/core/routers/composer_vision.py, the HUD's
@@ -3079,51 +4066,102 @@ def _fish_completion(parser: argparse.ArgumentParser) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _completion_paths(parser: argparse.ArgumentParser) -> dict[tuple[str, ...], tuple[str, ...]]:
+    """Each parser node's exact command path and its immediate child names."""
+    paths = {}
+
+    def walk(node: argparse.ArgumentParser, path: tuple[str, ...]) -> None:
+        children = {
+            name: child
+            for action in node._actions if isinstance(action, argparse._SubParsersAction)
+            for name, child in action.choices.items()
+        }
+        if children:
+            paths[path] = tuple(sorted(children))
+            for name, child in sorted(children.items()):
+                walk(child, (*path, name))
+
+    walk(parser, ())
+    return paths
+
+
+def _shell_candidates(names: tuple[str, ...]) -> str:
+    """An array of literal shell words, never code or a split completion string."""
+    return " ".join(shlex.quote(name) for name in names)
+
+
 def completion_script(shell: str, parser: argparse.ArgumentParser | None = None) -> str:
     if shell not in {"bash", "zsh", "fish"}:
         raise ValueError(f"unsupported completion shell: {shell!r}")
     if shell == "fish":
         return _fish_completion(parser or build_parser())
-    tree = command_tree(parser)
-    verbs = " ".join(sorted(tree))
+    paths = _completion_paths(parser or build_parser())
+    root = _shell_candidates(paths.get((), ()))
     if shell == "bash":
-        cases = "\n".join(
-            f'        {verb}) COMPREPLY=( $(compgen -W "{" ".join(subs)}" -- "$cur") ) ;;'
-            for verb, subs in sorted(tree.items())
-            if subs
+        lines = [
+            '# nerva bash completion — generated from the parser tree; eval "$(nerva completion bash)"',
+            "_nerva() {",
+            '    local cur="${COMP_WORDS[COMP_CWORD]}" candidate',
+            "    local -a candidates=()",
+            "    COMPREPLY=()",
+            "    if (( COMP_CWORD == 1 )); then",
+            f"        candidates=({root})",
+            "    elif (( COMP_CWORD == 2 )); then",
+            '        case "${COMP_WORDS[1]}" in',
+        ]
+        for path, names in sorted(paths.items()):
+            if len(path) == 1:
+                lines.append(f"            {shlex.quote(path[0])}) COMPREPLY=(); candidates=({_shell_candidates(names)}) ;;")
+        lines.append("        esac")
+        for path, names in sorted(paths.items()):
+            if len(path) < 2:
+                continue
+            checks = " && ".join(
+                f'[[ "${{COMP_WORDS[{i}]}}" == {shlex.quote(part)} ]]'
+                for i, part in enumerate(path, 1)
+            )
+            lines.extend([
+                f"    elif (( COMP_CWORD == {len(path) + 1} )) && {checks}; then",
+                f"        candidates=({_shell_candidates(names)})",
+            ])
+        lines.extend([
+            "    fi",
+            '    for candidate in "${candidates[@]}"; do',
+            '        [[ "$candidate" == "$cur"* ]] && COMPREPLY+=("$candidate")',
+            "    done",
+            "}",
+            "complete -F _nerva nerva",
+        ])
+        return "\n".join(lines) + "\n"
+    lines = [
+        "#compdef nerva",
+        "# nerva zsh completion — generated from the parser tree",
+        "_nerva() {",
+        "    local -a candidates=()",
+        "    if (( CURRENT == 2 )); then",
+        f"        candidates=({root})",
+    ]
+    for path, names in sorted(paths.items()):
+        if not path:
+            continue
+        checks = " && ".join(
+            f'[[ "${{words[{i}]}}" == {shlex.quote(part)} ]]'
+            for i, part in enumerate(path, 2)
         )
-        return (
-            "# nerva bash completion — generated from the parser tree; eval \"$(nerva completion bash)\"\n"
-            "_nerva() {\n"
-            '    local cur="${COMP_WORDS[COMP_CWORD]}"\n'
-            "    if [ \"$COMP_CWORD\" -eq 1 ]; then\n"
-            f'        COMPREPLY=( $(compgen -W "{verbs}" -- "$cur") ); return\n'
-            "    fi\n"
-            '    case "${COMP_WORDS[1]}" in\n'
-            f"{cases}\n"
-            "        *) COMPREPLY=() ;;\n"
-            "    esac\n"
-            "}\n"
-            "complete -F _nerva nerva\n"
-        )
-    lines = "\n".join(
-        f"        {verb}) _values 'action' {' '.join(subs)} ;;"
-        for verb, subs in sorted(tree.items())
-        if subs
-    )
-    return (
-        "#compdef nerva\n"
-        "# nerva zsh completion — generated from the parser tree\n"
-        "_nerva() {\n"
-        "    if (( CURRENT == 2 )); then\n"
-        f"        _values 'verb' {verbs}; return\n"
-        "    fi\n"
-        "    case \"${words[2]}\" in\n"
-        f"{lines}\n"
-        "    esac\n"
-        "}\n"
-        "_nerva \"$@\"\n"
-    )
+        lines.extend([
+            f"    elif (( CURRENT == {len(path) + 2} )) && {checks}; then",
+            f"        candidates=({_shell_candidates(names)})",
+        ])
+    lines.extend([
+        "    fi",
+        '    if (( ${#candidates[@]} )); then',
+        '        compadd -- "${candidates[@]}"',
+        '    fi',
+        "    return 0",
+        "}",
+        '_nerva "$@"',
+    ])
+    return "\n".join(lines) + "\n"
 
 
 def cmd_completion(ns: argparse.Namespace, ctx: Context) -> int:
@@ -3172,6 +4210,21 @@ def cmd_prompt_size(ns: argparse.Namespace, ctx: Context) -> int:
     ctx.out.write(render(report, window=int(getattr(ns, "window", 0) or 0),
                          agent=getattr(ns, "agent", "") or "") + "\n")
     return EXIT_OK
+
+
+def cmd_uninstall(ns: argparse.Namespace, ctx: Context) -> int:
+    """Delegate to agents.core.uninstall — its refusals, typed purge prompt and exit codes."""
+    from agents.core import uninstall as _uninstall
+
+    argv = [flag for flag, on in (("--dry-run", ns.dry_run), ("--confirm", ns.confirm),
+                                  ("--purge-data", ns.purge_data), ("--no-backup", ns.no_backup),
+                                  ("--gui", ns.gui), ("--gui-only", ns.gui_only),
+                                  ("--gui-summary", ns.gui_summary)) if on]
+    if ns.yes_purge is not None:
+        argv.append(f"--yes-purge={ns.yes_purge}")
+    if ns.root:
+        argv += ["--root", ns.root]
+    return _uninstall._main(argv, out=ctx.out, inp=ctx.inp)
 
 
 def cmd_security(ns: argparse.Namespace, ctx: Context) -> int:
@@ -3268,6 +4321,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "config": cmd_config,
     "approvals": cmd_approvals,
     "checkpoints": cmd_checkpoints,
+    "backup": cmd_backup,
     "kernel": cmd_kernel,
     "tools": cmd_tools,
     "inspect": cmd_inspect,
@@ -3275,12 +4329,15 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "skills": cmd_skills,
     "estop": cmd_estop,
     "company": cmd_company,
+    "pairing": cmd_pairing,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,
     "todo": cmd_todo,
     "chat": cmd_chat,
     "send": cmd_send,
     "desktop": cmd_desktop,
+    "support": cmd_support,
+    "uninstall": cmd_uninstall,
     "security": cmd_security,
     "completion": cmd_completion,
 }

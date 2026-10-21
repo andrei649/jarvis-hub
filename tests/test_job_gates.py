@@ -37,19 +37,35 @@ async def test_wake_gate_suppresses_both_modes_after_approval(tmp_path, scripts,
 
 
 @pytest.mark.asyncio
-async def test_truncated_gate_fails_open_and_failed_script_stays_failed(tmp_path, scripts):
+async def test_incomplete_stdout_and_failed_script_never_deliver(tmp_path, scripts):
     store, runner, job, tasks, outputs, _ = make_runtime(tmp_path, scripts)
     try:
         await runner.fire(job.id)
         complete(tasks[1], stdout='{"wakeAgent": false}')
-        tasks[1].result['result']['truncated'] = True
+        tasks[1].result['result']['stdout_capture']['snapshot_complete'] = False
         await runner.reconcile_scripts()
-        assert outputs == ['{"wakeAgent": false}']
+        assert outputs == []
+        assert store.runs(job.id)[0].status == 'failed'
         await runner.fire(job.id)
         complete(tasks[2], stdout='{"wakeAgent": false}', ok=False)
         await runner.reconcile_scripts()
         assert store.runs(job.id)[0].status == 'failed'
-        assert len(outputs) == 1
+        assert outputs == []
+    finally:
+        store.close()
+
+
+@pytest.mark.asyncio
+async def test_stderr_truncation_does_not_invalidate_complete_stdout_wake_gate(tmp_path, scripts):
+    store, runner, job, tasks, outputs, prompts = make_runtime(tmp_path, scripts)
+    try:
+        await runner.fire(job.id)
+        complete(tasks[1], stdout='{"wakeAgent": false}')
+        tasks[1].result['result']['truncated'] = True  # stderr alone may be truncated
+        await runner.reconcile_scripts()
+        assert store.runs(job.id)[0].status == 'ok'
+        assert store.runs(job.id)[0].summary == 'Suppressed: wake_gate'
+        assert outputs == prompts == []
     finally:
         store.close()
 

@@ -15,6 +15,7 @@ from .model_config import DEFAULT_CLAUDE_MODEL
 from .provider_errors import note_provider_failure
 from .quota import ProviderRateLimited
 from .reasoning_effort import apply_anthropic, parse_overrides
+from .repetition_guard import RepetitionStreamGuard
 from .tool_dialects import (
     ANTHROPIC_FINISH_REASONS,
     anthropic_messages,
@@ -26,17 +27,24 @@ from .tool_dialects import (
     cache_marked_tools,
     normalize_finish_reason,
 )
-from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
+from .tool_protocol import PROVIDER_REJECTED_FINISH, ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
+#: H297 — the statuses of a request the provider refused as invalid
+#: (``invalid_request_error``, ``request_too_large``): the only failures the tool loop
+#: answers by resending without the images the request carried.
+_REJECTED_REQUEST_STATUSES = frozenset({400, 413})
 
 
 class ClaudeBackend(LLMBackend):
     # Tool calls travel as tool_use / tool_result blocks; the translation lives in
     # tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
+    # H297: a tool_result block carries image blocks, so a multimodal tool result
+    # reaches the model as images (tool_dialects.anthropic_messages).
+    supports_tool_result_images = True
 
     def __init__(
         self,
@@ -103,10 +111,14 @@ class ClaudeBackend(LLMBackend):
         self.auth_pool.report_failure(key, cooldown=exc.retry_in)
         return True
 
-    async def _post_messages(self, payload: dict) -> tuple[dict | None, str]:
+    async def _post_messages(self, payload: dict) -> tuple[dict | None, str, int | None]:
         """POST /messages once per healthy auth profile, failing over on rotatable errors (H12.20).
 
-        Returns ``(data, "")`` on success or ``(None, error_text)``; never raises.
+        Returns ``(data, "", None)`` on success or ``(None, error_text, status)``; never
+        raises. ``status`` is the HTTP error status that ended the call, and ``None`` when
+        no HTTP error did (a transport error, the shared 429 guard refusing before
+        sending, every profile exhausted) — H297 tells a request the provider refused as
+        invalid from a transient failure by it.
         """
         attempts = self.auth_pool.size if self.auth_pool else 1
         last_err = ""
@@ -133,22 +145,22 @@ class ClaudeBackend(LLMBackend):
                     self.auth_pool.report_failure(key)
                     continue   # fail over to the next key
                 note_provider_failure("anthropic", model, e)
-                return None, f"[Claude API error: {e}]"
+                return None, f"[Claude API error: {e}]", status
             except ProviderRateLimited as e:
                 # H373 — held by the shared 429 guard, refused before sending: the next key.
                 last_err, last_exc = str(e), e
                 if self._fail_over_held(key, e):
                     continue
                 note_provider_failure("anthropic", model, e, kind="rate_limited", status=429)
-                return None, f"[Claude API error: {e}]"
+                return None, f"[Claude API error: {e}]", None
             except Exception as e:
                 note_provider_failure("anthropic", model, e)
-                return None, f"[Claude API error: {e}]"
+                return None, f"[Claude API error: {e}]", None
             if self.auth_pool is not None:
                 self.auth_pool.report_success(key)
-            return data, ""
+            return data, "", None
         note_provider_failure("anthropic", model, last_exc)
-        return None, f"[Claude API error: all auth profiles exhausted: {last_err}]"
+        return None, f"[Claude API error: all auth profiles exhausted: {last_err}]", None
 
     async def generate(
         self, model: str, prompt: str, system: str = "",
@@ -163,10 +175,13 @@ class ClaudeBackend(LLMBackend):
             "messages": self._build_messages(prompt, system),
         }
         self._fit_to_wire(payload, model)
-        data, error = await self._post_messages(payload)
+        data, error, _status = await self._post_messages(payload)
         if data is None:
             return error
-        answer = self._finalize_cloud(anthropic_text(data["content"])) if data.get("content") else ""
+        answer = (
+            self._finalize_cloud(anthropic_text(data["content"]), data.get("stop_reason"), model)
+            if data.get("content") else ""
+        )
         report_text_usage(anthropic_usage(data))
         return answer
 
@@ -197,12 +212,18 @@ class ClaudeBackend(LLMBackend):
             payload["tools"] = cache_marked_tools(anthropic_tools(tools))
             payload["tool_choice"] = {"type": "auto"}
         self._fit_to_wire(payload, payload["model"])
-        data, error = await self._post_messages(payload)
+        data, error, status = await self._post_messages(payload)
         if data is None:
+            # H297: only a request the provider refused as invalid (400/413) is named,
+            # so the tool loop can resend without the images it carried. A transient
+            # failure (429, 5xx/529, timeout, auth) ends the turn with its error as
+            # before and the images stay attached for the owner's retry.
+            if status in _REJECTED_REQUEST_STATUSES:
+                return ToolTurn(content=error, finish_reason=PROVIDER_REJECTED_FINISH)
             return ToolTurn(content=error)
         blocks = data.get("content") or []
         return ToolTurn(
-            content=self._finalize_cloud(anthropic_text(blocks)),
+            content=self._finalize_cloud(anthropic_text(blocks), data.get("stop_reason"), payload["model"]),
             tool_calls=parse_openai_tool_calls(anthropic_tool_calls(blocks)),
             finish_reason=normalize_finish_reason(ANTHROPIC_FINISH_REASONS, data.get("stop_reason")),
             usage=anthropic_usage(data),
@@ -228,8 +249,10 @@ class ClaudeBackend(LLMBackend):
         attempts = max(1, self.auth_pool.size if self.auth_pool else 1)
         for attempt in range(attempts):
             full = ""
+            stop_reason = None
+            rg = RepetitionStreamGuard()   # H393: never paint a loop live
             raw_usage = {}
-            started = completed = usage_failed = final_output = False
+            started = completed = usage_failed = final_output = errored = False
             stream_key = self._active_key()
             try:
                 async with self.client.stream(
@@ -256,6 +279,7 @@ class ClaudeBackend(LLMBackend):
                                     if not isinstance(raw, dict):
                                         usage_failed = True
                                 elif event_type == "message_delta":
+                                    stop_reason = (data.get("delta") or {}).get("stop_reason") or stop_reason
                                     raw = data.get("usage")
                                     # A start/intermediate count is not final output.
                                     final_output = (isinstance(raw, dict)
@@ -281,7 +305,7 @@ class ClaudeBackend(LLMBackend):
                                     if text:
                                         full += text
                                         if on_token:
-                                            await _emit(on_token, text)
+                                            await _emit(on_token, rg.feed(text))
                                 elif event_type == "message_stop":
                                     completed = True
                                     break
@@ -290,12 +314,14 @@ class ClaudeBackend(LLMBackend):
                                 continue
             except ProviderRateLimited as e:
                 usage_failed = True
+                errored = True
                 full = f"[Claude API stream error: {e}]"
                 if self._fail_over_held(stream_key, e) and attempt + 1 < attempts:
                     continue
                 note_provider_failure("anthropic", model, e, kind="rate_limited", status=429)
             except httpx.HTTPStatusError as e:
                 usage_failed = True
+                errored = True
                 # Rotatable error → cool this key down so the next call fails over (H12.20).
                 if self.auth_pool is not None and is_rotatable_status(e.response.status_code):
                     self.auth_pool.report_failure(stream_key)
@@ -303,10 +329,17 @@ class ClaudeBackend(LLMBackend):
                 note_provider_failure("anthropic", model, e)
             except Exception as e:
                 usage_failed = True
+                errored = True
                 full = f"[Claude API stream error: {e}]"
                 note_provider_failure("anthropic", model, e)
             break
-        answer = self._finalize_cloud(full)
+        answer = self._finalize_cloud(full, stop_reason, model)
+        # H393: withheld text reaches the bubble iff the answer was kept. Any
+        # attempt that ended without an exception counts — a clean EOF without
+        # message_stop still returns ``full`` as the answer — while an error
+        # attempt returns a sentinel, never the withheld text.
+        if on_token and not errored:
+            await _emit(on_token, rg.release(answer))
         if started and completed and final_output and not usage_failed:
             report_text_usage(anthropic_usage({"usage": raw_usage}))
         return answer

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from agents import web
+from agents.core.checkpoint import CheckpointManager
 from agents.core.llm.base import OllamaBackend
 from agents.core.llm.egress import llm_async_client
 from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
@@ -20,13 +21,20 @@ from agents.core.llm.vision_turn import (
     history_fingerprint,
     prepare_selected_image_turn,
 )
+from agents.core.memory import conversation, persistence
 from agents.core.memory.conversation import ConversationMemory
 from agents.core.routers import composer_vision
 from tests.test_composer_vision import PNG
 
 
 @pytest.fixture
-def selected(monkeypatch):
+def selected(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setattr(conversation, "MEMORY_DIR", tmp_path / "memory")
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path / "memory")
+    checkpoints = CheckpointManager(str(tmp_path / "checkpoints.db"))
+    checkpoints.initialize()
+    checkpoints.create_session_record("selected_s")
     calls = []
     response = {"done": True, "message": {"role": "assistant", "content": "A blue square."}}
     state = SimpleNamespace(late=None)
@@ -44,7 +52,8 @@ def selected(monkeypatch):
         transport=httpx.MockTransport(send))
     memory = ConversationMemory(persist=False)
     memory.sessions["selected_s"] = []
-    orch = SimpleNamespace(agents={"jarvis": object()}, memory=SimpleNamespace(conversation=memory))
+    orch = SimpleNamespace(agents={"jarvis": object()}, memory=SimpleNamespace(conversation=memory),
+                           checkpoints=checkpoints)
     turn = SelectedImageTurn("selected_s", "jarvis", "prompt-digest", "", backend,
                              "vision-model", "local", "prompt with context")
     turn = SelectedImageTurn(turn.session_id, turn.agent_id, turn.prompt_digest,
@@ -85,8 +94,11 @@ def selected(monkeypatch):
     monkeypatch.setenv("JARVIS_ADMIN_TOKEN", "selected-admin")
     client = TestClient(web.app, headers={"X-User-Token": "selected-test", "X-Admin-Token": "selected-admin"})
     user_client = TestClient(web.app, headers={"X-User-Token": "selected-test"})
-    return SimpleNamespace(client=client, user_client=user_client, calls=calls, response=response, state=state, orch=orch,
-                           memory=memory, turn=turn)
+    yield SimpleNamespace(client=client, user_client=user_client, calls=calls, response=response, state=state, orch=orch,
+                          memory=memory, turn=turn)
+    client.close()
+    user_client.close()
+    checkpoints.close()
 
 
 def _review(selected, images=(PNG,), handles=()):
@@ -246,7 +258,6 @@ async def test_turn_preparation_selects_from_the_current_agent_prompt(selected):
     orch._data_grounding_block = lambda data: ""
     orch._build_agent_turn_text = turn_text
     orch._build_agent_prompt = lambda agent, text, context: text + context
-    orch.checkpoints = SimpleNamespace(load=lambda agent, session: None)
     await selected.memory.add_turn("selected_s", "user", "Earlier context")
     turn = await prepare_selected_image_turn(
         orch, question="What is shown?", agent_id="jarvis", session_id="selected_s")

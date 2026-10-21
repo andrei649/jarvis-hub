@@ -25,7 +25,12 @@ export function errText(error: unknown): string {
 function initialSlug(): string { try { return localStorage.getItem(selectedKey) || ''; } catch { return ''; } }
 function saveSlug(slug: string): void { try { localStorage.setItem(selectedKey, slug); } catch { /* storage may be disabled */ } }
 function moveCard(board: KanbanBoard, id: string, status: string): KanbanBoard {
-  let moved = board.columns.flatMap(c => c.tasks).find(t => t.id === id);
+  // Bolt Optimization: Find moved task using nested loop across columns to avoid allocating intermediate task arrays with flatMap
+  let moved: any;
+  for (let i = 0; i < board.columns.length; i++) {
+    const hit = board.columns[i].tasks.find(t => t.id === id);
+    if (hit) { moved = hit; break; }
+  }
   if (!moved) return board;
   moved = { ...moved, status };
   return { ...board, columns: board.columns.map(c => ({ ...c, tasks: c.name === status ? [moved!, ...c.tasks.filter(t => t.id !== id)] : c.tasks.filter(t => t.id !== id) })) };
