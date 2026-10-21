@@ -27,11 +27,15 @@ from .tool_dialects import (
     cache_marked_tools,
     normalize_finish_reason,
 )
-from .tool_protocol import PROVIDER_ERROR_FINISH, ToolSpec, ToolTurn, parse_openai_tool_calls
+from .tool_protocol import PROVIDER_REJECTED_FINISH, ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
+#: H297 — the statuses of a request the provider refused as invalid
+#: (``invalid_request_error``, ``request_too_large``): the only failures the tool loop
+#: answers by resending without the images the request carried.
+_REJECTED_REQUEST_STATUSES = frozenset({400, 413})
 
 
 class ClaudeBackend(LLMBackend):
@@ -107,10 +111,14 @@ class ClaudeBackend(LLMBackend):
         self.auth_pool.report_failure(key, cooldown=exc.retry_in)
         return True
 
-    async def _post_messages(self, payload: dict) -> tuple[dict | None, str]:
+    async def _post_messages(self, payload: dict) -> tuple[dict | None, str, int | None]:
         """POST /messages once per healthy auth profile, failing over on rotatable errors (H12.20).
 
-        Returns ``(data, "")`` on success or ``(None, error_text)``; never raises.
+        Returns ``(data, "", None)`` on success or ``(None, error_text, status)``; never
+        raises. ``status`` is the HTTP error status that ended the call, and ``None`` when
+        no HTTP error did (a transport error, the shared 429 guard refusing before
+        sending, every profile exhausted) — H297 tells a request the provider refused as
+        invalid from a transient failure by it.
         """
         attempts = self.auth_pool.size if self.auth_pool else 1
         last_err = ""
@@ -137,22 +145,22 @@ class ClaudeBackend(LLMBackend):
                     self.auth_pool.report_failure(key)
                     continue   # fail over to the next key
                 note_provider_failure("anthropic", model, e)
-                return None, f"[Claude API error: {e}]"
+                return None, f"[Claude API error: {e}]", status
             except ProviderRateLimited as e:
                 # H373 — held by the shared 429 guard, refused before sending: the next key.
                 last_err, last_exc = str(e), e
                 if self._fail_over_held(key, e):
                     continue
                 note_provider_failure("anthropic", model, e, kind="rate_limited", status=429)
-                return None, f"[Claude API error: {e}]"
+                return None, f"[Claude API error: {e}]", None
             except Exception as e:
                 note_provider_failure("anthropic", model, e)
-                return None, f"[Claude API error: {e}]"
+                return None, f"[Claude API error: {e}]", None
             if self.auth_pool is not None:
                 self.auth_pool.report_success(key)
-            return data, ""
+            return data, "", None
         note_provider_failure("anthropic", model, last_exc)
-        return None, f"[Claude API error: all auth profiles exhausted: {last_err}]"
+        return None, f"[Claude API error: all auth profiles exhausted: {last_err}]", None
 
     async def generate(
         self, model: str, prompt: str, system: str = "",
@@ -167,7 +175,7 @@ class ClaudeBackend(LLMBackend):
             "messages": self._build_messages(prompt, system),
         }
         self._fit_to_wire(payload, model)
-        data, error = await self._post_messages(payload)
+        data, error, _status = await self._post_messages(payload)
         if data is None:
             return error
         answer = (
@@ -204,10 +212,15 @@ class ClaudeBackend(LLMBackend):
             payload["tools"] = cache_marked_tools(anthropic_tools(tools))
             payload["tool_choice"] = {"type": "auto"}
         self._fit_to_wire(payload, payload["model"])
-        data, error = await self._post_messages(payload)
+        data, error, status = await self._post_messages(payload)
         if data is None:
-            # H297: named, so the tool loop can resend without the images it carried.
-            return ToolTurn(content=error, finish_reason=PROVIDER_ERROR_FINISH)
+            # H297: only a request the provider refused as invalid (400/413) is named,
+            # so the tool loop can resend without the images it carried. A transient
+            # failure (429, 5xx/529, timeout, auth) ends the turn with its error as
+            # before and the images stay attached for the owner's retry.
+            if status in _REJECTED_REQUEST_STATUSES:
+                return ToolTurn(content=error, finish_reason=PROVIDER_REJECTED_FINISH)
+            return ToolTurn(content=error)
         blocks = data.get("content") or []
         return ToolTurn(
             content=self._finalize_cloud(anthropic_text(blocks), data.get("stop_reason"), payload["model"]),

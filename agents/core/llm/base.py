@@ -382,8 +382,9 @@ class LLMBackend(ABC):
     #: default: the tool loop strips them and the model reads their descriptors.
     #: Only the Anthropic backend declares it today; the OpenAI-compatible routes
     #: (local models, OpenRouter, DeepInfra) and Gemini read descriptors. A backend
-    #: that declares it marks a refused request with ``PROVIDER_ERROR_FINISH`` so the
-    #: loop can detach the images and resend once.
+    #: that declares it marks a request the provider refused as invalid (HTTP 400/413,
+    #: never a transient 429/5xx/timeout) with ``PROVIDER_REJECTED_FINISH`` so the loop
+    #: can detach the images and resend once.
     supports_tool_result_images = False
 
     @abstractmethod

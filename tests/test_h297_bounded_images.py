@@ -96,7 +96,7 @@ async def test_file_read_image_reaches_a_claude_request_as_an_image_block(tmp_pa
 
     async def post(payload):
         payloads.append(json.loads(json.dumps(payload)))
-        return replies.pop(0), None
+        return replies.pop(0), "", 200
 
     monkeypatch.setattr(backend, "_post_messages", post)
     events: list[dict] = []
