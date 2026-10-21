@@ -96,6 +96,13 @@ class TokenUsage:
                 "cache_read": self.cache_read, "cache_write": self.cache_write}
 
 
+#: H297 — the finish reason of a turn whose request the provider refused (the turn's
+#: content is the provider's error text). A backend that carries tool-result images
+#: sets it so the tool loop can detach the images and resend once instead of ending
+#: the turn with the error.
+PROVIDER_ERROR_FINISH = "provider_error"
+
+
 @dataclass(frozen=True)
 class ToolTurn:
     content: str = ""

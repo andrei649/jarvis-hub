@@ -85,6 +85,7 @@ import asyncio
 import contextlib
 import fnmatch
 import hashlib
+import io
 import json
 import logging
 import os
@@ -1452,12 +1453,79 @@ def _page(data: bytes, *, offset: int, total: int) -> dict:
     return fields
 
 
+#: H297 — the longest side, in pixels, an image a provider is sent may have: Anthropic
+#: rejects the whole request over 8,000 px. A larger image is scaled down to fit.
+MAX_IMAGE_SIDE = 8000
+#: The most pixels file_read decodes to check an image (about 160 MB as RGBA). A file
+#: past it is refused by name; ``raw=true`` still pages its bytes.
+MAX_IMAGE_DECODE_PIXELS = 40_000_000
+_PIL_FORMATS = {"image/png": "PNG", "image/jpeg": "JPEG", "image/gif": "GIF", "image/webp": "WEBP"}
+
+
+def _image_refusal(reason: str, detail: str, **fields: Any) -> dict:
+    return {"ok": False, "reason": reason, **fields,
+            "detail": f"{detail}; raw=true returns a bounded byte page"}
+
+
+def _fit_image(data: bytes, media_type: str) -> tuple[bytes, dict] | dict:
+    """Decode *data* and bring it within the provider's pixel limit (H297).
+
+    A provider rejects the whole request, not just the image, for an image it
+    cannot decode or one over :data:`MAX_IMAGE_SIDE` on a side, so a signature
+    check is not enough: the image is decoded here, off the event loop. Returns the
+    bytes to send (re-encoded only when scaled down) with their dimensions, or a
+    named refusal.
+    """
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover - pillow is a hard requirement
+        return _image_refusal("image_unreadable", "the image decoder is not installed")
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+            if image.format != _PIL_FORMATS.get(media_type):
+                return _image_refusal("image_unreadable", "the bytes do not decode as " + media_type)
+            if width < 1 or height < 1 or width * height > MAX_IMAGE_DECODE_PIXELS:
+                return _image_refusal(
+                    "image_dimensions_too_large", "the image has too many pixels to send",
+                    width=width, height=height, max_pixels=MAX_IMAGE_DECODE_PIXELS)
+            image.load()
+            if max(width, height) <= MAX_IMAGE_SIDE:
+                return data, {"width": width, "height": height}
+            if media_type == "image/gif":
+                return _image_refusal(
+                    "image_dimensions_too_large", "a GIF over the side limit is not rescaled",
+                    width=width, height=height, max_side=MAX_IMAGE_SIDE)
+            scaled = image.copy()
+    except Image.DecompressionBombError:
+        return _image_refusal("image_dimensions_too_large", "the image has too many pixels to send",
+                              max_pixels=MAX_IMAGE_DECODE_PIXELS)
+    except Exception:  # noqa: BLE001 - any decoder failure means the provider would refuse it too
+        return _image_refusal("image_unreadable", "the image is corrupt or truncated")
+    scaled.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+    if media_type == "image/jpeg" and scaled.mode not in ("RGB", "L", "CMYK"):
+        scaled = scaled.convert("RGB")
+    out = io.BytesIO()
+    try:
+        scaled.save(out, format=_PIL_FORMATS[media_type])
+    except Exception:  # noqa: BLE001 - an encoder failure is a refusal, not a crash
+        return _image_refusal("image_unreadable", "the scaled image could not be encoded")
+    encoded = out.getvalue()
+    if len(encoded) > MAX_IMAGE_BYTES:
+        return _image_refusal("image_too_large", "the scaled image is over max_image_bytes",
+                              max_image_bytes=MAX_IMAGE_BYTES)
+    return encoded, {"width": scaled.width, "height": scaled.height,
+                     "original_width": width, "original_height": height}
+
+
 def _read_image(target: Path, size: int) -> ToolContent | dict | None:
     """An image file as a multimodal result (H297), a bounded refusal, or ``None``.
 
     ``None`` means the bytes are not the image the suffix names, so the caller pages
     them as an ordinary file. Over :data:`~agents.core.tool_rpc.MAX_IMAGE_BYTES` the
-    read is refused by name rather than cut: half an image is a corrupt image.
+    read is refused by name rather than cut: half an image is a corrupt image. An
+    image that does not decode is refused as ``image_unreadable``; one over
+    :data:`MAX_IMAGE_SIDE` on a side is scaled down to fit (see :func:`_fit_image`).
     """
     media_type = IMAGE_SUFFIXES[target.suffix.lower()]
     too_large = {
@@ -1473,12 +1541,19 @@ def _read_image(target: Path, size: int) -> ToolContent | dict | None:
         return too_large
     if not data or not image_signature_ok(data, media_type):
         return None
+    fitted = _fit_image(data, media_type)
+    if isinstance(fitted, dict):
+        return {**fitted, "path": str(target), "size": size}
+    sent, dims = fitted
     digest = hashlib.sha256(data).hexdigest()
+    summary = f"{target.name}: {media_type} image, {dims['width']}x{dims['height']} px, {len(sent)} bytes."
+    if "original_width" in dims:
+        summary += (f" Scaled down from {dims['original_width']}x{dims['original_height']} px"
+                    f" to fit the {MAX_IMAGE_SIDE} px provider limit.")
     return ToolContent(
-        [ToolContent.text(f"{target.name}: {media_type} image, {len(data)} bytes."),
-         ToolContent.image(data, media_type)],
+        [ToolContent.text(summary), ToolContent.image(sent, media_type)],
         structured={"ok": True, "path": str(target), "image": True, "media_type": media_type,
-                    "bytes": len(data), "size": size, "sha256": digest},
+                    "bytes": len(data), "size": size, "sha256": digest, **dims},
     )
 
 

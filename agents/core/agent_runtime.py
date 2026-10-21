@@ -48,6 +48,7 @@ from .llm.effective_window import EffectiveWindow, resolve_effective_window
 from .llm.tokenizer import estimate_messages, estimate_tokens
 from .llm.tool_protocol import (
     MAX_PARSED_TOOL_CALLS,
+    PROVIDER_ERROR_FINISH,
     TokenUsage,
     ToolCall,
     ToolSpec,
@@ -703,7 +704,7 @@ class AgentToolRuntime:
         spent: dict[str, Any] = {"bytes": 0, "window": known_window or max(0, int(window_for(model) or 0)),
                                  "effective_window": known_window or 0,
                                  "attachments": {}}
-        images_supported = getattr(backend, "supports_tool_result_images", False) is True
+        images_supported = _tool_result_images_supported(backend)
         schema_tokens = estimate_tokens(json.dumps([tool.as_openai() for tool in tools])) if known_window else 0
         while budget.consume():
             from .steering import prepare_steering_rows
@@ -809,6 +810,27 @@ class AgentToolRuntime:
                         max_tokens=max_tokens,
                         temperature=temperature,
                     )
+                    # H297: a provider that refuses the request while it carries images
+                    # (an image it cannot decode, one past its pixel limit) must not end
+                    # the turn with its error. Every image is detached for good — the
+                    # descriptors stay and the text says why — and the request is sent
+                    # once more without them.
+                    if (images_supported and not turn.tool_calls
+                            and turn.finish_reason == PROVIDER_ERROR_FINISH
+                            and _detach_all_images(messages, "provider_rejected")):
+                        await self._emit(event_sink, {
+                            "event": "tool_result_images_detached",
+                            "agent_id": _bounded_identity(agent_id),
+                            "reason": "provider_rejected",
+                        })
+                        turn = await backend.generate_tool_turn(
+                            model=model,
+                            messages=[{key: value for key, value in row.items() if key not in hidden}
+                                      for row in messages],
+                            tools=[] if guardian_stopped else tools,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                        )
             steering.acknowledge()
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
@@ -1939,6 +1961,41 @@ def _bound_request_images(messages: list[dict[str, Any]]) -> int:
             message.clear()
             message.update(trimmed)
     return detached
+
+
+def _detach_all_images(messages: list[dict[str, Any]], reason: str) -> int:
+    """Detach every attached image, in place, saying *reason* in each text (H297)."""
+    detached = 0
+    for message in messages:
+        images = message.get("images")
+        if not isinstance(images, list) or not images:
+            continue
+        detached += len(images)
+        trimmed = _image_trimmed(message, [], reason)
+        message.clear()
+        message.update(trimmed)
+    return detached
+
+
+def _tool_result_images_supported(backend: Any) -> bool:
+    """Does the backend this loop talks to carry tool-result images (H297)?
+
+    Production never hands the loop a bare provider: ``Agent`` binds the guardrails
+    policy first, and that wrapper forwards ``supports_tools`` but not this flag, so
+    reading it off the wrapper alone said "no" on every owner turn. The first object
+    in the ``_backend`` chain that declares the flag answers (the same unwrap the
+    data-handling gate uses); a wrapper passes each message row through as a copy, so
+    the ``images`` key reaches the provider it wraps.
+    """
+    for _ in range(8):
+        declared = getattr(backend, "supports_tool_result_images", None)
+        if declared is not None:
+            return declared is True
+        child = getattr(backend, "_backend", None)
+        if child is None or child is backend:
+            return False
+        backend = child
+    return False
 
 
 def _split_images(raw_result: Any) -> tuple[Any, list[dict[str, str]]]:

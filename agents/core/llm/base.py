@@ -380,6 +380,10 @@ class LLMBackend(ABC):
     supports_tools = False
     #: H297 — whether a tool message's ``images`` reach the model as images. Off by
     #: default: the tool loop strips them and the model reads their descriptors.
+    #: Only the Anthropic backend declares it today; the OpenAI-compatible routes
+    #: (local models, OpenRouter, DeepInfra) and Gemini read descriptors. A backend
+    #: that declares it marks a refused request with ``PROVIDER_ERROR_FINISH`` so the
+    #: loop can detach the images and resend once.
     supports_tool_result_images = False
 
     @abstractmethod

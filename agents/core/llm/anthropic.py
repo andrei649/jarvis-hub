@@ -27,7 +27,7 @@ from .tool_dialects import (
     cache_marked_tools,
     normalize_finish_reason,
 )
-from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
+from .tool_protocol import PROVIDER_ERROR_FINISH, ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
@@ -206,7 +206,8 @@ class ClaudeBackend(LLMBackend):
         self._fit_to_wire(payload, payload["model"])
         data, error = await self._post_messages(payload)
         if data is None:
-            return ToolTurn(content=error)
+            # H297: named, so the tool loop can resend without the images it carried.
+            return ToolTurn(content=error, finish_reason=PROVIDER_ERROR_FINISH)
         blocks = data.get("content") or []
         return ToolTurn(
             content=self._finalize_cloud(anthropic_text(blocks), data.get("stop_reason"), payload["model"]),
