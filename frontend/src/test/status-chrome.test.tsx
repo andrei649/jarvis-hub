@@ -1,5 +1,5 @@
 // @ts-nocheck
-/* H133 — the live status chrome. The top bar's GATEWAY / SESSIONS / VER badges and the
+/* H133 — the live status chrome. The top bar's GATEWAY badge (with the session count), the version and the
    rail's gateway dot are pinned against a mocked `/status` poll: each badge shows what
    the poll answered, or an honest dash when it could not — never a plausible guess. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -72,7 +72,8 @@ describe('top-bar badges follow the polled /status', () => {
     expect(badge(container, 'gateway').getAttribute('title')).toContain('discord, telegram');
     expect(badge(container, 'gateway').getAttribute('data-state')).toBe('running');
     expect(badge(container, 'sessions').textContent).toContain('5');
-    expect(badge(container, 'sessions').getAttribute('title')).toContain('15 min');
+    expect(badge(container, 'sessions').closest('[title]').getAttribute('title')).toContain('5 sessions active in the last 15 min');
+    expect(badge(container, 'gateway').textContent).toContain('● 2/3· 5S');
     expect(badge(container, 'version').textContent).toContain('v1.4.0');
   });
 
@@ -147,14 +148,30 @@ describe('brand strip sheds whole badges by priority', () => {
   }
 
   it('shows every badge when they fit', () => {
-    expect(strip(8 * 70 + 7 * 9).shed).toEqual([]);
+    expect(strip(7 * 70 + 6 * 9).shed).toEqual([]);
   });
 
-  it('sheds SESSIONS, LOCAL, AGENTS, then MIC, then EGRESS — never LLM, DATA or GATEWAY first', () => {
+  it('sheds LOCAL, AGENTS, then MIC, then EGRESS — never LLM, DATA or GATEWAY first', () => {
     expect(strip(5 * 70 + 4 * 9).shown).toEqual(['LLM', 'DATA', 'GATEWAY', 'EGRESS', 'MIC']);
-    expect(strip(5 * 70 + 4 * 9).shed).toEqual(['AGENTS', 'SESSIONS', 'LOCAL']);
+    expect(strip(5 * 70 + 4 * 9).shed).toEqual(['AGENTS', 'LOCAL']);
     expect(strip(4 * 70 + 3 * 9).shown).toEqual(['LLM', 'DATA', 'GATEWAY', 'EGRESS']);
     expect(strip(3 * 70 + 2 * 9).shown).toEqual(['LLM', 'DATA', 'GATEWAY']);
+  });
+
+  it('keeps the active-session count on screen as long as GATEWAY is — it is never a badge of its own', () => {
+    // Review of the previous commit: a separate SESSIONS badge with the lowest keep was shed at
+    // every laptop width (1600 down), and nothing else showed the count. It now rides inside the
+    // GATEWAY badge, so the narrowest strip that still shows GATEWAY still shows the count.
+    const { shown, container } = strip(3 * 70 + 2 * 9);
+    expect(shown).toEqual(['LLM', 'DATA', 'GATEWAY']);
+    const count = container.querySelector('.brand .badges [data-chrome="sessions"]') as HTMLElement;
+    expect(count).not.toBeNull();
+    expect(count.closest('[data-shed]')).toBeNull();
+    expect(count.closest('[data-chrome="gateway"]')).not.toBeNull();
+    expect(count.textContent).toContain('2');
+    expect(count.closest('[title]')!.getAttribute('title')).toContain('2 sessions active in the last 15 min');
+    const keys = Array.from(container.querySelectorAll('.brand .badges > .badge .k')).map((k) => k.textContent);
+    expect(keys).not.toContain('SESSIONS');
   });
 
   it('keeps LLM as the last badge standing and never sheds to zero', () => {

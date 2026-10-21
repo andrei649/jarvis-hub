@@ -122,6 +122,8 @@ input { font-family: inherit; }
 .brand .badges > [data-shed] { display:none; }
 .brand .badge { min-width:62px; padding:7px 9px; }
 .brand-tx .l2 .ver { white-space:nowrap; }
+/* H133 — the active-session count inside the GATEWAY badge ("● 2/3 · 12S"): ink, not the gateway colour. */
+.brand .badge .gw-sess { color:var(--ink); white-space:nowrap; }
 .badge { position:relative; padding:7px 12px; min-width:70px; background:var(--surface); border:1px solid var(--panel-line); clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%); }
 .badge .k { font-size:8px; font-weight:600; letter-spacing:.14em; color:var(--ink-2); text-transform:uppercase; }
 .badge .v { font-family:var(--font-mono); font-size:11.5px; margin-top:3px; display:flex; align-items:center; gap:5px; }

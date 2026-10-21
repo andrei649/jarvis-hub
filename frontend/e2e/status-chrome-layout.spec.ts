@@ -11,11 +11,12 @@
    below the fold of a 768px-tall screen, in a body with `overflow:hidden`.
 
    The contract asserted here:
-   1) at 1920x1080, 1440x900 and 1366x768 the LLM, DATA and GATEWAY badges — and the EGRESS /
+   1) at 1920x1080, 1536x864, 1440x900 and 1366x768 the LLM, DATA and GATEWAY badges — and the EGRESS /
       MIC trust pair the strip already showed there — are painted fully inside the
       `.brand .badges` clip box: no low-priority badge may evict them;
    2) a badge that does not fit is HIDDEN whole (display:none), never half-clipped;
-   3) the rail gateway dot is inside the viewport at 1366x768 and with the collapsed rail at
+   3) the active-session count is painted inside the strip at every one of those widths;
+   4) the rail gateway dot is inside the viewport at 1366x768 and with the collapsed rail at
       1024x768 — and inside the rail's own visible box, not scrolled away under it.
 
    `/status` is stubbed so the strip carries the gateway, session and version fields whatever
@@ -50,7 +51,7 @@ async function boot(page: Page, width: number, height: number) {
   await page.waitForTimeout(300);
 }
 
-const TOPBAR = [[1920, 1080], [1440, 900], [1366, 768]] as const;
+const TOPBAR = [[1920, 1080], [1536, 864], [1440, 900], [1366, 768]] as const;
 
 for (const [width, height] of TOPBAR) {
   test(`LLM, DATA and GATEWAY stay fully visible in the top bar at ${width}x${height}`, async ({ page }) => {
@@ -79,6 +80,31 @@ for (const [width, height] of TOPBAR) {
     }
     const halfCut = m.filter((b) => b.partial).map((b) => b.key);
     expect(halfCut, `half-clipped badges at ${width}x${height}`).toEqual([]);
+    // 3) the active-session count (stubbed: 12) is PAINTED in the strip at every width here.
+    //    It used to be a badge of its own with the lowest keep, shed at every width from 1600
+    //    down — and the badge was the only place the count appeared. It now rides inside the
+    //    GATEWAY badge, which is never shed, so it lives exactly as long as GATEWAY does.
+    const sess = await page.evaluate(() => {
+      const strip = document.querySelector('.brand .badges') as HTMLElement;
+      const el = strip.querySelector('[data-chrome="sessions"]') as HTMLElement | null;
+      if (!el) return null;
+      const box = strip.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        text: (el.textContent || '').trim(),
+        title: el.closest('[title]')?.getAttribute('title') || '',
+        painted: r.width > 0 && r.height > 0 && el.offsetParent !== null,
+        inside: r.left >= box.left - 0.5 && r.right <= box.right + 0.5,
+        // the topmost element at the count's centre must be the count itself (or a child of
+        // it), or its own badge's value line — never the page behind a display:none box
+        hit: !!hit && (el.contains(hit) || (hit.contains(el) && !!el.closest('.badge')?.contains(hit))),
+      };
+    });
+    expect(sess, `no session count in the strip at ${width}x${height}`).not.toBeNull();
+    expect(sess!.text).toContain('12');
+    expect(sess!.painted && sess!.inside && sess!.hit, `session count not visible at ${width}x${height}: ${JSON.stringify(sess)}`).toBe(true);
+    expect(sess!.title).toContain('12 sessions active in the last 15 min');
     // the strip lost its VER badge; the version rides on the brand line instead
     await expect(page.locator('.brand [data-chrome="version"]')).toContainText('v1.1.0');
   });

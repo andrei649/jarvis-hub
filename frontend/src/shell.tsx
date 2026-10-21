@@ -22,7 +22,8 @@ function gatewayView(gw: StatusChrome['gateway'] = STATUS_CHROME_UNKNOWN.gateway
 /* H133 — the brand strip sheds WHOLE badges in priority order instead of letting
    `overflow:hidden` + `justify-content:flex-end` clip whatever happens to sit leftmost.
    Each badge carries `data-keep` (higher = kept longer): LLM, DATA and GATEWAY outlast the
-   trust pair (EGRESS, MIC), which outlast AGENTS, LOCAL and SESSIONS. Widths depend on live
+   trust pair (EGRESS, MIC), which outlast AGENTS and LOCAL. The active-session count is
+   not a badge: it rides inside GATEWAY, so it is shed only when GATEWAY is. Widths depend on live
    state ("○ NO MODEL" is wider than "● READY") and the strip's box on the viewport, so
    the fit is measured, not guessed from breakpoints: show everything, then shed the lowest
    keep until the visible badges fit the strip's box. Re-run on every render (a state change
@@ -87,6 +88,9 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
   const ch: StatusChrome = chrome || STATUS_CHROME_UNKNOWN;
   const GW = gatewayView(ch.gateway);
   const win = ch.sessions.windowS != null ? Math.round(ch.sessions.windowS / 60) + ' min' : 'the recent window';
+  const SESS = ch.sessions.active != null
+    ? { v:String(ch.sessions.active), t:ch.sessions.active + (ch.sessions.active === 1 ? ' session' : ' sessions') + ' active in the last ' + win }
+    : { v:'—', t:'active sessions unknown (session store not answering)' };
   const strip = useBadgeStrip();
   const lm = llm || { state:'unknown', model:null };
   const enabled = agents.length;
@@ -109,8 +113,10 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
           <div className="badge" data-keep="3" title="agents enabled · actually running"><div className="k">AGENTS</div><div className="v">{enabled} en{running>0 ? ' · '+running+' ▶' : ''}</div></div>
           <div className="badge" data-keep="8" title={LLM.t}><div className="k">LLM</div><div className="v" style={{color:LLM.c}}>{LLM.v}</div></div>
           <div className="badge" data-keep="7" title={DATA.t}><div className="k">DATA</div><div className="v" style={{color:DATA.c}}>{DATA.v}</div></div>
-          <div className="badge" data-keep="6" data-chrome="gateway" data-state={ch.gateway.state} title={GW.t}><div className="k">GATEWAY</div><div className="v" style={{color:GW.c}}>{GW.v}</div></div>
-          <div className="badge" data-keep="1" data-chrome="sessions" title={ch.sessions.active != null ? 'sessions active in the last ' + win : 'active sessions unknown (session store not answering)'}><div className="k">SESSIONS</div><div className="v">{ch.sessions.active != null ? ch.sessions.active : '—'}</div></div>
+          {/* H133 — the active-session count rides INSIDE the GATEWAY badge (never shed), not in a
+              badge of its own: a separate SESSIONS badge had the lowest keep and was shed at every
+              laptop width from 1600 down, and it was the only place the count appeared. */}
+          <div className="badge" data-keep="6" data-chrome="gateway" data-state={ch.gateway.state} title={GW.t + ' · ' + SESS.t}><div className="k">GATEWAY</div><div className="v"><span style={{color:GW.c}}>{GW.v}</span><span className="gw-sess" data-chrome="sessions">· {SESS.v}S</span></div></div>
           {localPct!=null && <div className={'badge' + (localPct===100 ? ' ok' : '')} data-keep="2" title="share of processing kept on-device"><div className="k">{t.local}</div><div className="v">{localPct}%</div></div>}
           <div className={'badge' + (tr.strict_local ? ' ok' : '')} data-keep="5" title={tr.strict_local ? 'strict-local — no cloud egress path; nothing leaves the machine' : 'hybrid — a cloud backend is reachable'}><div className="k">EGRESS</div><div className="v">{tr.strict_local ? '⊘ SEALED' : '↗ HYBRID'}</div></div>
           <div className={'badge' + (tr.mic === 'off' ? ' ok' : '')} data-keep="4" title={tr.mic === 'off' ? 'microphone muted (JARVIS_MIC_MUTED)' : 'microphone live'}><div className="k">MIC</div><div className="v">{tr.mic === 'off' ? '⊘ MUTED' : '● ON'}</div></div>
