@@ -74,8 +74,11 @@ Governance (MOONSHOT §5):
   is read once into memory within the 50 MB ceiling and parsed from those bytes, never
   the path (:func:`_admitted_bytes`); the parse is cached under their SHA-256
   (:class:`DocumentCache`), so later pages of an unchanged document are not parsed
-  again. Extraction is budgeted (``extraction_incomplete``), and garbled pages and
-  pages holding images are named beside the text (no OCR is performed).
+  again (a stop on the load-dependent time budget is not cached). Extraction is
+  budgeted (``extraction_incomplete``), and garbled pages and pages holding images
+  are named beside the text (no OCR is performed). A .docx is walked in document
+  order — tables, text boxes, headers/footers, notes — and its images, charts and
+  equations are named (:func:`_docx_annotations`).
 * Local-first, no new dependencies, no shell; blocking file I/O runs in
   ``asyncio.to_thread`` so the event loop stays free.
 
@@ -112,6 +115,8 @@ from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
 from agents.core.local_docs import (
     DOC_EXTS,
+    DOCX_READ_KINDS,
+    DOCX_VISUAL_KINDS,
     DocumentExtraction,
     extract_docx_document,
     extract_pdf_document,
@@ -1438,7 +1443,7 @@ def _parser_available(suffix: str) -> bool:
         return False
 
 
-def _utf8_page_end(data: bytes) -> int:
+def _utf8_page_end(data: bytes, *, allow_empty: bool = False) -> int:
     """How much of *data* to keep so a page never ends inside a UTF-8 character.
 
     A byte page cut through a multi-byte character decodes as a replacement mark at
@@ -1446,7 +1451,8 @@ def _utf8_page_end(data: bytes) -> int:
     perfectly good file reassembles a corrupted one. Dropping the incomplete tail
     moves those bytes to the next page instead. Never returns 0: a page too small for
     one whole character keeps the fragment rather than stall the reader at the same
-    offset forever.
+    offset forever — unless *allow_empty*, for a caller whose next page starts
+    elsewhere anyway (a line page moves on to the next line), which then gets 0.
     """
     size = len(data)
     for back in range(1, min(4, size) + 1):
@@ -1461,7 +1467,7 @@ def _utf8_page_end(data: bytes) -> int:
             needed = 2
         else:
             needed = 1
-        if needed > back and size - back > 0:
+        if needed > back and (size - back > 0 or allow_empty):
             return size - back
         return size
     return size
@@ -1471,12 +1477,14 @@ def _line_window_args(args: Mapping[str, Any]) -> tuple[int, int] | str | None:
     """``(first_line, line_count)`` when the read asks for a line window, ``None`` for
     a byte page, or the refusal reason. A window and a byte ``offset`` together are
     refused (``bad_window``): the two count different things, and silently picking
-    one would return a page labelled as the other."""
+    one would return a page labelled as the other. ``offset: 0`` is the absent offset
+    (the start of the file, which every read-back recipe names), not a conflict."""
     has_start = args.get("line_offset") is not None
     has_limit = args.get("line_limit") is not None
     if not has_start and not has_limit:
         return None
-    if args.get("offset") is not None:
+    offset = args.get("offset")
+    if offset is not None and not (type(offset) is int and offset == 0):
         return "bad_window"
     start = args.get("line_offset", 1) if has_start else 1
     count = args.get("line_limit") if has_limit else DEFAULT_LINE_LIMIT
@@ -1538,7 +1546,7 @@ def _line_page(stream: Any, start: int, count: int, *, budget: int,
         if len(out) + length > budget:
             if returned == 0:
                 cut = kept[:budget]
-                out += cut[:_utf8_page_end(cut)] if len(cut) < length else cut
+                out += cut[:_utf8_page_end(cut, allow_empty=True)] if len(cut) < length else cut
                 returned = 1
                 line_truncated = True
                 line_byte_offset = position
@@ -1776,6 +1784,37 @@ def _count_lines(data: bytes) -> int:
     return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
 
 
+def _docx_annotations(counts: Mapping[str, int]) -> dict[str, Any]:
+    """What a DOCX read says beside its text (H444): the parts it read besides body
+    paragraphs (``document_parts``), the visual parts it cannot carry
+    (``visual_content``) and the equations it does not extract (``coverage_warning``)."""
+    annotations: dict[str, Any] = {}
+    parts = {kind: counts[kind] for kind in DOCX_READ_KINDS if counts.get(kind)}
+    if parts:
+        annotations["document_parts"] = parts
+    visual = {kind: int(counts.get(kind, 0)) for kind in DOCX_VISUAL_KINDS}
+    if any(visual.values()):
+        annotations["visual_content"] = {
+            "reason": "docx_images",
+            "detail": (
+                "This document embeds images, charts, diagrams or objects. file_read "
+                "returns only the text and performs no OCR: what they show is not in "
+                "the content."
+            ),
+            **visual,
+        }
+    if counts.get("equations"):
+        annotations["coverage_warning"] = {
+            "reason": "docx_content_not_extracted",
+            "detail": (
+                "This document holds equations, which are not extracted: the text "
+                "around them is complete, the equations themselves are missing."
+            ),
+            "equations": int(counts["equations"]),
+        }
+    return annotations
+
+
 def _parse_document(suffix: str, data: bytes, target: Path) -> _ParsedDocument | None:
     stream = io.BytesIO(data)
     stream.name = str(target)  # type: ignore[attr-defined]  # what a parser error names
@@ -1801,9 +1840,14 @@ def _parse_document(suffix: str, data: bytes, target: Path) -> _ParsedDocument |
                 "ranges": ranges["ranges"],
                 "omitted_range_count": ranges["omitted_range_count"],
             }
+    else:
+        annotations.update(_docx_annotations(result.content_counts))
     if result.stopped is not None:
         limit = ("the extracted-text ceiling" if result.stopped == "text_limit"
                  else "the extraction time budget")
+        retry = ("" if result.stopped == "text_limit" else
+                 " The time budget depends on load, so this result is not cached: "
+                 "reading the file again parses the document again.")
         annotations["extraction_incomplete"] = {
             "reason": result.stopped,
             "unit": result.unit,
@@ -1812,7 +1856,7 @@ def _parse_document(suffix: str, data: bytes, target: Path) -> _ParsedDocument |
             "detail": (
                 f"Extraction stopped at {limit} after {result.units_read} of "
                 f"{result.units_total} {result.unit}s; the text ends there and is not "
-                "the whole document."
+                f"the whole document.{retry}"
             ),
         }
     text = result.text.encode("utf-8")
@@ -1855,7 +1899,11 @@ def _read_document(target: Path, size: int, limit: int, offset: int = 0, *,
         parsed = _parse_document(suffix, data, target)
         if parsed is None:
             return {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
-        if cache is not None:
+        stop = parsed.annotations.get("extraction_incomplete", {}).get("reason")
+        if cache is not None and stop != "time_limit":
+            # A time-budget stop depends on machine load: caching it would serve the
+            # truncated prefix to every later read. A text-budget stop is
+            # deterministic and stays cached.
             cache.put(key, parsed)
     text = parsed.text
     if window is not None:
@@ -2068,8 +2116,11 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "pass it back as offset to page through a large file or a spilled tool result. "
             "Or read by lines: line_offset (1-based first line) and line_limit (default "
             "500, at most 2000) return whole lines, and next_line_offset names the next "
-            "page; a byte offset and a line window cannot be combined. "
+            "page; a byte offset other than 0 and a line window cannot be combined. "
             "PDF/DOCX extraction accepts at most 50 MB (50,000,000 bytes); raw=true pages bytes. "
+            "A .docx is read in document order: tables as | rows, text boxes, "
+            "headers/footers and notes included; its images, charts and objects (no OCR) "
+            "and equations are reported beside the content. "
             "PDF page gaps without extracted text, pages of garbled text and pages "
             "holding images (no OCR is done) are reported separately from content; an "
             "unchanged document is parsed once and later pages come from cache. "

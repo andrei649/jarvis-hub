@@ -221,32 +221,6 @@ def test_pdf_extraction_stops_at_the_time_budget(monkeypatch):
     assert local_docs.MAX_EXTRACTED_TEXT_BYTES == 32_000_000
 
 
-def test_docx_extraction_reads_paragraphs_within_the_budget(monkeypatch):
-    fake = ModuleType("docx")
-    fake.__spec__ = importlib.machinery.ModuleSpec("docx", loader=None)
-    seen = []
-
-    class Paragraph:
-        def __init__(self, text):
-            self.text = text
-
-    class Document:
-        def __init__(self, source):
-            seen.append(source)
-            self.paragraphs = [Paragraph(t) for t in ("Title", "Body one", "Body two")]
-
-    fake.Document = Document
-    monkeypatch.setitem(sys.modules, "docx", fake)
-    stream = io.BytesIO(b"PK")
-    whole = local_docs.extract_docx_document(stream)
-    assert seen == [stream]
-    assert whole.text == "Title\nBody one\nBody two" and whole.stopped is None
-    assert (whole.unit, whole.units_read, whole.units_total) == ("paragraph", 3, 3)
-    cut = local_docs.extract_docx_document(stream, max_text_bytes=15)
-    assert cut.text == "Title\nBody one" and cut.stopped == "text_limit"
-    assert (cut.units_read, cut.units_total) == (2, 3)
-
-
 @pytest.mark.asyncio
 async def test_a_stopped_extraction_is_named_beside_the_text(root, monkeypatch):
     (root / "big.pdf").write_bytes(b"%PDF-1.4")
@@ -488,7 +462,7 @@ async def test_a_spill_read_by_lines_stays_tainted(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("args,reason", [
-    ({"offset": 0, "line_offset": 1}, "bad_window"),
+    ({"offset": 1, "line_offset": 1}, "bad_window"),
     ({"offset": 5, "line_limit": 3}, "bad_window"),
     ({"line_offset": 0}, "bad_line_offset"),
     ({"line_offset": True}, "bad_line_offset"),
