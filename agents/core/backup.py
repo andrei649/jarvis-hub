@@ -59,6 +59,7 @@ from typing import Iterator, Optional
 from agents.core import archive_safe
 from agents.core.archive_safe import ArchiveLimits
 from agents.core.env_config import env_int
+from agents.core.estop import SENTINEL_NAME as ESTOP_SENTINEL
 from agents.core.paths import data_root
 from agents.core.secrets import SecretStore
 
@@ -403,6 +404,11 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     # written scripts and tool-call mailboxes stay out of an archive (review-H667 m3).
     owner_root = _owner_sandbox_root(src)
     files = [f for f in files if not _in_exec_cache(f, src, owner_root)]
+    # H694: the ESTOP sentinel is the live kill switch shared by every profile of the
+    # install, not owner data. Archiving it would let a later restore reinstate a stale
+    # pause for every hub; leaving it out means a restore never touches the live switch
+    # (extraction only adds files, so an engaged pause also survives a restore).
+    files = [f for f in files if f != src / ESTOP_SENTINEL]
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         if do_encrypt:

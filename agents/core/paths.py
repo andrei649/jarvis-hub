@@ -192,12 +192,18 @@ def install_root(environ: "Mapping[str, str] | None" = None) -> Path:
     return home / "memory" if home is not None else _DEFAULT_ROOT
 
 
+def profiles_root(base: "Path | None" = None) -> Path:
+    """The directory holding every profile's data root: ``<install root>-profiles``."""
+    base = install_root() if base is None else base
+    return base.parent / f"{base.name}-profiles"
+
+
 def data_root(environ: "Mapping[str, str] | None" = None) -> Path:
     """Profile-local runtime root; the identity alone lives at :func:`install_root`."""
     base = install_root(environ)
     profile = profile_name(environ)
     if profile:
-        return base.parent / f"{base.name}-profiles" / profile
+        return profiles_root(base) / profile
     return base
 
 
