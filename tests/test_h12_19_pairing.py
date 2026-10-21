@@ -317,17 +317,27 @@ def test_clear_pending_runs_on_the_same_thread_as_every_other_pairing_write(
     run on a worker thread would walk that dict while the loop inserts into it —
     "dictionary changed size during iteration", a 500 on a flooded inbox. So the
     clear must run where every other write runs."""
+    import asyncio
     import threading
     client, hdr = _client(monkeypatch, tmp_path)
     seen = {}
     real_request, real_clear = SenderPairing.request, SenderPairing.clear_pending
 
+    def where():
+        # (thread, loop running here?) — a worker thread from asyncio.to_thread has no loop
+        try:
+            asyncio.get_running_loop()
+            on_loop = True
+        except RuntimeError:
+            on_loop = False
+        return threading.get_ident(), on_loop
+
     def spy_request(self, *a, **kw):
-        seen["request"] = threading.get_ident()
+        seen["request"] = where()
         return real_request(self, *a, **kw)
 
     def spy_clear(self):
-        seen["clear"] = threading.get_ident()
+        seen["clear"] = where()
         return real_clear(self)
 
     monkeypatch.setattr(SenderPairing, "request", spy_request)
@@ -335,7 +345,11 @@ def test_clear_pending_runs_on_the_same_thread_as_every_other_pairing_write(
     client.post("/api/channels/pairing/request", json={"channel": "telegram", "sender_id": "1"})
     r = client.post("/api/channels/pairing/clear-pending", headers=hdr)
     assert r.status_code == 200 and r.json()["cleared"] == 1
-    assert seen["clear"] == seen["request"]
+    # Both ran ON the event loop (a to_thread worker has no running loop). Comparing raw
+    # thread ids was flaky: outside a `with`, each TestClient call may get its own portal
+    # thread, so two loop-run writes can still differ in ident.
+    assert seen["request"][1] is True
+    assert seen["clear"][1] is True
 
 
 def test_clear_pending_survives_inserts_from_another_thread(reg, enabled):
