@@ -630,8 +630,17 @@ def test_a_failed_or_warned_row_links_its_troubleshooting_section(healthy_root, 
 @pytest.mark.parametrize("reason, section", [
     ("configured_not_resident", "local-model-servers"),
     ("provider_offline", "local-model-servers"),
+    ("inventory_unavailable", "local-model-servers"),
+    ("residency_unknown", "local-model-servers"),
     ("cloud_auth_failed", "symptom-cause-fix"),
     ("needs_token", "symptom-cause-fix"),
+    # review-H631: not about the local server — the symptom table explains them
+    ("route_unselected", "symptom-cause-fix"),
+    ("provider_unresolved", "symptom-cause-fix"),
+    ("router_unavailable", "symptom-cause-fix"),
+    ("unreported", "symptom-cause-fix"),
+    ("hub_url_invalid", "symptom-cause-fix"),
+    ("some_future_reason", "symptom-cause-fix"),
 ])
 def test_runtime_resolves_links_by_reason(reason, section):
     check = doctor.Check("runtime_resolves", doctor.WARN, reason)

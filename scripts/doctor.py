@@ -144,9 +144,13 @@ HELP_SECTIONS = {
     "model_roles": "my-agent-feels-dumber",
     "smoke": "recovery-sequence",
 }
-# runtime_resolves reasons that are not about the local server: a cloud key, a credential,
-# a hub address or reply — the symptom table names each.
-_NOT_LOCAL = ("cloud_", "needs_token", "hub_", "malformed_reply", "command_center_status")
+# runtime_resolves reasons about the local model server itself — the Ollama / LM Studio
+# tables name each. Every other reason (a cloud key, a credential, the hub's address or
+# reply, an unchosen or unresolved route, a router that did not start, a reason the hub
+# did not report — or one added later) is a row of the symptom table (review-H631).
+_LOCAL_SERVER_REASONS = frozenset({
+    "provider_offline", "configured_not_resident", "inventory_unavailable", "residency_unknown",
+})
 
 
 @dataclass
@@ -185,7 +189,7 @@ def help_for(check: Check) -> str:
     if check.status not in (FAIL, WARN):
         return ""
     section = HELP_SECTIONS.get(check.name)
-    if check.name == "runtime_resolves" and check.reason.startswith(_NOT_LOCAL):
+    if check.name == "runtime_resolves" and check.reason not in _LOCAL_SERVER_REASONS:
         section = "symptom-cause-fix"
     return f"{TROUBLESHOOTING_DOC}#{section}" if section else ""
 
