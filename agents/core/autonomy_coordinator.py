@@ -21,6 +21,7 @@ import logging
 import math
 # Telegram destinations use the shared channels.outbound resolver.
 import time
+from collections.abc import Mapping
 from datetime import datetime
 
 from .autonomy import TaskExecutor
@@ -147,6 +148,13 @@ def _desktop_run_overrides() -> dict:
     steps = deepcopy(_DESKTOP_RUN_SCHEMA["properties"]["steps"])
     steps["items"]["properties"]["action"]["enum"] = sorted(set(_DESKTOP_ARG_RULES) & actions)
     return {"properties": {"steps": steps}}
+
+
+def autonomy_tick_seconds(orch) -> int:
+    """Seconds ``AutonomyCoordinator.loop`` sleeps before each tick: ``system.autonomy_tick``
+    (60 by default), never under 15. An accepted task waits up to this long to run, which
+    ``GET /api/admin/backup`` reports for a restore (H010 review r7)."""
+    return max(15, int(orch.get_setting("system.autonomy_tick", 60) or 60))
 
 
 class AutonomyCoordinator:
@@ -561,8 +569,7 @@ class AutonomyCoordinator:
         external/irreversible tasks always wait for a waking human.
         """
         while True:
-            interval = int(self._orch.get_setting("system.autonomy_tick", 60) or 60)
-            await asyncio.sleep(max(15, interval))
+            await asyncio.sleep(autonomy_tick_seconds(self._orch))
             # Global emergency stop: skip the whole self-tasking tick while the
             # ESTOP sentinel exists (pause-new-work; in-flight work is not killed).
             from agents.core import estop
@@ -717,6 +724,14 @@ class AutonomyCoordinator:
         return worker.govern_enqueue(agent='jarvis', kind='toolrpc.terminal_run',
             title='Scheduled Python script awaiting this run approval', payload=payload,
             risk_tier=3, autonomy_level='ask', origin=origin)
+
+    def _submit_job_task(self, **kwargs):
+        """An unattended job may propose one ASK task through the live worker only."""
+        worker = getattr(self._orch, 'autonomy', None)
+        enqueue = getattr(worker, 'govern_enqueue', None)
+        if not callable(enqueue):
+            raise RuntimeError('governed scheduled-task intake is unavailable')
+        return enqueue(**kwargs)
 
     def _wire_agent_tool_runtime(self, action_kernel=None):
         """Build the shared, default-off governed tool loop for loaded agents."""
@@ -967,6 +982,7 @@ class AutonomyCoordinator:
             "desktop_run",
             _rpc_desktop_run,
             gated=True,
+            parallel_safe=False,  # H399 — drives the shared desktop; never overlaps
             description=_DESKTOP_RUN_DESCRIPTION,
             # H296: the actions the step validator and this host's driver accept.
             schema_overrides=_desktop_run_overrides,
@@ -1274,6 +1290,9 @@ class AutonomyCoordinator:
             gated=True,
             gated_intake=_terminal_intake,
             gated_review=_terminal_review,
+            # H399 — its review runs the command inside the model step, so no other
+            # call of that step (a read of the tree it changes) may overlap it.
+            parallel_safe=False,
             description="Run one bounded shell command on a named governed target.",
             input_schema={
                 "type": "object",
@@ -1687,12 +1706,13 @@ class AutonomyCoordinator:
             server,
             loader=lambda: getattr(self._orch, "skills", None),
             proposals=lambda: getattr(self._orch, "skill_proposals", None),
+            batches=lambda: getattr(self._orch, "skill_batches", None),
             approvals=lambda: getattr(self._orch, "action_approvals", None),
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
             posture=lambda: tool_profile.posture().key,
             settings=_get_setting,
             environment_registry=code_environment,
-            principal=_turn_principal,
+            principal=_turn_principal, shared_session=_on_shared_session,
         )
         # H309 — the model points at the owner's HUD (a tip, or a short tour) through
         # the canvas; ungated, named anchors only, marked when an untrusted turn wrote it.
@@ -1752,6 +1772,7 @@ class AutonomyCoordinator:
             gap_callback=acquisition.capture_gap,
             context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
             per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
+            stall_halt_enabled=lambda: _get_setting("llm.tool_loop_stall_halt_enabled", False) is True,
             # H298 — an oversized tool result is spilled to disk instead of being
             # thrown away, and the caps scale to the model's real context window.
             # The store writes under the file tools' default root, so the path in a
@@ -1781,6 +1802,8 @@ class AutonomyCoordinator:
         if callable(getattr(jobs, 'bind_scripts', None)) and queue is not None:
             jobs.bind_scripts(submit=self._submit_job_script, get=queue.get,
                               find=lambda origin: queue.list(origin=origin, limit=2))
+        if callable(getattr(jobs, 'bind_task_intake', None)):
+            jobs.bind_task_intake(submit=self._submit_job_task)
 
         async def _approved_desktop_tool_rpc_execute(task):
             # Publish the durable row for the length of this turn so a gated tool can
@@ -2235,7 +2258,21 @@ class AutonomyCoordinator:
                            exc_info=True)
         ledger = getattr(self._orch, "permission_ledger", None)
         if ledger is not None:
-            executor.register("permission.grant", ledger.apply_grant)
+            async def _apply_permission_grant(task):
+                payload = getattr(task, "payload", None)
+                if isinstance(payload, Mapping) and payload.get("surface") == "skill_switch":
+                    from .skills.switch_approval import apply_approved
+
+                    return await apply_approved(
+                        task,
+                        ledger=ledger,
+                        loader=getattr(self._orch, "skills", None),
+                        usage=getattr(self._orch, "skill_usage", None),
+                        intent_log=getattr(self._orch, "intent_log", None),
+                    )
+                return await ledger.apply_grant(task)
+
+            executor.register("permission.grant", _apply_permission_grant)
 
         # The work-run ledger. Bound whatever the flag says, because reading past
         # runs is honest with company mode off — what it must never do is open one,

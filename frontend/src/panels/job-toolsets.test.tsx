@@ -25,3 +25,18 @@ it('keeps unavailable saved IDs visible and removable',()=>{
   fireEvent.click(screen.getByLabelText('toolset removed'));
   expect(screen.getByRole('status').textContent).toContain('"enabled_toolsets":[]');
 });
+it('authors a canonical scheduled reasoning pin and clears it without losing other options',()=>{
+  render(<Editor initial={{repeat:2,enabled_toolsets:['basic']}}/>);
+  fireEvent.change(screen.getByLabelText('job reasoning effort'),{target:{value:'low'}});
+  expect(screen.getByRole('status').textContent).toBe('{"repeat":2,"enabled_toolsets":["basic"],"reasoning_effort":"low"}');
+  fireEvent.change(screen.getByLabelText('job reasoning effort'),{target:{value:''}});
+  expect(screen.getByRole('status').textContent).toBe('{"repeat":2,"enabled_toolsets":["basic"]}');
+});
+it('clears model-only pins when skip model is selected',()=>{
+  render(<Editor initial={{script:'watch.py',reasoning_effort:'high',enabled_toolsets:['basic'],repeat:2}}/>);
+  fireEvent.click(screen.getByLabelText('skip model'));
+  expect(screen.getByRole('status').textContent).toBe('{"script":"watch.py","repeat":2,"no_agent":true}');
+  for (const name of ['job toolsets mode','job reasoning effort','job model','job provider']) {
+    expect((screen.getByLabelText(name) as HTMLInputElement).disabled).toBe(true);
+  }
+});

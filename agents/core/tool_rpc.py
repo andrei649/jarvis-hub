@@ -24,6 +24,11 @@ This module is the **governed RPC surface** — the security-critical core:
   * **Secret containment:** the sandbox never sees secrets — handlers resolve
     credentials host-side, and every response is run through the secret-scrubber
     (defense-in-depth) before it crosses back.
+  * **Bounded, well-formed results (H297):** a handler may be a coroutine or a
+    plain function (run on the server's bounded worker pool; a sync call cannot be
+    cancelled, so its thread outlives a timeout or a revoke); a failure answers ``tool_error`` with
+    a sanitised, length-bounded ``error`` line; a :class:`ToolContent` result
+    becomes a validated ``content`` envelope of text and image parts.
 
 The Unix-socket transport + the sandbox-side client + actually running the
 agent's code in the sandbox are the host seam; the governance core here is pure
@@ -33,11 +38,17 @@ and offline-testable. The injected sink/secret-broker keep it decoupled.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import contextvars
+import functools
 import inspect
 import logging
+import threading
 import time
 import uuid
 from collections.abc import Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextvars import ContextVar
 from copy import deepcopy
 from typing import Awaitable, Callable, Optional
@@ -45,7 +56,7 @@ from typing import Awaitable, Callable, Optional
 from . import project_context
 from .automation_contracts import ContractTemplate, predicate
 from .autonomy.consent_registration import trusted_registration_key
-from .security.quarantine import strip_invisible_deep
+from .security.quarantine import strip_invisible, strip_invisible_deep
 from .turn_approvals import record_pending_approval
 
 logger = logging.getLogger("jarvis.tool_rpc")
@@ -87,7 +98,9 @@ def current_tool_turn() -> Optional[str]:
     return _tool_turn.get()
 
 
-Handler = Callable[[dict], Awaitable]
+#: A coroutine function, or (H297) a plain function: a sync handler runs on a worker
+#: thread (``asyncio.to_thread``, the call's context copied) so it never blocks the loop.
+Handler = Callable[[dict], object]
 Preflight = Callable[[dict], Mapping]
 GatedIntake = Callable[[str, dict], int]
 GatedReview = Callable[[str, dict, int], Awaitable[dict | None]]
@@ -202,6 +215,186 @@ _ANSWER_LABEL_KEYS = ("code_warnings", "code_warning_count")
 _KIND_PREFIX = "toolrpc."
 _RISK_TIER = 2
 
+# ── H297: the result envelope ────────────────────────────────────────────────
+
+#: The longest handler-error message the model is shown beside ``tool_error``.
+MAX_ERROR_CHARS = 240
+#: Content-part bounds for a multimodal result (:class:`ToolContent`).
+MAX_CONTENT_PARTS = 16
+MAX_IMAGE_PARTS = 4
+MAX_TEXT_PART_CHARS = 200_000
+#: Per image, as base64 — the form a provider measures: Anthropic refuses an image
+#: whose base64 data passes 5 MB, so the decoded cap is three quarters of that
+#: (3,750,000 bytes encode to exactly 5,000,000 characters).
+MAX_IMAGE_B64_CHARS = 5_000_000
+MAX_IMAGE_BYTES = MAX_IMAGE_B64_CHARS // 4 * 3
+#: Worker threads a server's sync handlers may occupy at once. A sync handler cannot
+#: be cancelled — a timed-out or revoked call keeps its thread until it returns — so
+#: the pool is the server's own (never the loop's default executor, which DNS and
+#: every ``run_in_executor(None)`` share) and a call past the bound is refused as
+#: ``tool_busy`` instead of queueing behind threads that may never come back.
+SYNC_HANDLER_WORKERS = 4
+#: The only image types a part may claim, each with the leading bytes it must carry:
+#: a part whose bytes are not what it says it is never reaches a provider.
+_IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/webp": (b"RIFF",),
+}
+
+
+class ToolContent:
+    """A multimodal tool result: ordered ``text`` and ``image`` content parts.
+
+    A handler returns one of these (never a plain dict, so a passthrough of external
+    JSON cannot promote itself into image parts) when its answer is more than JSON —
+    a screenshot, a rendered chart. ``structured`` is an optional JSON payload the
+    caller also reads as the envelope's ``result``. Parts are validated when the
+    server builds the envelope (:func:`normalize_content_parts`).
+    """
+
+    __slots__ = ("parts", "structured")
+
+    def __init__(self, parts, *, structured=None) -> None:
+        self.parts = list(parts or [])
+        self.structured = structured
+
+    @staticmethod
+    def text(text: str) -> dict:
+        return {"type": "text", "text": text}
+
+    @staticmethod
+    def image(data, media_type: str) -> dict:
+        """An image part from raw bytes or an already base64-encoded string."""
+        return {"type": "image", "media_type": media_type, "data": data}
+
+
+class ContentError(ValueError):
+    """A :class:`ToolContent` part is malformed or over its bounds."""
+
+
+def image_signature_ok(raw: bytes, media_type: str) -> bool:
+    """Do *raw*'s leading bytes carry the signature of the allowed *media_type*?"""
+    signatures = _IMAGE_SIGNATURES.get(media_type) if isinstance(media_type, str) else None
+    if signatures is None or not raw.startswith(signatures):
+        return False
+    return media_type != "image/webp" or raw[8:12] == b"WEBP"
+
+
+def _image_bytes(data) -> bytes:
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        return bytes(data)
+    if isinstance(data, str):
+        if len(data) > MAX_IMAGE_B64_CHARS:
+            raise ContentError("image_too_large")
+        try:
+            return base64.b64decode(data.encode("ascii"), validate=True)
+        except (binascii.Error, UnicodeEncodeError, ValueError) as exc:
+            raise ContentError("image_not_base64") from exc
+    raise ContentError("image_data_type")
+
+
+def normalize_content_parts(parts) -> list[dict]:
+    """Validate and canonicalize content parts, or raise :class:`ContentError`.
+
+    Text parts are stripped of invisible characters and bounded; image parts must
+    name an allowed type, decode, carry that type's signature and fit the size cap.
+    The output is plain JSON: ``{"type": "image", "media_type", "data": <base64>,
+    "bytes": n}``.
+    """
+    if not isinstance(parts, list) or not parts:
+        raise ContentError("content_empty")
+    if len(parts) > MAX_CONTENT_PARTS:
+        raise ContentError("too_many_parts")
+    out: list[dict] = []
+    images = 0
+    for part in parts:
+        if not isinstance(part, Mapping):
+            raise ContentError("part_not_mapping")
+        kind = part.get("type")
+        if kind == "text":
+            text = part.get("text")
+            if not isinstance(text, str):
+                raise ContentError("text_not_string")
+            if len(text) > MAX_TEXT_PART_CHARS:
+                raise ContentError("text_too_long")
+            out.append({"type": "text", "text": strip_invisible(text)})
+        elif kind == "image":
+            images += 1
+            if images > MAX_IMAGE_PARTS:
+                raise ContentError("too_many_images")
+            media_type = part.get("media_type")
+            signatures = _IMAGE_SIGNATURES.get(media_type) if isinstance(media_type, str) else None
+            if signatures is None:
+                raise ContentError("image_media_type")
+            raw = _image_bytes(part.get("data"))
+            if not raw:
+                raise ContentError("image_empty")
+            if len(raw) > MAX_IMAGE_BYTES:
+                raise ContentError("image_too_large")
+            if not image_signature_ok(raw, media_type):
+                raise ContentError("image_signature_mismatch")
+            out.append({
+                "type": "image",
+                "media_type": media_type,
+                "data": base64.b64encode(raw).decode("ascii"),
+                "bytes": len(raw),
+            })
+        else:
+            raise ContentError("part_type")
+    return out
+
+
+def sanitize_error(exc: BaseException, *, scrub: Callable[[str], str] | None = None,
+                   limit: int = MAX_ERROR_CHARS) -> str:
+    """A handler failure as one bounded, secret-free line the model may read.
+
+    ``ExceptionType: message`` with control and invisible characters removed,
+    known-pattern secrets redacted (and the broker's values, via ``scrub``), cut to
+    ``limit`` characters. Never the traceback, never a frame or a local.
+    """
+    try:
+        message = str(exc)
+    except Exception:
+        message = ""
+    text = type(exc).__name__ + (f": {message}" if message else "")
+    text = strip_invisible(text)
+    text = "".join(ch if ch.isprintable() else " " for ch in text)
+    text = " ".join(text.split())
+    # Redact the whole line before cutting it, so a secret is never half-kept.
+    try:
+        from .security.scanner import SecretScanner
+        text = SecretScanner().redact(text)
+    except Exception:
+        logger.debug("tool-rpc error redaction unavailable", exc_info=True)
+        text = type(exc).__name__
+    if scrub is not None:
+        try:
+            text = scrub(text)
+        except Exception:
+            text = type(exc).__name__
+    if len(text) > limit:
+        text = text[: max(1, limit - 1)].rstrip() + "…"
+    return text
+
+
+def _live(futures) -> set:
+    """The futures in *futures* whose thread has not returned yet."""
+    return {future for future in tuple(futures or ()) if not future.done()}
+
+
+class SyncHandlerBusy(RuntimeError):
+    """Every sync-handler worker of this server is still running a call (H297)."""
+
+
+def _is_async_callable(handler) -> bool:
+    target = handler
+    while isinstance(target, functools.partial):
+        target = target.func
+    return (inspect.iscoroutinefunction(target)
+            or (callable(target) and inspect.iscoroutinefunction(type(target).__call__)))
+
 
 def _tool_rpc_call_contract_template() -> ContractTemplate:
     """Contract form of the existing gated Tool-RPC approval path."""
@@ -258,12 +451,26 @@ class ToolRPCServer:
                  audit=None, agent: str = "jarvis", kernel=None,
                  execution_context_check: Optional[Callable] = None) -> None:
         self._tools: dict[str, dict] = {}
+        # H399 — the registrar's word on whether calls to a tool may overlap other
+        # calls of the same model step. Kept beside the spec, not in it: the spec is
+        # hashed for consent registration and the offer rows are snapshotted, and a
+        # scheduling hint must move neither.
+        self._parallel_safe: dict[str, bool] = {}
         self._secrets = secret_broker
         self._enqueue = enqueue
         self._audit = audit
         self.agent = agent
         self._kernel = kernel   # ORIZONT-24 K1 wave-3: bound kernel.authorize (default-off)
         self._execution_context_check = execution_context_check
+        # H297: sync handlers run on this server's own bounded pool (created on the
+        # first sync call); `_sync_slots` counts threads still running, including a
+        # call whose caller timed out or was cancelled, and `_sync_threads` keeps each
+        # name's running threads — registered or revoked — so a name cannot be
+        # re-registered while an old handler under it can still act. Kept beside the
+        # spec, not in it: the spec's keys are the consent registration's contract.
+        self._sync_executor: ThreadPoolExecutor | None = None
+        self._sync_slots = threading.BoundedSemaphore(SYNC_HANDLER_WORKERS)
+        self._sync_threads: dict[str, set[Future]] = {}
 
     # ── registration (the allowlist) ─────────────────────────────────────────
 
@@ -284,6 +491,7 @@ class ToolRPCServer:
         schema_overrides: SchemaOverrides | None = None,
         gated_review: GatedReview | None = None,
         consent_revision: str | None = None,
+        parallel_safe: bool | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -320,7 +528,18 @@ class ToolRPCServer:
         :func:`advertised_schema`); a hook that raises or answers something
         malformed is logged and the static schema is advertised instead. It narrows
         what is advertised; the handler's own checks still decide every call.
+
+        ``parallel_safe`` (H399) says whether a call to this tool may overlap other
+        calls of the same model step. ``False`` makes every call to it a barrier the
+        tool loop runs alone, in provider order (a writer that two concurrent calls
+        could interleave on). ``True`` keeps the concurrent default. ``None``
+        (undeclared) fails closed for a gated tool — the loop treats it as a barrier,
+        since a gated review may run the effect inside the step — and stays
+        concurrent for an ungated one. Like ``max_result_bytes`` it is not part of
+        :meth:`tools`.
         """
+        if parallel_safe is not None and type(parallel_safe) is not bool:
+            raise ValueError("parallel_safe must be a bool or None")
         if max_result_bytes is not None:
             try:
                 max_result_bytes = int(max_result_bytes)
@@ -371,6 +590,11 @@ class ToolRPCServer:
         existing = self._tools.get(name)
         if existing is not None and existing.get("active_tasks"):
             raise RuntimeError(f"tool has in-flight calls: {name}")
+        if _live(self._sync_threads.get(name)):
+            # H297: a sync handler still running on its thread (a revoked one too)
+            # can still act; a new handler under the same name waits until it returns.
+            raise RuntimeError(f"tool has in-flight calls: {name}")
+        self._sync_threads.pop(name, None)
         spec = {
             "handler": handler,
             "_grouping_epoch": uuid.uuid4().hex,
@@ -391,6 +615,10 @@ class ToolRPCServer:
         }
         spec["_consent_registration_key"] = trusted_registration_key(name, spec)
         self._tools[name] = spec
+        if parallel_safe is None:
+            self._parallel_safe.pop(name, None)
+        else:
+            self._parallel_safe[name] = parallel_safe
         return self
 
     async def unregister_tool(
@@ -400,10 +628,18 @@ class ToolRPCServer:
         cancel_inflight: bool = False,
         timeout: float = 5.0,
     ) -> bool:
-        """Deny new calls immediately, then drain or cancel calls already running."""
-        spec = self._tools.pop(str(name or ""), None)
+        """Deny new calls immediately, then drain or cancel calls already running.
+
+        A sync handler (H297) cannot be cancelled: its thread runs until the function
+        returns. Its call is waited for up to ``timeout`` like any other; a thread
+        still alive after that is kept under the name, so :meth:`register_tool`
+        refuses the same name until it has returned (:meth:`inflight_threads`).
+        """
+        key = str(name or "")
+        spec = self._tools.pop(key, None)
         if spec is None:
             return False
+        self._parallel_safe.pop(str(name or ""), None)
         current = asyncio.current_task()
         tasks = [task for task in tuple(spec.get("active_tasks", ())) if task is not current]
         if cancel_inflight:
@@ -419,7 +655,23 @@ class ToolRPCServer:
                 for task in tasks:
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
+        threads = _live(self._sync_threads.get(key))
+        if threads:
+            _done, pending = await asyncio.wait(
+                [asyncio.wrap_future(future) for future in threads],
+                timeout=max(0.01, min(30.0, float(timeout))),
+            )
+            for waiter in pending:
+                waiter.cancel()
+            alive = _live(threads)
+            if alive:
+                logger.warning("tool-rpc: %d sync call(s) of revoked tool %s still running",
+                               len(alive), key)
         return True
+
+    def inflight_threads(self, name: str) -> int:
+        """Sync-handler threads of *name* still running, registered or revoked (H297)."""
+        return len(_live(self._sync_threads.get(str(name or ""))))
 
     def tools(self, *, live: bool = True) -> "list[dict]":
         """The registered tools as the model is offered them. ``live=False`` leaves the
@@ -454,6 +706,10 @@ class ToolRPCServer:
         """
         spec = self._tools.get(str(name or ""))
         return None if spec is None else spec.get("max_result_bytes")
+
+    def declares_parallel_safe(self, name: str) -> bool | None:
+        """H399 — the tool's declared parallel safety, or None when it said nothing."""
+        return getattr(self, "_parallel_safe", {}).get(str(name or ""))
 
     def declares_untrusted_output(self, name: str) -> bool:
         """Whether this tool said what it returns comes from outside the box."""
@@ -643,12 +899,18 @@ class ToolRPCServer:
             return answer
 
         try:
-            result = await self._invoke_handler(spec, args, effective_actor)
-        except Exception:
+            result = await self._invoke_handler(spec, args, effective_actor, name=name)
+        except SyncHandlerBusy:
+            return {"ok": False, "reason": "tool_busy", "tool": name}
+        except Exception as exc:
             logger.warning("tool-rpc handler failed: %s", name, exc_info=True)
-            return {"ok": False, "reason": "tool_error", "tool": name}
+            # H297: the model is told what went wrong, in one bounded, secret-free line.
+            return {"ok": False, "reason": "tool_error", "tool": name,
+                    "error": sanitize_error(exc, scrub=self._scrub_text)}
 
         self._record("toolrpc.call", name, agent=effective_actor)
+        if isinstance(result, ToolContent):
+            return self._content_envelope(result, name, ok_key="ok", ok_value=True)
         # Invisible Unicode TAG characters never cross to the model or the sandbox: a
         # tool result (an MCP bridge, a fetched page, a file) can carry instructions the
         # owner cannot see on screen (Hermes absorption 4a).
@@ -732,10 +994,16 @@ class ToolRPCServer:
                     "detail": denied,
                 }
         try:
-            result = await self._invoke_handler(spec, args, effective_actor)
-        except Exception:
+            result = await self._invoke_handler(spec, args, effective_actor, name=name)
+        except SyncHandlerBusy:
+            return {"status": "failed", "reason": "tool_busy", "tool": name}
+        except Exception as exc:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
-            return {"status": "failed", "reason": "tool_error", "tool": name}
+            return {"status": "failed", "reason": "tool_error", "tool": name,
+                    "error": sanitize_error(exc, scrub=self._scrub_text)}
+        if isinstance(result, ToolContent) and not spec.get("trusted_execution"):
+            self._record("toolrpc.execute", name, agent=effective_actor)
+            return self._content_envelope(result, name, ok_key="status", ok_value="ok")
         if spec.get("trusted_execution") and not isinstance(result, Mapping):
             return {
                 "status": "failed",
@@ -764,19 +1032,61 @@ class ToolRPCServer:
 
     # ── internals ────────────────────────────────────────────────────────────
 
-    @staticmethod
-    async def _invoke_handler(spec: dict, args: dict, actor: str = ""):
+    async def _invoke_handler(self, spec: dict, args: dict, actor: str = "", *, name: str = ""):
         task = asyncio.current_task()
         active = spec["active_tasks"]
         if task is not None:
             active.add(task)
         token = _tool_actor.set(str(actor or ""))
         try:
-            return await spec["handler"](args)
+            handler = spec["handler"]
+            if _is_async_callable(handler):
+                return await handler(args)
+            result = await self._run_sync_handler(name, handler, args)
+            # A sync callable that hands back an awaitable (a lambda over a
+            # coroutine) is awaited here, on the loop.
+            if inspect.isawaitable(result):
+                result = await result
+            return result
         finally:
             _tool_actor.reset(token)
             if task is not None:
                 active.discard(task)
+
+    async def _run_sync_handler(self, name: str, handler, args: dict):
+        """H297: a plain-function handler, on this server's bounded worker pool.
+
+        The call's context is copied, so the actor and turn bindings are what the
+        handler reads, and a blocking handler never stalls the loop. The thread
+        cannot be interrupted: when the awaiting call is cancelled (``tool_timeout``
+        in the tool loop, ``unregister_tool(cancel_inflight=True)``) the caller stops
+        waiting, but the function runs to its end and any side effect it makes still
+        happens. Its slot and its entry under the tool's name are released
+        only when it returns, so a pool full of such threads refuses new sync calls
+        (:class:`SyncHandlerBusy`, answered as ``tool_busy``) and a revoked name stays
+        reserved until they finish. A handler that must stop with its caller has to be
+        a coroutine.
+        """
+        if not self._sync_slots.acquire(blocking=False):
+            raise SyncHandlerBusy("sync handler pool saturated")
+        try:
+            if self._sync_executor is None:
+                self._sync_executor = ThreadPoolExecutor(
+                    max_workers=SYNC_HANDLER_WORKERS, thread_name_prefix="toolrpc-sync")
+            context = contextvars.copy_context()
+            future = self._sync_executor.submit(context.run, handler, args)
+        except BaseException:
+            self._sync_slots.release()
+            raise
+        threads = self._sync_threads.setdefault(name, set())
+        threads.add(future)
+
+        def _finished(done: Future) -> None:
+            threads.discard(done)
+            self._sync_slots.release()
+
+        future.add_done_callback(_finished)
+        return await asyncio.wrap_future(future)
 
     def _classify(self, spec: dict, args: dict):
         """H506: the registrar's labels for this call, or a bounded denial.
@@ -831,6 +1141,35 @@ class ToolRPCServer:
         if not isinstance(sanitized, Mapping):
             return None, {"ok": False, "reason": "validation_failed", "tool": name}
         return dict(sanitized), None
+
+    def _scrub_text(self, text: str) -> str:
+        return self._secrets.redact(text) if self._secrets is not None else text
+
+    def _content_envelope(self, content: "ToolContent", name: str, *,
+                          ok_key: str, ok_value) -> dict:
+        """H297: a :class:`ToolContent` as a well-formed, bounded envelope.
+
+        ``{ok_key: ok_value, "tool", "result": <structured or None>, "content": [...]}``
+        — or ``invalid_result`` (with the bounded cause) when a part is malformed.
+        Text and structured data are scrubbed like any result; image bytes are
+        validated against their declared type, never rewritten.
+        """
+        failed_value = False if ok_key == "ok" else "failed"
+        try:
+            parts = normalize_content_parts(content.parts)
+        except ContentError as exc:
+            return {ok_key: failed_value, "reason": "invalid_result", "tool": name,
+                    "error": str(exc)}
+        scrubbed = [
+            {**part, "text": self._scrub_text(part["text"])} if part["type"] == "text" else part
+            for part in parts
+        ]
+        return {
+            ok_key: ok_value,
+            "tool": name,
+            "result": self._scrub(strip_invisible_deep(content.structured)),
+            "content": scrubbed,
+        }
 
     def _scrub(self, obj):
         """Recursively mask any known secret value before it crosses to the sandbox."""

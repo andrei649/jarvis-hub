@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
+from agents.core.checkpoint import CheckpointManager
 from agents.core.commands import Principal, build_default_registry
 from agents.core.learning.background_review import (
     REFINE_SNAPSHOT_CHARS,
@@ -160,6 +163,10 @@ class _FakeReviewer:
 
 def _orch(turns=(), reviewer=None):
     orch = Orchestrator.__new__(Orchestrator)
+    orch._native_root = TemporaryDirectory(prefix="refine-native-")
+    orch.checkpoints = CheckpointManager(str(Path(orch._native_root.name) / "checkpoints.db"))
+    orch.checkpoints.initialize()
+    orch.checkpoints.create_session_record("web-1")
     orch.memory = _Memory(list(turns))
     orch.reviewer = reviewer if reviewer is not None else _FakeReviewer()
     orch._session_id_default = "web-1"

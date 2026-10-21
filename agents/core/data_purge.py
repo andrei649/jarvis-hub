@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from agents.core import backup as _backup
+from agents.core import estop as _estop
 from agents.core import install_identity as _install_identity
 from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS, legacy_import_status
@@ -80,7 +81,15 @@ KEEP_FILES: frozenset[str] = frozenset({
     # H689: the install's identity, not its content; and the lock the running hub holds
     # (unlinked, a second hub could lock a new file on the same root).
     _install_identity.ID_FILE, _install_identity.LOCK_FILE, _install_identity.HUB_LOCK_FILE,
+    # H694: the kill switch every profile of the install obeys sits in the default root.
+    # It is a safety control, not owner content: a forget must never resume the hubs.
+    _estop.SENTINEL_NAME,
 })
+# H423 review: the core rings' cross-process lock files (``<ring>.json.lock``). They hold
+# no content (empty, or one placeholder byte for the Windows byte-range lock), and a
+# writer may hold one while the sweep runs: unlinked, the next writer would lock a new
+# inode and two writers would both hold "the" lock (the hazard HUB_LOCK_FILE is kept for).
+KEEP_SUFFIXES: tuple[str, ...] = (".json.lock",)
 KEEP_DIRS: frozenset[str] = frozenset({
     "security",         # append-only audit chain + intent log: compliance evidence
     # Nerva Workspace (`business/`: workspace.db, files/, secrets.enc): the COMPANY's
@@ -145,7 +154,13 @@ PURGE_MEMORY_FILES: tuple[str, ...] = (
     "bitemporal_kg.json",
     "entities.json",
     "decay.json",
+    # H423 review: both core rings and their digests are removed, never reset: a missing
+    # ring is an empty one, while the sweep's "{}" reset of the user ring (it used to be
+    # missing here) plus a deleted digest left a file every later write refused as drift.
     "cognition/core_memory.json",
+    "cognition/core_memory.json.sha256",
+    "cognition/user_core.json",
+    "cognition/user_core.json.sha256",
     "cognition/living_tiers.json",
     "house/private_graph.enc",
     "house/private_graph.cipher.salt",
@@ -306,6 +321,8 @@ def _is_kept(rel: Path) -> bool:
         return True
     if parts[0] in KEEP_DIRS:
         return True
+    if rel.name.endswith(KEEP_SUFFIXES):
+        return True
     return _sqlite_base_name(rel.name) in KEEP_FILES
 
 
@@ -393,6 +410,41 @@ def _purge_everything_but_keep(root: Path) -> dict:
     return report
 
 
+#: H423 review — the core rings, each removed with its digest under the ring's own file
+#: lock (``<ring>.json.lock``), so a writer that holds it finishes its save first and
+#: never writes the forgotten facts back after the unlink.
+_CORE_RING_FILES: tuple[str, ...] = ("cognition/core_memory.json", "cognition/user_core.json")
+
+
+def _unlink_core_ring(root: Path, ring: str) -> list[str]:
+    """Remove *ring* and its ``.sha256`` digest under the ring's file lock. Returns the
+    names removed. When the lock stays held past ``CLEAR_LOCK_TIMEOUT_S`` the files are
+    removed anyway (a forget must erase them) and a warning says so."""
+    from agents.core.cognition.memory import CLEAR_LOCK_TIMEOUT_S, CoreMemoryLocked, _path_lock
+
+    path = root / ring
+    names = [ring, ring + ".sha256"]
+    if not any((root / name).exists() for name in names):
+        return []
+    lock = _path_lock(path.with_name(path.name + ".lock"))
+    try:
+        lock.acquire(CLEAR_LOCK_TIMEOUT_S)
+    except CoreMemoryLocked:
+        lock = None
+        logger.warning("data purge: %s stayed locked; removing it without the lock", path)
+    removed: list[str] = []
+    try:
+        for name in names:
+            p = root / name
+            if p.exists():
+                p.unlink()
+                removed.append(name)
+    finally:
+        if lock is not None:
+            lock.release()
+    return removed
+
+
 def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> dict:
     """Erase the memory subsystem's at-rest content under *root*.
 
@@ -406,10 +458,14 @@ def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> d
     report: dict = {"files": [], "dirs": [], "sessions": []}
 
     for name in PURGE_MEMORY_FILES:
+        if name.removesuffix(".sha256") in _CORE_RING_FILES:
+            continue                      # removed below, under the ring's lock
         p = root / name
         if p.exists():
             p.unlink()
             report["files"].append(name)
+    for ring in _CORE_RING_FILES:
+        report["files"].extend(_unlink_core_ring(root, ring))
 
     for name in PURGE_MEMORY_DIRS:
         d = root / name
@@ -546,7 +602,10 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
             _note_failure("cognition_memory_lookup", exc)
     if living is not None and hasattr(living, "clear"):
         try:
-            living.clear()
+            # H423: the core rings' clear waits for their file lock (a forget never writes
+            # without it), so it runs off the event loop; a ring that stays locked raises
+            # and is reported here as not forgotten.
+            await asyncio.to_thread(living.clear)
             cleared.append("cognition_memory")
         except Exception as exc:
             _note_failure("cognition_memory", exc)
@@ -576,6 +635,10 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
     if getattr(orch, "_core_block_cache", None) is not None:
         orch._core_block_cache = None
         cleared.append("core_block_cache")
+    # H423 review: the turn's pending ring reread (with its drift notes) predates the
+    # forget too; the next block rereads the rings afresh.
+    if getattr(orch, "_core_rings_reread", None) is not None:
+        orch._core_rings_reread = None
     try:
         from agents.core.ingestion.pipeline import clear_live_ingestion
         watcher = getattr(orch, "ingestion_watcher", None)

@@ -609,6 +609,9 @@ def register_clarify_tool(server, orch):
         clarify,
         gated=False,
         untrusted_output=True,
+        # H399 — an interactive wait on the user: the rest of the step must not run
+        # around (or ahead of) the answer it is waiting for.
+        parallel_safe=False,
         description="Ask this conversation's user a clarification and wait for their reply.",
         input_schema={
             "type": "object",

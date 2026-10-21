@@ -106,7 +106,7 @@ async def test_actual_agent_process_keeps_guard_and_raw_metadata(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_actual_orchestrator_forwards_raw_window_through_guard(tmp_path):
+async def test_actual_orchestrator_forwards_raw_window_through_guard(tmp_path, monkeypatch):
     from agents.core.agent import Agent
     from agents.core.security.guardrails import GuardrailsEngine
     from tests.test_agent_runtime_v2 import _streamed_orchestrator_for
@@ -117,7 +117,7 @@ async def test_actual_orchestrator_forwards_raw_window_through_guard(tmp_path):
     agent = Agent('jarvis', {'name': 'Jarvis'})
     agent.tool_runtime = AgentToolRuntime(_server(30000), enabled=lambda: True,
                                         result_store=ToolResultStore(tmp_path))
-    orch, _, _, _ = _streamed_orchestrator_for(agent, backend)
+    orch, _, _, _ = _streamed_orchestrator_for(agent, backend, monkeypatch=monkeypatch)
     orch.security = GuardrailsEngine(scanners=[])
     assert await orch.handle_input_stream('fetch', channel='web', on_token=lambda _: None,
                                           session_id='window-test') == 'done'

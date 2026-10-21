@@ -15,6 +15,7 @@ from agents.core.llm.hybrid_router import (
 from agents.core.llm.providers import get_profile
 from agents.core.orchestrator import Orchestrator
 from agents.core.security.guardrails import GuardrailsEngine
+from tests.h441_native_fixture import bind_native
 
 EXPECTED_LOCAL_UNAVAILABLE_REPLY = (
     "⚠️ No local language model is available. "
@@ -108,7 +109,7 @@ class RecordingToolRuntime:
         )
 
 
-def streamed_orchestrator_for(agent: Agent, router, security: GuardrailsEngine):
+def streamed_orchestrator_for(agent: Agent, router, security: GuardrailsEngine, monkeypatch):
     orchestrator = Orchestrator.__new__(Orchestrator)
     orchestrator._session_id_default = None
 
@@ -149,9 +150,7 @@ def streamed_orchestrator_for(agent: Agent, router, security: GuardrailsEngine):
     orchestrator._route_candidates = lambda intent: intent.target_agents
     orchestrator.agents = {agent.id: agent}
     orchestrator.llm_router = router
-    orchestrator.checkpoints = SimpleNamespace(
-        load=lambda agent_id, session_id: None,
-    )
+    bind_native(orchestrator, monkeypatch, session_ids=("stream-session", "stream"))
     orchestrator.security = security
     orchestrator.context_cache = None
     orchestrator.get_setting = lambda key, default=None: default
@@ -312,7 +311,7 @@ async def test_synthesis_falls_back_to_the_join_when_no_local_backend_exists():
 
 
 @pytest.mark.asyncio
-async def test_streaming_uses_selected_backend_not_policy_prototype():
+async def test_streaming_uses_selected_backend_not_policy_prototype(monkeypatch):
     selected = RecordingBackend("selected stream")
     boot_backend = RecordingBackend("boot stream")
     router = StaticRouter(selected)
@@ -320,7 +319,7 @@ async def test_streaming_uses_selected_backend_not_policy_prototype():
     agent.soul = {"content": "test policy"}
     agent.build_prompt = lambda text, context: text
     security = GuardrailsEngine(backend=boot_backend)
-    orchestrator = streamed_orchestrator_for(agent, router, security)
+    orchestrator = streamed_orchestrator_for(agent, router, security, monkeypatch)
     emitted = []
 
     result = await orchestrator.handle_input_stream(
@@ -438,6 +437,7 @@ async def test_boot_without_backend_then_redetect_guards_first_request(
 @pytest.mark.asyncio
 async def test_local_unavailable_paths_share_stable_reply_and_zero_cloud_calls(
     agent_id,
+    monkeypatch,
 ):
     local = RecordingBackend("local answer")
     gemini = RecordingBackend("gemini answer", provider="gemini")
@@ -451,7 +451,7 @@ async def test_local_unavailable_paths_share_stable_reply_and_zero_cloud_calls(
 
     process_reply = await agent.process("private request", {"session_id": "normal"})
     emitted = []
-    orchestrator = streamed_orchestrator_for(agent, router, agent.guardrails)
+    orchestrator = streamed_orchestrator_for(agent, router, agent.guardrails, monkeypatch)
     stream_reply = await orchestrator.handle_input_stream(
         "private stream",
         channel="web",

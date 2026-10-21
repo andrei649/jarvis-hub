@@ -121,6 +121,50 @@ def test_a_sample_that_could_not_be_read_changes_nothing(tmp_path):
     assert _conditions(m.snapshot()) == ["disk_elevated", "memory_elevated"]
 
 
+@pytest.mark.parametrize(("raised", "condition"), [
+    (96.0, "disk_critical"), (86.0, "disk_elevated"),
+])
+def test_healthy_other_volume_cannot_confirm_unreadable_disks_recovery(tmp_path, raised, condition):
+    m = _monitor(tmp_path)
+    m.start()
+    m.observe(Sample(memory=10, disks={"/": raised, "/data": 10.0}))
+    assert m.snapshot()["worst"]["condition"] == condition
+    assert m.dismiss(condition, "boot-a")
+    for _ in range(4):
+        m.observe(Sample(memory=10, disks={"/data": 10.0}))
+        snap = m.snapshot()
+        assert _conditions(snap) == [condition]
+        assert snap["conditions"][0]["dismissed"] is True
+    for _ in range(2):
+        m.observe(Sample(memory=10, disks={"/": 10.0, "/data": 10.0}))
+        assert _conditions(m.snapshot()) == [condition]
+    m.observe(Sample(memory=10, disks={"/": 10.0, "/data": 10.0}))
+    assert m.snapshot()["worst"] is None
+    m.observe(Sample(memory=10, disks={"/": raised, "/data": 10.0}))
+    assert m.snapshot()["worst"]["condition"] == condition
+
+
+def test_a_missing_volume_breaks_its_recovery_streak_without_delaying_another_rise(tmp_path):
+    m = _monitor(tmp_path)
+    m.start()
+    m.observe(Sample(memory=10, disks={"/": 86.0, "/data": 10.0}))
+    for _ in range(2):
+        m.observe(Sample(memory=10, disks={"/": 10.0, "/data": 10.0}))
+    m.observe(Sample(memory=10, disks={"/data": 10.0}))
+    m.observe(Sample(memory=10, disks={"/": 10.0, "/data": 10.0}))
+    assert m.snapshot()["worst"]["condition"] == "disk_elevated"
+    m.observe(Sample(memory=10, disks={"/data": 97.0}))
+    snap = m.snapshot()
+    assert snap["worst"]["condition"] == "disk_critical"
+    assert snap["worst"]["paths"][0]["path"] == "/data"
+    for _ in range(2):
+        m.observe(Sample(memory=10, disks={"/": 10.0, "/data": 97.0}))
+    assert m.snapshot()["worst"]["condition"] == "disk_critical"
+    for _ in range(3):
+        m.observe(Sample(memory=10, disks={"/": 10.0, "/data": 10.0}))
+    assert m.snapshot()["worst"] is None
+
+
 def test_only_the_worst_undismissed_condition_is_shown(tmp_path):
     m = _monitor(tmp_path)
     m.start()

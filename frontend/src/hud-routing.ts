@@ -2,8 +2,8 @@ import { appUrl, logicalPath } from './base-path';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { CONSOLE_PANELS, CONSOLE_PANEL_MAP } from './console-routes';
 
-import { HUD_MODES } from './hud-modes';
-export { HUD_MODES } from './hud-modes';
+import { HUD_MODES, HUD_MODES_SET } from './hud-modes';
+export { HUD_MODES, HUD_MODES_SET } from './hud-modes';
 export type HudRoute = { mode: string; panel: string | null; path: string; title: string; valid: boolean };
 const CHANGE = 'nerva-route-change';
 
@@ -16,8 +16,9 @@ export function parseHudRoute(pathname: string, search = '', hash = '', floating
   const mode = parts[2];
   // Bolt Optimization: O(1) Map lookup via CONSOLE_PANEL_MAP avoids O(120) array scan on every route parse call
   const panel = mode === 'console' && parts.length === 4 ? CONSOLE_PANEL_MAP.get(parts[3]) || null : null;
+  // Bolt Optimization: O(1) Set lookup via HUD_MODES_SET avoids O(N) array scan on every route parse call
   const valid = parts[1] === 'v2' && (!floating || mode === 'chat') && (
-    (parts.length === 3 && (HUD_MODES.includes(mode as any) || mode === 'console')) || !!panel
+    (parts.length === 3 && (HUD_MODES_SET.has(mode) || mode === 'console')) || !!panel
   );
   if (!valid) return { mode: fallback, panel: null, path: `/v2/${fallback}`, title: `${floating ? 'Chat' : 'Cockpit'} · Nerva`, valid: false };
   return { mode, panel: panel?.id || null, path, valid: true, title: panel ? `${panel.label} · Console · Nerva` : `${mode[0].toUpperCase()}${mode.slice(1)} · Nerva` };

@@ -87,14 +87,18 @@ def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
-        "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets",
+        "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
+        "uninstall", "backup", "pairing",
     }
+    # H010: backup create/list/verify read the data root; restore asks the hub's approval queue;
+    # cancel withdraws a staged restore before it is applied.
+    assert tree["backup"] == ["cancel", "create", "list", "restore", "verify"]
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
     assert tree["extensions"] == ["activate", "consent", "doctor", "list"]
     # H022: the audit is the only security act so far; it reads and reports, never mutates.
     assert tree["security"] == ["audit"]
-    assert tree["config"] == ["check", "get", "list", "set"]
+    assert tree["config"] == ["check", "get", "list", "set", "unset"]
     assert tree["approvals"] == ["accept", "consent", "defer", "edit", "list", "reject"]
     assert tree["checkpoints"] == [
         "clear", "clear-legacy", "diff", "list", "prune", "restore", "status",
@@ -102,12 +106,13 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["kernel"] == ["explain"]
     assert tree["estop"] == ["engage", "resume", "status"]
     # H350: the linter reads files and reports; it never writes a skill.
-    assert tree["skills"] == ["lint", "list", "off", "on"]
+    assert tree["skills"] == ["config", "lint", "list", "off", "on"]
     # H464: read the runs, and let a parked one go. Nothing here starts a run.
     assert tree["company"] == ["clear-wait", "list"]
+    # H473: `discover` scans the file roots into the repo cache; `repos` lists that cache.
     assert tree["project"] == [
-        "add-folder", "archive", "bind-board", "create", "list", "ls", "remove-folder",
-        "rename", "restore", "set-primary", "show", "use",
+        "add-folder", "archive", "bind-board", "create", "discover", "list", "ls", "remove-folder",
+        "rename", "repos", "restore", "set-primary", "show", "use",
     ]
 
 
@@ -534,7 +539,8 @@ def test_logs_tail_the_hub_log_or_say_where_it_would_be(tmp_path, monkeypatch):
     assert code == EXIT_FAILED and "system.log_to_file" in err
 
 
-def test_doctor_delegates_to_the_install_doctor(monkeypatch):
+@pytest.mark.parametrize("args", [["--json", "--smoke"], ["--json", "--local-pilot"]])
+def test_doctor_delegates_to_the_install_doctor(monkeypatch, args):
     from scripts import doctor
 
     seen = {}
@@ -544,8 +550,8 @@ def test_doctor_delegates_to_the_install_doctor(monkeypatch):
         return 0
 
     monkeypatch.setattr(doctor, "main", fake_main)
-    code, _out, _err, _hub = _run(["doctor", "--json", "--smoke"])
-    assert code == EXIT_OK and seen["argv"] == ["--json", "--smoke"]
+    code, _out, _err, _hub = _run(["doctor", *args])
+    assert code == EXIT_OK and seen["argv"] == args
 
 
 # ── kernel explain ───────────────────────────────────────────────────────────

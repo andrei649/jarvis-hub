@@ -1,0 +1,552 @@
+{
+  "schema_version": 1,
+  "state": "draft_progress_checkpoint_pause_requested",
+  "base": "332b16ca857a3fd126a89be411e2e6ca17de4e91",
+  "last_whole_acceptance": "17f09315ee767b71fe0c3eabcf97c650d4dd0d40",
+  "combined_source_head": "17f8019e80c5975264b9054b17f8adb8cdefb5a9",
+  "accepted_contracts": 152,
+  "frozen_contracts": 697,
+  "new_whole_acceptances_after_batch09": [],
+  "source_sha256": {
+    "agents/core/voice/speech_text.py": "d3e564899d1c783263f62e8b77f19346c166d0295bf1d8fd309fffb17ad08063",
+    "frontend/src/speech-text.ts": "7c1f30553a079ec54484319c75ec122ebe15912bd5cc15af69a1463fd7fbd0fa",
+    "frontend/src/test/speech-text-cases.json": "fbfadca4549c643ff227c1516e51704898b4744de9cb43ddea59665d93ca40d9",
+    "tests/test_h526_speech_text.py": "1fc33b244fa52ea6f4f7604daf193e85f43ba211fb01b27f8b524167b6cbd318",
+    "frontend/src/test/speech-text.test.ts": "a7311abaf108aab457dca02ceeada55369566b2b4072e0ecfab9723e850b35e2",
+    "frontend/src/test/voice-speech-text.test.tsx": "ed5922d0fc0601a388c3d45a30ba86355221a6aa55a98cd24b670c9660d982f8",
+    "agents/core/orchestrator.py": "76c273c35c00c6f4504c83736416cc5504bb5bcd8a39d8b889958bd1fe9dd385",
+    "agents/core/route_compaction.py": "13c4cd2b9923e920c5ca7f58bbd5dc9a456892fec3ab45f41b0e6a8394fe0c60",
+    "tests/test_h673_anchor_lifecycle.py": "15966379b4f25c27b80287550f0f3f2927a7b6e0847277321fabb4c1d8951e23",
+    "tests/test_text_usage_context.py": "8c97b6eea5bfeabeb832a1003602c3a6bfa0842ecaed9c02ac582d83b3aba970",
+    "agents/core/context_compressor.py": "0c49517974ea36d7fbb4cd4dd0345b2ef54f2612ca1f4c6c0d66a4ca12a51c2e",
+    "tests/test_context_usage_anchor.py": "24fcecc6b401891e667a2445656a3bccf24081232db32985c7177624bd9ed542",
+    "frontend/src/test/desktop.test.tsx": "787de2a0049af61839e55d3d3c1feb8c83686d413b5ff5e7bad6a14cdafeb491"
+  },
+  "combined_focused_backend": {
+    "tests": 352,
+    "passed": 352,
+    "failures": 0,
+    "errors": 0
+  },
+  "h526_focused": [
+    {
+      "selection": "test_h526_speech_text.py test_tts.py test_tts_fish_emotion.py test_spoken_reply.py",
+      "counts": {
+        "tests": 170,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "artifact": "/workspace/scratch/hermes-697/batch11/h526-final-backend.xml"
+    },
+    {
+      "selection": "speech-text.test.ts voice-speech-text.test.tsx ttsStream.test.ts",
+      "counts": {
+        "numTotalTests": 91,
+        "numPassedTests": 91,
+        "numFailedTests": 0
+      },
+      "artifact": "/workspace/scratch/hermes-697/batch11/h526-final-frontend.json"
+    },
+    {
+      "selection": "frontend tsc --noEmit",
+      "result": "passed"
+    },
+    {
+      "selection": "Ruff on owned Python and git diff --check",
+      "result": "passed"
+    }
+  ],
+  "h526_red_first": [
+    {
+      "artifact": "/workspace/scratch/hermes-697/batch11/h526-red-python.xml",
+      "result": "five expected failures: three shared speech cases, one fixed-point consequence, route footer-only 204"
+    },
+    {
+      "artifact": "/workspace/scratch/hermes-697/batch11/h526-red-frontend.log",
+      "result": "six expected failures: shared speech cases, split footer stream, near-miss assertion, live voice synthesis leak"
+    },
+    {
+      "artifact": "/workspace/scratch/hermes-697/batch11/h526-reuse-red.log",
+      "result": "one expected failure: reused filter swallowed next stream after footer-at-EOF"
+    },
+    {
+      "artifact": "/workspace/scratch/hermes-697/batch11/h526-empty-bullet-red.log",
+      "result": "one expected failure: empty bullet marker initially misclassified as producer footer"
+    }
+  ],
+  "h526_review": {
+    "review": "H526 final independent read-only code review",
+    "base": "17f09315ee767b71fe0c3eabcf97c650d4dd0d40",
+    "verdict": "No remaining blocking defect found in the frozen six-file implementation.",
+    "reviewed_hashes_sha256": {
+      "agents/core/voice/speech_text.py": "d3e564899d1c783263f62e8b77f19346c166d0295bf1d8fd309fffb17ad08063",
+      "frontend/src/speech-text.ts": "7c1f30553a079ec54484319c75ec122ebe15912bd5cc15af69a1463fd7fbd0fa",
+      "frontend/src/test/speech-text-cases.json": "fbfadca4549c643ff227c1516e51704898b4744de9cb43ddea59665d93ca40d9",
+      "frontend/src/test/speech-text.test.ts": "a7311abaf108aab457dca02ceeada55369566b2b4072e0ecfab9723e850b35e2",
+      "frontend/src/test/voice-speech-text.test.tsx": "ed5922d0fc0601a388c3d45a30ba86355221a6aa55a98cd24b670c9660d982f8",
+      "tests/test_h526_speech_text.py": "1fc33b244fa52ea6f4f7604daf193e85f43ba211fb01b27f8b524167b6cbd318"
+    },
+    "checks": [
+      "Compared the complete six-file diff against the settled batch-11 plan and pinned donor producer in batch09/h526-donor/agent__turn_explainers.py. The matcher requires the warning icon, exact unique sentence, positive decimal count and a nonempty contiguous bullet before suppression. It recognizes the donor's path and overflow bullets and retains a bare header, ordinary warning and later nonbullet prose.",
+      "Python hub and TypeScript whole-reply normalization use equivalent line and CRLF handling. The stream parser withholds only a bounded candidate header; after the first nonempty bullet character it discards bullet lines without accumulating their contents. Invalid candidates replay into the existing code/reasoning filter, and nonbullet following lines are returned to the sentence aggregator.",
+      "Reviewed interactions with the existing fence/reasoning state machine: filtered output still passes through feedBlocks, and near-miss warnings are replayed rather than suppressed. The previously identified flush-reuse bug now has a red-first regression and footer state reset in flush(). The empty-bullet false match likewise has a red-first regression and fix.",
+      "The shared corpus and tests cover whole hub/HUD normalization, real TTS route 204, split live HUD speech, LF/CRLF, Unicode path, ten paths plus overflow, following text, ordinary warning, malformed long candidate, empty bullet and filter reuse."
+    ],
+    "validation_observed_not_rerun": {
+      "source": "/workspace/scratch/hermes-697/batch11/report.json",
+      "backend_focused": "170 passed",
+      "frontend_focused": "91 passed",
+      "other": "TypeScript, Ruff, and diff checks passed"
+    },
+    "limitations": [
+      "This was a static review; I ran no tests or live audio calls. Root owns the full-suite and browser display/speech smoke.",
+      "The useVoice test's visibleReply assertion checks joined fixture text, not a rendered chat component. The changed implementation only filters speech; root's browser smoke is the direct visible-reply check."
+    ],
+    "repository_edits": false
+  },
+  "h673_core_validation": {
+    "command": "JARVIS_TESTING=1 TIKTOKEN_CACHE_DIR=/workspace/scratch/pr-review/tiktoken-data /workspace/venv-h512/bin/python -m pytest tests/test_h673_anchor_lifecycle.py tests/test_text_usage_context.py tests/test_route_compaction.py tests/test_h002_turn_usage.py tests/test_complete_prompt_anchor.py tests/test_prompt_counter_completeness.py -q --disable-warnings --junitxml=/workspace/scratch/hermes-697/batch10/core/final.xml",
+    "result": "97 passed, 0 failed/errors/skipped",
+    "xml": "/workspace/scratch/hermes-697/batch10/core/final.xml",
+    "log": "/workspace/scratch/hermes-697/batch10/core/final.log",
+    "ruff": "All checks passed on four owned paths",
+    "diff_check": "passed"
+  },
+  "h673_image_validation": {
+    "junit": "green.xml",
+    "cases": 85,
+    "failures": 0,
+    "errors": 0,
+    "selection": [
+      "test_context_usage_anchor.py",
+      "test_context_compaction_policy.py",
+      "test_context_compressor_h20_3.py",
+      "test_context_compressor_salvage.py"
+    ]
+  },
+  "h673_smoke": {
+    "status": "passed",
+    "steps": [
+      "actual startup registered clarify without helper injection",
+      "actual chat model tool loop resumed with exact authenticated answer",
+      "guest isolation, auth, invalid choice and replay refused"
+    ],
+    "generation_requests": 3,
+    "blocked_network_attempts": 2,
+    "tool_reply_observed": true,
+    "auxiliary_text_requests": 1,
+    "usage_sink_warnings": [],
+    "temporary_state_removed": true,
+    "source_hashes": {
+      "agents/core/route_compaction.py": "13c4cd2b9923e920c5ca7f58bbd5dc9a456892fec3ab45f41b0e6a8394fe0c60",
+      "agents/core/context_compressor.py": "0c49517974ea36d7fbb4cd4dd0345b2ef54f2612ca1f4c6c0d66a4ca12a51c2e",
+      "agents/core/orchestrator.py": "76c273c35c00c6f4504c83736416cc5504bb5bcd8a39d8b889958bd1fe9dd385",
+      "agents/core/channels/pending_input_runtime.py": "1e92b1e6c36a77726680d478343528b3701ba8e70d65e8b7c35fd5f43e787ba2",
+      "agents/core/channels/pending_input.py": "32d8db2fcb5a3a24ec898575a3a7e551abae30bed3dfafb1e7d2680d3c69ba14",
+      "agents/core/agent_runtime.py": "49fa43e1650862231593e9cb559cf2ec56cc1289fe377395391e967291ae8126",
+      "agents/web.py": "242c8fd6d51eccc9c7a55fd21c0790191bb350d3bbff20de5304ac12ee01a39e",
+      "agents/core/routers/chat_pending.py": "6e2656d47ec62c3d2bb8d25d472d89e54f090aa98ea38820d9e43c4c0e2e33d5"
+    },
+    "source_unchanged": true
+  },
+  "built_browser": {
+    "setup": "Built HUD served by scratch static server; same-origin fixture STT/chat; fake microphone and speechSynthesis, no provider or physical audio",
+    "status": "passed",
+    "checks": {
+      "initial": {
+        "spoken": [
+          "Done.",
+          "The visible explanation remains."
+        ],
+        "advisoryStillVisible": true
+      },
+      "hardReload": {
+        "spoken": [
+          "Done.",
+          "The visible explanation remains."
+        ],
+        "advisoryStillVisible": true
+      }
+    },
+    "errors": [],
+    "badAssets": []
+  },
+  "latest_full_backend_milestone": {
+    "source_head": "f925c3d3637fbf09aec2e5a0c568bf42aad0b977",
+    "tests": 25951,
+    "passed": 25906,
+    "failed": 5,
+    "skipped_or_xfail": 40,
+    "repairs": {
+      "fixture_modules_passed": 245,
+      "provenance_modules_passed": 130,
+      "no_optional_sdk_original_guards_passed": 2
+    },
+    "new_combined_head_full_run": "deferred"
+  },
+  "checkpoint_pin_update": {
+    "base": "17f09315ee767b71fe0c3eabcf97c650d4dd0d40",
+    "head": "0719d9085449aba47faee08a8127916052f2cb22",
+    "new_whole_acceptances": [],
+    "refreshed_current": [
+      {
+        "id": "H002",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H067",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H256",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H315",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H328",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H363",
+        "path": "agents/core/context_compressor.py"
+      },
+      {
+        "id": "H364",
+        "path": "agents/core/context_compressor.py"
+      },
+      {
+        "id": "H398",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H413",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H427",
+        "path": "agents/core/context_compressor.py"
+      },
+      {
+        "id": "H441",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H441",
+        "path": "agents/core/context_compressor.py"
+      },
+      {
+        "id": "H659",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H671",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H673",
+        "path": "agents/core/context_compressor.py"
+      },
+      {
+        "id": "H673",
+        "path": "tests/test_context_usage_anchor.py"
+      },
+      {
+        "id": "H673",
+        "path": "tests/test_text_usage_context.py"
+      },
+      {
+        "id": "H673",
+        "path": "agents/core/route_compaction.py"
+      },
+      {
+        "id": "H674",
+        "path": "agents/core/context_compressor.py"
+      }
+    ],
+    "preserved_stale": [
+      {
+        "id": "H011",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H011",
+        "path": "mobile/PARITY.md"
+      },
+      {
+        "id": "H034",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H060",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H061",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H063",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H063",
+        "path": "mobile/PARITY.md"
+      },
+      {
+        "id": "H068",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H075",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H099",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H104",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H114",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H146",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H227",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H262",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H277",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H326",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H363",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H364",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H388",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H396",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H416",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H425",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H427",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H428",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H433",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H449",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H461",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H465",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H485",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H487",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H490",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H513",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H515",
+        "path": "mobile/PARITY.md"
+      },
+      {
+        "id": "H557",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H579",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H581",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H594",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H670",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H672",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H673",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H674",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H677",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H681",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H683",
+        "path": "agents/core/orchestrator.py"
+      },
+      {
+        "id": "H686",
+        "path": "agents/core/orchestrator.py"
+      }
+    ],
+    "deferred_h526": [
+      {
+        "id": "H526",
+        "path": "agents/core/voice/speech_text.py"
+      },
+      {
+        "id": "H526",
+        "path": "frontend/src/speech-text.ts"
+      },
+      {
+        "id": "H526",
+        "path": "tests/test_h526_speech_text.py"
+      },
+      {
+        "id": "H526",
+        "path": "frontend/src/test/speech-text.test.ts"
+      },
+      {
+        "id": "H526",
+        "path": "frontend/src/test/voice-speech-text.test.tsx"
+      },
+      {
+        "id": "H526",
+        "path": "frontend/src/test/speech-text-cases.json"
+      }
+    ],
+    "unresolved_citations": [],
+    "counts": {
+      "equivalent": 152,
+      "partial": 228,
+      "missing": 56,
+      "excluded": 0,
+      "needs_review": 261
+    },
+    "desktop_addendum": {
+      "id": "H178",
+      "path": "frontend/src/test/desktop.test.tsx",
+      "preservation": "Same partial status and remaining limits; bounded lazy-page test deadline only."
+    }
+  },
+  "deferred": [
+    "Full backend milestone for combined head",
+    "Whole H526 acceptance",
+    "H673 phase2 actual-dispatch prefix binding and full-budget arithmetic"
+  ],
+  "pause": "Resume only after the owner reports new resources and requests continuation.",
+  "frontend_full": {
+    "numTotalTests": 2192,
+    "numPassedTests": 2191,
+    "numFailedTests": 1,
+    "numPendingTests": 0,
+    "success": false,
+    "failed_node": "desktop.test.tsx::floating app renders existing chat without normal shell or world control"
+  },
+  "frontend_fixture_repair": {
+    "diagnosis": "Cold lazy ChatMode transform/render exceeded default one-second findByText wait; DOM remained in the real loading boundary. Same node failed in isolated original rerun.",
+    "change": "Wait up to five seconds for the same transcript assertion with a ten-second case deadline; no product behavior or asserted outcome changed.",
+    "fixed_module": {
+      "numTotalTests": 10,
+      "numPassedTests": 10,
+      "numFailedTests": 0,
+      "success": true
+    },
+    "cold_render_ms": 2041.107372,
+    "full_suite_after_fixture_repair": "not rerun"
+  },
+  "collected_backend_cases": 25971,
+  "mobile_count": {
+    "count": 359,
+    "provenance": "reused latest completed count; no mobile source change"
+  },
+  "desktop_fixture_review": {
+    "id": "H178",
+    "base_commit": "17f09315ee767b71fe0c3eabcf97c650d4dd0d40",
+    "final_worktree_head": "0719d9085449aba47faee08a8127916052f2cb22",
+    "frozen_clause": "A frameless transparent always-on-top panel window with per-compositor capability detection (Wayland vs X11 vs Cocoa vs win32), click-through, native frost, edge resize handles, press-and-hold composer drag, cross-monitor drag, a game-overlay watch, Hyprland promotion, reset-layout, a move-to-pointer chord, and handoff back to the app window (16 §8 hud-* ids + 17-desktop-a.md §7, ~20 ids).",
+    "assessment_status_and_remaining_preserved": {
+      "status": "partial",
+      "remaining": "Hermes overlay complet remains neechivalat: fără transparency/frost, click-through, press-and-hold composer drag, game-overlay watcher, Hyprland promotion, global chord/move-to-pointer sau citirea ferestrei de dedesubt. Windows/Linux și deconectarea fizică a monitorului neverificate; Wayland declară placement/topmost nesuportate."
+    },
+    "diff": {
+      "path": "frontend/src/test/desktop.test.tsx",
+      "base_sha256": "faef698a507eec2f611da3ca56f84be0a368a1880a6f98f0fb3d75d735df82c3",
+      "final_sha256": "787de2a0049af61839e55d3d3c1feb8c83686d413b5ff5e7bad6a14cdafeb491",
+      "change": "Only increases findByText timeout from the default to 5000ms and the test timeout to 10000ms, with an explanatory comment."
+    },
+    "review": "bounded test-only fixture repair; existing H178 verdict and remaining scope preserved; no new whole-contract claim",
+    "preservation_reason": "The test still imports and renders the floating App, waits for the exact existing server transcript, asserts that the normal console control is absent, and asserts the Open in app handoff button. ChatMode is a React.lazy import from modes3.tsx, so a slow transform can leave the DOM at the loading fallback beyond the previous short wait; the longer bounded wait allows the same behavioral assertions to execute without replacing or removing them. The frozen H178 contract and partial remaining platform/overlay gaps are unchanged.",
+    "verification": "Read-only diff and base-pin check. No tests run by this reviewer; root's isolated rerun was in progress at review time."
+  },
+  "final_metadata_tests": {
+    "tests": 86,
+    "passed": 86,
+    "failures": 0,
+    "errors": 0
+  }
+}

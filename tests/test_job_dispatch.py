@@ -70,7 +70,7 @@ async def test_cancelled_claim_becomes_unknown_without_replay(setup):
     receipt = runner.request_run(job.id)
     ready = asyncio.Event()
 
-    async def execute(job):
+    async def execute(job, **kwargs):
         ready.set()
         await asyncio.Event().wait()
 
@@ -91,7 +91,7 @@ async def test_shared_gate_prevents_cron_manual_overlap(setup):
     ready, release = asyncio.Event(), asyncio.Event()
     calls = []
 
-    async def execute(job):
+    async def execute(job, **kwargs):
         calls.append(job.id)
         ready.set()
         await release.wait()
@@ -260,7 +260,7 @@ async def test_two_runners_serialize_same_job_without_losing_cron(setup):
     second = JobRunner(other, orch=SimpleNamespace(), scheduler=lambda: None)
     ready, release = asyncio.Event(), asyncio.Event()
 
-    async def execute(job):
+    async def execute(job, **kwargs):
         ready.set()
         await release.wait()
         return "done", None
@@ -343,11 +343,11 @@ async def test_delete_after_claim_records_unknown_and_continues_other_requests(s
     later = runner.request_run(other.id)
     original = runner._execute
 
-    async def execute(active):
+    async def execute(active, **kwargs):
         if active.id == job.id:
             store.delete(job.id)
             return "effect may have happened", None
-        return await original(active)
+        return await original(active, **kwargs)
 
     runner._execute = execute
     await runner.drain_manual()

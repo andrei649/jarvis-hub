@@ -134,6 +134,7 @@ async def events(ws: WebSocket):
                     break
     except (HTTPException, ValueError, PermissionError, UnicodeError):
         await ws.close(code=1008)
+        return   # leave explicitly: nothing past a refused guard runs (H511)
     except WebSocketDisconnect:
         pass
     finally:

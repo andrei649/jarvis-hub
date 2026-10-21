@@ -10,11 +10,13 @@ Ported from pinned Hermes 59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import re
 import secrets
 import sqlite3
 import time
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import wraps
@@ -85,6 +87,7 @@ _OPTIONAL_PROJECT_COLUMNS = ("description", "board_slug", "primary_path", "icon"
 _OPTIONAL_ROW_FIELDS = ("description", "icon", "color", "board_slug", "primary_path")
 _ACTIVE_META_KEY = "active_id"
 _DISCOVERY_POLICY_META_KEY = "repo_discovery_policy"
+_DISCOVERY_DEPTH_META_KEY = "repo_discovery_depth"
 
 
 def _slugify(name: str) -> str:
@@ -734,3 +737,130 @@ def branch_name_for(project: Project, task_id: str, *, title: str = "") -> str:
     base = f"{project.slug or _slugify(project.name)}/{task_id}"
     tslug = _BRANCH_SAFE_RE.sub("-", str(title).strip().lower()).strip("-")[:40].strip("-") if title else ""
     return f"{base}-{tslug}" if tslug else base
+
+
+# --- Repo discovery scan (bounded to the owner's file roots) ------------------
+
+DISCOVERY_DEFAULT_DEPTH = 4
+DISCOVERY_MAX_DEPTH = 8
+DISCOVERY_MAX_DIRS = 20_000
+DISCOVERY_MAX_REPOS = 500
+DISCOVERY_MAX_ENTRIES_PER_DIR = 5_000
+# Heavy / generated trees a repo scan never needs to enter.
+_DISCOVERY_SKIP_DIRS = frozenset({
+    "node_modules", "__pycache__", "venv", "site-packages", "dist", "build", "target",
+})
+
+
+def discovery_policy_key(scope: FileScope) -> str:
+    """Stable identity of the scan scope: the resolved file roots. When the owner changes
+    ``JARVIS_FILE_ROOTS``, cached rows of the old roots are hidden and the next scan drops them.
+    The depth is a scan parameter, not scope, so it is stored separately (informational)."""
+    digest = hashlib.sha256("\n".join(sorted(map(str, scope.roots))).encode("utf-8")).hexdigest()[:16]
+    return f"v2:roots={digest}"
+
+
+def _read_entries(directory: Path) -> tuple[list[os.DirEntry], bool]:
+    """At most ``DISCOVERY_MAX_ENTRIES_PER_DIR`` entries of one directory, read lazily, name-sorted.
+    Returns ``(entries, capped)``."""
+    entries: list[os.DirEntry] = []
+    with os.scandir(directory) as iterator:
+        for entry in iterator:
+            if len(entries) >= DISCOVERY_MAX_ENTRIES_PER_DIR:
+                return sorted(entries, key=lambda e: e.name), True
+            entries.append(entry)
+    return sorted(entries, key=lambda e: e.name), False
+
+
+def scan_repo_roots(
+    scope: FileScope, *, depth: int = DISCOVERY_DEFAULT_DEPTH, max_dirs: int = DISCOVERY_MAX_DIRS,
+    max_repos: int = DISCOVERY_MAX_REPOS,
+) -> tuple[list[tuple[str, str]], bool]:
+    """Walk the scope roots breadth-first, at most ``depth`` levels below each root, for git repos.
+
+    A directory is a repo when it holds a ``.git`` directory or file (worktrees, submodules). Symlinks
+    are never followed, hidden and generated directories are skipped, a repo is not descended into,
+    and every hit is re-resolved through ``scope`` so secret-looking or escaping paths stay out.
+    Returns ``(repos, truncated)``; ``truncated`` says a directory/entry/repo budget stopped the walk.
+    """
+    if isinstance(depth, bool) or not isinstance(depth, int) or not 0 <= depth <= DISCOVERY_MAX_DEPTH:
+        raise ValueError(f"discovery depth must be an integer between 0 and {DISCOVERY_MAX_DEPTH}")
+    found: dict[str, str] = {}
+    queue: deque[tuple[Path, int]] = deque((root, 0) for root in scope.roots)
+    visited = 0
+    truncated = False
+    while queue:
+        if visited >= max_dirs or len(found) >= max_repos:
+            truncated = True
+            break
+        directory, level = queue.popleft()
+        visited += 1
+        try:
+            entries, capped = _read_entries(directory)
+        except OSError:
+            continue
+        truncated = truncated or capped
+        if any(e.name == ".git" and (e.is_dir(follow_symlinks=False) or e.is_file(follow_symlinks=False))
+               for e in entries):
+            try:
+                resolved = str(scope.resolve(str(directory)))
+            except FileScopeError:
+                continue
+            found.setdefault(resolved, os.path.basename(resolved) or resolved)
+            continue
+        if level >= depth:
+            continue
+        queue.extend(
+            (Path(entry.path), level + 1) for entry in entries
+            if not entry.name.startswith(".") and entry.name not in _DISCOVERY_SKIP_DIRS
+            and entry.is_dir(follow_symlinks=False)
+        )
+    return sorted(found.items()), truncated
+
+
+@_scoped_write
+def store_discovered_repos(
+    conn: sqlite3.Connection, repos: Iterable[tuple[str, str | None]], *, key: str, depth: int,
+) -> tuple[int, bool]:
+    """Replace the ``discovered_repos`` cache with one authoritative scan recorded under ``key``.
+    Returns ``(count, policy_reset)``; ``policy_reset`` is true only when rows recorded under other
+    file roots (or before any policy existed) were actually dropped."""
+    previous = get_discovery_policy_key(conn)
+    had_rows = conn.execute("SELECT 1 FROM discovered_repos LIMIT 1").fetchone() is not None
+    policy_reset = previous != key and had_rows
+    count = record_discovered_repos(conn, repos, replace=True, policy_key=key)
+    with write_txn(conn):
+        _upsert_meta_locked(conn, _DISCOVERY_DEPTH_META_KEY, str(int(depth)))
+    return count, policy_reset
+
+
+@_scoped_write
+def discover_repos(conn: sqlite3.Connection, *, depth: int = DISCOVERY_DEFAULT_DEPTH,
+                   scope: FileScope | None = None) -> dict:
+    """Run one authoritative scan of the file roots and replace the ``discovered_repos`` cache.
+    The walk is synchronous; async callers run it in a worker thread."""
+    scope = scope or FileScope.from_env()
+    key = discovery_policy_key(scope)
+    repos, truncated = scan_repo_roots(scope, depth=depth)
+    count, policy_reset = store_discovered_repos(conn, repos, key=key, depth=depth)
+    return {"policy": key, "count": count, "truncated": truncated, "policy_reset": policy_reset,
+            "roots": [str(root) for root in scope.roots], "depth": depth}
+
+
+@_scoped_read
+def cached_repos_for_current_policy(conn: sqlite3.Connection, *,
+                                    scope: FileScope | None = None) -> tuple[list[dict], bool, int | None]:
+    """Read-only view of the cache for the current file roots: ``(rows, stale, depth)``.
+
+    Rows recorded under other file roots (or with no policy at all) are withheld and ``stale`` is set;
+    nothing is deleted or rewritten here, the next ``discover_repos`` replaces them. ``depth`` is the
+    depth of the scan that produced the rows, when known."""
+    scope = scope or FileScope.from_env()
+    if get_discovery_policy_key(conn) != discovery_policy_key(scope):
+        # Checked before list_discovered_repos: rows of old roots would fail path validation.
+        has_rows = conn.execute("SELECT 1 FROM discovered_repos LIMIT 1").fetchone() is not None
+        return [], has_rows, None
+    rows = list_discovered_repos(conn)
+    raw_depth = _get_meta(conn, _DISCOVERY_DEPTH_META_KEY)
+    depth = int(raw_depth) if raw_depth is not None and raw_depth.isdigit() else None
+    return rows, False, depth

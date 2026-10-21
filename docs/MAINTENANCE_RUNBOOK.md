@@ -67,6 +67,11 @@ Contract & supported versions: [COMPATIBILITY.md](COMPATIBILITY.md) · [UPGRADE.
 
 ## 6. When something is wrong (triage order)
 
+The full symptom → cause → fix guide, with the ordered recovery sequence, the "feels
+dumber" checklist, the Ollama / LM Studio failure modes and the scheduled-jobs tree, is
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md); `nerva doctor` links its section on every red
+row. The short version:
+
 1. **HUD dead / 503** → is the server up? `GET /readyz`. Restart via §2. Logs rotate under
    `memory_logs/` (`JARVIS_LOG_MAX_MB`/`JARVIS_LOG_BACKUPS`).
 2. **Replies degraded / "LLM unavailable"** → LM Studio isn't serving. Open LM Studio, start

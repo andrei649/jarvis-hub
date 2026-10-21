@@ -28,6 +28,16 @@ def _fresh_cache():
     agent_mod._IDENTITY_CACHE.clear()
 
 
+@pytest.fixture(autouse=True)
+def _nothing_detected_about_the_host(monkeypatch):
+    """H283: the prompt now carries what Nerva detects about its host (a container on most
+    CI boxes, under its own heading). These tests pin exact prompt bytes, so the host is
+    pinned to "nothing detected"; tests/test_h283_host_identity.py covers the block."""
+    from agents.core import host_identity
+
+    monkeypatch.setattr(host_identity, "identity", lambda: host_identity.HostIdentity())
+
+
 def _contract() -> str:
     return agent_mod._strip_maintainer_note(SHIPPED.read_text(encoding="utf-8")).strip()
 

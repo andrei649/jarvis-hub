@@ -22,12 +22,21 @@ from .auxiliary_recovery import (
 )
 from .egress import llm_async_client
 from .host_protocol import HostProtocolRefused
-from .repetition_guard import is_repetition_dominated
+from .reasoning_effort import ReasoningEffortRefused
+from .repetition_guard import RepetitionStreamGuard, is_repetition_dominated, is_truncated_finish
+from .request_context import required_job_reasoning
 from .tool_dialects import lmstudio_usage, ollama_messages, ollama_tool_calls, ollama_usage
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
 
 logger = logging.getLogger("jarvis.llm.base")
+
+
+def _require_no_job_reasoning():
+    # These local adapters have no verified per-model effort control. Refuse an
+    # explicit scheduled pin before a generation request instead of ignoring it.
+    if required_job_reasoning() is not None:
+        raise ReasoningEffortRefused()
 
 
 # ── Output-budget ("max tokens") resolution ───────────────────────────────────
@@ -105,10 +114,35 @@ def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Excep
         "%s request failed — serving a degraded reply: %s%s",
         backend_name, exc, f" | server said: {detail}" if detail else "",
     )
+    if backend_name == "Ollama" and is_tools_unsupported_error(exc):
+        return OLLAMA_TOOLS_UNSUPPORTED_REPLY
     return (
         f"⚠️ The local {backend_name} model hit an error and couldn't answer. "
         f"Check the {backend_name} server and try again."
     )
+
+
+# H631: Ollama refuses a /api/chat request carrying ``tools`` for a model whose template
+# has no tool support — HTTP 400 {"error": "<model> does not support tools"}. With
+# llm.tool_loop_enabled on, every turn on such a model fails this way, so the owner is
+# told the cause and the two fixes instead of the generic "hit an error" bubble. Starts
+# with "⚠️ The local " so it stays a degraded / backend-failure reply (H23.12, H681).
+OLLAMA_TOOLS_UNSUPPORTED_REPLY = (
+    "⚠️ The local Ollama model can't call tools. Pick a model whose `ollama show` "
+    "lists tools, or turn the tool loop off: nerva config set llm.tool_loop_enabled false"
+)
+_TOOLS_UNSUPPORTED = re.compile(r"does\s+not\s+support\s+tools", re.IGNORECASE)
+
+
+def is_tools_unsupported_error(exc: BaseException) -> bool:
+    """True for Ollama's 400 "<model> does not support tools"."""
+    response = getattr(exc, "response", None)
+    if response is None or getattr(response, "status_code", None) != 400:
+        return False
+    try:
+        return bool(_TOOLS_UNSUPPORTED.search(response.text or ""))
+    except Exception:
+        return False
 
 
 def _server_error_detail(exc: Exception, limit: int = 300) -> str:
@@ -344,6 +378,14 @@ async def _emit(on_token: Callable, text: str) -> None:
 
 class LLMBackend(ABC):
     supports_tools = False
+    #: H297 — whether a tool message's ``images`` reach the model as images. Off by
+    #: default: the tool loop strips them and the model reads their descriptors.
+    #: Only the Anthropic backend declares it today; the OpenAI-compatible routes
+    #: (local models, OpenRouter, DeepInfra) and Gemini read descriptors. A backend
+    #: that declares it marks a request the provider refused as invalid (HTTP 400/413,
+    #: never a transient 429/5xx/timeout) with ``PROVIDER_REJECTED_FINISH`` so the loop
+    #: can detach the images and resend once.
+    supports_tool_result_images = False
 
     @abstractmethod
     async def generate(
@@ -450,7 +492,7 @@ class LLMBackend(ABC):
         return strip_thinking(reasoning_full)
 
     @staticmethod
-    def _finalize_cloud(text: str) -> str:
+    def _finalize_cloud(text: str, finish: object = None, model: str = "") -> str:
         """Strip chain-of-thought from a cloud backend's final answer.
 
         Cloud APIs surface reasoning as structured fields this client never
@@ -458,8 +500,32 @@ class LLMBackend(ABC):
         ``<think>`` tags are not expected in the text field — this is
         defense-in-depth so a reasoning block that *does* land there can never
         leak. A no-op on error sentinels (``[… error: …]``) and plain answers.
+
+        H393: when ``finish`` says the output cap was hit (any dialect's
+        spelling — ``length`` / ``max_tokens`` / ``MAX_TOKENS``) and the text is
+        repetition-dominated, the model spent its budget in a loop; drop the
+        fragment like ``_finalize_stream`` does instead of delivering the flood.
         """
-        return strip_thinking(text or "")
+        return LLMBackend._drop_truncated_loop(strip_thinking(text or ""), finish, model)
+
+    @staticmethod
+    def _drop_truncated_loop(answer: str, finish: object = None, model: str = "") -> str:
+        """H393: ``""`` when ``answer`` is a truncated repetition loop, else ``answer``.
+
+        Shared by ``_finalize_cloud`` and every backend's tool turn: a reply cut
+        at the output cap (``is_truncated_finish``) whose text is
+        repetition-dominated is the model's loop, not an answer. A complete reply
+        (any other finish, or none reported) is never touched.
+        """
+        if answer and is_truncated_finish(finish) and is_repetition_dominated(answer):
+            logger.warning(
+                "Reply truncated at max_tokens with repetition-dominated "
+                "output (model=%s); dropping the fragment instead of "
+                "delivering the flood",
+                model,
+            )
+            return ""
+        return answer
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
@@ -546,6 +612,7 @@ class LMStudioBackend(LLMBackend):
         temperature_retried = False
         output_cap_retried = False
         for _ in range(2 + int(auxiliary_recovery) + int(cap_recovery and "max_tokens" in current)):
+            _require_no_job_reasoning()
             resp = await self.client.post("/v1/chat/completions", json=current)
             try:
                 resp.raise_for_status()
@@ -582,6 +649,7 @@ class LMStudioBackend(LLMBackend):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7
     ) -> str:
+        _require_no_job_reasoning()
         payload = {
             "model": model,
             "messages": _chat_messages(system, prompt),
@@ -601,6 +669,8 @@ class LMStudioBackend(LLMBackend):
             answer = _finalize_lmstudio_message(msg, finish, model)
             report_text_usage(lmstudio_usage(data))
             return answer
+        except ReasoningEffortRefused:
+            raise
         except Exception as e:
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e, model=model)
 
@@ -612,6 +682,7 @@ class LMStudioBackend(LLMBackend):
         max_tokens: int = 1024,
         temperature: float = 0.7,
     ) -> ToolTurn:
+        _require_no_job_reasoning()
         payload = {
             "model": model,
             "messages": messages,
@@ -630,7 +701,9 @@ class LMStudioBackend(LLMBackend):
             finish = choice.get("finish_reason")
             tool_calls = parse_openai_tool_calls(message.get("tool_calls", []) or [])
             content = (
-                strip_thinking(message.get("content", "") or "")
+                self._drop_truncated_loop(
+                    strip_thinking(message.get("content", "") or ""), finish, model
+                )
                 if tool_calls
                 else _finalize_lmstudio_message(message, finish, model)
             )
@@ -640,6 +713,8 @@ class LMStudioBackend(LLMBackend):
                 finish_reason=finish,
                 usage=lmstudio_usage(data),
             )
+        except ReasoningEffortRefused:
+            raise
         except Exception as e:
             return ToolTurn(
                 content=local_backend_degraded_reply(
@@ -673,6 +748,7 @@ class LMStudioBackend(LLMBackend):
         temperature_retried = False
         output_cap_retried = False
         for _ in range(2 + int(auxiliary_recovery) + int(cap_recovery and "max_tokens" in payload)):
+            _require_no_job_reasoning()
             emitted = ""          # filtered text actually streamed to the user
             reasoning_full = ""   # accumulated reasoning_content (never emitted live)
             finish = None
@@ -685,6 +761,7 @@ class LMStudioBackend(LLMBackend):
             status_body_too_large = False
             response_cleanup_ok = False
             sf = ThinkingStreamFilter()
+            rg = RepetitionStreamGuard()   # H393: never paint a loop live
             try:
                 async with self.client.stream(
                     "POST", "/v1/chat/completions", json=payload
@@ -747,7 +824,7 @@ class LMStudioBackend(LLMBackend):
                                         if safe:
                                             emitted += safe
                                             if on_token:
-                                                await _emit(on_token, safe)
+                                                await _emit(on_token, rg.feed(safe))
                                     if reasoning:
                                         reasoning_full += reasoning
                                 except json.JSONDecodeError:
@@ -800,12 +877,14 @@ class LMStudioBackend(LLMBackend):
         if remainder:
             emitted += remainder
             if on_token:
-                await _emit(on_token, remainder)
+                await _emit(on_token, rg.feed(remainder))
 
         # Return what was actually streamed, not the raw buffer — otherwise a
         # truncated <think> / reasoning_content trace would overwrite the clean
         # bubble and poison conversation memory.
         answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
+            await _emit(on_token, rg.release(answer))
         if (temperature_retried and completed and not usage_failed and not refused
                 and finish == "stop" and answer.strip() and not is_degraded_reply(answer)):
             remember_temperature_rejection(self, model)
@@ -886,6 +965,7 @@ class OllamaBackend(LLMBackend):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7
     ) -> str:
+        _require_no_job_reasoning()
         payload = {
             "model": model,
             "prompt": prompt,
@@ -903,8 +983,11 @@ class OllamaBackend(LLMBackend):
             resp = await self.client.post("/api/generate", json=payload)
             resp.raise_for_status()
             data = resp.json()
-            answer = strip_thinking(data.get("response", "") or "")
-            if not answer and data.get("done_reason") == "length":
+            raw_answer = strip_thinking(data.get("response", "") or "")
+            # H393: a truncated repetition loop degrades to no answer (like the
+            # stream finalizer), not to the "context exhausted" reply below.
+            answer = self._drop_truncated_loop(raw_answer, data.get("done_reason"), model)
+            if not raw_answer and data.get("done_reason") == "length":
                 logger.warning(
                     "Ollama truncated at num_predict before an answer (model=%s); "
                     "the model filled its context before answering — load a larger-context "
@@ -931,6 +1014,7 @@ class OllamaBackend(LLMBackend):
         temperature: float = 0.7,
     ) -> ToolTurn:
         """One tool-enabled turn over /api/chat; calls cross `parse_openai_tool_calls`."""
+        _require_no_job_reasoning()
         payload: dict[str, Any] = {
             "model": model,
             "messages": ollama_messages(messages),
@@ -952,9 +1036,10 @@ class OllamaBackend(LLMBackend):
             tool_calls = (
                 parse_openai_tool_calls(ollama_tool_calls(raw_calls)) if raw_calls else ()
             )
-            content = strip_thinking(message.get("content", "") or "")
             finish = data.get("done_reason")
-            if not content and not tool_calls and finish == "length":
+            raw_content = strip_thinking(message.get("content", "") or "")
+            content = self._drop_truncated_loop(raw_content, finish, model)   # H393
+            if not raw_content and not tool_calls and finish == "length":
                 logger.warning(
                     "Ollama truncated at num_predict before an answer (model=%s)", model
                 )
@@ -974,6 +1059,7 @@ class OllamaBackend(LLMBackend):
         on_token: Callable[[str], None] = None,
         on_activity: Callable[[], None] | None = None,
     ) -> str:
+        _require_no_job_reasoning()
         payload = {
             "model": model,
             "prompt": prompt,
@@ -993,6 +1079,7 @@ class OllamaBackend(LLMBackend):
         usage = None
         usage_failed = False
         sf = ThinkingStreamFilter()
+        rg = RepetitionStreamGuard()   # H393: never paint a loop live
         try:
             async with self.client.stream("POST", "/api/generate", json=payload) as resp:
                 resp.raise_for_status()
@@ -1015,7 +1102,7 @@ class OllamaBackend(LLMBackend):
                                 if safe:
                                     emitted += safe
                                     if on_token:
-                                        await _emit(on_token, safe)
+                                        await _emit(on_token, rg.feed(safe))
                             if reasoning:
                                 reasoning_full += reasoning
                             if data.get("done") is True:
@@ -1035,9 +1122,11 @@ class OllamaBackend(LLMBackend):
         if remainder:
             emitted += remainder
             if on_token:
-                await _emit(on_token, remainder)
+                await _emit(on_token, rg.feed(remainder))
 
         answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
+            await _emit(on_token, rg.release(answer))
         if usage is not None and not usage_failed:
             report_text_usage(usage)
         return answer

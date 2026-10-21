@@ -717,6 +717,15 @@ def test_announce_names_the_server_proxy_layer_when_it_trusts_anything(monkeypat
 
 
 def test_the_compose_entry_turns_uvicorns_layer_off():
+    # H010 review r4: the compose hub runs serve.py (it applies a staged restore at boot),
+    # and serve.py builds uvicorn with proxy_headers=False itself; a raw uvicorn entry must
+    # still pass --no-proxy-headers.
     compose = (repo_root / "docker-compose.yml").read_text(encoding="utf-8")
-    line = next(ln for ln in compose.splitlines() if '"agents.web:app"' in ln)
-    assert '"--no-proxy-headers"' in line
+    cmds = [ln for ln in compose.splitlines() if ln.strip().startswith("CMD ")]
+    hub = [ln for ln in cmds if '"serve.py"' in ln or '"agents.web:app"' in ln]
+    assert hub
+    for line in hub:
+        assert '"serve.py"' in line or '"--no-proxy-headers"' in line
+    import serve
+
+    assert serve.server_config().proxy_headers is False

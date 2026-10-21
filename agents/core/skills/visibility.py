@@ -39,7 +39,6 @@ import contextvars
 import logging
 import sys
 import threading
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("jarvis.skills.visibility")
@@ -55,13 +54,21 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     "file": ("file_read", "file_list", "file_search", "file_write", "file_delete"),
     "files": ("file_read", "file_list", "file_search", "file_write", "file_delete"),
     "code_execution": ("execute_code",),
+    "coding": ("file_write", "terminal_run", "execute_code"),
+    "computer_use": ("desktop_run",),
     "image_gen": ("image_generate",),
-    "memory": ("memory",),
+    "memory": ("memory", "search_memory"),
     "todo": ("todo",),
     "tts": ("speak",),
     "session_search": ("session_search",),
-    "skills": ("skills_list", "skill_view"),
+    "skills": ("skills_list", "skill_view", "skill_propose"),
     "desktop": ("desktop_plan", "desktop_run"),
+    "kanban": (
+        "kanban_attach", "kanban_attach_url", "kanban_attachments", "kanban_block",
+        "kanban_comment", "kanban_complete", "kanban_create", "kanban_heartbeat",
+        "kanban_link", "kanban_list", "kanban_request_changes", "kanban_request_review",
+        "kanban_show", "kanban_unblock",
+    ),
     "basic": ("echo", "time"),
 }
 _SYS_PLATFORMS = (("darwin", "macos"), ("linux", "linux"), ("win", "windows"))
@@ -75,9 +82,10 @@ _logged_lock = threading.Lock()
 
 
 def _termux() -> bool:
-    from agents.core.env_config import env_str
+    """Termux, as the one host detector (H283, ``host_identity``) sees it."""
+    from agents.core import host_identity
 
-    return "com.termux" in env_str("PREFIX") or Path("/data/data/com.termux").is_dir()
+    return host_identity.identity().termux
 
 
 def host_platforms(platform: str | None = None) -> frozenset[str]:
@@ -109,13 +117,16 @@ def readiness(skill: Any, *, host: frozenset[str] | None = None) -> tuple[str, s
 
 
 def host_environments() -> frozenset[str]:
-    """The environment tags that hold for this process (the turn adds ``kanban``)."""
-    tags: set[str] = set()
-    if Path("/.dockerenv").exists() or Path("/run/.containerenv").exists():
-        tags |= {"docker", "container"}
-    if Path("/run/s6").is_dir() or Path("/command/s6-svscan").exists():
-        tags.add("s6")
+    """The environment tags that hold for this process (the turn adds ``kanban``): the
+    container and s6 tags come from the one host detector (H283, ``host_identity``), so
+    a skill gate and the model's prompt never describe two different machines. ``docker``
+    holds for a docker/podman container and wherever ``/.dockerenv`` or
+    ``/run/.containerenv`` exists (a pod that also has one); ``containerd`` and ``lxc`` hosts
+    without a marker file earn their own name plus ``container``, not ``docker``."""
+    from agents.core import host_identity
     from agents.core.env_config import env_str
+
+    tags: set[str] = set(host_identity.identity().environment_tags())
 
     extra = env_str(ENV_OVERRIDE)
     tags |= {part.strip().lower() for part in extra.split(",") if part.strip()}

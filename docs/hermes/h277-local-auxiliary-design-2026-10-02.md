@@ -1,5 +1,12 @@
 # H277 shared local auxiliary model routing
 
+Update 2026-10-10: H413 now defaults session titles directly to the declared
+small local `DEFAULT_LOCAL_MODEL` (`qwen3:7b`), independently of the active chat
+model. The explicit title override remains available. If that model is
+unavailable, the instant first-words title stays; no chat-model or cloud retry
+is introduced. The other task selectors retain the active-model fallback
+described in this original plan. See the [current closure plan](../plans/2026-10-10-hermes-closure-02.md).
+
 Generated 2026-10-02; base `614602123902391ccb5b30ba21c4ce900147b9c6`.
 Pinned Hermes: `59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e`.
 Previous goal turn made progress: approved primary video retry passed 20,450

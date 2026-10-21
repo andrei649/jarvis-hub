@@ -78,6 +78,8 @@ def _recorder(backend: str):
             _record(backend, request, allowed=False, reason=reason)
             raise HostProtocolRefused(reason)
         _record(backend, request, allowed=True)
+        from agents.core.turn_usage import record_dispatch
+        record_dispatch(backend, request)
 
     _hook._nerva_egress_recorder = True
     return _hook
@@ -123,6 +125,8 @@ def llm_sync_request_hook(backend):
             _record(backend, request, allowed=False, reason=reason)
             raise HostProtocolRefused(reason)
         _record(backend, request, allowed=True)
+        from agents.core.turn_usage import record_dispatch
+        record_dispatch(backend, request)
     hook._nerva_sync_provider = backend
     return hook
 

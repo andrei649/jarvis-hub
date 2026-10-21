@@ -3,8 +3,8 @@
    posts to the admin-only `POST /api/skills/switch` ({skill | category, enabled,
    channel?}). A switched-off skill stays installed, signed and approved: the model is
    not told about it and a command naming it is refused. Essential skills have no off
-   switch. Switching back on is refused when the hub cannot record it, and a refusal is
-   shown, never read as success; the list is re-read whatever the hub answered. A skill
+   switch. Switching back on is pending until a human approves and the worker applies
+   it; the list is re-read whatever the hub answered. A skill
    for another operating system is marked unsupported (H328). */
 import React, { useState } from 'react';
 import { Card, Row, State, Tag, actA, arr, asLive, inpS, mono, refusalReason, useApi } from '../panel-kit';
@@ -33,6 +33,13 @@ export function SkillSwitchesPanel() {
     setMsg(null);
     actA(SWITCH_PATH, body,
       (r: any) => {
+        if (r?.status === 'pending') {
+          const offAll = arr(r, 'off_everywhere');
+          setMsg(`pending owner approval · task ${r.task_id} · ${arr(r, 'pending').join(', ')}`
+            + (offAll.length ? ` · still off everywhere: ${offAll.join(', ')}` : ''));
+          setBusy(null); reload();
+          return;
+        }
         const changed = arr(r, 'changed');
         const kept = arr(r, 'essential');
         const note = r && r.audited === false && changed.length ? ' · not recorded in the intent log' : '';
@@ -98,7 +105,7 @@ export function SkillSwitchesPanel() {
       )}
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.5 }}>
         A switched-off skill stays installed, signed and approved; the model is not told about it and a command
-        naming it is refused. Switching back on is recorded in the intent log.
+        naming it is refused. Switching back on requires owner approval; the switch changes after the task runs.
       </div>
       {msg && <div role="status" style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     </Card>

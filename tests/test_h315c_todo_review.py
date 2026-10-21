@@ -480,16 +480,19 @@ def _owner_server(store, session="s"):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fan, calls", [(1, 5), (32, 2)])
-async def test_reading_an_unchanged_plan_again_is_stopped_like_any_repeat(fan, calls):
-    from agents.core.agent_runtime import _REPEAT_REPLY
-
+@pytest.mark.parametrize("fan", [1, 32])
+async def test_reading_an_unchanged_plan_gets_advice_until_iteration_limit(fan):
     store = TodoStore()
     backend = _Looping(fan=fan, first=("todo", {"todos": [{"id": "1", "content": "a step"}]}))
     runtime = AgentToolRuntime(_owner_server(store), enabled=lambda: True, max_iterations=lambda: 32)
-    reply = await runtime.run(agent_id="nerva", backend=backend, model="m", prompt="p", system="s",
-                              max_tokens=64, temperature=0.1)
-    assert reply == _REPEAT_REPLY and backend.calls == calls
+    events = []
+    result = await runtime.run_result(agent_id="nerva", backend=backend, model="m", prompt="p",
+                                      system="s", max_tokens=64, temperature=0.1,
+                                      event_sink=events.append)
+    assert result.exit_reason == "iteration_limit" and backend.calls == 32
+    assert store.read("s")["todos"][0]["content"] == "a step"
+    assert any(e["event"] == "tool_loop_stall_notice" and "no_progress" in e["tracks"]
+               for e in events)
 
 
 class _Scripted:
@@ -499,9 +502,11 @@ class _Scripted:
     def __init__(self, steps):
         self.steps = list(steps)
         self.calls = 0
+        self.messages = []
 
     async def generate_tool_turn(self, **kwargs):
         self.calls += 1
+        self.messages.append(kwargs["messages"])
         if not self.steps:
             return ToolTurn(content="done", finish_reason="stop")
         name, args = self.steps.pop(0)
@@ -524,17 +529,35 @@ async def test_reading_the_plan_after_every_change_is_never_a_repeat():
 
 @pytest.mark.asyncio
 async def test_a_failed_call_between_two_reads_changes_nothing_they_saw():
-    """A refused write restated no plan: the read after it is the same read again."""
-    from agents.core.agent_runtime import _REPEAT_REPLY
+    """A refused write leaves the plan intact; later reads receive guidance, not refusal."""
 
     store = TodoStore()
     refused = {"todos": [{"id": "1", "status": "someday"}], "merge": True}
     backend = _Scripted([("todo", {"todos": [{"id": "1", "content": "a step"}]}), ("todo", {}),
                          ("todo", refused)] + [("todo", {})] * 6)
     runtime = AgentToolRuntime(_owner_server(store), enabled=lambda: True, max_iterations=lambda: 32)
+    events = []
     reply = await runtime.run(agent_id="nerva", backend=backend, model="m", prompt="p", system="s",
-                              max_tokens=64, temperature=0.1)
-    assert reply == _REPEAT_REPLY and backend.calls == 6
+                              max_tokens=64, temperature=0.1, event_sink=events.append)
+    assert reply == "done" and backend.calls == 10
+    assert store.read("s")["todos"][0]["content"] == "a step"
+    last = [json.loads(m["content"]) for m in backend.messages[-1] if m.get("role") == "tool"][-1]
+    assert last["result"]["todos"][0]["content"] == "a step"
+    assert any(e["event"] == "tool_loop_stall_notice" and "no_progress" in e["tracks"]
+               for e in events)
+
+
+@pytest.mark.asyncio
+async def test_opted_in_unchanged_plan_stall_has_a_controlled_exit():
+    store = TodoStore()
+    backend = _Scripted([("todo", {"todos": [{"id": "1", "content": "a step"}]})]
+                        + [("todo", {})] * 6)
+    runtime = AgentToolRuntime(_owner_server(store), enabled=lambda: True,
+                               stall_halt_enabled=True, max_iterations=lambda: 32)
+    result = await runtime.run_result(agent_id="nerva", backend=backend, model="m", prompt="p",
+                                      system="s", max_tokens=64, temperature=0.1)
+    assert result.exit_reason == "repeated_call" and backend.calls == 6
+    assert store.read("s")["todos"][0]["content"] == "a step"
 
 
 # ── the nits ─────────────────────────────────────────────────────────────────────

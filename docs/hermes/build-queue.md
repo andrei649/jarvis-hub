@@ -1,5 +1,38 @@
 # Hermes build queue — the 93 small-effort rows, re-evaluated 2026-09-22
 
+**Current review, 2026-10-10:** dated closure notes below are historical. The
+first batch repaired H004/H161/H328/H450. The second repairs H413's small title
+model, H689's shared installation identity and H256's corrupt-store consent
+writers, and reconfirms H298/H671/H679 on current source. H296 remains partial:
+its generic dynamic-schema hook does not cover the frozen named producers.
+H182/H222/H283/H299/H301/H329/H397/H398/H583 also remain partial for concrete
+accepted-contract gaps. The local assessment is 133/697; these changes are unpublished.
+Use `scripts/hermes_status.py show <ID>` and the
+[current batch review](../plans/2026-10-10-hermes-closure-02.md) for live claims;
+a historical "closed" line does not override them.
+
+**Drift re-read, 2026-10-11 (PR #1249):** 25 rows that had been closed with a
+content-audited review and then went `needs_review` only because a pinned file
+changed under the Codex sprint and `main` were re-read on the current head and
+restamped — H034, H099, H117, H156, H157, H165, H168, H200, H209, H242, H247,
+H259, H285, H309, H314, H318, H368, H428, H433, H490, H507, H579, H594, H670 and
+H677 — with every citation re-opened and every pinned test re-run. No status
+moved; the headline is 180/697. The other 15 stale closed rows follow.
+Batch 2 (2026-10-12, head `0221c075`) re-read six more the same way — H262, H273,
+H275, H518, H681 and H687 — to 186/697; nine stale closed rows remain.
+Batch 3 (2026-10-12, head `b339672c`) fixed three Codex review findings (quiet-hours zone,
+guest session window, stale switch grants), re-read the 22 closed rows those fixes drifted
+and seven more stale ones (H078, H153, H313, H378, H465, H513, H674) — to 193/697.
+H523 then restamped equivalent and H586 demoted to partial (image turns committed
+untainted) — 194/697; no stale closed row remains.
+Batch 4 re-read all 112 stale recorded-partial rows (no status moved; 52 claims or
+remaining lists corrected) — needs_review 218 → 106.
+H586 then closed (image readings tainted on every turn, one-shot, recall and session_search path;
+never promoted to durable memory) after six skeptic rounds — 195/697.
+The 105 reopened former-skip rows were then assessed fresh (53 partial, 52 missing; skeptic-checked) — needs_review 106 → 0 (H468 re-read: partial).
+The 193 baseline-partial rows were then assessed fresh (2 equivalent: H521, H265; 178 partial; 13 missing; skeptic-checked) — 197/697; H488 re-read equivalent → partial (no memory write is staged) — 196/697.
+The 107 inherited (never-reviewed) equivalents were then re-read with adversarial verification: 10 hold, 95 partial, 2 missing — 99/697, inherited equivalent 0.
+
 Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) row that still carried only the 2026-09-07 audit verdict: 16 read-only assessors read the requirement and the code on `main` at 6578cd3c, a skeptic stood ready for every claimed promotion (none was claimed — the old audit held up), and a cross-row critic checked the plans against each other and against the code. The verdicts are in [assessment.json](assessment.json); this page keeps what the ledger does not: how each gap would close.
 
 **Pruned** (2026-09-27): the 45 rows closed so far (H613, H262, H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
@@ -79,7 +112,7 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 
 ## H586
 
-Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H586`.
+Closed in #1251 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H586`.
 
 ## H667
 
@@ -137,7 +170,9 @@ Implemented: typed HTTP user/admin allow/deny/local-bypass events and committed 
 
 Remaining: the frozen contract's login/logout/refresh/session/WebSocket/native-app event coverage is absent. These bearer events identify route tier and validated peer address, not a particular credential or person. Per-credential attribution and success deduplication from the earlier draft plan are not implemented; no token fingerprint is retained. Queue saturation, sink outages and process exit can lose best-effort rows. The broader contract and any stronger delivery/attribution policy must be implemented and tested before H512 can count as equivalent; this local slice does not close it.
 
-MCP transport continuation: OAuth, legacy user/admin credentials and localhost/network auth outcomes now submit fixed-field events via the same bounded queue, marked only with literal `surface=mcp`. Existing auth predicates/status/challenge/identity are unchanged; absent/disabled MCP emits no auth decision. Fifteen new cases plus existing MCP/H273e/H512 suites pass121/121. No token/subject/RPC/error values are retained. Current source has no WebSocket routes, and session selectors already use the HTTP guards; `/api/mcp/token` issuance remains a separate lifecycle gap. See [scope and evidence](../plans/2026-10-09-mcp-auth-audit.md).
+MCP transport continuation: OAuth, legacy user/admin credentials and localhost/network auth outcomes submit fixed-field events via the same bounded queue, marked only with literal `surface=mcp`. Existing auth predicates/status/challenge/identity are unchanged; absent/disabled MCP emits no auth decision. The original slice passed fifteen new cases plus existing MCP/H273e/H512 suites (121/121). No token/subject/RPC/error values are retained. Current source has no WebSocket routes, and session selectors already use the HTTP guards. See [RPC scope and evidence](../plans/2026-10-09-mcp-auth-audit.md).
+
+MCP token continuation (2026-10-10): successful signing through `/api/mcp/token` submits one `token_issued` event with fixed user credential tier, reason `issue`, count 1, `revoke_env=false` and literal `surface=mcp`. Its admin guard records the separate authorization decision. No issuance event follows denied authorization, invalid TTL, absent orchestrator or signing failure; arbitrary request/token values never enter the event. This records successful signing, not a durable TokenStore mutation. Blocked, failed or saturated audit sinks retain best-effort semantics. Managed-token rows keep their existing shape; H512 remains partial. See [scope and verification](../plans/2026-10-10-mcp-token-audit.md).
 
 ## H526
 
