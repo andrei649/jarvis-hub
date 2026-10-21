@@ -1399,3 +1399,111 @@ def test_multi_line_low_variety_loop_is_held_not_tripped():
     text2 = _R5_SHORT_PROSE + unit * 6 + "And that is the register dump you asked for, in full.\n"
     guard, live = _stream_through(text2, step=5)
     assert guard.withholding is False and live == text2
+
+
+# ── H393 review round 7: counter headings and loops inside an open fence ──
+#
+# Round 6 matched every line of a multi-line unit by hash, so a short heading
+# that carries a counter ("## Note 7", "### Example 7", "Step 7:") broke the
+# period and the loop was painted live until whole-stream dominance (10k-21k
+# chars after a 10k-20k prefix). A line-detector TRIP and ``_loop_suffix``
+# were also simply ignored inside an open ``` fence, so a fenced loop fell back
+# to the same dominance trip although the finalizer (fence-blind) drops it.
+
+
+def _r7_counter_units():
+    para = _paragraph_line(1000, seed=71)
+    return (
+        ("note-heading", lambda i: f"## Note {i}\n\n{para}\n\n"),
+        ("example-heading", lambda i: f"### Example {i}\n{para}\n"),
+        ("step-line", lambda i: f"Step {i}:\n{para}\n"),
+    )
+
+
+def _r7_counter_loop(prefix_len: int, unit) -> tuple[str, str, int]:
+    prefix = _r6_prefix(prefix_len)
+    size = len(unit(10))
+    copies = 3 * len(prefix) // size + 6
+    return prefix, prefix + "".join(unit(i) for i in range(1, copies + 1)), size
+
+
+@pytest.mark.parametrize("name,unit", _r7_counter_units(), ids=[u[0] for u in _r7_counter_units()])
+@pytest.mark.parametrize("prefix_len", (8000, 10000, 20000))
+def test_counter_heading_loop_after_long_prefix_is_not_painted_live(name, unit, prefix_len):
+    prefix, text, size = _r7_counter_loop(prefix_len, unit)
+    assert is_repetition_dominated(text) is True                      # the finalizer drops it
+    assert LLMBackend._finalize_stream(text, "", "length", "m") == ""
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is True and guard.withholding is True
+    assert text.startswith(live) and live.startswith(prefix)
+    assert len(live) - len(prefix) <= 6 * size, (name, len(live) - len(prefix), size)
+    assert guard.release("") == ""
+
+
+def test_counter_heading_loop_is_released_when_the_answer_is_kept():
+    prefix, text, _ = _r7_counter_loop(10000, _r7_counter_units()[0][1])
+    guard, live = _stream_through(text, step=7)
+    assert len(live) < len(text)
+    assert live + guard.release(text) == text
+
+
+def test_ollama_stream_counter_heading_truncated_loop_never_painted():
+    prefix, text, size = _r7_counter_loop(10000, _r7_counter_units()[1][1])
+    out, shown = _ollama_stream(text, "length")
+    assert out == ""
+    assert shown.startswith(prefix) and len(shown) - len(prefix) <= 6 * size
+
+
+def test_counter_headings_over_distinct_sections_stream_in_full():
+    # Numbered headings over DIFFERENT long paragraphs: an ordinary report.
+    text = "".join(
+        f"## Note {i}\n\n" + _paragraph_line(1000, seed=80 + i) + "\n\n" for i in range(12)
+    ) + "That is every note."
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text
+
+
+def test_long_list_of_distinct_short_lines_streams_live():
+    # Short lines only (no rich line to anchor a unit): never held or tripped,
+    # however many lines of similar length follow each other.
+    text = "".join(f"{i}. item {i * 7919 % 1000} done\n" for i in range(400))
+    guard = __import__("agents.core.llm.repetition_guard", fromlist=["x"]).RepetitionStreamGuard()
+    for i in range(0, len(text), 7):
+        guard.feed(text[i:i + 7])
+        assert guard.withholding is False
+
+
+def _r7_fence_units():
+    para = _paragraph_line(900, seed=91)
+    return (
+        ("plain", "```\n", para + "\n"),
+        ("text+end", "```text\n", para + "\n# end\n"),
+    )
+
+
+@pytest.mark.parametrize("name,opener,unit", _r7_fence_units(), ids=[u[0] for u in _r7_fence_units()])
+@pytest.mark.parametrize("prefix_len", (10000, 20000))
+def test_loop_inside_open_fence_is_withheld_not_painted_live(name, opener, unit, prefix_len):
+    prefix = _r6_prefix(prefix_len) + opener
+    text = prefix + unit * (3 * len(prefix) // len(unit) + 6)
+    assert is_repetition_dominated(text) is True                      # fence-blind finalizer drops it
+    guard, live = _stream_through(text, step=7)
+    assert guard.withholding is True
+    assert text.startswith(live) and live.startswith(prefix)
+    assert len(live) - len(prefix) <= 6 * len(unit), (name, len(live) - len(prefix), len(unit))
+    assert guard.release("") == ""
+    guard, live = _stream_through(text, step=7)
+    assert live + guard.release(text) == text
+
+
+def test_fenced_repeated_block_followed_by_more_code_streams_in_full():
+    # Five identical long code lines in a fence, then the code moves on: only
+    # delayed while repeating, never tripped, and the live text ends complete.
+    line = "    " + _paragraph_line(300, seed=95).replace(".", ";")
+    text = (_LEGIT[:12000] + "\n```text\n" + (line + "\n") * 6 + "    done = True\n```\n"
+            + _LEGIT[12000:15000])
+    assert is_repetition_dominated(text) is False
+    guard, live = _stream_through(text, step=7)
+    assert guard.tripped is False and guard.withholding is False
+    assert live == text

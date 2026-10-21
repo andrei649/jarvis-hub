@@ -307,6 +307,10 @@ _STREAM_UNIT_LINES_MAX = 16
 # Per-line verdicts of ``_LineRepeatTracker.feed``.
 _LOOP_NONE, _LOOP_TRIP, _LOOP_HOLD = 0, 1, 2
 
+# Digit runs in a short line are normalized away for the unit match, so a
+# heading that carries a counter ("## Note 7", "Step 12:") is the same line.
+_DIGIT_RUN = re.compile(r"[0-9]+")
+
 
 class _LineRepeatTracker:
     """Whole-stream counterpart of ``_line_repetition_dominated``.
@@ -327,12 +331,20 @@ class _LineRepeatTracker:
     than ``_STREAM_TAIL_PERIOD_MAX`` in total (shorter multi-line units are the
     tail detectors' job); a unit with no rich line longer than
     ``_STREAM_TAIL_PERIOD_MAX`` may be formatting and is ``_LOOP_HOLD``.
+
+    A model looping on "## Note 7 / <paragraph>", "### Example 7 / ...",
+    "Step 7: / ..." changes only a counter in a short line, so a unit that
+    holds a rich line also matches when every differing position is a pair
+    of short lines (under ``_REPEAT_WINDOW`` chars) equal once digit runs are
+    normalized (``_DIGIT_RUN``); every longer line still matches verbatim.
+    Such a counter unit is ``_LOOP_TRIP`` at any size (``_loop_suffix`` cannot
+    see it: the counter breaks the verbatim period).
     """
 
     def __init__(self) -> None:
         self.total = 0                       # characters streamed so far
         self.counts: dict[bytes, int] = {}   # line hash -> occurrences (LRU order)
-        self._seq: deque[tuple[bytes, int, bool]] = deque(
+        self._seq: deque[tuple[bytes, int, bool, str | None]] = deque(
             maxlen=_MIN_REPEAT_COUNT * _STREAM_UNIT_LINES_MAX
         )
         self._new_line()
@@ -345,6 +357,7 @@ class _LineRepeatTracker:
         self._len_kept = 0
         self._distinct: set[str] = set()
         self._pending_ws: set[str] = set()
+        self._head = ""                      # the line's first ~_REPEAT_WINDOW chars
 
     def _extend(self, piece: str) -> None:
         if not self._started:
@@ -352,6 +365,8 @@ class _LineRepeatTracker:
             if not piece:
                 return
             self._started = True
+        if len(self._head) < _REPEAT_WINDOW:
+            self._head += piece
         body = piece.rstrip()
         trail = piece[len(body):]
         if body:
@@ -375,12 +390,23 @@ class _LineRepeatTracker:
         for k in range(1, _STREAM_UNIT_LINES_MAX + 1):
             if _MIN_REPEAT_COUNT * k > n:
                 break
-            if all(seq[-i][0] == seq[-i - k][0] for i in range(1, (_MIN_REPEAT_COUNT - 1) * k + 1)):
-                unit = seq[-k:]
-                size = sum(length for _, length, _ in unit)
-                if any(rich for _, _, rich in unit):
+            span = range(1, (_MIN_REPEAT_COUNT - 1) * k + 1)
+            unit = seq[-k:]
+            size = sum(rec[1] for rec in unit)
+            rich = any(rec[2] for rec in unit)
+            if all(seq[-i][0] == seq[-i - k][0] for i in span):
+                if rich:
                     return _LOOP_TRIP if k == 1 or size > _STREAM_TAIL_PERIOD_MAX else _LOOP_NONE
                 return _LOOP_HOLD if size > _STREAM_TAIL_PERIOD_MAX else _LOOP_NONE
+            # Counter match: short lines equal modulo digit runs; every line
+            # of ``_REPEAT_WINDOW``+ chars still matches verbatim, and a rich
+            # line anchors the unit.
+            if rich and all(
+                seq[-i][0] == seq[-i - k][0]
+                or (seq[-i][3] is not None and seq[-i][3] == seq[-i - k][3])
+                for i in span
+            ):
+                return _LOOP_TRIP
         return _LOOP_NONE
 
     def feed(self, chunk: str) -> list[tuple[bytes | None, int, int, bool, int, int]]:
@@ -400,10 +426,11 @@ class _LineRepeatTracker:
             pos = m.end()
             started, length = self._started, self._len_kept
             key, low = self._h_kept.digest(), len(self._distinct) < _STREAM_MIN_DISTINCT
+            norm = _DIGIT_RUN.sub("0", self._head.rstrip()) if length < _REPEAT_WINDOW else None
             self._new_line()
             if not started:
                 continue   # a blank line: transparent to the line sequence
-            self._seq.append((key, length, length >= _REPEAT_WINDOW and not low))
+            self._seq.append((key, length, length >= _REPEAT_WINDOW and not low, norm))
             loop = self._loop_verdict()
             if length < _REPEAT_WINDOW:
                 done.append((None, length, 0, low, pos, loop))
@@ -439,7 +466,9 @@ class RepetitionStreamGuard:
     ``---`` rule are part of the unit) that contains a normalized line of
     ``_REPEAT_WINDOW``+ characters and ``_STREAM_MIN_DISTINCT``+ distinct
     characters — any such single line, or a multi-line unit over 800 characters
-    in total. Fence or not, it also trips once one such line's
+    in total, or a unit whose short lines differ only in a counter ("## Note 7").
+    Inside an open fence the same verdict HOLDS instead (recoverable: flushed
+    once a line breaks the unit). Fence or not, it also trips once one such line's
     ``_MIN_REPEAT_COUNT``+ copies cover half of everything streamed.
 
     Outside those trips, a stream that ends in a short-period run
@@ -547,7 +576,11 @@ class RepetitionStreamGuard:
             self._line_hold = loop == _LOOP_HOLD
             if loop == _LOOP_TRIP:
                 fence_open = fence_before ^ bool(scan.count(_FENCE, 0, len(carry_before) + end) % 2)
+                # Inside an open fence a loop may still be legitimate code:
+                # HOLD it (recoverable — flushed once a line breaks the unit)
+                # instead of painting it until whole-stream dominance.
                 trip = trip or not fence_open
+                self._line_hold = self._line_hold or fence_open
             if key is None or low:
                 continue
             dominant = count >= _MIN_REPEAT_COUNT and count * length >= self._lines.total * _DOMINANCE_RATIO
