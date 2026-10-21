@@ -46,6 +46,16 @@
   has accumulated above the cut section); (2) check the `release.yml` `workflow_dispatch` `dry_run`
   triggered 2026-09-02 by the coordinator — the workflow has never run on GitHub before; (3)
   `git tag v1.0.0 && git push origin v1.0.0` on `main`. Findings from the post-tag §0 run are 1.0.1.
+- [ ] **NWS-21 — merge the Nerva Workspace pilot PR (#1256) and cut the pilot tag** — added
+  2026-10-19. *Why this is yours:* the PR touches `.github/workflows/ci.yml` and `e2e.yml`
+  (control-plane: owner merges, [spec §11](business/WORKSPACE_PILOT_SPEC.md)), and the pilot
+  guide §2 installs only from a named tag that you cut after approving the pilot work — today none
+  exists (`v1.0.0` is older than the workspace). (1) Review and merge
+  [#1256](https://github.com/andrei649/jarvis-hub/pull/1256) (`claude/nerva-ai-os-product-tm5yzr`)
+  into `main`. (2) Choose the tag's name and tag the merge commit on `main` (`git tag <name> && git
+  push origin <name>`); the guide deliberately names no tag, so nothing in the docs has to change.
+  (3) Give that name to the installer (pilot guide §2 `<eticheta-pilotului>`, §15 upgrades from tag
+  to tag). Tracked in [BACKLOG.md](../BACKLOG.md) NWS-21.
 - [ ] **Run the manual-test runbook on the RTX box** — [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md),
   full pass incl. §0 sign-off and the ⭐B0 governed-autonomy demo. *Ordering decided 2026-09-01
   (owner, confirming the 2026-08-28 "gates removed" directive in BACKLOG.md): the v1.0.0 tag is
@@ -908,6 +918,18 @@ built on your Windows box:
       (Gemini) window, not 32k, and no compaction before the transcript is genuinely large.
 
 ## Parking lot (decisions, no rush)
+
+- [ ] **🔴 Nerva Business Suite („AI in a box” pentru companii) — 7 decizii blocante, toate ale tale**
+  (chestionar + hartă onestă a codului + fapte de piață datate 2026-10-13:
+  [`docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md`](decisions/2026-10-14-nerva-business-suite-kickoff-questions.md),
+  status DRAFT). În ordinea dependențelor: D1 clientul #1 + un singur flux (Digitaholic intern?);
+  D2 postura v1 (cloud/VM software-only vs appliance DGX Spark — nimic nu a rulat încă pe ARM64, imaginea
+  GHCR e privată, benchmark-urile sunt goale); D3 identitate/tenancy (single-user e ratificat; auditul nu
+  poate numi aprobatorul — `decided_by='admin'`); D4 MCP-first vs plugin-uri native vs n8n (bucla de tool-uri
+  e default-off); D5 copyright holder (LICENSE:190 e șablon necompletat), open-core, licență semnată, brand
+  „Nerva” neînregistrat; D6 cine operează / SLA realist (NBD, nu 4h) / rol GDPR / telemetrie; D7 înghețarea
+  roadmap-ului personal 1.x pe durata pivotului. Răspunsurile se scriu sub fiecare întrebare în același
+  fișier; abia apoi se deschid rânduri în BACKLOG. Până la D1–D3 nicio lucrare pe conectori/UI/hardware.
 
 - [ ] **Is the web HUD a phone surface? — one decision, and it unblocks a nightly that has never
   been green.** Packet refreshed 2026-09-04 against `main` @ `bf48cf2`; the question itself is the

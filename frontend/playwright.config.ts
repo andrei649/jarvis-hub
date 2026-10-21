@@ -29,6 +29,11 @@ const BROWSER_MATRIX = process.env.E2E_BROWSER_MATRIX === '1';
    recording video. Drive it through `node scripts/hud_footage.mjs`. */
 const FOOTAGE = process.env.FOOTAGE === '1';
 const FOOTAGE_SPEC = /footage\.spec\.ts$/;
+/* Nerva Workspace — a separate app with its own lane (`playwright.workspace.config.ts`): it
+   boots the hub with NERVA_WORKSPACE=1, a fake model server and an SMTP sink, none of which
+   this HUD lane starts. Every HUD project ignores those specs, so `npm run e2e` never runs
+   them against a server that has the workspace switched off. */
+const WORKSPACE_SPECS = '**/workspace*.spec.ts';
 // e2e.yml now exposes this as a dispatch input, so pin what a non-integer means here
 // instead of leaving it to coercion. `Math.max(1, Number(x))` returns NaN for an
 // unparseable x and passes it straight to `repeatEach`; measured on @playwright/test
@@ -89,12 +94,12 @@ export default defineConfig({
   },
   projects: [
     ...(BROWSER_MATRIX ? [
-      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts'], use: { ...devices['Desktop Chrome'] } },
-      { name: 'firefox', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts'], use: { ...devices['Desktop Firefox'] } },
-      { name: 'webkit', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts'], use: { ...devices['Desktop Safari'] } },
-      { name: 'mobile-chrome', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts'], use: { ...devices['Pixel 5'] } },
+      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS], use: { ...devices['Desktop Chrome'] } },
+      { name: 'firefox', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS], use: { ...devices['Desktop Firefox'] } },
+      { name: 'webkit', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS], use: { ...devices['Desktop Safari'] } },
+      { name: 'mobile-chrome', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS], use: { ...devices['Pixel 5'] } },
     ] : [
-      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts'], use: { ...devices['Desktop Chrome'] } },
+      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS], use: { ...devices['Desktop Chrome'] } },
     ]),
     // 1920x1080 because the output is footage, not a regression screenshot: the shot
     // list feeds a README hero and social previews, and upscaling a 1280-wide capture

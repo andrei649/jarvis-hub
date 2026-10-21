@@ -255,6 +255,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Sentence-streamed TTS | `POST /tts/stream` | ✅ | ⬜ | |
 | Eval datasets (run / compare / history) | `GET /api/eval/datasets`, `GET /api/eval/datasets/{name}/{runs,compare}` (open), `POST /api/eval/datasets/run` | ✅ | ➖ | — |
 | Bench stats | `GET /bench/stats` (open) | ✅ | ➖ | — |
+| Nerva Workspace (B2B pilot app: company accounts, departments, documents, assistant, reports, approvals, admin console) | `GET /workspace`, `GET /workspace/{path:path}` (the app shell); `/api/workspace/*` behind the workspace's own session cookie (tiers `ws_user`/`ws_admin`), all 404 unless `NERVA_WORKSPACE=1` | ✅ separate web app at `/workspace`, not a HUD panel | ➖ Nerva Workspace: web only, no native surface (intentional) — company employees use the responsive web app (usable at 360 px); the owner's native apps never sign in to it | — |
 
 > **H34.1 ➖ (intentional):** Mission Control is a desktop-operator cockpit (large canvas map,
 > dev-swarm lock files that only exist on the owner's dev machine). Its steering primitives

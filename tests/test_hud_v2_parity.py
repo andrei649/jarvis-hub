@@ -40,6 +40,11 @@ RULES = [
     ("/favicon", "shell"),
     ("/sw.js", "shell"),
     ("/admin", "admin"),
+    # Nerva Workspace — a separate B2B web app, not a HUD surface: its own SPA at
+    # /workspace (agents/web/workspace) calls every /api/workspace route; the caller gate
+    # below reads frontend/src/workspace like any other client.
+    ("/api/workspace", "workspace"),
+    ("/workspace", "workspace"),
     # machine-facing — intentionally not a HUD surface
     ("/.well-known/", "NOT_IN_HUD"),
     ("/healthz", "NOT_IN_HUD"),  # H23.11 liveness probe (LB / systemd / Docker HEALTHCHECK)
@@ -574,6 +579,11 @@ MACHINE_FACING: dict[str, str] = {
     "/docs/oauth2-redirect": "FastAPI docs UI",
     "/redoc": "FastAPI docs UI",
     "/v2/{path:path}": "SPA catch-all \u2014 serves the client, is not called by it",
+    # The Workspace shell: "/workspace" alone also matches every /api/workspace URL in the
+    # client, so these are declared rather than left to that accidental substring match.
+    "/workspace": "redirect to the Workspace SPA, navigated to rather than fetched",
+    "/workspace/": "Workspace SPA shell, navigated to rather than fetched",
+    "/workspace/{path:path}": "Workspace SPA catch-all \u2014 serves the client, is not called by it",
     "/mission-control": "server-rendered page, navigated to rather than fetched",
     "/map": "server-rendered page, navigated to rather than fetched",
     "/api/status": "alias probe"
