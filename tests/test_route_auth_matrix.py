@@ -201,6 +201,15 @@ INTENTIONALLY_OPEN_READS = PUBLIC_READS | {k for k in IN_HANDLER_GUARDED if k.st
 PUBLIC_BY_DESIGN = {
     "POST /api/channels/pairing/request",   # lands in owner approval, mints nothing
     "POST /api/analytics/event",            # bounded anonymous beacon
+    # Nerva Workspace entry points (#1256): how a company's people get a session at all.
+    # Each checks its own credential (first-run setup token, password, SSO assertion,
+    # invite token) and mints only a workspace session — never a hub tier; the set is
+    # pinned again by test_workspace_routes_use_only_workspace_tiers (WORKSPACE_PUBLIC).
+    "POST /api/workspace/setup",
+    "POST /api/workspace/login",
+    "POST /api/workspace/login/sso",
+    "POST /api/workspace/invites/lookup",
+    "POST /api/workspace/invites/accept",
 }
 
 # WebSocket upgrades whose guard runs in the handler body (an upgrade has no
@@ -318,6 +327,9 @@ IN_HANDLER_TIER_SITES = {
 ALLOWED_MOUNTS = {
     "/static": "starlette.staticfiles.StaticFiles",
     "/v2/assets": "starlette.staticfiles.StaticFiles",
+    # Nerva Workspace's hashed bundle (#1256): a StaticFiles subclass that answers the
+    # same plain 404 as its pages while the workspace is disabled.
+    "/workspace/assets": "agents.core.routers.workspace_ui.WorkspaceAssets",
 }
 
 WS_SNAPSHOT = repo_root / "tests" / "_snapshots" / "ws_route_auth.json"
