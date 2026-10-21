@@ -8,6 +8,7 @@ Exit codes: 0 ok · 1 the verb failed (the hub said no, or a check is red) · 2 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -181,13 +182,20 @@ def build_parser() -> argparse.ArgumentParser:
     config_list.add_argument("category", nargs="?")
     config_list.add_argument("--json", action="store_true")
     config_list.add_argument("--reveal", action="store_true", help="print secret values instead of masking them")
-    config_get = config_verbs.add_parser("get", help="print one setting: category.key")
-    config_get.add_argument("name")
+    # H688 — a name may go on below the key into a json value; `\\.` or "quotes" keep a dot
+    # inside one key (agents/core/settings_path.py has the grammar).
+    path_help = 'category.key[.path] — escape a dot inside a key as \\. or quote the key: "a.b"'
+    config_get = config_verbs.add_parser("get", help="print one setting: category.key[.path]")
+    config_get.add_argument("name", help=path_help)
     config_get.add_argument("--reveal", action="store_true")
-    config_set = config_verbs.add_parser("set", help="change one setting: category.key value")
-    config_set.add_argument("name")
+    config_set = config_verbs.add_parser("set", help="change one setting: category.key[.path] value")
+    config_set.add_argument("name", help=path_help)
     config_set.add_argument("value")
     _selection_flags(config_set)
+    config_unset = config_verbs.add_parser(
+        "unset", help="put a setting back to its declared value, or remove one key inside a json setting")
+    config_unset.add_argument("name", help=path_help)
+    _selection_flags(config_unset)
     config_verbs.add_parser("check", help="validate every stored value against its declared schema")
 
     approvals = verbs.add_parser("approvals", help="the approval queue (admin)")
@@ -1037,11 +1045,16 @@ def _shown(row: Mapping[str, Any], *, reveal: bool) -> Any:
     return row.get("value")
 
 
-def _split_name(name: str) -> tuple[str, str]:
-    category, sep, key = name.partition(".")
-    if not sep or not category or not key:
-        raise argparse.ArgumentTypeError(f"setting names are category.key, got {name!r}")
-    return category, key
+def _resolve_name(settings: Any, name: str) -> tuple[str, str, list[Any]] | None:
+    """H688 — ``(category, key, path below the key)`` for a setting name, or None when no
+    declared setting matches. Keys whose name contains a dot are matched greedily; a
+    malformed or ambiguous name is a usage error (exit 2) naming how to spell it."""
+    from agents.core import settings_path
+
+    try:
+        return settings_path.resolve_setting(name, settings._SPEC.keys())
+    except settings_path.PathError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _coerce(value: str, kind: str) -> Any:
@@ -1061,6 +1074,15 @@ def _coerce(value: str, kind: str) -> Any:
     if kind == "json":
         return json.loads(value)
     return value
+
+
+def _coerce_inner(value: str) -> Any:
+    """H688 — a value written inside a json setting: JSON when it parses (a number, true,
+    an object), else the text as typed."""
+    try:
+        return json.loads(value)
+    except ValueError:
+        return value
 
 
 def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
@@ -1085,28 +1107,54 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
                 ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay})")
         return EXIT_OK
     if ns.action == "get":
-        category, key = _split_name(ns.name)
-        row = next((r for r in settings.get_category(category) if r["key"] == key), None)
+        from agents.core import settings_path
+
+        resolved = _resolve_name(settings, ns.name)
+        row = None
+        if resolved is not None:
+            category, key, path = resolved
+            row = next((r for r in settings.get_category(category) if r["key"] == key), None)
         if row is None:
             ctx.err.write(f"no setting {ns.name}\n")
             return EXIT_FAILED
-        ctx.say(json.dumps(_shown(row, reveal=ns.reveal), ensure_ascii=False))
+        try:
+            # A secret stays masked whole, wherever inside it the name points.
+            value = settings_path.get_in(row.get("value"), path)
+        except settings_path.PathError as exc:
+            ctx.err.write(f"{ns.name}: {exc}\n")
+            return EXIT_FAILED
+        ctx.say(json.dumps(_shown({**row, "value": value}, reveal=ns.reveal), ensure_ascii=False))
         return EXIT_OK
-    if ns.action == "set":
-        category, key = _split_name(ns.name)
-        spec = settings._SPEC.get((category, key))
-        if spec is None:
+    if ns.action in ("set", "unset"):
+        from agents.core import settings_path
+
+        resolved = _resolve_name(settings, ns.name)
+        spec = settings._SPEC.get(resolved[:2]) if resolved is not None else None
+        if resolved is None or spec is None:
             ctx.err.write(f"{ns.name} is not a declared setting (see `nerva config list`)\n")
             return EXIT_FAILED
+        category, key, path = resolved
         if (category, key) in settings.ROUTE_ONLY:
             # review-H329 F1: a route-only row has one writer (the skill switches, which record a
             # switch-on; H613 the voice command providers, which ask for approval).
             hint = " — use `nerva skills on|off`" if category == "skills" else ""
             ctx.err.write(f"{ns.name} is changed only in {settings.ROUTE_ONLY[(category, key)]}{hint}\n")
             return EXIT_FAILED
+        kind = str(spec.get("kind", "text"))
         try:
-            value = _coerce(ns.value, str(spec.get("kind", "text")))
-        except ValueError as exc:
+            if path:
+                # H688 — inside a json value: the rest of the name is a path, the new whole
+                # value goes through the same validation and guards as any other write.
+                current = settings.get_value(category, key, spec.get("value"))
+                if ns.action == "unset":
+                    value = settings_path.unset_in(current, path)
+                else:
+                    value = settings_path.set_in(current, path, _coerce_inner(ns.value))
+            elif ns.action == "unset":
+                value = copy.deepcopy(spec.get("value"))
+            else:
+                value = _coerce(ns.value, kind)
+        except ValueError as exc:  # settings_path.PathError is a ValueError
             ctx.err.write(f"{ns.name}: {exc}\n")
             return EXIT_FAILED
         errors = settings.validate_category(category, {key: value})
@@ -1148,9 +1196,14 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             retention.lower_approval_offline()
         # A stored secret is echoed back masked, as `config get` shows it (review-H465e
         # nit 3); the value typed on this command line is the shell's to keep or not.
-        shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": value}, reveal=False)
         when = ("restart the hub to apply it" if _applies_at_restart(category, key, str(spec.get("kind", "")))
                 else "a running hub picks it up within 30 s")
+        if ns.action == "unset":
+            what = "removed" if path else "back to its declared value"
+            ctx.say(f"{ns.name} {what}  ({when})")
+            return EXIT_OK
+        written = settings_path.get_in(value, path) if path else value
+        shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": written}, reveal=False)
         ctx.say(f"{ns.name} = {json.dumps(shown, ensure_ascii=False)}  ({when})")
         return EXIT_OK
     if ns.action == "check":
