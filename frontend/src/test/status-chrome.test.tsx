@@ -7,7 +7,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { loadJarvisData } from '../api/loaders';
 import { readStatusChrome, STATUS_CHROME_UNKNOWN } from '../api/status-chrome';
-import { Rail, TopBar } from '../shell';
+import { Rail, TopBar, fitBadgeStrip } from '../shell';
 
 const ok = (payload: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => payload });
 const down = () => Promise.reject(new TypeError('network down'));
@@ -124,5 +124,54 @@ describe('rail gateway dot', () => {
   it('marks an unknown gateway when no poll has answered', () => {
     const { container } = render(<Rail mode="cockpit" setMode={() => {}} t={T} />);
     expect(container.querySelector('[data-chrome="rail-gateway"]').getAttribute('data-state')).toBe('unknown');
+  });
+});
+
+describe('brand strip sheds whole badges by priority', () => {
+  /* jsdom has no layout, so widths are stubbed: every badge 70px, 9px gaps. The geometry in a
+     real browser is pinned by e2e/status-chrome-layout.spec.ts; this pins the ORDER. */
+  function strip(width: number, chrome = { gateway: { state: 'running', running: ['x'], total: 1 }, sessions: { active: 2, windowS: 900 }, version: '1.1.0' }) {
+    const { container } = render(<TopBar clock={new Date(0)} lang="en" setLang={() => {}} accent="cyan" agents={[]} localPct={80}
+      live={false} trust={null} llm={null} demo={false} setDemo={() => {}} serverUp={true}
+      onPalette={() => {}} onAmbient={() => {}} chrome={chrome} t={T} />);
+    const el = container.querySelector('.brand .badges') as HTMLElement;
+    el.style.columnGap = '9px';
+    Object.defineProperty(el, 'clientWidth', { configurable: true, value: width });
+    for (const k of Array.from(el.children) as HTMLElement[]) {
+      k.getBoundingClientRect = () => ({ width: k.hasAttribute('data-shed') ? 0 : 70 } as DOMRect);
+    }
+    fitBadgeStrip(el);
+    const keys = (shed: boolean) => (Array.from(el.children) as HTMLElement[])
+      .filter((k) => k.hasAttribute('data-shed') === shed).map((k) => k.querySelector('.k')!.textContent);
+    return { shown: keys(false), shed: keys(true), container };
+  }
+
+  it('shows every badge when they fit', () => {
+    expect(strip(8 * 70 + 7 * 9).shed).toEqual([]);
+  });
+
+  it('sheds SESSIONS, LOCAL, AGENTS, then MIC, then EGRESS — never LLM, DATA or GATEWAY first', () => {
+    expect(strip(5 * 70 + 4 * 9).shown).toEqual(['LLM', 'DATA', 'GATEWAY', 'EGRESS', 'MIC']);
+    expect(strip(5 * 70 + 4 * 9).shed).toEqual(['AGENTS', 'SESSIONS', 'LOCAL']);
+    expect(strip(4 * 70 + 3 * 9).shown).toEqual(['LLM', 'DATA', 'GATEWAY', 'EGRESS']);
+    expect(strip(3 * 70 + 2 * 9).shown).toEqual(['LLM', 'DATA', 'GATEWAY']);
+  });
+
+  it('keeps LLM as the last badge standing and never sheds to zero', () => {
+    expect(strip(10).shown).toEqual(['LLM']);
+  });
+
+  it('a wider box brings shed badges back on the next fit', () => {
+    const { container } = strip(3 * 70 + 2 * 9);
+    const el = container.querySelector('.brand .badges') as HTMLElement;
+    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 2000 });
+    fitBadgeStrip(el);
+    expect(el.querySelectorAll('[data-shed]').length).toBe(0);
+  });
+
+  it('carries the version on the brand line, not as a strip badge', () => {
+    const { container } = strip(2000);
+    expect(container.querySelector('.brand-tx [data-chrome="version"]')!.textContent).toContain('v1.1.0');
+    expect(container.querySelector('.brand .badges [data-chrome="version"]')).toBeNull();
   });
 });
