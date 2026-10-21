@@ -82,6 +82,12 @@ table, the recovery sequence, the local-model-server failure modes or the "feels
 checklist.
 
 Stdlib-only, like the bootstrap: the doctor must run in a broken install.
+
+``--local-pilot`` checks only prerequisites on this machine's already-running hub:
+the shared local model inventory, fallback setting and MCP tools/list. It performs
+no inference, memory query, install write probe or cloud-route probe. Exit 0 proves
+only these metadata checks, not an actual client or generated answer. It cannot
+accompany --smoke.
 """
 
 from __future__ import annotations
@@ -143,6 +149,11 @@ HELP_SECTIONS = {
     "config_sources": "symptom-cause-fix",
     "model_roles": "my-agent-feels-dumber",
     "smoke": "recovery-sequence",
+    # `--local-pilot` rows (#1254)
+    "hub": "local-pilot-check",
+    "local_model": "local-pilot-check",
+    "fallback_policy": "local-pilot-check",
+    "mcp_memory": "local-pilot-check",
 }
 # runtime_resolves reasons about the local model server itself — the Ollama / LM Studio
 # tables name each. Every other reason (a cloud key, a credential, the hub's address or
@@ -341,6 +352,140 @@ def hub_url(env=None) -> str:
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"  # an IPv6 literal (::1): unbracketed, the URL has no host
     return f"http://{host}:{port}"
+
+
+def _pilot_json(path: str, *, env, opener, admin=False, rpc=False) -> tuple[dict, str]:
+    """Read fixed pilot metadata with the doctor's existing HTTP/credential boundary."""
+    url = hub_url(env) + path
+    auth_env = {"JARVIS_ADMIN_TOKEN": env.get("JARVIS_ADMIN_TOKEN", "")} if admin else env
+    headers = _hub_headers(auth_env, url)
+    data = None
+    if rpc:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}).encode()
+    try:
+        request = urllib.request.Request(url, headers=headers, data=data,
+                                         method="POST" if rpc else "GET")
+        response = opener(request, timeout=5.0)
+        try:
+            status = int(getattr(response, "status", 200))
+            raw = response.read(1_048_577)
+        finally:
+            response.close()
+        if status != 200:
+            return {}, f"http_status:{status}"
+        if len(raw) > 1_048_576:
+            return {}, "reply_too_large"
+        payload = json.loads(raw)
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        return {}, f"http_status:{exc.code}"
+    except (ValueError, TypeError, http.client.InvalidURL):
+        return {}, "malformed_reply"
+    except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException):
+        return {}, "hub_unreachable"
+    return (payload, "") if isinstance(payload, dict) else ({}, "malformed_reply")
+
+
+def _pilot_model(payload: dict, error: str) -> Check:
+    provider, model = payload.get("backend"), _text(payload.get("configured_model"))
+    # Emit bounded model identity, not endpoint/settings payloads or raw errors.
+    if model and (len(model) > 200 or any(ord(char) < 32 or ord(char) == 127 for char in model)):
+        model = None
+    rows = payload.get("models")
+    matches = [row for row in (rows if isinstance(rows, list) else [])
+               if isinstance(row, dict) and row.get("provider") == provider
+               and row.get("id") == model and row.get("configured") is True]
+    ok = (not error and provider in ("ollama", "lm-studio") and model is not None
+          and len(matches) == 1 and matches[0].get("available") is True
+          and matches[0].get("resident") is True)
+    detail = f"{provider}/{model}" if provider in ("ollama", "lm-studio") and model else ""
+    if not ok:
+        detail += "; check the selected, already-installed model in Admin > local models"
+    return Check("local_model", OK if ok else FAIL,
+                 "configured_model_resident" if ok else error or "configured_model_not_verified",
+                 detail.lstrip("; "))
+
+
+def _pilot_fallback(payload: dict, error: str) -> Check:
+    rows = payload.get("llm")
+    values = [row.get("value") for row in (rows if isinstance(rows, list) else [])
+              if isinstance(row, dict) and row.get("key") == "cloud_fallback"]
+    ok = not error and values == ["never"]
+    return Check("fallback_policy", OK if ok else FAIL,
+                 "configured_fallback_never" if ok else error or "fallback_not_verified_never",
+                 "Verify stored cloud fallback is 'never' in Admin > LLM settings. "
+                 "Auto-policy fallback only; explicit cloud agents are unaffected. "
+                 "Confirm a strict-local agent for the pilot; settings can take 30s to apply.")
+
+
+def _pilot_memory(payload: dict, error: str) -> Check:
+    reason = error
+    if not reason and (payload.get("jsonrpc") != "2.0" or type(payload.get("id")) is not int
+                       or payload["id"] != 1 or "error" in payload):
+        reason = "mcp_catalog_unavailable"
+    result = payload.get("result")
+    tools = result.get("tools") if isinstance(result, dict) else None
+    matches = [tool for tool in (tools if isinstance(tools, list) else [])
+               if isinstance(tool, dict) and tool.get("name") == "route_memory_search"]
+    if not reason and len(matches) != 1:
+        reason = "memory_tool_missing_or_ambiguous"
+    if not reason:
+        annotations = matches[0].get("annotations")
+        if not isinstance(annotations, dict) or annotations.get("readOnlyHint") is not True:
+            reason = "memory_read_hint_missing"
+        schema = matches[0].get("inputSchema")
+        schema = schema if isinstance(schema, dict) else {}
+        props = schema.get("properties")
+        query = props.get("q") if isinstance(props, dict) else None
+        required = schema.get("required", [])
+        if not reason and (schema.get("type") != "object" or not isinstance(query, dict)
+                           or query.get("type") != "string" or not isinstance(required, list)
+                           or any(key != "q" for key in required)):
+            reason = "memory_query_schema_incompatible"
+    return Check("mcp_memory", FAIL if reason else OK, reason or "memory_read_catalog_verified",
+                 "Catalog metadata only; memory read: not tested. "
+                 "If blocked, check existing MCP enablement/authentication and the read-route catalog.")
+
+
+def run_local_pilot(root: Path = REPO_ROOT, *, env=None, opener=None) -> DoctorReport:
+    """Reuse existing hub reads; never start services, bootstrap settings, or execute tools."""
+    env = os.environ if env is None else env
+    opener = opener or hub_open
+    url = hub_url(env)
+    try:
+        parts = urllib.parse.urlsplit(url)
+        local = (parts.scheme in ("http", "https") and is_loopback_url(url)
+                 and parts.username is None and parts.password is None
+                 and not parts.query and not parts.fragment)
+    except ValueError:
+        local = False
+    if not local:
+        return DoctorReport(False, str(root), [Check(
+            "hub", FAIL, "local_hub_required",
+            "Run this command on the hub computer with a loopback HTTP(S) address; no request sent.")])
+    ready = check_readyz(opener, env=env)
+    checks = [Check("hub", OK if ready.status == OK else FAIL, ready.reason,
+                    "Existing local hub; no service was started.")]
+    if ready.status != OK:
+        checks.extend(Check(name, SKIP, "hub_not_ready", "Re-run when the intended hub is ready.")
+                      for name in ("local_model", "fallback_policy", "mcp_memory"))
+        return DoctorReport(False, str(root), checks)
+    checks.append(_pilot_model(*_pilot_json("/api/models/local", env=env, opener=opener, admin=True)))
+    checks.append(_pilot_fallback(*_pilot_json("/api/admin/settings/llm", env=env, opener=opener, admin=True)))
+    checks.append(_pilot_memory(*_pilot_json("/api/mcp/server/rpc", env=env, opener=opener, rpc=True)))
+    return DoctorReport(all(check.status == OK for check in checks), str(root), checks)
+
+
+def format_local_pilot(report: DoctorReport) -> str:
+    lines = ["Nerva local pilot — read-only prerequisite check"]
+    for check in report.checks:
+        lines.append(f"[{check.status}] {check.name}: {check.reason} — {check.detail}")
+    lines.append("Prerequisites: " + ("verified" if report.ok else "NOT verified; resolve the failed checks"))
+    lines.append("inference: not tested; memory read: not tested; agent routing: not tested.")
+    lines.append("The hub may record authentication audit events and refresh metadata caches.")
+    lines.append("Next: run one authorized synthetic request on a strict-local agent and verify its provider trace.")
+    return "\n".join(lines)
 
 
 def check_readyz(opener=None, url: str | None = None, timeout: float = 2.0,
@@ -985,11 +1130,20 @@ def main(argv=None) -> int:
                     "Changes nothing.",
     )
     parser.add_argument("--root", default=str(REPO_ROOT))
-    parser.add_argument("--smoke", action="store_true",
-                        help="also run the install smoke in the venv (~30s)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--smoke", action="store_true",
+                      help="also run the install smoke in the venv (~30s)")
+    mode.add_argument("--local-pilot", action="store_true",
+                      help="read-only local model, fallback and MCP memory prerequisites; no inference")
     parser.add_argument("--json", action="store_true", help="machine-readable report")
     args = parser.parse_args(argv)
 
+    if args.local_pilot:
+        report = run_local_pilot(Path(args.root))
+        payload = {**report.to_dict(), "mode": "local_pilot", "inference_tested": False,
+                   "memory_read_tested": False, "agent_routing_tested": False}
+        print(json.dumps(payload, indent=2, sort_keys=True) if args.json else format_local_pilot(report))
+        return 0 if report.ok else 1
     report = run_doctor(Path(args.root), smoke=args.smoke)
     if args.json:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))

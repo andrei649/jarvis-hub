@@ -539,7 +539,8 @@ def test_logs_tail_the_hub_log_or_say_where_it_would_be(tmp_path, monkeypatch):
     assert code == EXIT_FAILED and "system.log_to_file" in err
 
 
-def test_doctor_delegates_to_the_install_doctor(monkeypatch):
+@pytest.mark.parametrize("args", [["--json", "--smoke"], ["--json", "--local-pilot"]])
+def test_doctor_delegates_to_the_install_doctor(monkeypatch, args):
     from scripts import doctor
 
     seen = {}
@@ -549,8 +550,8 @@ def test_doctor_delegates_to_the_install_doctor(monkeypatch):
         return 0
 
     monkeypatch.setattr(doctor, "main", fake_main)
-    code, _out, _err, _hub = _run(["doctor", "--json", "--smoke"])
-    assert code == EXIT_OK and seen["argv"] == ["--json", "--smoke"]
+    code, _out, _err, _hub = _run(["doctor", *args])
+    assert code == EXIT_OK and seen["argv"] == args
 
 
 # ── kernel explain ───────────────────────────────────────────────────────────
