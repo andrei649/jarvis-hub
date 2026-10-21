@@ -24,6 +24,10 @@ This module is the **governed RPC surface** — the security-critical core:
   * **Secret containment:** the sandbox never sees secrets — handlers resolve
     credentials host-side, and every response is run through the secret-scrubber
     (defense-in-depth) before it crosses back.
+  * **Bounded, well-formed results (H297):** a handler may be a coroutine or a
+    plain function (run on a worker thread); a failure answers ``tool_error`` with
+    a sanitised, length-bounded ``error`` line; a :class:`ToolContent` result
+    becomes a validated ``content`` envelope of text and image parts.
 
 The Unix-socket transport + the sandbox-side client + actually running the
 agent's code in the sandbox are the host seam; the governance core here is pure
@@ -33,6 +37,9 @@ and offline-testable. The injected sink/secret-broker keep it decoupled.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import functools
 import inspect
 import logging
 import time
@@ -45,7 +52,7 @@ from typing import Awaitable, Callable, Optional
 from . import project_context
 from .automation_contracts import ContractTemplate, predicate
 from .autonomy.consent_registration import trusted_registration_key
-from .security.quarantine import strip_invisible_deep
+from .security.quarantine import strip_invisible, strip_invisible_deep
 from .turn_approvals import record_pending_approval
 
 logger = logging.getLogger("jarvis.tool_rpc")
@@ -87,7 +94,9 @@ def current_tool_turn() -> Optional[str]:
     return _tool_turn.get()
 
 
-Handler = Callable[[dict], Awaitable]
+#: A coroutine function, or (H297) a plain function: a sync handler runs on a worker
+#: thread (``asyncio.to_thread``, the call's context copied) so it never blocks the loop.
+Handler = Callable[[dict], object]
 Preflight = Callable[[dict], Mapping]
 GatedIntake = Callable[[str, dict], int]
 GatedReview = Callable[[str, dict, int], Awaitable[dict | None]]
@@ -201,6 +210,161 @@ _ANSWER_LABEL_KEYS = ("code_warnings", "code_warning_count")
 
 _KIND_PREFIX = "toolrpc."
 _RISK_TIER = 2
+
+# ── H297: the result envelope ────────────────────────────────────────────────
+
+#: The longest handler-error message the model is shown beside ``tool_error``.
+MAX_ERROR_CHARS = 240
+#: Content-part bounds for a multimodal result (:class:`ToolContent`).
+MAX_CONTENT_PARTS = 16
+MAX_IMAGE_PARTS = 4
+MAX_TEXT_PART_CHARS = 200_000
+#: Per decoded image; the strictest common provider ceiling (5 MiB).
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+#: The only image types a part may claim, each with the leading bytes it must carry:
+#: a part whose bytes are not what it says it is never reaches a provider.
+_IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/webp": (b"RIFF",),
+}
+
+
+class ToolContent:
+    """A multimodal tool result: ordered ``text`` and ``image`` content parts.
+
+    A handler returns one of these (never a plain dict, so a passthrough of external
+    JSON cannot promote itself into image parts) when its answer is more than JSON —
+    a screenshot, a rendered chart. ``structured`` is an optional JSON payload the
+    caller also reads as the envelope's ``result``. Parts are validated when the
+    server builds the envelope (:func:`normalize_content_parts`).
+    """
+
+    __slots__ = ("parts", "structured")
+
+    def __init__(self, parts, *, structured=None) -> None:
+        self.parts = list(parts or [])
+        self.structured = structured
+
+    @staticmethod
+    def text(text: str) -> dict:
+        return {"type": "text", "text": text}
+
+    @staticmethod
+    def image(data, media_type: str) -> dict:
+        """An image part from raw bytes or an already base64-encoded string."""
+        return {"type": "image", "media_type": media_type, "data": data}
+
+
+class ContentError(ValueError):
+    """A :class:`ToolContent` part is malformed or over its bounds."""
+
+
+def _image_bytes(data) -> bytes:
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        return bytes(data)
+    if isinstance(data, str):
+        if len(data) > (MAX_IMAGE_BYTES * 4) // 3 + 8:
+            raise ContentError("image_too_large")
+        try:
+            return base64.b64decode(data.encode("ascii"), validate=True)
+        except (binascii.Error, UnicodeEncodeError, ValueError) as exc:
+            raise ContentError("image_not_base64") from exc
+    raise ContentError("image_data_type")
+
+
+def normalize_content_parts(parts) -> list[dict]:
+    """Validate and canonicalize content parts, or raise :class:`ContentError`.
+
+    Text parts are stripped of invisible characters and bounded; image parts must
+    name an allowed type, decode, carry that type's signature and fit the size cap.
+    The output is plain JSON: ``{"type": "image", "media_type", "data": <base64>,
+    "bytes": n}``.
+    """
+    if not isinstance(parts, list) or not parts:
+        raise ContentError("content_empty")
+    if len(parts) > MAX_CONTENT_PARTS:
+        raise ContentError("too_many_parts")
+    out: list[dict] = []
+    images = 0
+    for part in parts:
+        if not isinstance(part, Mapping):
+            raise ContentError("part_not_mapping")
+        kind = part.get("type")
+        if kind == "text":
+            text = part.get("text")
+            if not isinstance(text, str):
+                raise ContentError("text_not_string")
+            if len(text) > MAX_TEXT_PART_CHARS:
+                raise ContentError("text_too_long")
+            out.append({"type": "text", "text": strip_invisible(text)})
+        elif kind == "image":
+            images += 1
+            if images > MAX_IMAGE_PARTS:
+                raise ContentError("too_many_images")
+            media_type = part.get("media_type")
+            signatures = _IMAGE_SIGNATURES.get(media_type) if isinstance(media_type, str) else None
+            if signatures is None:
+                raise ContentError("image_media_type")
+            raw = _image_bytes(part.get("data"))
+            if not raw:
+                raise ContentError("image_empty")
+            if len(raw) > MAX_IMAGE_BYTES:
+                raise ContentError("image_too_large")
+            if not raw.startswith(signatures) or (
+                    media_type == "image/webp" and raw[8:12] != b"WEBP"):
+                raise ContentError("image_signature_mismatch")
+            out.append({
+                "type": "image",
+                "media_type": media_type,
+                "data": base64.b64encode(raw).decode("ascii"),
+                "bytes": len(raw),
+            })
+        else:
+            raise ContentError("part_type")
+    return out
+
+
+def sanitize_error(exc: BaseException, *, scrub: Callable[[str], str] | None = None,
+                   limit: int = MAX_ERROR_CHARS) -> str:
+    """A handler failure as one bounded, secret-free line the model may read.
+
+    ``ExceptionType: message`` with control and invisible characters removed,
+    known-pattern secrets redacted (and the broker's values, via ``scrub``), cut to
+    ``limit`` characters. Never the traceback, never a frame or a local.
+    """
+    try:
+        message = str(exc)
+    except Exception:
+        message = ""
+    text = type(exc).__name__ + (f": {message}" if message else "")
+    text = strip_invisible(text)
+    text = "".join(ch if ch.isprintable() else " " for ch in text)
+    text = " ".join(text.split())
+    # Redact the whole line before cutting it, so a secret is never half-kept.
+    try:
+        from .security.scanner import SecretScanner
+        text = SecretScanner().redact(text)
+    except Exception:
+        logger.debug("tool-rpc error redaction unavailable", exc_info=True)
+        text = type(exc).__name__
+    if scrub is not None:
+        try:
+            text = scrub(text)
+        except Exception:
+            text = type(exc).__name__
+    if len(text) > limit:
+        text = text[: max(1, limit - 1)].rstrip() + "…"
+    return text
+
+
+def _is_async_callable(handler) -> bool:
+    target = handler
+    while isinstance(target, functools.partial):
+        target = target.func
+    return (inspect.iscoroutinefunction(target)
+            or (callable(target) and inspect.iscoroutinefunction(type(target).__call__)))
 
 
 def _tool_rpc_call_contract_template() -> ContractTemplate:
@@ -644,11 +808,15 @@ class ToolRPCServer:
 
         try:
             result = await self._invoke_handler(spec, args, effective_actor)
-        except Exception:
+        except Exception as exc:
             logger.warning("tool-rpc handler failed: %s", name, exc_info=True)
-            return {"ok": False, "reason": "tool_error", "tool": name}
+            # H297: the model is told what went wrong, in one bounded, secret-free line.
+            return {"ok": False, "reason": "tool_error", "tool": name,
+                    "error": sanitize_error(exc, scrub=self._scrub_text)}
 
         self._record("toolrpc.call", name, agent=effective_actor)
+        if isinstance(result, ToolContent):
+            return self._content_envelope(result, name, ok_key="ok", ok_value=True)
         # Invisible Unicode TAG characters never cross to the model or the sandbox: a
         # tool result (an MCP bridge, a fetched page, a file) can carry instructions the
         # owner cannot see on screen (Hermes absorption 4a).
@@ -733,9 +901,13 @@ class ToolRPCServer:
                 }
         try:
             result = await self._invoke_handler(spec, args, effective_actor)
-        except Exception:
+        except Exception as exc:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
-            return {"status": "failed", "reason": "tool_error", "tool": name}
+            return {"status": "failed", "reason": "tool_error", "tool": name,
+                    "error": sanitize_error(exc, scrub=self._scrub_text)}
+        if isinstance(result, ToolContent) and not spec.get("trusted_execution"):
+            self._record("toolrpc.execute", name, agent=effective_actor)
+            return self._content_envelope(result, name, ok_key="status", ok_value="ok")
         if spec.get("trusted_execution") and not isinstance(result, Mapping):
             return {
                 "status": "failed",
@@ -772,7 +944,17 @@ class ToolRPCServer:
             active.add(task)
         token = _tool_actor.set(str(actor or ""))
         try:
-            return await spec["handler"](args)
+            handler = spec["handler"]
+            if _is_async_callable(handler):
+                return await handler(args)
+            # H297: a plain function runs on a worker thread so a blocking handler
+            # never stalls the loop; to_thread copies this context, so the actor and
+            # turn bindings are what the handler reads. A sync callable that hands
+            # back an awaitable (a lambda over a coroutine) is awaited here, on the loop.
+            result = await asyncio.to_thread(handler, args)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
         finally:
             _tool_actor.reset(token)
             if task is not None:
@@ -831,6 +1013,35 @@ class ToolRPCServer:
         if not isinstance(sanitized, Mapping):
             return None, {"ok": False, "reason": "validation_failed", "tool": name}
         return dict(sanitized), None
+
+    def _scrub_text(self, text: str) -> str:
+        return self._secrets.redact(text) if self._secrets is not None else text
+
+    def _content_envelope(self, content: "ToolContent", name: str, *,
+                          ok_key: str, ok_value) -> dict:
+        """H297: a :class:`ToolContent` as a well-formed, bounded envelope.
+
+        ``{ok_key: ok_value, "tool", "result": <structured or None>, "content": [...]}``
+        — or ``invalid_result`` (with the bounded cause) when a part is malformed.
+        Text and structured data are scrubbed like any result; image bytes are
+        validated against their declared type, never rewritten.
+        """
+        failed_value = False if ok_key == "ok" else "failed"
+        try:
+            parts = normalize_content_parts(content.parts)
+        except ContentError as exc:
+            return {ok_key: failed_value, "reason": "invalid_result", "tool": name,
+                    "error": str(exc)}
+        scrubbed = [
+            {**part, "text": self._scrub_text(part["text"])} if part["type"] == "text" else part
+            for part in parts
+        ]
+        return {
+            ok_key: ok_value,
+            "tool": name,
+            "result": self._scrub(strip_invisible_deep(content.structured)),
+            "content": scrubbed,
+        }
 
     def _scrub(self, obj):
         """Recursively mask any known secret value before it crosses to the sandbox."""

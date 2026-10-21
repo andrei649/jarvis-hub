@@ -378,6 +378,9 @@ async def _emit(on_token: Callable, text: str) -> None:
 
 class LLMBackend(ABC):
     supports_tools = False
+    #: H297 — whether a tool message's ``images`` reach the model as images. Off by
+    #: default: the tool loop strips them and the model reads their descriptors.
+    supports_tool_result_images = False
 
     @abstractmethod
     async def generate(

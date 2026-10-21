@@ -690,8 +690,11 @@ class AgentToolRuntime:
         # shared between concurrent runs and the model is known only here.
         from .llm.job_selection import selected_window
         known_window = effective_window.tokens if effective_window is not None else selected_window(model)
-        spent: dict[str, int] = {"bytes": 0, "window": known_window or max(0, int(window_for(model) or 0)),
-                                 "effective_window": known_window or 0}
+        # H297: "attachments" holds each call's image parts (by call id) between the
+        # call and its tool message; "images" counts them against the per-turn cap.
+        spent: dict[str, Any] = {"bytes": 0, "window": known_window or max(0, int(window_for(model) or 0)),
+                                 "effective_window": known_window or 0,
+                                 "images": 0, "attachments": {}}
         schema_tokens = estimate_tokens(json.dumps([tool.as_openai() for tool in tools])) if known_window else 0
         while budget.consume():
             from .steering import prepare_steering_rows
@@ -782,9 +785,13 @@ class AgentToolRuntime:
                 mark_invocation_outcomes_visible(messages)
                 from .turn_usage import model_usage_scope
                 with model_usage_scope(model=model, route=""):
+                    # H297: image parts reach only a backend whose tool-result
+                    # channel carries images; every other one reads the descriptors.
+                    hidden = ({"display_kind"} if getattr(backend, "supports_tool_result_images", False)
+                              else {"display_kind", "images"})
                     turn = await backend.generate_tool_turn(
                         model=model,
-                        messages=[{key: value for key, value in row.items() if key != "display_kind"}
+                        messages=[{key: value for key, value in row.items() if key not in hidden}
                                   for row in messages],
                         tools=[] if guardian_stopped else tools,
                         max_tokens=max_tokens,
@@ -883,6 +890,11 @@ class AgentToolRuntime:
                 if risk.upstream_elided:
                     content = COMPLETENESS_NOTICE + content
                 message = {"role": "tool", "tool_call_id": call.id, "content": content}
+                # H297: the call's image parts ride beside the text (whose JSON names
+                # them by descriptor); a "same as call N" stub re-sends none.
+                images = spent["attachments"].pop(call.id, None)
+                if images and deduped == raw:
+                    message["images"] = images
                 messages.append(message)
                 if risk.external_untrusted:
                     output_risks[id(message)] = risk
@@ -1045,7 +1057,9 @@ class AgentToolRuntime:
                 folded_content = self._compacted_content(encoded)
                 if risk is not None and risk.upstream_elided:
                     folded_content = COMPLETENESS_NOTICE + folded_content
-                replacement = {**message, "content": folded_content}
+                # A folded result drops its images with its bytes (H297).
+                replacement = {key: value for key, value in message.items() if key != "images"}
+                replacement["content"] = folded_content
                 messages[index] = replacement
                 if risk is not None:
                     replacement_risks[id(replacement)] = risk.with_context_elided()
@@ -1479,6 +1493,9 @@ class AgentToolRuntime:
                 "tool": call.name,
             }
 
+        raw_result, images = _split_images(raw_result, spent)
+        if images and spent is not None:
+            spent.setdefault("attachments", {})[call.id] = images
         result, content = self._prepare_result(raw_result, call.name, spent)
         await self._emit_result(event_sink, call, agent_id, result)
         return result, content
@@ -1819,6 +1836,50 @@ def _answer_revision(result: Any, previous: str) -> str:
     except (TypeError, ValueError):
         return previous
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+#: H297 — image parts one model turn may carry across all of its tool results.
+_MAX_IMAGES_PER_TURN = 8
+
+
+def _split_images(raw_result: Any, spent: dict[str, Any] | None) -> tuple[Any, list[dict[str, str]]]:
+    """Lift a content envelope's image bytes out of the JSON the model reads (H297).
+
+    Each image part becomes a small descriptor (type, size, digest) in the text, so
+    base64 never floods the context window or the spill/truncation path; the bytes
+    come back separately, to ride beside the tool message. Past the per-turn cap a
+    part is described with ``omitted`` and not attached. Anything that is not a
+    successful ``content`` envelope passes through untouched.
+    """
+    if not isinstance(raw_result, Mapping) or raw_result.get("ok") is not True:
+        return raw_result, []
+    parts = raw_result.get("content")
+    if not isinstance(parts, list):
+        return raw_result, []
+    images: list[dict[str, str]] = []
+    described: list[Any] = []
+    for part in parts:
+        data = part.get("data") if isinstance(part, Mapping) else None
+        media_type = part.get("media_type") if isinstance(part, Mapping) else None
+        if not (isinstance(part, Mapping) and part.get("type") == "image"
+                and isinstance(data, str) and isinstance(media_type, str)):
+            described.append(part)
+            continue
+        descriptor: dict[str, Any] = {
+            "type": "image",
+            "media_type": media_type,
+            "bytes": part.get("bytes") if isinstance(part.get("bytes"), int) else None,
+            "sha256": hashlib.sha256(data.encode("ascii", "replace")).hexdigest()[:16],
+        }
+        used = int((spent or {}).get("images", 0))
+        if used >= _MAX_IMAGES_PER_TURN:
+            descriptor["omitted"] = "per_turn_image_cap"
+        else:
+            images.append({"media_type": media_type, "data": data})
+            if spent is not None:
+                spent["images"] = used + 1
+        described.append(descriptor)
+    return {**raw_result, "content": described}, images
 
 
 def _non_json(tool_name: str) -> dict[str, Any]:

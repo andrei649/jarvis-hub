@@ -362,10 +362,14 @@ async def test_approval_required_enqueues_once_and_stops_without_another_provide
 
 @pytest.mark.asyncio
 async def test_handler_exception_returns_tool_error_without_exception_details():
-    server = ToolRPCServer()
+    # H297: the model now reads a bounded, sanitised cause beside ``tool_error``;
+    # what must never cross is a secret the message happened to carry.
+    broker = SecretBroker()
+    broker.put("handler", "do-not-leak-handler-secret")
+    server = ToolRPCServer(secret_broker=broker)
 
     async def fail(args):
-        raise RuntimeError("do-not-leak-handler-secret")
+        raise RuntimeError("upstream refused do-not-leak-handler-secret")
 
     server.register_tool("fail", fail)
     events = []
@@ -382,6 +386,7 @@ async def test_handler_exception_returns_tool_error_without_exception_details():
     result_message = backend.calls[1]["messages"][-1]["content"]
     assert answer == "safe recovery"
     assert json.loads(result_message)["reason"] == "tool_error"
+    assert json.loads(result_message)["error"] == "RuntimeError: upstream refused [REDACTED:handler]"
     assert "do-not-leak-handler-secret" not in result_message
     assert "do-not-leak-handler-secret" not in json.dumps(events)
 

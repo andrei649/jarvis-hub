@@ -38,6 +38,9 @@ class ClaudeBackend(LLMBackend):
     # Tool calls travel as tool_use / tool_result blocks; the translation lives in
     # tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
+    # H297: a tool_result block carries image blocks, so a multimodal tool result
+    # reaches the model as images (tool_dialects.anthropic_messages).
+    supports_tool_result_images = True
 
     def __init__(
         self,
