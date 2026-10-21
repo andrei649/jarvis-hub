@@ -76,7 +76,8 @@ def test_run_timeout_setting_is_seeded_and_validated():
     row = seeded[("jobs", "run_timeout_seconds")]
     assert row["value"] == jobs_module.DEFAULT_RUN_TIMEOUT_SECONDS == 900
     assert row["kind"] == "number"
-    assert settings_db.validate_category("jobs", {"run_timeout_seconds": 0})
+    assert not settings_db.validate_category("jobs", {"run_timeout_seconds": 0})  # unbounded
+    assert settings_db.validate_category("jobs", {"run_timeout_seconds": -1})
     assert settings_db.validate_category("jobs", {"run_timeout_seconds": 86401})
     assert settings_db.validate_category("jobs", {"run_timeout_seconds": 1.5})
     assert settings_db.validate_category("jobs", {"run_timeout_seconds": True})
@@ -89,9 +90,35 @@ def test_runner_reads_the_run_timeout_and_falls_back_on_bad_values(store):
     assert runner.run_timeout_seconds() == 900
     settings["jobs.run_timeout_seconds"] = 42
     assert runner.run_timeout_seconds() == 42
-    for bad in (0, -5, "soon", 1.5, True, 10**9):
+    settings["jobs.run_timeout_seconds"] = 0
+    assert runner.run_timeout_seconds() == 0       # Hermes parity: 0 = unbounded
+    for bad in (-5, "soon", 1.5, True, 10**9):
         settings["jobs.run_timeout_seconds"] = bad
         assert runner.run_timeout_seconds() == 900
+
+
+@pytest.mark.asyncio
+async def test_zero_run_timeout_means_unbounded(store, no_estop, monkeypatch):
+    """jobs.run_timeout_seconds=0 is the owner's opt-out (Hermes HERMES_CRON_TIMEOUT=0): a
+    long run is not cut, while each channel send stays bounded."""
+    runner, _ = _runner(store, _HungTelegram(), {"jobs.run_timeout_seconds": 0})
+    job = runner.create(name="brief", schedule_text="every day at 9",
+                        action={"type": "brief", "kind": "morning"})
+    seen = []
+
+    def no_deadline(seconds):
+        seen.append(seconds)
+        raise AssertionError("an unbounded run must not arm a deadline")
+
+    async def slow_brief(kind):
+        await asyncio.sleep(0.05)
+        raise RuntimeError("finished after its work")  # a non-timeout failure, recorded as-is
+
+    monkeypatch.setattr(jobs_module.asyncio, "timeout", no_deadline)
+    monkeypatch.setattr(runner, "_brief", slow_brief)
+    run = await asyncio.wait_for(runner.fire(job.id, force=True), 5)
+    assert seen == []
+    assert "RuntimeError" in (run.error or "") and "JobRunTimeout" not in (run.error or "")
 
 
 @pytest.mark.asyncio

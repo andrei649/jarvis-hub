@@ -64,7 +64,8 @@ MAX_FIRES_PER_DAY = 288  # one firing per five minutes, at most
 # remind, delivery included) and a shorter bound on each channel send, so a hung model call or
 # a hung Telegram/Discord adapter cannot hold the job's gate stripe and its scheduler slot.
 # An overrun is an ordinary failed run (``_failed``): the three-strike pause and the incident
-# still apply. The script lane keeps its own bounds (jobs_scripts.py).
+# still apply. The script lane keeps its own bounds (jobs_scripts.py). As in Hermes, 0 means
+# unbounded: the owner's explicit opt-out for long runs (each channel send stays bounded).
 RUN_TIMEOUT_SETTING = "jobs.run_timeout_seconds"
 DEFAULT_RUN_TIMEOUT_SECONDS = 900
 MAX_RUN_TIMEOUT_SECONDS = 86_400
@@ -76,7 +77,10 @@ class JobRunTimeout(TimeoutError):
 
 
 def valid_run_timeout(value: Any) -> bool:
-    return type(value) is int and 1 <= value <= MAX_RUN_TIMEOUT_SECONDS
+    """0 (unbounded, the owner's explicit opt-out) or 1..MAX_RUN_TIMEOUT_SECONDS."""
+    return type(value) is int and 0 <= value <= MAX_RUN_TIMEOUT_SECONDS
+
+
 ACTION_TYPES = ("remind", "ask", "brief", "task")
 _ACTION_KEYS = {
     "remind": {"type", "message", "channel", "urgent", "media_ids"},
@@ -1824,7 +1828,8 @@ class JobRunner:
         return run
 
     def run_timeout_seconds(self) -> int:
-        """The configured cron-run wall clock; a missing or invalid value uses the default."""
+        """The configured cron-run wall clock (0 = unbounded); a missing or invalid value
+        uses the default."""
         getter = getattr(self._orch, "get_setting", None)
         value = getter(RUN_TIMEOUT_SETTING, DEFAULT_RUN_TIMEOUT_SECONDS) if callable(getter) else None
         if valid_run_timeout(value):
@@ -1835,6 +1840,8 @@ class JobRunner:
 
     async def _bounded_execute(self, job: Job, publish: Callable[[str], None]) -> tuple[str, str | None]:
         seconds = self.run_timeout_seconds()
+        if seconds == 0:  # the owner opted out (Hermes HERMES_CRON_TIMEOUT=0)
+            return await self._execute(job, publish_candidate=publish)
         deadline = asyncio.timeout(seconds)
         try:
             async with deadline:
