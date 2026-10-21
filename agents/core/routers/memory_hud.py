@@ -70,6 +70,9 @@ async def clear_memory(req: Request):
         if confirm != "true":
             return JSONResponse({"error": "memory clear requires confirmation — send X-Confirm: true header or set DEV_MODE=1"}, status_code=400)
     await orch.memory.clear(session_id=orch.session_id)
+    from agents.core.session_archive import forget_skill_loads
+
+    forget_skill_loads(orch.session_id)         # H326: a cleared chat carries no skill loads
     orch.session_id = await orch.memory.new_session()
     orch.checkpoints.create_session_record(orch.session_id)
     return JSONResponse({"ok": True, "new_session": orch.session_id})

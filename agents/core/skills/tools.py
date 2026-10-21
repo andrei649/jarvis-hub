@@ -34,8 +34,10 @@ Three ToolRPC tools, all ungated:
     and only what a view can serve is kept in memory (``Skill.view_files``).
     H326: a repeat load the model provably still holds — served earlier in this tool loop
     with no compaction since, or carried in this turn's prompt from an earlier turn of the
-    session (:class:`LoadedSkillLedger`) — answers ``already_loaded`` with a pointer;
-    ``reload: true`` reads it again.
+    session (:class:`LoadedSkillLedger`) — answers ``already_loaded`` with a pointer that
+    keeps the skill's file list; ``reload: true`` reads it again. A carry rendered with
+    other template variables, older than its turns, or bound for an inbound non-owner turn
+    on the shared session is not carried, and the view is then served whole.
 
 ``skill_propose``
     Authoring, governed: ``{name, content}`` proposes a new SKILL.md for an existing skill
@@ -169,16 +171,24 @@ _ALREADY_LOADED = {
     "this_turn": "this skill was loaded earlier in this turn and is unchanged: follow that copy "
                  "(pass reload=true to read it again, for example after a context compaction)",
     "this_session": "this skill was loaded in an earlier turn of this session and is unchanged: its full "
-                    "text is in your prompt, in the 'Skills loaded earlier this session' block "
-                    "(pass reload=true to read it again)",
+                    "text and file list are in your prompt, in the 'Skills loaded earlier this session' "
+                    "block (pass reload=true to read it again)",
 }
 
-#: The session ledger's bounds: sessions kept, loads kept a session and agent, and what one
-#: turn's prompt carries of them (bodies, newest first).
+#: The session ledger's bounds: sessions kept, loads kept a session and agent, what one
+#: turn's prompt carries of them (bodies, newest first), and for how many later turns a
+#: load is carried after it was last loaded or pointed at (Hermes ages a load out of its
+#: history by compression; this is the carry's equivalent).
 LEDGER_MAX_SESSIONS = 64
 LEDGER_MAX_LOADS = 8
 CARRY_MAX_SKILLS = 3
 CARRY_MAX_BYTES = 24 * 1024
+CARRY_TTL_TURNS = 2
+#: The share of the model's context window the carry may take, in bytes per window token
+#: (a quarter byte: about 1/16 of the window at four bytes a token), and the window below
+#: which nothing is carried at all.
+CARRY_BYTES_PER_WINDOW_TOKEN = 0.25
+CARRY_MIN_WINDOW = 8192
 CARRY_HEADER = ("Skills loaded earlier this session (skill_view's answer in an earlier turn, unchanged "
                 "since; follow them as loaded):")
 
@@ -190,6 +200,60 @@ def _reply_digest(reply: dict) -> str:
 def carry_marker(digest: str) -> str:
     """The opening of a carried body in a prompt; skill_view looks for it by digest."""
     return f'<loaded-skill digest="{digest}"'
+
+
+def carry_budget(window_tokens: Any) -> int:
+    """The bytes the carry may take for a model with this context window: 0 below
+    :data:`CARRY_MIN_WINDOW`, at most :data:`CARRY_MAX_BYTES`; an unknown window gets the cap."""
+    if isinstance(window_tokens, bool) or not isinstance(window_tokens, int) or window_tokens <= 0:
+        return CARRY_MAX_BYTES
+    if window_tokens < CARRY_MIN_WINDOW:
+        return 0
+    return min(CARRY_MAX_BYTES, int(window_tokens * CARRY_BYTES_PER_WINDOW_TOKEN))
+
+
+def render_key(skill: Any, session: str, template_vars: Any) -> str:
+    """A hash of everything ``skill_view`` renders a body with besides SKILL.md itself: the
+    owner's template variables (as rendered, after ``clean_template_vars``), the skill's
+    directory and the session id. A carried body rendered under another key is stale."""
+    from .template_vars import clean_template_vars
+
+    try:
+        skill_dir = str(Path(skill.path).resolve())
+    except Exception:
+        skill_dir = str(getattr(skill, "path", "") or "")
+    payload = [clean_template_vars(template_vars), skill_dir, str(session or "")]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _carry_text(reply: dict) -> str:
+    """What the carry holds of a whole-skill reply: its description, body and file list —
+    everything the reply's digest names that the model reads (``files`` as one line)."""
+    text = f"{reply.get('description', '')}\n{reply.get('body', '')}"
+    files = [str(f) for f in (reply.get("files") or ())]
+    more = reply.get("files_more")
+    if files or more:
+        line = "files (read one with skill_view and file): " + ", ".join(files)
+        if isinstance(more, int) and more > 0:
+            line += f" (+{more} more)"
+        text += "\n" + line
+    return text
+
+
+def _fence(text: str) -> str:
+    """A carried body cannot open or close a carry fence of its own."""
+    return text.replace("</loaded-skill", "<\\/loaded-skill").replace("<loaded-skill", "<\\loaded-skill")
+
+
+def guest_on_shared_session(shared: bool, origin: str, identity: Any) -> bool:
+    """H315: an inbound turn from anyone but the owner on the shared default session (a
+    widget visitor, a webhook). What is kept per session there is the owner's, so such a
+    turn neither records a load nor is carried or pointed at one."""
+    from ..action_origin import INBOUND_ACTION_ORIGIN
+
+    if not shared or origin != INBOUND_ACTION_ORIGIN:
+        return False
+    return not (getattr(identity, "admin", False) is True or str(getattr(identity, "tag", "") or "") == "owner")
 
 
 class Transcript:
@@ -232,59 +296,110 @@ def _source_digest(skill: Any) -> str | None:
     return hashlib.sha256(data).hexdigest() if isinstance(data, bytes) else None
 
 
-class LoadedSkillLedger:
-    """H326 — the skills each session's agent has loaded, so a later turn need not load one
-    again: the prompt carries it once (:meth:`carry_block`) and ``skill_view`` answers a
-    repeat with a pointer to that copy. Nerva's tool transcript is rebuilt every turn (a
-    turn's history is its text, not its tool results), so the carry is what keeps a load
-    from an earlier turn in front of the model; Hermes keeps it in the message history.
+class _Bucket:
+    """One session and agent's loads, its turn count (one a prompt built for it) and the
+    digests its latest prompt carried."""
 
-    Only an untainted whole-skill load is kept (an import the owner has not vouched for,
-    or injection-flagged text, is served again every time, fenced), and a carried body is
-    re-validated against the loaded skill when the block is rendered: the same SKILL.md
-    bytes, still owner-vouched, still visible to this agent. Bounded in sessions, loads and
-    bytes."""
+    __slots__ = ("carried", "loads", "turn")
 
     def __init__(self) -> None:
-        self._sessions: OrderedDict[tuple[str, str], OrderedDict[str, dict]] = OrderedDict()
+        self.loads: OrderedDict[str, dict] = OrderedDict()
+        self.turn = 0
+        self.carried: frozenset[str] = frozenset()
+
+
+class LoadedSkillLedger:
+    """H326 — the skills each session's agent has loaded, so a later turn need not load one
+    again: the prompt carries it (:meth:`carry_block`) and ``skill_view`` answers a repeat
+    with a pointer to that copy. Nerva's tool transcript is rebuilt every turn (a turn's
+    history is its text, not its tool results), so the carry is what keeps a load from an
+    earlier turn in front of the model; Hermes keeps it in the message history.
+
+    Only an untainted whole-skill load is kept (an import the owner has not vouched for,
+    or injection-flagged text, is served again every time, fenced). A carried body is
+    re-validated when the block is rendered: the same Skill and SKILL.md bytes, still
+    owner-vouched, still visible to this agent, and rendered with the same template
+    variables, directory and session (:func:`render_key`) — else it is not carried and the
+    next ``skill_view`` serves the current text whole. The carry holds the reply's file
+    list with its body. A load is carried for :data:`CARRY_TTL_TURNS` turns after it was
+    last loaded or pointed at, within a byte budget the caller sizes to the model's
+    window (:func:`carry_budget`). Bounded in sessions, loads and bytes; a session's
+    loads are forgotten when it is archived, deleted or cleared (:meth:`forget`)."""
+
+    def __init__(self) -> None:
+        self._sessions: OrderedDict[tuple[str, str], _Bucket] = OrderedDict()
         self._lock = threading.Lock()
 
-    def record(self, session: str, agent: str, skill: Any, digest: str, reply: dict) -> None:
+    def record(self, session: str, agent: str, skill: Any, digest: str, reply: dict, *, rendered: str) -> None:
         source = _source_digest(skill)
-        text = f"{reply.get('description', '')}\n{reply.get('body', '')}"
+        text = _carry_text(reply)
         if (source is None or getattr(skill, "owner_vouched", False) is not True
                 or len(text.encode("utf-8")) > CARRY_MAX_BYTES):
             return
         with self._lock:
-            loads = self._sessions.setdefault((session, agent), OrderedDict())
+            bucket = self._sessions.get((session, agent))
+            if bucket is None:
+                bucket = self._sessions[(session, agent)] = _Bucket()
             self._sessions.move_to_end((session, agent))
-            loads.pop(skill.name, None)
-            loads[skill.name] = {"digest": digest, "source": source, "text": text, "skill": skill}
-            while len(loads) > LEDGER_MAX_LOADS:
-                loads.popitem(last=False)
+            bucket.loads.pop(skill.name, None)
+            bucket.loads[skill.name] = {"digest": digest, "source": source, "text": text, "skill": skill,
+                                        "rendered": rendered, "turn": bucket.turn}
+            while len(bucket.loads) > LEDGER_MAX_LOADS:
+                bucket.loads.popitem(last=False)
             while len(self._sessions) > LEDGER_MAX_SESSIONS:
                 self._sessions.popitem(last=False)
+
+    def touch(self, session: str, agent: str, name: str) -> None:
+        """The model was pointed at a carried load: it is in use, so its time-to-live restarts."""
+        with self._lock:
+            bucket = self._sessions.get((session, agent))
+            entry = bucket.loads.get(name) if bucket is not None else None
+            if entry is not None:
+                entry["turn"] = bucket.turn
+
+    def carried(self, session: str, agent: str, digest: str) -> bool:
+        """Whether this session and agent's latest prompt carried the body with ``digest``."""
+        with self._lock:
+            bucket = self._sessions.get((session, agent))
+            return bucket is not None and digest in bucket.carried
 
     def loaded(self, session: str, agent: str) -> list[str]:
         """The skills recorded for this session and agent, oldest first."""
         with self._lock:
-            return list((self._sessions.get((session, agent)) or {}).keys())
+            bucket = self._sessions.get((session, agent))
+            return list(bucket.loads.keys()) if bucket is not None else []
 
     def forget(self, session: str) -> None:
+        """Drop every load of ``session`` (archived, deleted or cleared)."""
+        session = str(session or "")
         with self._lock:
             for key in [k for k in self._sessions if k[0] == session]:
                 del self._sessions[key]
 
-    def carry_block(self, session: str, agent: str, loader: Any) -> str:
-        """The bodies this session's agent loaded in earlier turns, newest first, each still
-        what the loader holds; "" when there are none."""
+    def clear(self) -> None:
+        with self._lock:
+            self._sessions.clear()
+
+    def carry_block(self, session: str, agent: str, loader: Any, *, template_vars: Any = None,
+                    max_bytes: int = CARRY_MAX_BYTES) -> str:
+        """The bodies this session's agent loaded in its last :data:`CARRY_TTL_TURNS` turns,
+        newest first, each still what ``skill_view`` would answer now; "" when there are
+        none. Each call is one prompt built for this session and agent: it counts a turn."""
         from .visibility import SOFT_GATES
 
         if not session or not agent or loader is None:
             return ""
         with self._lock:
-            loads = list((self._sessions.get((session, agent)) or {}).items())
-        parts, used = [], 0
+            bucket = self._sessions.get((session, agent))
+            if bucket is None:
+                return ""
+            bucket.turn += 1
+            bucket.carried = frozenset()
+            for name in [n for n, e in bucket.loads.items() if bucket.turn - e["turn"] > CARRY_TTL_TURNS]:
+                del bucket.loads[name]
+            loads = list(bucket.loads.items())
+        budget = min(CARRY_MAX_BYTES, max(0, int(max_bytes)))
+        parts, used, digests = [], 0, set()
         for name, entry in reversed(loads):
             if len(parts) >= CARRY_MAX_SKILLS:
                 break
@@ -292,18 +407,22 @@ class LoadedSkillLedger:
             try:
                 current = (skill is entry["skill"] and getattr(skill, "owner_vouched", False) is True
                            and _source_digest(skill) == entry["source"]
+                           and render_key(skill, session, template_vars) == entry["rendered"]
                            and loader.catalog_gate(skill, agent) in (None, "", *SOFT_GATES))
             except Exception:
                 current = False
             if not current or _flags(entry["text"]):
                 continue
-            body = entry["text"].replace("</loaded-skill", "<\\/loaded-skill")
-            piece = f'{carry_marker(entry["digest"])} name={json.dumps(name)}>\n{body}\n</loaded-skill>'
+            piece = f'{carry_marker(entry["digest"])} name={json.dumps(name)}>\n{_fence(entry["text"])}\n</loaded-skill>'
             size = len(piece.encode("utf-8"))
-            if used + size > CARRY_MAX_BYTES:
+            if used + size > budget:
                 continue
             parts.append(piece)
+            digests.add(entry["digest"])
             used += size
+        with self._lock:
+            if self._sessions.get((session, agent)) is bucket:
+                bucket.carried = frozenset(digests)
         if not parts:
             return ""
         return CARRY_HEADER + "\n" + "\n".join(parts)
@@ -358,9 +477,12 @@ def register_skill_tools(
     settings: Callable[[str, Any], Any] = lambda key, default: default,
     environment_registry=None,
     principal: Callable[[], Any] = lambda: None,
+    shared_session: Callable[[], bool] = lambda: True,
 ) -> tuple[str, str, str]:
     """Expose the three tools. Every getter is read per call, so a reload, a new session
-    or a changed setting is seen by the next call."""
+    or a changed setting is seen by the next call. ``shared_session`` says whether the
+    turn runs on the HUD's shared default session (H315; a missing probe counts as shared):
+    an inbound non-owner turn there neither records a skill load nor is pointed at one."""
     from ..security.taint import is_untrusted_source
 
     # Proposals made today (one entry, keyed by the day). A proposal's approval card is
@@ -522,6 +644,7 @@ def register_skill_tools(
                 logger.warning("skill_view: %s could not be read; none rendered", TEMPLATE_VARS_SETTING,
                                exc_info=True)
                 variables = {}
+            rendered = render_key(skill, str(session_id() or ""), variables)
             body = render_skill_body(body, skill_dir=str(Path(skill.path).resolve()),
                                      session_id=str(session_id() or ""), template_vars=variables)
             if len(body.encode("utf-8")) > MAX_FILE_BYTES or _json_bytes(body) > MAX_ENCODED_BYTES:
@@ -544,6 +667,7 @@ def register_skill_tools(
         else:
             reply = {"ok": True, "name": skill.name, "file": rel, "content": text}
             shown = text
+            rendered = ""
         warning = _warning(skill, shown)
         if warning:
             reply["tainted"] = True
@@ -577,36 +701,52 @@ def register_skill_tools(
             except Exception:
                 # Invalid/unreadable declarations never make a view fail or grant env.
                 logger.debug("skill_view: environment declaration skipped", exc_info=True)
-        return _once(reply, skill, rel if file is not None else "", reload=reload)
+        return _once(reply, skill, rel if file is not None else "", reload=reload, rendered=rendered)
 
-    def _once(reply: dict, skill: Any, rel: str, *, reload: bool) -> dict:
+    def _guest() -> bool:
+        try:
+            return guest_on_shared_session(bool(shared_session()), _origin(), principal())
+        except Exception:
+            return True                         # unknown: the owner's session state stays out of reach
+
+    def _once(reply: dict, skill: Any, rel: str, *, reload: bool, rendered: str) -> dict:
         """H326 — a load the model already holds answers with a pointer, not a second copy.
 
         Two places can hold it, and a pointer is given only when the copy is provably there:
         this turn's transcript (served earlier in this tool loop, and no compaction since),
         or this turn's prompt (the session's carried block of skills loaded in earlier
         turns, :meth:`LoadedSkillLedger.carry_block`, which names each body by its digest).
-        Anything else — no bound transcript, a changed skill, ``reload`` — is served whole."""
+        Anything else — no bound transcript, a changed skill, ``reload`` — is served whole.
+        The carried copy counts only when the ledger carried that digest into this
+        session and agent's latest prompt, so a marker echoed into history or typed by a
+        user is not taken for it. A whole-skill pointer keeps the reply's file list."""
         digest = _reply_digest(reply)
         transcript = _TRANSCRIPT.get()
         key = (skill.name, rel)
+        actor, session = _actor(), str(session_id() or "")
+        guest = _guest()
         if not reload and transcript is not None:
             where = None
             if (key, digest) in transcript.served:
                 where = "this_turn"
-            elif not reply.get("tainted") and carry_marker(digest) in transcript.text:
+            elif (not reply.get("tainted") and not rel and not guest and actor and session
+                  and LEDGER.carried(session, actor, digest) and carry_marker(digest) in transcript.text):
                 where = "this_session"
+                LEDGER.touch(session, actor, skill.name)
             if where is not None:
                 stub = {"ok": True, "name": skill.name, "already_loaded": where, "digest": digest[:16],
                         "detail": _ALREADY_LOADED[where]}
                 if rel:
                     stub["file"] = rel
+                else:
+                    stub["files"] = list(reply.get("files") or [])
+                    if reply.get("files_more"):
+                        stub["files_more"] = reply["files_more"]
                 return stub
         if transcript is not None:
             transcript.served.add((key, digest))
-        actor, session = _actor(), str(session_id() or "")
-        if not rel and not reply.get("tainted") and actor and session:
-            LEDGER.record(session, actor, skill, digest, reply)
+        if not rel and not reply.get("tainted") and actor and session and not guest:
+            LEDGER.record(session, actor, skill, digest, reply, rendered=rendered)
         return reply
 
     async def _propose(args: dict) -> dict:
@@ -741,6 +881,6 @@ def register_skill_tools(
 
 __all__ = [
     "LEDGER", "LoadedSkillLedger", "Transcript", "bind_transcript", "carry_marker", "note_compacted",
-    "reset_transcript",
+    "carry_budget", "guest_on_shared_session", "render_key", "reset_transcript",
     "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW", "register_skill_tools",
 ]

@@ -3973,11 +3973,25 @@ class Orchestrator:
             merged["skills"] = rows
         if isinstance(index, str) and index:
             merged["skills_index"] = index
-        # H326: the skills this session's agent loaded in earlier turns, carried once.
+        # H326: the skills this session's agent loaded in its last turns, still current under
+        # today's template variables, within a share of the model's window. Never into an
+        # inbound non-owner turn on the shared session (H315: what it keeps is the owner's).
         try:
-            from .skills.tools import LEDGER
+            from .context_compressor import window_for
+            from .skills.template_vars import SETTING as TEMPLATE_VARS_SETTING
+            from .skills.tools import LEDGER, carry_budget, guest_on_shared_session
 
-            carried = LEDGER.carry_block(str(self.session_id or ""), str(agent_id or ""), loader)
+            if guest_on_shared_session(self.on_shared_session(), current_action_origin(), current_principal()):
+                carried = ""
+            else:
+                try:
+                    window = window_for(self._agent_default_model(str(agent_id or ""), agent))
+                except Exception:
+                    window = None                          # unknown: the carry's own cap
+                carried = LEDGER.carry_block(
+                    str(self.session_id or ""), str(agent_id or ""), loader,
+                    template_vars=self.get_setting(TEMPLATE_VARS_SETTING, {}),
+                    max_bytes=carry_budget(window))
         except Exception:
             logger.warning("loaded-skills carry failed; none carried", exc_info=True)
             carried = ""

@@ -174,6 +174,17 @@ def skills_index_component(skills: Iterable[Mapping[str, Any]] | str) -> Compone
                         detail=f"{len(rows)} skill(s)")
 
 
+def skills_loaded_component(carried: str) -> Component:
+    """H326 — the skills a session carries from earlier turns (``LoadedSkillLedger.carry_block``),
+    rendered as ``build_prompt`` renders it. Not part of a fresh session's floor (it is empty
+    there), but a turn after a skill load pays it, so it is costed when given."""
+    text = (carried or "").strip()
+    if not text:
+        return Component(name="skills-loaded", chars=0, tokens=0, detail="none carried")
+    count = text.count("<loaded-skill digest=")
+    return Component.of("skills-loaded", f"{text}\n\n", detail=f"{count} skill(s) carried")
+
+
 def tool_schema_components(specs: Iterable[Mapping[str, Any]]) -> list[Component]:
     """One row per tool, costed as the JSON that actually crosses the wire.
 
@@ -212,8 +223,9 @@ def breakdown(
     *,
     agents_root: Path,
     tool_specs: Iterable[Mapping[str, Any]] = (),
-    skills: Iterable[Mapping[str, Any]] = (),
+    skills: Iterable[Mapping[str, Any]] | str = (),
     agent_name: str = "Jarvis",
+    skills_loaded: str = "",
 ) -> Breakdown:
     """Assemble the fixed floor. Every input is passed in but the environment hint, which
     is read from this process's environment; nothing is booted."""
@@ -223,6 +235,7 @@ def breakdown(
     report.components.append(environment_hint_component())
     report.components.extend(tool_schema_components(tool_specs))
     report.components.append(skills_index_component(skills))
+    report.components.append(skills_loaded_component(skills_loaded))
     report.components.append(scaffold_component(agent_name))
     report.components = [c for c in report.components if c.chars or c.name == "skills-index"]
     report.notes.append(
@@ -278,6 +291,7 @@ __all__ = [
     "render",
     "scaffold_component",
     "skills_index_component",
+    "skills_loaded_component",
     "soul_components",
     "tool_schema_components",
 ]

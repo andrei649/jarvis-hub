@@ -91,9 +91,20 @@ def run_auto_archive(checkpoints: Any, days: int, *, active: str | Iterable[str]
             continue
         if checkpoints.set_archived(sid, True, at=moment.isoformat()):
             done.append(sid)
+            forget_skill_loads(sid)
     if done:
         logger.info("auto-archived %d idle session(s) older than %d day(s)", len(done), days)
     return done
+
+
+def forget_skill_loads(session_id: str) -> None:
+    """H326: a session put away or deleted stops carrying the skills it loaded."""
+    try:
+        from agents.core.skills.tools import LEDGER
+
+        LEDGER.forget(session_id)
+    except Exception:
+        logger.debug("skill-load ledger not cleared for a session", exc_info=True)
 
 
 def default_backup_dir() -> Path:
@@ -342,6 +353,7 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
         removed["note"] = bool(notes.clear(session_id)) if notes is not None else False
     if outcome_cleanup_error is not None:
         raise SessionDeleteError("approval_outcomes_unavailable") from outcome_cleanup_error
+    forget_skill_loads(session_id)
     pruned = await asyncio.to_thread(prune_backups, root) if prune else []
     logger.info("session %s deleted; backup at %s", session_id, backup)
     return {"ok": True, "session": session_id, "backup": str(backup), "removed": removed, "pruned": pruned}

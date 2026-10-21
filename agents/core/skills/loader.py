@@ -1654,7 +1654,9 @@ def register(skill):
         in a disk snapshot, both keyed by :meth:`index_manifest` and everything else the
         gates read (the agent, the switches, the turn's channel, environments, offered
         tools and host, the bounds). A snapshot is used only when its manifest hash is
-        this loader's, and its text is scanned again before it reaches a prompt. A cache
+        this loader's, its text is scanned again, and every row in it is one this loader
+        would write now for a skill the gates show (:meth:`_index_rows_current`); the
+        manifest hash is not a secret, so a block failing either check is rebuilt. A cache
         hit skips the per-skill hide notes; the first build of each key logs them."""
         from . import switches as skill_switches
         from . import visibility as skill_visibility
@@ -1675,6 +1677,15 @@ def register(skill):
                 _INDEX_LRU.move_to_end(key)
                 return cached
         text = self._read_index_snapshot(manifest, key)
+        if text is not None:
+            try:
+                current = self._index_rows_current(text, agent_id, switched=switched, seen=seen,
+                                                   limit=cap, chars=chars)
+            except Exception:
+                current = False
+            if not current:
+                logger.warning("skills index snapshot holds rows this loader would not write; rebuilt")
+                text = None
         if text is None:
             text = self._build_prompt_index(agent_id, switched=switched, seen=seen, limit=cap, chars=chars)
             self._write_index_snapshot(manifest, key, text)
@@ -1702,21 +1713,7 @@ def register(skill):
             if gate:
                 continue
             label = _catalog_text(skill.name, 64)
-            description = _catalog_text(skill.description, chars)
-            category = _skill_category(skill)
-            commands = []
-            for meta in skill.commands_meta:
-                command = meta.get("command") if isinstance(meta, dict) else None
-                if not isinstance(command, str) or not re.fullmatch(r"\w+", command):
-                    continue
-                args = meta.get("args") if isinstance(meta.get("args"), str) else ""
-                args = _catalog_text(args, chars)
-                commands.append(f"{command[:chars]} <{args}>" if args else command[:chars])
-                if len(commands) >= INDEX_MAX_COMMANDS:
-                    break
-            row = f"{label}: {description}" if description else label
-            if commands:
-                row += f" (commands: {', '.join(commands)})"
+            category, row = self._index_row(skill, chars)
             flags = quarantine.detect_injection_normalized(f"{category}: {row}")
             if not label or flags:
                 logger.warning("Skill '%s' is NOT in the model's skills index — its row is "
@@ -1731,6 +1728,55 @@ def register(skill):
             lines.append(f"  {category}:")
             lines.extend(f"    - {row}" for row in grouped[category])
         return "\n".join(lines)
+
+    @staticmethod
+    def _index_row(skill: "Skill", chars: int) -> tuple[str, str]:
+        """A skill's category and its index row (name, description, commands), as rendered."""
+        label = _catalog_text(skill.name, 64)
+        description = _catalog_text(skill.description, chars)
+        commands = []
+        for meta in skill.commands_meta:
+            command = meta.get("command") if isinstance(meta, dict) else None
+            if not isinstance(command, str) or not re.fullmatch(r"\w+", command):
+                continue
+            args = meta.get("args") if isinstance(meta.get("args"), str) else ""
+            args = _catalog_text(args, chars)
+            commands.append(f"{command[:chars]} <{args}>" if args else command[:chars])
+            if len(commands) >= INDEX_MAX_COMMANDS:
+                break
+        row = f"{label}: {description}" if description else label
+        if commands:
+            row += f" (commands: {', '.join(commands)})"
+        return _skill_category(skill), row
+
+    def _index_rows_current(self, text: str, agent_id: Optional[str], *, switched: dict, seen: dict,
+                            limit: int, chars: int) -> bool:
+        """A snapshot block is used only if every row in it is one this loader would write
+        now: a skill :meth:`catalog_gate` shows this agent in this context, under its own
+        category, with its own row text, at most once, and no more rows than ``limit``. A
+        block naming a hidden, switched-off or invented skill, or with an edited row, is
+        rebuilt: the manifest hash it is keyed by is not a secret. (Injection flags are
+        re-scanned by :meth:`_index_text_clean`.)"""
+        if text == "":
+            return True
+        by_row: dict[str, tuple[str, str]] = {}
+        for name in sorted(self.skills):
+            skill = self.skills[name]
+            if self.catalog_gate(skill, agent_id, switches=switched, visibility=seen):
+                continue
+            category, row = self._index_row(skill, chars)
+            by_row.setdefault(row, (category, name))
+        category, names, rows = None, set(), 0
+        for line in text.split("\n")[1:]:
+            if not line.startswith("    - "):
+                category = line.strip()[:-1]
+                continue
+            hit = by_row.get(line[len("    - "):])
+            if hit is None or hit[0] != category or hit[1] in names:
+                return False
+            names.add(hit[1])
+            rows += 1
+        return rows <= limit
 
     @staticmethod
     def _index_text_clean(text: object) -> bool:

@@ -146,6 +146,10 @@ async def _set_stamp(session_id: str, field: str, on: bool, req: Request):
                             status_code=503)
     if not done:
         return JSONResponse({"error": f"session '{session_id}' not found"}, status_code=404)
+    if (field, on) == ("archived", True):
+        from agents.core.session_archive import forget_skill_loads
+
+        forget_skill_loads(session_id)          # H326: an archived chat carries no skill loads
     return JSONResponse({"ok": True, "session": session_id, field: on}, headers=_NO_STORE)
 
 

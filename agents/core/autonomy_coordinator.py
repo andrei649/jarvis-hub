@@ -1707,7 +1707,7 @@ class AutonomyCoordinator:
             posture=lambda: tool_profile.posture().key,
             settings=_get_setting,
             environment_registry=code_environment,
-            principal=_turn_principal,
+            principal=_turn_principal, shared_session=_on_shared_session,
         )
         # H309 — the model points at the owner's HUD (a tip, or a short tour) through
         # the canvas; ungated, named anchors only, marked when an untrusted turn wrote it.
