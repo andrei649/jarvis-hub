@@ -338,6 +338,32 @@ def main():
 _SAME_PID_REEXEC = os.name != "nt"
 
 
+def _close_on_exec_all() -> list[int]:
+    """Mark every descriptor above stdio close-on-exec before the self-restart re-exec, and
+    return the ones that were inheritable. Nothing the new image needs crosses the exec:
+    uvicorn has closed its listening socket, the hub lock was released, and systemd's notify
+    socket is a path in the environment. A handle that did cross it — a SQLite DB under the
+    data root opened without O_CLOEXEC — would keep pointing at the inode the staged restore
+    then replaces (H010 review r4); the apply also refuses to run while it holds one."""
+    for fd_dir in ("/proc/self/fd", "/dev/fd"):
+        try:
+            fds = [int(entry) for entry in os.listdir(fd_dir) if entry.isdigit()]
+        except OSError:
+            continue
+        flipped = []
+        for fd in fds:
+            if fd <= 2:
+                continue
+            try:
+                if os.get_inheritable(fd):
+                    os.set_inheritable(fd, False)
+                    flipped.append(fd)
+            except OSError:
+                continue                       # the listdir's own fd, closed meanwhile
+        return flipped
+    return []
+
+
 def run_server(server) -> None:
     """Run *server*; when the hub asked to restart itself (H010: an approved restore was
     staged), re-exec this same command once it has drained, so the staged restore is
@@ -359,6 +385,7 @@ def run_server(server) -> None:
 
     # The new image keeps systemd's watchdog fed from its first lines (sd_notify).
     os.environ.update({RESTART_ENV: "1"})
+    _close_on_exec_all()
     # The interpreter and argv this process was started with; nothing from a request.
     os.execv(sys.executable, list(sys.orig_argv))  # nosec B606 - this process's own argv
 

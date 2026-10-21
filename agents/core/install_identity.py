@@ -318,7 +318,8 @@ def hub_lock_held_elsewhere(root: str | Path | None = None) -> bool:
     What a pid cannot tell: a crashed hub's pid reused by another process reads as a hub
     (the coordinator then skips its sweeps until that process exits: nothing is deleted),
     and a hub in another pid namespace sharing the data root (a separate container) reads
-    as none. The shipped compose file does not share a data root between containers."""
+    as none. The shipped compose file shares the data root between the hub and the
+    coordinator containers, so it puts them in one pid namespace (``pid: service:jarvis``)."""
     if _hub_handle is not None:
         return False
     try:

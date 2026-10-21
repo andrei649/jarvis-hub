@@ -45,7 +45,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import re
 import signal
 import sys
 from pathlib import Path
@@ -141,31 +140,17 @@ async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:
 RESTORE_YIELD_EXIT = 75
 
 
-_DB_FILE = re.compile(r"\.(db|sqlite|sqlite3)(-wal|-shm|-journal)?( \(deleted\))?$")
-
-
 def _open_root_files() -> list[str] | None:
     """The SQLite files (DBs and their -wal/-shm/-journal) under the data root this process
     has open (Linux: ``/proc/self/fd``); None where that cannot be read. The orchestrator's
     stores keep WAL connections that ``Orchestrator.aclose`` does not close (missions,
     permissions, work_runs, jobs, analytics, ambient attention …), several of them
     module-global. Other files (a log the operator pointed under the root) are not what a
-    restore corrupts and must not make a fresh process exit forever."""
-    from agents.core.paths import data_root
+    restore corrupts and must not make a fresh process exit forever. The check itself is
+    ``backup.open_root_db_files``, which the hub's apply runs too."""
+    from agents.core import backup
 
-    fd_dir = Path("/proc/self/fd")
-    if not fd_dir.is_dir():
-        return None
-    prefix = os.path.realpath(data_root()) + os.sep
-    held = []
-    for entry in os.listdir(fd_dir):
-        try:
-            target = os.readlink(fd_dir / entry)
-        except OSError:
-            continue                                  # closed meanwhile (the listdir fd)
-        if target.startswith(prefix) and _DB_FILE.search(target):
-            held.append(target)
-    return held
+    return backup.open_root_db_files()
 
 
 def _exit_process(code: int) -> None:
@@ -191,7 +176,7 @@ async def run() -> None:
     # H010: this process opens the hub's DBs too. It marks the root while it may open
     # them, and gives the root up whenever a restore is staged or being applied
     # (backup.runtime_should_yield). A process that has built an orchestrator never
-    # drops its mark and never builds a second one: its stores keep SQLite handles that
+    # drops its mark (not on a stop, an error or a yield) and never builds a second one: its stores keep SQLite handles that
     # aclose() leaves open, so it stops the channels and EXITS (RESTORE_YIELD_EXIT); the
     # restore waits for its pid to be gone (H010 review r3). The supervisor's fresh process
     # finds the stage before it opens anything, drops its mark (only with no file under
@@ -202,6 +187,12 @@ async def run() -> None:
     _install_stop_handlers(stop)
     poll = _restore_poll_seconds()
     exiting = False
+    # Set before the first store opens (a build that raises halfway may have opened some):
+    # from then on the mark is never cleared by this process, whatever way it leaves — a
+    # SIGTERM stop, an exception from aclose(), a yield. Its dead (or zombie) pid is what
+    # releases the root; clearing it first would let a waiting apply start while this
+    # process's SQLite handles are still open (H010 review r4).
+    built = False
     try:
         while not stop.is_set():
             backup.mark_runtime()
@@ -222,6 +213,7 @@ async def run() -> None:
                 logger.warning("a staged restore was not applied within %gs: the coordinator "
                                "runs again and stops when the hub applies it",
                                backup.runtime_restore_grace_seconds())
+            built = True
             if not await _run_marked(stop, backup, poll):
                 break
             logger.info("coordinator exits to release the data root for the restore; "
@@ -229,7 +221,7 @@ async def run() -> None:
             exiting = True
             _exit_process(RESTORE_YIELD_EXIT)
     finally:
-        if not exiting:
+        if not exiting and not built:
             backup.clear_runtime_mark()
 
 

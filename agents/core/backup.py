@@ -941,6 +941,36 @@ def _zombie(pid: int) -> bool:
     return bool(fields) and fields[0] in ("Z", "X")
 
 
+#: A SQLite file a restore replaces: a DB or its -wal/-shm/-journal (a replaced inode
+#: reads as "<path> (deleted)" in /proc/self/fd).
+_DB_FILE = re.compile(r"\.(db|sqlite|sqlite3)(-wal|-shm|-journal)?( \(deleted\))?$")
+
+
+def open_root_db_files(source_root=None) -> Optional[list[str]]:
+    """The SQLite files (DBs and their -wal/-shm/-journal) under the data root that THIS
+    process has open (Linux: ``/proc/self/fd``); None where that cannot be read.
+
+    Both processes that open the root's stores check it before the root changes under
+    them: the coordinator before it drops its mark (scripts/coordinator.py), and the
+    apply itself (``_apply_locked``) — the hub applies a staged restore in an image it
+    re-exec'd into, and a handle carried across that exec would keep writing to the
+    replaced inode (H010 review r4). Other files (a log pointed under the root) are not
+    what a restore corrupts."""
+    fd_dir = Path("/proc/self/fd")
+    if not fd_dir.is_dir():
+        return None
+    prefix = os.path.realpath(_root_of(source_root)) + os.sep
+    held = []
+    for entry in os.listdir(fd_dir):
+        try:
+            target = os.readlink(fd_dir / entry)
+        except OSError:
+            continue                                  # closed meanwhile (the listdir fd)
+        if target.startswith(prefix) and _DB_FILE.search(target):
+            held.append(target)
+    return held
+
+
 def _journal_live(journal: dict) -> bool:
     """A journal written by a live process other than this one is a restore running now."""
     from agents.core import install_identity
@@ -1344,7 +1374,14 @@ def _apply_locked(root: Path, out: Path, key: Optional[str], runtime_wait: float
     # same moment then sees this journal (runtime_should_yield) and gives the root up again.
     _write_json(journal_path, {**_base(staged), "phase": "checking", "pid": os.getpid()})
     reason = None
-    if install_identity.hub_lock_held_elsewhere(root):
+    held = open_root_db_files(root)
+    if held:
+        # The applying process itself still has a DB open (a handle that survived the hub's
+        # re-exec): restoring now would leave it writing to the replaced inode.
+        reason = (f"this process still holds {len(held)} SQLite file(s) under the data root "
+                  f"({', '.join(sorted({Path(t.removesuffix(' (deleted)')).name for t in held}))}); "
+                  f"the restore stays staged until a start that holds none")
+    elif install_identity.hub_lock_held_elsewhere(root):
         reason = "another hub holds this data root; the restore stays staged"
     elif not wait_for_runtime_yield(root, timeout=runtime_wait, sleep=sleep):
         reason = (f"the jarvis-runtime coordinator did not release the data root within "

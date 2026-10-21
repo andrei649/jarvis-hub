@@ -161,7 +161,10 @@ def test_a_running_coordinator_yields_and_the_staged_restore_completes(root, tmp
         fresh.send_signal(signal.SIGTERM)
         fresh.wait(timeout=30)
     assert fresh.returncode == 0
-    assert not mark.exists()
+    # H010 review r4: a coordinator that built an orchestrator leaves its mark on a stop
+    # too; its dead pid is what releases the root.
+    assert mark.read_text().strip() == str(fresh.pid)
+    assert bk.runtime_running_elsewhere(root) is False
 
 
 def coordinator_exit_code() -> int:

@@ -1077,7 +1077,7 @@ that.
 **This is the only forwarding-header allowlist.** uvicorn has its own (`proxy_headers` +
 `forwarded_allow_ips`, loopback by default) that would rewrite the client address and
 scheme before this list is consulted. `serve.py` builds uvicorn with it switched off, and
-`docker-compose.yml` passes `--no-proxy-headers`. `FORWARDED_ALLOW_IPS`,
+`docker-compose.yml` runs `serve.py` too. `FORWARDED_ALLOW_IPS`,
 `UVICORN_FORWARDED_ALLOW_IPS` and, on a `uvicorn` command line, `--forwarded-allow-ips` are
 checked at boot: an entry that is `*`, a `/0`, not an address, or a peer outside this list
 (and outside uvicorn's own loopback default) refuses boot naming the variable — list the
