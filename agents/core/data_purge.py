@@ -231,6 +231,43 @@ def purge_contract_denial(*, source: str = "function", backup_first: bool = True
     return contract_denial(decision)
 
 
+# H574 — a virtual table (FTS5: ``memory_fts``, ``turn_fts``) keeps its index in shadow
+# tables (``<name>_data``, ``_idx``, ``_content``, ``_docsize``, ``_config``; FTS3/4 and
+# R*Tree have their own). Deleting rows from those directly — as a plain per-table DELETE
+# did — wipes the FTS5 version row in ``_config`` and leaves an index every later open
+# rejects ("invalid fts5 file format"). The rows go through the virtual table instead,
+# which empties its shadow tables consistently.
+_SHADOW_SUFFIXES: frozenset[str] = frozenset({
+    "data", "idx", "content", "docsize", "config",          # fts5
+    "segments", "segdir", "stat",                            # fts3/4
+    "node", "rowid", "parent",                               # rtree
+})
+
+
+def _is_virtual_table_sql(sql: object) -> bool:
+    return isinstance(sql, str) and sql.lstrip().upper().startswith("CREATE VIRTUAL TABLE")
+
+
+def _is_shadow_table(name: str, virtual: set[str]) -> bool:
+    return any(name.startswith(vt + "_") and name[len(vt) + 1:] in _SHADOW_SUFFIXES
+               for vt in virtual)
+
+
+def _delete_all_virtual_rows(conn: sqlite3.Connection, table: str, path: Path) -> None:
+    quoted = '"' + table.replace('"', '""') + '"'
+    try:
+        conn.execute(_delete_all_rows_sql(table))
+        return
+    except sqlite3.Error:
+        pass
+    try:
+        # A contentless / external-content FTS5 table refuses DELETE; this is its wipe.
+        conn.execute(" ".join(("INSERT", "INTO", f"{quoted}({quoted})", "VALUES('delete-all')")))
+    except sqlite3.Error as exc:
+        # Surfaced through the sweep's `not_erased`, never skipped silently.
+        raise OSError(f"could not erase virtual table {table} in {path.name}: {exc}") from exc
+
+
 def _purge_db(path: Path) -> dict:
     """Delete every row from each non-internal table in *path*; keep the schema.
 
@@ -256,12 +293,16 @@ def _purge_db(path: Path) -> dict:
     conn = sqlite3.connect(str(path))
     try:
         conn.execute("PRAGMA secure_delete = ON")
-        tables = [r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        ).fetchall()]
-        for table in tables:
+        catalog = conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        virtual = {name for name, sql in catalog if _is_virtual_table_sql(sql)}
+        for table in (name for name, _sql in catalog if not _is_shadow_table(name, virtual)):
             before = conn.total_changes
-            conn.execute(_delete_all_rows_sql(table))
+            if table in virtual:
+                _delete_all_virtual_rows(conn, table, path)
+            else:
+                conn.execute(_delete_all_rows_sql(table))
             deleted[table] = conn.total_changes - before
         conn.commit()
         # Must follow the commit: VACUUM cannot run inside a transaction. It rebuilds the
@@ -487,6 +528,12 @@ def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> d
                 removed = True
         if removed:
             report["sessions"].append(sid)
+    # H574: the session-search index holds every transcript's turns; a memory forget
+    # empties it (the sweep below would too, but the index must not outlive this pass).
+    from agents.core.memory import session_index
+
+    if session_index.clear(root):
+        report["files"].append(session_index.INDEX_NAME)
     return report
 
 

@@ -140,9 +140,42 @@ def _verb_index(raw: list[str]) -> int:
     return i
 
 
+def _leading_profile(raw: list[str]) -> str | None:
+    """The last ``-p NAME`` / ``-pNAME`` / ``--profile[=]NAME`` before the verb (argparse
+    keeps the last one too), or None."""
+    name = None
+    i = 0
+    while i < _verb_index(raw):
+        word = raw[i]
+        if word in ("-p", "--profile"):
+            name = raw[i + 1] if i + 1 < len(raw) else None
+            i += 2
+            continue
+        name = word.split("=", 1)[1] if word.startswith("--profile=") else word[2:]
+        i += 1
+    return name
+
+
+def _apply_profile_early(raw: list[str]) -> None:
+    """H574 review — set ``JARVIS_PROFILE`` from a leading ``-p NAME`` *before* the parser
+    is built. :func:`build_parser` imports verb modules, and several of those fix a path
+    in the data root at import (``agents.core.secrets.DEFAULT_STORE``, the kanban stores),
+    so setting the profile after parsing sent ``nerva -p work secrets op set …`` into the
+    default profile's store. An invalid name is left for argparse to refuse (exit 2)."""
+    from agents.core.paths import PROFILE_ENV, profile_error
+
+    name = _leading_profile(raw)
+    if name is not None and not profile_error({PROFILE_ENV: name}):
+        os.environ.update({PROFILE_ENV: name})
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nerva",
+        # `--prof work` must not pass for `--profile work`: the verb's own argv
+        # (kanban, project) is sliced after the profile by `_verb_index`, which only knows
+        # the spelled-out forms.
+        allow_abbrev=False,
         description="One command for the whole product. Online verbs talk to the running hub "
         "over the same routes the HUD uses; offline verbs read the same data root.",
     )
@@ -4244,8 +4277,10 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
 
 
 def main(argv: list[str] | None = None, *, context: Context | None = None) -> int:
-    parser = build_parser()
     raw = list(argv) if argv is not None else sys.argv[1:]
+    if context is None:
+        _apply_profile_early(raw)
+    parser = build_parser()
     try:
         ns = parser.parse_args(raw)
     except SystemExit as exc:

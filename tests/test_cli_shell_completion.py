@@ -321,3 +321,61 @@ def test_profile_option_selects_the_profiles_data_root_in_a_real_run(tmp_path):
 
     assert nerva("-p", "work", "backup", "list", "--json") == ["jarvis-backup-20261021.tar.gz"]
     assert nerva("backup", "list", "--json") == []
+
+
+def test_profile_is_applied_before_the_parser_imports_verb_modules(monkeypatch):
+    """build_parser() imports verb modules that fix data-root paths at import
+    (agents.core.secrets.DEFAULT_STORE, the kanban stores): the profile must already be
+    in the environment when it runs."""
+    from agents.cli import nerva
+
+    seen = {}
+
+    class _Stop(Exception):
+        pass
+
+    def spy():
+        seen["profile"] = os.environ.get("JARVIS_PROFILE")
+        raise _Stop
+
+    # main() writes os.environ directly; record the real value first so teardown restores it.
+    monkeypatch.setenv("JARVIS_PROFILE", "")
+    monkeypatch.setattr(nerva, "build_parser", spy)
+    for argv in (["-p", "work", "doctor"], ["--profile=work", "doctor"], ["-pwork", "doctor"],
+                 ["--profile", "work", "doctor"]):
+        monkeypatch.delenv("JARVIS_PROFILE", raising=False)
+        with pytest.raises(_Stop):
+            nerva.main(argv)
+        assert seen["profile"] == "work", argv
+    monkeypatch.delenv("JARVIS_PROFILE", raising=False)
+    with pytest.raises(_Stop):
+        nerva.main(["-p", "Bad!", "doctor"])          # left for argparse to refuse
+    assert seen["profile"] is None
+
+
+def test_abbreviated_profile_option_is_refused_not_misparsed(capsys):
+    ctx = Context(environ={}, out=io.StringIO(), err=io.StringIO())
+    assert main(["--prof", "work", "kanban", "list"], context=ctx) == 2
+    assert main(["--pro=work", "kanban", "list"], context=ctx) == 2
+
+
+def test_profile_option_routes_secrets_to_the_profiles_store(tmp_path):
+    """`nerva -p work secrets op set …` used to write the default profile's store."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (tmp_path / "home-profiles" / "work").mkdir(parents=True)
+    repo = Path(__file__).resolve().parents[1]
+
+    def nerva(*args, **extra):
+        run = subprocess.run([sys.executable, "-m", "agents.cli.nerva", *args], cwd=repo,
+                             capture_output=True, text=True, timeout=60,
+                             env=_env(JARVIS_HOME=str(home), JARVIS_TESTING="1",
+                                      JARVIS_KEY_DIR=str(tmp_path / "keys"), **extra))
+        assert run.returncode == 0, run.stderr
+        return run.stdout
+
+    assert "FOO_TOKEN" in nerva("-p", "work", "secrets", "op", "set", "FOO_TOKEN", "op://vault/item/field")
+    assert (tmp_path / "home-profiles" / "work" / "security" / "secrets.enc").exists()
+    assert not (home / "security" / "secrets.enc").exists()
+    assert "references: 1" in nerva("secrets", "op", "status", JARVIS_PROFILE="work")
+    assert "references: 0" in nerva("secrets", "op", "status")

@@ -13,9 +13,8 @@ import subprocess  # nosec B404 - fixed helper argv, no shell; credentials use a
 import sys
 from typing import TYPE_CHECKING
 
-from agents.core.secrets import SecretStore, SecretStoreError
-
 if TYPE_CHECKING:
+    from agents.core.secrets import SecretStore
     from agents.core.security.secret_sources import ExternalSecretSources
 
 _REGIONS = {"us": "", "eu": "https://vault.bitwarden.eu"}
@@ -27,7 +26,26 @@ def __getattr__(name: str):
         from agents.core.security.secret_sources import ExternalSecretSources
 
         return ExternalSecretSources
+    if name in ("SecretStore", "SecretStoreError"):
+        # Lazy (H574 review): `nerva` builds its parser before running a verb, and an
+        # import here would fix the secret store's path before `-p NAME` applies.
+        from agents.core import secrets
+
+        return getattr(secrets, name)
     raise AttributeError(name)
+
+
+def _default_store() -> SecretStore:
+    """The active profile's secret store, its path resolved now — never the path
+    ``agents.core.secrets`` fixed when it was first imported (H574 review: a ``-p NAME``
+    applied after that import wrote the profile's tokens into the default profile)."""
+    from agents.core.paths import data_path
+    from agents.core.secrets import SecretStore as real
+
+    store_type = globals().get("SecretStore", real)
+    if store_type is not real:
+        return store_type()   # an injected store (tests)
+    return real(data_path("security", "secrets.enc"))
 
 
 def register_parser(subparsers) -> None:
@@ -67,6 +85,7 @@ def register_parser(subparsers) -> None:
 def cmd_secrets(ns: argparse.Namespace, ctx, *, store: SecretStore | None = None,
                 sources: ExternalSecretSources | None = None) -> int:
     """Offline command handler. Root wires this to the main CLI dispatch table."""
+    from agents.core.secrets import SecretStoreError
     from agents.core.security.secret_sources import onepassword
     from agents.core.security.secret_sources.base import executable, valid_env_name
 
@@ -77,7 +96,7 @@ def cmd_secrets(ns: argparse.Namespace, ctx, *, store: SecretStore | None = None
     out, err = ctx.out, ctx.err
     provider = "bitwarden" if ns.provider in ("bitwarden", "bw") else "onepassword"
     try:
-        source = sources or source_type(store or SecretStore())
+        source = sources or source_type(store or _default_store())
         cfg = source.configuration(provider)
         action = ns.action
         if action == "status":

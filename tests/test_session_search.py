@@ -141,8 +141,12 @@ def test_bad_arguments_are_refused_by_name(store):
 
 
 def test_oversized_snapshots_and_caps_are_reported(store, monkeypatch):
+    # H574: the caps bound the fallback scan, used when this SQLite has no FTS5.
+    from agents.core.memory import session_index
+    monkeypatch.setattr(session_index, "FTS5_MODULE", "no_such_fts_module")
     monkeypatch.setattr(session_search, "MAX_SNAPSHOT_BYTES", 10)
     out = search_sessions("dentist", directory=store)
+    assert out["engine"] == "scan"
     assert out["hits"] == [] and out["sessions_skipped"] == 3 and out["sessions_scanned"] == 0
     monkeypatch.setattr(session_search, "MAX_SNAPSHOT_BYTES", 8_000_000)
     monkeypatch.setattr(session_search, "MAX_SESSIONS", 1)

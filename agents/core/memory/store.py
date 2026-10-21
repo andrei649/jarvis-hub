@@ -9,6 +9,7 @@ Contains:
     unicode61 over CJK unigrams + bigrams from ``cjk_fts``), not a LIKE scan.
 """
 import asyncio
+import contextlib
 import json
 import logging
 import math
@@ -326,24 +327,44 @@ class MemoryStore:
     def _segment(key: str, value: str) -> str:
         return cjk_fts.index_text(f"{key}\n{value}")
 
+    _FTS_CREATE = (
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {name} USING fts5("
+        f"seg, tokenize='{cjk_fts.TOKENIZE}')"
+    )
+    _FTS_SHADOWS = ("data", "idx", "content", "docsize", "config")
+
     def _init_fts(self, conn: sqlite3.Connection) -> bool:
         """Create ``memory_fts`` and bring it in step with ``memory`` (the reindex migration).
 
         A segmenter-version change rebuilds it; otherwise rows written before the index
         existed (or by another writer) are backfilled and rows deleted behind the store are
         dropped. False when this SQLite has no FTS5: search then stays on LIKE.
+
+        An index SQLite can no longer read — its shadow tables emptied behind its back, as
+        a per-table purge used to do ("invalid fts5 file format") — is dropped and rebuilt
+        from ``memory``: it is derived, and opening the store must never fail over it.
         """
         try:
-            conn.execute(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5("
-                f"seg, tokenize='{cjk_fts.TOKENIZE}')"
-            )
+            conn.execute(self._FTS_CREATE.format(name="memory_fts"))
         except sqlite3.OperationalError as exc:
-            logger.warning("FTS5 unavailable, memory search stays on LIKE: %s", exc)
-            return False
+            if "no such module" in str(exc):
+                logger.warning("FTS5 unavailable, memory search stays on LIKE: %s", exc)
+                return False
+            return self._recover_fts(conn, exc)
+        except sqlite3.DatabaseError as exc:
+            return self._recover_fts(conn, exc)
+        try:
+            self._sync_fts(conn)
+        except sqlite3.DatabaseError as exc:
+            return self._recover_fts(conn, exc)
+        return True
+
+    def _sync_fts(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS memory_fts_meta (name TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
+        # Touch the FTS structure first, so a broken index fails here and is rebuilt.
+        conn.execute("SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'x'").fetchone()
         row = conn.execute("SELECT value FROM memory_fts_meta WHERE name='segmenter'").fetchone()
         if row is None or row[0] != cjk_fts.SEGMENTER_VERSION:
             conn.execute("DELETE FROM memory_fts")
@@ -360,9 +381,47 @@ class MemoryStore:
             "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
             [(r[0], self._segment(r[1], r[2])) for r in missing],
         )
+        conn.commit()
         if missing:
             logger.info("memory_fts: indexed %d row(s)", len(missing))
+
+    def _recover_fts(self, conn: sqlite3.Connection, failure: sqlite3.Error) -> bool:
+        """Drop the unreadable ``memory_fts`` and rebuild it from ``memory``. False (LIKE
+        search) only when even that fails."""
+        logger.warning("memory_fts unreadable (%s); rebuilding it", failure)
+        with contextlib.suppress(sqlite3.Error):
+            conn.rollback()
+        try:
+            try:
+                conn.execute("DROP TABLE IF EXISTS memory_fts")
+            except sqlite3.DatabaseError:
+                # FTS5 cannot even construct the table to drop it (its _config version row
+                # is gone). Give its shadow tables a fresh, empty index's content first.
+                conn.execute("DROP TABLE IF EXISTS memory_fts_template")
+                conn.execute(self._FTS_CREATE.format(name="memory_fts_template"))
+                for suffix in self._FTS_SHADOWS:
+                    # Fixed names: `suffix` comes from _FTS_SHADOWS, never from input.
+                    conn.execute(" ".join(("DELETE", "FROM", f"memory_fts_{suffix}")))
+                    conn.execute(" ".join(("INSERT", "INTO", f"memory_fts_{suffix}", "SELECT", "*",
+                                           "FROM", f"memory_fts_template_{suffix}")))
+                conn.execute("DROP TABLE memory_fts_template")
+                conn.commit()
+                conn.execute("DROP TABLE IF EXISTS memory_fts")
+            conn.execute("DROP TABLE IF EXISTS memory_fts_meta")
+            conn.execute(self._FTS_CREATE.format(name="memory_fts"))
+            self._sync_fts(conn)
+        except sqlite3.Error as exc:
+            with contextlib.suppress(sqlite3.Error):
+                conn.rollback()
+            logger.warning("memory_fts could not be rebuilt, search stays on LIKE: %s", exc)
+            return False
         return True
+
+    def _fts_failed(self, exc: sqlite3.Error) -> None:
+        """The index broke under a live store: stop using it (LIKE answers); the next
+        open rebuilds it."""
+        logger.warning("memory_fts failed (%s); this store falls back to LIKE", exc)
+        self._fts = False
 
     def _index_row(self, conn: sqlite3.Connection, category: str, key: str) -> None:
         if not self._fts:
@@ -372,11 +431,14 @@ class MemoryStore:
         ).fetchone()
         if row is None:
             return
-        conn.execute("DELETE FROM memory_fts WHERE rowid=?", (row["id"],))
-        conn.execute(
-            "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
-            (row["id"], self._segment(row["key"], row["value"])),
-        )
+        try:
+            conn.execute("DELETE FROM memory_fts WHERE rowid=?", (row["id"],))
+            conn.execute(
+                "INSERT INTO memory_fts (rowid, seg) VALUES (?, ?)",
+                (row["id"], self._segment(row["key"], row["value"])),
+            )
+        except sqlite3.DatabaseError as exc:
+            self._fts_failed(exc)
 
     async def upsert(self, category: str, key: str, value: str, metadata: dict = None):
         meta_json = json.dumps(metadata or {})
@@ -445,11 +507,14 @@ class MemoryStore:
         with self._lock:
             with self._conn() as conn:
                 if self._fts:
-                    conn.execute(
-                        "DELETE FROM memory_fts WHERE rowid IN "
-                        "(SELECT id FROM memory WHERE category=? AND key=?)",
-                        (category, key),
-                    )
+                    try:
+                        conn.execute(
+                            "DELETE FROM memory_fts WHERE rowid IN "
+                            "(SELECT id FROM memory WHERE category=? AND key=?)",
+                            (category, key),
+                        )
+                    except sqlite3.DatabaseError as exc:
+                        self._fts_failed(exc)
                 cur = conn.execute(
                     "DELETE FROM memory WHERE category=? AND key=?", (category, key)
                 )
@@ -463,7 +528,10 @@ class MemoryStore:
     def _search_sync(self, query: str, limit: int) -> list[dict]:
         match = cjk_fts.match_expression(query) if self._fts else None
         if match is not None:
-            return self._search_fts(query, match, limit)
+            try:
+                return self._search_fts(query, match, limit)
+            except sqlite3.DatabaseError as exc:
+                self._fts_failed(exc)
         with self._lock:
             with self._conn() as conn:
                 pattern = f"%{query}%"

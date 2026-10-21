@@ -261,6 +261,12 @@ def _delete_traces(session_id: str, checkpoints: Any, files: dict[str, Path],
             removed[name] = True
         except FileNotFoundError:
             removed[name] = False
+    # H574: the transcript's turns leave the session-search index in the same delete.
+    snapshot = files.get("snapshot")
+    if snapshot is not None:
+        from agents.core.memory import session_index
+
+        removed["search_index"] = bool(session_index.forget_sessions(snapshot.parent, [session_id]))
     return removed
 
 

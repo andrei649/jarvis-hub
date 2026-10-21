@@ -194,6 +194,50 @@ def test_without_fts5_cjk_search_falls_back_to_like(store):
     assert "LIKE" in " ".join(seen)
 
 
+# ── the index survives a forget's per-table wipe ───────────────────────────
+
+def _old_style_wipe(path):
+    """What `_purge_db` did before the H574 review: DELETE FROM every table, the FTS5
+    shadow tables included (which empties the version row in ``memory_fts_config``)."""
+    conn = sqlite3.connect(str(path))
+    for (name,) in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            " AND sql NOT LIKE 'CREATE VIRTUAL TABLE%'").fetchall():
+        conn.execute(f'DELETE FROM "{name}"')
+    conn.commit()
+    conn.close()
+
+
+def test_purge_db_leaves_the_fts_index_readable(tmp_path):
+    from agents.core.data_purge import _purge_db
+
+    path = tmp_path / "memory.db"
+    _run(MemoryStore(db_path=path).upsert("facts", "dentist", "明天去看牙医"))
+    deleted = _purge_db(path)
+    assert deleted["memory"] == 1 and deleted["memory_fts"] >= 1
+    assert not any(name.startswith("memory_fts_") and name != "memory_fts_meta" for name in deleted)
+    reopened = MemoryStore(db_path=path)                  # used to raise "invalid fts5 file format"
+    assert reopened._fts is True
+    assert _run(reopened.search("牙医")) == []
+    _run(reopened.upsert("facts", "eye", "下周看眼科"))
+    assert _values(_run(reopened.search("眼"))) == ["下周看眼科"]
+
+
+def test_a_store_whose_fts_shadow_tables_were_wiped_rebuilds_on_open(tmp_path):
+    path = tmp_path / "memory.db"
+    live = MemoryStore(db_path=path)
+    _run(live.upsert("facts", "dentist", "明天去看牙医"))
+    _old_style_wipe(path)
+    _run(live.upsert("facts", "eye", "下周看眼科"))       # a live store degrades to LIKE, never raises
+    assert _values(_run(live.search("眼科"))) == ["下周看眼科"]
+    assert live._fts is False
+    reopened = MemoryStore(db_path=path)                  # rebuilt from `memory`
+    assert reopened._fts is True
+    seen = _traced(reopened)
+    assert _values(_run(reopened.search("眼"))) == ["下周看眼科"]
+    assert any("MATCH" in sql for sql in seen)
+
+
 # ── session search: CJK-aware keyword split ─────────────────────────────────
 
 def _session(tmp_path, sid, turns):
