@@ -980,7 +980,9 @@ class Agent:
             if recorded is not None:
                 if response == THINKING_EXHAUSTED_REPLY:
                     recorded.note_exit("thinking_exhausted")
-                elif not recorded.exit_reason and is_degraded_reply(response):
+                elif recorded.exit_reason in trajectory.COMPLETED_EXITS and is_degraded_reply(response):
+                    # A failed tool-capable adapter returns its degraded reply as a plain
+                    # ToolTurn, so the loop's normal model_response exit must not keep it completed.
                     recorded.note_exit("degraded")
                 recorded.finish(response)
             return response

@@ -132,6 +132,18 @@ async def test_a_degraded_plain_reply_is_saved_as_not_completed():
     assert trajectory.export("sess-3", completed_only=True) == []
 
 
+async def test_a_degraded_tool_loop_reply_is_saved_as_not_completed():
+    # A tool-capable adapter that fails returns its degraded reply as a ToolTurn with no
+    # tool calls; the loop records its normal model_response exit, which must not win.
+    from agents.core.llm.gemini import GEMINI_DEGRADED_REPLY
+
+    agent, backend = _agent([ToolTurn(content=GEMINI_DEGRADED_REPLY)])
+    assert await _ask(agent, backend, session="sess-5") == GEMINI_DEGRADED_REPLY
+    [record] = trajectory.load("sess-5")
+    assert record["completed"] is False and record["exit_reason"] == "degraded"
+    assert trajectory.export("sess-5", completed_only=True) == []
+
+
 async def test_a_turn_without_a_session_or_that_raises_writes_nothing(data_home):
     class _Boom:
         async def generate(self, **kwargs):
