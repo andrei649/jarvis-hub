@@ -13,6 +13,9 @@ H262 adds the pin (`POST /sessions/{id}/pin` and `/unpin`, user-guarded): a pinn
 never auto-archived and never deleted by retention; each list row carries `pinned_at`.
 H262 review: unarchiving or resuming a chat stamps `kept_at`, from which the archiver
 counts its idle time again, so the next sweep does not archive it straight back.
+
+H652 adds ``GET /sessions/{id}/trajectories`` (admin): the session's saved full turns,
+exported as ShareGPT or OpenAI chat rows for training (``agents/core/trajectory.py``).
 """
 
 from uuid import UUID
@@ -214,6 +217,38 @@ async def delete_session(session_id: str, confirm: str = ""):
 
 
 _NO_STORE = {"Cache-Control": "no-store"}
+
+
+@router.get("/sessions/{session_id}/trajectories", dependencies=[Depends(admin_guard)])
+async def get_session_trajectories(session_id: str, format: str = "sharegpt", completed_only: bool = False,
+                                   jsonl: bool = False, limit: int = 1000):
+    """H652 — the session's saved full turns (system, prompt, tool calls, tool results,
+    reply) as training data: ``format=sharegpt`` (Hermes ``conversations`` of from/value)
+    or ``format=messages`` (OpenAI chat rows for ``training/sft_grpo.py``).
+    ``completed_only`` keeps the turns that ended on the model's own answer; ``jsonl``
+    answers one row per line. Admin only — a tool result can carry what the owner read.
+    Capture is opt-in (``NERVA_SAVE_TRAJECTORIES``), so ``capture_enabled`` says why a
+    session may have none."""
+    import asyncio
+
+    from fastapi.responses import Response
+
+    from agents.core import trajectory
+
+    if not is_valid_session_id(session_id):
+        return JSONResponse({"error": "invalid session_id"}, status_code=400)
+    if format not in trajectory.FORMATS:
+        return JSONResponse({"error": f"format must be one of {', '.join(trajectory.FORMATS)}"},
+                            status_code=400)
+    rows = await asyncio.to_thread(trajectory.export, session_id, fmt=format,
+                                   completed_only=completed_only, limit=limit)
+    if jsonl:
+        return Response(trajectory.to_jsonl(rows), media_type="application/x-ndjson", headers=_NO_STORE)
+    return JSONResponse({"session_id": session_id, "format": format, "count": len(rows),
+                         "capture_enabled": trajectory.capture_enabled(), "trajectories": rows},
+                        headers=_NO_STORE)
+
+
 #: How many plans the recent list returns — the Decision Inbox shows a few, `nerva todo`
 #: prints them all.
 RECENT_PLANS = 20

@@ -527,6 +527,18 @@ def build_parser() -> argparse.ArgumentParser:
     imported.add_argument("--from", dest="foreign_source", choices=("claude", "codex"), required=True)
     imported.add_argument("path", help="owner-selected local JSONL path")
     imported.add_argument("--json", action="store_true")
+    # H652 — the session's saved full turns as training data (admin; capture is opt-in).
+    exported = session_verbs.add_parser(
+        "export", help="the session's saved full turns (tool calls and results kept) as JSONL training data")
+    exported.add_argument("session_id")
+    exported.add_argument("--format", dest="export_format", choices=("sharegpt", "messages"), default="sharegpt",
+                          help="sharegpt: Hermes conversations of from/value (default); messages: OpenAI chat rows")
+    exported.add_argument("--sharegpt", dest="export_format", action="store_const", const="sharegpt",
+                          help="same as --format sharegpt")
+    exported.add_argument("--completed-only", action="store_true",
+                          help="only turns that ended on the model's own answer")
+    exported.add_argument("-o", "--out", default="-", help="output JSONL path ('-' = stdout)")
+    exported.add_argument("--json", action="store_true")
 
     chat = verbs.add_parser(
         "chat",
@@ -2772,6 +2784,8 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             ctx.say(f"Imported {reply['session_id']}; resume with nerva chat -r {reply['session_id']} MESSAGE")
         return EXIT_OK
+    if getattr(ns, "session_action", None) == "export":
+        return _export_trajectories(ns, ctx)
     reply = ctx.client().get("/sessions")
     sessions = (reply or {}).get("sessions") or []
     if ns.json:
@@ -2785,6 +2799,32 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         started = row.get("started_at") or ""
         title = row.get("title") or ""   # H413
         ctx.say(f"{sid}  {started}  {title}".rstrip())
+    return EXIT_OK
+
+
+def _export_trajectories(ns: argparse.Namespace, ctx: Context) -> int:
+    """H652 — ``nerva sessions export ID --sharegpt``: one JSONL row per saved turn, to
+    ``-o`` or stdout; the count (and why there may be none) goes to stderr, so a pipe
+    into a trainer reads only rows."""
+    from urllib.parse import quote
+
+    query = f"format={ns.export_format}" + ("&completed_only=true" if ns.completed_only else "")
+    reply = ctx.client().get(f"/sessions/{quote(ns.session_id, safe='')}/trajectories?{query}") or {}
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    rows = reply.get("trajectories") or []
+    data = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+    if ns.out == "-":
+        ctx.out.write(data)
+    else:
+        with open(ns.out, "w", encoding="utf-8") as handle:
+            handle.write(data)
+    noun = "trajectory" if len(rows) == 1 else "trajectories"
+    ctx.err.write(f"{len(rows)} {noun} ({ns.export_format}) from session {ns.session_id}"
+                  + ("" if ns.out == "-" else f" written to {ns.out}") + "\n")
+    if not rows and reply.get("capture_enabled") is False:
+        ctx.err.write("trajectory capture is off; set NERVA_SAVE_TRAJECTORIES=1 on the hub to save full turns\n")
     return EXIT_OK
 
 

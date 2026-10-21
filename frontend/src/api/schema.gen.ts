@@ -10363,6 +10363,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/trajectories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Trajectories
+         * @description H652 — the session's saved full turns (system, prompt, tool calls, tool results,
+         *     reply) as training data: ``format=sharegpt`` (Hermes ``conversations`` of from/value)
+         *     or ``format=messages`` (OpenAI chat rows for ``training/sft_grpo.py``).
+         *     ``completed_only`` keeps the turns that ended on the model's own answer; ``jsonl``
+         *     answers one row per line. Admin only — a tool result can carry what the owner read.
+         *     Capture is opt-in (``NERVA_SAVE_TRAJECTORIES``), so ``capture_enabled`` says why a
+         *     session may have none.
+         */
+        get: operations["get_session_trajectories_sessions__session_id__trajectories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/todo": {
         parameters: {
             query?: never;
@@ -30984,6 +31010,42 @@ export interface operations {
         parameters: {
             query?: {
                 confirm?: string;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_trajectories_sessions__session_id__trajectories_get: {
+        parameters: {
+            query?: {
+                format?: string;
+                completed_only?: boolean;
+                jsonl?: boolean;
+                limit?: number;
             };
             header?: never;
             path: {

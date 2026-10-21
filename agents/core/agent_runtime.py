@@ -572,6 +572,8 @@ class AgentToolRuntime:
             logger.info("tool_loop_exit agent=%r reason=%s", _bounded_identity(agent_id), result.exit_reason.value)
         from .turn_stops import record_runtime_stop
         record_runtime_stop(result.exit_reason)
+        from . import trajectory  # H652: the turn's own exit, for its saved trajectory
+        trajectory.note_exit(result.exit_reason)
         return result
 
     async def _run_turn(
@@ -746,6 +748,8 @@ class AgentToolRuntime:
         # ends with it.
         from .skills.tools import bind_transcript
         bind_transcript(messages[0]["content"], prompt)
+        from . import trajectory  # H652: what the model saw, step by step (opt-in, never raises)
+        trajectory.note_system(messages[0]["content"])
         limit = self._iteration_limit()
         budget = IterationBudget(limit)
         compacted: set[int] = set()
@@ -785,6 +789,8 @@ class AgentToolRuntime:
             from .steering import prepare_steering_rows
             steering = prepare_steering_rows(agent_id)
             messages.extend(steering.rows)
+            for row in steering.rows:
+                trajectory.note_message(row)
             folds_before = len(compacted)
             if (known_window is not None or len(messages) > 2) and not await self._compact_context(
                 messages,
@@ -937,6 +943,7 @@ class AgentToolRuntime:
             assistant_message = turn.as_assistant_message()
             assistant_message["tool_calls"] = [call.as_openai() for call in bounded_calls]
             messages.append(assistant_message)
+            trajectory.note_message(assistant_message)
             observations = await self._execute_turn_calls(
                 bounded_calls,
                 agent_id=agent_id,
@@ -1019,6 +1026,7 @@ class AgentToolRuntime:
                         "suspicious": False,
                     })
                 messages.append(message)
+                trajectory.note_message(message)
                 if risk.external_untrusted:
                     output_risks[id(message)] = risk
             for call, (result, _raw) in zip(bounded_calls, observations, strict=True):

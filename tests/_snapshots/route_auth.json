@@ -360,6 +360,7 @@
   "GET /sessions": "user",
   "GET /sessions/todo": "user",
   "GET /sessions/{session_id}/todo": "user",
+  "GET /sessions/{session_id}/trajectories": "admin",
   "GET /skills": "user",
   "GET /skills/imported": "open",
   "GET /status": "open",
