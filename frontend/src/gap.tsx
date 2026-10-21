@@ -662,6 +662,9 @@ function ReflectionPanel() {
 }
 
 /* ── Trust / Security ───────────────────────────────────── */
+/* H051: the sender store writes ALLOWED = "allowed" (agents/core/channels/pairing.py);
+   'paired' is accepted too so an older reply still reads as approved. */
+const senderApproved = (status) => status === 'allowed' || status === 'paired';
 export function PairingPanel() {
   const { d, e, loading, reload } = useApi('/api/channels/pairing', true, true);
   const senders = arr(d, 'senders');
@@ -689,16 +692,19 @@ export function PairingPanel() {
   };
   return <Card title="SENDER PAIRING" live={asLive(d)} sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
     <State e={e} loading={loading} n={senders.length} />
-    {senders.slice(0, 10).map((s, i) => <Row key={i}>
+    {senders.slice(0, 10).map((s, i) => { const ok = senderApproved(s.status); return <Row key={i}>
       <span style={mono}>{s.name || s.sender_id || s.id}</span>
       <Tag>{s.channel}</Tag>
-      <Tag c={s.status === 'paired' ? 'var(--green)' : s.status === 'blocked' ? 'var(--red)' : 'var(--amber)'}>{s.status || 'pending'}</Tag>
+      <Tag c={ok ? 'var(--green)' : s.status === 'blocked' ? 'var(--red)' : 'var(--amber)'}>{s.status || 'pending'}</Tag>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-        {s.status !== 'paired' && <button className="tool-btn" title="approve" onClick={() => decide(s, 'approve')}>✓</button>}
+        {!ok && <button className="tool-btn" title="approve" onClick={() => decide(s, 'approve')}>✓</button>}
         {s.status !== 'blocked' && <button className="tool-btn" title="block" onClick={() => decide(s, 'block')}>⛔</button>}
-        {s.status === 'paired' ? <button className="tool-btn" title="unpair" onClick={() => decide(s, 'unpair')}>✕</button>
-          : <button className="tool-btn" title="reject" onClick={() => decide(s, 'reject')}>✕</button>}
-      </span></Row>)}
+        {/* reject only drops a *pending* record server-side; an approved or blocked
+            sender is revoked with `unpair` (back to unknown). */}
+        {(s.status || 'pending') === 'pending'
+          ? <button className="tool-btn" title="reject" onClick={() => decide(s, 'reject')}>✕</button>
+          : <button className="tool-btn" title="unpair" onClick={() => decide(s, 'unpair')}>✕</button>}
+      </span></Row>; })}
     {pendingCount > 0 && <div style={{ display: 'flex', marginTop: 6 }}>
       <span style={{ marginLeft: 'auto' }}>
         <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="clear pending" title="drop every pending request at once"

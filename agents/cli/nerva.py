@@ -331,6 +331,26 @@ def build_parser() -> argparse.ArgumentParser:
     clear_wait.add_argument("run_id")
     clear_wait.add_argument("--json", action="store_true")
 
+    pairing = verbs.add_parser("pairing", help="who may talk to the agent over a DM channel (admin, H051)")
+    pairing_verbs = pairing.add_subparsers(dest="action", required=True, metavar="action")
+    pairing_list = pairing_verbs.add_parser("list", help="every sender the pairing store knows, and its status")
+    pairing_list.add_argument("--status", choices=_PAIRING_STATUSES, help="only senders with this status")
+    pairing_list.add_argument("--json", action="store_true")
+    pairing_approve = pairing_verbs.add_parser("approve", help="let one sender through (pending, blocked or new)")
+    pairing_approve.add_argument("channel")
+    pairing_approve.add_argument("sender_id")
+    pairing_approve.add_argument("--name", default="", help="a label for the sender")
+    pairing_approve.add_argument("--json", action="store_true")
+    pairing_revoke = pairing_verbs.add_parser(
+        "revoke", help="forget one sender: an approved one loses access, a blocked one may ask again")
+    pairing_revoke.add_argument("channel")
+    pairing_revoke.add_argument("sender_id")
+    pairing_revoke.add_argument("--json", action="store_true")
+    pairing_clear = pairing_verbs.add_parser(
+        "clear-pending", help="drop every pending request (nobody is blocked); a preview without --confirm")
+    pairing_clear.add_argument("--confirm", action="store_true", help="actually drop them")
+    pairing_clear.add_argument("--json", action="store_true")
+
     jobs = verbs.add_parser("jobs", help="your scheduled jobs (admin)")
     jobs_verbs = jobs.add_subparsers(dest="action", required=True, metavar="action")
     jobs_list = jobs_verbs.add_parser("list", help="every job and whether the scheduler is alive")
@@ -2221,6 +2241,83 @@ def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say(f"not cleared: it is now waiting on {reply['waiting_on']}")
         else:
             ctx.say("no barrier")
+    return EXIT_OK
+
+
+_PAIRING_STATUSES = ("allowed", "pending", "blocked")
+
+
+def cmd_pairing(ns: argparse.Namespace, ctx: Context) -> int:
+    """H051 — approve or revoke who may talk to the agent over a DM channel.
+
+    The same admin routes the HUD's SENDER PAIRING card uses
+    (agents/core/routers/pairing.py). ``revoke`` is the store's ``unpair``: the
+    record goes, so an approved sender is back to unknown (held for approval on its
+    next message) and a blocked one may ask again. ``clear-pending`` is a bulk
+    reject and only previews unless ``--confirm`` is given — the CLI's counterpart
+    of the HUD's two-step confirm.
+    """
+    client = ctx.client()
+    if ns.action == "list":
+        path = "/api/channels/pairing"
+        if ns.status:
+            path += "?" + urlencode({"status": ns.status})
+        reply = client.get(path)
+        senders = reply.get("senders") if isinstance(reply, dict) else None
+        if not isinstance(senders, list):
+            ctx.err.write("unexpected reply from the hub: no list of senders in it\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        summary = reply.get("summary") if isinstance(reply.get("summary"), dict) else {}
+        if summary:
+            state = "on" if summary.get("enabled") else "off (every sender passes)"
+            ctx.say(f"pairing {state} · " + " · ".join(
+                f"{int(summary.get(name) or 0)} {name}" for name in _PAIRING_STATUSES))
+        if not senders:
+            ctx.say("no senders" + (f" with status {ns.status}" if ns.status else ""))
+        for sender in senders:
+            if not isinstance(sender, dict):
+                continue
+            name = sender.get("name") or ""
+            label = f"  {name}" if name and name != sender.get("sender_id") else ""
+            ctx.say(f"{sender.get('channel')}  {sender.get('sender_id')}  {sender.get('status')}{label}")
+        return EXIT_OK
+    if ns.action == "clear-pending":
+        if not ns.confirm:
+            reply = client.get("/api/channels/pairing?" + urlencode({"status": "pending"}))
+            senders = reply.get("senders") if isinstance(reply, dict) else None
+            count = len(senders) if isinstance(senders, list) else 0
+            ctx.say(f"would drop {count} pending request(s); nobody is blocked and they may ask again. "
+                    "Rerun with --confirm to drop them.")
+            return EXIT_OK
+        reply = client.post("/api/channels/pairing/clear-pending")
+        reply = reply if isinstance(reply, dict) else {}
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            # ``audited: false`` is said, so a cleared inbox never implies an audit row.
+            ctx.say(f"cleared {int(reply.get('cleared') or 0)} pending"
+                    + (" · not audited" if reply.get("audited") is False else ""))
+        return EXIT_OK
+    body = {"channel": ns.channel, "sender_id": ns.sender_id,
+            "action": "approve" if ns.action == "approve" else "unpair"}
+    if ns.action == "approve" and ns.name:
+        body["name"] = ns.name
+    reply = client.post("/api/channels/pairing/decide", body)
+    reply = reply if isinstance(reply, dict) else {}
+    who = f"{ns.channel}:{ns.sender_id}"
+    if ns.action == "revoke" and not reply.get("unpaired"):
+        ctx.err.write(f"no pairing record for {who}; nothing to revoke\n")
+        return EXIT_FAILED
+    if ns.action == "approve" and reply.get("status") != "allowed":
+        ctx.err.write(f"the hub did not approve {who}: {reply}\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+    else:
+        ctx.say(f"approved {who}" if ns.action == "approve" else f"revoked {who}")
     return EXIT_OK
 
 
@@ -4159,6 +4256,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "skills": cmd_skills,
     "estop": cmd_estop,
     "company": cmd_company,
+    "pairing": cmd_pairing,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,
     "todo": cmd_todo,

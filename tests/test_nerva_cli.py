@@ -88,7 +88,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
-        "uninstall", "backup",
+        "uninstall", "backup", "pairing",
     }
     # H010: backup create/list/verify read the data root; restore asks the hub's approval queue;
     # cancel withdraws a staged restore before it is applied.
