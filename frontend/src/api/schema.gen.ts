@@ -1270,6 +1270,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/pairing/clear-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pairing Clear Pending
+         * @description Drop every pending request at once — a bulk reject (H154).
+         *
+         *     Approved and blocked senders are untouched and nobody is blocked, so a real
+         *     contact caught in the sweep can simply ask again.
+         */
+        post: operations["pairing_clear_pending_api_channels_pairing_clear_pending_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/pairing/code": {
         parameters: {
             query?: never;
@@ -16106,6 +16129,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pairing_clear_pending_api_channels_pairing_clear_pending_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

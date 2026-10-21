@@ -1,5 +1,11 @@
-"""Inbound sender pairing / approval endpoints (H12.19) — extracted from web.py (CLN-3)."""
+"""Inbound sender pairing / approval endpoints (H12.19) — extracted from web.py (CLN-3).
 
+H154: a bulk "clear pending" for a flooded inbox, admin-only and audited.
+"""
+
+import asyncio
+import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -10,6 +16,8 @@ from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["pairing"])
 
@@ -76,6 +84,39 @@ async def pairing_decide(body: PairingDecisionBody):
             body.channel, body.sender_id, body.action, name=body.name))
     except ValueError:
         return nocache_json({"error": "unknown action"}, status_code=400)
+
+
+async def _audit_pairing(action: str, preview: str) -> None:
+    """H154 — one audit row for a bulk owner action. Counts only, never sender ids
+    (the precedent is webhooks._audit_webhook). A broken audit log never turns the
+    action itself into a 500: the change has already happened."""
+    orch = get_orch()
+    audit = getattr(orch, "audit", None) if orch else None
+    if audit is None:
+        return
+    from agents.core.security.types import SecurityEvent, SecurityEventType
+
+    try:
+        await asyncio.to_thread(audit.log, SecurityEvent(
+            event_type=SecurityEventType.SETTINGS_CHANGE,
+            timestamp=time.time(),
+            content_preview=preview,
+            action_taken=f"pairing_{action}",
+        ))
+    except Exception:
+        logger.warning("pairing %s: the audit row could not be written", action, exc_info=True)
+
+
+@router.post("/api/channels/pairing/clear-pending", dependencies=[Depends(admin_guard)])
+async def pairing_clear_pending():
+    """Drop every pending request at once — a bulk reject (H154).
+
+    Approved and blocked senders are untouched and nobody is blocked, so a real
+    contact caught in the sweep can simply ask again.
+    """
+    cleared = await asyncio.to_thread(_get_sender_pairing().clear_pending)
+    await _audit_pairing("clear_pending", f"pairing clear pending: cleared={cleared} pending senders")
+    return nocache_json({"ok": True, "cleared": cleared})
 
 
 @router.post("/api/channels/pairing/code", dependencies=[Depends(admin_guard)])

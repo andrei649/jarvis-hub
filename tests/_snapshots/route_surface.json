@@ -393,6 +393,7 @@
   "POST /api/capture/ingest",
   "POST /api/capture/surfaces",
   "POST /api/channels/inbox/{thread_id}/reply",
+  "POST /api/channels/pairing/clear-pending",
   "POST /api/channels/pairing/code",
   "POST /api/channels/pairing/decide",
   "POST /api/channels/pairing/link",

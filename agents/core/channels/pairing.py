@@ -661,6 +661,21 @@ class SenderPairing(JsonStore):
             return True
         return False
 
+    def clear_pending(self) -> int:
+        """Drop every pending request at once (H154). Returns how many went.
+
+        A bulk ``reject``: approved and blocked senders are untouched, and a
+        cleared sender is not blocked — it may ask again. The owner's answer to a
+        flooded inbox.
+        """
+        with self._lock:
+            dead = [k for k, r in self._senders.items() if r.get("status") == PENDING]
+            for key in dead:
+                del self._senders[key]
+            if dead:
+                self._save()
+        return len(dead)
+
     def decide(self, channel: str, sender_id: str, action: str, name: str = "") -> dict:
         """Convenience dispatcher for the management endpoint."""
         action = (action or "").lower()

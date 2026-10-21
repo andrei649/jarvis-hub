@@ -393,6 +393,7 @@
   "POST /api/capture/ingest": "capture_ingest_api_capture_ingest_post",
   "POST /api/capture/surfaces": "capture_set_surfaces_api_capture_surfaces_post",
   "POST /api/channels/inbox/{thread_id}/reply": "channels_inbox_reply_api_channels_inbox__thread_id__reply_post",
+  "POST /api/channels/pairing/clear-pending": "pairing_clear_pending_api_channels_pairing_clear_pending_post",
   "POST /api/channels/pairing/code": "pairing_set_code_api_channels_pairing_code_post",
   "POST /api/channels/pairing/decide": "pairing_decide_api_channels_pairing_decide_post",
   "POST /api/channels/pairing/link": "pairing_mint_link_api_channels_pairing_link_post",

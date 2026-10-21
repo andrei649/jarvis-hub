@@ -222,3 +222,86 @@ def test_decide_rejects_unknown_action(monkeypatch, tmp_path, enabled):
                     json={"channel": "telegram", "sender_id": "1", "action": "nuke"},
                     headers=hdr)
     assert r.status_code == 400
+
+
+# ── H154: bulk "clear pending" (owner action, audited) ─────────────
+
+def test_clear_pending_drops_only_pending_and_persists(tmp_path, enabled):
+    path = str(tmp_path / "pairing.json")
+    reg = SenderPairing(path=path)
+    reg.request("telegram", "1")
+    reg.request("discord", "2")
+    reg.approve("telegram", "3")
+    reg.block("telegram", "4")
+    assert reg.clear_pending() == 2
+    assert reg.status("telegram", "1") == UNKNOWN
+    assert reg.status("discord", "2") == UNKNOWN
+    assert reg.status("telegram", "3") == ALLOWED       # approved senders survive
+    assert reg.status("telegram", "4") == BLOCKED       # a block is never undone by this
+    assert reg.summary()[PENDING] == 0
+    fresh = SenderPairing(path=path)
+    assert fresh.status("telegram", "1") == UNKNOWN and fresh.status("telegram", "3") == ALLOWED
+    assert reg.clear_pending() == 0                     # nothing left: a no-op, not an error
+
+
+def test_clear_pending_is_not_a_block(reg, enabled):
+    reg.request("telegram", "1")
+    reg.clear_pending()
+    assert reg.request("telegram", "1")["status"] == PENDING   # may ask again
+
+
+def _audited_client(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    client, hdr = _client(monkeypatch, tmp_path)
+    events = []
+    monkeypatch.setattr(web, "orch", SimpleNamespace(
+        audit=SimpleNamespace(log=events.append), sender_pairing=None))
+    return client, hdr, events
+
+
+def _pairing_rows(events):
+    return [ev for ev in events if str(getattr(ev, "action_taken", "")).startswith("pairing_")]
+
+
+def test_clear_pending_endpoint_is_admin_only(monkeypatch, tmp_path, enabled):
+    import agents.core.routers.pairing as _pairing_mod
+    client, _hdr, events = _audited_client(monkeypatch, tmp_path)
+    client.post("/api/channels/pairing/request", json={"channel": "telegram", "sender_id": "9"})
+    assert client.post("/api/channels/pairing/clear-pending").status_code in (401, 403)
+    assert _pairing_mod._sender_pairing.status("telegram", "9") == PENDING
+    assert _pairing_rows(events) == []
+    from tests.test_route_auth_matrix import _runtime_guards
+    assert _runtime_guards()["POST /api/channels/pairing/clear-pending"] == "admin"
+
+
+def test_clear_pending_endpoint_clears_and_audits(monkeypatch, tmp_path, enabled):
+    client, hdr, events = _audited_client(monkeypatch, tmp_path)
+    for sid in ("alice-7", "bob-8"):
+        client.post("/api/channels/pairing/request", json={"channel": "telegram", "sender_id": sid})
+    client.post("/api/channels/pairing/decide",
+                json={"channel": "telegram", "sender_id": "carol-9", "action": "approve"}, headers=hdr)
+    r = client.post("/api/channels/pairing/clear-pending", headers=hdr)
+    assert r.status_code == 200 and r.json() == {"ok": True, "cleared": 2}
+    summary = client.get("/api/channels/pairing", headers=hdr).json()["summary"]
+    assert summary["pending"] == 0 and summary["allowed"] == 1
+    rows = _pairing_rows(events)
+    assert len(rows) == 1
+    assert rows[0].action_taken == "pairing_clear_pending"
+    assert rows[0].event_type.value == "settings_change"
+    assert "cleared=2" in rows[0].content_preview
+    # A count is enough: the row does not copy who was waiting.
+    assert "alice-7" not in rows[0].content_preview and "bob-8" not in rows[0].content_preview
+
+
+def test_clear_pending_endpoint_survives_a_broken_audit_log(monkeypatch, tmp_path, enabled):
+    from types import SimpleNamespace
+    client, hdr = _client(monkeypatch, tmp_path)
+
+    def boom(_event):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(web, "orch", SimpleNamespace(audit=SimpleNamespace(log=boom),
+                                                     sender_pairing=None))
+    client.post("/api/channels/pairing/request", json={"channel": "telegram", "sender_id": "1"})
+    r = client.post("/api/channels/pairing/clear-pending", headers=hdr)
+    assert r.status_code == 200 and r.json()["cleared"] == 1

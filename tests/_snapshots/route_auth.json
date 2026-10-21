@@ -397,6 +397,7 @@
   "POST /api/capture/ingest": "user",
   "POST /api/capture/surfaces": "user",
   "POST /api/channels/inbox/{thread_id}/reply": "user",
+  "POST /api/channels/pairing/clear-pending": "admin",
   "POST /api/channels/pairing/code": "admin",
   "POST /api/channels/pairing/decide": "admin",
   "POST /api/channels/pairing/link": "admin",

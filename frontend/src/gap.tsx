@@ -677,6 +677,14 @@ export function PairingPanel() {
     (r) => { setLink(r); reload(); });
   const revokeLinks = () => actA('/api/channels/pairing/link/revoke', {},
     () => { setLink(null); reload(); });
+  /* H154: a flooded inbox in one move — a bulk reject (nobody is blocked, they may
+     ask again), admin-guarded and audited server-side, behind a confirm. */
+  const [cleared, setCleared] = useState(null);
+  const pendingCount = d?.summary?.pending ?? senders.filter((s) => (s.status || 'pending') === 'pending').length;
+  const clearPending = () => {
+    if (!window.confirm(`Drop all ${pendingCount} pending request(s)? Nobody is blocked; they can ask again.`)) return;
+    actA('/api/channels/pairing/clear-pending', {}, (r) => { setCleared(r?.cleared ?? 0); reload(); });
+  };
   return <Card title="SENDER PAIRING" live={asLive(d)} sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
     <State e={e} loading={loading} n={senders.length} />
     {senders.slice(0, 10).map((s, i) => <Row key={i}>
@@ -689,6 +697,10 @@ export function PairingPanel() {
         {s.status === 'paired' ? <button className="tool-btn" title="unpair" onClick={() => decide(s, 'unpair')}>✕</button>
           : <button className="tool-btn" title="reject" onClick={() => decide(s, 'reject')}>✕</button>}
       </span></Row>)}
+    {pendingCount > 0 && <div style={{ display: 'flex', marginTop: 6 }}>
+      <button className="tool-btn" style={{ marginLeft: 'auto' }} title="drop every pending request at once" onClick={clearPending}>clear pending</button>
+    </div>}
+    {cleared != null && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>cleared {cleared} pending</div>}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="pairing code (empty = clear)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={() => actA('/api/channels/pairing/code', { code: code || null }, () => { setCode(''); reload(); })}>set code</button>
