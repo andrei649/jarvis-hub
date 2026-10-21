@@ -678,11 +678,10 @@ export function PairingPanel() {
   const revokeLinks = () => actA('/api/channels/pairing/link/revoke', {},
     () => { setLink(null); reload(); });
   /* H154: a flooded inbox in one move — a bulk reject (nobody is blocked, they may
-     ask again), admin-guarded and audited server-side, behind a confirm. */
+     ask again), admin-guarded and audited server-side, behind a two-step ConfirmAction. */
   const [cleared, setCleared] = useState(null);
   const pendingCount = d?.summary?.pending ?? senders.filter((s) => (s.status || 'pending') === 'pending').length;
   const clearPending = () => {
-    if (!window.confirm(`Drop all ${pendingCount} pending request(s)? Nobody is blocked; they can ask again.`)) return;
     // `audited: false` means the server had no audit log to write to (or the write
     // failed) — said on screen, so a cleared inbox never implies a row that is not there.
     actA('/api/channels/pairing/clear-pending', {}, (r) => {
@@ -701,7 +700,10 @@ export function PairingPanel() {
           : <button className="tool-btn" title="reject" onClick={() => decide(s, 'reject')}>✕</button>}
       </span></Row>)}
     {pendingCount > 0 && <div style={{ display: 'flex', marginTop: 6 }}>
-      <button className="tool-btn" style={{ marginLeft: 'auto' }} title="drop every pending request at once" onClick={clearPending}>clear pending</button>
+      <span style={{ marginLeft: 'auto' }}>
+        <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="clear pending" title="drop every pending request at once"
+          prompt="nobody is blocked; they can ask again" armedLabel={`drop ${pendingCount} pending`} onConfirm={clearPending} />
+      </span>
     </div>}
     {cleared != null && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>cleared {cleared}</div>}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>

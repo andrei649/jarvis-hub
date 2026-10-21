@@ -292,11 +292,20 @@ job's configuration and its last attempts.
   `unsupported_options`); it gets the skills its agent has with no human present:
   `nerva inspect jarvis --as internal --section skills`.
 - **The job cannot use a tool the chat can** — a job runs with no human present (the
-  `internal` posture): approval-bound tools — `file_write`, `file_delete`, `terminal_run`,
-  `video_analyze`, desktop control — are offered only when `llm.internal_actuation` is on;
-  the `memory` tool is never offered (only your own turns write memory). A job's toolsets
-  are picked from a fixed list — `basic`, `files`, `terminal`, `video` — with no
-  execute_code, delegation or plugin groups, and they only narrow what the posture allows.
+  `internal` posture). Without approval it is offered the ungated tools: `echo`, `time`,
+  file reading and search, `web_search`/`web_extract`, `session_search`/`search_memory`,
+  `execute_code`, the skill readers, the planners, `todo` and `canvas_point`.
+  Approval-bound tools — `file_write`, `file_delete`, `terminal_run`, `video_analyze`,
+  desktop control — are offered only when `llm.internal_actuation` is on. The `memory`
+  tool is never offered (only your own turns write memory). A job's toolsets come from a
+  fixed catalog — `basic`, `files`, `terminal`, `video`, `web`, `recall`, `code`, `skills`,
+  `planning`, `desktop`, `osint`, `image`, `voice`, `notes`, `checklist`, `canvas`,
+  `cronjob` — and only narrow what the posture allows, never widen it (`notes` holds the
+  `memory` tool, which a job still does not get). The owner can also switch groups off for
+  every job (`agents.disabled_toolsets`) or set the default list (`llm.platform_toolsets`).
+- `tool_policy_unreadable` — the doctor could not read that scheduled tool policy from the
+  settings store, so it cannot say which groups a job gets. Run `nerva config check`; a
+  store that is locked or corrupt is the usual cause.
 - **The skill is switched off** — `nerva skills list` shows where each is off;
   `nerva skills on SKILL_NAME` switches it back.
 - **The skill does not load at all** — a malformed `SKILL.md` is refused at discovery:
