@@ -118,6 +118,16 @@ def _words(names) -> str:
 
 # ── bash ─────────────────────────────────────────────────────────────────────
 
+def _short(profile: tuple[str, ...]) -> list[str]:
+    """The single-letter profile options (``-p``), which also take an attached value."""
+    return [opt for opt in profile if len(opt) == 2 and opt[0] == "-" and opt[1] != "-"]
+
+
+def _attached_arms(profile: tuple[str, ...]) -> str:
+    """Case patterns for ``-pNAME`` (one word: option and value), ``""`` when none."""
+    return "|".join(shlex.quote(opt) + "?*" for opt in _short(profile))
+
+
 def _bash(parser: argparse.ArgumentParser, base: str) -> str:
     nodes = completion_nodes(parser)
     options = root_options(parser)
@@ -136,6 +146,7 @@ def _bash(parser: argparse.ArgumentParser, base: str) -> str:
     ]
     if profile:
         arms = "|".join(shlex.quote(opt) for opt in profile)
+        attached = _attached_arms(profile)
         lines += [
             "    # the root profile option comes before the verb: skip it and its value",
             "    while (( o + 1 < COMP_CWORD )); do",
@@ -146,6 +157,7 @@ def _bash(parser: argparse.ArgumentParser, base: str) -> str:
             "                else",
             "                    (( o + 2 < COMP_CWORD )) || break; o=$((o + 2))",
             "                fi ;;",
+            *([f"            {attached}) o=$((o + 1)) ;;"] if attached else []),
             "            *) break ;;",
             "        esac",
             "    done",
@@ -238,7 +250,8 @@ def _zsh(parser: argparse.ArgumentParser, base: str) -> str:
     ]
     if profile:
         arms = "|".join(shlex.quote(opt) for opt in profile)
-        eq_arms = "|".join(shlex.quote(opt + "=") + "*" for opt in profile if opt.startswith("--"))
+        eq_arms = "|".join([*(shlex.quote(opt + "=") + "*" for opt in profile
+                              if opt.startswith("--")), *filter(None, [_attached_arms(profile)])])
         skip = [f"            {arms}) (( o + 3 < CURRENT )) || break; o=$((o + 2)) ;;"]
         if eq_arms:
             skip.append(f"            {eq_arms}) o=$((o + 1)) ;;")
@@ -315,6 +328,8 @@ def _fish(parser: argparse.ArgumentParser, base: str) -> str:
     quote = _fish_quote
     profile = profile_options(parser)
     longs = [opt for opt in profile if opt.startswith("--")]
+    # `-pNAME`: the value attached to a short option, which nerva.py accepts too.
+    one_word = [quote(o + "=*") for o in longs] + [quote(o + "?*") for o in _short(profile)]
     skip = ""
     if profile:
         skip = "\n".join([
@@ -322,8 +337,9 @@ def _fish(parser: argparse.ArgumentParser, base: str) -> str:
             f"        if contains -- $words[1] {' '.join(quote(o) for o in profile)}",
             "            test (count $words) -ge 2; or break",
             "            set -e words[1..2]",
-            *([f"        else if string match -q -- {' '.join(quote(o + '=*') for o in longs)} $words[1]",
-               "            set -e words[1]"] if longs else []),
+            # `string match` takes one pattern (the rest are subjects): one test each.
+            *([f"        else if {'; or '.join(f'string match -q -- {o} $words[1]' for o in one_word)}",
+               "            set -e words[1]"] if one_word else []),
             "        else",
             "            break",
             "        end",

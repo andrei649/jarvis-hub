@@ -202,12 +202,10 @@ def test_memory_store_update_erases_the_old_value(tmp_path):
     asyncio.run(store.upsert("fact", "secret", f"old value {TOKEN}"))
     _fill(store)
     asyncio.run(store.upsert("fact", "secret", "new value"))
-    conn = sqlite3.connect(str(tmp_path / "memory.db"))
-    try:
-        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        conn.close()
-    assert _holds(tmp_path / "memory.db", TOKEN) == []
+    # Review round 4: no outside checkpoint; the update itself empties the WAL.
+    db = tmp_path / "memory.db"
+    assert _holds(db, TOKEN) == []
+    assert asyncio.run(store.get("fact", "secret"))["value"] == "new value"
 
 
 def test_memory_store_re_enables_secure_delete_after_a_purge_recreated_its_index(tmp_path):
@@ -218,6 +216,116 @@ def test_memory_store_re_enables_secure_delete_after_a_purge_recreated_its_index
     _fill(store)
     assert asyncio.run(store.delete("fact", "secret")) is True
     assert _holds(tmp_path / "memory.db", TOKEN) == []
+
+
+# ── owner-only files (review round 4) ───────────────────────────────────────
+
+@pytest.fixture
+def umask_022():
+    previous = os.umask(0o022)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
+def _mode(path: Path) -> int:
+    return path.stat().st_mode & 0o777
+
+
+def test_the_index_and_its_journal_are_owner_only(root, umask_022):
+    persistence.save_memory("sess-abc123", [_turn("user", f"明天去看牙医 {TOKEN}")])
+    assert _mode(root / "sess-abc123.json") == 0o600
+    assert search_sessions("牙医", directory=root)["engine"] == "fts5"
+    index = root / session_index.INDEX_NAME
+    assert _mode(index) == 0o600
+    # the rollback journal of a live write transaction holds the pages it changes
+    writer = sqlite3.connect(str(index), isolation_level=None)
+    try:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("DELETE FROM turns")
+        journal = Path(str(index) + "-journal")
+        assert journal.exists() and _mode(journal) == 0o600
+    finally:
+        writer.execute("ROLLBACK")
+        writer.close()
+
+
+def test_an_index_planted_world_readable_is_narrowed_on_open(root, umask_022):
+    _write(root, "session_a", [_turn("user", "牙医 appointment")])
+    assert search_sessions("牙医", directory=root)["engine"] == "fts5"
+    index = root / session_index.INDEX_NAME
+    os.chmod(index, 0o644)                       # as an earlier version created it
+    session_index.open_index(root).close()
+    assert _mode(index) == 0o600
+
+
+def test_a_rebuilt_corrupt_index_is_owner_only(root, umask_022):
+    _write(root, "session_a", [_turn("user", "牙医 appointment")])
+    index = root / session_index.INDEX_NAME
+    index.write_bytes(b"not a database" * 100)
+    os.chmod(index, 0o644)
+    assert search_sessions("牙医", directory=root)["engine"] == "fts5"
+    assert _mode(index) == 0o600
+
+
+def test_memory_db_and_its_wal_are_owner_only(tmp_path, umask_022):
+    db = tmp_path / "memory.db"
+    db.touch(mode=0o644)                         # planted world-readable
+    os.chmod(db, 0o644)
+    store = _store(tmp_path)
+    reader = sqlite3.connect(str(db))            # keeps the WAL from being removed
+    try:
+        reader.execute("SELECT count(*) FROM memory").fetchone()
+        _fill(store)
+        assert _mode(db) == 0o600
+        for suffix in ("-wal", "-shm"):
+            sidecar = Path(str(db) + suffix)
+            assert sidecar.exists() and _mode(sidecar) == 0o600
+    finally:
+        reader.close()
+
+
+# ── a removal on a busy index is not forgotten (review round 4) ─────────────
+
+def test_a_removal_on_a_busy_index_is_erased_by_the_next_save(root, monkeypatch, umask_022):
+    index = _history(root)
+    monkeypatch.setattr(session_index, "OPEN_TIMEOUT", 0.05)
+    holder = _hold_exclusive(index)
+    try:
+        persistence.delete_memory("session_secret")
+    finally:
+        holder.rollback()
+        holder.close()
+    pending = root / session_index.PENDING_NAME
+    assert pending.read_text().split() == ["session_secret"] and _mode(pending) == 0o600
+    assert _holds(index, TOKEN) == [session_index.INDEX_NAME]
+    # no search runs: the next save opens the index and drops the pending removal
+    persistence.save_memory("session_new", [_turn("user", "unrelated")])
+    assert _holds(index, TOKEN) == [] and _holds(index, CJK_TOKEN) == []
+    assert not pending.exists()
+    assert search_sessions("filler", directory=root)["hits"]
+
+
+def test_a_pending_removal_never_drops_a_snapshot_saved_again(root, monkeypatch):
+    index = _history(root)
+    monkeypatch.setattr(session_index, "OPEN_TIMEOUT", 0.05)
+    holder = _hold_exclusive(index)
+    try:
+        persistence.delete_memory("session_secret")
+    finally:
+        holder.rollback()
+        holder.close()
+    persistence.save_memory("session_secret", [_turn("user", f"back again {TOKEN}")])
+    assert search_sessions(TOKEN, directory=root)["hits"]
+    assert not (root / session_index.PENDING_NAME).exists()
+
+
+def test_forget_of_all_memory_removes_the_pending_list(root):
+    _history(root)
+    session_index._record_pending(root, ["session_secret"])
+    assert session_index.clear(root) is True
+    assert not (root / session_index.PENDING_NAME).exists()
 
 
 # ── a busy index is not a corrupt one ───────────────────────────────────────

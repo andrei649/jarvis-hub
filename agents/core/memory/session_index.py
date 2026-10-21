@@ -53,19 +53,24 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import sqlite3
+import threading
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
 from agents.core.memory import cjk_fts
+from agents.core.memory.private_db import PRIVATE_MODE, ensure_private
 from agents.core.session_files import is_session_snapshot_payload, is_session_stem
 from agents.core.validation import is_valid_session_id
 
 logger = logging.getLogger("jarvis.session_index")
 
 INDEX_NAME = "session_index.db"
+#: Stems a removal could not drop (busy index), dropped by the next :func:`open_index`.
+PENDING_NAME = "session_index.forget"
 #: The FTS module the index uses; a test points it at a missing module to exercise the
 #: no-FTS5 fallback.
 FTS5_MODULE = "fts5"
@@ -109,6 +114,10 @@ class _IndexConnection(sqlite3.Connection):
 
 def index_path(root: Path) -> Path:
     return Path(root) / INDEX_NAME
+
+
+def pending_path(root: Path) -> Path:
+    return Path(root) / PENDING_NAME
 
 
 def is_busy_error(exc: BaseException) -> bool:
@@ -182,6 +191,9 @@ def _schema(conn: _IndexConnection) -> None:
 
 
 def _connect_once(path: Path, timeout: float) -> _IndexConnection:
+    # The index holds a verbatim copy of every turn: owner-only like the snapshots (and
+    # its -journal, which SQLite creates with the main file's mode), never 0o666 & ~umask.
+    ensure_private(path)
     conn = sqlite3.connect(str(path), timeout=timeout, isolation_level=None,
                            factory=_IndexConnection)
     conn.row_factory = sqlite3.Row
@@ -229,7 +241,7 @@ def open_index(root: Path, *, create: bool = True,
     wait = OPEN_TIMEOUT if timeout is None else timeout
     existed = path.exists()
     try:
-        return _connect_once(path, wait)
+        return _drain_pending(_connect_once(path, wait), root)
     except sqlite3.Error as exc:
         if "no such module" in str(exc):
             if not existed:
@@ -243,9 +255,54 @@ def open_index(root: Path, *, create: bool = True,
     logger.warning("session index corrupt (%s); rebuilding it", type(failure).__name__)
     _remove_files(path)
     try:
-        return _connect_once(path, wait)
+        return _drain_pending(_connect_once(path, wait), root)
     except sqlite3.Error as exc:
         raise IndexUnavailable(str(exc), busy=is_busy_error(exc)) from exc
+
+
+def _record_pending(root: Path, stems: list[str]) -> None:
+    """Remember *stems* a removal could not drop (the index was busy), owner-only."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(pending_path(root), flags, PRIVATE_MODE)
+        try:
+            os.write(fd, "".join(f"{stem}\n" for stem in stems).encode("ascii"))
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        logger.warning("session index: could not record a pending removal: %s", exc)
+
+
+def _drain_pending(conn: _IndexConnection, root: Path) -> _IndexConnection:
+    """Drop the rows of the removals :func:`forget_sessions` left pending on a busy
+    index, so the next open of any kind (a save, a search, a removal) erases them, not
+    only a search's :func:`sync`. A stem whose snapshot exists again is left to sync.
+    Best effort: on a busy lock the list stays for the next open."""
+    pending = pending_path(root)
+    if not pending.is_file():
+        return conn
+    # Claim the list first, so a removal appending meanwhile writes a new one.
+    claim = pending.with_name(f"{PENDING_NAME}.{os.getpid()}.{threading.get_ident()}")
+    try:
+        os.replace(pending, claim)
+        text = claim.read_text(encoding="ascii", errors="ignore")
+    except OSError:
+        return conn
+    stems = [stem for stem in dict.fromkeys(text.split())
+             if is_valid_session_id(stem) and not (Path(root) / f"{stem}.json").exists()]
+    try:
+        if stems:
+            conn.execute("BEGIN IMMEDIATE")
+            for stem in stems:
+                _drop(conn, stem)
+            _commit(conn)
+    except sqlite3.Error as exc:
+        _rollback(conn)
+        logger.debug("session index: pending removals kept for the next open: %s", exc)
+        _record_pending(root, stems)
+    with contextlib.suppress(OSError):
+        claim.unlink()
+    return conn
 
 
 def _drop(conn: _IndexConnection, stem: str) -> int:
@@ -466,14 +523,16 @@ def index_session(root: Path, session_id: str, *, timeout: float | None = None) 
 def forget_sessions(root: Path, session_ids: Iterable[str]) -> int:
     """Drop every row of *session_ids* from *root*'s index (the session-removal hook),
     erasing their terms from the FTS segments too. Returns how many sessions had rows.
-    Never creates an index; a busy index answers 0 and the next :func:`sync` drops the
-    rows of the snapshots that are gone."""
+    Never creates an index. A busy index answers 0 and the stems are recorded as
+    pending: the next :func:`open_index` of any kind (a save, a search) drops them."""
     stems = [sid for sid in session_ids if isinstance(sid, str) and is_valid_session_id(sid)]
     if not stems:
         return 0
     try:
         conn = open_index(root, create=False)
-    except IndexUnavailable:
+    except IndexUnavailable as exc:
+        if exc.busy:
+            _record_pending(root, stems)
         return 0
     if conn is None:
         return 0
@@ -489,6 +548,7 @@ def forget_sessions(root: Path, session_ids: Iterable[str]) -> int:
     except sqlite3.OperationalError as exc:
         _rollback(conn)
         if is_busy_error(exc):
+            _record_pending(root, stems)
             return 0
         raise
     finally:
@@ -500,6 +560,8 @@ def clear(root: Path) -> bool:
     sidecars: it is derived, and the next search rebuilds it. True when one existed and is
     now gone; the ``OSError`` propagates when it could not be removed."""
     path = index_path(root)
+    with contextlib.suppress(OSError):
+        pending_path(root).unlink()        # nothing is left to drop
     if not any(Path(str(path) + suffix).exists() for suffix in ("", *_SIDECARS)):
         return False
     _remove_files(path, strict=True)
@@ -508,7 +570,7 @@ def clear(root: Path) -> bool:
 
 __all__ = [
     "BATCH_SECONDS", "FTS5_MODULE", "HOOK_TIMEOUT", "INDEX_NAME", "IndexUnavailable",
-    "MAX_INDEX_SNAPSHOT_BYTES", "MAX_TURN_CHARS", "OPEN_TIMEOUT", "SCHEMA_VERSION", "TRACE",
-    "clear", "forget_sessions", "index_path", "index_session", "is_busy_error",
-    "is_corrupt_error", "open_index", "sync",
+    "MAX_INDEX_SNAPSHOT_BYTES", "MAX_TURN_CHARS", "OPEN_TIMEOUT", "PENDING_NAME",
+    "SCHEMA_VERSION", "TRACE", "clear", "forget_sessions", "index_path", "index_session",
+    "is_busy_error", "is_corrupt_error", "open_index", "pending_path", "sync",
 ]

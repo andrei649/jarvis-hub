@@ -130,6 +130,14 @@ def test_fish_completes_profile_names_then_the_command_path(fish, tmp_path):
     assert query(fish, tmp_path, parser, 'nerva -p work jobs doctor ', **env) == set()
 
 
+def test_fish_skips_the_attached_short_profile_form(fish, tmp_path):
+    # H574 review round 4: nerva.py accepts `-pwork`; completion treated it as the verb.
+    parser = build_parser()
+    root = {name for name, _ in completion_nodes(parser)[()]}
+    assert query(fish, tmp_path, parser, 'nerva -pwork ') == root
+    assert query(fish, tmp_path, parser, 'nerva -pwork jobs doc') == {'doctor'}
+
+
 def test_fish_completes_the_profile_equals_form(fish, tmp_path):
     # Review round 3: `nerva --profile=<TAB>` listed nothing in fish (bash handles it).
     home = _profiles(tmp_path)

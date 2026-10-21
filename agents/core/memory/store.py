@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from agents.core.memory import cjk_fts
+from agents.core.memory.private_db import ensure_private
 
 logger = logging.getLogger("jarvis.memory.store")
 
@@ -296,6 +297,9 @@ class MemoryStore:
         self._init_db()
 
     def _conn(self) -> sqlite3.Connection:
+        # H574 review: facts (and memory_fts' segmented copy of each) stay owner-only,
+        # never 0o666 & ~umask; the -wal/-shm sidecars take the main file's mode.
+        ensure_private(self._path)
         conn = sqlite3.connect(str(self._path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -469,16 +473,45 @@ class MemoryStore:
 
     def _upsert_sync(self, category: str, key: str, value: str, meta_json: str):
         with self._lock:
-            with self._conn() as conn:
-                conn.execute("""
-                    INSERT INTO memory (category, key, value, metadata)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(category, key) DO UPDATE SET
-                        value=excluded.value,
-                        metadata=excluded.metadata,
-                        updated_at=datetime('now')
-                """, (category, key, value, meta_json))
-                self._index_row(conn, category, key)
+            conn = self._conn()
+            try:
+                with conn:
+                    replaced = conn.execute(
+                        "SELECT 1 FROM memory WHERE category=? AND key=?", (category, key)
+                    ).fetchone() is not None
+                    conn.execute("""
+                        INSERT INTO memory (category, key, value, metadata)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(category, key) DO UPDATE SET
+                            value=excluded.value,
+                            metadata=excluded.metadata,
+                            updated_at=datetime('now')
+                    """, (category, key, value, meta_json))
+                    self._index_row(conn, category, key)
+                if replaced:
+                    # H574 review: the overwritten value's pages sit in the WAL until a
+                    # truncating checkpoint, exactly as a deleted fact's do.
+                    self._truncate_wal(conn)
+            finally:
+                conn.close()
+
+    @staticmethod
+    def _truncate_wal(conn: sqlite3.Connection) -> bool:
+        """After a commit that overwrote or deleted a fact: move the (zeroed) pages into
+        the file and empty the write-ahead log, so the old text is gone from both. False
+        (logged) when a reader kept the checkpoint from completing: the old frames then
+        stay in the log until the next truncating checkpoint."""
+        try:
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        except sqlite3.Error as exc:
+            logger.warning("memory.db checkpoint failed; old values may stay in the WAL: %s",
+                           exc)
+            return False
+        if row is not None and row[0]:
+            logger.warning("memory.db checkpoint busy; old values stay in the WAL until "
+                           "the next one")
+            return False
+        return True
 
     async def get(self, category: str, key: str) -> Optional[dict]:
         loop = asyncio.get_event_loop()
@@ -549,8 +582,7 @@ class MemoryStore:
                     # H574: the pre-delete pages still sit in the write-ahead log until a
                     # checkpoint; TRUNCATE moves the zeroed pages into the file and empties
                     # the log, so the fact is gone from both.
-                    with contextlib.suppress(sqlite3.Error):
-                        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    self._truncate_wal(conn)
                 return deleted
             finally:
                 conn.close()

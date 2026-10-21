@@ -246,6 +246,17 @@ def test_zsh_skips_the_equals_form_before_the_verb(tmp_path):
 
 
 @pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_attached_short_profile_form_is_skipped_before_the_verb(tmp_path, shell):
+    # H574 review round 4: nerva.py accepts `-pwork`; completion treated it as the verb.
+    if not shutil.which(shell):
+        pytest.skip(f"{shell} is not installed")
+    script = _script(tmp_path, shell, build_parser())
+    assert _complete(shell, script, "-pwork", "jobs", "doc") == ["doctor"]
+    assert "jobs" in _complete(shell, script, "-pwork", "")
+    assert _complete(shell, script, "-pwork", "-p", "lab", "jobs", "doc") == ["doctor"]
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
 def test_profile_root_falls_back_to_the_generated_install_root(tmp_path, shell):
     if not shutil.which(shell):
         pytest.skip(f"{shell} is not installed")
