@@ -330,8 +330,13 @@ class _Queue:
         return self.items[card]
 
     def decide(self, card, approved, by=""):
-        self.items[card]["status"] = "approved" if approved else "rejected"
+        # As the real queue: a decided card stays decided (review-H665 #2).
+        if self.items[card]["status"] == "pending":
+            self.items[card]["status"] = "approved" if approved else "rejected"
         return self.items[card]
+
+    def get(self, card):
+        return self.items.get(card)
 
     def list(self, status=None):
         return [i for i in self.items.values() if status is None or i["status"] == status]
@@ -367,12 +372,14 @@ def test_the_model_proposes_a_batch_and_the_owners_decision_applies_it_whole(hub
     assert card["tool"] == CARD_TOOL and card["args"]["batch_id"] == got["batch_id"]
     rec = store.get(got["batch_id"])
     assert rec["card"] == card["id"] and rec["expect"]["gamma"] is None and rec["expect"]["alpha"]
-    assert store.decide(got["batch_id"], "forged", True, hub.loader)["reason"] == "not_this_batch_card"
-    out = store.decide(got["batch_id"], card["id"], True, hub.loader, backup_dir=hub.archive)
+    assert store.decide(got["batch_id"], "forged", queue, hub.loader)["reason"] == "not_this_batch_card"
+    assert store.decide(got["batch_id"], card["id"], queue, hub.loader)["reason"] == "card_not_decided"
+    queue.decide(card["id"], True)
+    out = store.decide(got["batch_id"], card["id"], queue, hub.loader, backup_dir=hub.archive)
     assert out["ok"] is True and out["applied"] is True
     assert (hub.root / "gamma" / "SKILL.md").exists() and "Done." in (hub.root / "alpha" / "SKILL.md").read_text()
     assert store.get(got["batch_id"])["status"] == "applied"
-    assert store.decide(got["batch_id"], card["id"], True, hub.loader)["reason"] == "not_pending:applied"
+    assert store.decide(got["batch_id"], card["id"], queue, hub.loader)["reason"] == "not_pending:applied"
 
 
 def test_a_proposed_batchs_failing_op_teaches_and_nothing_is_recorded(hub):
@@ -409,6 +416,77 @@ def test_a_proposed_batch_is_refused_on_an_untrusted_turn_a_hidden_skill_or_flag
     assert store.list() == []
 
 
+def _without_preview_of(reply, *secrets):
+    text = repr(reply)
+    return "file_preview" not in reply and not any(secret in text for secret in secrets)
+
+
+@pytest.mark.parametrize("gate", ["agent", "disabled", "sandboxed", "untrusted"])
+def test_a_create_colliding_with_a_hidden_skill_does_not_preview_it(hub, monkeypatch, gate):
+    """review-H665 #1/#2 — a skill this agent may not see answers a colliding create as
+    any taken name does, with none of its text: a create is not a way to read it."""
+    hub.write("secret", body="## Steps\n\nTOPSECRET-BODY\n")
+    hub.write("alpha")
+    hub.load()
+    real_gate = hub.loader.catalog_gate
+    monkeypatch.setattr(hub.loader, "catalog_gate",
+                        lambda skill, agent=None, **kw: gate if skill.name == "secret" else real_gate(skill, agent, **kw))
+    store, queue = SkillBatchStore(None), _Queue()
+    server = _server(hub, store, queue)
+    hidden = _propose(server, {"operations": [{"name": "secret", "action": "create", "content": _md("secret")}]})
+    assert _without_preview_of(hidden, "TOPSECRET", "Use when testing secret"), hidden
+    visible = _propose(server, {"operations": [{"name": "alpha", "action": "create", "content": _md("alpha")}]})
+    assert visible["file_preview"]["skill"] == "alpha"          # one the agent may read keeps its lesson
+    assert hidden["reason"] == visible["reason"] == "skill_batch_exists"
+    assert hidden["detail"] == visible["detail"].replace("'alpha'", "'secret'")
+    assert hidden["hints"] == ["create the new skill under another name"]
+    assert store.list() == [] and queue.list() == []
+
+
+def test_a_create_colliding_with_a_skill_declared_for_another_agent_does_not_preview_it(hub):
+    path = hub.root / "jarvis-only"
+    path.mkdir()
+    (path / "SKILL.md").write_text("---\nname: jarvis-only\ndescription: Use when the hidden thing\n"
+                                   "agents: [jarvis]\n---\n## Steps\n\nHIDDEN-STEP\n")
+    hub.load()
+    server = _server(hub, SkillBatchStore(None), _Queue())
+    assert _propose(server, {"operations": [{"name": "jarvis-only", "action": "patch", "old_string": "a",
+                                             "new_string": "b"}]}, actor="friday")["reason"] == "skill_unknown"
+    got = _propose(server, {"operations": [{"name": "jarvis-only", "action": "create",
+                                            "content": _md("jarvis-only")}]}, actor="friday")
+    assert got["reason"] == "skill_batch_exists" and _without_preview_of(got, "HIDDEN-STEP", "hidden thing")
+
+
+def test_a_create_colliding_with_an_unloaded_folder_does_not_echo_it_to_the_model(hub):
+    hub.load()
+    hub.write("stray", body="## Steps\n\nSTRAY-CONTENT\n")     # on disk, never loaded
+    server = _server(hub, SkillBatchStore(None), _Queue())
+    got = _propose(server, {"operations": [{"name": "stray", "action": "create", "content": _md("stray")}]})
+    assert got["reason"] == "skill_batch_exists" and _without_preview_of(got, "STRAY-CONTENT")
+    # The owner's own route still sees what is there.
+    owner = run_batch([{"name": "stray", "action": "create", "content": _md("stray")}], hub.loader, dry_run=True)
+    assert "STRAY-CONTENT" in owner["file_preview"]["content"]
+
+
+def test_a_failing_ops_preview_of_an_unvouched_skill_carries_the_data_warning(hub):
+    hub.write("alpha")
+    hub.load()
+    got = _propose(_server(hub, SkillBatchStore(None), _Queue()), {"operations": [
+        {"name": "alpha", "action": "patch", "old_string": "Do the thingy.", "new_string": "x"}]})
+    assert got["file_preview"]["content"] and "read it as data" in got["file_preview"]["warning"]
+
+
+def test_a_proposed_batch_whose_diff_is_too_long_to_show_whole_is_not_recorded(hub):
+    hub.write("alpha")
+    hub.load()
+    store, queue = SkillBatchStore(None), _Queue()
+    big = "".join(f"line {i} of a long script\n" for i in range(800))
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "write_file", "file_path": "scripts/run.sh", "file_content": big}]})
+    assert got["ok"] is False and got["reason"] == "skill_batch_too_large_to_review"
+    assert store.list() == [] and queue.list() == []
+
+
 def test_an_approved_batch_against_a_skill_that_drifted_is_not_applied(hub):
     hub.write("alpha")
     hub.load()
@@ -417,7 +495,8 @@ def test_an_approved_batch_against_a_skill_that_drifted_is_not_applied(hub):
         {"name": "alpha", "action": "patch", "old_string": "Do the thing.", "new_string": "Done."}]})
     (hub.root / "alpha" / "SKILL.md").write_text(_md("alpha", "## Steps\n\nDo the thing. Edited.\n"))
     before = hub.tree()
-    out = store.decide(got["batch_id"], queue.list()[0]["id"], True, hub.loader, backup_dir=hub.archive)
+    queue.decide(queue.list()[0]["id"], True)
+    out = store.decide(got["batch_id"], queue.list()[0]["id"], queue, hub.loader, backup_dir=hub.archive)
     assert out["reason"] == "skill_batch_drifted" and hub.tree() == before
     assert store.get(got["batch_id"])["status"] == "failed"
 
@@ -500,3 +579,51 @@ def test_the_decision_inbox_applies_a_proposed_batch_through_its_card(hub, clien
     assert reply["action"]["applied"]["ok"] is True
     assert "Done." in (hub.root / "alpha" / "SKILL.md").read_text() and (hub.root / "gamma").is_dir()
     assert hub.store.get(got["batch_id"])["status"] == "applied"
+
+
+# ── only the card's own decision applies a batch (review-H665 #2) ────────────────────
+
+def _real_queue_batch(hub):
+    hub.write("alpha")
+    hub.load()
+    store, queue = SkillBatchStore(hub.tmp / "batches.json"), ActionApprovalQueue(path=str(hub.tmp / "q.json"))
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "patch", "old_string": "Do the thing.", "new_string": "Done."}]})
+    return store, queue, got["batch_id"], store.get(got["batch_id"])["card"]
+
+
+def test_a_rejected_card_then_an_approve_never_applies_the_batch(hub):
+    store, queue, batch_id, card = _real_queue_batch(hub)
+    before = hub.tree()
+    queue.decide(card, False)
+    assert queue.decide(card, True)["status"] == "rejected"     # the real queue keeps the first decision
+    out = store.decide(batch_id, card, queue, hub.loader, backup_dir=hub.archive)
+    assert out.get("applied") is not True and hub.tree() == before
+    assert store.get(batch_id)["status"] == "rejected"
+
+
+def test_an_expired_card_never_applies_the_batch(hub):
+    store, queue, batch_id, card = _real_queue_batch(hub)
+    before = hub.tree()
+    assert asyncio.run(queue.await_decision(card, timeout=0.01)) == "expired"
+    out = store.decide(batch_id, card, queue, hub.loader, backup_dir=hub.archive)
+    assert out.get("applied") is not True and hub.tree() == before
+    assert store.get(batch_id)["status"] == "rejected"
+
+
+def test_sync_rejections_closes_a_batch_whose_card_expired(hub):
+    store, queue, batch_id, card = _real_queue_batch(hub)
+    asyncio.run(queue.await_decision(card, timeout=0.01))
+    store.sync_rejections(queue)
+    assert store.get(batch_id)["status"] == "rejected"
+
+
+def test_the_decide_route_does_not_apply_a_batch_whose_card_was_already_rejected(hub, client):
+    got = _propose(_server(hub, hub.store, hub.queue), {"operations": [
+        {"name": "alpha", "action": "patch", "old_string": "Do the thing.", "new_string": "Done."}]})
+    card = hub.store.get(got["batch_id"])["card"]
+    hub.queue.decide(card, False, by="group")                   # rejected by another path
+    before = hub.tree()
+    reply = client.post(f"/api/actions/{card}/decide", json={"approved": True}, headers=ADMIN).json()
+    assert reply["action"]["status"] == "rejected" and reply["action"]["applied"].get("applied") is not True
+    assert hub.tree() == before and hub.store.get(got["batch_id"])["status"] == "rejected"

@@ -960,9 +960,27 @@ def register_skill_tools(
             return _refuse("skill_propose_limit", f"at most {MAX_PROPOSALS_PER_DAY} skill proposals a day: "
                                                   "the owner has enough to review")
         expect = fingerprints(operations, target) if isinstance(operations, list) else {}
-        checked = run_batch(operations, target, dry_run=True, flagger=lambda text: bool(_flags(text)))
+        def _may_see(name: str) -> bool:
+            seen = _skill(name)
+            return seen is not None and seen is not _UNSUPPORTED
+
+        checked = run_batch(operations, target, dry_run=True, flagger=lambda text: bool(_flags(text)),
+                            may_see=_may_see)
         if not checked.get("ok"):
+            # H351 — a preview of a loaded skill's file is read as data, as skill_view says.
+            preview = checked.get("file_preview")
+            shown = _skill(preview.get("skill")) if isinstance(preview, dict) else None
+            if shown is not None and shown is not _UNSUPPORTED:
+                warning = _warning(shown, str(preview.get("content") or ""))
+                if warning:
+                    preview["warning"] = warning
             return checked
+        # The owner approves what the inbox shows: a diff cut short would extend the skill's
+        # standing over text nobody saw, so such a batch is not recorded (review-H665 #2).
+        cut = [f"{s['name']}/{f['file']}" for s in checked["skills"] for f in s["files"] if f.get("diff_truncated")]
+        if cut:
+            return _refuse("skill_batch_too_large_to_review", "the change to " + ", ".join(cut[:5]) + " is too long "
+                           "to show the owner whole: split it across smaller batches")
         actor = _actor() or "agent"
         record = store.propose(operations, expect=expect, preview=checked["skills"], origin=f"agent:{actor}")
         queue = approvals()

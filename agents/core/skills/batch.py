@@ -310,7 +310,7 @@ def _skills_root(create_root: Path | None) -> Path:
 
 
 def _resolve(name: str, index: int, op: dict, loader: Any, targets: dict[str, _Target],
-             create_root: Path) -> _Target:
+             create_root: Path, may_see: Callable[[str], bool] | None = None) -> _Target:
     if name in targets:
         target = targets[name]
         if op["action"] == "create":       # normalize() already refused this order
@@ -321,6 +321,12 @@ def _resolve(name: str, index: int, op: dict, loader: Any, targets: dict[str, _T
         live = create_root / name
         existing = skills.get(name)
         if existing is not None or live.exists():
+            # review-H665 #1/#2 — the governed path previews only a skill its caller may
+            # read: a hidden skill, or a folder on disk the loader did not load, answers
+            # as a taken name and nothing more (a create is not a way to read it).
+            if may_see is not None and (existing is None or not may_see(name)):
+                raise BatchError("skill_batch_exists", f"a skill named {name!r} already exists", index=index,
+                                 op=op, hints=["create the new skill under another name"])
             where = Path(existing.path) if existing is not None else live
             preview = None
             try:
@@ -634,12 +640,14 @@ def fingerprints(operations: list[dict], loader: Any) -> dict[str, str | None]:
 
 def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, backup_dir: Path | None = None,
               dry_run: bool = False, expect: dict[str, str | None] | None = None,
-              flagger: Callable[[str], bool] | None = None) -> dict:
+              flagger: Callable[[str], bool] | None = None, may_see: Callable[[str], bool] | None = None) -> dict:
     """Check, stage and (unless ``dry_run``) atomically apply ``operations``. Never raises.
 
     ``expect`` pins each touched skill to the tree fingerprint a reviewer saw (a governed
     batch): a skill that changed since makes the batch ``skill_batch_drifted``. ``flagger``
-    refuses text that reads like an instruction to the model (the governed path)."""
+    refuses text that reads like an instruction to the model (the governed path).
+    ``may_see`` (the governed path) says which loaded skills the caller may read: a create
+    colliding with any other name is refused without a preview of what is there."""
     try:
         ops = normalize(operations)
     except BatchError as exc:
@@ -661,7 +669,7 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
             try:
                 last_index: dict[str, int] = {}
                 for index, op in enumerate(ops):
-                    target = _resolve(op["name"], index, op, loader, targets, root)
+                    target = _resolve(op["name"], index, op, loader, targets, root, may_see)
                     if target.stage_root is None:
                         _stage(target, batch_id)
                         if expect is not None and target.existing and expect.get(target.name) != target.before_fp:
@@ -825,17 +833,26 @@ class SkillBatchStore(JsonStore):
                     except Exception:
                         logger.debug("superseded batch card %s not withdrawn", older["card"], exc_info=True)
 
-    def decide(self, batch_id: str, card: str, approved: bool, loader: Any, *, create_root: Path | None = None,
+    def decide(self, batch_id: str, card: str, queue: Any, loader: Any, *, create_root: Path | None = None,
                backup_dir: Path | None = None) -> dict:
-        """The owner's decision on ``card``: an approval applies the batch now, against the
-        trees it was checked on; a rejection closes it. Only the bound card decides."""
+        """The owner's decision on ``card``, read from the approval ``queue`` itself (never
+        from a caller's claim — review-H665 #2): an approved card applies the batch now,
+        against the trees it was checked on; a rejected or expired card closes it. Only the
+        bound card decides."""
         with self._apply_lock:
             rec = self.get(batch_id)
             if rec is None or not card or rec.get("card") != card:
                 return {"ok": False, "reason": "not_this_batch_card"}
             if rec.get("status") != STATUS_PENDING:
                 return {"ok": False, "reason": f"not_pending:{rec.get('status')}"}
-            if not approved:
+            getter = getattr(queue, "get", None)
+            item = getter(card) if callable(getter) else None
+            if not isinstance(item, dict) or item.get("tool") != CARD_TOOL:
+                return {"ok": False, "reason": "not_this_batch_card"}
+            status = str(item.get("status") or "")
+            if status == "pending":
+                return {"ok": False, "reason": "card_not_decided"}
+            if status != "approved":
                 self.mark(batch_id, STATUS_REJECTED)
                 return {"ok": True, "applied": False, "status": STATUS_REJECTED}
             out = run_batch(rec["operations"], loader, create_root=create_root, backup_dir=backup_dir,
@@ -847,12 +864,13 @@ class SkillBatchStore(JsonStore):
             return out
 
     def sync_rejections(self, queue) -> None:
-        """A card rejected by another path (a group reject, a reset) closes its batch."""
+        """A card rejected by another path (a group reject, a reset), or expired, closes its batch."""
         lister = getattr(queue, "list", None)
         if not callable(lister):
             return
         try:
-            rejected = {str(i.get("id")) for i in lister("rejected") if i.get("tool") == CARD_TOOL}
+            rejected = {str(i.get("id")) for status in ("rejected", "expired") for i in lister(status)
+                        if i.get("tool") == CARD_TOOL}
         except Exception:
             return
         for rec in self.list(STATUS_PENDING):

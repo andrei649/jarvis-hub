@@ -153,7 +153,9 @@ async def actions_decide(action_id: str, req: Request):
             return nocache_json({"ok": True, "action": {**item, "note": "skill batches are not available"}})
         from agents.core.paths import data_path
 
-        outcome = await asyncio.to_thread(store.decide, batch_id, action_id, body["approved"], loader,
+        # review-H665 #2 — the card's own status decides, not the request: an approve
+        # posted after a rejection or an expiry never applies the batch.
+        outcome = await asyncio.to_thread(store.decide, batch_id, action_id, q, loader,
                                           backup_dir=data_path("skills", "batch-archive"))
         return nocache_json({"ok": True, "action": {**item, "applied": outcome}})
     if item.get("tool") == "skill.patch_proposal":
