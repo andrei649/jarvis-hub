@@ -162,10 +162,18 @@ describe('the pointer', () => {
       <PointerView pointer={readPointer(tip())} onClose={() => {}} />
     </React.Profiler>);
     expect(screen.getByTestId('pointer-ring')).toBeTruthy();
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    // Re-measures run on the next animation frame, so wait for a frame (not just a macrotask):
+    // the mount's own DOM changes settle first, and each change below is really re-measured.
+    const nextFrame = () => act(async () => {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await nextFrame();
+    await nextFrame();
     const settled = commits;
     for (let i = 0; i < 3; i += 1) {
-      await act(async () => { document.body.appendChild(document.createElement('div')); await new Promise((r) => setTimeout(r, 0)); });
+      await act(async () => { document.body.appendChild(document.createElement('div')); });
+      await nextFrame();
     }
     expect(commits).toBe(settled);
   });
