@@ -8,7 +8,15 @@ export function effectiveTaskState(task: Task): string {
 }
 
 export function runningTasks(tasks: Task[] | null | undefined): Task[] {
-  return Array.isArray(tasks)
-    ? tasks.filter((task) => effectiveTaskState(task) === 'running')
-    : [];
+  if (!Array.isArray(tasks) || tasks.length === 0) return [];
+  // Bolt Optimization: Single indexed loop avoids callback closure allocations from .filter()
+  // during canvas frame rendering (burst.tsx, mesh.tsx) and high-frequency UI updates.
+  const out: Task[] = [];
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i];
+    if (effectiveTaskState(task) === 'running') {
+      out.push(task);
+    }
+  }
+  return out;
 }

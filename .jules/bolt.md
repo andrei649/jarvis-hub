@@ -51,3 +51,7 @@
 ## 2026-04-12 - O(1) Set Lookups for Public Route Validation in HUD Routing
 **Learning:** `HUD_MODES` array scans via `HUD_MODES.includes(...)` on every route parsing call during history navigation, route changes, and external sync store listeners execute O(N) comparisons on every route update.
 **Action:** Export `HUD_MODES_SET = new Set<string>(HUD_MODES)` in `hud-modes.ts` to perform O(1) Set membership lookups in `parseHudRoute`.
+
+## 2026-04-13 - Function Closure Allocations in Shared Task-State Helper runningTasks
+**Learning:** `runningTasks` in `frontend/src/task-state.ts` is called across canvas 60 FPS animation loops (`NeuralBurst`, `NeuralMesh`) and topbar status rendering. Calling `.filter()` inside `runningTasks` allocates a callback closure on every animation tick and status update cycle.
+**Action:** Use an indexed `for` loop in shared utility helpers like `runningTasks` so all dependent components avoid callback closure allocations during frame ticks and state updates.
