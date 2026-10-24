@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -897,3 +898,42 @@ def test_a_reset_names_the_switch_rows_it_keeps():
     kept = settings_db.reset_kept("skills")
     assert "disabled" in kept and "channel_disabled" in kept
     assert {"skills.disabled", "skills.channel_disabled"} <= set(settings_db.reset_kept_all())
+
+
+def test_nerva_skills_list_shows_usage_when_the_hub_reports_it():
+    """H354: the listing names how often a skill ran and when it last did; a hub without
+    the usage block (an older hub) lists the switches exactly as before."""
+    listing = {"skills": {
+        "Spotify": {"disabled": False, "disabled_channels": [],
+                    "usage": {"use_count": 3, "view_count": 0, "patch_count": 1,
+                              "last_used_at": "2026-10-20T08:15:00+00:00"}},
+        "brief": {"disabled": False, "disabled_channels": [],
+                  "usage": {"use_count": 0, "view_count": 0, "patch_count": 0, "last_used_at": None}},
+    }}
+    code, out, _err, _calls = _cli(["skills", "list"], {"GET /skills": listing})
+    assert code == 0 and out.splitlines() == ["brief: on · never used",
+                                              "Spotify: on · used 3× (last 2026-10-20 08:15 UTC) · patched 1×"]
+
+
+def test_nerva_skills_verify_runs_one_skill_case_on_the_hub():
+    """H354: `nerva skills verify <name>` is the owner's trigger for the reality harness's
+    case of one skill; a red probe is reported and exits 1, and the name is URL-encoded."""
+    path = "/api/capabilities/skills/Weather%20Intel/verify"
+    green = {"ok": True, "skill": "Weather Intel", "capability_id": "skill:Weather Intel",
+             "ref": "reality-v1:skill:Weather Intel", "passed": True, "detail": "contract held",
+             "harness_id": "reality-v1", "verified_at": "2026-10-24T10:00:00+00:00",
+             "promotion_scope": "in_process_only", "record": {"state": "verified"}}
+    code, out, _err, calls = _cli(["skills", "verify", "Weather Intel"], {f"POST {path}": green})
+    assert code == 0 and calls == [("POST", path, {})]
+    assert out.splitlines() == [
+        "Weather Intel: passed — contract held (reality-v1:skill:Weather Intel)",
+        "  record verified, verified at 2026-10-24T10:00:00+00:00; the verdict lives until the hub's next boot"]
+    red = {**green, "passed": False, "detail": "contract NOT held", "verified_at": None, "record": {"state": "seam"}}
+    code, out, _err, _calls = _cli(["skills", "verify", "Weather Intel"], {f"POST {path}": red})
+    assert code == 1 and out.splitlines() == [
+        "Weather Intel: FAILED — contract NOT held (reality-v1:skill:Weather Intel)",
+        "  record seam; the verdict lives until the hub's next boot"]
+    code, out, _err, _calls = _cli(["skills", "verify", "Weather Intel", "--json"], {f"POST {path}": green})
+    assert code == 0 and json.loads(out)["passed"] is True
+    code, _out, err, _calls = _cli(["skills", "verify", "Weather Intel"], {f"POST {path}": {"error": "x"}})
+    assert code == 1 and "no verdict" in err

@@ -437,6 +437,7 @@
   "POST /api/canvas/clear": "canvas_clear_api_canvas_clear_post",
   "POST /api/canvas/post": "canvas_post_api_canvas_post_post",
   "POST /api/canvas/{el_id}/pin": "canvas_pin_api_canvas__el_id__pin_post",
+  "POST /api/capabilities/skills/{name}/verify": "verify_skill_capability_api_capabilities_skills__name__verify_post",
   "POST /api/capture/clear": "capture_clear_api_capture_clear_post",
   "POST /api/capture/ingest": "capture_ingest_api_capture_ingest_post",
   "POST /api/capture/surfaces": "capture_set_surfaces_api_capture_surfaces_post",

@@ -7402,6 +7402,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/capabilities/skills/{name}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Skill Capability
+         * @description H354 — run the reality harness's case for one loaded skill, now, and answer with
+         *     the record it leaves behind.
+         *
+         *     The same probe the CI lane runs (``skill_reality_case``), through the same promotion
+         *     path (``run_reality`` → ``record_verification``): a green probe promotes the skill's
+         *     record to VERIFIED in this process, a red one un-verifies it. The verdict lives until
+         *     the next boot (``promotion_scope: in_process_only``): nothing is written to disk and
+         *     the durable evidence ledger is not consulted (GAP-9's V3 constraint). One skill, one
+         *     in-process probe, no network — bounded by construction. 404 for a name the loader
+         *     does not hold; the name is echoed in the body, never logged.
+         */
+        post: operations["verify_skill_capability_api_capabilities_skills__name__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/capabilities": {
         parameters: {
             query?: never;
@@ -26950,6 +26979,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    verify_skill_capability_api_capabilities_skills__name__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

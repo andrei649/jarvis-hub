@@ -248,3 +248,60 @@ def test_marketplace_install_zip_success(monkeypatch):
     resp = client.post("/api/skills/marketplace/install-zip", json={"zip_base64": payload}, headers=_HDR)
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# GET /skills — per-skill usage counters (H354)
+# ---------------------------------------------------------------------------
+
+def _usage_orch(tmp_path):
+    """A loader with two skills and a real usage sidecar, the way the orchestrator wires it."""
+    from types import SimpleNamespace
+
+    from agents.core.skills.usage import SkillUsageStore
+
+    def skill(name):
+        return SimpleNamespace(name=name, version="1.0", description=name, agents=["jarvis"],
+                               commands_meta={}, hermes_meta=None, platforms=None, path=None,
+                               module=object(), trusted=True)
+
+    orch = SimpleNamespace(skills=SimpleNamespace(skills={"Weather Intel": skill("Weather Intel"),
+                                                          "Spotify": skill("Spotify")}))
+    orch.skill_usage = SkillUsageStore(tmp_path / "skill_usage.json")
+    return orch
+
+
+def test_skills_list_carries_usage_counters_and_last_used(monkeypatch, tmp_path):
+    orch = _usage_orch(tmp_path)
+    store = orch.skill_usage
+    store.bump("Weather Intel", "use")
+    store.bump("Weather Intel", "use")
+    store.bump("Weather Intel", "view")
+    store.bump("Weather Intel", "patch")
+    monkeypatch.setattr(web, "orch", orch)
+    body = TestClient(web.app).get("/skills").json()
+
+    weather = body["skills"]["Weather Intel"]["usage"]
+    rec = store.get("Weather Intel")
+    assert weather == {
+        "use_count": 2, "view_count": 1, "patch_count": 1,
+        "last_used_at": rec["last_used_at"], "last_viewed_at": rec["last_viewed_at"],
+        "last_patched_at": rec["last_patched_at"],
+        "origin": "bundled", "state": "active", "pinned": False,
+    }
+    assert weather["last_used_at"] and weather["last_viewed_at"] and weather["last_patched_at"]
+    # A skill the sidecar never saw is reported with zeros — not omitted, not an error.
+    spotify = body["skills"]["Spotify"]["usage"]
+    assert spotify["use_count"] == spotify["view_count"] == spotify["patch_count"] == 0
+    assert spotify["last_used_at"] is None and spotify["origin"] == "bundled"
+    # Reading the listing writes nothing: the untouched skill still has no record.
+    assert store.get("Spotify") is None
+
+
+def test_skills_list_usage_is_zero_when_the_sidecar_is_absent(monkeypatch, tmp_path):
+    orch = _usage_orch(tmp_path)
+    orch.skill_usage = None               # the orchestrator's learning init failed
+    monkeypatch.setattr(web, "orch", orch)
+    body = TestClient(web.app).get("/skills").json()
+    assert body["skills"]["Spotify"]["usage"]["use_count"] == 0
+    assert body["skills"]["Spotify"]["usage"]["last_used_at"] is None

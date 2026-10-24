@@ -255,6 +255,49 @@ async def capabilities():
     return nocache_json(snapshot(orch))
 
 
+@router.post("/api/capabilities/skills/{name}/verify", dependencies=[Depends(admin_guard)])
+async def verify_skill_capability(name: str):
+    """H354 — run the reality harness's case for one loaded skill, now, and answer with
+    the record it leaves behind.
+
+    The same probe the CI lane runs (``skill_reality_case``), through the same promotion
+    path (``run_reality`` → ``record_verification``): a green probe promotes the skill's
+    record to VERIFIED in this process, a red one un-verifies it. The verdict lives until
+    the next boot (``promotion_scope: in_process_only``): nothing is written to disk and
+    the durable evidence ledger is not consulted (GAP-9's V3 constraint). One skill, one
+    in-process probe, no network — bounded by construction. 404 for a name the loader
+    does not hold; the name is echoed in the body, never logged."""
+    orch = get_orch()
+    loader = getattr(orch, "skills", None) if orch else None
+    skills = getattr(loader, "skills", None) if loader is not None else None
+    if not orch or not isinstance(skills, dict):
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    if name not in skills:
+        return nocache_json({"error": f"skill '{name}' is not loaded", "reason": "unknown_skill"},
+                            status_code=404)
+    from dataclasses import asdict
+
+    from agents.core.observability.capability_registry import build_records
+    from agents.core.observability.reality_harness import run_reality, skill_reality_case
+
+    case = skill_reality_case(orch, name)
+    run = await run_reality([case])
+    result = run["results"][0]
+    record = next((r for r in build_records(orch) if r.id == case.capability_id), None)
+    return nocache_json({
+        "ok": True,
+        "skill": name,
+        "capability_id": case.capability_id,
+        "ref": case.ref,
+        "passed": bool(result["passed"]),
+        "detail": result["detail"],
+        "harness_id": run["harness_id"],
+        "verified_at": record.last_verified if record is not None else None,
+        "promotion_scope": "in_process_only",
+        "record": asdict(record) if record is not None else None,
+    })
+
+
 @router.get("/v1/capabilities", dependencies=[Depends(user_guard)])
 async def client_protocol_capabilities(request: Request):
     """Static mounted chat/session wire contract, separate from live readiness."""

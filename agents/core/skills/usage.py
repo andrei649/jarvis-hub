@@ -150,7 +150,53 @@ class SkillUsageStore(JsonStore):
                 by_origin[r.get("origin", "?")] = by_origin.get(r.get("origin", "?"), 0) + 1
             return {"total": len(self._items), "by_state": by_state, "by_origin": by_origin}
 
+    def summary(self, name: str) -> dict:
+        """The owner-facing counters of one skill (see :func:`usage_summary`)."""
+        return usage_summary(self, name)
 
-__all__ = ["SkillUsageStore", "latest_activity_at",
+
+def usage_summary(store: Any, name: str) -> dict:
+    """H354 — the counters the owner reads: how often a skill ran, was viewed and was
+    patched, and when last; plus provenance, lifecycle state and the pin.
+
+    Read-only: ``store.get`` never creates a row, so listing a skill leaves the sidecar
+    exactly as it was. Zeros (origin ``bundled``, state ``active``) for a skill the sidecar
+    never saw, and for no usable store at all (the orchestrator's learning init failed, or
+    a test double stands in) — a counter the owner asked for must never fail the listing.
+    """
+    rec = None
+    get = getattr(store, "get", None)
+    if callable(get):
+        try:
+            rec = get(name)
+        except Exception:
+            logger.debug("usage read skipped for %s", name, exc_info=True)
+    if not isinstance(rec, dict):
+        rec = {}
+
+    def _count(key: str) -> int:
+        try:
+            return int(rec.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _when(key: str) -> str | None:
+        value = rec.get(key)
+        return str(value) if value else None
+
+    return {
+        "use_count": _count("use_count"),
+        "view_count": _count("view_count"),
+        "patch_count": _count("patch_count"),
+        "last_used_at": _when("last_used_at"),
+        "last_viewed_at": _when("last_viewed_at"),
+        "last_patched_at": _when("last_patched_at"),
+        "origin": str(rec.get("origin") or ORIGIN_BUNDLED),
+        "state": str(rec.get("state") or STATE_ACTIVE),
+        "pinned": bool(rec.get("pinned")),
+    }
+
+
+__all__ = ["SkillUsageStore", "latest_activity_at", "usage_summary",
            "STATE_ACTIVE", "STATE_STALE", "STATE_ARCHIVED",
            "ORIGIN_AGENT", "ORIGIN_IMPORT", "ORIGIN_BUNDLED"]

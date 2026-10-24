@@ -403,6 +403,11 @@ def build_parser() -> argparse.ArgumentParser:
         switch.add_argument("--category", help="every skill of this category instead of one skill")
         switch.add_argument("--channel", help="only on this channel (telegram, voice, web, ...)")
         switch.add_argument("--json", action="store_true")
+    # H354 — the owner's trigger for one skill's reality-harness case.
+    verify = skills_verbs.add_parser(
+        "verify", help="run the reality harness's case for one loaded skill on the hub, now (admin)")
+    verify.add_argument("name", help="the skill's name as `nerva skills list` shows it")
+    verify.add_argument("--json", action="store_true")
 
     estop = verbs.add_parser("estop", help="the global emergency stop")
     estop_verbs = estop.add_subparsers(dest="action", required=True, metavar="action")
@@ -2467,9 +2472,12 @@ def _skill_files(raw: str) -> list[Path] | None:
 
 def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
-    H329 — ``nerva skills list | off | on | config``: running-hub skill switches."""
+    H329 — ``nerva skills list | off | on | config``: running-hub skill switches.
+    H354 — ``nerva skills verify``: run one skill's reality-harness case on the hub."""
     if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
+    if ns.action == "verify":
+        return _skill_verify(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
         Problem,
@@ -2580,6 +2588,55 @@ def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def _skill_usage_suffix(usage: Any) -> str:
+    """H354 — `` · used 3× (last 2026-10-20 08:15 UTC) · patched 1×``, or `` · never used``;
+    nothing when the hub reports no counters (an older hub)."""
+    if not isinstance(usage, Mapping):
+        return ""
+    try:
+        used, patched = int(usage.get("use_count") or 0), int(usage.get("patch_count") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if not used:
+        return " · never used"
+    text = f" · used {used}×"
+    last = usage.get("last_used_at")
+    if isinstance(last, str) and last:
+        from datetime import UTC, datetime
+
+        try:
+            when = datetime.fromisoformat(last)
+            when = when.astimezone(UTC) if when.tzinfo else when.replace(tzinfo=UTC)
+            text += f" (last {when.strftime('%Y-%m-%d %H:%M')} UTC)"
+        except ValueError:
+            text += f" (last {last})"
+    if patched:
+        text += f" · patched {patched}×"
+    return text
+
+
+def _skill_verify(ns: argparse.Namespace, ctx: Context) -> int:
+    """H354 — ``nerva skills verify <name>``: the hub runs the reality harness's case for
+    that skill now; a green probe marks its capability record VERIFIED until the hub's
+    next boot, a red one leaves it ref-only. Exit 1 on a red probe, so a script can tell."""
+    from urllib.parse import quote
+
+    reply = ctx.client().post(f"/api/capabilities/skills/{quote(ns.name, safe='')}/verify", {})
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    if not isinstance(reply, dict) or "passed" not in reply:
+        ctx.err.write("unexpected reply from the hub: no verdict in it\n")
+        return EXIT_FAILED
+    record = reply.get("record") if isinstance(reply.get("record"), dict) else {}
+    passed = bool(reply.get("passed"))
+    ctx.say(f"{reply.get('skill') or ns.name}: {'passed' if passed else 'FAILED'} — "
+            f"{reply.get('detail', '')} ({reply.get('ref', '')})")
+    when = f", verified at {reply['verified_at']}" if reply.get("verified_at") else ""
+    ctx.say(f"  record {record.get('state', '?')}{when}; the verdict lives until the hub's next boot")
+    return EXIT_OK if passed else EXIT_FAILED
+
+
 def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
     if ns.action == "config":
@@ -2597,7 +2654,8 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
             row = skills[name] if isinstance(skills[name], dict) else {}
             where = ("off everywhere" if row.get("disabled") else
                      "off on " + ", ".join(row["disabled_channels"]) if row.get("disabled_channels") else "on")
-            ctx.say(f"{name}: {where}{' (essential)' if row.get('essential') else ''}")
+            ctx.say(f"{name}: {where}{' (essential)' if row.get('essential') else ''}"
+                    f"{_skill_usage_suffix(row.get('usage'))}")
         return EXIT_OK
     if bool(ns.name) == bool(ns.category):
         ctx.err.write("name one skill, or one --category\n")

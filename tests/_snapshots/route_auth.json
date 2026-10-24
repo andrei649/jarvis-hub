@@ -441,6 +441,7 @@
   "POST /api/canvas/clear": "user",
   "POST /api/canvas/post": "user",
   "POST /api/canvas/{el_id}/pin": "user",
+  "POST /api/capabilities/skills/{name}/verify": "admin",
   "POST /api/capture/clear": "user",
   "POST /api/capture/ingest": "user",
   "POST /api/capture/surfaces": "user",

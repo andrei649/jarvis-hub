@@ -43,6 +43,7 @@ async def list_skills():
         return JSONResponse({"error": "not initialized"}, status_code=503)
     from agents.core import load_set
     from agents.core.skills import switches
+    from agents.core.skills.usage import usage_summary
     from agents.core.skills.visibility import readiness
 
     try:
@@ -50,6 +51,8 @@ async def list_skills():
     except Exception:
         logger.warning("skill switches unreadable", exc_info=True)
         return JSONResponse({"error": "skill switches unavailable", "reason": "switches_unavailable"}, status_code=503)
+    # H354: the usage sidecar the loader bumps on every run — read here, never written.
+    usage_store = getattr(orch, "skill_usage", None)
     result = {}
     for name, skill in orch.skills.skills.items():
         key = skill.name.casefold()
@@ -71,6 +74,8 @@ async def list_skills():
             "disabled_channels": [] if essential else sorted(
                 ch for ch, names in switched[switches.CHANNEL_KEY].items()
                 if key in {n.casefold() for n in names}),
+            # H354: how often it ran, was viewed and was patched, and when last.
+            "usage": usage_summary(usage_store, skill.name),
         }
     # H285: what the owner's load set switched off at discovery, and what it names in vain.
     return {"skills": result, "load_set": load_set.status("skills"), "switches": switched}

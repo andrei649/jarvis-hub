@@ -15,6 +15,7 @@ from agents.core.observability import capability_registry as cr
 
 def teardown_function():
     cr._OVERRIDES.clear()
+    cr.clear_verifications()
 
 
 def _fake_orch():
@@ -189,3 +190,121 @@ def test_canonical_capabilities_endpoint_is_user_guarded_and_returns_registry(mo
     assert body["total"] == len(body["capabilities"])
     assert any(row["id"] == "component:arena" for row in body["capabilities"])
     assert "no-store" in response.headers.get("cache-control", "")
+
+
+# ── H354: usage counters + reality evidence on the skill record ───────────────
+def _usage_orch(tmp_path):
+    from agents.core.skills.usage import SkillUsageStore
+
+    orch = _fake_orch()
+    orch.skill_usage = SkillUsageStore(tmp_path / "skill_usage.json")
+    return orch
+
+
+def test_skill_records_carry_usage_counters_without_writing(tmp_path):
+    orch = _usage_orch(tmp_path)
+    orch.skill_usage.bump("loaded_skill", "use")
+    orch.skill_usage.bump("loaded_skill", "use")
+    orch.skill_usage.bump("loaded_skill", "view")
+    orch.skill_usage.bump("loaded_skill", "patch")
+    recs = {r.id: r for r in cr.build_records(orch=orch)}
+    usage = recs["skill:loaded_skill"].detail["usage"]
+    assert (usage["use_count"], usage["view_count"], usage["patch_count"]) == (2, 1, 1)
+    assert usage["last_used_at"] == orch.skill_usage.get("loaded_skill")["last_used_at"]
+    assert usage["last_patched_at"] and usage["origin"] == "bundled"
+    stub = recs["skill:stub_skill"].detail["usage"]
+    assert stub["use_count"] == 0 and stub["last_used_at"] is None
+    # The registry is read-only observability: deriving a record creates no sidecar row.
+    assert orch.skill_usage.get("stub_skill") is None
+    # Snapshot (the HTTP shape) carries the same block.
+    row = next(c for c in cr.snapshot(orch=orch)["capabilities"] if c["id"] == "skill:loaded_skill")
+    assert row["detail"]["usage"]["use_count"] == 2
+
+
+def test_skill_records_without_a_sidecar_still_report_zero_usage():
+    recs = {r.id: r for r in cr.build_records(orch=_fake_orch())}   # no skill_usage at all
+    assert recs["skill:loaded_skill"].detail["usage"]["use_count"] == 0
+
+
+def test_skill_record_is_honestly_ref_only_until_a_harness_verdict_lands():
+    recs = {r.id: r for r in cr.build_records(orch=_fake_orch())}
+    evidence = recs["skill:loaded_skill"].detail["evidence"]
+    assert evidence["status"] == "ref_only"
+    assert evidence["ref"] == "reality-v1:skill:loaded_skill"
+    assert evidence["harness_id"] is None and evidence["last_verified"] is None
+    assert evidence["promotion_scope"] == "in_process_only"
+    assert evidence["run"] == "POST /api/capabilities/skills/loaded_skill/verify"
+    assert recs["skill:loaded_skill"].state == cr.WIRED
+
+
+def test_skill_record_shows_the_harness_verdict_when_one_exists():
+    cr.record_verification("skill:loaded_skill", "reality-v1", "2026-10-24T10:00:00+00:00", passed=True)
+    cr.record_verification("skill:stub_skill", "reality-v1", "2026-10-24T10:00:00+00:00", passed=True)
+    recs = {r.id: r for r in cr.build_records(orch=_fake_orch())}
+    loaded = recs["skill:loaded_skill"]
+    assert loaded.state == cr.VERIFIED
+    assert loaded.detail["evidence"] == {
+        "status": "verified", "ref": "reality-v1:skill:loaded_skill",
+        "harness_id": "reality-v1", "last_verified": "2026-10-24T10:00:00+00:00",
+        "promotion_scope": "in_process_only",
+        "run": "POST /api/capabilities/skills/loaded_skill/verify",
+    }
+    # A seam cannot be verified, whatever the verdict table says: it stays ref-only.
+    stub = recs["skill:stub_skill"]
+    assert stub.state == cr.SEAM and stub.detail["evidence"]["status"] == "ref_only"
+
+
+# ── H354: the owner-triggered reality run for one skill ──────────────────────
+_ADMIN = "cap-test-admin"
+
+
+def _admin_client(monkeypatch, orch):
+    from agents import web
+    from agents.core.routers import analytics
+
+    monkeypatch.setattr(analytics, "get_orch", lambda: orch)
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _ADMIN)
+    return TestClient(web.app)
+
+
+def test_verify_skill_route_is_admin_guarded(monkeypatch):
+    client = _admin_client(monkeypatch, _fake_orch())
+    assert client.post("/api/capabilities/skills/loaded_skill/verify").status_code in (401, 403)
+
+
+def test_verify_skill_route_503_without_orch_and_404_for_an_unknown_skill(monkeypatch):
+    client = _admin_client(monkeypatch, None)
+    assert client.post("/api/capabilities/skills/loaded_skill/verify",
+                       headers={"X-Admin-Token": _ADMIN}).status_code == 503
+    client = _admin_client(monkeypatch, _fake_orch())
+    resp = client.post("/api/capabilities/skills/nope/verify", headers={"X-Admin-Token": _ADMIN})
+    assert resp.status_code == 404 and resp.json()["reason"] == "unknown_skill"
+
+
+def test_verify_skill_route_runs_the_real_harness_case_and_promotes_in_process(monkeypatch):
+    client = _admin_client(monkeypatch, _fake_orch())
+    resp = client.post("/api/capabilities/skills/loaded_skill/verify", headers={"X-Admin-Token": _ADMIN})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True and body["passed"] is True
+    assert body["capability_id"] == "skill:loaded_skill" and body["harness_id"] == "reality-v1"
+    assert body["promotion_scope"] == "in_process_only"
+    assert body["record"]["state"] == "verified"
+    assert body["record"]["detail"]["evidence"]["status"] == "verified"
+    assert body["record"]["detail"]["evidence"]["last_verified"] == body["verified_at"]
+    # The verdict is now on the live record the owner reads.
+    board = client.get("/api/capabilities").json()
+    row = next(c for c in board["capabilities"] if c["id"] == "skill:loaded_skill")
+    assert row["state"] == "verified" and row["harness_id"] == "reality-v1"
+    assert board["harness_pending"] is False
+
+
+def test_verify_skill_route_reports_a_stub_honestly(monkeypatch):
+    client = _admin_client(monkeypatch, _fake_orch())
+    resp = client.post("/api/capabilities/skills/stub_skill/verify", headers={"X-Admin-Token": _ADMIN})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True and body["passed"] is False
+    assert body["record"]["state"] == "seam"
+    assert body["record"]["detail"]["evidence"]["status"] == "ref_only"
+    assert body["verified_at"] is None

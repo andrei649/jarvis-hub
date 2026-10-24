@@ -437,6 +437,7 @@
   "POST /api/canvas/clear",
   "POST /api/canvas/post",
   "POST /api/canvas/{el_id}/pin",
+  "POST /api/capabilities/skills/{name}/verify",
   "POST /api/capture/clear",
   "POST /api/capture/ingest",
   "POST /api/capture/surfaces",

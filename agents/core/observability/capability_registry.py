@@ -124,6 +124,34 @@ def _apply_override(rec: CapabilityRecord) -> CapabilityRecord:
     return rec
 
 
+_SKILL_IMPLEMENTATION_PREFIX = "orchestrator.skills:"
+
+
+def _apply_evidence(rec: CapabilityRecord) -> CapabilityRecord:
+    """H354 — say what a loaded skill's ``verification`` ref is backed by, after the
+    verdict and the override have had their say.
+
+    ``verified``: the reality harness ran this skill's case green in this process
+    (``harness_id`` / ``last_verified`` name the run). ``ref_only``: the ref names the
+    harness case and nothing has run it since boot — the honest default, because a
+    verdict lives in-process only (GAP-9: the durable ledger is a transcript the registry
+    never reads back). ``run`` is the admin route that runs the case now."""
+    if rec.kind != "skill" or not rec.implementation.startswith(_SKILL_IMPLEMENTATION_PREFIX):
+        return rec
+    from urllib.parse import quote
+
+    name = rec.implementation[len(_SKILL_IMPLEMENTATION_PREFIX):]
+    rec.detail["evidence"] = {
+        "status": "verified" if rec.state in (VERIFIED, GA) else "ref_only",
+        "ref": rec.verification,
+        "harness_id": rec.harness_id,
+        "last_verified": rec.last_verified,
+        "promotion_scope": "in_process_only",
+        "run": f"POST /api/capabilities/skills/{quote(name, safe='')}/verify",
+    }
+    return rec
+
+
 def _plugin_records(orch=None) -> list[CapabilityRecord]:
     """Derive plugin capabilities from the static manifest registry.
 
@@ -395,11 +423,15 @@ def _component_records(orch) -> list[CapabilityRecord]:
 def _skill_records(orch) -> list[CapabilityRecord]:
     """Derive skill capabilities from the loaded skill set (loaded module ⇒ WIRED)."""
     from agents.core.capability_verification import skill_verification_ref
+    from agents.core.skills.usage import usage_summary
 
     loader = getattr(orch, "skills", None)
     skills = getattr(loader, "skills", None) if loader is not None else None
     if not skills:
         return []
+    # H354: the loader's usage sidecar, keyed by the skill's display name. Read-only —
+    # deriving a record must never create a row.
+    usage_store = getattr(orch, "skill_usage", None)
     out = []
     for name, sk in sorted(skills.items()):
         agents = list(getattr(sk, "agents", []) or [])
@@ -420,8 +452,12 @@ def _skill_records(orch) -> list[CapabilityRecord]:
                     limitations="Disabling prevents future use but does not undo completed effects.",
                 ),
                 confidence=0.0,
-                implementation=f"orchestrator.skills:{name}",
-                detail={"trusted": bool(getattr(sk, "trusted", False)), "agents": agents},
+                implementation=f"{_SKILL_IMPLEMENTATION_PREFIX}{name}",
+                detail={
+                    "trusted": bool(getattr(sk, "trusted", False)),
+                    "agents": agents,
+                    "usage": usage_summary(usage_store, getattr(sk, "name", None) or name),
+                },
             )
         )
     return out
@@ -502,8 +538,9 @@ def build_records(orch=None, *, live_schemas: bool = True) -> list[CapabilityRec
             logger.warning("duplicate capability id ignored: %s", record.id)
             continue
         unique[record.id] = record
-    # Order matters: derive → promote-if-harness-verified → manual demote wins last.
-    return [_apply_override(_apply_verification(r)) for r in unique.values()]
+    # Order matters: derive → promote-if-harness-verified → manual demote wins last →
+    # then the evidence marker reports whatever state that left (H354).
+    return [_apply_evidence(_apply_override(_apply_verification(r))) for r in unique.values()]
 
 
 def snapshot(orch=None, *, live_schemas: bool = True) -> dict:
