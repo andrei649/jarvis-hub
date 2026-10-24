@@ -108,7 +108,8 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["kernel"] == ["explain"]
     assert tree["estop"] == ["engage", "resume", "status"]
     # H350: the linter reads files and reports; it never writes a skill.
-    assert tree["skills"] == ["config", "lint", "list", "off", "on"]
+    # H354: `verify` runs one in-process reality probe on the hub and writes nothing durable.
+    assert tree["skills"] == ["config", "lint", "list", "off", "on", "verify"]
     # H464: read the runs, and let a parked one go. Nothing here starts a run.
     assert tree["company"] == ["clear-wait", "list"]
     # H473: `discover` scans the file roots into the repo cache; `repos` lists that cache.
