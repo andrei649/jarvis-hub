@@ -17,10 +17,11 @@ MAX_PER_TURN = 64
 MAX_PER_CONSUMER = 256
 TERMINAL_RETENTION_DAYS = 30
 DENIAL_NOTICE = 'The security reviewer denied this operation. Explain the denial and ask the owner for guidance.'
+# H486: the owner's own rejections feed the same tally as the reviewer's denials.
 DENIAL_BREAKER_NOTICE = (
-    'Security reviewer denied repeated operations. STOP attempting variations '
-    'of the blocked operation. Explain the denial and request explicit owner '
-    'guidance before trying again.'
+    'Repeated operations were denied by the security reviewer or the owner. STOP '
+    'attempting variations of the blocked operation. Explain the denial and request '
+    'explicit owner guidance before trying again.'
 )
 
 

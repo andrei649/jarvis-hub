@@ -1780,6 +1780,8 @@ class AutonomyCoordinator:
             gap_callback=acquisition.capture_gap,
             context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
             per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
+            # H486 — the web-search ceiling ships on at 50; the runtime sanitizes the value.
+            tool_turn_caps=lambda: {"web_search": _get_setting("llm.tool_loop_web_search_cap", 50)},
             stall_halt_enabled=lambda: _get_setting("llm.tool_loop_stall_halt_enabled", False) is True,
             # H298 — an oversized tool result is spilled to disk instead of being
             # thrown away, and the caps scale to the model's real context window.
@@ -2417,6 +2419,8 @@ class AutonomyCoordinator:
                 # spawned in total for the life of the process, so a delegation loop
                 # burns out instead of running all night. 0 keeps it unbounded.
                 budget=self._subagent_spawn_budget(),
+                # H486 — and this caps how many one tool-loop turn may spawn (Hermes: 50).
+                turn_cap=self._subagent_turn_cap,
             ),
         )
 
@@ -2462,6 +2466,11 @@ class AutonomyCoordinator:
         except (TypeError, ValueError):
             return None
         return IterationBudget(cap) if cap > 0 else None
+
+    def _subagent_turn_cap(self):
+        """``llm.tool_loop_subagent_spawn_cap`` as stored, read at each spawn; the manager
+        sanitizes it (an unreadable value is the shipped 50, 0 is no ceiling)."""
+        return self._orch.get_setting("llm.tool_loop_subagent_spawn_cap", 50)
 
     def _subagent_concurrency(self) -> int:
         """Effective subagent concurrency cap (0.62 system-profile consumer).

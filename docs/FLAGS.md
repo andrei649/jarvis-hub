@@ -1454,6 +1454,21 @@ failures, two unchanged successes and three identical tool/argument/result
 signatures. Unreadable settings retain guidance only. Changing results continue
 to execute; all calls in a concurrent batch receive a response before a stop.
 
+## H486 denial breaker and per-turn ceilings (2026-10-24)
+
+The consecutive-denial breaker (`JARVIS_SMART_DENIAL_BREAKER_THRESHOLD`, default
+3) now counts the owner's own **reject** of a chat-originated `terminal_run`
+approval card as a denial, exactly like a smart-reviewer DENY (same per-session
+tally, reset by any owner approval, one event per task). It therefore trips with
+`JARVIS_SMART_APPROVALS` left off. `llm.tool_loop_web_search_cap` and
+`llm.tool_loop_subagent_spawn_cap` are runtime settings, default **50** (Hermes'
+ceilings), `0` = that ceiling off, whole numbers up to 10000. The web-search
+ceiling applies in the tool loop beside `llm.tool_loop_per_tool_cap` (the stricter
+one wins; an unreadable value is the shipped 50, never "off"); the spawn ceiling
+applies at `SubAgentManager.spawn` to spawns made inside a tool-loop turn (refusal
+`turn_spawn_cap`, HTTP 429 on `/api/subagents/spawn`) — spawns outside a turn stay
+under `autonomy.max_subagent_spawns_per_boot`.
+
 `process`, `*_poll` and `*_get_result` skip stall guidance and duplicate stubs.
 Owner per-tool caps, approval, wall/iteration/context limits still apply; todo
 retains its full-plan/no-cap/no-stub behavior. Duplicate successful results of at

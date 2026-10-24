@@ -100,3 +100,42 @@ def test_breaker_guidance_shares_fenced_output_budget(guardian):
 def test_unvalidated_feedback_cannot_insert_stop_instruction(guardian):
     block, _ = render_chat_outcomes([{'task_id': 1, 'guardian': guardian}])
     assert 'STOP attempting variations' not in block
+
+
+@pytest.mark.asyncio
+async def test_three_owner_rejections_trip_the_breaker_without_smart_approvals(chat, monkeypatch):
+    """H486: the owner's own "no" on the approval card counts; no reviewer is needed."""
+    monkeypatch.delenv('JARVIS_SMART_APPROVALS', raising=False)
+    monkeypatch.delenv('JARVIS_SMART_DENIAL_BREAKER_THRESHOLD', raising=False)
+
+    async def execute(args):
+        chat.executed.append(args)
+        return {'ok': True}
+
+    chat.server.register_tool('terminal_run', execute, gated=True)
+    principal = bind_turn_principal(Principal(channel='web', admin=True))
+    try:
+        for n in range(3):
+            args = {'target': 'local-host', 'command': f'pwd # attempt {n}',
+                    'cwd': '/tmp', 'timeout': 15}
+            chat.backend.turns.append(ToolTurn(tool_calls=(ToolCall(
+                id=f'terminal-{n}', name='terminal_run', raw_arguments=json.dumps(args), arguments=args),)))
+            await chat.orch.handle_input('run the terminal operation', channel='web', session_id='s')
+            blocked = [task for task in chat.q.list() if task.status == 'blocked']
+            assert len(blocked) == 1
+            await chat.worker.apply_decision(blocked[0].id, 'reject', decided_by='owner',
+                                             reason='not on this machine')
+        assert all(task.status == 'rejected' for task in chat.q.list())
+        chat.backend.turns.append(ToolTurn(content='The owner rejected it; I will stop retrying.'))
+        await chat.orch.handle_input('what happened?', channel='web', session_id='s')
+        prompt = str(chat.backend.calls[-1]['messages'])
+        assert 'STOP attempting variations' in prompt
+        assert 'consecutive_denials' in prompt and 'guardian' in prompt
+        assert '"action":"reject"' in prompt and 'Do not replay' in prompt
+        assert chat.executed == []
+        chat.backend.turns.append(ToolTurn(content='A different question.'))
+        await chat.orch.handle_input('next question', channel='web', session_id='s')
+        assert 'Approval outcome observations' not in str(chat.backend.calls[-1]['messages'])
+        assert len(chat.q.list()) == 3 and chat.executed == []
+    finally:
+        reset_turn_principal(principal)

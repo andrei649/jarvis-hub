@@ -226,6 +226,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
     dict(category="llm",     key="tool_loop_context_tokens", value=0,               label="Agent tool-loop context budget (tokens; 0 = 75% of the model window)", kind="number"),
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
+    # H486 — Hermes' two named per-turn ceilings ship on at 50 (0 = this ceiling off).
+    dict(category="llm",     key="tool_loop_web_search_cap", value=50,              label="Web searches per turn (0 = no ceiling)", kind="number"),
+    dict(category="llm",     key="tool_loop_subagent_spawn_cap", value=50,          label="Sub-agent spawns per turn (0 = no ceiling)", kind="number"),
     dict(category="llm",     key="tool_loop_stall_halt_enabled", value=False,        label="Stop stalled tool loops at failure/no-progress thresholds (off = guidance only)", kind="toggle"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     # H594: read the project's AGENTS.md / CLAUDE.md / .cursorrules into the turn (scanned, bounded, tainting).
@@ -956,6 +959,10 @@ _LEARNING_INT_BOUNDS = {
 }
 
 
+#: H486 — the per-turn ceilings: a whole number of calls, 0 = that ceiling off.
+_TURN_CEILING_KEYS = frozenset({"tool_loop_web_search_cap", "tool_loop_subagent_spawn_cap"})
+
+
 #: H262 — the data lifecycle's whole-number knobs and their bounds, per (category, key):
 #: a day count or an interval, never a fraction, a bool or a negative.
 _LIFECYCLE_INT_BOUNDS: dict[tuple[str, str], tuple[int, int]] = {
@@ -1041,6 +1048,8 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
         low, high = _LEARNING_INT_BOUNDS[key]
         if type(value) is not int or not low <= value <= high:
             return f"{key}: expected an integer between {low} and {high}"
+    if key in _TURN_CEILING_KEYS and (type(value) is not int or not 0 <= value <= 10_000):
+        return f"{key}: expected an integer between 0 (no ceiling) and 10000 calls per turn"
     if kind == "toggle":
         if not isinstance(value, bool):
             return f"{key}: expected a boolean (toggle)"

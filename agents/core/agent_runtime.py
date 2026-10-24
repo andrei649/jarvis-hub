@@ -40,6 +40,7 @@ from collections.abc import Callable, Coroutine, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
+from types import MappingProxyType
 from typing import Any
 
 from .action_origin import current_action_origin
@@ -126,6 +127,15 @@ _CAP_NOTICE = (
     "This tool was already called {calls} times this turn, which is its limit ({limit}); "
     "use another tool or answer with what you have."
 )
+# H486 — Hermes caps web searches and sub-agent spawns at 50 per turn. Unlike the generic
+# per-tool cap these ceilings ship ON: `tool_turn_caps` names a tool and its ceiling (the
+# coordinator reads llm.tool_loop_web_search_cap), an unreadable value reads as the shipped
+# ceiling rather than as "off", and 0 turns one ceiling off on purpose. When the generic
+# cap is also set the stricter of the two applies. Sub-agent spawns have no model-facing
+# tool; their ceiling is enforced at the spawn surface (subagents.SubAgentManager) keyed on
+# the same per-run tool turn.
+DEFAULT_TURN_CEILING = 50
+DEFAULT_TURN_CEILINGS: Mapping[str, int] = MappingProxyType({"web_search": DEFAULT_TURN_CEILING})
 _DUPLICATE_NOTICE = (
     "This result is byte-identical to the result of call {call_id} earlier this turn and "
     "was not repeated; refer to that result."
@@ -277,6 +287,7 @@ class AgentToolRuntime:
         tool_profile: ToolProfileHook | None = None,
         execution_profile: ToolProfileHook | None = None,
         per_tool_limit: int | Callable[[], int] = 0,
+        tool_turn_caps: Mapping[str, Any] | Callable[[], Mapping[str, Any]] | None = None,
         duplicate_stub_bytes: int = _DEFAULT_DUPLICATE_STUB_BYTES,
         result_store: Any | None = None,
         result_thresholds: Callable[[], Mapping[str, object]] | None = None,
@@ -308,6 +319,9 @@ class AgentToolRuntime:
         )
         self._stall_halt_enabled = stall_halt_enabled
         self._per_tool_limit = per_tool_limit
+        # H486 — None keeps the shipped ceilings; a mapping (or a reader of one) overrides
+        # them by tool name and is re-read each time it is consulted.
+        self._tool_turn_caps = tool_turn_caps
         self._duplicate_stub_bytes = _safe_int(
             duplicate_stub_bytes, default=_DEFAULT_DUPLICATE_STUB_BYTES, minimum=64,
         )
@@ -1060,7 +1074,8 @@ class AgentToolRuntime:
                 guardian_stopped = True
                 continue
             if capped:
-                return ToolLoopResult(_CAP_NOTICE.format(calls=self._per_tool_cap(), limit=self._per_tool_cap()),
+                _count, limit = next(iter(capped.values()))
+                return ToolLoopResult(_CAP_NOTICE.format(calls=limit, limit=limit),
                                       ToolLoopExitReason.TOOL_CALL_LIMIT)
             if stall_halt is not None:
                 call, track, count = stall_halt
@@ -1291,19 +1306,46 @@ class AgentToolRuntime:
                 return 0
         return _safe_int(limit, default=0, minimum=0)
 
+    def _turn_ceiling(self, name: str) -> int:
+        """H486: one tool's own per-turn ceiling (0 = none). A tool outside the shipped
+        ceilings and the owner's overrides has none; an unreadable value is the shipped
+        ceiling, never "off"."""
+        overrides = self._tool_turn_caps
+        if callable(overrides):
+            try:
+                overrides = overrides()
+            except Exception:
+                logger.warning("per-turn ceiling settings unreadable; shipped ceilings apply")
+                overrides = None
+        shipped = DEFAULT_TURN_CEILINGS.get(name)
+        if not isinstance(overrides, Mapping) or name not in overrides:
+            return shipped or 0
+        return _safe_int(overrides[name], default=shipped or DEFAULT_TURN_CEILING, minimum=0)
+
+    def _cap_for(self, name: str) -> int:
+        """The limit one tool gets this turn: the stricter of the generic per-tool cap and
+        the tool's own ceiling, either one alone when the other is off, 0 when both are."""
+        generic, ceiling = self._per_tool_cap(), self._turn_ceiling(name)
+        if generic > 0 and ceiling > 0:
+            return min(generic, ceiling)
+        return generic or ceiling
+
     def _note_tool_counts(
         self, calls: tuple[ToolCall, ...], counts: dict[str, int],
-    ) -> dict[str, int]:
-        """Count calls per tool across the turn; the ids past the cap are refused."""
-        limit = self._per_tool_cap()
-        capped: dict[str, int] = {}
+    ) -> dict[str, tuple[int, int]]:
+        """Count calls per tool across the turn; the ids past their cap are refused.
+
+        Returns ``call id → (count, limit)`` so the refusal can name the limit that
+        applied to that tool (H486: web searches have a ceiling of their own)."""
+        capped: dict[str, tuple[int, int]] = {}
         for call in calls:
             if call.name in _ALWAYS_RESTATED:
                 continue
             count = counts.get(call.name, 0) + 1
             counts[call.name] = count
+            limit = self._cap_for(call.name)
             if limit > 0 and count > limit:
-                capped[call.id] = count
+                capped[call.id] = (count, limit)
         return capped
 
     async def _fence_result(
@@ -1397,7 +1439,7 @@ class AgentToolRuntime:
         agent_id: str,
         gated_tools: dict[str, bool],
         event_sink: ToolEventSink | None,
-        capped: Mapping[str, int] | None = None,
+        capped: Mapping[str, tuple[int, int]] | None = None,
         spent: dict[str, int] | None = None,
     ) -> list[tuple[dict[str, Any], str]]:
         capped = capped or {}
@@ -1412,6 +1454,7 @@ class AgentToolRuntime:
 
         def dispatch(index: int) -> Coroutine[Any, Any, tuple[dict[str, Any], str]]:
             call = calls[index]
+            capped_at, cap_limit = capped.get(call.id, (0, 0))
             return self._execute_one(
                 call,
                 overflow=index >= self._max_tool_calls_per_turn,
@@ -1421,7 +1464,8 @@ class AgentToolRuntime:
                 approval_state=approval_state,
                 agent_id=agent_id,
                 event_sink=event_sink,
-                capped_at=capped.get(call.id, 0),
+                capped_at=capped_at,
+                cap_limit=cap_limit,
                 spent=spent,
             )
 
@@ -1564,6 +1608,7 @@ class AgentToolRuntime:
         agent_id: str,
         event_sink: ToolEventSink | None,
         capped_at: int = 0,
+        cap_limit: int = 0,
         spent: dict[str, int] | None = None,
     ) -> tuple[dict[str, Any], str]:
         if overflow:
@@ -1591,7 +1636,7 @@ class AgentToolRuntime:
                 spent=spent,
             )
         if capped_at:
-            limit = self._per_tool_cap()
+            limit = cap_limit or self._cap_for(call.name)
             return await self._local_failure(
                 call,
                 agent_id=agent_id,

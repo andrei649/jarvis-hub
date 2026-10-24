@@ -183,6 +183,7 @@ def test_nothing_moved_is_not_reported(monkeypatch):
 _NUMBERS_NOT_FORCED = {
     # the tool loop and the pre-turn recall are off in safe mode
     "llm.tool_loop_max_iterations", "llm.tool_loop_context_tokens", "llm.tool_loop_per_tool_cap",
+    "llm.tool_loop_web_search_cap", "llm.tool_loop_subagent_spawn_cap",
     "memory.recall_top_k", "memory.recall_timeout_s",
     # the shipped default is already the loosest value (0 = no cap)
     "llm.daily_cost_cap_usd",

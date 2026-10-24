@@ -2092,6 +2092,12 @@ class TaskQueue:
                     self._finalize_chat_approval_locked(_row_to_task(updated))
                 if record_human and new_status == TaskStatus.APPROVED and decision in {'accept', 'edit'}:
                     self._reset_chat_guardian_denials_locked(task)
+                # H486: the owner's own "no" on a waiting chat terminal call counts
+                # toward the same consecutive-denial tally as a reviewer's DENY, so
+                # the breaker works with the opt-in smart reviewer off.
+                if (record_human and new_status == TaskStatus.REJECTED and decision == 'reject'
+                        and cur_status in {TaskStatus.BLOCKED, TaskStatus.DEFERRED}):
+                    self._record_chat_owner_denial_locked(task)
                 self._conn.commit()
                 if new_status in {TaskStatus.DONE, TaskStatus.FAILED}:
                     self._consent_claims.pop(task_id, None)
@@ -2625,6 +2631,32 @@ class TaskQueue:
                 WHERE session_id=? AND session_instance=? AND principal_key=?''',
                 (consumer['session_id'], consumer['session_instance'], consumer['principal_key']))
 
+    def _record_chat_owner_denial_locked(self, task: Task) -> None:
+        """Count the owner's rejection of a chat terminal call as one denial event.
+
+        Runs inside the rejecting CAS on the pre-decision row. Only a ready chat
+        terminal association counts; the snapshot is the same digest a reviewer's
+        DENY binds to, so a task already denied under it (reviewer first, then the
+        owner's reject of the same card) is one event, never two.
+        """
+        consumer = self._chat_denial_consumer_locked(task)
+        if consumer is None:
+            return
+        original = replace(task, status=TaskStatus.BLOCKED.value,
+                           decided_by='policy', decision='needs-approval',
+                           mediation_execution_id=None, human_decision=None)
+        snapshot = self._approval_snapshot_digest_locked(original)
+        if snapshot is None or consumer['denial_snapshot_sha256'] == snapshot:
+            return
+        self._record_chat_guardian_denial_locked(task, snapshot)
+
+    @staticmethod
+    def _owner_rejected(task: Task) -> bool:
+        """A settled human reject on the card (H486), not a reviewer's or owner-once deny."""
+        return (task.status == TaskStatus.REJECTED.value and task.decision == 'reject'
+                and type(task.human_decision) is dict
+                and task.human_decision.get('action') == 'reject')
+
     def _chat_guardian_denial_locked(self, task: Task, association: sqlite3.Row) -> dict | None:
         """Project one exact original DENY, including its settled outcome."""
         if association['ready'] != 1 or association['task_birth'] != task.created_at:
@@ -2643,6 +2675,8 @@ class TaskQueue:
             if (not approval_is_pending(task) or task.decided_by != 'policy'
                     or task.decision != 'needs-approval' or task.human_decision is not None):
                 return None
+        elif self._owner_rejected(task):
+            pass  # The owner's reject is the denial; no reviewer opinion is required.
         elif task.status == TaskStatus.REJECTED.value:
             if self._smart_terminal_denial_locked(task.id, snapshot) is None:
                 bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
@@ -2667,11 +2701,12 @@ class TaskQueue:
                            mediation_execution_id=None, human_decision=None)
         if self._approval_snapshot_digest_locked(original) != snapshot:
             return None
-        opinion = self._conn.execute('''SELECT snapshot_sha256,annotation,receipt,signature
-            FROM task_smart_approvals WHERE task_id=? AND snapshot_sha256=?''',
-            (task.id, snapshot)).fetchone()
-        if opinion is None or self._unsigned_smart_hold_verdict(opinion) != 'deny':
-            return None
+        if not self._owner_rejected(task):
+            opinion = self._conn.execute('''SELECT snapshot_sha256,annotation,receipt,signature
+                FROM task_smart_approvals WHERE task_id=? AND snapshot_sha256=?''',
+                (task.id, snapshot)).fetchone()
+            if opinion is None or self._unsigned_smart_hold_verdict(opinion) != 'deny':
+                return None
         consumer = self._chat_denial_consumer_locked(task)
         if consumer is None:
             return None
