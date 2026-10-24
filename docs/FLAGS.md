@@ -169,7 +169,9 @@ SSO IdPs, adult; secret file roots) and any `never` row always deny.
 allowlist at all**.
 **ON:** `file_read` / `file_list` / `file_search` are ungated *inside* `JARVIS_FILE_ROOTS`
 (no `..`, no symlink escape, secret-looking names refused, bytes/entries/matches bounded;
-`file_search` is a *literal* content search — no regex, no ripgrep — that reports every cap
+`file_search` is a *literal* content search by default, a regex search with `regex=true` (ripgrep
+when installed, Python `re` with the same results otherwise; a nested unbounded repeat such as
+`(a+)+` is refused on both) and a recursive file finder with `glob` alone — each reports every cap
 it hit; `file_read` returns a `.pdf`/`.docx` as extracted text when `pypdf`/`python-docx` is
 installed — both are declared in `requirements.txt` / `requirements-beta.txt` and their
 hash-pinned locks, so a default install has them — and names the missing parser otherwise);

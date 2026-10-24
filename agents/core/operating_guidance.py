@@ -275,7 +275,7 @@ def _execution_guidance(tools: set[str]) -> str:
     if read:
         mandatory.append("- File contents → use file_read")
     if search:
-        mandatory.append("- Literal matches across files → use file_search")
+        mandatory.append("- Matches across files (literal, or regex=true) and files by glob → use file_search")
     if terminal:
         mandatory.append("- File sizes and line counts → use terminal_run")
     if web_search:
