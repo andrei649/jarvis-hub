@@ -9,7 +9,10 @@
 >
 > Settings are read and changed with `nerva config get llm.default_model` /
 > `nerva config set llm.temperature 0.7` — every `category.key` setting the same way — or
-> in **Admin → settings** in the HUD. The online
+> in **Admin → settings** in the HUD; `nerva config edit` opens them all in `$EDITOR`,
+> `nerva config path` / `nerva config env-path` name the store and the `.env` files, and
+> `nerva config migrate --dry-run` lists what this build would write into an older store
+> (new defaults, a retired model id's replacement). The online
 > verbs need the hub running and a token in the shell: `JARVIS_ADMIN_TOKEN` (or
 > `JARVIS_USER_TOKEN` for the user-level reads).
 

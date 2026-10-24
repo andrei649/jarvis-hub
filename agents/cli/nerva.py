@@ -262,6 +262,21 @@ def build_parser() -> argparse.ArgumentParser:
     config_unset.add_argument("name", help=path_help)
     _selection_flags(config_unset)
     config_verbs.add_parser("check", help="validate every stored value against its declared schema")
+    # H006 — the rest of `hermes config`: an editor over the declared settings, the files,
+    # and a migration an operator can read before a boot applies it.
+    config_edit = config_verbs.add_parser(
+        "edit", help="open every editable setting in $VISUAL/$EDITOR, then write back only what changed")
+    _selection_flags(config_edit)
+    config_path = config_verbs.add_parser(
+        "path", help="the data root and the settings store these verbs use (the hub's, in the same environment)")
+    config_path.add_argument("--json", action="store_true")
+    config_env_path = config_verbs.add_parser(
+        "env-path", help="the .env files and the secret store the hub reads — names only, never a value")
+    config_env_path.add_argument("--json", action="store_true")
+    config_migrate = config_verbs.add_parser(
+        "migrate", help="write this build's new defaults and retired-model replacements into an existing store")
+    config_migrate.add_argument("--dry-run", action="store_true", help="print what would change; change nothing")
+    config_migrate.add_argument("--json", action="store_true")
 
     approvals = verbs.add_parser("approvals", help="the approval queue (admin)")
     approvals_verbs = approvals.add_subparsers(dest="action", required=True, metavar="action")
@@ -1251,47 +1266,14 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         if errors:
             ctx.err.write(f"{ns.name}: rejected — {'; '.join(errors)}\n")
             return EXIT_FAILED
-        # H262 — a value that makes retention delete deeper than a human approved waits for
-        # the approval queue, which is the hub's: refused here (the approval is read, read-only).
-        from agents.core import retention
-
-        if retention.needs_approval({category: {key: value}}, retention.stored_values(),
-                                    retention.approved_horizons_offline()):
-            ctx.err.write(f"{ns.name}: not changed — it would make retention delete deeper than approved; "
-                          "change it in the HUD, Settings → Retention, which asks for approval\n")
+        value = _stamped(category, key, value)
+        refusal = _write_setting(settings, ns.name, category, key, value, ns)
+        if refusal:
+            ctx.err.write("".join(line + "\n" for line in refusal))
             return EXIT_FAILED
-        # H378 — a model choice passes the selection guards here as on the hub's routes.
-        from agents.core.llm import selection_guards as guards
-
-        choices = guards.choices_from_settings(category, {key: value}, lambda k: settings.get_value(category, k))
-        if choices:
-            try:
-                findings = guards.enforce(choices, confirm_expensive=ns.confirm_expensive,
-                                          acknowledge_training=ns.acknowledge_training)
-            except guards.SelectionRefused as refused:
-                for finding in refused.findings:
-                    ctx.err.write(f"{ns.name}: {finding.message}\n")
-                flags = " ".join("--" + need.replace("_", "-") for need in refused.missing)
-                ctx.err.write(f"{ns.name}: not changed — rerun with {flags} to choose it anyway\n")
-                return EXIT_FAILED
-            try:
-                guards.record(findings, "cli", _audit_log())
-            except guards.ConsentNotRecorded as exc:
-                ctx.err.write(f"{ns.name}: {exc}\n")
-                return EXIT_FAILED
-        if (category, key) == ("appearance", "preferences") and isinstance(value, dict):
-            # review-H688 r2: the HUD syncs appearance across devices on this revision; a CLI
-            # write moves it as `appearance.update_appearance` does, or no other device sees it.
-            value = {**value, "_revision": uuid.uuid4().hex}
-        settings.put_category(category, {key: value})
-        if f"{category}.{key}" in retention.RETENTION_KEYS:
-            # H262 review — a narrowing is a human decision too: the approval is lowered to it,
-            # so deepening again later needs a new approval (never raised here).
-            retention.lower_approval_offline()
         # A stored secret is echoed back masked, as `config get` shows it (review-H465e
         # nit 3); the value typed on this command line is the shell's to keep or not.
-        when = ("restart the hub to apply it" if _applies_at_restart(category, key, str(spec.get("kind", "")))
-                else "a running hub picks it up within 30 s")
+        when = _when_applied(category, key, spec)
         if ns.action == "unset":
             what = "removed" if path else "back to its declared value"
             ctx.say(f"{ns.name} {what}  ({when})")
@@ -1300,6 +1282,14 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": written}, reveal=False)
         ctx.say(f"{ns.name} = {json.dumps(shown, ensure_ascii=False)}  ({when})")
         return EXIT_OK
+    if ns.action == "edit":
+        return _config_edit(ns, ctx, settings)
+    if ns.action == "path":
+        return _config_path(ns, ctx, settings)
+    if ns.action == "env-path":
+        return _config_env_path(ns, ctx)
+    if ns.action == "migrate":
+        return _config_migrate(ns, ctx, settings)
     if ns.action == "check":
         problems: list[str] = []
         for cat, rows in settings.get_all().items():
@@ -1314,6 +1304,371 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say("every stored setting matches its declared schema")
         return EXIT_OK
     return EXIT_USAGE
+
+
+def _stamped(category: str, key: str, value: Any) -> Any:
+    """review-H688 r2: the HUD syncs appearance across devices on this revision; a CLI
+    write moves it as ``appearance.update_appearance`` does, or no other device sees it."""
+    if (category, key) == ("appearance", "preferences") and isinstance(value, dict):
+        return {**value, "_revision": uuid.uuid4().hex}
+    return value
+
+
+def _write_setting(settings: Any, name: str, category: str, key: str, value: Any,
+                   ns: argparse.Namespace) -> list[str]:
+    """The guarded write ``config set``, ``unset`` and ``edit`` share once a value has
+    passed its schema: the retention approval (H262), the selection guards (H378), the
+    write, and the approval lowering a narrowing implies. Returns the lines that explain
+    a refusal (nothing written), or ``[]`` once the value is stored."""
+    # H262 — a value that makes retention delete deeper than a human approved waits for
+    # the approval queue, which is the hub's: refused here (the approval is read, read-only).
+    from agents.core import retention
+
+    if retention.needs_approval({category: {key: value}}, retention.stored_values(),
+                                retention.approved_horizons_offline()):
+        return [f"{name}: not changed — it would make retention delete deeper than approved; "
+                "change it in the HUD, Settings → Retention, which asks for approval"]
+    # H378 — a model choice passes the selection guards here as on the hub's routes.
+    from agents.core.llm import selection_guards as guards
+
+    choices = guards.choices_from_settings(category, {key: value}, lambda k: settings.get_value(category, k))
+    if choices:
+        try:
+            findings = guards.enforce(choices, confirm_expensive=getattr(ns, "confirm_expensive", False),
+                                      acknowledge_training=getattr(ns, "acknowledge_training", False))
+        except guards.SelectionRefused as refused:
+            lines = [f"{name}: {finding.message}" for finding in refused.findings]
+            flags = " ".join("--" + need.replace("_", "-") for need in refused.missing)
+            lines.append(f"{name}: not changed — rerun with {flags} to choose it anyway")
+            return lines
+        try:
+            guards.record(findings, "cli", _audit_log())
+        except guards.ConsentNotRecorded as exc:
+            return [f"{name}: {exc}"]
+    settings.put_category(category, {key: value})
+    if f"{category}.{key}" in retention.RETENTION_KEYS:
+        # H262 review — a narrowing is a human decision too: the approval is lowered to it,
+        # so deepening again later needs a new approval (never raised here).
+        retention.lower_approval_offline()
+    return []
+
+
+def _when_applied(category: str, key: str, spec: Mapping[str, Any]) -> str:
+    return ("restart the hub to apply it" if _applies_at_restart(category, key, str(spec.get("kind", "")))
+            else "a running hub picks it up within 30 s")
+
+
+# ── H006: config edit / path / env-path / migrate ────────────────────────────
+
+_EDIT_HEADER = (
+    "# nerva config edit — every setting you may change here, as `nerva config list` prints it.\n"
+    "# Change a value and save: `category.key = VALUE`, VALUE as JSON (true/false, 12, 0.7,\n"
+    '# "text", ["a", "b"], {"k": 1}); what follows the value on a line is ignored. Lines\n'
+    "# starting with # are ignored; delete a line to leave that setting alone. Only values\n"
+    "# that differ are written, each through the same checks as `nerva config set`.\n"
+)
+
+
+def _editor_argv(environ: Mapping[str, str]) -> list[str]:
+    """``$VISUAL``, then ``$EDITOR`` (split as a shell would, so ``code --wait`` works),
+    then the platform's plain editor."""
+    for var in ("VISUAL", "EDITOR"):
+        try:
+            argv = shlex.split(str(environ.get(var, "") or ""))
+        except ValueError:
+            argv = []
+        if argv:
+            return argv
+    return ["notepad"] if os.name == "nt" else ["vi"]
+
+
+def _run_editor(argv: list[str], path: str) -> int:
+    """Run the owner's editor on *path* with this terminal; its exit status."""
+    import subprocess  # nosec B404 — the owner's own $VISUAL/$EDITOR argv, never a shell
+
+    return subprocess.run([*argv, path], check=False).returncode  # noqa: S603  # nosec B603
+
+
+def _edit_document(settings: Any) -> tuple[str, dict[str, Mapping[str, Any]]]:
+    """The file the editor opens, and by name the rows it may change. A secret, a
+    route-only row and an undeclared row are named in a comment, their value never
+    written to disk (the file is owner-only and removed, but it still leaves this process)."""
+    lines = [_EDIT_HEADER]
+    editable: dict[str, Mapping[str, Any]] = {}
+    for cat, rows in settings.get_all().items():
+        lines.append(f"\n# [{cat}]")
+        for row in rows:
+            name = f"{cat}.{row['key']}"
+            if settings._SPEC.get((cat, row["key"])) is None:
+                lines.append(f"# {name}: nothing declares it — read it with `nerva config get {name}`")
+            elif (cat, row["key"]) in settings.ROUTE_ONLY:
+                lines.append(f"# {name}: changed only in {settings.ROUTE_ONLY[(cat, row['key'])]}")
+            elif _is_secret(row):
+                lines.append(f"# {name}: a secret — change it with `nerva config set {name} VALUE`")
+            else:
+                source = f", {row['source']}" if row.get("source") else ""
+                lines.append(f"{name} = {json.dumps(row['value'], ensure_ascii=False)}"
+                             f"  ({row.get('kind', '?')}{source})")
+                editable[name] = row
+    return "\n".join(lines) + "\n", editable
+
+
+def _parse_edit(text: str) -> tuple[dict[str, Any], list[str]]:
+    """``(values by name, rejected lines)`` from the saved file: a value is the JSON at
+    the start of what follows ``=``; the rest of the line is the annotation and is ignored."""
+    decoder = json.JSONDecoder()
+    values: dict[str, Any] = {}
+    rejected: list[str] = []
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, sep, rest = line.partition("=")
+        name = name.strip()
+        if not sep or "." not in name or any(ch.isspace() for ch in name):
+            rejected.append(f"line {number}: not `category.key = value`: {_plain(line, 80)}")
+            continue
+        try:
+            value, _end = decoder.raw_decode(rest.strip())
+        except ValueError:
+            rejected.append(f"line {number}: {name}: the value is not JSON "
+                            '(true/false, a number, "text" in quotes, [...] or {...})')
+            continue
+        if name in values:
+            rejected.append(f"line {number}: {name} is named twice")
+            continue
+        values[name] = value
+    return values, rejected
+
+
+def _config_edit(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
+    """``nerva config edit`` — the declared settings in ``$VISUAL``/``$EDITOR``; only the
+    values that differ afterwards are written, each through ``config set``'s checks, and
+    every line that cannot be written is named. A failed editor writes nothing."""
+    import contextlib
+    import tempfile
+
+    document, editable = _edit_document(settings)
+    argv = _editor_argv(ctx.environ)
+    fd, temporary = tempfile.mkstemp(prefix="nerva-config-", suffix=".conf")   # owner-only (0600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(document)
+        try:
+            status = _run_editor(argv, temporary)
+        except FileNotFoundError:
+            ctx.err.write(f"editor {_plain(argv[0], 80)} not found — set $VISUAL or $EDITOR to one; "
+                          "nothing changed\n")
+            return EXIT_FAILED
+        if status != 0:
+            ctx.err.write(f"editor exited {status}; nothing changed\n")
+            return EXIT_FAILED
+        edited = Path(temporary).read_text(encoding="utf-8")
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+    values, rejected = ({}, []) if edited == document else _parse_edit(edited)
+    changed: list[str] = []
+    for name, value in values.items():
+        category, _, key = name.partition(".")
+        spec = settings._SPEC.get((category, key))
+        if spec is None:
+            rejected.append(f"{name}: not a declared setting (see `nerva config list`)")
+            continue
+        if (category, key) in settings.ROUTE_ONLY:
+            rejected.append(f"{name}: changed only in {settings.ROUTE_ONLY[(category, key)]}")
+            continue
+        if _is_secret({"key": key, "kind": spec.get("kind", "")}):
+            rejected.append(f"{name}: a secret — change it with `nerva config set {name} VALUE`")
+            continue
+        current = editable[name]["value"] if name in editable else spec.get("value")
+        if settings._same_value(value, current):
+            continue
+        errors = settings.validate_category(category, {key: value})
+        if errors:
+            rejected.append(f"{name}: rejected — {'; '.join(errors)}")
+            continue
+        refusal = _write_setting(settings, name, category, key, _stamped(category, key, value), ns)
+        if refusal:
+            rejected.extend(refusal)
+            continue
+        shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": value}, reveal=False)
+        changed.append(f"{name} = {json.dumps(shown, ensure_ascii=False)}  ({_when_applied(category, key, spec)})")
+    for line in changed:
+        ctx.say(line)
+    for line in rejected:
+        ctx.err.write(line + "\n")
+    if not changed and not rejected:
+        ctx.say("nothing changed")
+        return EXIT_OK
+    ctx.say(f"{len(changed)} setting(s) changed")
+    if rejected:
+        ctx.err.write(f"{len(rejected)} line(s) rejected — "
+                      + ("the rest was written\n" if changed else "nothing written\n"))
+        return EXIT_FAILED
+    return EXIT_OK
+
+
+def _config_path(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
+    """``nerva config path`` — where the data lives: the profile, its data root (as
+    ``nerva backup`` resolves it) and the settings store the offline verbs read and
+    write, with a row count read without touching it (no init, no seeding)."""
+    import sqlite3
+
+    from agents.core.paths import data_root, profile_name
+
+    try:
+        root = data_root(ctx.environ)
+    except RuntimeError as exc:         # a refused JARVIS_PROFILE
+        ctx.err.write(f"{exc}\n")
+        return EXIT_USAGE
+    store = Path(settings.DB_PATH)
+    present = store.exists()
+    count: int | None = None
+    if present:
+        try:
+            conn = sqlite3.connect(store.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+            try:
+                count = int(conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0])
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            count = None
+    profile = profile_name(ctx.environ) or "default"
+    if ns.json:
+        ctx.dump({"profile": profile, "data_root": str(root), "settings_db": str(store),
+                  "settings_db_present": present, "settings_count": count})
+        return EXIT_OK
+    if not present:
+        state = "not created yet — the hub seeds it at first start, or `nerva config migrate`"
+    elif count is None:
+        state = "present, not readable as a settings store"
+    else:
+        state = f"present, {count} settings"
+    ctx.say(f"{'profile:':<14}{profile}")
+    ctx.say(f"{'data root:':<14}{root}")
+    ctx.say(f"{'settings db:':<14}{store}  ({state})")
+    return EXIT_OK
+
+
+def _config_env_path(ns: argparse.Namespace, ctx: Context) -> int:
+    """``nerva config env-path`` — the ``.env`` files the hub's load reads, in its order
+    (the repo's, then the data home's; a profile reads only its own, H689b), the example
+    they start from and the secret store. Names and presence only: a value is never read."""
+    from agents.core import env_provenance as ep
+    from agents.core.env_config import dotenv_disabled
+    from agents.core.paths import app_root, data_root, profile_name, user_home
+
+    environ = ctx.environ
+    try:
+        profile_env = ep.profile_env_file(environ)
+        root = data_root(environ)
+    except RuntimeError as exc:         # a refused JARVIS_PROFILE
+        ctx.err.write(f"{exc}\n")
+        return EXIT_USAGE
+    profile = profile_name(environ)
+    home = user_home(environ)
+    home_env = home / ".env" if home is not None else None
+    files: list[dict[str, Any]] = []
+    if profile_env is not None:
+        files.append({"layer": "profile_env", "label": "profile .env", "path": str(profile_env),
+                      "present": profile_env.exists(), "read": True,
+                      "note": "the only .env a profile's hub reads"})
+    shared_note = ep.PROFILE_NOT_READ if profile else None
+    files.append({"layer": ep.REPO_ENV, "label": "repo .env", "path": str(ep.REPO_ENV_FILE),
+                  "present": ep.REPO_ENV_FILE.exists(), "read": not profile, "note": shared_note})
+    files.append({"layer": ep.USER_ENV, "label": "data-home .env",
+                  "path": str(home_env) if home_env is not None else None,
+                  "present": bool(home_env is not None and home_env.exists()),
+                  "read": not profile and home_env is not None,
+                  "note": shared_note or (None if home_env is not None else
+                                          "no JARVIS_USER_HOME; the packaged app uses ~/Documents/Nerva/.env")})
+    example = app_root() / ".env.example"
+    store = root / "security" / "secrets.enc"
+    disabled = bool(dotenv_disabled(environ))
+    if ns.json:
+        ctx.dump({"profile": profile or "default", "files": files, "example": str(example),
+                  "secret_store": {"path": str(store), "present": store.exists()},
+                  "dotenv_disabled": disabled})
+        return EXIT_OK
+    for entry in files:
+        line = f"{entry['label'] + ':':<17}{entry['path'] or 'none'}"
+        if entry["path"]:
+            line += f"  ({'present' if entry['present'] else 'absent'})"
+        if entry["note"]:
+            line += f"  — {entry['note']}"
+        ctx.say(line)
+    ctx.say(f"{'.env.example:':<17}{example}" + ("" if example.exists() else "  (absent)"))
+    ctx.say(f"{'secret store:':<17}{store}  ({'present' if store.exists() else 'absent'})"
+            "  — `nerva secrets` reads it")
+    if disabled:
+        ctx.say("PYTHON_DOTENV_DISABLED is set: no .env file is loaded")
+    ctx.say("values are never printed here; `nerva doctor` names which keys each file sets")
+    return EXIT_OK
+
+
+def _describe_change(change: Any, settings: Any) -> str:
+    category, _, key = change.setting.partition(".")
+    kind = str((settings._SPEC.get((category, key)) or {}).get("kind", ""))
+    after = json.dumps(_shown({"key": key, "kind": kind, "value": change.after}, reveal=False), ensure_ascii=False)
+    if change.kind == "seed":
+        return f"seed     {change.setting} = {after}   ({change.why})"
+    if change.kind == "kept":
+        return f"kept     {change.setting}   ({change.why})"
+    before = json.dumps(_shown({"key": key, "kind": kind, "value": change.before}, reveal=False), ensure_ascii=False)
+    return f"{change.kind:<8} {change.setting}: {before} → {after}   ({change.why})"
+
+
+def _config_migrate(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
+    """``nerva config migrate`` — what this build writes into an existing store (a seed
+    for each new setting, a changed shipped default, a retired model id's replacement),
+    listed one per line; ``--dry-run`` lists it and writes nothing. A boot does the same
+    seeding silently; this is the same work read first, plus the retired-model rewrite on
+    every model setting (agents/core/settings_migrate.py)."""
+    import sqlite3
+
+    from agents.core import settings_migrate
+
+    store = Path(settings.DB_PATH)
+    try:
+        changes = settings_migrate.plan()
+    except sqlite3.Error as exc:
+        ctx.err.write(f"{store} could not be read as a settings store: {exc}\n")
+        return EXIT_UNAVAILABLE
+    if changes is None:
+        total = len(settings._SPEC)
+        if ns.dry_run:
+            if ns.json:
+                ctx.dump({"dry_run": True, "changes": [], "store": str(store), "would_create": total})
+            else:
+                ctx.say(f"no settings store at {store}: migrate would create it with all {total} declared "
+                        "settings (a hub's first start does the same)")
+            return EXIT_OK
+        count = settings_migrate.create()
+        if ns.json:
+            ctx.dump({"dry_run": False, "changes": [], "store": str(store), "created": count})
+        else:
+            ctx.say(f"created {store} with {count} declared settings")
+        return EXIT_OK
+    kept = [c for c in changes if c.kind == "kept"]
+    planned = [c for c in changes if c.kind != "kept"]
+    done = planned if ns.dry_run else settings_migrate.apply(changes)
+    if ns.json:
+        doc: dict[str, Any] = {"dry_run": bool(ns.dry_run), "changes": [c.to_dict() for c in done],
+                               "store": str(store)}
+        if kept:
+            doc["kept"] = [c.to_dict() for c in kept]
+        ctx.dump(doc)
+        return EXIT_OK
+    for change in [*done, *kept]:
+        ctx.say("  " + _describe_change(change, settings))
+    if not done:
+        ctx.say(f"nothing to migrate: {store} holds every setting of this build")
+    elif ns.dry_run:
+        ctx.say(f"{len(done)} change(s) would be made — rerun without --dry-run to apply them")
+    else:
+        ctx.say(f"{len(done)} change(s) applied; a running hub picks them up within 30 s")
+    return EXIT_OK
 
 
 def _payload(raw: str | None) -> dict[str, Any]:

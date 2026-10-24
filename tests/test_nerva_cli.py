@@ -98,7 +98,9 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["extensions"] == ["activate", "consent", "doctor", "list"]
     # H022: the audit is the only security act so far; it reads and reports, never mutates.
     assert tree["security"] == ["audit"]
-    assert tree["config"] == ["check", "get", "list", "set", "unset"]
+    # H006: edit opens $VISUAL/$EDITOR on the declared settings; path / env-path name the
+    # files; migrate writes this build's defaults and retired-model rewrites into a store.
+    assert tree["config"] == ["check", "edit", "env-path", "get", "list", "migrate", "path", "set", "unset"]
     assert tree["approvals"] == ["accept", "consent", "defer", "edit", "list", "reject"]
     assert tree["checkpoints"] == [
         "clear", "clear-legacy", "diff", "list", "prune", "restore", "status",
@@ -527,6 +529,233 @@ def test_config_shows_a_token_budget_as_the_number_it_is(temp_settings):
         settings_db.put_category(category, {key: 4096})
         code, out, _err, _hub = _run(["config", "get", name])
         assert code == EXIT_OK and "4096" in out and "••" not in out, name
+
+
+# ── H006: config edit / path / env-path / migrate ────────────────────────────
+
+
+def _editor(tmp_path, replacements=None, *, append=(), exit_code=0):
+    """A fake ``$EDITOR``: a script that rewrites ``name = value`` lines in place, appends
+    lines, keeps a copy of what it was shown and exits as told. Returns the environ."""
+    import shlex
+    import sys
+
+    copy = tmp_path / "shown.conf"
+    script = tmp_path / "editor.py"
+    script.write_text(
+        "import json, pathlib, sys\n"
+        f"replacements = json.loads({json.dumps(json.dumps(replacements or {}))})\n"
+        f"append = json.loads({json.dumps(json.dumps(list(append)))})\n"
+        "path = pathlib.Path(sys.argv[1])\n"
+        "text = path.read_text(encoding='utf-8')\n"
+        f"pathlib.Path({str(copy)!r}).write_text(text, encoding='utf-8')\n"
+        "lines = []\n"
+        "for line in text.splitlines():\n"
+        "    for name, value in replacements.items():\n"
+        "        if line.startswith(name + ' = '):\n"
+        "            line = name + ' = ' + value\n"
+        "    lines.append(line)\n"
+        "lines.extend(append)\n"
+        "path.write_text('\\n'.join(lines) + '\\n', encoding='utf-8')\n"
+        f"sys.exit({int(exit_code)})\n",
+        encoding="utf-8",
+    )
+    return {"EDITOR": f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}"}, copy
+
+
+def test_config_edit_writes_back_only_what_changed(temp_settings, tmp_path, monkeypatch):
+    from agents.cli import nerva as nerva_module
+
+    seen_paths = []
+    real_run_editor = nerva_module._run_editor
+
+    def spy(argv, path):
+        seen_paths.append(path)
+        return real_run_editor(argv, path)
+
+    monkeypatch.setattr(nerva_module, "_run_editor", spy)
+    environ, shown = _editor(tmp_path, {"llm.tool_loop_max_iterations": "12", "llm.tool_loop_enabled": "true"})
+    code, out, err, _hub = _run(["config", "edit"], environ=environ)
+    assert code == EXIT_OK, err
+    assert "2 setting(s) changed" in out and "llm.tool_loop_max_iterations" in out
+    assert settings_db.get_value("llm", "tool_loop_max_iterations") == 12
+    assert settings_db.get_value("llm", "tool_loop_enabled") is True
+    # The file is the `config list` format, declared settings only, and it is gone afterwards.
+    text = shown.read_text(encoding="utf-8")
+    assert "llm.tool_loop_max_iterations = 8  (number, default)" in text
+    assert seen_paths and not Path(seen_paths[0]).exists()
+    # Everything else keeps its declared value: only the two lines that moved were written.
+    assert all(row["source"] == "default" for row in settings_db.get_category("llm")
+               if row["key"] not in ("tool_loop_max_iterations", "tool_loop_enabled"))
+
+
+def test_config_edit_with_no_change_or_a_failed_editor_changes_nothing(temp_settings, tmp_path):
+    environ, _shown = _editor(tmp_path)
+    code, out, _err, _hub = _run(["config", "edit"], environ=environ)
+    assert code == EXIT_OK and "nothing changed" in out
+
+    environ, _shown = _editor(tmp_path, {"llm.tool_loop_max_iterations": "12"}, exit_code=3)
+    code, _out, err, _hub = _run(["config", "edit"], environ=environ)
+    assert code == EXIT_FAILED and "editor exited 3" in err and "nothing changed" in err
+    assert settings_db.get_value("llm", "tool_loop_max_iterations") == 8
+
+    code, _out, err, _hub = _run(["config", "edit"], environ={"EDITOR": str(tmp_path / "no-such-editor")})
+    assert code == EXIT_FAILED and "not found" in err and "$VISUAL" in err
+
+    # $VISUAL wins over $EDITOR, as everywhere else.
+    visual, _shown = _editor(tmp_path, {"llm.tool_loop_max_iterations": "9"})
+    code, _out, _err, _hub = _run(["config", "edit"],
+                                  environ={"VISUAL": visual["EDITOR"], "EDITOR": str(tmp_path / "no-such-editor")})
+    assert code == EXIT_OK and settings_db.get_value("llm", "tool_loop_max_iterations") == 9
+
+
+def test_config_edit_rejects_what_the_schema_refuses_and_keeps_the_rest(temp_settings, tmp_path):
+    environ, _shown = _editor(
+        tmp_path,
+        {"llm.tool_loop_enabled": '"maybe"', "llm.tool_loop_max_iterations": "12"},
+        append=["llm.no_such_key = 1", "not a setting line", "llm.max_tokens = on"],
+    )
+    code, out, err, _hub = _run(["config", "edit"], environ=environ)
+    assert code == EXIT_FAILED
+    assert "1 setting(s) changed" in out and "llm.tool_loop_max_iterations" in out
+    assert settings_db.get_value("llm", "tool_loop_max_iterations") == 12
+    assert settings_db.get_value("llm", "tool_loop_enabled") is False
+    assert "llm.tool_loop_enabled" in err and "rejected" in err
+    assert "llm.no_such_key" in err and "not a declared setting" in err
+    assert "not a setting line" in err and "category.key = value" in err
+    assert "llm.max_tokens" in err and "JSON" in err
+    assert "4 line(s) rejected" in err
+
+
+def test_config_edit_never_shows_a_secret_or_a_route_only_row(temp_settings, tmp_path):
+    secret_row = next(
+        (r for r in settings_db.DEFAULTS
+         if r["kind"] == "text" and ("token" in r["key"] or "secret" in r["key"]) or r["kind"] in ("secret", "password")),
+        None,
+    )
+    if secret_row is None:
+        pytest.skip("no secret-shaped setting declared")
+    name = f"{secret_row['category']}.{secret_row['key']}"
+    settings_db.put_category(secret_row["category"], {secret_row["key"]: "sk-live-1234"})
+    route_only = next(iter(settings_db.ROUTE_ONLY))
+    environ, shown = _editor(tmp_path, append=[f'{name} = "sk-live-5678"',
+                                                f'{route_only[0]}.{route_only[1]} = []'])
+    code, _out, err, _hub = _run(["config", "edit"], environ=environ)
+    text = shown.read_text(encoding="utf-8")
+    assert "sk-live-1234" not in text and f"# {name}:" in text and "secret" in text
+    assert f"\n{route_only[0]}.{route_only[1]} = " not in text
+    assert code == EXIT_FAILED and "nerva config set" in err and "changed only in" in err
+    assert settings_db.get_value(secret_row["category"], secret_row["key"]) == "sk-live-1234"
+
+
+def test_config_path_names_the_store_the_verbs_use(temp_settings, tmp_path):
+    environ = {"JARVIS_HOME": str(tmp_path / "data")}
+    code, out, _err, _hub = _run(["config", "path"], environ=environ)
+    assert code == EXIT_OK
+    assert str(tmp_path / "settings.db") in out and str(tmp_path / "data") in out
+    assert "not created yet" in out and "profile:      default" in out
+
+    settings_db.init_db()
+    code, out, _err, _hub = _run(["config", "path", "--json"], environ=environ)
+    doc = json.loads(out)
+    assert doc["settings_db"] == str(tmp_path / "settings.db") and doc["settings_db_present"] is True
+    assert doc["data_root"] == str(tmp_path / "data") and doc["profile"] == "default"
+    assert doc["settings_count"] == len(settings_db._SPEC)
+
+    code, out, _err, _hub = _run(["-p", "work", "config", "path", "--json"], environ=environ)
+    assert code == EXIT_OK and json.loads(out)["profile"] == "work"
+    assert json.loads(out)["data_root"] == str(tmp_path / "data-profiles" / "work")
+
+
+def test_config_env_path_names_the_env_files_without_their_values(temp_settings, tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".env").write_text("TELEGRAM_TOKEN=very-secret-value\n", encoding="utf-8")
+    environ = {"JARVIS_HOME": str(tmp_path / "data"), "JARVIS_USER_HOME": str(home)}
+    code, out, _err, _hub = _run(["config", "env-path"], environ=environ)
+    assert code == EXIT_OK
+    assert "very-secret-value" not in out and "TELEGRAM_TOKEN" not in out
+    assert f"data-home .env:  {home / '.env'}  (present)" in out
+    assert "repo .env:" in out and ".env.example:" in out
+    assert str(tmp_path / "data" / "security" / "secrets.enc") in out and "(absent)" in out
+
+    code, out, _err, _hub = _run(["config", "env-path", "--json"], environ=environ)
+    doc = json.loads(out)
+    layers = {f["layer"]: f for f in doc["files"]}
+    assert layers["user_env"]["path"] == str(home / ".env") and layers["user_env"]["present"] is True
+    assert layers["user_env"]["read"] is True and layers["repo_env"]["read"] is True
+    assert doc["secret_store"]["present"] is False and doc["dotenv_disabled"] is False
+    assert "very-secret-value" not in out
+
+    # H689b: a profile's hub reads only its own .env; the shared files are named but not read.
+    code, out, _err, _hub = _run(["-p", "work", "config", "env-path", "--json"], environ=environ)
+    doc = json.loads(out)
+    layers = {f["layer"]: f for f in doc["files"]}
+    assert layers["profile_env"]["path"] == str(tmp_path / "data-profiles" / "work" / ".env")
+    assert layers["profile_env"]["read"] is True
+    assert layers["user_env"]["read"] is False and layers["repo_env"]["read"] is False
+
+    code, out, _err, _hub = _run(["config", "env-path"],
+                                 environ={**environ, "PYTHON_DOTENV_DISABLED": "1"})
+    assert code == EXIT_OK and "PYTHON_DOTENV_DISABLED" in out
+
+
+def test_config_migrate_dry_run_then_apply(temp_settings):
+    import sqlite3
+
+    from agents.core.llm.model_config import DEFAULT_CLAUDE_MODEL, RETIRED_CLAUDE_DEFAULT
+
+    settings_db.init_db()
+    conn = sqlite3.connect(settings_db.DB_PATH)
+    conn.execute("DELETE FROM settings WHERE category='llm' AND key='tool_loop_max_iterations'")
+    conn.execute("UPDATE settings SET value=? WHERE category='llm' AND key='claude_model'",
+                 (json.dumps(RETIRED_CLAUDE_DEFAULT),))
+    conn.execute("UPDATE settings SET value=? WHERE category='llm' AND key='guest_tools'",
+                 (json.dumps(["echo", "time"]),))
+    conn.execute("DELETE FROM settings_migrations WHERE name='llm.guest_tools+todo'")
+    conn.commit()
+    conn.close()
+
+    code, out, _err, _hub = _run(["config", "migrate", "--dry-run"])
+    assert code == EXIT_OK, out
+    assert "seed     llm.tool_loop_max_iterations = 8" in out
+    assert f'retired  llm.claude_model: "{RETIRED_CLAUDE_DEFAULT}" → "{DEFAULT_CLAUDE_MODEL}"' in out
+    assert 'default  llm.guest_tools: ["echo", "time"] → ["echo", "time", "todo"]' in out
+    assert "3 change(s) would be made" in out and "--dry-run" in out
+    conn = sqlite3.connect(settings_db.DB_PATH)
+    assert conn.execute("SELECT value FROM settings WHERE category='llm' AND key='claude_model'").fetchone()[0] \
+        == json.dumps(RETIRED_CLAUDE_DEFAULT)
+    conn.close()
+
+    code, out, _err, _hub = _run(["config", "migrate", "--dry-run", "--json"])
+    doc = json.loads(out)
+    assert doc["dry_run"] is True and len(doc["changes"]) == 3
+    assert {c["kind"] for c in doc["changes"]} == {"seed", "retired", "default"}
+
+    code, out, _err, _hub = _run(["config", "migrate"])
+    assert code == EXIT_OK and "3 change(s) applied" in out and "30 s" in out
+    assert settings_db.get_value("llm", "claude_model") == DEFAULT_CLAUDE_MODEL
+    assert settings_db.get_value("llm", "tool_loop_max_iterations") == 8
+    assert "todo" in settings_db.get_value("llm", "guest_tools")
+
+    code, out, _err, _hub = _run(["config", "migrate"])
+    assert code == EXIT_OK and "nothing to migrate" in out
+    code, out, _err, _hub = _run(["config", "migrate", "--json"])
+    assert json.loads(out) == {"dry_run": False, "changes": [], "store": str(settings_db.DB_PATH)}
+
+
+def test_config_migrate_without_a_store_creates_it_only_when_applied(temp_settings):
+    assert not settings_db.DB_PATH.exists()
+    code, out, _err, _hub = _run(["config", "migrate", "--dry-run"])
+    assert code == EXIT_OK and "no settings store" in out and "would create it" in out
+    assert f"{len(settings_db._SPEC)} declared settings" in out
+    assert not settings_db.DB_PATH.exists()
+
+    code, out, _err, _hub = _run(["config", "migrate"])
+    assert code == EXIT_OK and f"created {settings_db.DB_PATH}" in out
+    assert settings_db.DB_PATH.exists()
+    code, out, _err, _hub = _run(["config", "migrate"])
+    assert code == EXIT_OK and "nothing to migrate" in out
 
 
 def test_logs_tail_the_hub_log_or_say_where_it_would_be(tmp_path, monkeypatch):
