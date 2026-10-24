@@ -51,7 +51,14 @@ from .action_origin import (
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from .turn_outcome import measure_turn_latency
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
-from .commands import ADMIN, CommandOutcome, Principal, build_default_registry, checkpoint_command_name
+from .commands import (
+    ADMIN,
+    CommandOutcome,
+    Principal,
+    build_default_registry,
+    checkpoint_command_name,
+    side_question_command_name,
+)
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
@@ -1965,6 +1972,20 @@ class Orchestrator:
                                else "checkpoint.unavailable", outcome.reply)
         return outcome
 
+    async def _dispatch_preappend_command(self, text: str):
+        """The commands answered before the turn is appended, so neither they nor their
+        replies become turns: the checkpoint operations, and (H414) the ``/btw`` side
+        question, which asks ABOUT the conversation and must leave it exactly as it was."""
+        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        if outcome is not None:
+            return outcome
+        name = side_question_command_name(text)
+        if name is None:
+            return None
+        outcome = await self._dispatch_command(text)
+        return outcome if outcome is not None else CommandOutcome(
+            name, "failed", f"/{name} failed — check the hub log.")
+
     async def _direct_session_command(self, text: str, channel: str, session_id: str | None):
         """Switch web/CLI to a concrete new ID before appending a command turn."""
         if channel not in {"web", "cli"} or (session_id is None and _session_is_shared.get() is False):
@@ -2521,7 +2542,7 @@ class Orchestrator:
         if session_reply is not None:
             return session_reply
 
-        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        outcome = await self._dispatch_preappend_command(text)
         if outcome is not None:
             self.last_cognition = self._command_cognition(outcome)
             return outcome.reply
@@ -2749,7 +2770,7 @@ class Orchestrator:
                     await emitted
             return session_reply
 
-        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        outcome = await self._dispatch_preappend_command(text)
         if outcome is not None:
             if on_token:
                 emitted = on_token(outcome.reply)

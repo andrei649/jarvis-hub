@@ -1360,9 +1360,12 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
         # H579: @file:path references in the owner's own message are attached for this turn:
         # the model reads them after the message, which itself goes on as typed.
         from agents.core import context_refs
-        from agents.core.commands import checkpoint_command_name
+        from agents.core.commands import preappend_command_name
 
-        checkpoint_command = checkpoint_command_name(req.message) is not None
+        # A checkpoint command or a /btw side question (H414) is answered before the
+        # turn is appended: it is not a message for the model, so nothing is attached
+        # or prefixed to it.
+        checkpoint_command = preappend_command_name(req.message) is not None
         expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
         # H10.21: inject the active session's notes as persistent context.
         message = req.message
@@ -1588,9 +1591,9 @@ async def chat_stream(req: ChatRequest, request: Request):
     agent_override = req.agent if req.agent != "jarvis" else None
     # H579: @file:path references are attached for the turn here too, as on /chat.
     from agents.core import context_refs
-    from agents.core.commands import checkpoint_command_name
+    from agents.core.commands import preappend_command_name
 
-    checkpoint_command = checkpoint_command_name(req.message) is not None
+    checkpoint_command = preappend_command_name(req.message) is not None   # see /chat
     expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped

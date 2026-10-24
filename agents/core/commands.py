@@ -34,13 +34,31 @@ _COMMAND_RE = re.compile(r"^/([A-Za-z][A-Za-z0-9_]*)(?:@\w+)?(?:\s+(.*))?$", re.
 _MAX_ARGS = 2_000
 
 
-def checkpoint_command_name(text: str) -> str | None:
-    """Identify only raw checkpoint commands; recognition grants no authority."""
+def _raw_command_name(text: str) -> str | None:
     if not isinstance(text, str):
         return None
     match = _COMMAND_RE.fullmatch(text.strip())
-    name = match.group(1).lower() if match else None
+    return match.group(1).lower() if match else None
+
+
+def checkpoint_command_name(text: str) -> str | None:
+    """Identify only raw checkpoint commands; recognition grants no authority."""
+    name = _raw_command_name(text)
     return name if name in {"rollback", "checkpoints"} else None
+
+
+def side_question_command_name(text: str) -> str | None:
+    """Identify a raw ``/btw`` side question (H414); recognition grants no authority."""
+    name = _raw_command_name(text)
+    return name if name == "btw" else None
+
+
+def preappend_command_name(text: str) -> str | None:
+    """A command the orchestrator answers *before* the turn is appended, so neither it
+    nor its reply becomes a turn: the checkpoint operations and the ``/btw`` side
+    question. Callers that prepare a message for the model (notes, ``@file`` refs)
+    leave these alone."""
+    return checkpoint_command_name(text) or side_question_command_name(text)
 
 
 @dataclass(frozen=True)
@@ -399,6 +417,75 @@ async def _refine(ctx: CommandContext) -> str:
     return "\n".join(lines)
 
 
+_BTW_SYSTEM = (
+    "You answer a side question about a conversation you are shown. Answer from the "
+    "conversation only, briefly and plainly; if it does not say, say so. Do not continue "
+    "the conversation and do not address its participants."
+)
+_BTW_NO_MODEL = ("The side question could not be answered: it needs a local model, and none "
+                 "answered (side questions never leave this machine).")
+
+
+async def _btw(ctx: CommandContext) -> str:
+    """H414 — Hermes' ``/btw <question>``: a side question ABOUT this conversation,
+    answered beside it. The model sees a bounded, redacted snapshot of the session
+    (the one ``/refine`` reviews: newest turns first, commands and their replies left
+    out, secrets and personal data scrubbed line by line) and the question, once,
+    through ``run_oneshot`` on the auxiliary rail — strict-local, job pins excluded,
+    the auxiliary consent boundary. The orchestrator dispatches ``/btw`` before the
+    turn is appended, so neither the question nor the answer becomes a turn."""
+    from agents.core.llm.auxiliary_text import (
+        BTW_MAX_TOKENS,
+        BTW_QUESTION_CHARS,
+        BTW_SNAPSHOT_CHARS,
+        run_oneshot,
+    )
+
+    question = " ".join((ctx.args or "").split())[:BTW_QUESTION_CHARS]
+    if not question:
+        return ("Usage: /btw <question> — ask a side question about this conversation "
+                "(e.g. /btw what did I ask first?); nothing is added to it.")
+    orch = ctx.orch
+    # As /recap: a turn with no session of its own runs on the owner's shared one, and
+    # only the owner may ask about it. No probe counts as shared (fail closed).
+    probe = getattr(orch, "on_shared_session", None)
+    shared = bool(probe()) if callable(probe) else True
+    if shared and not ctx.principal.admin:
+        return "This conversation is the owner's: /btw answers about it only for the owner."
+    memory = getattr(orch, "memory", None)
+    session = getattr(orch, "session_id", None)
+    if memory is None or not session:
+        return "There is no conversation here to ask about yet."
+    router = getattr(orch, "llm_router", None)
+    if router is None:
+        return _BTW_NO_MODEL
+    from agents.core.day_report import default_redactor
+    from agents.core.learning.background_review import REFINE_TURN_CHARS, conversation_snapshot
+    from agents.core.llm.data_handling import DataHandlingRefused
+    from agents.core.llm.job_selection import SelectionError
+
+    turns = await memory.get_history(session)
+    snapshot = conversation_snapshot(turns, limit=BTW_SNAPSHOT_CHARS, per_turn=REFINE_TURN_CHARS)
+    if not snapshot:
+        return "There is no conversation here to ask about yet."
+    redact = default_redactor()
+    # Redacted line by line so the role lines survive (the redactor folds whitespace).
+    transcript = "\n".join(redact(line, limit=REFINE_TURN_CHARS + 16) for line in snapshot.splitlines())
+    prompt = f"Conversation:\n{transcript}\n\nQuestion about this conversation: {question}"
+    try:
+        answer = await run_oneshot(router, prompt, system=_BTW_SYSTEM, purpose="btw",
+                                   max_tokens=BTW_MAX_TOKENS, temperature=0.2)
+    except SelectionError:
+        return "A job model pin is in force for this turn, and side questions do not run under one."
+    except DataHandlingRefused as exc:
+        return f"The side question could not be answered: {exc}"
+    except Exception:
+        logger.warning("/btw: the local model did not answer", exc_info=True)
+        return _BTW_NO_MODEL
+    answer = str(answer or "").strip()
+    return answer or "The local model gave no answer to that."
+
+
 async def _recap(ctx: CommandContext) -> str:
     """H441 — Hermes' ``/recap``: this conversation's last exchanges, rendered from the
     stored turns with no model call; tools a reply used show as a count. ``/recap 20``
@@ -547,6 +634,8 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("reset", "same as /new", _session_change, tier=ADMIN))
     registry.register(SlashCommand("undo", "remove the last exchange while preserving history", _session_change, tier=ADMIN))
     registry.register(SlashCommand("recap", "this conversation's last exchanges, with no model call", _recap, usage="[exchanges]"))
+    registry.register(SlashCommand("btw", "ask a side question about this conversation; nothing is added to it",
+                                   _btw, usage="<question>"))
     registry.register(SlashCommand("usage", "cloud provider quota left, and any 429 hold", _usage, tier=ADMIN))
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("stop", "same as /pause — in-flight work still finishes", _pause, tier=ADMIN, usage="[reason]"))

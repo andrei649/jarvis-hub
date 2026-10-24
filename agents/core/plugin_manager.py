@@ -55,14 +55,106 @@ logger = logging.getLogger("jarvis.plugins.manager")
 _GATE_IDS = {"whatsapp": "whatsapp-bridge"}
 
 
+class PluginLLMRefused(RuntimeError):
+    """A plugin asked for a model call its manifest or the gate does not allow."""
+
+
+class PluginLLM:
+    """H414 — the plugin LLM facade (Hermes' ``ctx.llm``) for a trusted in-tree plugin.
+
+    Third-party extensions get no ``ctx`` at all (the sandbox never sees a host object),
+    so this is the supported lane for the plugins the hub builds itself. ``complete()``
+    and ``stream()`` go through ``run_oneshot`` on the auxiliary rail — the fail-closed
+    local backend, the auxiliary consent boundary, job pins excluded, bounded budgets —
+    labelled ``plugin:<id>`` in the usage ledger. The gate is asked at every call, never
+    once at construction: the manifest must declare ``llm_access`` and the plugin must
+    still be switched on (the load set and safe mode switch it off with the plugins).
+    A stream hook is the plugin's own callable, fed from the same guarded scope.
+    """
+
+    def __init__(self, plugin_id: str, *, gate, router) -> None:
+        self.plugin_id = plugin_id
+        self._gate = gate            # callable -> PermissionGate | None
+        self._router = router        # callable -> LLMRouter | None
+
+    def _check(self):
+        gate = self._gate()
+        if gate is None:
+            raise PluginLLMRefused("plugin model calls refused: no permission gate is bound")
+        manifest = getattr(gate, "plugins", {}).get(self.plugin_id)
+        if manifest is None:
+            raise PluginLLMRefused(f"plugin model calls refused: unknown plugin {self.plugin_id}")
+        if not manifest.enabled:
+            raise PluginLLMRefused(f"plugin model calls refused: {self.plugin_id} is switched off")
+        if not getattr(manifest, "llm_access", False):
+            raise PluginLLMRefused(
+                f"plugin model calls refused: {self.plugin_id} does not declare llm_access in its manifest")
+        router = self._router()
+        if router is None:
+            raise PluginLLMRefused("plugin model calls refused: no model router is bound")
+        return router
+
+    async def complete(self, prompt: str, *, system: str | None = None,
+                       max_tokens: int | None = None, temperature: float = 0.2) -> str:
+        """One stateless completion on the auxiliary rail; never a session turn."""
+        from .llm.auxiliary_text import DEFAULT_ONESHOT_TOKENS, run_oneshot
+
+        router = self._check()
+        return await run_oneshot(
+            router, prompt, purpose=f"plugin:{self.plugin_id}", system=system,
+            max_tokens=DEFAULT_ONESHOT_TOKENS if max_tokens is None else max_tokens,
+            temperature=temperature)
+
+    async def stream(self, prompt: str, *, on_token, system: str | None = None,
+                     max_tokens: int | None = None, temperature: float = 0.2) -> str:
+        """The same call, with each piece of the answer handed to ``on_token`` as it
+        arrives; returns the whole answer."""
+        from .llm.auxiliary_text import DEFAULT_ONESHOT_TOKENS, run_oneshot
+
+        router = self._check()
+        return await run_oneshot(
+            router, prompt, purpose=f"plugin:{self.plugin_id}", system=system,
+            max_tokens=DEFAULT_ONESHOT_TOKENS if max_tokens is None else max_tokens,
+            temperature=temperature, on_token=on_token)
+
+
 class PluginManager:
     """Owns the live-plugin registry (``orch.plugins``) + its build/close lifecycle."""
 
     def __init__(self):
         self.plugins: dict = {}
+        self._llm_orch = None
 
     def get(self, name: str):
         return self.plugins.get(name)
+
+    # ── H414: the plugin LLM facade ─────────────────────────────────────────────
+    def bind_llm(self, orch) -> None:
+        """Remember where the gate and the router live; both are read at call time."""
+        self._llm_orch = orch
+
+    def llm_for(self, plugin_id: str) -> PluginLLM:
+        """The facade for *plugin_id* (its gate id). Cheap, and grants nothing: every
+        call re-checks the manifest and the gate."""
+        if plugin_id in _GATE_IDS:
+            plugin_id = _GATE_IDS[plugin_id]
+
+        def gate():
+            if self._llm_orch is None:
+                raise PluginLLMRefused("plugin model calls refused: the plugin manager is not bound")
+            return getattr(self._llm_orch, "permission_gate", None)
+
+        return PluginLLM(plugin_id, gate=gate,
+                         router=lambda: getattr(self._llm_orch, "llm_router", None))
+
+    def attach_llm(self) -> None:
+        """Hand the facade to every built plugin that asks for it (``attach_llm``). A
+        plugin never imports the rail: the manager gives it the facade, and the gate
+        decides at each call whether the facade answers."""
+        for key, plugin in self.plugins.items():
+            attach = getattr(plugin, "attach_llm", None)
+            if callable(attach):
+                attach(self.llm_for(key))
 
     def build(self, orch) -> None:
         """Construct every live plugin into the registry (was Orchestrator.load_agents
@@ -186,6 +278,9 @@ class PluginManager:
             api_key=env_str("POSTIZ_API_KEY"),
         )
         self._drop_switched_off()
+        # H414: the plugin LLM facade, for the plugins that ask for one.
+        self.bind_llm(orch)
+        self.attach_llm()
         bind_external_orchestrator_attribute(
             orch, "oracle_bridge", self.plugins.get("oracle-bridge")
         )

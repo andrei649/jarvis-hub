@@ -42,6 +42,11 @@ class PluginManifest:
     allowed_domains: list[str] = field(default_factory=list)
     agents_served: list[str] = field(default_factory=list)
     enabled: bool = True
+    #: H414: whether the plugin may make its own model calls through the plugin LLM
+    #: facade (``PluginManager.llm_for``). Those calls run on the strict-local auxiliary
+    #: rail whatever the plugin's network or data scope says; a plugin that does not
+    #: declare this gets a refusal, not a route. No shipped plugin declares it yet.
+    llm_access: bool = False
 
 
 # Built-in plugin manifests
