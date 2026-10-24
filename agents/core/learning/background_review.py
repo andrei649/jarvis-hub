@@ -435,6 +435,13 @@ class BackgroundReviewer:
 
         try:
             raw = await self._llm(prompt)
+        except asyncio.CancelledError:
+            # H403: a new user turn on the session cancels its in-flight review so the
+            # model is free for the reply. No review was had: the unit goes back, on the
+            # day it was spent (as a cancelled /refine's does).
+            if self._day == spent_day:
+                self._day_count = max(0, self._day_count - 1)
+            raise
         except Exception as e:
             logger.debug("background review LLM call failed: %s", e)
             raw = None
@@ -647,4 +654,14 @@ class BackgroundReviewer:
                 "reviews_today": self._day_count, "cut_offs_today": self._day_cut_offs, "day": self._day}
 
 
-__all__ = ["BackgroundReviewer", "REVIEW_PROMPT", "parse_review_json"]
+def action_summary(result, label: str = "Background review") -> str:
+    """H403 — the one-line review action summary the owner sees (Hermes prints one after
+    its fork): what the pass did, ``"; "``-joined, or "" for a pass that did not run or
+    changed nothing — nothing is not news beside every reply."""
+    if not isinstance(result, dict) or not result.get("ran"):
+        return ""
+    actions = [str(a).strip() for a in result.get("actions") or [] if str(a or "").strip()]
+    return f"{label}: {'; '.join(actions)}" if actions else ""
+
+
+__all__ = ["BackgroundReviewer", "REVIEW_PROMPT", "action_summary", "parse_review_json"]
