@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPut } from './api/client';
 import { basePath } from './base-path';
+import { LANGUAGES } from './data';
 
 const OPTIONS = {
   font: ['theme', 'system-sans', 'system-serif', 'system-mono', 'jetbrains-mono'],
   accent: ['cyan', 'amber', 'green', 'violet'], look: ['obsidian', 'graphite'],
   density: ['normal', 'compact', 'comfy'], motion: ['system', 'calm', 'lively'],
   scanline: ['on', 'off'], dotgrid: ['off', 'on'],
+  // H221 — the HUD language is a display choice like the rest: one list, synced the same way.
+  lang: LANGUAGES.map(l => l.code),
 } as const;
 export type AppearanceKey = keyof typeof OPTIONS;
 export type Appearance = Record<AppearanceKey, string>;
-const DEFAULTS: Appearance = {font:'theme', accent:'cyan', look:'obsidian', density:'normal', motion:'system', scanline:'on', dotgrid:'off'};
+const DEFAULTS: Appearance = {font:'theme', accent:'cyan', look:'obsidian', density:'normal', motion:'system', scanline:'on', dotgrid:'off', lang:'en'};
 const KEYS = Object.keys(DEFAULTS) as AppearanceKey[];
 const ENDPOINT = '/api/preferences/appearance';
 type Patch = Partial<Appearance>;
@@ -49,17 +52,21 @@ function journal(key:string): Edit[] {
   return edits.sort((a,b)=>a.time-b.time || a.id.localeCompare(b.id));
 }
 function patches(edits:Edit[]):Patch {return Object.assign({},...edits.map(edit=>edit.patch));}
+// Legacy `hud.<key>` browser choices are a display fallback, never a boot-time upload.
+function legacy(keys: AppearanceKey[]): Patch {
+  return normalize(Object.fromEntries(keys.filter(k => localStorage.getItem('hud.'+k) !== null).map(k => [k, localStorage.getItem('hud.'+k)])));
+}
 function readCache(key: string): State {
   let preferences = {...DEFAULTS}, pending: Patch = {};
   try {
     const cached = JSON.parse(localStorage.getItem(key) || 'null');
     if (cached && cached.version === 1) {
-      preferences = {...preferences, ...normalize(cached.preferences)};
+      // A cache written before the language joined the document keeps the globe choice it predates.
+      const predates: AppearanceKey[] = Object.prototype.hasOwnProperty.call(cached.preferences || {}, 'lang') ? [] : ['lang'];
+      preferences = {...preferences, ...legacy(predates), ...normalize(cached.preferences)};
       pending = patches(journal(key));
     } else {
-      // Legacy browser choices are a display fallback, never a boot-time upload.
-      const legacy = Object.fromEntries(KEYS.filter(k => k !== 'motion' && localStorage.getItem('hud.'+k) !== null).map(k => [k, localStorage.getItem('hud.'+k)]));
-      preferences = {...preferences, ...normalize(legacy)};
+      preferences = {...preferences, ...legacy(KEYS.filter(k => k !== 'motion'))};
     }
   } catch { /* unavailable/corrupt browser storage keeps safe defaults */ }
   pending = {...pending,...patches(journal(key))};

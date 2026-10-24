@@ -102,8 +102,11 @@ function App({ floating = false, shortcuts, onWorld }: {
   const setFont = useCallback((value: string) => appearance.setPreference('font', value), [appearance.setPreference]);
   const setMotion = useCallback((value: string) => appearance.setPreference('motion', value), [appearance.setPreference]);
   const setAccent = useCallback((value: string) => appearance.setPreference('accent', value), [appearance.setPreference]);
+  // H221 — the language is an appearance preference (cached + synced like the others); the
+  // globe menu and the palette rows both set it by code.
+  const lang = appearance.preferences.lang;
+  const setLang = useCallback((value: string) => appearance.setPreference('lang', value), [appearance.setPreference]);
   const ia = 'rail' as 'rail' | 'tabs';
-  const [lang, setLang] = useState(() => { try { return localStorage.getItem('hud.lang') || 'en'; } catch { return 'en'; } });
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useDemoMode();
@@ -223,7 +226,14 @@ function App({ floating = false, shortcuts, onWorld }: {
     if (_firstView.current) { _firstView.current = false; return; }
     trackPageview(route.path);
   }, [route.path]);
-  useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
+  // `hud.lang` stays written for the v1 shell (agents/web/static/i18n.js reads it); the document
+  // carries lang/dir so assistive tech and :lang() styling follow the HUD's language.
+  useEffect(() => {
+    const entry = V2.LANGUAGES.find(l => l.code === lang);
+    document.documentElement.lang = lang;
+    document.documentElement.dir = entry?.dir || 'ltr';
+    try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ }
+  }, [lang]);
   useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
   // Demo ON also restores the pristine ADMIN/OBSERVE fiction — the live cycles in
@@ -721,7 +731,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       <button className="tool-btn" data-anchor="console" onClick={() => setConsoleOpen(true)} title={`console (${displayChord(chordOf(shortcutOverrides, 'view.console'))})`}
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
-        setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
+        setAccent={setAccent} lang={lang} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
         onShortcuts={() => setShortcutsOpen(true)} shortcutOverrides={shortcutOverrides}
         ui={{ font: appearance.preferences.font, setFont, look, setLook, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}

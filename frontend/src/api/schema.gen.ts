@@ -13015,6 +13015,8 @@ export interface components {
             scanline?: string | null;
             /** Dotgrid */
             dotgrid?: string | null;
+            /** Lang */
+            lang?: string | null;
         };
         /** AssignSpaceBody */
         AssignSpaceBody: {

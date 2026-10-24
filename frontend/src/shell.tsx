@@ -1,12 +1,12 @@
 /* HUD v2 · SHELL — topbar, nav, ticker, right column, ambient, palette */
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useId } from 'react';
 import { Icon, ICONS, Glyph, Reactor, Meter, statusClass, fmtTime, fmtTimeShort, fmtDate } from './primitives';
 import { Bubble } from './cockpit';
 import { isExecutingAgent, NeuralMesh } from './mesh';
 import { VoiceOrb } from './orb';
 import { BriefingWall } from './wall';
 import { runningTasks } from './task-state';
-import { V2 } from './data';
+import { V2, LANGUAGES } from './data';
 import { bindings as shortcutBindings, chordOf, displayChord, matchAction } from './shortcuts';
 import { STATUS_CHROME_UNKNOWN, type StatusChrome } from './api/status-chrome';
 
@@ -83,6 +83,64 @@ const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; 
   { id:'admin', icon:'admin', tkey:'admin' },
 ];
 
+/* H221 — the globe is a WAI-ARIA menu button over LANGUAGES, not a two-way toggle: click or
+   ArrowDown/ArrowUp opens with focus on the first/last row, arrows (wrapping), Home and End move
+   between rows, Enter/Space or a click chooses, Escape closes and returns focus to the globe, a
+   press elsewhere or Tab closes. Rows are radio items so the active language is announced as
+   checked, and each carries its own `lang` so a screen reader says the name in that language. */
+function LangMenu({ lang, setLang, t }: any){
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const globe = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const focusOnOpen = useRef<'first' | 'last'>('first');
+  const menuId = 'lang-menu-' + useId().replace(/:/g, '');
+  const rows = () => Array.from(list.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? []);
+  const close = (returnFocus = true) => { setOpen(false); if(returnFocus) globe.current?.focus(); };
+  useEffect(() => {
+    if(!open) return undefined;
+    const all = rows();
+    (focusOnOpen.current === 'last' ? all[all.length - 1] : all[0])?.focus();
+    const away = (e: MouseEvent) => { if(wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [open]);
+  const onGlobeKey = (e: React.KeyboardEvent) => {
+    if(e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault(); focusOnOpen.current = e.key === 'ArrowUp' ? 'last' : 'first'; setOpen(true);
+  };
+  const onListKey = (e: React.KeyboardEvent) => {
+    const all = rows(), i = all.indexOf(document.activeElement as HTMLElement);
+    const move = (n: number) => { e.preventDefault(); all[(n + all.length) % all.length]?.focus(); };
+    if(e.key === 'ArrowDown') move(i + 1);
+    else if(e.key === 'ArrowUp') move(i - 1);
+    else if(e.key === 'Home') move(0);
+    else if(e.key === 'End') move(all.length - 1);
+    // Explicit, not left to the button's native activation: one choice per press, in every browser.
+    else if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); all[i]?.click(); }
+    else if(e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if(e.key === 'Tab') close(false);
+  };
+  const choose = (code: string) => { close(); setLang(code); };
+  return (
+    <div className="lang-menu" ref={wrap}>
+      <button ref={globe} className={'tool-btn' + (open ? ' on' : '')} title="language" aria-label={'language: ' + t.langName}
+        aria-haspopup="menu" aria-expanded={open} aria-controls={menuId}
+        onClick={() => { focusOnOpen.current = 'first'; setOpen(o => !o); }} onKeyDown={onGlobeKey}>
+        <Icon d={ICONS.globe} size={13}/>{t.langName}
+      </button>
+      {open && (
+        <div ref={list} id={menuId} role="menu" aria-label="language" className="lang-menu-list" onKeyDown={onListKey}>
+          {LANGUAGES.map(l => (
+            <button key={l.code} type="button" role="menuitemradio" aria-checked={l.code === lang} tabIndex={-1} lang={l.code}
+              className="lang-menu-item" onClick={() => choose(l.code)}>{l.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, onJobs = () => {}, shortcutOverrides = {}, chrome = STATUS_CHROME_UNKNOWN, t }: any){
   const tr = trust || { mic:'on', strict_local:false };
   const ch: StatusChrome = chrome || STATUS_CHROME_UNKNOWN;
@@ -129,7 +187,7 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
       <div className="badges">
         <button className="tool-btn" onClick={onJobs} title="Scheduled automations">Automations</button>
         <button className="tool-btn" onClick={()=>setDemo&&setDemo(!demo)} title="toggle demo data (seeded sample vs live-only)" style={demo?{color:'var(--amber)',borderColor:'var(--amber)'}:undefined}>{demo?'◐ demo':'○ demo'}</button>
-        <button className="tool-btn" onClick={()=>setLang(lang==='en'?'ro':'en')} title="language"><Icon d={ICONS.globe} size={13}/>{t.langName}</button>
+        <LangMenu lang={lang} setLang={setLang} t={t}/>
         <button className="tool-btn" onClick={onAmbient} title="ambient"><Icon d={ICONS.ambient} size={13}/>{t.enterAmbient}</button>
         <button className="tool-btn" onClick={onPalette} title="command palette">{displayChord(chordOf(shortcutOverrides, 'session.palette'))}</button>
       </div>
@@ -315,7 +373,7 @@ function RosterColumn({ agents, activeId, onSelect, sys, llm, demo, t }){
 }
 
 /* COMMAND PALETTE */
-function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, onShortcuts = () => {}, shortcutOverrides = {}, ui, t }){
+function Palette({ open, onClose, onMode, setAccent, lang = 'en', setLang, onAmbient, onShortcuts = () => {}, shortcutOverrides = {}, ui, t }){
   const [q,setQ]=useState('');
   const [sel,setSel]=useState(0);
   const inputRef=useRef(null);
@@ -352,7 +410,8 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, onShort
       { name:'Accent · Amber', act:()=>setAccent('amber'), icon:'bolt' },
       { name:'Accent · Green', act:()=>setAccent('green'), icon:'bolt' },
       { name:'Accent · Violet', act:()=>setAccent('violet'), icon:'bolt' },
-      { name:'Toggle language EN / RO', act:()=>setLang(l=>l==='en'?'ro':'en'), icon:'globe' },
+      // H221 — one Language row per translated language, the active one ticked (the globe menu's twin).
+      ...LANGUAGES.map(l=>({ name:'Language · '+l.label+(lang===l.code?' ✓':''), act:()=>setLang(l.code), icon:'globe' })),
     ]},
     { g:'Display', items:[
       ...[['theme','Theme Default'],['system-sans','System Sans'],['system-serif','System Serif'],['system-mono','System Mono'],['jetbrains-mono','JetBrains Mono']].map(([id,label])=>({name:'Font · '+label+(u.font===id?' ✓':''),act:()=>u.setFont&&u.setFont(id),icon:'bolt'})),
@@ -367,7 +426,7 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, onShort
       { name:'Scanline · '+(u.scanline==='off'?'On':'Off'), act:()=>u.setScanline&&u.setScanline(u.scanline==='off'?'on':'off'), icon:'bolt' },
       { name:'Dot grid · '+(u.dotgrid==='on'?'Off':'On'), act:()=>u.setDotgrid&&u.setDotgrid(u.dotgrid==='on'?'off':'on'), icon:'bolt' },
     ]},
-  ],[onMode,setAccent,setLang,onAmbient,onShortcuts,shortcutOverrides,u.look,u.density,u.motion,u.scanline,u.dotgrid]);
+  ],[onMode,setAccent,lang,setLang,onAmbient,onShortcuts,shortcutOverrides,u.look,u.density,u.motion,u.scanline,u.dotgrid]);
   const flat = useMemo(()=>{
     const f=[]; cmds.forEach(grp=>grp.items.forEach(it=>{ if(!q||it.name.toLowerCase().includes(q.toLowerCase())) f.push({...it,g:grp.g}); })); return f;
   },[cmds,q]);
