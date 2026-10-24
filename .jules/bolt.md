@@ -55,3 +55,7 @@
 ## 2026-04-13 - Function Closure Allocations in Shared Task-State Helper runningTasks
 **Learning:** `runningTasks` in `frontend/src/task-state.ts` is called across canvas 60 FPS animation loops (`NeuralBurst`, `NeuralMesh`) and topbar status rendering. Calling `.filter()` inside `runningTasks` allocates a callback closure on every animation tick and status update cycle.
 **Action:** Use an indexed `for` loop in shared utility helpers like `runningTasks` so all dependent components avoid callback closure allocations during frame ticks and state updates.
+
+## 2026-04-14 - O(1) Map Lookups and Single-Pass Grouping in Agents and Memory Modes
+**Learning:** `AgentsMode` and `MemoryMode` in `frontend/src/modes.tsx` performed repetitive O(N) array scans (`.filter()` per tier and `.find()` for edge endpoints) during renders and slider adjustments. In Knowledge Graph rendering, calling `.find()` twice per edge creates 2*E*N array comparisons on every slider movement.
+**Action:** Pre-compute static or memoized `Map` instances (`V2_AGENTS_MAP`, `agentsByTier`, `kgNodeMap`) to convert repeated array scans into O(1) lookups and single-pass calculations.

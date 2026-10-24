@@ -6,13 +6,34 @@ import { MemoryNeighborhood } from './panels/memory-neighborhood';
 import { SoulEditor } from './soul-edit';
 /* HUD v2 · MODES — Agents, Trust, Memory */
 
+// Bolt Optimization: Precompute O(1) agent map for Dossier lookups
+const V2_AGENTS_MAP = new Map(V2.AGENTS.map((a: any) => [a.id, a]));
+
 /* ============ AGENTS ============ */
 function AgentsMode({ agents, onOpen, t }) {
   const TIERS = V2.TIERS;
+
+  // Bolt Optimization: Pre-group agents by tier and count live agents in a single pass to eliminate O(N) filtering per tier
+  const { agentsByTier, liveCount } = useMemo(() => {
+    const map = new Map<string, any[]>();
+    let count = 0;
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i];
+      if (a.status !== 'idle') count++;
+      let list = map.get(a.tier);
+      if (!list) {
+        list = [];
+        map.set(a.tier, list);
+      }
+      list.push(a);
+    }
+    return { agentsByTier: map, liveCount: count };
+  }, [agents]);
+
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} agents · {agents.filter(a=>a.status!=='idle').length} live</span></div>
+      <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} agents · {liveCount} live</span></div>
       {/* `overflow-y:auto` with no focusable child is WCAG 2.1.1: the agent cards are
           `<div className="acard" onClick=…>`, so there is nothing to tab to and the roster
           scrolls past the fold unreachable by keyboard (measured 774px of content in a
@@ -28,7 +49,7 @@ function AgentsMode({ agents, onOpen, t }) {
           label for exactly this reason. */}
       <div className="panel-body" tabIndex={0} role="group" aria-label={t.roster}>
         {TIERS.map(tier=>{
-          const list=agents.filter(a=>a.tier===tier.id);
+          const list = agentsByTier.get(tier.id) || [];
           if(!list.length) return null;
           return (
             <div className="tier-group" key={tier.id}>
@@ -62,7 +83,8 @@ function Dossier({ id, onClose, onOpen }) {
   // (archetype/personality/runtime) is the static fallback for fields with no single
   // backend source; the real SOUL.md overrides the seeded soul blurb when it loads.
   const d = V2.DOSSIER[id] || {};
-  const a = V2.AGENTS.find(x=>x.id===id);
+  // Bolt Optimization: O(1) Map lookup for agent details instead of O(N) array search
+  const a = V2_AGENTS_MAP.get(id);
   const [soul,setSoul]=useState(null);   // real SOUL.md text (null = not loaded → seed)
   const [description,setDescription]=useState('');   // H156: the front-matter description
   const [editing,setEditing]=useState(false);        // H156: the persona editor is open
@@ -121,7 +143,7 @@ function Dossier({ id, onClose, onOpen }) {
           )}
           {plugins.length>0 && <div className="dsec"><div className="dl">Plugins</div><div className="dep-links">{plugins.map(p=><span key={p} className="dep-link" style={{cursor:'default'}}>{p}</span>)}</div></div>}
           <div className="dsec"><div className="dl">Collaborates with</div>
-            <div className="dep-links">{deps.map(dep=>{ const da=V2.AGENTS.find(x=>x.id===dep); return <span key={dep} className="dep-link" onClick={()=>onOpen(dep)}><Glyph id={dep} size={12}/>{da?da.name:dep}</span>; })}</div>
+            <div className="dep-links">{deps.map(dep=>{ const da=V2_AGENTS_MAP.get(dep); return <span key={dep} className="dep-link" onClick={()=>onOpen(dep)}><Glyph id={dep} size={12}/>{da?da.name:dep}</span>; })}</div>
           </div>
         </div>
       </div>
@@ -336,12 +358,17 @@ function MemoryMode({ t, demo = false }) {
             ))}</>}
           </div>
           {/* KG */}
-          {demo ? <div>
+          {demo ? (() => {
+            // Bolt Optimization: Precompute O(1) node Map for Knowledge Graph edge endpoint lookups
+            // to avoid 2x O(N) array scans per edge during time-slider interactions
+            const kgNodeMap = new Map(D.KG.nodes.map((n: any) => [n.id, n]));
+            return (
+            <div>
             <div className="kg-wrap">
               <svg className="kg-svg" viewBox="0 0 640 380" preserveAspectRatio="xMidYMid meet">
                 {D.KG.edges.map((e,i)=>{
                   const on = e.born<=born && visIds.has(e.a) && visIds.has(e.b);
-                  const A=D.KG.nodes.find(n=>n.id===e.a), B=D.KG.nodes.find(n=>n.id===e.b);
+                  const A=kgNodeMap.get(e.a) as any, B=kgNodeMap.get(e.b) as any;
                   return <g key={i} className={on?'':'faded'}>
                     <line className={'kg-edge'+(on?'':' faded')} x1={A.x} y1={A.y} x2={B.x} y2={B.y}/>
                     {on && <text className="kg-edge-label" x={(A.x+B.x)/2} y={(A.y+B.y)/2-2} textAnchor="middle">{e.label}</text>}
@@ -366,7 +393,8 @@ function MemoryMode({ t, demo = false }) {
               <span className="asof">{marks[ti]}</span>
             </div>
             <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,color:'var(--ink-4)',marginTop:8,textAlign:'center'}}>bitemporal · drag to travel through what Nerva knew</div>
-          </div> : <MemoryNeighborhood />}
+          </div>);
+          })() : <MemoryNeighborhood />}
         </div>
       </div>
     </div>
