@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import json
 import logging
 from types import SimpleNamespace
 
@@ -264,9 +265,57 @@ def test_the_session_ledger_sums_turns_and_reviews_and_is_bounded(monkeypatch):
     assert cost_tracker.session_usage("s-3")["calls"] == 1
 
 
-def test_the_turn_record_site_names_its_session():
+def test_the_turn_record_site_names_its_session_under_the_reviews_key():
     source = inspect.getsource(Orchestrator._record_interactions)
-    assert 'purpose="turn"' in source and 'session_id=getattr(self, "session_id", None) or ""' in source
+    assert 'purpose="turn"' in source
+    assert 'session_id=self._review_key(getattr(self, "session_id", None))' in source
+    assert Orchestrator._review_key(None) == Orchestrator._review_key("") == "default"
+
+
+def test_a_stored_session_row_missing_counters_loads_whole(monkeypatch, tmp_path):
+    path = tmp_path / "cost_usage.json"
+    path.write_text(json.dumps({"agents": {}, "daily": {}, "sessions": {
+        "old": {"purposes": {"turn": {"calls": "3"}}, "calls": 1},
+        "bad": [], "worse": {"purposes": 7}}}), encoding="utf-8")
+    monkeypatch.setattr(cost_tracker, "_store_path", lambda: path)
+    cost_tracker._state["loaded"] = False
+    cost_tracker._sessions.clear()
+    assert cost_tracker.session_usage("old") == {
+        "calls": 1, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "updated_at": 0.0,
+        "purposes": {"turn": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}}}
+    assert cost_tracker.session_usage("bad") is None and cost_tracker.session_usage("worse") is None
+    cost_tracker.record("jarvis", 1, 1, model="local", route="local", session_id="old")
+    assert cost_tracker.session_usage("old")["calls"] == 2
+
+
+# ── one refund, not two ───────────────────────────────────────────────────────
+
+def test_a_refine_that_times_out_is_refunded_once_above_zero(monkeypatch):
+    from agents.core.learning import background_review as br
+    monkeypatch.setattr(br, "REFINE_TIMEOUT_S", 0.2)
+    gate, llm = _stuck()
+    reviewer = _reviewer(llm, **{"learning.review_daily_budget": 5})
+    reviewer.should_run()
+    reviewer._day_count = 2                                   # two real reviews already had
+    assert asyncio.run(reviewer.run_on_demand("user: x"))["reason"] == "llm_timeout"
+    assert reviewer.status()["reviews_today"] == 2
+
+
+def test_a_cancelled_per_turn_review_is_refunded_once_above_zero(monkeypatch):
+    gate, llm = _stuck()
+    reviewer = _reviewer(llm, **{"learning.review_daily_budget": 5})
+    reviewer.should_run()
+    reviewer._day_count = 2
+    orch = _orch(monkeypatch, reviewer)
+
+    async def scenario():
+        orch._spawn_background_review("hi", "hello", "web")
+        await asyncio.sleep(0.05)
+        assert reviewer.status()["reviews_today"] == 3            # the pass spent its unit
+        assert await orch._settle_background_review("web-1") is True
+
+    asyncio.run(scenario())
+    assert reviewer.status()["reviews_today"] == 2 and reviewer._in_flight == 0
 
 
 # ── the action summary reaches the owner ──────────────────────────────────────
@@ -313,6 +362,93 @@ def test_a_review_that_found_nothing_leaves_no_notice(monkeypatch):
     orch = _orch(monkeypatch, _reviewer(llm))
     asyncio.run(orch._background_review_task("hi", "hello"))
     assert not orch.__dict__.get("_review_notices")
+
+
+def test_a_channel_turn_carries_the_summary_in_its_reply(monkeypatch):
+    """A Telegram/Slack/voice owner has no HUD: the channel turn collects the notices
+    the way /chat does and the reply carries them as system lines."""
+    async def llm(prompt):
+        return ONE_FACT
+
+    orch = _orch(monkeypatch, _reviewer(llm))
+    seen = []
+
+    async def handle_input(text, channel):
+        # stands for the real prologue, whose order the source test above pins
+        await orch._settle_background_review(orch.session_id)
+        seen.append((text, channel))
+        return "Noted."
+
+    orch.handle_input = handle_input
+
+    async def scenario():
+        await orch._background_review_task("I like tea", "noted")
+        return await orch._channel_turn("thanks", "telegram", observe_only=False)
+
+    reply = asyncio.run(scenario())
+    assert seen == [("thanks", "telegram")]
+    assert reply == "Noted.\n\nℹ Background review: User profile updated (+1)"
+    assert orch._review_notices == {}
+    assert asyncio.run(orch._channel_turn("again", "telegram", observe_only=False)) == "Noted."
+
+
+def test_channel_notices_leave_silent_and_typed_replies_alone():
+    from agents.core.channels.ephemeral import EphemeralReply
+    notes = [{"code": "x", "text": "a note"}, {"code": "y", "text": " "}, "junk"]
+    assert Orchestrator._with_channel_notices("", notes) == ""
+    assert Orchestrator._with_channel_notices(None, notes) is None
+    typed = EphemeralReply("busy")
+    assert Orchestrator._with_channel_notices(typed, notes) is typed
+    assert Orchestrator._with_channel_notices("ok \n", notes) == "ok\n\nℹ a note"
+    assert Orchestrator._with_channel_notices("ok", []) == "ok"
+
+
+def test_a_summary_from_another_conversation_reaches_the_owners_next_turn(monkeypatch):
+    async def llm(prompt):
+        return ONE_FACT
+
+    orch = _orch(monkeypatch, _reviewer(llm))
+
+    async def scenario():
+        with _on_session("s-old"):                 # the review ran after that chat's last reply
+            await orch._background_review_task("I like tea", "noted")
+        await orch._background_review_task("I like tea", "noted")      # and one on web-1
+        sink, token = open_turn_notices()
+        try:
+            await orch._settle_background_review("web-1")
+        finally:
+            reset_turn_notices(token)
+        return sink
+
+    sink = asyncio.run(scenario())
+    assert sink == [{"code": "background_review", "text":
+                     "Background review: User profile updated (+1)\n"
+                     "Background review: User profile updated (+1) (conversation s-old)"}]
+    assert orch._review_notices == {}
+
+
+def test_one_reply_shows_a_few_summaries_and_keeps_the_rest(monkeypatch):
+    async def llm(prompt):
+        return ONE_FACT
+
+    orch = _orch(monkeypatch, _reviewer(llm, **{"learning.review_daily_budget": 1000}))
+    monkeypatch.setattr(orch_module, "_REVIEW_NOTICE_LINES", 2)
+
+    async def scenario():
+        for n in range(4):
+            with _on_session(f"s-{n}"):
+                await orch._background_review_task("hi", "hello")
+        sink, token = open_turn_notices()
+        try:
+            await orch._settle_background_review("s-3")
+        finally:
+            reset_turn_notices(token)
+        return sink
+
+    sink = asyncio.run(scenario())
+    assert sink[0]["text"].splitlines() == ["Background review: User profile updated (+1)",
+                                            "Background review: User profile updated (+1) (conversation s-0)"]
+    assert list(orch._review_notices) == ["s-1", "s-2"]
 
 
 def test_pending_summaries_are_bounded_per_process(monkeypatch):

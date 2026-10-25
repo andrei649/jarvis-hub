@@ -188,8 +188,33 @@ def _load_unlocked() -> None:
     sessions = raw.get("sessions")
     if isinstance(sessions, dict):
         for sid, data in sessions.items():
-            if isinstance(data, dict) and isinstance(data.get("purposes"), dict):
-                _sessions[str(sid)] = data
+            row = _session_row(data)
+            if row is not None:
+                _sessions[str(sid)] = row
+
+
+_SESSION_COUNTS = ("calls", "input_tokens", "output_tokens", "cost_usd")
+
+
+def _session_row(data) -> dict | None:
+    """A stored session row with every counter present and numeric (a hand-edited or
+    older row starts the missing ones at 0, as the per-agent loader does), or None."""
+    if not isinstance(data, dict) or not isinstance(data.get("purposes"), dict):
+        return None
+
+    def counts(part: dict) -> dict:
+        out = {}
+        for key in _SESSION_COUNTS:
+            value = part.get(key, 0)
+            out[key] = value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+        return out
+
+    row = counts(data)
+    updated = data.get("updated_at", 0.0)
+    row["updated_at"] = float(updated) if isinstance(updated, (int, float)) else 0.0
+    row["purposes"] = {str(name): counts(slot) for name, slot in data["purposes"].items()
+                       if isinstance(slot, dict)}
+    return row
 
 
 def _save_unlocked() -> None:

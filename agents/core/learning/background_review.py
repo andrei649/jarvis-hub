@@ -436,10 +436,11 @@ class BackgroundReviewer:
         try:
             raw = await self._llm(prompt)
         except asyncio.CancelledError:
-            # H403: a new user turn on the session cancels its in-flight review so the
-            # model is free for the reply. No review was had: the unit goes back, on the
-            # day it was spent (as a cancelled /refine's does).
-            if self._day == spent_day:
+            # H403: a new user turn on the session cancels its in-flight per-turn review
+            # so the model is free for the reply. No review was had: the unit goes back,
+            # on the day it was spent. A /refine cut short is refunded by run_on_demand
+            # (its wait_for cancels this coroutine too): one refund, not two.
+            if not on_demand and self._day == spent_day:
                 self._day_count = max(0, self._day_count - 1)
             raise
         except Exception as e:

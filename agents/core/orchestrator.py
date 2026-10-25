@@ -139,8 +139,9 @@ def _log_task_result(task: "asyncio.Task") -> None:
 
 
 #: H403: how many sessions' background-review summaries wait for a reply that can show
-#: them (one line per session; the oldest goes first).
+#: them (one line per session; the oldest goes first), and how many one reply shows.
 _REVIEW_NOTICES_LIMIT = 64
+_REVIEW_NOTICE_LINES = 4
 
 HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
@@ -2016,18 +2017,35 @@ class Orchestrator:
             if WARMUP.warming:   # H677: named, so a slow first reply is not a mystery
                 logger.info("%s turn served while the local model is still warming up", channel)
             from .channels.session_lifecycle import note_session_activity
+            from .turn_notices import open_turn_notices, reset_turn_notices
             from . import code_interruptions
             note_session_activity()
             conversation_token = code_interruptions.bind_conversation(str(self.session_id or ""))
+            # H403/H674: a channel turn collects its notices like /chat does, and the
+            # reply carries them (a Telegram owner has no HUD to show them beside it).
+            notices, notices_token = open_turn_notices()
             try:
                 if draft is not None:
                     async def push(token):
                         note_session_activity()
                         await draft.push(token)
-                    return await self.handle_input_stream(text, channel, on_token=push)
-                return await self.handle_input(text, channel)
+                    reply = await self.handle_input_stream(text, channel, on_token=push)
+                else:
+                    reply = await self.handle_input(text, channel)
             finally:
+                reset_turn_notices(notices_token)
                 code_interruptions.reset_conversation(conversation_token)
+            return self._with_channel_notices(reply, notices)
+
+    @staticmethod
+    def _with_channel_notices(reply, notices: list) -> Optional[str]:
+        """The turn's notices as system lines under a channel reply (the HUD's ``ℹ``
+        lines, H674). A silent turn stays silent, and a typed reply (an ephemeral system
+        notice is a ``str`` subclass) is left exactly as it is."""
+        lines = [f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
+        if not lines or type(reply) is not str or not reply.strip():
+            return reply
+        return reply.rstrip() + "\n\n" + "\n".join(lines)
 
     async def _run_channel_session_turn(self, session_id, text, channel, *, observe_only, draft):
         # BUG-5: request-local binding never mutates the owner's default session.
@@ -4126,6 +4144,8 @@ class Orchestrator:
 
     @staticmethod
     def _review_key(session_id: Optional[str]) -> str:
+        """The session's key in the review registry and the cost ledger: the shared
+        default session (no id bound) is "default" for its turns and its reviews alike."""
         return str(session_id or "default")
 
     def _forget_review_task(self, key: str, task: "asyncio.Task") -> None:
@@ -4154,10 +4174,12 @@ class Orchestrator:
 
     async def _settle_background_review(self, session_id: Optional[str]) -> bool:
         """H403 — a new user turn on the session: its in-flight review is cancelled, and
-        the last review's action summary, if one waits, is shown beside this reply (H674
-        notices). A turn that has no notice collector (a channel without the HUD) keeps
-        the summary for one that does. Never raises into the turn; returns whether a
-        review was cancelled."""
+        the review summaries waiting for the owner are shown beside this reply (H674
+        notices): this conversation's first, then the others named by conversation, so a
+        review that finished after a conversation's last reply still reaches the owner
+        on their next turn anywhere. A turn with no notice collector keeps them all for
+        one that has it. Never raises into the turn; returns whether a review was
+        cancelled."""
         from .turn_notices import record_turn_notice
 
         key = self._review_key(session_id)
@@ -4169,9 +4191,12 @@ class Orchestrator:
             logger.debug("background review cancel skipped", exc_info=True)
             cancelled = False
         notices = self.__dict__.get("_review_notices") or {}
-        summary = notices.get(key)
-        if summary and record_turn_notice("background_review", summary):
-            notices.pop(key, None)
+        shown = [key] if key in notices else []
+        shown += [sid for sid in notices if sid != key][:_REVIEW_NOTICE_LINES - len(shown)]
+        lines = [notices[sid] if sid == key else f"{notices[sid]} (conversation {sid})" for sid in shown]
+        if lines and record_turn_notice("background_review", "\n".join(lines)):
+            for sid in shown:
+                notices.pop(sid, None)
         return cancelled
 
     async def refine(self, focus: str = "", session_id: Optional[str] = None) -> dict:
@@ -5382,10 +5407,10 @@ class Orchestrator:
                         # an Ollama tag, and pricing the local families on the string
                         # alone metered a whole provider class at a measured $0.00.
                         route=agent_route or "",
-                        # H403: the conversation this turn served, so what a session
-                        # cost — its background reviews included — is one row. (A bare
-                        # instance has no session: the per-agent rollup alone.)
-                        session_id=getattr(self, "session_id", None) or "", purpose="turn",
+                        # H403: the conversation this turn served, under the key its
+                        # background review records under, so what a session cost —
+                        # reviews included — is one row.
+                        session_id=self._review_key(getattr(self, "session_id", None)), purpose="turn",
                     )
                 except Exception:
                     logger.debug("cost record skipped", exc_info=True)
