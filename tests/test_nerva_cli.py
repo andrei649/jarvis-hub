@@ -627,25 +627,84 @@ def test_config_edit_rejects_what_the_schema_refuses_and_keeps_the_rest(temp_set
     assert "4 line(s) rejected" in err
 
 
-def test_config_edit_never_shows_a_secret_or_a_route_only_row(temp_settings, tmp_path):
-    secret_row = next(
-        (r for r in settings_db.DEFAULTS
-         if r["kind"] == "text" and ("token" in r["key"] or "secret" in r["key"]) or r["kind"] in ("secret", "password")),
-        None,
-    )
-    if secret_row is None:
-        pytest.skip("no secret-shaped setting declared")
-    name = f"{secret_row['category']}.{secret_row['key']}"
-    settings_db.put_category(secret_row["category"], {secret_row["key"]: "sk-live-1234"})
-    route_only = next(iter(settings_db.ROUTE_ONLY))
-    environ, shown = _editor(tmp_path, append=[f'{name} = "sk-live-5678"',
-                                                f'{route_only[0]}.{route_only[1]} = []'])
+@pytest.mark.parametrize("category,key", [
+    ("plugins", "twilio_auth_token"),       # SECRET_KEYS: encrypted at rest
+    ("plugins", "tuya_client_id"),          # the store's _CREDENTIAL_NAME suffix, not SECRET_KEYS
+    ("plugins", "gecko_ing_client_id"),
+])
+def test_config_edit_never_shows_or_writes_a_secret(temp_settings, tmp_path, category, key):
+    name = f"{category}.{key}"
+    code, _out, _err, _hub = _run(["config", "set", name, "sentinel-9999"])
+    assert code == EXIT_OK and settings_db.is_secret_setting(category, key)
+    environ, shown = _editor(tmp_path, append=[f'{name} = "sentinel-5678"'])
     code, _out, err, _hub = _run(["config", "edit"], environ=environ)
     text = shown.read_text(encoding="utf-8")
-    assert "sk-live-1234" not in text and f"# {name}:" in text and "secret" in text
-    assert f"\n{route_only[0]}.{route_only[1]} = " not in text
-    assert code == EXIT_FAILED and "nerva config set" in err and "changed only in" in err
-    assert settings_db.get_value(secret_row["category"], secret_row["key"]) == "sk-live-1234"
+    assert "sentinel-9999" not in text and f"# {name}: a secret" in text
+    assert f"\n{name} = " not in text
+    assert code == EXIT_FAILED and f"{name}: a secret" in err and "nerva config set" in err
+    assert settings_db.get_value(category, key) == "sentinel-9999"
+    # `config list` / `get` agree with the edit document.
+    code, out, _err, _hub = _run(["config", "get", name])
+    assert code == EXIT_OK and "sentinel-9999" not in out and "••••" in out
+
+
+def test_config_edit_never_shows_a_route_only_row(temp_settings, tmp_path):
+    route_only = next(iter(settings_db.ROUTE_ONLY))
+    environ, shown = _editor(tmp_path, append=[f"{route_only[0]}.{route_only[1]} = []"])
+    code, _out, err, _hub = _run(["config", "edit"], environ=environ)
+    assert f"\n{route_only[0]}.{route_only[1]} = " not in shown.read_text(encoding="utf-8")
+    assert code == EXIT_FAILED and "changed only in" in err
+
+
+def test_config_edit_names_a_non_executable_editor_and_writes_nothing(temp_settings, tmp_path):
+    script = tmp_path / "noexec"
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    script.chmod(0o644)
+    code, _out, err, _hub = _run(["config", "edit"], environ={"EDITOR": str(script)})
+    assert code == EXIT_FAILED and "not executable" in err and "nothing changed" in err
+
+
+def test_editor_argv_on_windows_keeps_backslashes_and_strips_quotes(monkeypatch):
+    from agents.cli import nerva as nerva_module
+
+    monkeypatch.setattr(nerva_module.os, "name", "nt")
+    argv = nerva_module._editor_argv({"EDITOR": '"C:\\Program Files\\Notepad++\\notepad++.exe" -multiInst'})
+    assert argv == ["C:\\Program Files\\Notepad++\\notepad++.exe", "-multiInst"]
+    assert nerva_module._editor_argv({}) == ["notepad"]
+
+
+def test_a_busy_settings_store_is_named_not_a_traceback(temp_settings, monkeypatch):
+    import sqlite3
+
+    from agents.core import settings_migrate
+
+    def locked(*_a, **_k):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(settings_migrate, "plan", locked)
+    code, _out, err, _hub = _run(["config", "migrate", "--dry-run"])
+    assert code == EXIT_FAILED and "settings store busy" in err and "retry" in err
+
+    monkeypatch.setattr(settings_db, "put_category", locked)
+    code, _out, err, _hub = _run(["config", "set", "llm.tool_loop_max_iterations", "12"])
+    assert code == EXIT_FAILED and "settings store busy" in err
+
+
+def test_config_migrate_rewrites_a_retired_compatible_model_and_leaves_others(temp_settings):
+    import sqlite3
+
+    settings_db.init_db()
+    conn = sqlite3.connect(settings_db.DB_PATH)
+    conn.execute("UPDATE settings SET value=? WHERE category='llm' AND key='compatible_model'",
+                 (json.dumps("claude-opus-4-20250514"),))
+    conn.execute("UPDATE settings SET value=? WHERE category='llm' AND key='gemini_model'",
+                 (json.dumps("gemini-2.5-pro"),))
+    conn.commit()
+    conn.close()
+    code, out, _err, _hub = _run(["config", "migrate"])
+    assert code == EXIT_OK and 'llm.compatible_model: "claude-opus-4-20250514" → "claude-opus-4-6"' in out
+    assert settings_db.get_value("llm", "compatible_model") == "claude-opus-4-6"
+    assert settings_db.get_value("llm", "gemini_model") == "gemini-2.5-pro"
 
 
 def test_config_path_names_the_store_the_verbs_use(temp_settings, tmp_path):

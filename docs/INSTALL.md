@@ -133,6 +133,10 @@ python scripts/nerva.py config list llm        # settings, secrets masked (--rev
 python scripts/nerva.py config set llm.tool_loop_enabled on   # validated; the hub reloads in ≤30 s
 python scripts/nerva.py config set appearance.preferences.accent amber   # a path into a json setting (other devices pick it up); \\. or "quotes" keep a dot inside one key name
 python scripts/nerva.py config unset llm.tool_loop_max_iterations   # back to its declared value (or remove one key inside a json setting)
+python scripts/nerva.py config edit            # every editable setting in $VISUAL/$EDITOR; only changed values are written, each validated like `config set`
+python scripts/nerva.py config path            # the profile, data root and settings.db these verbs use
+python scripts/nerva.py config env-path        # the .env files and secret store the hub reads (names only, never values)
+python scripts/nerva.py config migrate --dry-run   # what this build would write into an older store: new defaults, retired-model replacements (drop --dry-run to apply)
 python scripts/nerva.py approvals list         # the approval queue (needs JARVIS_ADMIN_TOKEN)
 python scripts/nerva.py approvals accept 7
 python scripts/nerva.py kernel explain payment --payload '{"amount": 120}'   # replay the gates, execute nothing

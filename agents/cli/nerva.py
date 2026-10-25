@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shlex
+import sqlite3
 import sys
 import time
 import uuid
@@ -1131,7 +1132,11 @@ def _is_secret(row: Mapping[str, Any]) -> bool:
     # GA4 service-account JSON, a private key, printed in the clear).
     if kind in _SECRET_KINDS or key in _settings().SECRET_KEYS:
         return True
-    return kind not in _PLAIN_KINDS and any(hint in key for hint in _SECRET_HINTS)
+    # H006: the store's own rule (export, reset and preview use it) as well as the hint list,
+    # so `config list`, `get` and `edit` agree — it adds the `client_id` suffix.
+    return kind not in _PLAIN_KINDS and (
+        any(hint in key for hint in _SECRET_HINTS)
+        or _settings().is_secret_setting(str(row.get("category", "")), str(row.get("key", ""))))
 
 
 def _shown(row: Mapping[str, Any], *, reveal: bool) -> Any:
@@ -1345,12 +1350,22 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
             guards.record(findings, "cli", _audit_log())
         except guards.ConsentNotRecorded as exc:
             return [f"{name}: {exc}"]
-    settings.put_category(category, {key: value})
+    try:
+        settings.put_category(category, {key: value})
+    except sqlite3.OperationalError as exc:
+        return [f"{name}: {_busy(exc)}"]
     if f"{category}.{key}" in retention.RETENTION_KEYS:
         # H262 review — a narrowing is a human decision too: the approval is lowered to it,
         # so deepening again later needs a new approval (never raised here).
         retention.lower_approval_offline()
     return []
+
+
+def _busy(exc: sqlite3.Error) -> str:
+    """The reason a store write or read failed with ``OperationalError``, named."""
+    return ("settings store busy (another process holds it) — not changed, retry"
+            if "locked" in str(exc).lower() or "busy" in str(exc).lower()
+            else f"settings store unusable: {_plain(exc, 120)} — not changed")
 
 
 def _when_applied(category: str, key: str, spec: Mapping[str, Any]) -> str:
@@ -1371,15 +1386,20 @@ _EDIT_HEADER = (
 
 def _editor_argv(environ: Mapping[str, str]) -> list[str]:
     """``$VISUAL``, then ``$EDITOR`` (split as a shell would, so ``code --wait`` works),
-    then the platform's plain editor."""
+    then the platform's plain editor. On Windows a backslash path is not an escape
+    (``posix=False``), and the quotes that leaves around a word are stripped."""
+    windows = os.name == "nt"
     for var in ("VISUAL", "EDITOR"):
         try:
-            argv = shlex.split(str(environ.get(var, "") or ""))
+            argv = shlex.split(str(environ.get(var, "") or ""), posix=not windows)
         except ValueError:
             argv = []
+        if windows:
+            argv = [word[1:-1] if len(word) > 1 and word[0] == word[-1] and word[0] in "\"'" else word
+                    for word in argv]
         if argv:
             return argv
-    return ["notepad"] if os.name == "nt" else ["vi"]
+    return ["notepad"] if windows else ["vi"]
 
 
 def _run_editor(argv: list[str], path: str) -> int:
@@ -1456,8 +1476,9 @@ def _config_edit(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
             handle.write(document)
         try:
             status = _run_editor(argv, temporary)
-        except FileNotFoundError:
-            ctx.err.write(f"editor {_plain(argv[0], 80)} not found — set $VISUAL or $EDITOR to one; "
+        except (FileNotFoundError, PermissionError) as exc:
+            why = "not found" if isinstance(exc, FileNotFoundError) else "not executable"
+            ctx.err.write(f"editor {_plain(argv[0], 80)} {why} — set $VISUAL or $EDITOR to one; "
                           "nothing changed\n")
             return EXIT_FAILED
         if status != 0:
@@ -1513,8 +1534,6 @@ def _config_path(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
     """``nerva config path`` — where the data lives: the profile, its data root (as
     ``nerva backup`` resolves it) and the settings store the offline verbs read and
     write, with a row count read without touching it (no init, no seeding)."""
-    import sqlite3
-
     from agents.core.paths import data_root, profile_name
 
     try:
@@ -1625,16 +1644,22 @@ def _config_migrate(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
     listed one per line; ``--dry-run`` lists it and writes nothing. A boot does the same
     seeding silently; this is the same work read first, plus the retired-model rewrite on
     every model setting (agents/core/settings_migrate.py)."""
-    import sqlite3
-
     from agents.core import settings_migrate
 
     store = Path(settings.DB_PATH)
     try:
-        changes = settings_migrate.plan()
+        return _config_migrate_run(ns, ctx, settings, settings_migrate, store)
+    except sqlite3.OperationalError as exc:
+        ctx.err.write(f"{store}: {_busy(exc)}\n")
+        return EXIT_FAILED
     except sqlite3.Error as exc:
         ctx.err.write(f"{store} could not be read as a settings store: {exc}\n")
         return EXIT_UNAVAILABLE
+
+
+def _config_migrate_run(ns: argparse.Namespace, ctx: Context, settings: Any, settings_migrate: Any,
+                        store: Path) -> int:
+    changes = settings_migrate.plan()
     if changes is None:
         total = len(settings._SPEC)
         if ns.dry_run:

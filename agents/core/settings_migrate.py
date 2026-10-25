@@ -33,21 +33,37 @@ class RetiredModel:
     vendor: str
     retired: str
     replacement: str
-    since: str        # the retirement date the price table records (ISO day)
+    source: str       # where the repo records the retirement (a path, never a memory)
+    since: str = ""   # the retirement date that source records (ISO day); "" when it records none
 
 
 #: The rewrite table — data, pinned by tests/test_settings_db_migrate.py: one row per
-#: retired id, a replacement the cost estimator prices and that is not itself retired.
-#: The first row is the shipped Claude default's own retirement, single-sourced from
-#: ``model_config`` so the boot migration and this table can never disagree. The other
-#: rows are the retirements ``agents/core/llm/cost_estimator.py`` records (it keeps the
-#: retired rows priced so past runs stay answerable); each moves to the oldest id still
-#: served in the same family, the smallest change for a caller that pinned the old one.
+#: retired id, each with the repo file that records its retirement, and a replacement
+#: the cost estimator prices and that is not itself retired. The first row is the
+#: shipped Claude default's own retirement, single-sourced from ``model_config`` so the
+#: boot migration and this table can never disagree. The other rows are the retirements
+#: ``agents/core/llm/cost_estimator.py`` and docs/research/2026-08-18-llm-pricing-
+#: verification.md record (the estimator keeps the retired rows priced so past runs stay
+#: answerable). The repo records no vendor-recommended successor, so the replacement is
+#: this table's own choice: the same family on the 4.6 generation the hub's Claude
+#: default runs (``DEFAULT_CLAUDE_MODEL``), and for Haiku, which has no 4.6, the newest
+#: Haiku the estimator prices.
+#:
+#: Only Anthropic ids are listed, deliberately: nothing in the repo records a retired
+#: xAI (``llm.compatible_provider = xai``), OpenAI, Google or OpenRouter id, and a
+#: retirement is not taken from memory. ``llm.compatible_model`` and ``llm.gemini_model``
+#: are still scanned, so the day such a row is added here (with its source) `nerva
+#: config migrate` rewrites it, with no code change — that is the whole of the
+#: vendor-specific `hermes migrate xai`, as data.
 RETIRED_MODELS: tuple[RetiredModel, ...] = (
-    RetiredModel("anthropic", RETIRED_CLAUDE_DEFAULT, DEFAULT_CLAUDE_MODEL, "2026-06-15"),
-    RetiredModel("anthropic", "claude-opus-4-20250514", "claude-opus-4-6", "2026-06-15"),
-    RetiredModel("anthropic", "claude-opus-4-1-20250805", "claude-opus-4-6", "2026-08-05"),
-    RetiredModel("anthropic", "claude-3-5-haiku-20241022", "claude-haiku-4-5", "2026-02-19"),
+    RetiredModel("anthropic", RETIRED_CLAUDE_DEFAULT, DEFAULT_CLAUDE_MODEL,
+                 "agents/core/llm/model_config.py"),
+    RetiredModel("anthropic", "claude-opus-4-20250514", "claude-opus-4-6",
+                 "agents/core/llm/cost_estimator.py", "2026-06-15"),
+    RetiredModel("anthropic", "claude-opus-4-1-20250805", "claude-opus-4-6",
+                 "agents/core/llm/cost_estimator.py", "2026-08-05"),
+    RetiredModel("anthropic", "claude-3-5-haiku-20241022", "claude-haiku-4-5",
+                 "agents/core/llm/cost_estimator.py", "2026-02-19"),
 )
 
 #: The declared settings whose whole value is one model id. A retired id is rewritten
@@ -115,10 +131,11 @@ def _read_store(path) -> tuple[dict[tuple[str, str], Any], set[str], bool] | Non
 _MISSING = object()
 
 
-def plan(path=None) -> list[Change] | None:
+def plan(path=None, table: tuple[RetiredModel, ...] | None = None) -> list[Change] | None:
     """What :func:`apply` would write into the store at *path* (the active store when
     None), in the order it would write it; ``[]`` when it is current, None when there
-    is no store yet (a boot, or :func:`create`, seeds every declared default)."""
+    is no store yet (a boot, or :func:`create`, seeds every declared default). *table*
+    replaces :data:`RETIRED_MODELS` (a test, or a caller with a vendor's own list)."""
     from agents.core import settings_db
 
     read = _read_store(settings_db.DB_PATH if path is None else path)
@@ -146,10 +163,10 @@ def plan(path=None) -> list[Change] | None:
         current = values.get((category, key))
         if not isinstance(current, str):
             continue
-        row = next((r for r in RETIRED_MODELS if r.retired == current), None)
+        row = next((r for r in (RETIRED_MODELS if table is None else table) if r.retired == current), None)
         if row is not None:
             changes.append(Change(f"{category}.{key}", "retired", current, row.replacement,
-                                  f"{row.vendor} retired it ({row.since})"))
+                                  f"{row.vendor} retired it" + (f" ({row.since})" if row.since else "")))
     return changes
 
 
