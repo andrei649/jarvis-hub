@@ -5463,7 +5463,7 @@ class Orchestrator:
                         # H403: the conversation this turn served, under the key its
                         # background review records under, so what a session cost —
                         # reviews included — is one row.
-                        session_id=self._review_key(getattr(self, "session_id", None)), purpose="turn",
+                        session_id=Orchestrator._review_key(getattr(self, "session_id", None)), purpose="turn",
                     )
                 except Exception:
                     logger.debug("cost record skipped", exc_info=True)

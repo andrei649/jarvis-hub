@@ -287,7 +287,7 @@ def test_the_session_ledger_sums_turns_and_reviews_and_is_bounded(monkeypatch):
 def test_the_turn_record_site_names_its_session_under_the_reviews_key():
     source = inspect.getsource(Orchestrator._record_interactions)
     assert 'purpose="turn"' in source
-    assert 'session_id=self._review_key(getattr(self, "session_id", None))' in source
+    assert 'session_id=Orchestrator._review_key(getattr(self, "session_id", None))' in source
     assert Orchestrator._review_key(None) == Orchestrator._review_key("") == "default"
 
 
