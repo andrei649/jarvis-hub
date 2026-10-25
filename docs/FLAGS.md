@@ -1473,7 +1473,11 @@ The consecutive-denial breaker (`JARVIS_SMART_DENIAL_BREAKER_THRESHOLD`, default
 3) now counts the owner's own **reject** of a chat-originated `terminal_run`
 approval card as a denial, exactly like a smart-reviewer DENY (same per-session
 tally, reset by any owner approval, one event per task). It therefore trips with
-`JARVIS_SMART_APPROVALS` left off.
+`JARVIS_SMART_APPROVALS` left off. Every settled owner "no" counts: the single-card
+reject, each member of a grouped reject (a model retrying one command lands as one
+approval group), and each member of a reusable-consent **deny**; a consent
+**session**/**always** grant is an owner approval and resets the tally. An approval
+that merely expires unanswered does not count.
 
 `llm.tool_loop_web_search_cap` is a runtime setting, default **50** (Hermes'
 ceiling), `0` = off, whole numbers up to 10000. It applies in the tool loop beside
