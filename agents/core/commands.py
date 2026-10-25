@@ -469,11 +469,23 @@ async def _btw(ctx: CommandContext) -> str:
     # key so that no pattern matches and its prefix survives (the Redactor's own rule).
     # The snapshot then bounds each turn and the total, over text that is already clean;
     # the redactor also folds whitespace, so a turn cannot forge a role line.
+    # Only the newest window that can fill the snapshot is redacted (a long history is not
+    # scanned whole on the event loop); each turn kept in it is redacted in full first.
     redact = default_redactor()
-    clean = [dict(turn, content=redact(turn["content"], limit=max(1, len(str(turn["content"])))))
-             if isinstance(turn, dict) and turn.get("content") is not None else turn
-             for turn in turns or []]
-    transcript = conversation_snapshot(clean, limit=BTW_SNAPSHOT_CHARS, per_turn=REFINE_TURN_CHARS)
+    window, used = [], 0
+    for turn in reversed(list(turns or [])):
+        if not isinstance(turn, dict) or turn.get("content") is None or not str(turn["content"]).strip():
+            continue
+        content = str(turn["content"])
+        if turn.get("agent_id") == "commands" or (
+                turn.get("role") == "user" and CommandRegistry.parse(content.strip()) is not None):
+            continue
+        clean = redact(content, limit=max(1, len(content)))
+        window.append(dict(turn, content=clean))
+        used += min(len(clean), REFINE_TURN_CHARS) + 16
+        if used > BTW_SNAPSHOT_CHARS:
+            break
+    transcript = conversation_snapshot(window[::-1], limit=BTW_SNAPSHOT_CHARS, per_turn=REFINE_TURN_CHARS)
     if not transcript:
         return "There is no conversation here to ask about yet."
     prompt = f"Conversation:\n{transcript}\n\nQuestion about this conversation: {question}"

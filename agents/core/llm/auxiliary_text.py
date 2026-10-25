@@ -11,6 +11,7 @@ history goes in unless the caller puts it in the prompt, and nothing here writes
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import re
@@ -292,7 +293,9 @@ async def run_oneshot(
 
         if is_backend_failure_reply(answer):
             raise AuxiliaryBackendFailure("the local model did not answer")
-    except BaseException:
+    except asyncio.CancelledError:
+        raise            # a cancelled call is neither answered nor refused
+    except Exception:
         _record_oneshot(purpose, prompt_chars=prompt_chars, max_tokens=max_tokens,
                         model=model, answered=False)
         raise

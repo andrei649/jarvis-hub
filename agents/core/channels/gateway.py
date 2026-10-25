@@ -228,13 +228,19 @@ class Gateway:
         return True
 
     def pre_lane_interrupt(self, *, channel: str, sender: str, chat_id,
-                           message_thread_id=None) -> bool:
+                           message_thread_id=None, text: str = "") -> bool:
         """Probe Telegram's current admission before its occupied chat lane.
 
         This does not reserve a rate slot or pair anyone. The later route still
-        makes the actual admission decision against then-current state.
+        makes the actual admission decision against then-current state. *text* is the
+        admitted message: a ``/btw`` side question (H414) asks beside the running work and
+        never signals it, so it is not probed at all.
         """
         if channel != "telegram" or not callable(self.interrupt_handler):
+            return False
+        from ..commands import side_question_command_name
+
+        if side_question_command_name(text) is not None:
             return False
         now = time.time()
         if sum(now - stamp < self._window for stamp in self._rate_limits.get(channel, ())) >= self._max_rate:
@@ -244,7 +250,7 @@ class Gateway:
                 return False
             return bool(self.interrupt_handler(
                 channel=channel, sender=str(sender), chat_id=chat_id,
-                message_thread_id=message_thread_id))
+                message_thread_id=message_thread_id, text=text))
         except Exception:
             logger.warning("Telegram pre-lane code interruption unavailable", exc_info=True)
             return False

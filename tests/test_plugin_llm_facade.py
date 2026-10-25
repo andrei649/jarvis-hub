@@ -280,3 +280,22 @@ async def test_a_backend_failure_text_is_a_refusal_for_a_plugin_too(manager, rai
     with pytest.raises(auxiliary_text.AuxiliaryBackendFailure):
         await manager.manager.llm_for("probe").complete("p")
     assert auxiliary_text.oneshot_usage()["plugin:probe"]["refused"] == 1
+
+
+async def test_a_callback_that_swallows_its_cancellation_cannot_hold_the_stream_open(manager, rail, monkeypatch):
+    import asyncio
+    import contextlib
+
+    monkeypatch.setattr(pm, "STREAM_DRAIN_SECONDS", 0.05)
+    stubborn = asyncio.Event()
+
+    async def callback(text):
+        while not stubborn.is_set():
+            with contextlib.suppress(asyncio.CancelledError):   # a cancel-resistant plugin
+                await asyncio.sleep(0.01)
+
+    llm = manager.manager.llm_for("probe")
+    answer = await asyncio.wait_for(llm.stream("p", on_token=callback), timeout=3)
+    assert answer == "local answer"
+    stubborn.set()                       # let the abandoned worker end
+    await asyncio.sleep(0.05)

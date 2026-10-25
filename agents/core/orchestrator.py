@@ -1738,8 +1738,11 @@ class Orchestrator:
             reset_action_origin(origin_token)
 
     def interrupt_channel_message(self, *, channel: str, sender: str,
-                                  chat_id=None, message_thread_id=None) -> bool:
-        """Trusted adapter hook, before its chat lane occupies the turn queue."""
+                                  chat_id=None, message_thread_id=None, text: str = "") -> bool:
+        """Trusted adapter hook, before its chat lane occupies the turn queue. A ``/btw``
+        side question (H414) is asked beside the running work and never interrupts it."""
+        if side_question_command_name(text) is not None:
+            return False
         thread_id = str(chat_id) if chat_id is not None else None
         if channel == "telegram" and message_thread_id:
             thread_id = f"{thread_id}:topic:{message_thread_id}"

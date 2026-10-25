@@ -80,7 +80,9 @@ class _StreamObserver:
         self._callback = callback
         self._plugin_id = plugin_id
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=STREAM_QUEUE_LIMIT)
+        self._closed = False
         self._worker = asyncio.create_task(self._run())
+        self._worker.add_done_callback(lambda task: task.cancelled() or task.exception())
         self.dropped = 0
 
     async def push(self, text: str) -> None:
@@ -97,7 +99,7 @@ class _StreamObserver:
                     pass
 
     async def _run(self) -> None:
-        while True:
+        while not self._closed:
             text = await self._queue.get()
             try:
                 result = self._callback(text)
@@ -116,8 +118,14 @@ class _StreamObserver:
             logger.warning("plugin %s stream callback did not keep up; its remaining pieces were dropped",
                            self._plugin_id)
         finally:
+            self._closed = True
             self._worker.cancel()
-            await asyncio.gather(self._worker, return_exceptions=True)
+            # Bounded and cancel-safe: a callback that swallows its cancellation cannot hold
+            # the stream open; the worker is abandoned (it exits at its next turn of the loop).
+            _done, pending = await asyncio.wait({self._worker}, timeout=STREAM_DRAIN_SECONDS)
+            if pending:
+                logger.warning("plugin %s stream callback ignored cancellation; abandoned",
+                               self._plugin_id)
 
 
 class PluginLLM:

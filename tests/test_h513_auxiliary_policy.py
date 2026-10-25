@@ -375,3 +375,19 @@ async def test_run_oneshot_keeps_an_answer_that_merely_looks_like_a_list(oneshot
     oneshot.backend.generate = listy
     assert (await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8)).startswith('[1]')
     assert oneshot.module.oneshot_usage()['btw']['answered'] == 1
+
+
+async def test_run_oneshot_does_not_record_a_cancelled_call_as_refused(oneshot):
+    started = asyncio.Event()
+
+    async def slow(**kwargs):
+        started.set()
+        await asyncio.sleep(30)
+
+    oneshot.backend.generate = slow
+    task = asyncio.create_task(oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert oneshot.module.oneshot_usage() == {}

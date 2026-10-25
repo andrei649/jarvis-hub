@@ -624,3 +624,30 @@ async def test_the_web_lease_helper_holds_no_lease_for_a_side_question():
     assert orch.entered == 0
     async with web._turn_lease(orch, "s") as acquired:
         assert acquired is False and orch.entered == 1
+
+
+# ── only the newest window is redacted ────────────────────────────────────────────
+
+
+async def test_btw_redacts_only_the_newest_window_of_a_long_history(rail, monkeypatch):
+    from agents.core import day_report
+
+    seen = []
+    real = day_report.default_redactor()
+
+    def counting(text, *, limit=0):
+        seen.append(len(str(text)))
+        return real(text, limit=limit)
+
+    monkeypatch.setattr(day_report, "default_redactor", lambda: counting)
+    turns = []
+    for index in range(3000):
+        turns.append({"role": "user", "content": f"question {index} " + "w" * 300})
+        turns.append({"role": "assistant", "content": f"answer {index}", "agent_id": "jarvis"})
+    turns.append({"role": "user", "content": "x" * 1990 + SECRET + " tail"})
+    orch = _orch(rail, turns)
+    await orch.commands.dispatch("/btw summarise", orch=orch, principal=OWNER)
+    assert 0 < len(seen) < 100                     # not 6000 scans of the whole history
+    prompt = rail.calls[0]["prompt"]
+    assert "A1b2C3d4" not in prompt and "sk-A1" not in prompt   # the kept window is redacted whole
+    assert "question 2999" in prompt and "question 0 " not in prompt
