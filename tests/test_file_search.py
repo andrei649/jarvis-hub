@@ -990,3 +990,17 @@ def test_brace_expansion_is_bounded():
     assert len(file_tools._expand_braces("{" + ",".join(str(i) for i in range(32)) + "}")) == 32
     assert file_tools._expand_braces("{" + ",".join(str(i) for i in range(33)) + "}") is None
     assert file_tools._compile_glob("!*.py") == (True, ("*.py",))
+
+
+async def test_embedded_globstar_matches_at_depth_zero(globs):
+    """`src/**/*.py` finds `src/m.py` (zero directories) as well as `src/deep/o.py`."""
+    tools = _loose(globs)
+    assert _found(await tools.search_files({"glob": "src/**/*.py"}), globs) == ["src/deep/o.py", "src/m.py"]
+    out = await tools.search_files({"pattern": "needle", "glob": "src/**/*.py"})
+    assert sorted(os.path.relpath(m["path"], globs) for m in out["matches"]) == ["src/deep/o.py", "src/m.py"]
+    assert _found(await tools.search_files({"glob": "!src/**/*.py"}), globs).count("src/m.py") == 0
+    assert file_tools._zero_depth_variants("plain/*.py") == ["plain/*.py"]
+    assert sorted(file_tools._zero_depth_variants("a/**/b/**/c")) == sorted(
+        ["a/**/b/**/c", "a/b/**/c", "a/**/b/c", "a/b/c"])
+    many = "**/a/**/b/**/c/**/d/**/e"
+    assert file_tools._zero_depth_variants(many) == [many, "a/b/c/d/e"]

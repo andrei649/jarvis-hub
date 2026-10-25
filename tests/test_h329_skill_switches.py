@@ -941,3 +941,11 @@ def test_nerva_skills_verify_runs_one_skill_case_on_the_hub():
     assert code == 0 and json.loads(out)["passed"] is True
     code, _out, err, _calls = _cli(["skills", "verify", "Weather Intel"], {f"POST {path}": {"error": "x"}})
     assert code == 1 and "no verdict" in err
+
+
+def test_nerva_skills_verify_json_exit_code_follows_the_verdict():
+    """H354: `--json` prints the hub's reply but a red or verdict-less probe still exits 1."""
+    path = "/api/capabilities/skills/Weather%20Intel/verify"
+    for reply, want in (({"passed": True}, 0), ({"passed": False}, 1), ({"error": "x"}, 1)):
+        code, out, _err, _calls = _cli(["skills", "verify", "Weather Intel", "--json"], {f"POST {path}": reply})
+        assert code == want and json.loads(out) == reply

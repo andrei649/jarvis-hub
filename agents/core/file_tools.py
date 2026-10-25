@@ -2413,8 +2413,8 @@ def _glob_one(file: Path, target: Path, glob: str) -> bool:
     """One plain glob (``* ? [seq]``, no braces or negation) against *file*: a glob
     without ``/`` is matched against the file name, one with ``/`` against the POSIX
     path relative to *target* (``*`` crosses directories, so ``**/*.py`` and
-    ``src/*.py`` both work, and a leading ``**/`` also matches at depth zero, as in
-    gitignore / ripgrep globs). Case matters, as on the disk the roots name."""
+    ``src/*.py`` both work, and a ``**/`` segment, leading or embedded, also matches at
+    depth zero, as in gitignore / ripgrep globs). Case matters, as on the disk the roots name."""
     if "/" not in glob:
         return fnmatch.fnmatchcase(file.name, glob)
     try:
@@ -2423,9 +2423,33 @@ def _glob_one(file: Path, target: Path, glob: str) -> bool:
         relative = file.name
     if relative == ".":
         relative = file.name
-    if fnmatch.fnmatchcase(relative, glob):
-        return True
-    return glob.startswith("**/") and fnmatch.fnmatchcase(relative, glob[3:])
+    return any(fnmatch.fnmatchcase(relative, variant) for variant in _zero_depth_variants(glob))
+
+
+_GLOBSTAR_SEGMENT = re.compile(r"(?:(?<=/)|^)\*\*/")
+_MAX_GLOBSTAR_SEGMENTS = 4
+
+
+def _zero_depth_variants(glob: str) -> list[str]:
+    """*glob* itself plus every spelling with some of its ``**/`` segments dropped, so
+    ``src/**/*.ts`` also matches ``src/a.ts`` (a ``**/`` may span zero directories, as in
+    gitignore / ripgrep globs). More than :data:`_MAX_GLOBSTAR_SEGMENTS` of them: only the
+    original and the fully collapsed spelling."""
+    spans = [m.span() for m in _GLOBSTAR_SEGMENT.finditer(glob)]
+    if not spans:
+        return [glob]
+    if len(spans) > _MAX_GLOBSTAR_SEGMENTS:
+        return [glob, _GLOBSTAR_SEGMENT.sub("", glob)]
+    variants = []
+    for mask in range(1 << len(spans)):
+        out, last = [], 0
+        for i, (a, b) in enumerate(spans):
+            out.append(glob[last:a])
+            out.append("" if mask & (1 << i) else glob[a:b])
+            last = b
+        out.append(glob[last:])
+        variants.append("".join(out))
+    return variants
 
 
 def _glob_matches(file: Path, target: Path, glob: tuple[bool, tuple[str, ...]]) -> bool:

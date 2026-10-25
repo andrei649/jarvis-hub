@@ -2659,7 +2659,7 @@ def _skill_verify(ns: argparse.Namespace, ctx: Context) -> int:
     reply = ctx.client().post(f"/api/capabilities/skills/{quote(ns.name, safe='')}/verify", {})
     if ns.json:
         ctx.dump(reply)
-        return EXIT_OK
+        return EXIT_OK if isinstance(reply, dict) and reply.get("passed") is True else EXIT_FAILED
     if not isinstance(reply, dict) or "passed" not in reply:
         ctx.err.write("unexpected reply from the hub: no verdict in it\n")
         return EXIT_FAILED
