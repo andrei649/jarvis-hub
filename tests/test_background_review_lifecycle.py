@@ -25,11 +25,12 @@ import pytest
 
 from agents.core import cost_tracker
 from agents.core import orchestrator as orch_module
+from agents.core.commands import Principal
 from agents.core.learning.background_review import BackgroundReviewer, action_summary
 from agents.core.llm.egress import llm_async_client
 from agents.core.llm.tool_protocol import TokenUsage
 from agents.core.llm.usage_context import report_text_usage
-from agents.core.orchestrator import Orchestrator
+from agents.core.orchestrator import Orchestrator, bind_turn_principal, reset_turn_principal
 from agents.core.turn_notices import open_turn_notices, reset_turn_notices
 from agents.core.turn_usage import model_usage_scope
 
@@ -95,6 +96,24 @@ def _stuck():
         return NOTHING
 
     return gate, llm
+
+
+@pytest.fixture(autouse=True)
+def _owner_principal():
+    """The review summary is the owner's: these tests run as the admin unless one says
+    otherwise (``_as``)."""
+    token = bind_turn_principal(Principal(channel="telegram", sender="1", admin=True))
+    yield
+    reset_turn_principal(token)
+
+
+@contextlib.contextmanager
+def _as(*, admin, channel="telegram", sender="999"):
+    token = bind_turn_principal(Principal(channel=channel, sender=sender, admin=admin, chat="-100group"))
+    try:
+        yield
+    finally:
+        reset_turn_principal(token)
 
 
 @pytest.fixture(autouse=True)
@@ -471,3 +490,162 @@ def test_the_orchestrator_declares_the_registry_and_the_notices():
     source = inspect.getsource(Orchestrator.__init__)
     assert "self._review_tasks: dict[str, asyncio.Task] = {}" in source
     assert "self._review_notices: dict[str, str] = {}" in source
+
+
+# ── the summary is the owner's: no leak to anyone else ────────────────────────
+
+OWNER_LINE = "Background review: User profile updated (+1)"
+
+
+def _owner_review_pending(orch, sessions=("owner-private-session",)):
+    async def scenario():
+        for sid in sessions:
+            with _on_session(sid):
+                await orch._background_review_task("my secret", "noted")
+
+    asyncio.run(scenario())
+    assert set(orch._review_notices) == set(sessions)
+
+
+def _stranger_orch(monkeypatch):
+    async def llm(prompt):
+        return ONE_FACT
+
+    orch = _orch(monkeypatch, _reviewer(llm, **{"learning.review_daily_budget": 1000}))
+
+    async def handle_input(text, channel):
+        await orch._settle_background_review(orch.session_id)
+        return "hi"
+
+    orch.handle_input = handle_input
+    return orch
+
+
+def test_regression_a_strangers_channel_turn_gets_nothing_of_the_owners_reviews(monkeypatch):
+    """The reproduced leak: a non-admin Telegram sender in a group got the owner's
+    summary and the owner's session id appended to the reply."""
+    orch = _stranger_orch(monkeypatch)
+    _owner_review_pending(orch)
+    before = dict(orch._review_notices)
+
+    async def scenario():
+        with _as(admin=False), _on_session("stranger-session"):
+            return await orch._channel_turn("hello", "telegram", observe_only=False)
+
+    reply = asyncio.run(scenario())
+    assert reply == "hi" and "owner-private-session" not in reply and "ℹ" not in reply
+    assert orch._review_notices == before                  # kept, for the owner
+
+
+def test_a_stranger_sharing_the_owners_session_gets_its_summary_neither(monkeypatch):
+    """memory.cross_channel_sessions: one session id for everyone on the box."""
+    orch = _stranger_orch(monkeypatch)
+    _owner_review_pending(orch, ("shared",))
+
+    async def scenario():
+        with _as(admin=False), _on_session("shared"):
+            return await orch._channel_turn("hello", "slack", observe_only=False)
+
+    assert asyncio.run(scenario()) == "hi"
+    assert orch._review_notices == {"shared": OWNER_LINE}
+
+
+def test_a_non_admin_web_turn_gets_no_lines_and_consumes_none(monkeypatch):
+    """agents/web.py binds the token's principal and opens the collector around the
+    turn: the orchestrator's gate is what the HUD path rests on."""
+    orch = _stranger_orch(monkeypatch)
+    _owner_review_pending(orch, ("owner-private-session", "other"))
+
+    async def web_turn(admin, sid):
+        sink, token = open_turn_notices()
+        try:
+            with _as(admin=admin, channel="web", sender=None), _on_session(sid):
+                await orch._settle_background_review(sid)
+        finally:
+            reset_turn_notices(token)
+        return sink
+
+    assert asyncio.run(web_turn(False, "other")) == []
+    assert asyncio.run(web_turn(False, "somebody-else")) == []
+    assert set(orch._review_notices) == {"owner-private-session", "other"}
+    sink = asyncio.run(web_turn(True, "owner-private-session"))        # the owner still gets them
+    assert sink[0]["text"].splitlines() == [OWNER_LINE, OWNER_LINE + " (conversation other)"]
+    assert orch._review_notices == {}
+
+
+def test_the_owners_next_channel_turn_still_gets_what_a_stranger_could_not(monkeypatch):
+    orch = _stranger_orch(monkeypatch)
+    _owner_review_pending(orch)
+
+    async def turn(admin, sid):
+        with _as(admin=admin), _on_session(sid):
+            return await orch._channel_turn("hello", "telegram", observe_only=False)
+
+    assert asyncio.run(turn(False, "stranger-session")) == "hi"
+    owner = asyncio.run(turn(True, "owner-session"))
+    assert owner == f"hi\n\nℹ {OWNER_LINE} (conversation owner-private-session)"
+    assert orch._review_notices == {}
+
+
+def test_a_strangers_own_review_is_not_queued_for_the_owner(monkeypatch):
+    async def llm(prompt):
+        return ONE_FACT
+
+    orch = _orch(monkeypatch, _reviewer(llm))
+
+    async def scenario():
+        with _as(admin=False), _on_session("stranger-session"):
+            await orch._background_review_task("hi", "hello")
+
+    asyncio.run(scenario())
+    assert not orch.__dict__.get("_review_notices")
+
+
+@pytest.mark.parametrize("channel", ["voice", "webhook", "gateway", "email", "mcp"])
+def test_voice_and_machine_replies_carry_no_footer_and_the_summary_waits(monkeypatch, channel):
+    orch = _stranger_orch(monkeypatch)
+    _owner_review_pending(orch, ("owner-private-session",))
+
+    async def scenario():
+        with _on_session("owner-session"):                   # the owner, admin
+            return await orch._channel_turn("hello", channel, observe_only=False)
+
+    assert asyncio.run(scenario()) == "hi"
+    assert orch._review_notices == {"owner-private-session": OWNER_LINE}
+
+
+def test_a_streamed_draft_finishes_with_the_notice_bearing_owner_reply(monkeypatch):
+    class Draft:
+        def __init__(self):
+            self.pushed, self.final = [], None
+
+        async def push(self, token):
+            self.pushed.append(token)
+
+        async def finish(self, text):
+            self.final = text
+
+    async def llm(prompt):
+        return ONE_FACT
+
+    orch = _orch(monkeypatch, _reviewer(llm))
+    _owner_review_pending(orch, ("old",))
+    draft = Draft()
+
+    async def handle_input_stream(text, channel, on_token=None):
+        await orch._settle_background_review(orch.session_id)
+        await on_token("Hel")
+        await on_token("lo")
+        return "Hello"
+
+    orch.handle_input_stream = handle_input_stream
+
+    async def scenario():
+        with _on_session("web-1"):
+            reply = await orch._channel_turn("hi", "telegram", observe_only=False, draft=draft)
+        await draft.finish(reply)               # what the channel router does with the response
+        return reply
+
+    reply = asyncio.run(scenario())
+    assert draft.pushed == ["Hel", "lo"]
+    assert draft.final == reply == f"Hello\n\nℹ {OWNER_LINE} (conversation old)"

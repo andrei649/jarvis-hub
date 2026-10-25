@@ -142,6 +142,10 @@ def _log_task_result(task: "asyncio.Task") -> None:
 #: them (one line per session; the oldest goes first), and how many one reply shows.
 _REVIEW_NOTICES_LIMIT = 64
 _REVIEW_NOTICE_LINES = 4
+#: H403: the channels whose reply is text a person reads, where an ``ℹ`` footer is safe.
+#: Voice (the reply is spoken), email, webhook and gateway replies (machine-consumed)
+#: are not: their turns open no notice collector, so the summary waits for a HUD or chat.
+_NOTICE_FOOTER_CHANNELS = frozenset({"telegram", "slack", "discord", "ntfy"})
 
 HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
@@ -2021,9 +2025,12 @@ class Orchestrator:
             from . import code_interruptions
             note_session_activity()
             conversation_token = code_interruptions.bind_conversation(str(self.session_id or ""))
-            # H403/H674: a channel turn collects its notices like /chat does, and the
-            # reply carries them (a Telegram owner has no HUD to show them beside it).
-            notices, notices_token = open_turn_notices()
+            # H403/H674: an OWNER's turn on a text-chat channel collects its notices like
+            # /chat does, and the reply carries them (a Telegram owner has no HUD to show
+            # them beside it). Anyone else's turn, and a channel whose reply is spoken or
+            # read by a machine, opens no collector: the notices stay for the owner.
+            carries = channel in _NOTICE_FOOTER_CHANNELS and current_principal().admin is True
+            notices, notices_token = open_turn_notices() if carries else ([], None)
             try:
                 if draft is not None:
                     async def push(token):
@@ -2041,7 +2048,8 @@ class Orchestrator:
     def _with_channel_notices(reply, notices: list) -> Optional[str]:
         """The turn's notices as system lines under a channel reply (the HUD's ``ℹ``
         lines, H674). A silent turn stays silent, and a typed reply (an ephemeral system
-        notice is a ``str`` subclass) is left exactly as it is."""
+        notice is a ``str`` subclass) is left exactly as it is. Only an owner's turn on a
+        text-chat channel collects any (see ``_channel_turn``)."""
         lines = [f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
         if not lines or type(reply) is not str or not reply.strip():
             return reply
@@ -4178,8 +4186,10 @@ class Orchestrator:
         notices): this conversation's first, then the others named by conversation, so a
         review that finished after a conversation's last reply still reaches the owner
         on their next turn anywhere. A turn with no notice collector keeps them all for
-        one that has it. Never raises into the turn; returns whether a review was
-        cancelled."""
+        one that has it. The summaries are the owner's (they come from the owner's
+        private conversations): a turn whose principal is not an admin neither receives
+        nor consumes any, whatever session it shares. Never raises into the turn;
+        returns whether a review was cancelled."""
         from .turn_notices import record_turn_notice
 
         key = self._review_key(session_id)
@@ -4190,6 +4200,8 @@ class Orchestrator:
         except Exception:
             logger.debug("background review cancel skipped", exc_info=True)
             cancelled = False
+        if current_principal().admin is not True:
+            return cancelled
         notices = self.__dict__.get("_review_notices") or {}
         shown = [key] if key in notices else []
         shown += [sid for sid in notices if sid != key][:_REVIEW_NOTICE_LINES - len(shown)]
@@ -4317,11 +4329,14 @@ class Orchestrator:
 
     def _queue_review_summary(self, session_id: Optional[str], result: dict) -> None:
         """H403 — keep the pass's action summary for the session's next reply; a pass
-        that did nothing leaves no notice. Bounded per process, oldest session first."""
+        that did nothing leaves no notice. Bounded per process, oldest session first.
+        Only the owner's own turns queue one: a stranger's review (a group chat, a
+        non-admin token) must not put its summary in the pool the owner's replies drain,
+        and the pool is never shown to anyone else (``_settle_background_review``)."""
         from .learning.background_review import action_summary
 
         summary = action_summary(result)
-        if not summary:
+        if not summary or current_principal().admin is not True:
             return
         notices = self.__dict__.setdefault("_review_notices", {})
         notices.pop(self._review_key(session_id), None)
