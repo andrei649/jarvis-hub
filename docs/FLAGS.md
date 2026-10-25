@@ -169,11 +169,12 @@ SSO IdPs, adult; secret file roots) and any `never` row always deny.
 allowlist at all**.
 **ON:** `file_read` / `file_list` / `file_search` are ungated *inside* `JARVIS_FILE_ROOTS`
 (no `..`, no symlink escape, secret-looking names refused, bytes/entries/matches bounded;
-`file_search` is a *literal* content search by default, a regex search with `regex=true` (ripgrep
-when installed; otherwise a Python `re` child process killed at the 10 s deadline, so no pattern can
-pin the host; both give the same rows, refuse a nested unbounded repeat such as `(a+)+` and a
-construct the two read differently such as `[[:alpha:]]`, and a pattern Python cannot finish stops
-with `stopped_by: "deadline"`) and a recursive file finder with `glob` alone (`*.{py,md}`
+`file_search` is a *literal* content search by default, a regex search with `regex=true` (Python
+`re` syntax and Unicode semantics, run in a child process killed at the 10 s deadline, so no pattern
+can pin the host — ripgrep is deliberately not used: its `\w \b \s` differ from Python's and its
+output cannot be bounded; a nested unbounded repeat such as `(a+)+` and a construct whose meaning
+depends on the regex flavour such as `[[:alpha:]]` are refused, and a pattern Python cannot finish
+stops with `stopped_by: "deadline"`) and a recursive file finder with `glob` alone (`*.{py,md}`
 alternation, a leading `!` to negate); `node_modules`, `venv`/`.venv`, `__pycache__`, `dist`,
 `build`, `target`, `.tox`, tool caches and plain directory names in the root's `.gitignore` are not
 entered unless `include_ignored=true` (reported as `ignored`) — each reports every cap

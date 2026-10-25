@@ -5,12 +5,12 @@ by file — burning the context budget that is already the problem. `file_search
 contents with exactly the read tools' containment (roots, no symlink escape, no secret-looking
 names) and every bound reported: matches, matches per file, files visited, seconds.
 
-H303 added two modes on the same containment: ``regex: true`` (ripgrep when installed, a
-Python ``re`` fallback with the same results otherwise) and a glob file-finding mode
+H303 added two modes on the same containment: ``regex: true`` (Python ``re`` in one
+killable child process; ripgrep is deliberately not used) and a glob file-finding mode
 (``glob`` without ``pattern``).
 """
 import os
-import shutil
+import re
 import sys
 import time
 from pathlib import Path
@@ -215,7 +215,7 @@ def test_spec_is_closed_ungated_and_literal_by_default():
     }
     # The model-facing description documents the glob syntax, the pruned directories and
     # the regex refusals (H303 round 2), not just the argument names.
-    for word in ("regex", "ripgrep", "glob", "Glob syntax", "{py,md}", "negates", "include_ignored",
+    for word in ("regex", "PYTHON re", "killed", "glob", "Glob syntax", "{py,md}", "negates", "include_ignored",
                  "node_modules", ".gitignore", "bad_regex", "regex_too_complex", "deadline"):
         assert word in spec["description"], word
 
@@ -252,26 +252,13 @@ async def test_audit_records_the_search(workspace, tmp_path):
     assert record["why"].endswith(": budget")
 
 
-# ── H303: regex mode (ripgrep, with a Python fallback) ───────────────────────
-
-HAVE_RG = shutil.which("rg") is not None
+# ── H303: regex mode (one engine: a killable Python child) ───────────────────
 
 
-@pytest.fixture(params=["ripgrep", "python"])
-def engine(request, monkeypatch):
-    """Run a test once per engine: ripgrep when installed, and with ripgrep hidden."""
-    if request.param == "ripgrep":
-        if not HAVE_RG:
-            pytest.skip("ripgrep is not installed here")
-    else:
-        monkeypatch.setattr(file_tools.shutil, "which", lambda name, *a, **k: None)
-    return request.param
-
-
-async def test_regex_mode_matches_a_regular_expression(tools, engine):
+async def test_regex_mode_matches_a_regular_expression(tools):
     out = await tools.search_files({"pattern": "bud.et", "regex": True})
     assert out["ok"] is True and out["regex"] is True and out["mode"] == "regex"
-    assert out["engine"] == engine
+    assert out["engine"] == "python"
     assert _rows(out) == [
         ("notes.txt", 1, "Alpha budget"),
         ("notes.txt", 2, "the Budget line"),
@@ -284,12 +271,12 @@ async def test_regex_mode_matches_a_regular_expression(tools, engine):
     assert _rows(out) == [("plan.md", 2, "budget: 10")] and out["files_scanned"] == 1
 
 
-async def test_regex_and_literal_agree_on_a_plain_phrase(tools, engine):
+async def test_regex_and_literal_agree_on_a_plain_phrase(tools):
     for flags in ({}, {"case_sensitive": True}, {"whole_word": True},
                   {"case_sensitive": True, "whole_word": True}, {"glob": "*.md"}):
         literal = await tools.search_files({"pattern": "budget", **flags})
         regex = await tools.search_files({"pattern": "budget", "regex": True, **flags})
-        assert regex["engine"] == engine
+        assert regex["engine"] == "python"
         assert _rows(regex) == _rows(literal), flags
         assert regex["hidden"] == literal["hidden"] == 2
         assert regex["skipped"] == literal["skipped"]
@@ -298,24 +285,7 @@ async def test_regex_and_literal_agree_on_a_plain_phrase(tools, engine):
     assert literal["matches"] == [] and literal["mode"] == "literal" and "engine" not in literal
 
 
-async def test_the_two_engines_return_the_same_rows(tools, monkeypatch):
-    if not HAVE_RG:
-        pytest.skip("ripgrep is not installed here")
-    cases = [
-        {"pattern": r"\bbudget\b"}, {"pattern": r"[Bb]udget(ary)?", "case_sensitive": True},
-        {"pattern": r"\d+"}, {"pattern": r"^#\s"}, {"pattern": "bud", "whole_word": True},
-        {"pattern": r"bud\w+", "whole_word": True}, {"pattern": r"line$", "glob": "notes.*"},
-    ]
-    with_rg = [await tools.search_files({**case, "regex": True}) for case in cases]
-    monkeypatch.setattr(file_tools.shutil, "which", lambda name, *a, **k: None)
-    without = [await tools.search_files({**case, "regex": True}) for case in cases]
-    for case, a, b in zip(cases, with_rg, without, strict=True):
-        assert a["engine"] == "ripgrep" and b["engine"] == "python", case
-        assert _rows(a) == _rows(b), case
-        assert (a["files_scanned"], a["files_matched"]) == (b["files_scanned"], b["files_matched"]), case
-
-
-async def test_regex_mode_keeps_the_containment_and_the_bounds(tools, workspace, tmp_path, engine,
+async def test_regex_mode_keeps_the_containment_and_the_bounds(tools, workspace, tmp_path,
                                                               monkeypatch):
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -348,7 +318,7 @@ async def test_regex_mode_keeps_the_containment_and_the_bounds(tools, workspace,
     assert out["ok"] is True and out["matches"] == [] and out["stopped_by"] == "deadline"
 
 
-async def test_regex_snippets_are_bounded_around_the_match(tools, workspace, engine):
+async def test_regex_snippets_are_bounded_around_the_match(tools, workspace):
     line = "a" * 600 + " needle42 " + "b" * 600
     (workspace / "long.txt").write_text(line + "\n", encoding="utf-8")
     out = await tools.search_files({"pattern": r"needle\d+", "regex": True, "glob": "long.txt"})
@@ -357,15 +327,15 @@ async def test_regex_snippets_are_bounded_around_the_match(tools, workspace, eng
     assert len(text) <= file_tools.SNIPPET_CHARS + 2
 
 
-async def test_an_invalid_regex_is_refused_by_name_on_both_engines(tools, engine):
+async def test_an_invalid_regex_is_refused_by_name(tools):
     out = await tools.search_files({"pattern": "(unclosed", "regex": True})
     assert out["ok"] is False and out["reason"] == "bad_regex"
     assert "unterminated subpattern" in out["detail"]      # re's own words, bounded
     with pytest.raises(ToolRPCValidationError) as info:
         FILE_TOOL_SPECS["file_search"]["preflight"]({"pattern": "[z-a]", "regex": True})
     assert info.value.reason == "bad_regex"
-    # A nested unbounded repeat is refused up front on both engines, so the pattern set is
-    # the same whichever engine answers (Python's re would backtrack on it without bound).
+    # A nested unbounded repeat is refused up front (Python's re would backtrack on it
+    # without bound); the killable child is the guarantee for the ones this cannot see.
     for pattern in (r"(a+)+$", r"(\w*)*x", r"((ab)*)+"):
         out = await tools.search_files({"pattern": pattern, "regex": True})
         assert out == {"ok": False, "reason": "regex_too_complex"}, pattern
@@ -380,52 +350,7 @@ async def test_an_invalid_regex_is_refused_by_name_on_both_engines(tools, engine
     assert info.value.reason == "bad_flag"
 
 
-async def test_a_python_only_construct_falls_back_to_the_python_engine(tools):
-    if not HAVE_RG:
-        pytest.skip("ripgrep is not installed here")
-    out = await tools.search_files({"pattern": r"(?<=Alpha )budget", "regex": True})
-    assert out["engine"] == "python" and _rows(out) == [("notes.txt", 1, "Alpha budget")]
-
-
-async def test_ripgrep_is_run_without_a_shell_and_within_the_deadline(tools, monkeypatch):
-    if not HAVE_RG:
-        pytest.skip("ripgrep is not installed here")
-    seen = {}
-    real = file_tools.subprocess.run
-
-    def spy(argv, *args, **kwargs):
-        seen["argv"] = argv
-        seen["kwargs"] = kwargs
-        return real(argv, *args, **kwargs)
-
-    monkeypatch.setattr(file_tools.subprocess, "run", spy)
-    out = await tools.search_files({"pattern": "-budget", "regex": True})
-    assert out["ok"] is True and out["engine"] == "ripgrep" and out["matches"] == []
-    argv = seen["argv"]
-    assert isinstance(argv, list) and argv[0].endswith("rg")
-    assert "--json" in argv and "--no-config" in argv and "-e" in argv
-    assert argv[argv.index("-e") + 1] == "-budget"      # a leading dash is a pattern, not a flag
-    assert "--" in argv and all(os.path.isabs(p) for p in argv[argv.index("--") + 1:])
-    assert seen["kwargs"].get("shell", False) is False
-    assert 0 < seen["kwargs"]["timeout"] <= file_tools.MAX_SEARCH_SECONDS
-    assert seen["kwargs"]["stdin"] == file_tools.subprocess.DEVNULL
-
-
-async def test_a_ripgrep_failure_falls_back_instead_of_failing_the_search(tools, monkeypatch):
-    real = file_tools.subprocess.run
-
-    def broken(argv, *args, **kwargs):
-        if argv[0] == "/nonexistent/rg":
-            raise OSError("rg vanished")
-        return real(argv, *args, **kwargs)        # the Python child still runs
-
-    monkeypatch.setattr(file_tools.shutil, "which", lambda name, *a, **k: "/nonexistent/rg")
-    monkeypatch.setattr(file_tools.subprocess, "run", broken)
-    out = await tools.search_files({"pattern": "bud.et", "regex": True})
-    assert out["ok"] is True and out["engine"] == "python" and len(out["matches"]) == 4
-
-
-async def test_a_regex_search_of_a_spill_stays_tainted(tmp_path, engine):
+async def test_a_regex_search_of_a_spill_stays_tainted(tmp_path):
     root = tmp_path / "roots"
     spill = root / file_tools._SPILL_DIRNAME
     spill.mkdir(parents=True)
@@ -539,10 +464,6 @@ async def test_the_audit_names_the_mode(workspace, tmp_path):
 
 # ── H303 round 2: the Python regex engine cannot hang the host ───────────────
 
-def _no_ripgrep(monkeypatch):
-    monkeypatch.setattr(file_tools.shutil, "which", lambda name, *a, **k: None)
-
-
 def _loose(root, **kw):
     return FileTools(FileScope([root]), max_bytes=kw.pop("max_bytes", 100_000), **kw)
 
@@ -568,7 +489,6 @@ async def test_a_backtracking_pattern_cannot_hang_the_python_engine(tmp_path, mo
     root.mkdir()
     (root / "x.txt").write_text(line + "\n", encoding="utf-8")
     assert not file_tools._regex_too_complex(pattern)        # the guard does not catch it
-    _no_ripgrep(monkeypatch)
     monkeypatch.setattr(file_tools, "MAX_SEARCH_SECONDS", 1.5)
     started = time.monotonic()
     out = await _loose(root).search_files({"pattern": pattern, "regex": True})
@@ -585,7 +505,6 @@ async def test_rows_found_before_the_deadline_are_kept(tmp_path, monkeypatch):
     root.mkdir()
     (root / "a_first.txt").write_text("aaa\n", encoding="utf-8")
     (root / "z_slow.txt").write_text("a" * 44 + "b\n", encoding="utf-8")
-    _no_ripgrep(monkeypatch)
     monkeypatch.setattr(file_tools, "MAX_SEARCH_SECONDS", 1.5)
     out = await _loose(root).search_files({"pattern": r"(a|aa)+$", "regex": True})
     assert [(os.path.basename(m["path"]), m["line"]) for m in out["matches"]] == [("a_first.txt", 1)]
@@ -594,9 +513,8 @@ async def test_rows_found_before_the_deadline_are_kept(tmp_path, monkeypatch):
     assert out["files_scanned"] == 1 and out["files_matched"] == 1
 
 
-# Backtracking patterns the static guard cannot see, each with a line it cannot finish
-# on. `(?=a)` is a look-ahead that ripgrep rejects, so with ripgrep installed that one
-# is answered by the (killable) Python child; the others are linear in ripgrep.
+# Backtracking patterns the static guard cannot see, each with a line Python's `re`
+# cannot finish on: the killable child is the only thing between them and the host.
 HEAVY = [
     (r"(a|a)*b", "a" * 5000),
     (r"(?=a)(a|a)*b", "a" * 5000),
@@ -606,24 +524,18 @@ HEAVY = [
 
 
 @pytest.mark.parametrize("pattern,line", HEAVY)
-@pytest.mark.parametrize("use_rg", [True, False], ids=["ripgrep", "no-ripgrep"])
 async def test_heavy_patterns_are_refused_or_return_within_the_deadline(
-        tmp_path, monkeypatch, pattern, line, use_rg):
-    if use_rg and not HAVE_RG:
-        pytest.skip("ripgrep is not installed here")
+        tmp_path, monkeypatch, pattern, line):
     root = tmp_path / "ws"
     root.mkdir()
     (root / "x.txt").write_text(line + "\n", encoding="utf-8")
-    if not use_rg:
-        _no_ripgrep(monkeypatch)
     monkeypatch.setattr(file_tools, "MAX_SEARCH_SECONDS", 1.5)
     started = time.monotonic()
     out = await _loose(root).search_files({"pattern": pattern, "regex": True})
     assert time.monotonic() - started < 8, "the search outlived its deadline"
     if out["ok"]:
         assert out["stopped_by"] in (None, "deadline"), out
-        if out["stopped_by"] is None:
-            assert out["engine"] == "ripgrep" and out["matches"] == []   # finished: only rg can
+        assert out["engine"] == "python"
     else:
         assert out["reason"] in ("bad_regex", "regex_too_complex"), out
 
@@ -632,26 +544,13 @@ def test_the_subprocess_import_carries_its_bandit_waiver():
     # security.yml runs bandit against .bandit-baseline.json: a new finding fails CI.
     source = Path(file_tools.__file__).read_text(encoding="utf-8")
     assert "import subprocess  # nosec B404" in source
-    assert source.count("subprocess.run(  # nosec B603") == 2
-
-
-@pytest.mark.skipif(not HAVE_RG, reason="ripgrep is not installed here")
-@pytest.mark.parametrize("pattern,line", [(pat, text) for pat, text, _ in REDOS])
-async def test_ripgrep_answers_the_same_patterns_in_linear_time(tmp_path, pattern, line):
-    root = tmp_path / "ws"
-    root.mkdir()
-    (root / "x.txt").write_text(line + "\n", encoding="utf-8")
-    started = time.monotonic()
-    out = await _loose(root).search_files({"pattern": pattern, "regex": True})
-    assert time.monotonic() - started < 5
-    assert out["engine"] == "ripgrep" and out["stopped_by"] is None and out["matches"] == []
+    assert source.count("subprocess.run(  # nosec B603") == 1
 
 
 async def test_the_python_worker_is_a_child_process_with_no_shell(tmp_path, monkeypatch):
     root = tmp_path / "ws"
     root.mkdir()
     (root / "x.txt").write_text("needle\n", encoding="utf-8")
-    _no_ripgrep(monkeypatch)
     seen = {}
     real = file_tools.subprocess.run
 
@@ -673,10 +572,9 @@ async def test_a_build_without_a_python_child_says_so_instead_of_pretending(tmp_
     root = tmp_path / "ws"
     root.mkdir()
     (root / "x.txt").write_text("needle\n", encoding="utf-8")
-    _no_ripgrep(monkeypatch)
     monkeypatch.setattr(file_tools.sys, "executable", "")      # no interpreter to start a child with
     out = await _loose(root).search_files({"pattern": "need.e", "regex": True})
-    assert out["ok"] is False and out["reason"] == "regex_unavailable" and "ripgrep" in out["detail"]
+    assert out["ok"] is False and out["reason"] == "regex_unavailable" and "Python child" in out["detail"]
     # A literal search needs no child and still works.
     assert (await _loose(root).search_files({"pattern": "needle"}))["ok"] is True
 
@@ -702,7 +600,7 @@ def test_the_worker_snippet_is_the_parents_snippet(tmp_path):
         assert rows[0]["text"] == file_tools._snippet(line, line.index("needle"), 6), name
 
 
-# ── H303 round 2: both engines give the same answer ──────────────────────────
+# ── H303 round 2/3: one engine, so the rows are Python's ─────────────────────
 
 @pytest.fixture
 def corpus(tmp_path):
@@ -716,103 +614,195 @@ def corpus(tmp_path):
     (root / "ff.txt").write_text("needle\x0cneedle\nneedle", encoding="utf-8")
     (root / "posix.txt").write_text("alpha beta\n123\n", encoding="utf-8")
     (root / "blank.txt").write_text("one\n\ntwo\n", encoding="utf-8")
-    # Anchored matches past the 8 KiB mark of a very long line must be found by both engines.
+    # Anchored matches past the 8 KiB mark of a very long line must be found.
     (root / "long2.txt").write_text("b" * 20000 + "needle\n" + "c" * 20000 + "\n", encoding="utf-8")
     return root
 
 
-def _summary(result):
-    keys = ("ok", "reason", "files_scanned", "files_matched", "files_capped", "hidden", "ignored",
-            "skipped", "non_utf8", "stopped_by", "truncated")
-    return {key: result.get(key) for key in keys}
+async def test_regex_lines_are_matched_whole_and_decoded_leniently(corpus):
+    tools = _loose(corpus)
+    # A match past the first 8 KiB of a line, and a $-anchored one 20 000 characters in.
+    out = await tools.search_files({"pattern": r"needle tail$", "regex": True})
+    assert _rows(out) == [("long.txt", 1, out["matches"][0]["text"])]
+    assert len(out["matches"][0]["text"]) <= file_tools.SNIPPET_CHARS + 2
+    for pattern in (r"b{3}needle$", r"^b+needle$"):
+        out = await tools.search_files({"pattern": pattern, "regex": True})
+        assert [(r[0], r[1]) for r in _rows(out)] == [("long2.txt", 1)], pattern
+    assert [(r[0], r[1]) for r in _rows(
+        await tools.search_files({"pattern": "c$", "regex": True}))] == [("long2.txt", 2)]
+    # A latin-1 file is searched with replacement characters, as the literal mode does.
+    out = await tools.search_files({"pattern": "caf.", "regex": True})
+    assert ("latin1.txt", 1, "caf� needle") in _rows(out)
+    # `$` matches before a CRLF; a form feed or U+2028 does not split a line.
+    out = await tools.search_files({"pattern": "^needle$", "regex": True, "glob": "crlf.txt"})
+    assert _rows(out) == [("crlf.txt", 2, "needle")]
+    out = await tools.search_files({"pattern": "x$", "regex": True, "glob": "multi.txt"})
+    assert _rows(out) == [("multi.txt", 3, "needle x")]
+    out = await tools.search_files({"pattern": "needle$", "regex": True, "glob": "ff.txt"})
+    assert [(r[1]) for r in _rows(out)] == [1, 2]
+    out = await tools.search_files({"pattern": "^$", "regex": True})
+    assert _rows(out) == [("blank.txt", 2, "")]
+    # files_scanned stops at the file that reached max_matches (blank.txt matches nothing).
+    out = await tools.search_files({"pattern": "needle", "regex": True, "max_matches": 1})
+    assert out["files_scanned"] == 2 and out["stopped_by"] == "max_matches"
+    assert out["engine"] == "python"
 
 
-async def _both(root, args, monkeypatch):
-    """The same search under ripgrep and under the Python child."""
-    with_rg = await _loose(root).search_files(args)
-    with monkeypatch.context() as scope:
-        scope.setattr(file_tools.shutil, "which", lambda name, *a, **k: None)
-        without = await _loose(root).search_files(args)
-    return with_rg, without
+# Lines on which the Unicode classes of Python's `re` and of Rust's regex crate disagree
+# (decomposed accents, superscripts, a zero-width joiner, a control character that `\s`
+# covers in Python). The one engine is Python's, so the expected rows ARE `re`'s.
+UNICODE_LINES = ["été", "x²y", "x‍y", "a\x1cb", "café été",
+                 "ab c", "²", "x_y", "١٢"]
+UNICODE_PATTERNS = [r"^\w+$", r"x\wy", r"x\Wy", r"a\sb", r"a\Sb", r"\bte", r"\Bte", r"\w+",
+                    r"\W", r"\s", r"\S+$", r"\d+", r"\D", r"\bt", r"y\b"]
 
 
-PARITY_CASES = [
-    {"pattern": "needle"},
-    {"pattern": "needle", "case_sensitive": True},
-    {"pattern": "NEEDLE"},
-    {"pattern": "needle", "whole_word": True},
-    {"pattern": "needle$"},
-    {"pattern": "^needle$"},
-    {"pattern": r"needle tail$"},          # past the first 8 KiB of a 9 KiB line
-    {"pattern": r"b{3}needle$"},           # $-anchored, 20 000 characters in
-    {"pattern": r"c$"},                    # the end of a 20 000-character line
-    {"pattern": r"^b+needle$"},
-    {"pattern": r"a{3} needle"},
-    {"pattern": "caf."},                   # the invalid byte of a latin-1 file
-    {"pattern": r"needle \S+ end"},
-    {"pattern": r"\w+ needle"},
-    {"pattern": "日本."},
-    {"pattern": r"é|ï"},
-    {"pattern": r"needle\s"},
-    {"pattern": r"\x0c"},
-    {"pattern": r"^$"},
-    {"pattern": r"o*"},
-    {"pattern": r"(?<=caf.) needle"},      # look-behind: ripgrep refuses, Python answers
-    {"pattern": r"needle", "max_matches": 3},
-    {"pattern": r"needle", "max_matches": 1},
-    {"pattern": r"needle", "glob": "*.txt"},
-    {"pattern": r"needle", "glob": "!l*"},
-]
+@pytest.mark.parametrize("pattern", UNICODE_PATTERNS)
+@pytest.mark.parametrize("flags", [{}, {"case_sensitive": True}, {"whole_word": True},
+                                   {"case_sensitive": True, "whole_word": True}],
+                         ids=["default", "case", "word", "case+word"])
+async def test_unicode_classes_behave_as_python_re(tmp_path, pattern, flags):
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "u.txt").write_text("\n".join(UNICODE_LINES) + "\n", encoding="utf-8")
+    source = file_tools._regex_source(pattern, bool(flags.get("whole_word")))
+    rx = re.compile(source, 0 if flags.get("case_sensitive") else re.IGNORECASE)
+    expected = [(n, line) for n, line in enumerate(UNICODE_LINES, 1) if rx.search(line)]
+    out = await _loose(root).search_files({"pattern": pattern, "regex": True, "max_matches": 100, **flags})
+    assert out["ok"] is True and out["engine"] == "python", out
+    assert [(m["line"], m["text"]) for m in out["matches"]] == expected
 
 
-@pytest.mark.skipif(not HAVE_RG, reason="ripgrep is not installed here")
-@pytest.mark.parametrize("case", PARITY_CASES, ids=[c["pattern"] + str(sorted(c)) for c in PARITY_CASES])
-async def test_the_two_engines_agree_on_a_hard_corpus(corpus, monkeypatch, case):
-    args = {**case, "regex": True}
-    with_rg, without = await _both(corpus, args, monkeypatch)
-    assert without["engine"] == "python"
-    assert _rows(with_rg) == _rows(without)
-    assert _summary(with_rg) == _summary(without)
-    assert with_rg["ok"] is True and with_rg["matches"], case
+async def test_the_unicode_facts_the_description_promises(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "u.txt").write_text("\n".join(UNICODE_LINES) + "\n", encoding="utf-8")
+    tools = _loose(root)
+
+    async def lines(pattern):
+        out = await tools.search_files({"pattern": pattern, "regex": True, "max_matches": 100})
+        return [m["line"] for m in out["matches"]]
+
+    assert await lines(r"^\w+$") == [2, 7, 8, 9]         # x²y, ², x_y, Arabic-Indic digits; NOT decomposed é (a combining mark is not \w)
+    assert await lines(r"x\wy") == [2, 8]                 # x²y yes, x<ZWJ>y no
+    assert await lines(r"x\Wy") == [3]
+    assert await lines(r"a\sb") == [4]                    # \x1c is whitespace to Python
 
 
-@pytest.mark.skipif(not HAVE_RG, reason="ripgrep is not installed here")
-async def test_the_corpus_specifics_both_engines_share(corpus, monkeypatch):
-    # (a) a match past the first 8 KiB of a line is found by both, snippet still bounded;
-    # (b) a latin-1 file is searched with replacement characters, and counted;
-    # a CRLF file's `$` matches before the \r\n; `\u2028` does not split a line.
-    for engine_args in ({"pattern": r"needle tail$", "regex": True},):
-        for out in await _both(corpus, engine_args, monkeypatch):
-            assert _rows(out) == [("long.txt", 1, out["matches"][0]["text"])]
-            assert len(out["matches"][0]["text"]) <= file_tools.SNIPPET_CHARS + 2
-    for out in await _both(corpus, {"pattern": "caf.", "regex": True}, monkeypatch):
-        assert ("latin1.txt", 1, "caf� needle") in _rows(out) and out["non_utf8"] == 1
-    for out in await _both(corpus, {"pattern": "^needle$", "regex": True, "glob": "crlf.txt"}, monkeypatch):
-        assert _rows(out) == [("crlf.txt", 2, "needle")]
-    for out in await _both(corpus, {"pattern": "x$", "regex": True, "glob": "multi.txt"}, monkeypatch):
-        assert _rows(out) == [("multi.txt", 3, "needle\u2028x")]
-    # (d) files_scanned stops at the file that reached max_matches, in both engines
-    # (blank.txt has no match, crlf.txt is the first with one).
-    first, second = await _both(corpus, {"pattern": "needle", "regex": True, "max_matches": 1}, monkeypatch)
-    assert first["files_scanned"] == second["files_scanned"] == 2
-    assert first["stopped_by"] == second["stopped_by"] == "max_matches"
+async def test_ripgrep_is_not_used_even_when_it_is_on_the_path(tmp_path, monkeypatch):
+    if sys.platform.startswith("win"):
+        pytest.skip("a shell stub")
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "x.txt").write_text("needle\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    marker = tmp_path / "rg-was-run"
+    stub = bin_dir / "rg"
+    stub.write_text(f"#!/bin/sh\ntouch {marker}\nexit 2\n", encoding="utf-8")
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    out = await _loose(root).search_files({"pattern": "need.e", "regex": True})
+    assert out["ok"] is True and len(out["matches"]) == 1 and out["engine"] == "python"
+    assert not marker.exists()
+    assert not hasattr(file_tools, "_rg_search") and not hasattr(file_tools, "shutil")
+
+
+# ── H303 round 3: output and memory stay bounded ─────────────────────────────
+
+async def test_a_two_megabyte_single_line_is_searched_within_the_deadline_and_memory(tmp_path):
+    resource = pytest.importorskip("resource")
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "b64.txt").write_text(("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo" * 53_000)[:1_870_000] + "\n",
+                                  encoding="utf-8")
+    (root / "a1.txt").write_text("a" * 1_990_000, encoding="utf-8")
+    (root / "a2.txt").write_text("a" * 1_990_000, encoding="utf-8")
+    (root / "many.txt").write_text("x\n" * 500_000, encoding="utf-8")
+    tools = _loose(root, max_bytes=2_000_000)
+    rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    for pattern in (r"\w", "a", r"\w+", r"."):
+        started = time.monotonic()
+        out = await tools.search_files({"pattern": pattern, "regex": True, "max_matches": 100})
+        assert time.monotonic() - started < 6, pattern
+        assert out["ok"] is True and out["stopped_by"] is None, (pattern, out)
+        # One snippet per single-line file and at most MAX_MATCHES_PER_FILE for the long one:
+        # the output grows with the files searched, never with the matches in a line.
+        by_file = {}
+        for match in out["matches"]:
+            by_file.setdefault(os.path.basename(match["path"]), []).append(match)
+            assert len(match["text"]) <= file_tools.SNIPPET_CHARS + 2
+        assert len(by_file.get("b64.txt", [])) == (0 if pattern == "a" else 1), pattern
+        assert len(by_file.get("a1.txt", [])) == 1, pattern
+        assert len(by_file.get("many.txt", [])) <= file_tools.MAX_MATCHES_PER_FILE
+        assert len(out["matches"]) <= 2 + 2 + file_tools.MAX_MATCHES_PER_FILE
+    if sys.platform.startswith("linux"):                 # ru_maxrss is KiB there
+        assert resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss < 400_000
+        assert resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss_before < 400_000
+
+
+async def test_the_child_output_is_bounded_by_the_batch_not_by_the_matches(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "big.txt").write_text("a" * 1_990_000, encoding="utf-8")
+    found, timed_out = file_tools._py_regex_scan(
+        [root / "big.txt"], "a", ignore_case=False, deadline=time.monotonic() + 20,
+        max_bytes=2_000_000)
+    rows, capped = found[root / "big.txt"]
+    assert timed_out is False and capped is False and len(rows) == 1
+    assert len(rows[0]["text"]) <= file_tools.SNIPPET_CHARS + 2
+
+
+# ── H303 round 3: names that are not UTF-8, and trees of names nobody may read ──
+
+async def test_a_file_whose_name_is_not_utf8_is_found_by_every_mode(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    raw = os.path.join(os.fsencode(root), b"caf\xe9.txt")
+    try:
+        with open(raw, "wb") as handle:
+            handle.write(b"a needle here\n")
+    except (OSError, ValueError):
+        pytest.skip("this filesystem rejects non-UTF-8 names")
+    tools = _loose(root)
+    for args in ({"pattern": "needle"}, {"pattern": "need.e", "regex": True}, {"glob": "caf*"}):
+        out = await tools.search_files(args)
+        found = out.get("matches") or out.get("files")
+        assert out["ok"] is True and len(found) == 1, (args, out)
+        assert os.fsencode(os.path.basename(found[0]["path"])) == b"caf\xe9.txt", args
+
+
+async def test_a_tree_of_secret_names_cannot_outrun_the_walk_caps(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    root.mkdir()
+    for i in range(300):
+        (root / f"api_key_{i:03d}.txt").write_text("x\n", encoding="utf-8")
+    (root / "zz.txt").write_text("needle\n", encoding="utf-8")
+    tools = _loose(root)
+    out = await tools.search_files({"pattern": "needle"})                  # control: reachable
+    assert len(out["matches"]) == 1 and out["hidden"] == 300 and out["stopped_by"] is None
+    monkeypatch.setattr(file_tools, "MAX_WALK_ENTRIES", 100)
+    for args in ({"pattern": "needle"}, {"pattern": "needle", "regex": True}, {"glob": "zz.txt"}):
+        out = await tools.search_files(args)
+        assert out["ok"] is True and out["stopped_by"] == "max_files" and out["truncated"] is True, args
+        assert out["hidden"] <= 100 and not (out.get("matches") or out.get("files")), args
+    monkeypatch.setattr(file_tools, "MAX_WALK_ENTRIES", 200_000)
+    # The deadline is checked inside the walk too, not only when it yields a file.
+    monkeypatch.setattr(file_tools, "MAX_SEARCH_SECONDS", -1.0)
+    out = await tools.search_files({"pattern": "needle"})
+    assert out["stopped_by"] == "deadline" and out["hidden"] < 300
 
 
 @pytest.mark.parametrize("pattern", [
     r"[[:alpha:]]+", r"[[:digit:]]", r"[a&&b]", r"[a--b]", r"[a~~b]", r"[a||b]",
     r"\<needle\>", r"needle\>", r"[x[y]]", r"\p{L}+",
 ])
-async def test_a_non_portable_regex_is_refused_by_name_on_both_engines(corpus, monkeypatch, pattern):
+async def test_a_flavour_dependent_regex_is_refused_by_name(corpus, pattern):
     args = {"pattern": pattern, "regex": True}
-    # \p{L} is not a portability case: Python's own parser rejects it, which is the point —
-    # whichever engine would have run, the pattern is refused before either does.
+    # \p{L} is not a portability case: Python's own parser rejects it, which is the point.
     assert file_tools._portability_error(pattern) is not None or pattern == r"\p{L}+"
-    outs = [await _loose(corpus).search_files(args)]
-    with monkeypatch.context() as scope:
-        scope.setattr(file_tools.shutil, "which", lambda name, *a, **k: None)
-        outs.append(await _loose(corpus).search_files(args))
-    for out in outs:
-        assert out["ok"] is False and out["reason"] == "bad_regex" and out["detail"], pattern
+    out = await _loose(corpus).search_files(args)
+    assert out["ok"] is False and out["reason"] == "bad_regex" and out["detail"], pattern
     with pytest.raises(ToolRPCValidationError) as info:
         FILE_TOOL_SPECS["file_search"]["preflight"](args)
     assert info.value.reason == "bad_regex"
@@ -854,7 +844,7 @@ async def test_a_glob_finds_a_file_behind_a_5200_file_dependency_tree(tmp_path):
     assert out["files_scanned"] == 5201 and out["truncated"] is False
 
 
-async def test_a_content_search_skips_noise_directories_unless_asked(tmp_path, monkeypatch, engine):
+async def test_a_content_search_skips_noise_directories_unless_asked(tmp_path, monkeypatch):
     root = _tree(tmp_path, noise_files=120)
     monkeypatch.setattr(file_tools, "MAX_SEARCH_FILES", 50)
     tools = _loose(root)

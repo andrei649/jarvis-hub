@@ -10,15 +10,18 @@ tools that are *governed by construction*:
     default, linear by construction. H303 added ``regex: true`` and a glob
     file-finding mode on the same containment: the file set always comes from
     :func:`_walk_files` (the read tools' rules), never from a tool walking the
-    disk on its own. A regex runs under ripgrep when it is installed (a finite
-    automaton: linear time, in a subprocess with no shell, a deadline and a
-    bounded batch), and otherwise in a Python child process that is killed at the
-    deadline (:func:`_py_regex_scan`) — Python's ``re`` backtracks without bound
-    on patterns no static check can list, so the only guarantee is a process the
-    parent can kill. The two give the same rows: both match whole lines, decode a
-    file that is not UTF-8 with replacement characters, refuse a nested unbounded
-    repeat (``regex_too_complex``, :func:`_regex_too_complex`) and a construct the
-    two read differently (``bad_regex``, :func:`_portability_error`). Dependency
+    disk on its own. A regex is Python ``re`` syntax and semantics, run by ONE
+    engine: a child Python process that is killed at the deadline
+    (:func:`_py_regex_scan`) — ``re`` backtracks without bound on patterns no
+    static check can list, so the only guarantee is a process the parent can kill.
+    Ripgrep is deliberately not used for regex search: its Unicode classes
+    (``\\w \\b \\s``) differ from Python's, so the rows would depend on whether it is
+    installed, and its JSON output grows with the number of matches in a line
+    (``\\w`` on a 2 MB line is gigabytes), which the parent cannot bound. Lines are
+    matched whole, a file that is not UTF-8 is decoded with replacement
+    characters, a nested unbounded repeat is refused (``regex_too_complex``,
+    :func:`_regex_too_complex`) and so is a construct whose meaning depends on the
+    regex flavour (``bad_regex``, :func:`_portability_error`). Dependency
     and build trees (:data:`NOISE_DIRS`, plain ``.gitignore`` directory names) are
     pruned unless ``include_ignored``; a glob may use ``{a,b}`` and a leading ``!``.
   * ``file_write`` / ``file_delete`` — gated ToolRPC tools (``gated=True``,
@@ -118,7 +121,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import stat
 import subprocess  # nosec B404 - fixed argv, no shell, explicit files only
 import sys
@@ -219,21 +221,25 @@ MAX_SEARCH_SECONDS = 10.0
 MATCH_LINE_CHARS = 8192
 SNIPPET_CHARS = 200
 _BINARY_PROBE_BYTES = 8192
-#: H303 — one ripgrep run searches at most this many files / bytes of files, so its
-#: JSON output (every matching line, at most ``MAX_MATCHES_PER_FILE + 1`` per file) is
-#: bounded by the batch and never by the workspace. Files reach ripgrep as explicit
-#: arguments from :func:`_walk_files`; it never walks the disk itself.
-RG_BATCH_FILES = 128
-RG_BATCH_BYTES = 4_000_000
+#: H303 — one regex child process searches at most this many files / bytes of files. The
+#: child writes at most ``MAX_MATCHES_PER_FILE`` snippets per file, so its output is
+#: bounded by the batch (never by how many matches a line holds), and the files it is
+#: given are explicit paths from :func:`_walk_files`.
+REGEX_BATCH_FILES = 128
+REGEX_BATCH_BYTES = 4_000_000
 _UTF8_CONTINUATION = bytes(range(0x80, 0xC0))
-#: H303 — files a search may *visit* (an lstat each, whether or not it matches ``glob``
-#: or is read). A glob search is not held to :data:`MAX_SEARCH_FILES`, which counts files
-#: whose contents were searched, so files that do not match never use up the budget that
-#: later directories need.
+#: H303 — regular files a search may *visit* (:data:`MAX_WALK_FILES`) and directory
+#: entries it may *examine* (:data:`MAX_WALK_ENTRIES`: every file, directory, symlink and
+#: secret-looking name the walk meets, matched or not). A glob search is not held to
+#: :data:`MAX_SEARCH_FILES`, which counts files whose contents were searched, so files
+#: that do not match never use up the budget that later directories need; and because
+#: secret names and symlinks are examined but never yielded, only the entry cap and the
+#: deadline (checked inside the walk) stop a tree made of them.
 MAX_WALK_FILES = 100_000
+MAX_WALK_ENTRIES = 200_000
 #: H303 — directories a content or glob search does not descend into unless asked
 #: (``include_ignored: true``): dependency, build and cache trees that hold thousands of
-#: files nobody searches for, and that ripgrep's ``.gitignore`` handling skips too. The
+#: files nobody searches for, and that a code search tool skips by convention. The
 #: count of pruned directories is reported as ``ignored``. ``.git`` is a secret path
 #: (``hidden``). A ``path`` that is itself one of them is searched: only what lies
 #: *below* the searched directory is pruned.
@@ -1061,19 +1067,16 @@ class FileTools:
         their size and not read, so the byte cap does not apply, and bounded by
         :data:`MAX_WALK_FILES` visited files rather than by files searched).
 
-        A regex runs under ripgrep over batches of the walk's own files when it is
-        installed, and in a killable Python child (:func:`_py_regex_scan`) otherwise;
-        ``engine`` says which. Both validate the pattern identically (an invalid or
-        non-portable one is ``bad_regex``, a nested unbounded repeat
-        ``regex_too_complex``), match lines whole, split lines on ``\\n`` only, and
-        decode a file that is not valid UTF-8 with replacement characters (ripgrep
-        cannot, so those files go to the Python child whichever engine is primary;
-        ``non_utf8`` counts them) — so the rows do not depend on the engine. A pattern
-        Python's ``re`` cannot finish before the deadline stops the search with
-        ``stopped_by: "deadline"`` and the rows found so far. ``files_scanned`` counts
-        files consumed up to the one that reached a cap, whichever engine ran; on a
-        deadline stop it counts only files whose search finished (ripgrep names only
-        files with matches, so there it is a lower bound).
+        A regex is Python ``re`` syntax and semantics and runs in a killable Python
+        child process (:func:`_py_regex_scan`) over batches of the walk's own files —
+        the only engine, so what a pattern matches never depends on what is installed.
+        An invalid or flavour-dependent pattern is ``bad_regex``, a nested unbounded
+        repeat ``regex_too_complex``; lines are matched whole and split on ``\\n``
+        only, and a file that is not valid UTF-8 is decoded with replacement
+        characters. A pattern Python's ``re`` cannot finish before the deadline stops
+        the search with ``stopped_by: "deadline"`` and the rows found so far.
+        ``files_scanned`` counts files consumed up to the one that reached a cap; on a
+        deadline stop it counts only files whose search finished.
 
         A glob (``*``, ``?``, ``[seq]``, ``{a,b}`` alternation, a leading ``!`` to
         negate) without a ``/`` is matched against the file name, one with a ``/``
@@ -1146,17 +1149,13 @@ class FileTools:
             tainted = False
             counts = {
                 "files_scanned": 0, "files_matched": 0, "files_capped": 0, "hidden": 0,
-                "binary": 0, "large": 0, "symlink": 0, "ignored": 0, "non_utf8": 0,
-                "visited": 0,
+                "binary": 0, "large": 0, "symlink": 0, "ignored": 0, "visited": 0,
+                "entries": 0,
             }
             stopped_by: str | None = None
-            engine: str | None = None
             unavailable = False
-            rg = shutil.which("rg") if mode == "regex" else None
-            if mode == "regex":
-                engine = "ripgrep" if rg else "python"
-            #: Regex files waiting for an engine: ``(file, size, valid_utf8)``.
-            batch: list[tuple[Path, int, bool]] = []
+            #: Regex files waiting for the child process: ``(file, size)``.
+            batch: list[tuple[Path, int]] = []
             batch_bytes = 0
 
             def _take(rows: list[dict], capped: bool, file: Path) -> bool:
@@ -1176,45 +1175,24 @@ class FileTools:
                 return False
 
             def _flush() -> None:
-                """Search the pending regex batch and fold its files, in walk order, into
-                the result. Valid-UTF-8 files go to ripgrep when it is the engine; the
-                rest — and every file when ripgrep is absent or fails — go to the
-                killable Python child, and a ripgrep failure is then named in
-                ``engine``. A batch cut by the deadline keeps the rows written so far."""
-                nonlocal engine, stopped_by, batch, batch_bytes, unavailable
+                """Search the pending regex batch in the killable child and fold its files,
+                in walk order, into the result. A batch cut by the deadline keeps the rows
+                of the files finished before the kill and counts only those."""
+                nonlocal stopped_by, batch, batch_bytes, unavailable
                 pending, batch, batch_bytes = batch, [], 0
                 if not pending or stopped_by == "max_matches":
                     return
-                found: dict[Path, tuple[list[dict], bool]] = {}
-                finished: set[Path] = set()      # files whose search is known to be complete
-                timed_out = False
-                todo = pending
-                if engine == "ripgrep" and rg:
-                    valid = [file for file, _, ok in pending if ok]
-                    answer = (_rg_search(rg, pattern, valid, case_sensitive=case_sensitive,
-                                         whole_word=whole_word, deadline=deadline)
-                              if valid else ({}, False))
-                    if answer is None:
-                        engine = "python"       # ripgrep could not answer: all go to Python
-                    else:
-                        found, timed_out = answer
-                        finished.update(found if timed_out else valid)
-                        todo = [item for item in pending if not item[2]]
-                if todo and not timed_out:
-                    answer = _py_regex_scan([file for file, _, _ in todo], regex_source,
-                                            ignore_case=not case_sensitive, deadline=deadline,
-                                            max_bytes=max_bytes)
-                    if answer is None:
-                        unavailable = True
-                        return
-                    scanned, timed_out = answer
-                    found.update(scanned)
-                    finished.update(scanned)
-                for file, _, ok in pending:
-                    if timed_out and file not in finished:
+                answer = _py_regex_scan([file for file, _ in pending], regex_source,
+                                        ignore_case=not case_sensitive, deadline=deadline,
+                                        max_bytes=max_bytes)
+                if answer is None:
+                    unavailable = True
+                    return
+                found, timed_out = answer
+                for file, _ in pending:
+                    if timed_out and file not in found:
                         continue    # cut by the deadline before it was searched: not counted
                     counts["files_scanned"] += 1
-                    counts["non_utf8"] += 0 if ok else 1
                     rows, capped = found.get(file, ([], False))
                     if _take(rows, capped, file):
                         return
@@ -1222,7 +1200,8 @@ class FileTools:
                     stopped_by = "deadline"
 
             for file, size in _walk_files(target, root, counts, skip_dirs=skip_dirs,
-                                          skip_rooted=skip_rooted):
+                                          skip_rooted=skip_rooted, deadline=deadline,
+                                          max_entries=MAX_WALK_ENTRIES):
                 if time.monotonic() > deadline:
                     stopped_by = "deadline"
                     break
@@ -1252,30 +1231,30 @@ class FileTools:
                     if b"\x00" in probe:
                         counts["binary"] += 1
                         continue
-                    data = probe + handle.read(max(0, max_bytes - len(probe)))
+                    # A regex search leaves the file to the child; a literal one reads it here.
+                    data = b"" if mode == "regex" else probe + handle.read(
+                        max(0, max_bytes - len(probe)))
                 if mode == "regex":
-                    try:
-                        data.decode("utf-8")
-                        valid_utf8 = True
-                    except UnicodeDecodeError:
-                        valid_utf8 = False
-                    batch.append((file, size, valid_utf8))
-                    batch_bytes += size
-                    if len(batch) >= RG_BATCH_FILES or batch_bytes >= RG_BATCH_BYTES:
+                    batch.append((file, size))
+                    batch_bytes += min(size, max_bytes)
+                    if len(batch) >= REGEX_BATCH_FILES or batch_bytes >= REGEX_BATCH_BYTES:
                         _flush()
                 else:
                     counts["files_scanned"] += 1
                     _take(*_scan_literal(file, data), file)
                 if stopped_by is not None or unavailable:
                     break
+            walk_stop = counts.get("walk_stopped")
+            if walk_stop is not None and stopped_by is None:
+                stopped_by = walk_stop        # the walk itself ran out of entries or time
             if mode == "regex" and not unavailable and stopped_by in (None, "max_files"):
                 # A walk that ended (or hit the file cap) still owes the pending batch.
                 _flush()
             if unavailable:
                 return {
                     "ok": False, "reason": "regex_unavailable",
-                    "detail": "ripgrep (rg) is not installed and the Python regex worker "
-                              "cannot start in this build; install ripgrep or search a literal",
+                    "detail": "regex search runs in a Python child process and none can be "
+                              "started in this build; search a literal phrase instead",
                 }
             result: dict[str, Any] = {
                 "ok": True,
@@ -1291,9 +1270,8 @@ class FileTools:
                 result["files"] = files
             else:
                 result["matches"] = matches
-            if engine is not None:
-                result["engine"] = engine
-                result["non_utf8"] = counts["non_utf8"]
+            if mode == "regex":
+                result["engine"] = "python"
             result.update({
                 "files_scanned": counts["files_scanned"],
                 "files_matched": counts["files_matched"],
@@ -2263,9 +2241,10 @@ def _gitignore_dirs(root: Path) -> tuple[frozenset[str], frozenset[str]]:
     return frozenset(anywhere), frozenset(rooted)
 
 
-def _walk_files(target: Path, root: Path, counts: dict[str, int], *,
+def _walk_files(target: Path, root: Path, counts: dict[str, Any], *,
                 skip_dirs: frozenset[str] = frozenset(),
-                skip_rooted: frozenset[str] = frozenset()):
+                skip_rooted: frozenset[str] = frozenset(),
+                deadline: float | None = None, max_entries: int | None = None):
     """Yield ``(path, size)`` for every regular file under *target* the read tools
     would show: symlinks are never followed (counted), secret-looking names and
     directories are pruned (counted as hidden), everything else is visited in
@@ -2274,10 +2253,27 @@ def _walk_files(target: Path, root: Path, counts: dict[str, int], *,
     H303 — a directory below *target* whose name is in *skip_dirs*, or whose path below
     *root* is in *skip_rooted*, is not entered (counted as ``ignored``): the search
     tools prune dependency and build trees this way (:data:`NOISE_DIRS`, a plain
-    ``.gitignore``). *target* itself is never pruned."""
+    ``.gitignore``). *target* itself is never pruned.
+
+    Every entry the walk meets — yielded or not (a secret name, a symlink, a pruned
+    directory) — counts in ``counts["entries"]``. Past *max_entries* entries, or past
+    *deadline* (checked every 64 entries), the walk ends and ``counts["walk_stopped"]``
+    names why (``max_files`` / ``deadline``), so a tree made only of names the read tools
+    never show cannot outrun the caps the consumer applies to what is yielded."""
     if target.is_file():
         yield target, target.stat().st_size
         return
+
+    def exhausted() -> bool:
+        counts["entries"] = counts.get("entries", 0) + 1
+        if max_entries is not None and counts["entries"] > max_entries:
+            counts["walk_stopped"] = "max_files"
+            return True
+        if deadline is not None and counts["entries"] % 64 == 0 and time.monotonic() > deadline:
+            counts["walk_stopped"] = "deadline"
+            return True
+        return False
+
     for dirpath, dirnames, filenames in os.walk(target, topdown=True, followlinks=False):
         here = Path(dirpath)
         try:
@@ -2286,6 +2282,8 @@ def _walk_files(target: Path, root: Path, counts: dict[str, int], *,
             relative = ()
         kept: list[str] = []
         for name in sorted(dirnames):
+            if exhausted():
+                return
             if os.path.islink(here / name):
                 counts["symlink"] += 1
             elif _has_secret_part((*relative, name)):
@@ -2296,6 +2294,8 @@ def _walk_files(target: Path, root: Path, counts: dict[str, int], *,
                 kept.append(name)
         dirnames[:] = kept
         for name in sorted(filenames):
+            if exhausted():
+                return
             if looks_secret_name(name):
                 counts["hidden"] += 1
                 continue
@@ -2351,9 +2351,9 @@ def _snippet(line: str, index: int, width: int) -> str:
 
 def _text_lines(text: str) -> list[str]:
     """*text* as the lines a search numbers: split on ``\\n`` only (``\\r`` stripped),
-    the way ripgrep and every editor count them — not ``str.splitlines``, which also
-    breaks on form feeds and Unicode separators and would number lines differently
-    from the ripgrep engine (H303)."""
+    the way editors and ``file_read``'s line windows count them — not
+    ``str.splitlines``, which also breaks on form feeds and Unicode separators and would
+    number lines differently from both (H303)."""
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
@@ -2438,9 +2438,11 @@ def _glob_matches(file: Path, target: Path, glob: tuple[bool, tuple[str, ...]]) 
 def _regex_too_complex(pattern: str) -> bool:
     """True when *pattern* nests one unbounded repeat inside another (``(a+)+``,
     ``(\\w*)*``, ``((ab)*)+``): star height above one, the shape Python's backtracking
-    ``re`` cannot bound. Both engines refuse it up front (``regex_too_complex``), so
-    the accepted pattern set does not depend on whether ripgrep is installed. A
-    pattern the parser rejects is left for ``re.compile`` to name (``bad_regex``)."""
+    ``re`` cannot bound. It is refused up front (``regex_too_complex``) as a cheap
+    first line of defence; the guarantee is the killable child (:func:`_py_regex_scan`),
+    because patterns such as ``(a|aa)+$`` have star height one and still backtrack
+    without bound. A pattern the parser rejects is left for ``re.compile`` to name
+    (``bad_regex``)."""
     try:
         from re import _parser as parser  # CPython 3.11+ (the former sre_parse)
 
@@ -2478,15 +2480,17 @@ def _regex_too_complex(pattern: str) -> bool:
 
 
 def _portability_error(pattern: str) -> str | None:
-    """Why *pattern* would mean different things to ripgrep and to Python's ``re``, or
-    ``None`` (H303). Both engines answer for the same pattern set, so a construct that
-    the two read differently is refused (``bad_regex``) before either runs:
+    """Why *pattern* would silently mean something other than what a model that knows
+    ripgrep, PCRE or POSIX regexes wrote, or ``None`` (H303). The engine is Python's
+    ``re``, which reads these differently, so they are refused (``bad_regex``) with a
+    message that says how to write what was probably meant, instead of matching
+    something else:
 
     * a ``[`` inside a character class — a POSIX class (``[[:alpha:]]``) or a nested
-      set. ripgrep honours it; ``re`` silently reads a different set (and warns);
-    * ``--``, ``&&``, ``~~`` or ``||`` inside a class — set operators in ripgrep,
+      set. ``re`` silently reads a different set (and warns);
+    * ``--``, ``&&``, ``~~`` or ``||`` inside a class — set operators elsewhere,
       literal characters in ``re``;
-    * ``\\<`` and ``\\>`` — word boundaries in ripgrep, literal characters in ``re``.
+    * ``\\<`` and ``\\>`` — word boundaries elsewhere, literal characters in ``re``.
     """
     in_class = False
     i = 0
@@ -2496,18 +2500,18 @@ def _portability_error(pattern: str) -> str | None:
         if char == "\\":
             follower = pattern[i + 1:i + 2]
             if follower in ("<", ">"):
-                return (f"\\{follower} is a word boundary in ripgrep but a literal in Python; "
+                return (f"\\{follower} is a word boundary in other regex flavours but a literal in Python; "
                         f"write {follower} or \\b")
             i += 2
             continue
         if in_class:
             if char == "[":
                 return ("a [ inside a character class (POSIX [[:alpha:]] or a nested set) is "
-                        "read differently by ripgrep and Python; escape it as \\[ or use "
+                        "read differently by Python than by POSIX/ripgrep; escape it as \\[ or use "
                         "\\w, \\d or a range such as a-z")
             if char in "-&~|" and pattern[i + 1:i + 2] == char:
                 return (f"'{char}{char}' inside a character class is a set operator in "
-                        "ripgrep but literal in Python; escape it")
+                        "other regex flavours but literal in Python; escape it")
             if char == "]":
                 in_class = False
             i += 1
@@ -2524,7 +2528,7 @@ def _portability_error(pattern: str) -> str | None:
 
 def _regex_source(pattern: str, whole_word: bool) -> str:
     """The regex both engines run: *pattern*, wrapped so the match has no word
-    character on either side when *whole_word* (ripgrep's ``-w``)."""
+    character on either side when *whole_word* (what ``grep -w`` means)."""
     return f"(?<!\\w)(?:{pattern})(?!\\w)" if whole_word else pattern
 
 
@@ -2533,7 +2537,7 @@ def _compile_regex(pattern: str, *, case_sensitive: bool, whole_word: bool) -> r
     ``re.error`` for a bad or non-portable regex (:func:`_portability_error`),
     ``regex_too_complex`` for star height above one, else the compiled pattern.
     ``whole_word`` requires a non-word character (or an edge) on both sides of the
-    match, which is what ripgrep's ``-w`` and the literal mode mean by it."""
+    match, which is what ``grep -w`` and the literal mode mean by it."""
     problem = _portability_error(pattern)
     if problem is not None:
         raise re.error(problem)
@@ -2561,7 +2565,7 @@ def _regex_error(pattern: object) -> str:
 #: process the parent kills at the search deadline, never a thread it cannot stop. It
 #: reads one JSON request on stdin (the pattern source, the files, the caps), decodes
 #: each file as UTF-8 with replacement characters (so a latin-1 file is searched, as the
-#: literal mode does), splits it on ``\n`` only (``\r`` stripped, the way ripgrep counts
+#: literal mode does), splits it on ``\n`` only (``\r`` stripped, the way editors count
 #: lines), matches the WHOLE line (no window) and writes one JSON record per file,
 #: flushed, so the rows of the files finished before a kill are kept. Its ``_snip`` is
 #: :func:`_snippet`; tests pin that the two agree.
@@ -2656,101 +2660,6 @@ def _py_regex_scan(files: Sequence[Path], source: str, *, ignore_case: bool, dea
         result[file] = (rows, bool(record.get("capped")))
     if code != 0 and not timed_out:
         return None
-    return result, timed_out
-
-
-def _rg_text(value: Any) -> str:
-    """The text of a ripgrep JSON ``{"text": …}`` / ``{"bytes": base64}`` field."""
-    if not isinstance(value, Mapping):
-        return ""
-    text = value.get("text")
-    if isinstance(text, str):
-        return text
-    encoded = value.get("bytes")
-    if isinstance(encoded, str):
-        import base64
-
-        try:
-            return base64.b64decode(encoded).decode("utf-8", errors="replace")
-        except (ValueError, TypeError):
-            return ""
-    return ""
-
-
-def _rg_search(rg: str, pattern: str, files: Sequence[Path], *, case_sensitive: bool,
-               whole_word: bool, deadline: float,
-               ) -> tuple[dict[Path, tuple[list[dict], bool]], bool] | None:
-    """One ripgrep run over *files* (H303): ``({file: (rows, capped)}, timed_out)``, or
-    ``None`` when ripgrep could not answer (not runnable, or it rejected the pattern —
-    a construct Python's ``re`` has and its regex does not, such as look-around), in
-    which case the caller scans the same files with the Python engine.
-
-    No shell, no ripgrep walk: the files are explicit arguments the read tools'
-    walk produced, ``--no-config`` ignores any user configuration, stdin is closed,
-    output is JSON (one record per line) and the run is killed at *deadline* — the
-    rows it had written by then are kept and reported as a ``deadline`` stop. Each
-    file yields at most ``MAX_MATCHES_PER_FILE`` rows (one more is asked for, to
-    know the file was capped). Lines are matched whole, as the Python engine does
-    (:data:`_PY_SCAN_WORKER`): ``--crlf`` makes ``$`` match before a ``\\r\\n``, and the
-    caller only passes files that are valid UTF-8, because ripgrep cannot decode with
-    replacement characters the way the Python engine does.
-    """
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        return {}, True
-    argv = [
-        rg, "--json", "--no-config", "--no-messages", "--no-ignore", "--hidden", "--no-follow",
-        "--text", "--encoding", "none", "--crlf", "--max-count", str(MAX_MATCHES_PER_FILE + 1),
-        "--case-sensitive" if case_sensitive else "--ignore-case",
-    ]
-    if whole_word:
-        argv.append("--word-regexp")
-    argv += ["-e", pattern, "--", *(str(file) for file in files)]
-    timed_out = False
-    try:
-        proc = subprocess.run(  # nosec B603 - fixed argv, no shell
-            argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=max(0.05, remaining),
-            check=False,
-        )
-        stdout, code = proc.stdout or b"", proc.returncode
-    except subprocess.TimeoutExpired as exc:
-        stdout, code, timed_out = exc.stdout or b"", 0, True
-    except (OSError, ValueError):
-        return None
-    by_path = {str(file): file for file in files}
-    rows: dict[Path, list[dict]] = {}
-    seen = False
-    for raw in stdout.splitlines():
-        try:
-            record = json.loads(raw)
-        except ValueError:
-            continue  # a record cut by the kill
-        kind = record.get("type") if isinstance(record, Mapping) else None
-        if kind not in ("begin", "match", "end"):
-            continue
-        seen = True
-        data = record.get("data") or {}
-        file = by_path.get(_rg_text(data.get("path")))
-        if kind != "match" or file is None:
-            continue
-        line_text = _rg_text(data.get("lines"))
-        line_number = data.get("line_number")
-        submatches = data.get("submatches") or [{}]
-        first = submatches[0] if isinstance(submatches[0], Mapping) else {}
-        start = first.get("start", 0)
-        if not isinstance(line_number, int) or not isinstance(start, int):
-            continue
-        index = len(line_text.encode("utf-8")[:start].decode("utf-8", errors="replace"))
-        lines = _text_lines(line_text)
-        hay = lines[0] if lines else ""
-        width = max(1, len(_rg_text(first.get("match"))))
-        rows.setdefault(file, []).append(
-            {"path": str(file), "line": line_number, "text": _snippet(hay, index, width)})
-    if code not in (0, 1) and not seen:
-        return None
-    result: dict[Path, tuple[list[dict], bool]] = {}
-    for file, found in rows.items():
-        result[file] = (found[:MAX_MATCHES_PER_FILE], len(found) > MAX_MATCHES_PER_FILE)
     return result, timed_out
 
 
@@ -2950,11 +2859,13 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "Search file contents inside the owner's file roots — the replacement for "
             "grep/rg/find in a terminal. pattern is a literal phrase (case-insensitive "
             "unless case_sensitive; whole_word available) or, with regex=true, a regular "
-            "expression (run by ripgrep when installed, else by Python's re with the same "
-            "results; an invalid or non-portable regex — a POSIX class like [[:alpha:]], "
-            "\\\\< or \\\\>, a nested set — is refused as bad_regex, a nested unbounded repeat "
-            "like (a+)+ as regex_too_complex; a pattern that cannot finish in time stops "
-            "with stopped_by 'deadline'). Returns bounded snippets with path and line; "
+            "expression in PYTHON re syntax (\\\\w \\\\d \\\\s \\\\b are Unicode; no POSIX classes), "
+            "matched against whole lines in a child process that is killed at the "
+            "deadline: an invalid regex or one meaning something else elsewhere — a POSIX "
+            "class like [[:alpha:]], \\\\< or \\\\>, a nested set — is refused as bad_regex, a "
+            "nested unbounded repeat like (a+)+ as regex_too_complex, and a pattern that "
+            "cannot finish in time stops with stopped_by 'deadline' and the rows found so "
+            "far. Returns bounded snippets with path and line; "
             "says when a cap stopped the search. glob narrows the files; glob WITHOUT "
             "pattern finds files recursively (mode 'glob': files with their size, bounded "
             "by max_matches) — use it instead of walking directories with file_list. "
