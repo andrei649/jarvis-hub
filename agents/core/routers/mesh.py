@@ -271,7 +271,7 @@ async def _guard_subagent_models(items, body):
 # Reasons a spawn was refused at the gate (429), as opposed to a child that ran
 # and failed / violated its output schema (422 — the request itself was fine).
 _SPAWN_GATE_REASONS = frozenset({
-    "concurrency_cap", "spawn_budget_exhausted", "recursion_depth_cap", "turn_spawn_cap",
+    "concurrency_cap", "spawn_budget_exhausted", "recursion_depth_cap",
 })
 
 

@@ -228,7 +228,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
     # H486 — Hermes' two named per-turn ceilings ship on at 50 (0 = this ceiling off).
     dict(category="llm",     key="tool_loop_web_search_cap", value=50,              label="Web searches per turn (0 = no ceiling)", kind="number"),
-    dict(category="llm",     key="tool_loop_subagent_spawn_cap", value=50,          label="Sub-agent spawns per turn (0 = no ceiling)", kind="number"),
+    dict(category="llm",     key="tool_loop_subagent_spawn_cap", value=50,          label="Sub-agent spawns per tool-loop turn (0 = no ceiling; dormant: the model has no spawn tool, HTTP spawns are not in a turn)", kind="number"),
     dict(category="llm",     key="tool_loop_stall_halt_enabled", value=False,        label="Stop stalled tool loops at failure/no-progress thresholds (off = guidance only)", kind="toggle"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     # H594: read the project's AGENTS.md / CLAUDE.md / .cursorrules into the turn (scanned, bounded, tainting).

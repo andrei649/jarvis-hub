@@ -1454,21 +1454,6 @@ failures, two unchanged successes and three identical tool/argument/result
 signatures. Unreadable settings retain guidance only. Changing results continue
 to execute; all calls in a concurrent batch receive a response before a stop.
 
-## H486 denial breaker and per-turn ceilings (2026-10-24)
-
-The consecutive-denial breaker (`JARVIS_SMART_DENIAL_BREAKER_THRESHOLD`, default
-3) now counts the owner's own **reject** of a chat-originated `terminal_run`
-approval card as a denial, exactly like a smart-reviewer DENY (same per-session
-tally, reset by any owner approval, one event per task). It therefore trips with
-`JARVIS_SMART_APPROVALS` left off. `llm.tool_loop_web_search_cap` and
-`llm.tool_loop_subagent_spawn_cap` are runtime settings, default **50** (Hermes'
-ceilings), `0` = that ceiling off, whole numbers up to 10000. The web-search
-ceiling applies in the tool loop beside `llm.tool_loop_per_tool_cap` (the stricter
-one wins; an unreadable value is the shipped 50, never "off"); the spawn ceiling
-applies at `SubAgentManager.spawn` to spawns made inside a tool-loop turn (refusal
-`turn_spawn_cap`, HTTP 429 on `/api/subagents/spawn`) — spawns outside a turn stay
-under `autonomy.max_subagent_spawns_per_boot`.
-
 `process`, `*_poll` and `*_get_result` skip stall guidance and duplicate stubs.
 Owner per-tool caps, approval, wall/iteration/context limits still apply; todo
 retains its full-plan/no-cap/no-stub behavior. Duplicate successful results of at
@@ -1481,3 +1466,27 @@ disables both failure tracks; a positive value overrides only the same-tool
 halt threshold. The default `None` selects eight, independently of the exact
 failure threshold of five. The owner toggle is separate from these detector
 settings and grants no tool authority.
+
+## H486 denial breaker and per-turn ceilings (2026-10-24)
+
+The consecutive-denial breaker (`JARVIS_SMART_DENIAL_BREAKER_THRESHOLD`, default
+3) now counts the owner's own **reject** of a chat-originated `terminal_run`
+approval card as a denial, exactly like a smart-reviewer DENY (same per-session
+tally, reset by any owner approval, one event per task). It therefore trips with
+`JARVIS_SMART_APPROVALS` left off.
+
+`llm.tool_loop_web_search_cap` is a runtime setting, default **50** (Hermes'
+ceiling), `0` = off, whole numbers up to 10000. It applies in the tool loop beside
+`llm.tool_loop_per_tool_cap`: the stricter of the two wins, an unreadable value is
+the shipped 50 (never "off"). Past the ceiling the call is refused with the cap
+notice and the loop ends the turn with that notice, exactly as the generic cap
+already does; this is now on by default for `web_search`.
+
+`llm.tool_loop_subagent_spawn_cap` (default 50, `0` = off) is a **dormant guard**.
+It applies at `SubAgentManager.spawn` only to spawns made inside a bound tool-loop
+turn (refusal `turn_spawn_cap`). No such spawn exists today: the model has no
+spawn tool, and the only callers of `spawn`/`spawn_batch` are the
+`/api/subagents/spawn` and `/batch` HTTP routes, which run outside any tool-loop
+turn and are limited by `autonomy.max_subagent_spawns_per_boot` and the
+concurrency/depth caps instead. The guard starts to matter if a model-facing spawn
+tool is ever added.

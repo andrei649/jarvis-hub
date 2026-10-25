@@ -132,8 +132,8 @@ _CAP_NOTICE = (
 # coordinator reads llm.tool_loop_web_search_cap), an unreadable value reads as the shipped
 # ceiling rather than as "off", and 0 turns one ceiling off on purpose. When the generic
 # cap is also set the stricter of the two applies. Sub-agent spawns have no model-facing
-# tool; their ceiling is enforced at the spawn surface (subagents.SubAgentManager) keyed on
-# the same per-run tool turn.
+# tool today; their ceiling (llm.tool_loop_subagent_spawn_cap) is a dormant guard in
+# subagents.SubAgentManager, keyed on the same per-run tool turn, for the day one exists.
 DEFAULT_TURN_CEILING = 50
 DEFAULT_TURN_CEILINGS: Mapping[str, int] = MappingProxyType({"web_search": DEFAULT_TURN_CEILING})
 _DUPLICATE_NOTICE = (

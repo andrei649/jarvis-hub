@@ -405,7 +405,8 @@ class SubAgentManager:
         # H486: how many spawns one tool-loop turn may make (Hermes caps delegate_task at
         # 50 per turn). Read at each spawn (a setting reader in prod); 0 = no ceiling, an
         # unreadable value = the shipped ceiling. Keyed on the tool loop's own turn token,
-        # so a spawn outside any turn (the HTTP route) is left to the per-boot budget.
+        # so a spawn outside any turn is left to the per-boot budget. DORMANT today: the
+        # model has no spawn tool and the only callers (the HTTP routes) run outside a turn.
         self._turn_cap = turn_cap
         self._turn_spawns: dict[str, int] = {}
         # Capability scoping for children (hermes DELEGATE_BLOCKED_TOOLS analog).
@@ -453,7 +454,8 @@ class SubAgentManager:
             return DEFAULT_TURN_SPAWN_CAP
 
     def _note_turn_spawn(self, turn: str) -> None:
-        self._turn_spawns[turn] = self._turn_spawns.get(turn, 0) + 1
+        # Re-insert so the table is ordered by recency of the last spawn.
+        self._turn_spawns[turn] = self._turn_spawns.pop(turn, 0) + 1
         # Turn tokens are fresh per run; keep only the most recent few so a long-lived
         # process does not grow a table of finished turns.
         while len(self._turn_spawns) > TURN_SPAWN_HISTORY:

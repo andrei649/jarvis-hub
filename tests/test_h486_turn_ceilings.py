@@ -1,9 +1,10 @@
 """H486 — default per-turn ceilings on web searches and sub-agent spawns (Hermes: 50).
 
 The generic `llm.tool_loop_per_tool_cap` ships off (0). These two ship ON at 50: a turn
-that runs `web_search` past its ceiling is refused with the usual cap notice, and a
-sub-agent spawned during a tool-loop turn past its ceiling is refused at the spawn
-surface with a named reason. When the generic cap is also set, the stricter one applies.
+that runs `web_search` past its ceiling is refused with the usual cap notice. The spawn
+ceiling is a DORMANT guard: it refuses a spawn made inside a bound tool-loop turn, but no
+model-facing spawn tool exists and the HTTP routes run outside any turn. When the generic
+cap is also set, the stricter one applies.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from agents.core.agent_runtime import AgentToolRuntime
 from agents.core.llm.tool_protocol import ToolCall, ToolTurn
 from agents.core.subagents import SubAgentManager
 from agents.core.tool_rpc import ToolRPCServer, bind_tool_turn, reset_tool_turn
+from tests.test_subagent_steer import harness  # noqa: F401
 from tests.test_web_tools_wiring import _coordinator
 
 WEB, SPAWN = "tool_loop_web_search_cap", "tool_loop_subagent_spawn_cap"
@@ -247,7 +249,17 @@ def test_the_coordinator_binds_the_spawn_ceiling_to_its_setting(monkeypatch):
     assert read() == 3
 
 
-def test_the_spawn_route_reports_the_ceiling_as_a_gate():
-    from agents.core.routers import mesh
-
-    assert "turn_spawn_cap" in mesh._SPAWN_GATE_REASONS
+@pytest.mark.asyncio
+async def test_the_http_spawn_routes_run_outside_a_turn_so_the_ceiling_is_dormant_there(harness):
+    """Pins the honest scope: no tool-loop turn is bound for a request handler, so even a
+    ceiling of 1 refuses neither /spawn nor /batch (the per-boot budget governs them)."""
+    manager, _started, client = harness
+    manager._turn_cap = 1
+    async with client:
+        for task in ("one", "two", "three"):
+            reply = await client.post("/api/subagents/spawn", json={"task": task})
+            assert reply.status_code == 200 and reply.json()["ok"] is True
+        batch = await client.post("/api/subagents/batch", json={"tasks": [{"task": "a"}, {"task": "b"}]})
+        assert batch.status_code == 200
+        assert all(child.get("reason") != "turn_spawn_cap" for child in batch.json()["children"])
+    assert [r["status"] for r in manager.list()] == ["done"] * 5
