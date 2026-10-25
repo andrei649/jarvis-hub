@@ -922,3 +922,98 @@ describe('WebhooksPanel H039', () => {
     expect(sent('PATCH')[1].body.filter).toEqual([]);
   });
 });
+
+/* H039 round 2 — an unreadable filter is never reopened by saving another field, the create
+   form takes a filter, and a test report is dropped when the hook is edited. */
+describe('WebhooksPanel H039 round 2', () => {
+  const ready = () => waitFor(() => expect(screen.getByText('ci')).toBeTruthy());
+
+  it('saves another field of a hook with an unreadable filter without sending a filter', async () => {
+    hooks = [{ ...hooks[0], filter: [], filter_unreadable: true }];
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByText(/The stored filter is unreadable, so every delivery is filtered/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('description of ci'), { target: { value: 'pager' } });
+    expect(screen.getByRole('button', { name: 'save ci' })).toBeTruthy();       // no clear warning: it is left alone
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect('filter' in sent('PATCH')[0].body).toBe(false);
+    expect(sent('PATCH')[0].body).toMatchObject({ description: 'pager' });
+  });
+
+  it('says on the button that emptying an unreadable filter clears it, and then sends an empty list', async () => {
+    hooks = [{ ...hooks[0], filter: [], filter_unreadable: true }];
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    const box = screen.getByLabelText('filter for ci');
+    fireEvent.change(box, { target: { value: '[{"path": "a", "op": "exists"}]' } });
+    expect(screen.getByRole('button', { name: 'save ci' })).toBeTruthy();       // a new list replaces it: no clearing
+    fireEvent.change(box, { target: { value: '' } });
+    const clear = screen.getByRole('button', { name: 'save ci: clears the unreadable filter' });
+    expect(clear.textContent).toBe('save: clears the unreadable filter');
+    fireEvent.click(clear);
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect(sent('PATCH')[0].body.filter).toEqual([]);
+  });
+
+  it('sends the filter of a readable hook as before, even unchanged', async () => {
+    hooks = [{ ...hooks[0], filter: [{ path: 'ref', op: 'exists' }] }];
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect(sent('PATCH')[0].body.filter).toEqual([{ path: 'ref', op: 'exists' }]);
+  });
+
+  it('creates a hook with a filter, and refuses one that is not a JSON list before posting', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.change(screen.getByLabelText('filter'), { target: { value: '{"path": "ref"' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(FILTER_NOT_JSON));
+    expect(sent('POST')).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText('filter'), { target: { value: '[{"path": "ref", "op": "startswith", "value": "refs/heads/"}]' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    expect(sent('POST')[0].body).toMatchObject({ target: 'friday', filter: [{ path: 'ref', op: 'startswith', value: 'refs/heads/' }] });
+    await waitFor(() => expect(screen.getByTestId('webhook-secret')).toBeTruthy());
+    expect(screen.getByLabelText('filter').value).toBe('');
+  });
+
+  it('creates a hook with no filter as an empty list', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    expect(sent('POST')[0].body.filter).toEqual([]);
+  });
+
+  it('drops a test report once the hook is edited, or switched', async () => {
+    const inner = global.fetch;
+    global.fetch = vi.fn(async (url, init = {}) => {
+      if ((init.method || 'GET') === 'POST' && String(url).endsWith('/test')) {
+        return reply(200, { ok: true, test: { event: 'push', auth: 'token', authenticated: true, receiver: 'on', enabled: true,
+          outcome: 'run', status: 200, reason: '', target: 'agent:jarvis', deliver: 'log', deliver_only: false, text: 'x',
+          sample: { headers: {}, payload: {} } } });
+      }
+      return inner(url, init);
+    });
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'test ci' }));
+    await waitFor(() => expect(screen.getByTestId('webhook-test-outcome')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('description of ci'), { target: { value: 'edited' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('ci saved'));
+    expect(screen.queryByTestId('webhook-test-outcome')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'test ci' }));
+    await waitFor(() => expect(screen.getByTestId('webhook-test-outcome')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'switch off ci' }));
+    await waitFor(() => expect(screen.queryByTestId('webhook-test-outcome')).toBeNull());
+  });
+});

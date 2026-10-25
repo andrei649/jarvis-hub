@@ -15289,7 +15289,7 @@ export interface components {
             filter?: {
                 path: string;
                 /** @enum {string} */
-                op: "eq" | "ne" | "contains" | "in" | "exists" | "missing" | "matches";
+                op: "eq" | "ne" | "contains" | "startswith" | "endswith" | "glob" | "in" | "exists" | "missing";
                 value?: unknown;
             }[];
         };
@@ -15381,7 +15381,7 @@ export interface components {
             filter?: {
                 path: string;
                 /** @enum {string} */
-                op: "eq" | "ne" | "contains" | "in" | "exists" | "missing" | "matches";
+                op: "eq" | "ne" | "contains" | "startswith" | "endswith" | "glob" | "in" | "exists" | "missing";
                 value?: unknown;
             }[];
         };

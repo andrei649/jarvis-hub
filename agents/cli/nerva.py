@@ -465,7 +465,7 @@ def build_parser() -> argparse.ArgumentParser:
     webhook_subscribe.add_argument("--description", default="")
     webhook_subscribe.add_argument("--filter", default=None,
                                    help='JSON list of rules every delivery must satisfy, e.g. \'[{"path": "ref", "op": "eq", '
-                                        '"value": "refs/heads/main"}]\'; ops: eq ne contains in exists missing matches')
+                                        '"value": "refs/heads/main"}]\'; ops: eq ne contains startswith endswith glob in exists missing')
     webhook_subscribe.add_argument("--json", action="store_true")
     webhook_list = webhook_verbs.add_parser("list", help="every hook, its credential kind, switch, calls and filter")
     webhook_list.add_argument("--json", action="store_true")

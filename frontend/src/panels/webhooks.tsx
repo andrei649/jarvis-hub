@@ -88,7 +88,9 @@ export function parseEvents(text: string): string[] {
 }
 
 export type SubscriptionChange = {
-  events: string[]; prompt: string; deliver: string; deliver_only: boolean; description: string; filter: unknown[];
+  events: string[]; prompt: string; deliver: string; deliver_only: boolean; description: string;
+  /** Absent when the owner left an unreadable filter alone: saving another field must not clear it. */
+  filter?: unknown[];
 };
 
 /** The filter editor's text for a hook: one rule per line, or nothing for no rule. */
@@ -122,24 +124,40 @@ function Subscription({ hook, label, held, onSave, onProblem }: {
   const [deliver, setDeliver] = useState(DESTINATIONS.includes(hook.deliver) ? hook.deliver : 'log');
   const [deliverOnly, setDeliverOnly] = useState(hook.deliver_only === true);
   const [description, setDescription] = useState(String(hook.description || ''));
-  const [filter, setFilter] = useState(hook.filter_unreadable ? '' : filterText(hook));
+  const filterBad = !!hook.filter_unreadable;
+  const [filter, setFilter] = useState(filterBad ? '' : filterText(hook));
+  const [filterEdited, setFilterEdited] = useState(false);
   const everyEvent = unreadable && parseEvents(events).length === 0;
+  // An unreadable filter filters every delivery. It is pre-filled with nothing, so saving
+  // another field must not send an empty list (that would reopen the hook): the filter is
+  // sent only when the owner edited it, and the button says when that clears it.
+  const clearsFilter = filterBad && filterEdited && !filter.trim();
   const save = () => {
     const rules = parseFilter(filter);
     if (rules === null) {
       onProblem(FILTER_NOT_JSON);
       return;
     }
-    onSave({ events: parseEvents(events), prompt, deliver, deliver_only: deliverOnly, description, filter: rules });
+    const change: SubscriptionChange = { events: parseEvents(events), prompt, deliver, deliver_only: deliverOnly, description };
+    if (!filterBad || filterEdited) change.filter = rules;
+    onSave(change);
   };
+  const saveLabel = clearsFilter ? 'save: clears the unreadable filter' : everyEvent ? 'save: every event' : 'save';
   return (
     <div style={{ display: 'grid', gap: 4, margin: '4px 0' }}>
       <input aria-label={`events for ${label}`} placeholder="events, comma-separated (empty: every event)" value={events}
         onChange={(e) => setEvents(e.target.value)} style={inpS} />
       <textarea aria-label={`prompt template for ${label}`} placeholder="prompt template, e.g. {event} on {repository.full_name} (empty: the payload's text)"
         value={prompt} maxLength={2000} onChange={(e) => setPrompt(e.target.value)} style={{ ...taS, minHeight: 40 }} />
-      <textarea aria-label={`filter for ${label}`} value={filter} onChange={(e) => setFilter(e.target.value)}
-        placeholder='filter: JSON rules every delivery must satisfy, e.g. [{"path": "ref", "op": "eq", "value": "refs/heads/main"}] (ops: eq ne contains in exists missing matches; empty: no rule)'
+      {filterBad && (
+        <div role="status" style={{ ...mono, color: 'var(--amber)' }}>
+          The stored filter is unreadable, so every delivery is filtered. Saving the other fields leaves it as it is;
+          write a new list of rules to replace it, or clear the box and save to remove it.
+        </div>
+      )}
+      <textarea aria-label={`filter for ${label}`} value={filter}
+        onChange={(e) => { setFilter(e.target.value); setFilterEdited(true); }}
+        placeholder='filter: JSON rules every delivery must satisfy, e.g. [{"path": "ref", "op": "eq", "value": "refs/heads/main"}] (ops: eq ne contains startswith endswith glob in exists missing; empty: no rule)'
         style={{ ...taS, minHeight: 40 }} />
       <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <select aria-label={`deliver ${label} to`} value={deliver} onChange={(e) => setDeliver(e.target.value)} style={inpS}>
@@ -153,7 +171,7 @@ function Subscription({ hook, label, held, onSave, onProblem }: {
           onChange={(e) => setDescription(e.target.value)} style={{ ...inpS, flex: 1 }} />
       </span>
       <span><button className="tool-btn" disabled={held} onClick={save}
-        aria-label={everyEvent ? `save ${label}: every event` : `save ${label}`}>{everyEvent ? 'save: every event' : 'save'}</button></span>
+        aria-label={saveLabel === 'save' ? `save ${label}` : `${saveLabel.replace('save', `save ${label}`)}`}>{saveLabel}</button></span>
     </div>
   );
 }
@@ -273,6 +291,7 @@ export function WebhooksPanel() {
   const [deliver, setDeliver] = useState('log');
   const [deliverOnly, setDeliverOnly] = useState(false);
   const [description, setDescription] = useState('');
+  const [filter, setFilter] = useState('');
   const [created, setCreated] = useState<any>(null);
   const [open, setOpen] = useState('');
   const [confirming, setConfirming] = useState('');
@@ -309,9 +328,14 @@ export function WebhooksPanel() {
       setNote(DELIVER_ONLY_NEEDS_A_CHANNEL);
       return;
     }
+    const rules = parseFilter(filter);
+    if (rules === null) {
+      setNote(FILTER_NOT_JSON);
+      return;
+    }
     setBusy(true);
     apiPost(HOOKS_PATH, { name: name.trim(), target: target.trim(), target_type: targetType, signed,
-      events: parseEvents(events), prompt, deliver, deliver_only: deliverOnly, description: description.trim() },
+      events: parseEvents(events), prompt, deliver, deliver_only: deliverOnly, description: description.trim(), filter: rules },
       { admin: true })
       .then((rec: any) => {
         setCreated(rec);
@@ -322,6 +346,7 @@ export function WebhooksPanel() {
         setDeliver('log');
         setDeliverOnly(false);
         setDescription('');
+        setFilter('');
         setNote('');
         list.reload();
       })
@@ -334,7 +359,7 @@ export function WebhooksPanel() {
     hold(hook.id, true);
     let gone = false;
     apiPatch(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, { enabled: !hook.enabled }, { admin: true })
-      .then(() => setNote(''))
+      .then(() => { setNote(''); forgetTest(hook.id); })
       .catch((err: any) => {
         if (err && err.status === 404) {
           gone = true;
@@ -372,7 +397,7 @@ export function WebhooksPanel() {
     hold(hook.id, true);
     let gone = false;
     apiPatch(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, change, { admin: true })
-      .then(() => setNote(`${hookName(hook)} saved`))
+      .then(() => { setNote(`${hookName(hook)} saved`); forgetTest(hook.id); })
       .catch((err: any) => {
         if (err && err.status === 404) {
           gone = true;
@@ -386,6 +411,13 @@ export function WebhooksPanel() {
       // when the hook is gone).
       .finally(() => { hold(hook.id, false); list.reload(); setFocusKey(gone ? 'create' : `open:${hook.id}`); });
   };
+  // A test report describes the hook as it was when tested: an edit makes it stale.
+  const forgetTest = (id: string) => setTests((t) => {
+    if (!(id in t)) return t;
+    const next = { ...t };
+    delete next[id];
+    return next;
+  });
   // H039 — a signed sample through the hook's receive path, dry: the hub runs nothing and
   // pushes nothing, so no confirmation is asked. The report lands in the detail pane,
   // which opens to show it; the list reloads for the hook's last_test note.
@@ -470,6 +502,8 @@ export function WebhooksPanel() {
           onChange={(e) => setEvents(e.target.value)} style={inpS} />
         <textarea aria-label="prompt template" placeholder="prompt template, e.g. {event} on {repository.full_name} (empty: the payload's text)"
           value={prompt} maxLength={2000} onChange={(e) => setPrompt(e.target.value)} style={{ ...taS, minHeight: 40 }} />
+        <textarea aria-label="filter" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ ...taS, minHeight: 40 }}
+          placeholder='filter: JSON rules every delivery must satisfy, e.g. [{"path": "ref", "op": "eq", "value": "refs/heads/main"}] (ops: eq ne contains startswith endswith glob in exists missing; empty: no rule)' />
         <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={mono}>deliver to{' '}
             <select aria-label="deliver to" value={deliver} onChange={(e) => setDeliver(e.target.value)} style={inpS}>

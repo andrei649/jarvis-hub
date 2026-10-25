@@ -254,66 +254,20 @@ def extract_input(payload) -> str:
 # the inbound payload, which is attacker-controlled text; it was not copied. A hook gets
 # a list of declarative rules instead, all of which must hold (AND) for a delivery to go
 # on; a rule reads one path of the payload (as a template placeholder does) and compares
-# it. Every op runs in time linear in what it reads, and ``matches`` is a *bounded* regex:
-# the pattern is refused unless its matching time over a subject of
-# :data:`MAX_FILTER_SUBJECT` characters is a small polynomial, whatever the sender wrote.
-FILTER_OPS: tuple[str, ...] = ("eq", "ne", "contains", "in", "exists", "missing", "matches")
+# it. There is deliberately no regex op: a pattern over attacker-controlled text can be made
+# to backtrack for as long as the sender likes (an alternation repeated in sequence doubles
+# the work per group), and the filter runs on the event loop before anything is
+# authenticated twice. Every op here is a comparison, a substring or prefix/suffix test, a
+# membership test or a one-``*`` glob, each linear in what it reads, with no backtracking.
+# A rule stored by the first build with ``op: matches`` is no longer valid, so the hook's
+# filter reads as unreadable and filters every delivery (fail closed) until it is rewritten.
+FILTER_OPS: tuple[str, ...] = ("eq", "ne", "contains", "startswith", "endswith", "glob", "in", "exists", "missing")
 MAX_FILTER_RULES = 16
 MAX_FILTER_PATH = 128
 MAX_FILTER_VALUE = 256      # a rule's text value, or one member of an ``in`` list
 MAX_FILTER_IN = 32          # members of an ``in`` list
-MAX_FILTER_REGEX = 128      # a ``matches`` pattern
-MAX_FILTER_SUBJECT = 512    # what a ``matches`` pattern reads of the field
-MAX_FILTER_REPEATS = 2      # variable repeats (``*``, ``+``, ``{1,5}``) a pattern may hold
 _RULE_PATH = re.compile(r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$")
 _SCALARS = (str, int, float, bool, type(None))
-
-
-def _regex_problem(pattern: str) -> str:
-    """"" when *pattern* is a bounded regex, else why not. Bounded: it compiles and holds
-    no backreference, lookaround or conditional, no repeat or branch inside a repeat, and
-    at most :data:`MAX_FILTER_REPEATS` variable repeats (an exact ``{n}`` is not one), so
-    no subject can make it backtrack exponentially, and the worst case is a small power of
-    :data:`MAX_FILTER_SUBJECT`. The pattern is walked as the ``re`` parser reads it."""
-    import re._parser as parser  # the stdlib parser's tree, read and never changed
-
-    try:
-        tree = parser.parse(pattern)
-    except (re.error, OverflowError, RecursionError) as exc:
-        return f"not a regex ({str(exc)[:80]})"
-    variable = 0
-
-    def walk(sub, inside_repeat: bool) -> str:
-        nonlocal variable
-        for op, av in sub:
-            if op in (parser.GROUPREF, parser.GROUPREF_EXISTS):
-                return "a backreference"
-            if op in (parser.ASSERT, parser.ASSERT_NOT):
-                return "a lookaround"
-            if op in (parser.MAX_REPEAT, parser.MIN_REPEAT, parser.POSSESSIVE_REPEAT):
-                low, high, body = av
-                if inside_repeat:
-                    return "a repeat inside a repeat"
-                if high != low:
-                    variable += 1
-                    if variable > MAX_FILTER_REPEATS:
-                        return f"more than {MAX_FILTER_REPEATS} variable repeats (* + ? {{m,n}})"
-                problem = walk(body, True)
-            elif op == parser.BRANCH:
-                if inside_repeat:
-                    return "a branch inside a repeat"
-                problem = next((found for alt in av[1] if (found := walk(alt, inside_repeat))), "")
-            elif op == parser.SUBPATTERN:
-                problem = walk(av[3], inside_repeat)
-            elif op == parser.ATOMIC_GROUP:
-                problem = walk(av, inside_repeat)
-            else:
-                problem = ""
-            if problem:
-                return problem
-        return ""
-
-    return walk(tree, False)
 
 
 def _scalar_ok(value) -> bool:
@@ -348,12 +302,14 @@ def rule_problem(rule) -> str:
         if (not isinstance(value, list) or not value or len(value) > MAX_FILTER_IN
                 or not all(_scalar_ok(item) for item in value)):
             return f"value is a list of 1 to {MAX_FILTER_IN} texts, numbers, booleans or nulls"
-    elif op == "matches":
-        if not isinstance(value, str) or not value or len(value) > MAX_FILTER_REGEX:
-            return f"value is a regex of 1 to {MAX_FILTER_REGEX} characters"
-        problem = _regex_problem(value)
-        if problem:
-            return f"value is not a bounded regex: {problem}"
+    elif op in ("startswith", "endswith"):
+        if not isinstance(value, str) or not value or len(value) > MAX_FILTER_VALUE:
+            return f"value is text of 1 to {MAX_FILTER_VALUE} characters"
+    elif op == "glob":
+        if not isinstance(value, str) or not value or len(value) > MAX_FILTER_VALUE:
+            return f"value is a pattern of 1 to {MAX_FILTER_VALUE} characters"
+        if value.count("*") > 1:
+            return "a glob has at most one * (it stands for any run of characters)"
     return ""
 
 
@@ -401,7 +357,7 @@ def _scalar_equal(a, b) -> bool:
 def _shown(found: bool, node) -> str:
     if not found:
         return "the field is missing"
-    text = json.dumps(node, ensure_ascii=False) if isinstance(node, str) else _encode_capped(node, 80)
+    text = json.dumps(node[:81], ensure_ascii=False) if isinstance(node, str) else _encode_capped(node, 80)
     return "the value is " + (text if len(text) <= 80 else text[:80] + "…")
 
 
@@ -427,15 +383,30 @@ def _rule_holds(rule: dict, payload, event: str) -> tuple[bool, str]:
         if isinstance(node, dict):
             return value in node, _shown(found, node)
         return False, _shown(found, node)
-    # matches: the field's text (a string as is, anything else as JSON), cut first, so a
-    # megabyte-sized field costs what the cap shows; the pattern was bounded when stored.
+    # startswith, endswith and glob read the field's text: a string as is, a number as its
+    # JSON, anything else never (a list or object has no text to compare).
     if not found:
         return False, _shown(found, node)
-    subject = node[:MAX_FILTER_SUBJECT] if isinstance(node, str) else _encode_capped(node, MAX_FILTER_SUBJECT)
-    try:
-        return re.search(value, subject) is not None, _shown(found, node)
-    except re.error:
-        return False, "the pattern cannot be compiled"
+    if isinstance(node, str):
+        subject = node
+    elif isinstance(node, (int, float)) and not isinstance(node, bool):
+        subject = json.dumps(node)
+    else:
+        return False, _shown(found, node)
+    return _text_test(op, value, subject), _shown(found, node)
+
+
+def _text_test(op: str, value: str, subject: str) -> bool:
+    """startswith / endswith / glob over *subject*, in time linear in the two lengths: a
+    glob holds at most one ``*``, so it is a prefix and a suffix that must not overlap."""
+    if op == "startswith":
+        return subject.startswith(value)
+    if op == "endswith":
+        return subject.endswith(value)
+    head, star, tail = value.partition("*")
+    if not star:
+        return subject == head
+    return len(subject) >= len(head) + len(tail) and subject.startswith(head) and subject.endswith(tail)
 
 
 def filter_verdict(rules: list[dict], payload, event: str) -> str:

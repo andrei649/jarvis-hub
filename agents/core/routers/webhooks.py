@@ -626,9 +626,11 @@ def _skipped(store, hook_id: str, event: str, reason: str):
 
 def _filtered(store, hook_id: str, reason: str):
     """H039 — a delivery the payload filter turned away: answered 202 (the sender does
-    not retry), never run, counted as filtered with the rule that did it."""
+    not retry), never run, counted as filtered. The sender is told only that it was: the
+    rule (the owner's path, op and value) and the part of the sender's own field it echoes
+    stay on the hook (``last_filtered_rule``, admin) and in the admin test report."""
     store.mark_filtered(hook_id, reason)
-    return nocache_json({"ok": True, "filtered": reason}, status_code=202)
+    return nocache_json({"ok": True, "filtered": True}, status_code=202)
 
 
 #: What ``_classify`` decides about an authenticated delivery of an enabled hook.

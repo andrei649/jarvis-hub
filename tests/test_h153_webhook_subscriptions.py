@@ -437,7 +437,7 @@ def _rule(path, op, value=None):
 
 
 def test_the_filter_ops_are_the_declared_set():
-    assert set(FILTER_OPS) == {"eq", "ne", "contains", "in", "exists", "missing", "matches"}
+    assert set(FILTER_OPS) == {"eq", "ne", "contains", "startswith", "endswith", "glob", "in", "exists", "missing"}
 
 
 @pytest.mark.parametrize("rules, verdict", [
@@ -461,9 +461,20 @@ def test_the_filter_ops_are_the_declared_set():
     ([_rule("head_commit", "exists")], ""),                        # present, even when null
     ([_rule("deleted", "missing")], ""),
     ([_rule("ref", "missing")], "rule 1"),
-    ([_rule("ref", "matches", r"^refs/heads/")], ""),
-    ([_rule("ref", "matches", r"^refs/tags/")], "rule 1"),
-    ([_rule("repository.stars", "matches", r"^\d+$")], ""),       # a number, as its text
+    ([_rule("ref", "startswith", "refs/heads/")], ""),
+    ([_rule("ref", "startswith", "refs/tags/")], "rule 1"),
+    ([_rule("ref", "endswith", "/main")], ""),
+    ([_rule("ref", "endswith", "/dev")], "rule 1"),
+    ([_rule("repository.stars", "startswith", "7")], ""),          # a number, as its text
+    ([_rule("commits", "startswith", "[")], "rule 1"),             # a list has no text to compare
+    ([_rule("ref", "glob", "refs/heads/*")], ""),
+    ([_rule("ref", "glob", "*/main")], ""),
+    ([_rule("ref", "glob", "refs/*/main")], ""),
+    ([_rule("ref", "glob", "*")], ""),
+    ([_rule("ref", "glob", "refs/heads/main")], ""),               # no * : the whole text
+    ([_rule("ref", "glob", "refs/tags/*")], "rule 1"),
+    ([_rule("ref", "glob", "refs/heads/main*main")], "rule 1"),    # prefix and suffix never overlap
+    ([_rule("nope", "glob", "*")], "rule 1"),
     ([_rule("event", "eq", "push")], ""),                          # the delivery's event
     ([_rule("payload.ref", "exists")], ""),                        # the template's spelling
     ([_rule("ref", "eq", "refs/heads/main"), _rule("sender.login", "eq", "bob")], "rule 2"),   # AND
@@ -506,22 +517,75 @@ def test_a_filter_over_a_body_that_is_not_json():
     ([_rule("a", "in", [])], "value"),
     ([_rule("a", "in", [{"x": 1}])], "value"),
     ([_rule("a", "in", ["x"] * 33)], "value"),
-    ([_rule("a", "matches", "(")], "regex"),
-    ([_rule("a", "matches", "x" * 129)], "value"),
-    ([_rule("a", "matches", r"(a+)+$")], "regex"),                  # a repeat inside a repeat
-    ([_rule("a", "matches", r"(a|aa)*$")], "regex"),                # a branch inside a repeat
-    ([_rule("a", "matches", r"(a)\1")], "regex"),                   # a backreference
-    ([_rule("a", "matches", r"(?=a)a")], "regex"),                  # a lookaround
-    ([_rule("a", "matches", r"a*b*c*")], "regex"),                  # more than two unbounded repeats
+    ([_rule("a", "matches", "^x$")], "op"),                         # the regex op is gone
+    ([_rule("a", "startswith", "")], "value"),
+    ([_rule("a", "endswith", 3)], "value"),
+    ([_rule("a", "glob", "a*b*c")], "at most one"),
+    ([_rule("a", "glob", "x" * 257)], "value"),
 ])
 def test_a_filter_rule_is_validated(rules, why):
     problem = filter_problem(rules)
     assert problem and why in problem, problem
 
 
-def test_a_bounded_regex_is_bounded_in_what_it_reads_too():
-    # The subject is cut before it is matched: a 5 MiB field costs what the cap shows.
-    assert filter_verdict([_rule("x", "matches", "a$")], {"x": "a" * 100_000 + "b"}, "") == ""
+# The first build had a ``matches`` regex op that a sender could make backtrack for 30 s on a
+# 512-character field (an alternation repeated in sequence doubles the work per group). The op
+# is gone: these patterns are refused at validation, and no op left is super-linear.
+_REDOS = [
+    "(.|..)" * 21 + "c",
+    "(a|aa)*" * 20 + "b",
+    "(a|a.)*" * 20 + "c",
+    "(aa|a)*" * 20 + "b",
+    r"(a+)+$",
+]
+
+
+@pytest.mark.parametrize("pattern", _REDOS)
+def test_the_regex_op_is_gone_and_a_redos_pattern_is_refused_at_validation(pattern):
+    import time
+
+    rules = [_rule("x", "matches", pattern)]
+    started = time.perf_counter()
+    problem = filter_problem(rules)
+    assert time.perf_counter() - started < 0.1
+    assert problem.startswith("rule 1: op is one of ") and "matches" not in problem
+
+
+def test_a_rule_with_the_removed_matches_op_fails_closed(hub):
+    """A hook stored by the first build with ``op: matches`` reads as an unreadable filter:
+    every delivery is filtered, never run, until the owner rewrites it."""
+    client, _events, turns = hub
+    hook = _hook(client)
+    from agents.core.routers import webhooks as router
+
+    router._webhook_store._hooks[hook["id"]]["filter"] = [_rule("text", "matches", "^hi")]
+    assert router._webhook_store.stored_filter(router._webhook_store._hooks[hook["id"]]) is None
+    filtered = _post(client, hook, {"text": "hi"})
+    assert filtered.status_code == 202 and filtered.json() == {"ok": True, "filtered": True}
+    assert turns == []
+    row = _listed(client, hook["id"])
+    assert row["filter_unreadable"] is True and row["filter"] == []
+    client.patch(f"/api/webhooks/{hook['id']}", json={"filter": [_rule("text", "startswith", "hi")]}, headers=_ADMIN)
+    assert _post(client, hook, {"text": "hi"}).status_code == 200 and turns == ["hi"]
+
+
+@pytest.mark.parametrize("op, value", [
+    ("startswith", "a" * 255 + "b"),
+    ("endswith", "b" + "a" * 255),
+    ("glob", "a" * 128 + "*" + "a" * 127 + "b"),
+    ("glob", "*" + "a" * 255),
+    ("contains", "a" * 255 + "b"),
+    ("eq", "a" * 255 + "b"),
+    ("in", ["a" * 255 + "b"] * 32),
+])
+def test_no_rule_takes_super_linear_time_on_an_adversarial_subject(op, value):
+    import time
+
+    rules = [_rule("x", op, value)] * 16
+    for subject in ("a" * 512, "a" * 100_000):
+        started = time.perf_counter()
+        filter_verdict(rules, {"x": subject}, "")
+        assert time.perf_counter() - started < 0.1, (op, len(subject))
 
 
 def test_a_filter_is_stored_validated_and_masked(tmp_path):
@@ -546,11 +610,13 @@ def test_a_delivery_a_rule_turns_away_is_filtered_and_never_run(hub):
     assert hook["filter"] == [_rule("ref", "eq", "refs/heads/main")]
     filtered = _post(client, hook, {**GITHUB_PUSH, "ref": "refs/heads/dev"}, **{"X-GitHub-Event": "push"})
     assert filtered.status_code == 202
-    assert filtered.json() == {"ok": True, "filtered": 'rule 1 (ref eq "refs/heads/main"): the value is "refs/heads/dev"'}
+    # the sender learns only that it was filtered: not the owner's rule, nor its own field echoed
+    assert filtered.json() == {"ok": True, "filtered": True}
+    assert "refs/heads/main" not in filtered.text and "refs/heads/dev" not in filtered.text
     assert turns == []
     row = _listed(client, hook["id"])
     assert row["calls"] == 0 and row["skipped"] == 0 and row["filtered"] == 1
-    assert row["last_filtered_rule"].startswith("rule 1")
+    assert row["last_filtered_rule"] == 'rule 1 (ref eq "refs/heads/main"): the value is "refs/heads/dev"'
     assert _post(client, hook, GITHUB_PUSH, **{"X-GitHub-Event": "push"}).status_code == 200
     assert len(turns) == 1 and _listed(client, hook["id"])["calls"] == 1
 
@@ -575,7 +641,7 @@ def test_a_filter_can_be_changed_and_the_change_is_audited(hub):
     assert _post(client, hook, {"text": "deploy done"}).status_code == 200 and turns == ["deploy done"]
 
 
-@pytest.mark.parametrize("rules", ["x", [{"path": "a", "op": "like", "value": 1}], [_rule("a", "matches", "(")],
+@pytest.mark.parametrize("rules", ["x", [{"path": "a", "op": "like", "value": 1}], [_rule("a", "matches", "^x$")],
                                    [_rule("a", "eq", "x")] * 17])
 def test_a_filter_is_validated_by_the_routes(hub, rules):
     client, events, _turns = hub
@@ -592,7 +658,7 @@ def test_an_unreadable_filter_filters_every_delivery(hub):
 
     router._webhook_store._hooks[hook["id"]]["filter"] = {"path": "a"}          # a hand edit, not a list
     filtered = _post(client, hook, {"text": "hi"})
-    assert filtered.status_code == 202 and filtered.json()["filtered"] == "the hook's filter is unreadable"
+    assert filtered.status_code == 202 and filtered.json() == {"ok": True, "filtered": True}
     assert turns == []
     row = _listed(client, hook["id"])
     assert row["filter"] == [] and row["filter_unreadable"] is True
@@ -873,3 +939,27 @@ def test_test_sends_a_signed_sample_and_shows_the_outcome(tmp_path, monkeypatch)
     assert code == EXIT_FAILED and "no webhook" in err
     code, out, err = _cli(["webhook", "test", rec["id"], "--payload", "{bad"], hub)
     assert code == EXIT_USAGE and "--payload" in err
+
+
+@pytest.mark.parametrize("pattern", [r"(?i)[a-z]*[a-z]*\d", r"\w*\w*\d", r".+.+\d", "(.|..)" * 21 + "c"])
+def test_a_stored_round_one_regex_rule_is_unreadable_and_never_evaluated(pattern, tmp_path, monkeypatch):
+    """Whatever regex the first build accepted and stored reads as an unreadable filter, so
+    nothing ever hands it to the ``re`` engine (a rule with two variable repeats cost 0.3-0.5 s
+    a field, on the event loop)."""
+    import re
+
+    store = WebhookStore(path=tmp_path / "wh.json")
+    rec = store.create("jarvis")
+    store._hooks[rec["id"]]["filter"] = [_rule("x", "matches", pattern)]
+    assert store.stored_filter(store._hooks[rec["id"]]) is None
+    assert store.list()[0]["filter_unreadable"] is True
+
+    def refuse(*_a, **_k):
+        raise AssertionError("a filter rule reached the regex engine")
+
+    for name in ("search", "match", "fullmatch", "compile"):
+        monkeypatch.setattr(re, name, refuse)
+    # every op that is left evaluates without it
+    rules = [_rule("x", op, "a") for op in ("eq", "ne", "contains", "startswith", "endswith", "glob")]
+    rules += [_rule("x", "in", ["a"]), _rule("x", "exists"), _rule("x", "missing")]
+    filter_verdict(rules, {"x": "a" * 512}, "")
