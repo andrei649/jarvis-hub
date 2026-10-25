@@ -642,6 +642,7 @@
   "POST /api/voice/stt": "user",
   "POST /api/webhooks": "admin",
   "POST /api/webhooks/{hook_id}": "open",
+  "POST /api/webhooks/{hook_id}/test": "admin",
   "POST /api/widget/{token}/message": "open",
   "POST /api/workflows": "admin",
   "POST /api/workflows/hierarchical": "user",

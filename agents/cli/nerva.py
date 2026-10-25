@@ -445,6 +445,40 @@ def build_parser() -> argparse.ArgumentParser:
     pairing_clear.add_argument("--confirm", action="store_true", help="actually drop them")
     pairing_clear.add_argument("--json", action="store_true")
 
+    webhook = verbs.add_parser("webhook", help="inbound webhooks: subscribe an external system's events to an agent (admin, H039)")
+    webhook_verbs = webhook.add_subparsers(dest="action", required=True, metavar="action")
+    webhook_subscribe = webhook_verbs.add_parser(
+        "subscribe", help="create a hook that runs an agent or workflow on each delivery; its credential is shown once")
+    webhook_subscribe.add_argument("target", help="the agent or workflow id the hook runs")
+    webhook_subscribe.add_argument("--type", dest="target_type", choices=("agent", "workflow"), default="agent")
+    webhook_subscribe.add_argument("--name", default="", help="a label for the hook (default: the target)")
+    webhook_subscribe.add_argument("--signed", action="store_true",
+                                   help="HMAC-signed deliveries (X-Signature-256 over the raw body) instead of a token")
+    webhook_subscribe.add_argument("--events", default="",
+                                   help="comma-separated event names the hook runs, e.g. push,issues (empty: every event)")
+    webhook_subscribe.add_argument("--prompt", default="",
+                                   help="prompt template over the payload, e.g. '{event} on {repository.full_name}'")
+    webhook_subscribe.add_argument("--deliver", choices=_WEBHOOK_DESTINATIONS, default="log",
+                                   help="where the reply goes: the log, or one of your own channels")
+    webhook_subscribe.add_argument("--deliver-only", action="store_true",
+                                   help="skip the agent: the rendered text goes straight to the channel")
+    webhook_subscribe.add_argument("--description", default="")
+    webhook_subscribe.add_argument("--filter", default=None,
+                                   help='JSON list of rules every delivery must satisfy, e.g. \'[{"path": "ref", "op": "eq", '
+                                        '"value": "refs/heads/main"}]\'; ops: eq ne contains in exists missing matches')
+    webhook_subscribe.add_argument("--json", action="store_true")
+    webhook_list = webhook_verbs.add_parser("list", help="every hook, its credential kind, switch, calls and filter")
+    webhook_list.add_argument("--json", action="store_true")
+    webhook_remove = webhook_verbs.add_parser("remove", help="delete a hook: the sender's token or secret dies with it")
+    webhook_remove.add_argument("hook_id")
+    webhook_remove.add_argument("--json", action="store_true")
+    webhook_test = webhook_verbs.add_parser(
+        "test", help="send a correctly signed sample delivery through the hook's receive path, dry, and show the outcome")
+    webhook_test.add_argument("hook_id")
+    webhook_test.add_argument("--event", default="", help="the event the sample names (default: the hook's first subscribed event)")
+    webhook_test.add_argument("--payload", default=None, help="a JSON object to send instead of the built-in sample")
+    webhook_test.add_argument("--json", action="store_true")
+
     jobs = verbs.add_parser("jobs", help="your scheduled jobs (admin)")
     jobs_verbs = jobs.add_subparsers(dest="action", required=True, metavar="action")
     jobs_list = jobs_verbs.add_parser("list", help="every job and whether the scheduler is alive")
@@ -2831,6 +2865,10 @@ def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 _PAIRING_STATUSES = ("allowed", "pending", "blocked")
+#: Where a hook may deliver (agents/core/webhooks.py DELIVER_CHOICES), spelled here so the
+#: parser builds without importing the hub.
+_WEBHOOK_DESTINATIONS = ("log", "telegram", "voice", "ntfy")
+_WEBHOOK_PATH = "/api/webhooks"
 
 
 def cmd_pairing(ns: argparse.Namespace, ctx: Context) -> int:
@@ -2904,6 +2942,141 @@ def cmd_pairing(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.dump(reply)
     else:
         ctx.say(f"approved {who}" if ns.action == "approve" else f"revoked {who}")
+    return EXIT_OK
+
+
+def _json_option(flag: str, text: str, *, an_object: bool = False):
+    try:
+        value = json.loads(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{flag} is not JSON: {exc}") from None
+    if an_object and not isinstance(value, dict):
+        raise argparse.ArgumentTypeError(f"{flag} must be a JSON object")
+    return value
+
+
+def _webhook_line(hook: dict) -> str:
+    """One hook as ``list`` shows it: id, name, target, credential kind, switch, and
+    what narrows or routes its deliveries."""
+    kind = "hmac" if hook.get("signed") else "token"
+    parts = [str(hook.get("id")), str(hook.get("name") or hook.get("target") or ""),
+             f"{hook.get('target_type')}:{hook.get('target')}", kind, "on" if hook.get("enabled") else "off"]
+    deliver = hook.get("deliver") or "log"
+    if deliver != "log":
+        parts.append(f"-> {deliver}")
+    if hook.get("deliver_only") is True:
+        parts.append("deliver only")
+    if hook.get("events_unreadable"):
+        parts.append("events: unreadable")
+    elif hook.get("events"):
+        parts.append("events: " + ", ".join(str(name) for name in hook["events"]))
+    rules = hook.get("filter") if isinstance(hook.get("filter"), list) else []
+    if hook.get("filter_unreadable"):
+        parts.append("filter: unreadable")
+    elif rules:
+        parts.append(f"filter: {len(rules)} rule" + ("" if len(rules) == 1 else "s"))
+    parts.append(f"calls {int(hook.get('calls') or 0)}")
+    return "  ".join(parts)
+
+
+def cmd_webhook(ns: argparse.Namespace, ctx: Context) -> int:
+    """H039 — `nerva webhook subscribe|list|remove|test`, Hermes' `hermes webhook`.
+
+    The same admin routes the HUD's WEBHOOKS card uses (agents/core/routers/webhooks.py).
+    ``subscribe`` prints the hook's URL and its token or signing secret once: the hub
+    masks it ever after. ``test`` asks the hub for a correctly signed sample delivery run
+    through the hook's own receive path, dry (nothing runs, nothing is pushed, no call is
+    counted), and shows what a real delivery like it would do.
+    """
+    client = ctx.client()
+    if ns.action == "list":
+        reply = client.get(_WEBHOOK_PATH)
+        hooks = reply.get("webhooks") if isinstance(reply, dict) else None
+        if not isinstance(hooks, list):
+            ctx.err.write("unexpected reply from the hub: no list of webhooks in it\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        if not hooks:
+            ctx.say("no webhooks")
+        for hook in hooks:
+            if isinstance(hook, dict):
+                ctx.say(_webhook_line(hook))
+        return EXIT_OK
+    if ns.action == "subscribe":
+        body: dict[str, Any] = {
+            "target": ns.target, "target_type": ns.target_type, "name": ns.name, "signed": bool(ns.signed),
+            "events": [name.strip() for name in ns.events.split(",") if name.strip()],
+            "prompt": ns.prompt, "deliver": ns.deliver, "deliver_only": bool(ns.deliver_only),
+            "description": ns.description,
+        }
+        if ns.filter is not None:
+            body["filter"] = _json_option("--filter", ns.filter)
+        reply = client.post(_WEBHOOK_PATH, body)
+        reply = reply if isinstance(reply, dict) else {}
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        hook_id = str(reply.get("id") or "")
+        ctx.say(f"subscribed {hook_id}  {reply.get('name') or ns.target}  {reply.get('target_type')}:{reply.get('target')}")
+        ctx.say(f"POST {client.base_url}{_WEBHOOK_PATH}/{quote(hook_id, safe='')}")
+        if reply.get("signed"):
+            ctx.say(f"signing secret: {reply.get('signing_secret')}")
+            ctx.say("The sender signs each raw body: X-Signature-256: sha256=<HMAC-SHA256 with this secret>.")
+            ctx.say("Save it now: the signing secret is shown once and never again.")
+        else:
+            ctx.say(f"X-Webhook-Token: {reply.get('token')}")
+            ctx.say("Save it now: the token is shown once and never again.")
+        return EXIT_OK
+    path = f"{_WEBHOOK_PATH}/{quote(ns.hook_id, safe='')}"
+    if ns.action == "remove":
+        try:
+            reply = client.request("DELETE", path)
+        except HubError as exc:
+            if exc.status == 404:
+                ctx.err.write(f"no webhook {ns.hook_id}; nothing to remove\n")
+                return EXIT_FAILED
+            raise
+        if ns.json:
+            ctx.dump(reply if isinstance(reply, dict) else {"ok": True})
+        else:
+            ctx.say(f"removed {ns.hook_id}")
+        return EXIT_OK
+    # test
+    body = {}
+    if ns.event:
+        body["event"] = ns.event
+    if ns.payload is not None:
+        body["payload"] = _json_option("--payload", ns.payload, an_object=True)
+    try:
+        reply = client.post(path + "/test", body)
+    except HubError as exc:
+        if exc.status == 404:
+            ctx.err.write(f"no webhook {ns.hook_id}; nothing to test\n")
+            return EXIT_FAILED
+        raise
+    test = reply.get("test") if isinstance(reply, dict) else None
+    if not isinstance(test, dict):
+        ctx.err.write("unexpected reply from the hub: no test report in it\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    verified = "verified" if test.get("authenticated") else "NOT verified"
+    ctx.say(f"{test.get('auth')} {verified} · event {test.get('event')} · receiver {test.get('receiver')} "
+            f"· hook {'on' if test.get('enabled') else 'off'}")
+    outcome, reason = test.get("outcome"), test.get("reason") or ""
+    if outcome == "run":
+        ctx.say(f"would run {test.get('target')}, reply to {test.get('deliver')}")
+    elif outcome == "deliver_only":
+        ctx.say(f"would deliver only to {test.get('deliver')}: no turn")
+    elif outcome in ("skipped", "filtered"):
+        ctx.say(f"would be {outcome}: {reason}")
+    else:
+        ctx.say(f"would be refused ({test.get('status')}): {reason}")
+    if test.get("text"):
+        ctx.say(f"text: {test['text']}")
     return EXIT_OK
 
 
@@ -4747,6 +4920,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "estop": cmd_estop,
     "company": cmd_company,
     "pairing": cmd_pairing,
+    "webhook": cmd_webhook,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,
     "todo": cmd_todo,

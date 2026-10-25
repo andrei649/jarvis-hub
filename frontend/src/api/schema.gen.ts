@@ -1078,6 +1078,31 @@ export interface paths {
         patch: operations["update_webhook_api_webhooks__hook_id__patch"];
         trace?: never;
     };
+    "/api/webhooks/{hook_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Webhook
+         * @description H039 — a signed test delivery, dry. The hub builds a sample for the hook's event
+         *     (or the one given), signs it the way a sender must (the HMAC of the raw body, or the
+         *     token header), verifies it with the receiver's own checks and runs it through the
+         *     same event, filter and template path as a real delivery, without running the target,
+         *     pushing anywhere or counting a call. The report says what a real delivery like it
+         *     would do and shows the sample as a sender posts it, with the credential masked.
+         */
+        post: operations["test_webhook_api_webhooks__hook_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/.well-known/agent-card": {
         parameters: {
             query?: never;
@@ -15260,6 +15285,76 @@ export interface components {
              * @default
              */
             description: string;
+            /** Filter */
+            filter?: {
+                path: string;
+                /** @enum {string} */
+                op: "eq" | "ne" | "contains" | "in" | "exists" | "missing" | "matches";
+                value?: unknown;
+            }[];
+        };
+        /**
+         * WebhookTestBody
+         * @description H039 — what a test delivery carries, each part optional: the event it names (else
+         *     the hook's first subscribed event, else ``test``) and its JSON object payload (else
+         *     a small sample that says it is a test).
+         */
+        WebhookTestBody: {
+            /** Event */
+            event?: string;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
+        /** WebhookTestReply */
+        WebhookTestReply: {
+            /** Ok */
+            ok: boolean;
+            test: components["schemas"]["WebhookTestReport"];
+        };
+        /**
+         * WebhookTestReport
+         * @description What a test delivery found (H039): how it authenticated and whether the receiver
+         *     accepted that, the receiver's and the hook's switches, and what a real delivery like
+         *     it would do (``outcome``: run, deliver_only, skipped, filtered or refused, with the
+         *     HTTP status a sender would see and the reason when it would not run).
+         */
+        WebhookTestReport: {
+            /** Event */
+            event: string;
+            /** Auth */
+            auth: string;
+            /** Authenticated */
+            authenticated: boolean;
+            /** Receiver */
+            receiver: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Outcome */
+            outcome: string;
+            /** Status */
+            status: number;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Target */
+            target: string;
+            /** Deliver */
+            deliver: string;
+            /** Deliver Only */
+            deliver_only: boolean;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /** Sample */
+            sample: {
+                [key: string]: unknown;
+            };
         };
         /**
          * WebhookUpdateBody
@@ -15282,6 +15377,13 @@ export interface components {
             deliver_only?: boolean;
             /** Description */
             description?: string;
+            /** Filter */
+            filter?: {
+                path: string;
+                /** @enum {string} */
+                op: "eq" | "ne" | "contains" | "in" | "exists" | "missing" | "matches";
+                value?: unknown;
+            }[];
         };
         /** WorkflowRunBody */
         WorkflowRunBody: {
@@ -17217,6 +17319,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_webhook_api_webhooks__hook_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WebhookTestBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookTestReply"];
                 };
             };
             /** @description Validation Error */

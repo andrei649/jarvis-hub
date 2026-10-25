@@ -638,6 +638,7 @@
   "POST /api/voice/stt",
   "POST /api/webhooks",
   "POST /api/webhooks/{hook_id}",
+  "POST /api/webhooks/{hook_id}/test",
   "POST /api/widget/{token}/message",
   "POST /api/workflows",
   "POST /api/workflows/hierarchical",

@@ -638,6 +638,7 @@
   "POST /api/voice/stt": "stt_endpoint_api_voice_stt_post",
   "POST /api/webhooks": "create_webhook_api_webhooks_post",
   "POST /api/webhooks/{hook_id}": "trigger_webhook_api_webhooks__hook_id__post",
+  "POST /api/webhooks/{hook_id}/test": "test_webhook_api_webhooks__hook_id__test_post",
   "POST /api/widget/{token}/message": "widget_message_api_widget__token__message_post",
   "POST /api/workflows": "create_workflow_api_workflows_post",
   "POST /api/workflows/hierarchical": "workflow_hierarchical_api_workflows_hierarchical_post",
