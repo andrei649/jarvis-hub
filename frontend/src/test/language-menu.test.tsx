@@ -142,14 +142,61 @@ describe('App language preference', () => {
     expect(screen.getByText(V2.I18N.ro.sub)).toBeTruthy();
   });
 
-  it('honours the pre-sync hud.lang browser choice as a display fallback without uploading it', async () => {
-    localStorage.setItem('hud.lang', 'ro');
+  it('shows the pre-sync hud.lang choice on an unconfigured server without uploading a default', async () => {
+    localStorage.setItem('hud.lang', 'en');
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({configured:false, preferences:defaults})));
     vi.stubGlobal('fetch', fetch);
     render(<App/>);
-    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
+    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('EN');
     await waitFor(() => expect(fetch).toHaveBeenCalled());
+    await new Promise(r => setTimeout(r, 30));
     expect(fetch.mock.calls.some(c => c[1]?.method === 'PUT')).toBe(false);
+    expect(localStorage.getItem('hud.lang')).toBe('en');
+  });
+
+  // Upgrade path: the old globe wrote hud.lang ('en' by default), so 'ro' is an explicit choice. A
+  // configured server document (an earlier accent/font pick) answers lang:'en' and must not revert it.
+  const predatesLang = () => localStorage.setItem('hud.appearance.v1:/', JSON.stringify({version:1, preferences:{font:'theme',accent:'amber',look:'obsidian',density:'normal',motion:'system',scanline:'on',dotgrid:'off'}}));
+  for (const [label, seed] of [['no v2 cache on this browser', () => {}], ['a v1 cache written before lang existed', predatesLang]]) {
+    it(`keeps a legacy hud.lang=ro through hydration from a configured server and uploads it once — ${label}`, async () => {
+      localStorage.setItem('hud.lang', 'ro');
+      seed();
+      const api = server({accent:'amber'});
+      render(<App/>);
+      expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
+      await waitFor(() => expect(api.saved.lang).toBe('ro'));
+      await new Promise(r => setTimeout(r, 30));
+      expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
+      expect(document.documentElement.lang).toBe('ro');
+      expect(localStorage.getItem('hud.lang')).toBe('ro');
+      expect(api.fetch.mock.calls.filter(c => c[1]?.method === 'PUT').map(c => JSON.parse(c[1].body).lang)).toEqual(['ro']);
+      expect(Object.keys(localStorage).filter(k => k.includes(':edit:'))).toEqual([]);
+    });
+  }
+
+  it('does not upload a legacy hud.lang twice across reloads', async () => {
+    localStorage.setItem('hud.lang', 'ro');
+    const api = server({accent:'amber'});
+    render(<App/>);
+    await waitFor(() => expect(api.saved.lang).toBe('ro'));
+    cleanup();
+    render(<App/>);
+    await new Promise(r => setTimeout(r, 30));
+    expect(api.fetch.mock.calls.filter(c => c[1]?.method === 'PUT')).toHaveLength(1);
+    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
+  });
+
+  it('follows the v1 shell: jarvis:locale_changed and a hud.lang storage event reach the HUD', async () => {
+    const api = server();
+    render(<App/>);
+    await waitFor(() => expect(document.documentElement.lang).toBe('en'));
+    fireEvent(window, new CustomEvent('jarvis:locale_changed', {detail:'ro'}));
+    await waitFor(() => expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO'));
+    await waitFor(() => expect(api.saved.lang).toBe('ro'));
+    fireEvent(window, new StorageEvent('storage', {key:'hud.lang', newValue:'en'}));
+    await waitFor(() => expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('EN'));
+    fireEvent(window, new CustomEvent('jarvis:locale_changed', {detail:'xx'}));
+    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('EN');
   });
 
   it('offers every language as a palette row and switches from there', async () => {

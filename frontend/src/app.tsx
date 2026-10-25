@@ -228,12 +228,27 @@ function App({ floating = false, shortcuts, onWorld }: {
   }, [route.path]);
   // `hud.lang` stays written for the v1 shell (agents/web/static/i18n.js reads it); the document
   // carries lang/dir so assistive tech and :lang() styling follow the HUD's language.
+  // Not while the first hydration is pending: a stale default must not clobber a legacy choice
+  // (appearance.ts journals that choice, so `lang` already holds it, but the write can wait).
   useEffect(() => {
     const entry = V2.LANGUAGES.find(l => l.code === lang);
     document.documentElement.lang = lang;
     document.documentElement.dir = entry?.dir || 'ltr';
+    if (appearance.status === 'loading') return;
     try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ }
-  }, [lang]);
+  }, [lang, appearance.status]);
+  // v1 ↔ v2 coherence: the v1 shell's setLocale() (agents/web/static/i18n.js) writes hud.lang and
+  // fires `jarvis:locale_changed`; the same write reaches other tabs as a `storage` event.
+  useEffect(() => {
+    const adopt = (code: unknown) => {
+      if (typeof code === 'string' && code !== lang && V2.LANGUAGES.some(l => l.code === code)) setLang(code);
+    };
+    const onLocale = (e: Event) => adopt((e as CustomEvent).detail);
+    const onStorage = (e: StorageEvent) => { if (e.key === 'hud.lang') adopt(e.newValue); };
+    window.addEventListener('jarvis:locale_changed', onLocale);
+    window.addEventListener('storage', onStorage);
+    return () => { window.removeEventListener('jarvis:locale_changed', onLocale); window.removeEventListener('storage', onStorage); };
+  }, [lang, setLang]);
   useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
   // Demo ON also restores the pristine ADMIN/OBSERVE fiction — the live cycles in
