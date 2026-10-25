@@ -776,3 +776,79 @@ def test_the_decide_route_does_not_apply_a_batch_whose_card_was_already_rejected
     reply = client.post(f"/api/actions/{card}/decide", json={"approved": True}, headers=ADMIN).json()
     assert reply["action"]["status"] == "rejected" and reply["action"]["applied"].get("applied") is not True
     assert hub.tree() == before and hub.store.get(got["batch_id"])["status"] == "rejected"
+
+
+# ── H354: an applied batch counts as a patch of each skill it edited ─────────────────
+
+def _usage(hub):
+    from agents.core.skills.usage import SkillUsageStore
+
+    store = SkillUsageStore(hub.tmp / "usage.json")
+    hub.loader.attach_usage(store)
+    return store
+
+
+def test_the_owner_route_counts_a_patch_per_edited_skill_only_when_it_lands(hub, client):
+    import agents.web as web
+
+    hub.write("beta")
+    hub.write("delta")
+    hub.loader.discover()
+    store = _usage(hub)
+    web.orch.skill_usage = store
+    ops = [{"name": "alpha", "action": "patch", "old_string": "Do the thing.", "new_string": "Done."},
+           {"name": "beta", "action": "write_file", "file_path": "references/n.md", "file_content": "n\n"},
+           {"name": "gamma", "action": "create", "content": _md("gamma")}]
+    # A dry run, a refusal: nothing was applied, nothing is counted.
+    assert client.post("/api/skills/batch", json={"operations": ops, "dry_run": True}, headers=ADMIN).status_code == 200
+    bad = client.post("/api/skills/batch", json={"operations": [
+        {"name": "alpha", "action": "patch", "old_string": "nope", "new_string": "x"}]}, headers=ADMIN)
+    assert bad.status_code == 422 and store.list() == {}
+
+    done = client.post("/api/skills/batch", json={"operations": ops}, headers=ADMIN)
+    assert done.status_code == 200 and done.json()["applied"] is True, done.json()
+    alpha, beta = store.get("alpha"), store.get("beta")
+    assert alpha["patch_count"] == 1 and alpha["last_patched_at"] and not alpha["use_count"]
+    assert beta["patch_count"] == 1
+    assert store.get("gamma") is None                                   # created: not a patch of anything
+    gone = client.post("/api/skills/batch", json={"operations": [{"name": "delta", "action": "delete"}]},
+                       headers=ADMIN)
+    assert gone.status_code == 200 and gone.json()["applied"] is True and store.get("delta") is None
+
+    again = client.post("/api/skills/batch", json={"operations": [
+        {"name": "alpha", "action": "patch", "old_string": "Done.", "new_string": "Done twice."}]}, headers=ADMIN)
+    assert again.status_code == 200 and store.get("alpha")["patch_count"] == 2
+    listed = client.get("/skills").json()["skills"]["alpha"]["usage"]
+    assert listed["patch_count"] == 2 and listed["last_patched_at"] == store.get("alpha")["last_patched_at"]
+
+
+def test_a_batch_rolled_back_in_the_swap_counts_nothing(hub, monkeypatch):
+    hub.write("alpha")
+    hub.write("beta")
+    hub.load()
+    store = _usage(hub)
+    real, calls = batch_mod._rename, []
+
+    def flaky(src, dst):
+        calls.append(src)
+        if len(calls) == 3:
+            raise OSError(5, "disk said no")
+        return real(src, dst)
+
+    monkeypatch.setattr(batch_mod, "_rename", flaky)
+    out = _run(hub, [{"name": "alpha", "action": "patch", "old_string": "Do the thing.", "new_string": "A."},
+                     {"name": "beta", "action": "patch", "old_string": "Do the thing.", "new_string": "B."}])
+    assert out["ok"] is False and out["reason"] == "skill_batch_apply_failed"
+    assert store.list() == {}
+
+
+def test_an_approved_proposed_batch_counts_a_patch_too(hub, client):
+    store = _usage(hub)
+    server = _server(hub, hub.store, hub.queue)
+    got = _propose(server, {"operations": [
+        {"name": "alpha", "action": "patch", "old_string": "Do the thing.", "new_string": "Done."}]})
+    assert store.get("alpha") is None                                     # proposing is not patching
+    [row] = client.get("/api/skills/batches", headers=ADMIN).json()["batches"]
+    reply = client.post(f"/api/actions/{row['card']}/decide", json={"approved": True}, headers=ADMIN).json()
+    assert reply["action"]["applied"]["ok"] is True and hub.store.get(got["batch_id"])["status"] == "applied"
+    assert store.get("alpha")["patch_count"] == 1

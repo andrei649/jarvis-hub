@@ -655,6 +655,25 @@ def _reload(loader: Any, targets: list[_Target]) -> None:
             logger.warning("skill batch: %s could not be reloaded", target.name, exc_info=True)
 
 
+def _note_patched(loader: Any, targets: list[_Target]) -> None:
+    """H354 — count one ``patch`` for each skill an applied batch changed in place.
+
+    A created skill is not a patch of anything, and a deleted one is gone; the skills the
+    batch edited (patch, write_file, remove_file) are the ones the owner's direct edit
+    path used to leave uncounted. Only a batch that landed reaches this (a dry run, a
+    refusal and a rolled-back swap all return first); best-effort like the loader's hook."""
+    note = getattr(loader, "note_usage", None)
+    if not callable(note):
+        return
+    for target in targets:
+        if target.existing and not target.deleted:
+            try:
+                # The sidecar is keyed by the skill's own name, as the `use` hook writes it.
+                note(getattr(target.skill, "name", None) or target.name, "patch")
+            except Exception:
+                logger.debug("skill batch: usage note skipped for %s", target.name, exc_info=True)
+
+
 def fingerprints(operations: list[dict], loader: Any) -> dict[str, str | None]:
     """Each touched existing skill's tree fingerprint now (None for one a batch creates)."""
     out: dict[str, str | None] = {}
@@ -775,6 +794,7 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                             logger.warning("skill batch: the old %s could not be archived", target.name,
                                            exc_info=True)
             _reload(loader, order)
+            _note_patched(loader, order)
             return {"ok": True, "applied": True, "dry_run": False, "batch_id": batch_id, "operations": len(ops),
                     "skills": summary, **({"backup": str(backup)} if backup else {})}
         finally:

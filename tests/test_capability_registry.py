@@ -205,11 +205,10 @@ def test_skill_records_carry_usage_counters_without_writing(tmp_path):
     orch = _usage_orch(tmp_path)
     orch.skill_usage.bump("loaded_skill", "use")
     orch.skill_usage.bump("loaded_skill", "use")
-    orch.skill_usage.bump("loaded_skill", "view")
     orch.skill_usage.bump("loaded_skill", "patch")
     recs = {r.id: r for r in cr.build_records(orch=orch)}
     usage = recs["skill:loaded_skill"].detail["usage"]
-    assert (usage["use_count"], usage["view_count"], usage["patch_count"]) == (2, 1, 1)
+    assert (usage["use_count"], usage["view_count"], usage["patch_count"]) == (2, 0, 1)
     assert usage["last_used_at"] == orch.skill_usage.get("loaded_skill")["last_used_at"]
     assert usage["last_patched_at"] and usage["origin"] == "bundled"
     stub = recs["skill:stub_skill"].detail["usage"]

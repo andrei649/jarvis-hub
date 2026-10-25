@@ -276,7 +276,6 @@ def test_skills_list_carries_usage_counters_and_last_used(monkeypatch, tmp_path)
     store = orch.skill_usage
     store.bump("Weather Intel", "use")
     store.bump("Weather Intel", "use")
-    store.bump("Weather Intel", "view")
     store.bump("Weather Intel", "patch")
     monkeypatch.setattr(web, "orch", orch)
     body = TestClient(web.app).get("/skills").json()
@@ -284,12 +283,13 @@ def test_skills_list_carries_usage_counters_and_last_used(monkeypatch, tmp_path)
     weather = body["skills"]["Weather Intel"]["usage"]
     rec = store.get("Weather Intel")
     assert weather == {
-        "use_count": 2, "view_count": 1, "patch_count": 1,
+        "use_count": 2, "view_count": 0, "patch_count": 1,
         "last_used_at": rec["last_used_at"], "last_viewed_at": rec["last_viewed_at"],
         "last_patched_at": rec["last_patched_at"],
         "origin": "bundled", "state": "active", "pinned": False,
     }
-    assert weather["last_used_at"] and weather["last_viewed_at"] and weather["last_patched_at"]
+    # `view` is counted by the real skill_view tool: see tests/test_h318_skill_tools.py.
+    assert weather["last_used_at"] and weather["last_patched_at"] and weather["last_viewed_at"] is None
     # A skill the sidecar never saw is reported with zeros — not omitted, not an error.
     spotify = body["skills"]["Spotify"]["usage"]
     assert spotify["use_count"] == spotify["view_count"] == spotify["patch_count"] == 0

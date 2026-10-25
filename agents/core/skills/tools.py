@@ -759,6 +759,15 @@ def register_skill_tools(
             except Exception:
                 # Invalid/unreadable declarations never make a view fail or grant env.
                 logger.debug("skill_view: environment declaration skipped", exc_info=True)
+        # H354 — the model read this skill (a body or a file, whole or as the repeat pointer
+        # `_once` may answer with). Every refusal above returned before this line, so only
+        # a view that was served is counted. Best-effort, like the loader's `use` hook.
+        try:
+            note = getattr(loader(), "note_usage", None)
+            if callable(note):
+                note(skill.name, "view")
+        except Exception:
+            logger.debug("skill_view: usage note skipped", exc_info=True)
         return _once(reply, skill, rel if file is not None else "", reload=reload, rendered=rendered)
 
     def _guest() -> bool:

@@ -909,9 +909,13 @@ def test_nerva_skills_list_shows_usage_when_the_hub_reports_it():
                               "last_used_at": "2026-10-20T08:15:00+00:00"}},
         "brief": {"disabled": False, "disabled_channels": [],
                   "usage": {"use_count": 0, "view_count": 0, "patch_count": 0, "last_used_at": None}},
+        # Edited (an owner batch, an approved proposal) but never run: the patch is not dropped.
+        "edited": {"disabled": False, "disabled_channels": [],
+                   "usage": {"use_count": 0, "view_count": 0, "patch_count": 2, "last_used_at": None}},
     }}
     code, out, _err, _calls = _cli(["skills", "list"], {"GET /skills": listing})
     assert code == 0 and out.splitlines() == ["brief: on · never used",
+                                              "edited: on · never used · patched 2×",
                                               "Spotify: on · used 3× (last 2026-10-20 08:15 UTC) · patched 1×"]
 
 

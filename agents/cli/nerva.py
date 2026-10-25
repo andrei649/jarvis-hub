@@ -2598,7 +2598,8 @@ def _skill_usage_suffix(usage: Any) -> str:
     except (TypeError, ValueError):
         return ""
     if not used:
-        return " · never used"
+        # Edited but never run (an owner batch, an approved proposal): say so, don't hide it.
+        return f" · never used · patched {patched}×" if patched else " · never used"
     text = f" · used {used}×"
     last = usage.get("last_used_at")
     if isinstance(last, str) and last:
