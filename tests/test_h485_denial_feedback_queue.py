@@ -464,3 +464,65 @@ def test_signed_approval_reset_rolls_back_with_receipt_if_tally_delete_fails(que
     queue._conn.commit()
     assert _judge(queue, approved, approved_digest, "approve")[0]["decision"] == "approve"
     assert _tallies(queue) == []
+
+
+# ── H486: an owner's rejection counts like a reviewer's DENY ─────────────────
+
+def _reject(queue, task_id, *, by="owner", reason="not this"):
+    queue.transition(task_id, TaskStatus.REJECTED, decided_by=by, decision="reject",
+                     human_reason=reason)
+
+
+def test_owner_rejections_count_without_a_reviewer(queue):
+    for expected in (1, 2, 3):
+        task_id, _digest = _propose(queue, context=_turn(), command=f"printf {expected}")
+        _reject(queue, task_id)
+        assert _tallies(queue)[0][3] == expected
+    assert _guardian(queue) == [
+        {"decision": "deny", "consecutive_denials": 1, "breaker": False},
+        {"decision": "deny", "consecutive_denials": 2, "breaker": False},
+        {"decision": "deny", "consecutive_denials": 3, "breaker": True},
+    ]
+    observations = sorted(queue.chat_outcome_snapshot(_turn()), key=lambda item: item["task_id"])
+    assert all(item["decision"]["action"] == "reject" and item["decision"]["by"] == "owner"
+               for item in observations)
+    assert "STOP attempting variations" in render_chat_outcomes(observations)[0]
+    assert len(_tallies(queue)) == 1
+
+
+def test_owner_rejection_after_a_reviewer_denial_is_one_event(queue):
+    task_id, digest = _propose(queue, context=_turn())
+    assert _judge(queue, task_id, digest)[0]["decision"] == "deny"
+    _reject(queue, task_id)
+    assert _tallies(queue)[0][3] == 1
+    # The reviewer's event survives the owner's reject and keeps its count.
+    assert _guardian(queue) == [{"decision": "deny", "consecutive_denials": 1, "breaker": False}]
+
+
+def test_owner_approval_resets_owner_rejections(queue):
+    for index in range(3):
+        task_id, _digest = _propose(queue, context=_turn(), command=f"printf {index}")
+        _reject(queue, task_id)
+    assert _guardian(queue)[-1]["breaker"] is True
+    approved, _digest = _propose(queue, context=_turn(), command="printf approve")
+    queue.transition(approved, TaskStatus.APPROVED, decided_by="owner", decision="accept",
+                     human_reason=None)
+    assert _tallies(queue) == []
+    assert _guardian(queue)[2]["breaker"] is False
+    fresh, _digest = _propose(queue, context=_turn(), command="printf fresh")
+    _reject(queue, fresh)
+    assert _guardian(queue)[-1] == {"decision": "deny", "consecutive_denials": 1, "breaker": False}
+
+
+def test_rejections_outside_a_chat_terminal_origin_do_not_count(queue):
+    unbound, _digest = _propose(queue)
+    _reject(queue, unbound)
+    deferred, _digest = _propose(queue, context=_turn(), command="printf defer")
+    queue.transition(deferred, TaskStatus.DEFERRED, decided_by="owner", decision="defer",
+                     human_reason=None)
+    assert _tallies(queue) == []
+    other = Principal(channel="telegram", sender="owner", chat="room", admin=True)
+    theirs, _digest = _propose(queue, context=_turn(principal=other), command="printf theirs")
+    _reject(queue, theirs)
+    assert [row[2] for row in _tallies(queue)] == ['["telegram","owner","room"]']
+    assert all("guardian" not in item for item in queue.chat_outcome_snapshot(_turn()))

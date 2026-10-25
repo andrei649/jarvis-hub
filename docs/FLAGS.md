@@ -169,7 +169,15 @@ SSO IdPs, adult; secret file roots) and any `never` row always deny.
 allowlist at all**.
 **ON:** `file_read` / `file_list` / `file_search` are ungated *inside* `JARVIS_FILE_ROOTS`
 (no `..`, no symlink escape, secret-looking names refused, bytes/entries/matches bounded;
-`file_search` is a *literal* content search — no regex, no ripgrep — that reports every cap
+`file_search` is a *literal* content search by default, a regex search with `regex=true` (Python
+`re` syntax and Unicode semantics, run in a child process killed at the 10 s deadline, so no pattern
+can pin the host — ripgrep is deliberately not used: its `\w \b \s` differ from Python's and its
+output cannot be bounded; a nested unbounded repeat such as `(a+)+` and a construct whose meaning
+depends on the regex flavour such as `[[:alpha:]]` are refused, and a pattern Python cannot finish
+stops with `stopped_by: "deadline"`) and a recursive file finder with `glob` alone (`*.{py,md}`
+alternation, a leading `!` to negate); `node_modules`, `venv`/`.venv`, `__pycache__`, `dist`,
+`build`, `target`, `.tox`, tool caches and plain directory names in the root's `.gitignore` are not
+entered unless `include_ignored=true` (reported as `ignored`) — each reports every cap
 it hit; `file_read` returns a `.pdf`/`.docx` as extracted text when `pypdf`/`python-docx` is
 installed — both are declared in `requirements.txt` / `requirements-beta.txt` and their
 hash-pinned locks, so a default install has them — and names the missing parser otherwise);
@@ -881,7 +889,7 @@ fetching a URL source again; local-file checks can reread bytes to verify their
 approved hash. Results expose fixed attempt categories and the successful model,
 without failed provider bodies, destination paths or credentials.
 
-**Shared local auxiliary models (H277).** Seven optional model IDs select a model
+**Shared local auxiliary models (H277).** Eight optional model IDs select a model
 on the router's existing local backend independently of the conversation model:
 
 | Setting | Consumer | Fallback when unset or ASCII-space-only |
@@ -893,6 +901,7 @@ on the router's existing local backend independently of the conversation model:
 | `JARVIS_AUX_ACQUISITION_CAPABILITY_MODEL` | Governed capability generation | Active local model, then `local` |
 | `JARVIS_AUX_ACQUISITION_DRAFT_MODEL` | Grounded acquisition plan drafting | Active local model, then `local` |
 | `JARVIS_AUX_SOUL_DESCRIPTION_MODEL` | Local SOUL description proposal | Active local model, then `qwen3:7b` |
+| `JARVIS_AUX_ONESHOT_MODEL` | `run_oneshot` side calls: `/btw`, the plugin LLM facade | Active local model, then `qwen3:7b` |
 
 Read when each operation starts; changing one does not change the active
 conversation model or the other auxiliary tasks. Acquisition captures the backend
@@ -1465,3 +1474,31 @@ disables both failure tracks; a positive value overrides only the same-tool
 halt threshold. The default `None` selects eight, independently of the exact
 failure threshold of five. The owner toggle is separate from these detector
 settings and grants no tool authority.
+
+## H486 denial breaker and per-turn ceilings (2026-10-24)
+
+The consecutive-denial breaker (`JARVIS_SMART_DENIAL_BREAKER_THRESHOLD`, default
+3) now counts the owner's own **reject** of a chat-originated `terminal_run`
+approval card as a denial, exactly like a smart-reviewer DENY (same per-session
+tally, reset by any owner approval, one event per task). It therefore trips with
+`JARVIS_SMART_APPROVALS` left off. Every settled owner "no" counts: the single-card
+reject, each member of a grouped reject (a model retrying one command lands as one
+approval group), and each member of a reusable-consent **deny**; a consent
+**session**/**always** grant is an owner approval and resets the tally. An approval
+that merely expires unanswered does not count.
+
+`llm.tool_loop_web_search_cap` is a runtime setting, default **50** (Hermes'
+ceiling), `0` = off, whole numbers up to 10000. It applies in the tool loop beside
+`llm.tool_loop_per_tool_cap`: the stricter of the two wins, an unreadable value is
+the shipped 50 (never "off"). Past the ceiling the call is refused with the cap
+notice and the loop ends the turn with that notice, exactly as the generic cap
+already does; this is now on by default for `web_search`.
+
+`llm.tool_loop_subagent_spawn_cap` (default 50, `0` = off) is a **dormant guard**.
+It applies at `SubAgentManager.spawn` only to spawns made inside a bound tool-loop
+turn (refusal `turn_spawn_cap`). No such spawn exists today: the model has no
+spawn tool, and the only callers of `spawn`/`spawn_batch` are the
+`/api/subagents/spawn` and `/batch` HTTP routes, which run outside any tool-loop
+turn and are limited by `autonomy.max_subagent_spawns_per_boot` and the
+concurrency/depth caps instead. The guard starts to matter if a model-facing spawn
+tool is ever added.

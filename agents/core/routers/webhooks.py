@@ -17,6 +17,12 @@ H153 third round: a delivery reaches its channel for real (the quiet-hours rule 
 the first time), a push that fails is recorded on the hook and is never a 500 after the
 turn, the text goes as plain text, each hook is capped per hour, and the hook and the
 receiver are read again after the turn, before anything is pushed.
+
+H039 (the Hermes row closed): a declarative payload filter (``filter``, set on create or
+by PATCH, checked after the event list and before anything runs; a delivery a rule turns
+away is answered 202 and counted as filtered), and ``POST /api/webhooks/{id}/test``, a
+signed sample delivery run through the same receive path dry, whose report says what a
+real delivery like it would do.
 """
 
 import asyncio
@@ -39,7 +45,7 @@ from agents.core.action_origin import INBOUND_ACTION_ORIGIN, bind_action_origin,
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
-from agents.core.webhooks import DELIVER_CHOICES
+from agents.core.webhooks import DELIVER_CHOICES, FILTER_OPS, MAX_FILTER_RULES
 
 logger = logging.getLogger("jarvis.webhooks")
 
@@ -74,6 +80,15 @@ def _destination(value: str) -> str:
     return value
 
 
+def _filter_rules(value: list) -> list:
+    from agents.core.webhooks import filter_problem
+
+    problem = filter_problem(value)
+    if problem:
+        raise ValueError(problem)
+    return value
+
+
 EventName = Annotated[StrictStr, AfterValidator(_event_name)]
 EventList = Annotated[list[EventName], Field(max_length=32)]
 PromptTemplate = Annotated[StrictStr, Field(max_length=2_000)]
@@ -82,6 +97,15 @@ PromptTemplate = Annotated[StrictStr, Field(max_length=2_000)]
 Destination = Annotated[StrictStr, AfterValidator(_destination),
                         WithJsonSchema({"type": "string", "enum": list(DELIVER_CHOICES)})]
 Description = Annotated[StrictStr, Field(max_length=500)]
+# H039 — the payload filter: the store's own validator names the rule at fault; the schema
+# shows a rule's shape (a dotted path, one of the ops, and the value the op takes).
+FilterRules = Annotated[list[dict], AfterValidator(_filter_rules), WithJsonSchema({
+    "type": "array", "maxItems": MAX_FILTER_RULES,
+    "items": {"type": "object", "required": ["path", "op"], "additionalProperties": False,
+              "properties": {"path": {"type": "string", "maxLength": 128},
+                             "op": {"type": "string", "enum": list(FILTER_OPS)},
+                             "value": {}}},
+})]
 
 
 class WebhookCreateBody(BaseModel):
@@ -97,6 +121,7 @@ class WebhookCreateBody(BaseModel):
     deliver: Destination = "log"                       # H153 review — where the result goes
     deliver_only: StrictBool = False                   # H153 review — skip the agent
     description: Description = ""
+    filter: FilterRules = Field(default_factory=list)  # H039 — empty: no rule
 
     @model_validator(mode="after")
     def _somewhere_to_go(self):
@@ -118,6 +143,7 @@ class WebhookUpdateBody(BaseModel):
     deliver: Destination | SkipJsonSchema[None] = None
     deliver_only: StrictBool | SkipJsonSchema[None] = None
     description: Description | SkipJsonSchema[None] = None
+    filter: FilterRules | SkipJsonSchema[None] = None
 
     @model_validator(mode="after")
     def _a_real_change(self):
@@ -127,6 +153,40 @@ class WebhookUpdateBody(BaseModel):
             if getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
         return self
+
+
+class WebhookTestBody(BaseModel):
+    """H039 — what a test delivery carries, each part optional: the event it names (else
+    the hook's first subscribed event, else ``test``) and its JSON object payload (else
+    a small sample that says it is a test)."""
+    model_config = ConfigDict(extra="forbid")
+    event: EventName | SkipJsonSchema[None] = None
+    payload: dict | SkipJsonSchema[None] = None
+
+
+class WebhookTestReport(BaseModel):
+    """What a test delivery found (H039): how it authenticated and whether the receiver
+    accepted that, the receiver's and the hook's switches, and what a real delivery like
+    it would do (``outcome``: run, deliver_only, skipped, filtered or refused, with the
+    HTTP status a sender would see and the reason when it would not run)."""
+    event: str
+    auth: str                    # "hmac" or "token": how the sample authenticated
+    authenticated: bool          # the receiver's own check accepted it
+    receiver: str                # "on", "off" or "unreadable"
+    enabled: bool
+    outcome: str
+    status: int
+    reason: str = ""
+    target: str
+    deliver: str
+    deliver_only: bool
+    text: str = ""               # what the agent or channel would receive (cut)
+    sample: dict                 # the headers (credential masked) and payload a sender posts
+
+
+class WebhookTestReply(BaseModel):
+    ok: bool
+    test: WebhookTestReport
 
 
 def _printable(value, limit: int = 128) -> str:
@@ -153,8 +213,10 @@ async def _audit_webhook(action: str, record: dict) -> None:
     events = json.dumps(record.get("events") or [], ensure_ascii=False)
     prompt = record.get("prompt") if isinstance(record.get("prompt"), str) else ""
     store = _get_webhook_store()
+    rules = store.stored_filter(record)
+    rule_count = "unreadable" if rules is None else f"{len(rules)} rule" + ("" if len(rules) == 1 else "s")
     preview = (f"webhook {action}: id={_printable(record.get('id'))} target={_quoted(target)} "
-               f"events={events} prompt={len(prompt)} chars "
+               f"events={events} prompt={len(prompt)} chars filter={rule_count} "
                f"deliver={store.destination(record)} deliver_only={store.delivers_only(record)} "
                f"signed={bool(record.get('signed'))} enabled={store.is_enabled(record)}")
     try:
@@ -184,7 +246,8 @@ async def create_webhook(body: WebhookCreateBody):
     try:
         rec = _get_webhook_store().create(body.target, body.target_type, body.name, signed=body.signed,
                                           events=body.events, prompt=body.prompt, deliver=body.deliver,
-                                          deliver_only=body.deliver_only, description=body.description)
+                                          deliver_only=body.deliver_only, description=body.description,
+                                          filter=body.filter)
     except ValueError as exc:
         return error_json(exc, 400, "invalid webhook target")
     await _audit_webhook("create", rec)
@@ -228,6 +291,72 @@ async def delete_webhook(hook_id: str):
     if not ok:
         return nocache_json({"ok": False, "error": "webhook not found"}, status_code=404)
     return nocache_json({"ok": True})
+
+
+def _masked_credential(headers: dict) -> dict:
+    """The sample's headers as the report shows them: the token and the signature are
+    cut to a hint. The signature is the HMAC of this very body, which an admin could
+    replay to run the hook; the report is for reading, not for sending."""
+    shown = dict(headers)
+    if "x-signature-256" in shown:
+        shown["x-signature-256"] = shown["x-signature-256"][:15] + "…"      # "sha256=" + 8 hex
+    if "x-webhook-token" in shown:
+        shown["x-webhook-token"] = shown["x-webhook-token"][:4] + "…"
+    return shown
+
+
+@router.post("/api/webhooks/{hook_id}/test", dependencies=[Depends(admin_guard)], response_model=WebhookTestReply)
+async def test_webhook(hook_id: str, body: WebhookTestBody | None = None):
+    """H039 — a signed test delivery, dry. The hub builds a sample for the hook's event
+    (or the one given), signs it the way a sender must (the HMAC of the raw body, or the
+    token header), verifies it with the receiver's own checks and runs it through the
+    same event, filter and template path as a real delivery, without running the target,
+    pushing anywhere or counting a call. The report says what a real delivery like it
+    would do and shows the sample as a sender posts it, with the credential masked."""
+    from agents.core import safe_mode
+    from agents.core.webhooks import RECEIVER
+
+    store = _get_webhook_store()
+    hook = store.get(hook_id)
+    if hook is None:
+        return nocache_json({"error": "webhook not found"}, status_code=404)
+    sample = store.sample_delivery(hook_id, event=body.event if body else None,
+                                   payload=body.payload if body else None)
+    headers, raw = sample["headers"], sample["raw"]
+    if hook.get("signed"):
+        auth, authenticated = "hmac", store.verify_signature(hook_id, raw, headers.get("x-signature-256", ""))
+    else:
+        auth, authenticated = "token", store.verify(hook_id, headers.get("x-webhook-token", ""))
+    state = await RECEIVER.astate()
+    receiver = "off" if safe_mode.enabled() else {True: "on", False: "off"}.get(state, "unreadable")
+    enabled = store.is_enabled(hook)
+    kind, event, text, reason = _classify(store, hook, headers, raw)
+    # In the order the trigger decides: the receiver, the credential, the hook's switch,
+    # then what the delivery itself is.
+    status = 200
+    if receiver != "on":
+        outcome, status = "refused", 503
+        reason = "the webhook receiver is off" if receiver == "off" else "the webhook receiver's state cannot be read"
+    elif not authenticated:
+        outcome, status, reason = "refused", 401, f"invalid or missing {'signature' if auth == 'hmac' else 'token'}"
+    elif not enabled:
+        outcome, status, reason = "refused", 403, "webhook disabled"
+    elif kind != RUN:
+        outcome, status = kind, 202
+    else:
+        outcome = "deliver_only" if store.delivers_only(hook) else RUN
+    report = WebhookTestReport(
+        event=event or sample["event"], auth=auth, authenticated=authenticated, receiver=receiver,
+        enabled=enabled, outcome=outcome, status=status, reason=reason,
+        target=f"{hook.get('target_type')}:{hook.get('target')}", deliver=store.destination(hook),
+        deliver_only=store.delivers_only(hook), text=text[:500],
+        sample={"headers": _masked_credential(headers), "payload": sample["payload"]})
+    try:
+        store.mark_tested(hook_id, outcome, reason)
+    except Exception:
+        logger.warning("webhook %s: the test outcome could not be saved", hook_id, exc_info=True)
+    await _audit_webhook("test", hook)
+    return _answer(WebhookTestReply(ok=True, test=report).model_dump())
 
 
 #: The largest body a delivery may carry (a GitHub push with hundreds of commits is a
@@ -495,6 +624,53 @@ def _skipped(store, hook_id: str, event: str, reason: str):
     return nocache_json({"ok": True, "skipped": reason}, status_code=202)
 
 
+def _filtered(store, hook_id: str, reason: str):
+    """H039 — a delivery the payload filter turned away: answered 202 (the sender does
+    not retry), never run, counted as filtered. The sender is told only that it was: the
+    rule (the owner's path, op and value) and the part of the sender's own field it echoes
+    stay on the hook (``last_filtered_rule``, admin) and in the admin test report."""
+    store.mark_filtered(hook_id, reason)
+    return nocache_json({"ok": True, "filtered": True}, status_code=202)
+
+
+#: What ``_classify`` decides about an authenticated delivery of an enabled hook.
+RUN, SKIPPED, FILTERED = "run", "skipped", "filtered"
+
+
+def _classify(store, live: dict, headers, raw: bytes) -> tuple[str, str, str, str]:
+    """``(kind, event, text, reason)`` for a delivery, from the live record: the event
+    list (H153), then the payload filter (H039), then the prompt template. *kind* is
+    :data:`RUN` with the text the target receives, or :data:`SKIPPED` / :data:`FILTERED`
+    with the reason. Pure: nothing is counted or run, so a test delivery reads it too."""
+    from agents.core.webhooks import (
+        delivery_event, event_subscribed, extract_input, filter_verdict, render_prompt)
+
+    try:
+        payload = json.loads(raw) if raw else {}
+    except Exception:
+        payload = raw.decode("utf-8", "replace")
+    event = delivery_event(headers, payload)
+    events = store.stored_events(live)
+    if events is None:
+        return SKIPPED, event, "", "the hook's event list is unreadable"
+    if events and not event:
+        return SKIPPED, event, "", "the delivery names no event"
+    if events and not event_subscribed(events, event):
+        return SKIPPED, event, "", f"event '{event}' is not subscribed"
+    rules = store.stored_filter(live)
+    if rules is None:
+        return FILTERED, event, "", "the hook's filter is unreadable"
+    verdict = filter_verdict(rules, payload, event) if rules else ""
+    if verdict:
+        return FILTERED, event, "", verdict
+    template = live.get("prompt") if isinstance(live.get("prompt"), str) else ""
+    text = render_prompt(template, payload, event) if template else extract_input(payload)
+    if not text.strip():
+        return SKIPPED, event, "", ("the prompt template rendered nothing" if template
+                                    else "the delivery carries no text")
+    return RUN, event, text, ""
+
+
 @router.post("/api/webhooks/{hook_id}")
 async def trigger_webhook(hook_id: str, request: Request):
     """Token-authenticated trigger → runs the configured agent/workflow.
@@ -588,7 +764,7 @@ def _attempt_failed(store, hook: dict, live: dict, response) -> bool:
     if response.status_code >= 500:
         return True
     body = _answer_body(response)
-    if "skipped" in body:
+    if "skipped" in body or "filtered" in body:
         return False
     if store.delivers_only(live):
         delivery = body.get("delivery")
@@ -603,33 +779,21 @@ def _attempt_failed(store, hook: dict, live: dict, response) -> bool:
 def _public_outcome(response) -> dict:
     """What a replayed delivery answers: whether it ran and where, never its reply or steps."""
     body = _answer_body(response)
-    return {k: body[k] for k in ("ok", "target", "skipped", "error") if isinstance(body.get(k), (bool, str))}
+    return {k: body[k] for k in ("ok", "target", "skipped", "filtered", "error")
+            if isinstance(body.get(k), (bool, str))}
 
 
 async def _run_delivery(orch, store, hook: dict, live: dict, hook_id: str, raw: bytes, request: Request):
     """Run one authenticated delivery of an enabled hook, as the route did before H659."""
-    try:
-        payload = json.loads(raw) if raw else {}
-    except Exception:
-        payload = raw.decode("utf-8", "replace")
-
-    # H153 — the event list and the prompt template, both from the live record. A
-    # delivery the list turns away is answered 202 (the sender does not retry), is
-    # never run and is counted as skipped, not as a call.
-    from agents.core.webhooks import delivery_event, event_subscribed, extract_input, render_prompt
-    event = delivery_event(request.headers, payload)
-    events = store.stored_events(live)
-    if events is None:
-        return _skipped(store, hook_id, event, "the hook's event list is unreadable")
-    if events and not event:
-        return _skipped(store, hook_id, event, "the delivery names no event")
-    if events and not event_subscribed(events, event):
-        return _skipped(store, hook_id, event, f"event '{event}' is not subscribed")
-    template = live.get("prompt") if isinstance(live.get("prompt"), str) else ""
-    text = render_prompt(template, payload, event) if template else extract_input(payload)
-    if not text.strip():
-        return _skipped(store, hook_id, event,
-                        "the prompt template rendered nothing" if template else "the delivery carries no text")
+    # H153 — the event list and the prompt template, H039 — the payload filter, all from
+    # the live record. A delivery the list or a rule turns away is answered 202 (the
+    # sender does not retry), is never run and is counted as skipped or filtered, not as
+    # a call.
+    kind, event, text, reason = _classify(store, live, request.headers, raw)
+    if kind == SKIPPED:
+        return _skipped(store, hook_id, event, reason)
+    if kind == FILTERED:
+        return _filtered(store, hook_id, reason)
     store.mark_called(hook_id)
     # From here every way out notes the delivery's outcome on the hook, so the detail
     # pane never shows an earlier success for a call that delivered nothing.

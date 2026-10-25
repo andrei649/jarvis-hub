@@ -30,7 +30,7 @@ def test_new_instance_defaults_are_not_an_explicit_motion_override(client):
     assert response.status_code == 200
     assert response.json() == {'revision': '0', 'configured': False, 'preferences': {
         'accent': 'cyan', 'look': 'obsidian', 'density': 'normal',
-        'motion': 'system', 'scanline': 'on', 'dotgrid': 'off', 'font': 'theme'}}
+        'motion': 'system', 'scanline': 'on', 'dotgrid': 'off', 'font': 'theme', 'lang': 'en'}}
     assert 'no-store' in response.headers['cache-control']
 
 
@@ -133,3 +133,13 @@ def test_stale_font_coerces_and_cas_protects_new_choice(client):
     assert client.put(PATH, json={'font': 'system-mono', '_revision': first['revision']}).status_code == 409
     assert client.get(PATH).json()['preferences']['font'] == 'system-serif'
     assert client.put(PATH, json={'font': 'url(https://example.com/font)', '_revision': saved['revision']}).json()['preferences']['font'] == 'theme'
+
+
+def test_language_is_an_appearance_preference_limited_to_translated_codes(client):
+    # H221: the HUD language syncs with the other display choices; an untranslated
+    # code coerces to the default instead of leaving the HUD without strings.
+    assert client.put(PATH, json={'lang': 'ro'}).status_code == 200
+    fresh = TestClient(web.app, headers={'X-User-Token': TOKEN}).get(PATH).json()
+    assert fresh['preferences']['lang'] == 'ro'
+    assert client.put(PATH, json={'lang': 'xx'}).status_code == 200
+    assert client.get(PATH).json()['preferences']['lang'] == 'en'

@@ -736,6 +736,17 @@ def _make_skill_probe(orch, name: str):
     return _probe
 
 
+def skill_reality_case(orch, name: str) -> RealityCase:
+    """The canonical case for one loaded skill — the row the registry lane runs for it,
+    and the one ``POST /api/capabilities/skills/{name}/verify`` runs alone (H354)."""
+    return RealityCase(
+        f"skill:{name}",
+        skill_case_name(name),
+        f"skill {name} is discovered and its runtime module is loaded",
+        _make_skill_probe(orch, name),
+    )
+
+
 def registry_reality_cases(orch) -> list[RealityCase]:
     """Build canonical cases for every plugin and live component/skill registry row."""
     from agents.core.plugin_gate import BUILTIN_PLUGINS
@@ -764,15 +775,7 @@ def registry_reality_cases(orch) -> list[RealityCase]:
 
     loader = getattr(orch, "skills", None)
     skills = getattr(loader, "skills", {}) if loader is not None else {}
-    cases.extend(
-        RealityCase(
-            f"skill:{name}",
-            skill_case_name(name),
-            f"skill {name} is discovered and its runtime module is loaded",
-            _make_skill_probe(orch, name),
-        )
-        for name in sorted(skills)
-    )
+    cases.extend(skill_reality_case(orch, name) for name in sorted(skills))
 
     refs = [case.ref for case in cases]
     capability_ids = [case.capability_id for case in cases]

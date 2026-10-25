@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPut } from './api/client';
 import { basePath } from './base-path';
+import { LANGUAGES } from './data';
 
 const OPTIONS = {
   font: ['theme', 'system-sans', 'system-serif', 'system-mono', 'jetbrains-mono'],
   accent: ['cyan', 'amber', 'green', 'violet'], look: ['obsidian', 'graphite'],
   density: ['normal', 'compact', 'comfy'], motion: ['system', 'calm', 'lively'],
   scanline: ['on', 'off'], dotgrid: ['off', 'on'],
+  // H221 — the HUD language is a display choice like the rest: one list, synced the same way.
+  lang: LANGUAGES.map(l => l.code),
 } as const;
 export type AppearanceKey = keyof typeof OPTIONS;
 export type Appearance = Record<AppearanceKey, string>;
-const DEFAULTS: Appearance = {font:'theme', accent:'cyan', look:'obsidian', density:'normal', motion:'system', scanline:'on', dotgrid:'off'};
+const DEFAULTS: Appearance = {font:'theme', accent:'cyan', look:'obsidian', density:'normal', motion:'system', scanline:'on', dotgrid:'off', lang:'en'};
 const KEYS = Object.keys(DEFAULTS) as AppearanceKey[];
 const ENDPOINT = '/api/preferences/appearance';
 type Patch = Partial<Appearance>;
@@ -35,6 +38,9 @@ function reply(value: unknown): Reply {
 }
 let lastEditTime = 0;
 type Edit = {id:string; patch:Patch; time:number};
+function newEdit(key:string, patch:Patch): Edit {
+  return {id:key+':edit:'+(crypto.randomUUID?.() || Math.random().toString(36).slice(2)), time:(lastEditTime=Math.max(Date.now(),lastEditTime+0.001)), patch};
+}
 function journal(key:string): Edit[] {
   const edits:Edit[]=[];
   try {
@@ -49,18 +55,37 @@ function journal(key:string): Edit[] {
   return edits.sort((a,b)=>a.time-b.time || a.id.localeCompare(b.id));
 }
 function patches(edits:Edit[]):Patch {return Object.assign({},...edits.map(edit=>edit.patch));}
+// Legacy `hud.<key>` browser choices are a display fallback, never a boot-time upload.
+function legacy(keys: AppearanceKey[]): Patch {
+  return normalize(Object.fromEntries(keys.filter(k => localStorage.getItem('hud.'+k) !== null).map(k => [k, localStorage.getItem('hud.'+k)])));
+}
+// The one exception is the language (H221). Before it joined the document the only writer of
+// `hud.lang` was the globe/palette/v1 toggle, whose default was 'en', so a translated code other
+// than the default can only be an explicit owner choice. A configured server document answers
+// with lang 'en' for such an owner and would otherwise silently revert it on hydration (and
+// flip the still-served v1 shell, which reads hud.lang). Journal it once as an ordinary edit:
+// the first flush uploads it and refresh() keeps it. Once the cache carries `lang` (or a lang
+// edit is already queued) this is a no-op, and 'en' is never uploaded.
+function adoptLegacyLang(key: string, cached: {version?: number; preferences?: object} | null, queued: Patch): Patch {
+  if (cached?.version === 1 && Object.prototype.hasOwnProperty.call(cached.preferences || {}, 'lang')) return {};
+  if (queued.lang !== undefined) return {};
+  const lang = legacy(['lang']).lang;
+  if (!lang || lang === DEFAULTS.lang) return {};
+  const edit = newEdit(key, {lang});
+  try { localStorage.setItem(edit.id, JSON.stringify(edit)); } catch { /* display fallback only; nothing to upload from */ }
+  return {lang};
+}
 function readCache(key: string): State {
   let preferences = {...DEFAULTS}, pending: Patch = {};
   try {
     const cached = JSON.parse(localStorage.getItem(key) || 'null');
     if (cached && cached.version === 1) {
       preferences = {...preferences, ...normalize(cached.preferences)};
-      pending = patches(journal(key));
     } else {
-      // Legacy browser choices are a display fallback, never a boot-time upload.
-      const legacy = Object.fromEntries(KEYS.filter(k => k !== 'motion' && localStorage.getItem('hud.'+k) !== null).map(k => [k, localStorage.getItem('hud.'+k)]));
-      preferences = {...preferences, ...normalize(legacy)};
+      preferences = {...preferences, ...legacy(KEYS.filter(k => k !== 'motion' && k !== 'lang'))};
     }
+    pending = patches(journal(key));
+    pending = {...pending, ...adoptLegacyLang(key, cached, pending)};
   } catch { /* unavailable/corrupt browser storage keeps safe defaults */ }
   pending = {...pending,...patches(journal(key))};
   return {preferences:{...preferences,...pending}, pending, status:'loading', error:''};
@@ -174,7 +199,7 @@ export function useAppearance() {
 
   const setPreference = useCallback((key: AppearanceKey, value: string) => {
     const next = normalize({[key]:value})[key]!;
-    const edit={id:cacheKey+':edit:'+(crypto.randomUUID?.() || Math.random().toString(36).slice(2)), time:(lastEditTime=Math.max(Date.now(),lastEditTime+0.001)), patch:{[key]:next}};
+    const edit=newEdit(cacheKey,{[key]:next});
     try {localStorage.setItem(edit.id,JSON.stringify(edit));} catch {memoryEdits.current.push(edit);}
     generation.current++;
     publish({...current.current, preferences:{...current.current.preferences,[key]:next},

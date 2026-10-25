@@ -14,6 +14,8 @@ OPTIONS = {
     'motion': ('system', 'calm', 'lively'),
     'scanline': ('on', 'off'),
     'dotgrid': ('off', 'on'),
+    # H221: HUD language; the codes mirror frontend/src/data.ts LANGUAGES (translated tables only).
+    'lang': ('en', 'ro'),
 }
 DEFAULTS = {key: values[0] for key, values in OPTIONS.items()}
 

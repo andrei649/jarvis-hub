@@ -38,7 +38,7 @@ from collections.abc import Awaitable, Callable, Hashable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..commands import CommandRegistry
+from ..commands import CommandRegistry, side_question_command_name
 
 logger = logging.getLogger("jarvis.channels.batching")
 
@@ -176,6 +176,10 @@ class AsyncBatcher:
         if not self._batch.enabled:
             return await self._deliver(key, text, dict(meta))
         generation = self._generation
+        if side_question_command_name(text) is not None:
+            # H414: a /btw is asked beside the running work, so it does not wait for the
+            # key's running turn; pieces still held go out on their own timer.
+            return await self._deliver(key, text, dict(meta))
         if is_command(text):
             await self.flush(key)
             return await self._in_order(key, text, dict(meta), generation)

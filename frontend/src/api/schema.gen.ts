@@ -1078,6 +1078,31 @@ export interface paths {
         patch: operations["update_webhook_api_webhooks__hook_id__patch"];
         trace?: never;
     };
+    "/api/webhooks/{hook_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Webhook
+         * @description H039 — a signed test delivery, dry. The hub builds a sample for the hook's event
+         *     (or the one given), signs it the way a sender must (the HMAC of the raw body, or the
+         *     token header), verifies it with the receiver's own checks and runs it through the
+         *     same event, filter and template path as a real delivery, without running the target,
+         *     pushing anywhere or counting a call. The report says what a real delivery like it
+         *     would do and shows the sample as a sender posts it, with the credential masked.
+         */
+        post: operations["test_webhook_api_webhooks__hook_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/.well-known/agent-card": {
         parameters: {
             query?: never;
@@ -7402,6 +7427,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/capabilities/skills/{name}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Skill Capability
+         * @description H354 — run the reality harness's case for one loaded skill, now, and answer with
+         *     the record it leaves behind.
+         *
+         *     The same probe the CI lane runs (``skill_reality_case``), through the same promotion
+         *     path (``run_reality`` → ``record_verification``): a green probe promotes the skill's
+         *     record to VERIFIED in this process, a red one un-verifies it. The verdict lives until
+         *     the next boot (``promotion_scope: in_process_only``): nothing is written to disk and
+         *     the durable evidence ledger is not consulted (GAP-9's V3 constraint). One skill, one
+         *     in-process probe, no network — bounded by construction. 404 for a name the loader
+         *     does not hold; the name is echoed in the body, never logged.
+         */
+        post: operations["verify_skill_capability_api_capabilities_skills__name__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/capabilities": {
         parameters: {
             query?: never;
@@ -13015,6 +13069,8 @@ export interface components {
             scanline?: string | null;
             /** Dotgrid */
             dotgrid?: string | null;
+            /** Lang */
+            lang?: string | null;
         };
         /** AssignSpaceBody */
         AssignSpaceBody: {
@@ -15229,6 +15285,76 @@ export interface components {
              * @default
              */
             description: string;
+            /** Filter */
+            filter?: {
+                path: string;
+                /** @enum {string} */
+                op: "eq" | "ne" | "contains" | "startswith" | "endswith" | "glob" | "in" | "exists" | "missing";
+                value?: unknown;
+            }[];
+        };
+        /**
+         * WebhookTestBody
+         * @description H039 — what a test delivery carries, each part optional: the event it names (else
+         *     the hook's first subscribed event, else ``test``) and its JSON object payload (else
+         *     a small sample that says it is a test).
+         */
+        WebhookTestBody: {
+            /** Event */
+            event?: string;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
+        /** WebhookTestReply */
+        WebhookTestReply: {
+            /** Ok */
+            ok: boolean;
+            test: components["schemas"]["WebhookTestReport"];
+        };
+        /**
+         * WebhookTestReport
+         * @description What a test delivery found (H039): how it authenticated and whether the receiver
+         *     accepted that, the receiver's and the hook's switches, and what a real delivery like
+         *     it would do (``outcome``: run, deliver_only, skipped, filtered or refused, with the
+         *     HTTP status a sender would see and the reason when it would not run).
+         */
+        WebhookTestReport: {
+            /** Event */
+            event: string;
+            /** Auth */
+            auth: string;
+            /** Authenticated */
+            authenticated: boolean;
+            /** Receiver */
+            receiver: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Outcome */
+            outcome: string;
+            /** Status */
+            status: number;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Target */
+            target: string;
+            /** Deliver */
+            deliver: string;
+            /** Deliver Only */
+            deliver_only: boolean;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /** Sample */
+            sample: {
+                [key: string]: unknown;
+            };
         };
         /**
          * WebhookUpdateBody
@@ -15251,6 +15377,13 @@ export interface components {
             deliver_only?: boolean;
             /** Description */
             description?: string;
+            /** Filter */
+            filter?: {
+                path: string;
+                /** @enum {string} */
+                op: "eq" | "ne" | "contains" | "startswith" | "endswith" | "glob" | "in" | "exists" | "missing";
+                value?: unknown;
+            }[];
         };
         /** WorkflowRunBody */
         WorkflowRunBody: {
@@ -17186,6 +17319,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_webhook_api_webhooks__hook_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WebhookTestBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookTestReply"];
                 };
             };
             /** @description Validation Error */
@@ -26948,6 +27116,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    verify_skill_capability_api_capabilities_skills__name__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

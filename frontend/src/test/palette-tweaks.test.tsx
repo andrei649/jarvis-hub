@@ -5,11 +5,11 @@ import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Palette } from '../shell';
-import { V2 } from '../data';
+import { LANGUAGES, V2 } from '../data';
 
 const t = V2.I18N.en;
 
-function renderPalette(ui) {
+function renderPalette(ui, extra = {}) {
   const onClose = vi.fn();
   render(
     <Palette
@@ -18,6 +18,7 @@ function renderPalette(ui) {
       onMode={() => {}}
       setAccent={() => {}}
       setLang={() => {}}
+      {...extra}
       onAmbient={() => {}}
       ui={ui}
       t={t}
@@ -51,5 +52,16 @@ describe('Palette display tweaks', () => {
 
     fireEvent.click(screen.getByText('Dot grid · On'));
     expect(ui.setDotgrid).toHaveBeenCalledWith('on');
+  });
+
+  // H221 — the Language row is an appearance row like the others: one entry per translated
+  // language (its own name), the active one ticked, chosen by code rather than toggled.
+  it('offers a Language row per translated language, the active one ticked', () => {
+    const setLang = vi.fn();
+    renderPalette({ look: 'obsidian', density: 'normal', motion: 'lively', scanline: 'on', dotgrid: 'off' }, { lang: 'ro', setLang });
+    for (const l of LANGUAGES) expect(screen.getByText('Language · ' + l.label + (l.code === 'ro' ? ' ✓' : ''))).toBeTruthy();
+    expect(screen.queryByText(/Toggle language/)).toBeNull();
+    fireEvent.click(screen.getByText('Language · English'));
+    expect(setLang).toHaveBeenCalledWith('en');
   });
 });

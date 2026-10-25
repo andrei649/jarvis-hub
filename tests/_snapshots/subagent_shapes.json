@@ -48,6 +48,12 @@
     "reason",
     "used"
   ],
+  "spawn.turn_spawn_cap": [
+    "cap",
+    "ok",
+    "reason",
+    "spawned"
+  ],
   "stats": [
     "active",
     "blocked",
@@ -57,7 +63,8 @@
     "max_depth",
     "persist",
     "steerable",
-    "total"
+    "total",
+    "turn_cap"
   ],
   "steer.unknown": [
     "id",

@@ -45,6 +45,7 @@ from .media_reader import note as read_note
 from .media_reader import turn_text as image_turn_text
 from .render import chunk, to_plain, to_telegram_html
 from .spoken_reply import REASON_SEND, Audio, SpokenReply
+from ..commands import side_question_command_name
 from ..log_safe import log_safe
 from ..settings_db import get_value
 from ..owner_once_context import OwnerReplySource, bind_owner_reply_source, close_owner_reply_source
@@ -1274,7 +1275,8 @@ class TelegramChannel(ChannelAdapter):
         if callable(self.pre_turn_interrupt):
             self.pre_turn_interrupt(
                 channel="telegram", sender=str(uid), chat_id=chat_id,
-                message_thread_id=topic if type(topic) is int and topic > 0 else None)
+                message_thread_id=topic if type(topic) is int and topic > 0 else None,
+                text=decision.text)
         turn = decision.text
         if attachment is not None:
             logger.info("Telegram inbound media: %s", attachment.to_dict())
@@ -1343,6 +1345,18 @@ class TelegramChannel(ChannelAdapter):
         mark = (chat_id, str(uid))
         if session_meta.get("message_thread_id") is not None:
             mark += (session_meta["message_thread_id"],)
+        if side_question_command_name(turn) is not None:
+            # H414: a /btw is asked beside the running turn, so it does not queue behind
+            # that chat's lane. It has a lane of its own (still counted by settle/drain),
+            # takes no voice mark, and the held pieces were already flushed in order.
+            def work():
+                return self._run_turn(chat_id, uid, turn, spoken=False, **session_meta)
+
+            if chat_id is None or self._lanes is None:
+                await work()
+            else:
+                self._lanes.submit(("side-question", chat_id), work)
+            return
         spoken = mark in self._voice_pending
         self._voice_pending.discard(mark)
         await self._in_chat(chat_id, lambda: self._run_turn(chat_id, uid, turn, spoken=spoken, **session_meta))

@@ -615,3 +615,56 @@ def test_an_injected_description_taints_a_vouched_skills_view(installed):
     loader.skills["desc"].owner_vouched = True
     view = _call(_server(loader), TOOL_VIEW, {"name": "desc"})
     assert view["tainted"] is True and "injection patterns" in view["warning"]
+
+
+# ── H354: a view the model was served counts in the usage sidecar ────────────────────
+
+def test_a_served_skill_view_counts_and_a_refused_one_does_not(installed, tmp_path, monkeypatch):
+    """The owner's `view_count` / `last_viewed_at` move through the real skill_view tool
+    (a loader with a real SkillUsageStore attached), and show on GET /skills."""
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    import agents.web as web
+    from agents.core.skills.usage import SkillUsageStore
+
+    loader = installed(ref={"body": "Steps.\n", "files": {"references/api.md": "api\n"}})
+    store = SkillUsageStore(tmp_path / "usage.json")
+    loader.attach_usage(store)
+    server = _server(loader)
+
+    for refused in ({"name": "nope"},                                  # unknown skill
+                    {"name": "ref", "file": "../escape.md"},           # outside the skill
+                    {"name": "ref", "file": "references/missing.md"},  # no such file
+                    {"name": "ref", "bogus": 1},                       # unknown field
+                    {"name": ""}):                                     # bad name
+        assert _call(server, TOOL_VIEW, refused)["ok"] is False, refused
+    assert store.get("ref") is None                                    # no refusal wrote a row
+
+    assert _call(server, TOOL_VIEW, {"name": "ref"})["ok"] is True
+    rec = store.get("ref")
+    assert rec["view_count"] == 1 and rec["last_viewed_at"] and not rec["use_count"]
+    first = rec["last_viewed_at"]
+    assert _call(server, TOOL_VIEW, {"name": "ref", "file": "references/api.md"})["ok"] is True
+    rec = store.get("ref")
+    assert rec["view_count"] == 2 and rec["last_viewed_at"] >= first
+    assert rec["use_count"] == 0 and rec["patch_count"] == 0           # a view is only a view
+
+    monkeypatch.setattr(web, "orch", SimpleNamespace(skills=loader, skill_usage=store))
+    usage = TestClient(web.app).get("/skills").json()["skills"]["ref"]["usage"]
+    assert usage["view_count"] == 2 and usage["last_viewed_at"] == rec["last_viewed_at"]
+
+
+def test_a_broken_or_missing_usage_sidecar_never_fails_a_view(installed):
+    class Broken:
+        def bump(self, name, kind):
+            raise OSError("disk full")
+
+    loader = installed(ref={"body": "Steps.\n"})
+    assert _call(_server(loader), TOOL_VIEW, {"name": "ref"})["ok"] is True      # none attached
+    loader.attach_usage(Broken())
+    assert _call(_server(loader), TOOL_VIEW, {"name": "ref"})["ok"] is True      # one that raises
+    # A loader stand-in with no note_usage at all is served as before.
+    bare = type("L", (), {"skills": loader.skills, "catalog_gate": staticmethod(lambda skill, agent=None: None)})()
+    assert _call(_server(bare), TOOL_VIEW, {"name": "ref"})["ok"] is True

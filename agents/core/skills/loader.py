@@ -655,6 +655,21 @@ class SkillLoader:
         for skill in self.skills.values():
             skill.usage_hook = _hook
 
+    def note_usage(self, name: str, kind: str) -> None:
+        """H354 — count one ``view`` or ``patch`` of a skill in the attached sidecar.
+
+        ``use`` is counted by the skill's own hook when it runs; the reads (``skill_view``)
+        and edits (the owner's batch route, an approved batch) that never run it come
+        through here. Best-effort like that hook: no sidecar attached, or a broken one,
+        is a no-op and never fails the call that asked."""
+        store = self._usage
+        if store is None:
+            return
+        try:
+            store.bump(name, kind)
+        except Exception:
+            logger.debug("usage note skipped for %s/%s", name, kind, exc_info=True)
+
     def revoke_approval(self, path) -> bool:
         """Drop the owner approval bound to ``path`` (DRA-54).
 

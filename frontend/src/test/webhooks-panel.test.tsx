@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent, cleanup, act } from '@testing-library/react';
-import { DELIVER_ONLY_NEEDS_A_CHANNEL, DESTINATIONS, WebhooksPanel, parseEvents, triggerUrl } from '../panels/webhooks';
+import { DELIVER_ONLY_NEEDS_A_CHANNEL, DESTINATIONS, FILTER_NOT_JSON, WebhooksPanel, parseEvents, triggerUrl } from '../panels/webhooks';
 import { CONSOLE_PANELS } from '../console-routes';
 
 let hooks;
@@ -800,5 +800,220 @@ describe('WebhooksPanel after the fourth review', () => {
     await waitFor(() => expect(screen.getByText(/^not read/)).toBeTruthy());
     expect(screen.queryByText('on · not stored (the default)')).toBeNull();
     expect(screen.getByRole('button', { name: 'receiver state not read' }).disabled).toBe(true);
+  });
+});
+
+/* H039 — the test button (a signed sample through the hook's receive path, dry) and the
+   payload filter editor. */
+describe('WebhooksPanel H039', () => {
+  let testReply;
+  const ready = () => waitFor(() => expect(screen.getByText('ci')).toBeTruthy());
+  const report = (over = {}) => ({
+    event: 'push', auth: 'token', authenticated: true, receiver: 'on', enabled: true, outcome: 'run', status: 200,
+    reason: '', target: 'agent:jarvis', deliver: 'log', deliver_only: false, text: 'push on andrei/nerva',
+    sample: { headers: { 'x-webhook-token': 'AbCd…' }, payload: { event: 'push', test: true } }, ...over,
+  });
+
+  beforeEach(() => {
+    testReply = () => reply(200, { ok: true, test: report() });
+    const inner = global.fetch;
+    global.fetch = vi.fn(async (url, init = {}) => {
+      if ((init.method || 'GET') === 'POST' && String(url).endsWith('/test')) {
+        calls.push({ method: 'POST', url: String(url), body: init.body ? JSON.parse(init.body) : undefined,
+          admin: (init.headers || {})['X-Admin-Token'] });
+        return testReply();
+      }
+      return inner(url, init);
+    });
+  });
+
+  it('sends a test delivery with the admin credential and shows what a real one would do', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'test ci' }));
+    await waitFor(() => expect(screen.getByTestId('webhook-test-outcome')).toBeTruthy());
+    const posted = calls.filter((c) => c.method === 'POST' && c.url.endsWith('/api/webhooks/hk1/test'));
+    expect(posted).toHaveLength(1);
+    expect(posted[0].admin).toBe('admin-secret');
+    const text = screen.getByTestId('webhook-test-outcome').textContent;
+    expect(text).toContain('token verified');
+    expect(text).toContain('event push');
+    expect(text).toContain('would run agent:jarvis');
+    expect(text).toContain('push on andrei/nerva');
+    expect(screen.queryByTestId('webhook-secret')).toBeNull();       // the sample never shows a credential
+  });
+
+  it('says when the sample would be filtered, skipped or refused', async () => {
+    testReply = () => reply(200, { ok: true, test: report({ outcome: 'filtered', status: 202, text: '',
+      reason: 'rule 1 (ref eq "refs/heads/main"): the value is "refs/heads/dev"' }) });
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'test ci' }));
+    await waitFor(() => expect(screen.getByTestId('webhook-test-outcome').textContent)
+      .toContain('would be filtered: rule 1 (ref eq "refs/heads/main")'));
+    testReply = () => reply(200, { ok: true, test: report({ outcome: 'refused', status: 503, receiver: 'off',
+      reason: 'the webhook receiver is off' }) });
+    fireEvent.click(screen.getByRole('button', { name: 'test ci' }));
+    await waitFor(() => expect(screen.getByTestId('webhook-test-outcome').textContent)
+      .toContain('would be refused (503): the webhook receiver is off'));
+  });
+
+  it('shows a refused test as a note and holds the button while the call is pending', async () => {
+    let release;
+    testReply = () => new Promise((resolve) => { release = () => resolve(reply(403, { error: 'admin token required' })); });
+    render(<WebhooksPanel />);
+    await ready();
+    const button = screen.getByRole('button', { name: 'test ci' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(button.disabled).toBe(true));
+    expect(calls.filter((c) => c.url.endsWith('/test'))).toHaveLength(1);
+    await act(async () => { release(); });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('refused'));
+    expect(screen.queryByTestId('webhook-test-outcome')).toBeNull();
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
+  it('shows the filter in the row and the detail pane, with what it turned away', async () => {
+    hooks = [{ ...hooks[0], filter: [{ path: 'ref', op: 'eq', value: 'refs/heads/main' }, { path: 'deleted', op: 'missing' }],
+               filtered: 4, last_filtered_rule: 'rule 2 (deleted missing): the field is present',
+               last_test: { at: 1790000000, outcome: 'filtered', reason: 'rule 1 (ref eq "refs/heads/main"): the value is "x"' } }];
+    render(<WebhooksPanel />);
+    await ready();
+    expect(screen.getByText('2 rules')).toBeTruthy();
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByText(/4 filtered · last filtered: rule 2 \(deleted missing\)/)).toBeTruthy();
+    expect(screen.getByText(/last test 2026-09-21 \d\d:\d\d UTC · filtered: rule 1/)).toBeTruthy();
+    expect(screen.getByLabelText('filter for ci').value).toBe(JSON.stringify(hooks[0].filter, null, 1));
+  });
+
+  it('flags a filter the hub could not read', async () => {
+    hooks = [{ ...hooks[0], filter: [], filter_unreadable: true }];
+    render(<WebhooksPanel />);
+    await ready();
+    expect(screen.getByText('filter unreadable')).toBeTruthy();
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByText(/filter unreadable: every delivery is filtered/)).toBeTruthy();
+  });
+
+  it('saves a filter from the detail pane, and refuses one that is not a JSON list before posting', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    const filter = screen.getByLabelText('filter for ci');
+    expect(filter.value).toBe('');
+    fireEvent.change(filter, { target: { value: '{"path": "ref"' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(FILTER_NOT_JSON));
+    fireEvent.change(filter, { target: { value: '{"path": "ref", "op": "exists"}' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(FILTER_NOT_JSON));
+    expect(sent('PATCH')).toHaveLength(0);
+    fireEvent.change(filter, { target: { value: '[{"path": "ref", "op": "eq", "value": "refs/heads/main"}]' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect(sent('PATCH')[0]).toMatchObject({ admin: 'admin-secret',
+      body: { filter: [{ path: 'ref', op: 'eq', value: 'refs/heads/main' }], events: [] } });
+    await waitFor(() => expect(screen.getByText('1 rule')).toBeTruthy());
+    // an emptied editor clears the filter (an empty list), rather than being skipped
+    fireEvent.change(screen.getByLabelText('filter for ci'), { target: { value: '  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(2));
+    expect(sent('PATCH')[1].body.filter).toEqual([]);
+  });
+});
+
+/* H039 round 2 — an unreadable filter is never reopened by saving another field, the create
+   form takes a filter, and a test report is dropped when the hook is edited. */
+describe('WebhooksPanel H039 round 2', () => {
+  const ready = () => waitFor(() => expect(screen.getByText('ci')).toBeTruthy());
+
+  it('saves another field of a hook with an unreadable filter without sending a filter', async () => {
+    hooks = [{ ...hooks[0], filter: [], filter_unreadable: true }];
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByText(/The stored filter is unreadable, so every delivery is filtered/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('description of ci'), { target: { value: 'pager' } });
+    expect(screen.getByRole('button', { name: 'save ci' })).toBeTruthy();       // no clear warning: it is left alone
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect('filter' in sent('PATCH')[0].body).toBe(false);
+    expect(sent('PATCH')[0].body).toMatchObject({ description: 'pager' });
+  });
+
+  it('says on the button that emptying an unreadable filter clears it, and then sends an empty list', async () => {
+    hooks = [{ ...hooks[0], filter: [], filter_unreadable: true }];
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    const box = screen.getByLabelText('filter for ci');
+    fireEvent.change(box, { target: { value: '[{"path": "a", "op": "exists"}]' } });
+    expect(screen.getByRole('button', { name: 'save ci' })).toBeTruthy();       // a new list replaces it: no clearing
+    fireEvent.change(box, { target: { value: '' } });
+    const clear = screen.getByRole('button', { name: 'save ci: clears the unreadable filter' });
+    expect(clear.textContent).toBe('save: clears the unreadable filter');
+    fireEvent.click(clear);
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect(sent('PATCH')[0].body.filter).toEqual([]);
+  });
+
+  it('sends the filter of a readable hook as before, even unchanged', async () => {
+    hooks = [{ ...hooks[0], filter: [{ path: 'ref', op: 'exists' }] }];
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect(sent('PATCH')[0].body.filter).toEqual([{ path: 'ref', op: 'exists' }]);
+  });
+
+  it('creates a hook with a filter, and refuses one that is not a JSON list before posting', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.change(screen.getByLabelText('filter'), { target: { value: '{"path": "ref"' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(FILTER_NOT_JSON));
+    expect(sent('POST')).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText('filter'), { target: { value: '[{"path": "ref", "op": "startswith", "value": "refs/heads/"}]' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    expect(sent('POST')[0].body).toMatchObject({ target: 'friday', filter: [{ path: 'ref', op: 'startswith', value: 'refs/heads/' }] });
+    await waitFor(() => expect(screen.getByTestId('webhook-secret')).toBeTruthy());
+    expect(screen.getByLabelText('filter').value).toBe('');
+  });
+
+  it('creates a hook with no filter as an empty list', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    expect(sent('POST')[0].body.filter).toEqual([]);
+  });
+
+  it('drops a test report once the hook is edited, or switched', async () => {
+    const inner = global.fetch;
+    global.fetch = vi.fn(async (url, init = {}) => {
+      if ((init.method || 'GET') === 'POST' && String(url).endsWith('/test')) {
+        return reply(200, { ok: true, test: { event: 'push', auth: 'token', authenticated: true, receiver: 'on', enabled: true,
+          outcome: 'run', status: 200, reason: '', target: 'agent:jarvis', deliver: 'log', deliver_only: false, text: 'x',
+          sample: { headers: {}, payload: {} } } });
+      }
+      return inner(url, init);
+    });
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'test ci' }));
+    await waitFor(() => expect(screen.getByTestId('webhook-test-outcome')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('description of ci'), { target: { value: 'edited' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('ci saved'));
+    expect(screen.queryByTestId('webhook-test-outcome')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'test ci' }));
+    await waitFor(() => expect(screen.getByTestId('webhook-test-outcome')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'switch off ci' }));
+    await waitFor(() => expect(screen.queryByTestId('webhook-test-outcome')).toBeNull());
   });
 });

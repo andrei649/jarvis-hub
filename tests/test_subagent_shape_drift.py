@@ -51,6 +51,7 @@ CALLER_KEYS = {
     "spawn.recursion_depth_cap": {"ok", "reason", "depth", "max_depth"},
     "spawn.concurrency_cap": {"ok", "reason", "active", "cap"},
     "spawn.spawn_budget_exhausted": {"ok", "reason", "used", "max_total"},
+    "spawn.turn_spawn_cap": {"ok", "reason", "spawned", "cap"},
     "spawn.invalid_output_schema": {"ok", "reason"},
 }
 
@@ -180,6 +181,19 @@ def _capture(tmp_path) -> tuple[dict, list[str]]:
     shapes["spawn.spawn_budget_exhausted"] = _shape(
         _refused(asyncio.run(spent.spawn("no budget")), "spawn_budget_exhausted", problems)
     )
+
+    # H486: the per-turn ceiling, inside a bound tool-loop turn with a ceiling of 0 spawns.
+    from agents.core.tool_rpc import bind_tool_turn, reset_tool_turn
+
+    per_turn = _runtime(tmp_path, turn_cap=1)
+    token = bind_tool_turn("shape-drift-turn")
+    try:
+        asyncio.run(per_turn.spawn("the one allowed"))
+        shapes["spawn.turn_spawn_cap"] = _shape(
+            _refused(asyncio.run(per_turn.spawn("one too many")), "turn_spawn_cap", problems)
+        )
+    finally:
+        reset_tool_turn(token)
 
     bad_schema = _runtime(tmp_path)
     shapes["spawn.invalid_output_schema"] = _shape(

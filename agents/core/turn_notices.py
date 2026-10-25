@@ -32,12 +32,16 @@ def reset_turn_notices(token) -> None:
         _turn_notices.reset(token)
 
 
-def record_turn_notice(code: str, text: str) -> None:
-    """Note one notice for the turn in flight; a no-op outside one, and once per code."""
+def record_turn_notice(code: str, text: str) -> bool:
+    """Note one notice for the turn in flight; a no-op outside one, and once per code.
+    Whether it was taken: ``False`` outside a turn, so a producer with something to say
+    later (H403: a background review's summary) keeps it for a reply that can show it."""
     sink = _turn_notices.get()
-    if sink is None or any(item.get("code") == code for item in sink):
-        return
-    sink.append({"code": str(code), "text": str(text)})
+    if sink is None:
+        return False
+    if not any(item.get("code") == code for item in sink):
+        sink.append({"code": str(code), "text": str(text)})
+    return True
 
 
 __all__ = ["open_turn_notices", "record_turn_notice", "reset_turn_notices"]

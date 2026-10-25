@@ -276,6 +276,15 @@ const I18N = {
   },
 };
 
+/* H221 — the languages the HUD is translated into, in menu order (EN, RO first). Each code
+   owns a full I18N table (the i18n-completeness gate keeps the tables aligned, and the
+   language-menu test pins this list to them); `label` is the language's own name, so the
+   list reads right whichever language is active; `dir` feeds the document's text direction. */
+export const LANGUAGES = [
+  { code:'en', label:'English', dir:'ltr' },
+  { code:'ro', label:'Română', dir:'ltr' },
+] as const;
+
 /* ============ AUTONOMY ============ */
 const AUTONOMY = {
   brief:[
@@ -522,7 +531,7 @@ const FAMILY = {
 
 export const V2 = { GLYPHS, FALLBACK_GLYPH, glyphFor, TIERS, AGENTS, COLLAB, DOSSIER, COGNITION_SCORING, SEED_MESSAGES, TICKER, WEATHER,
     CALENDAR, DECISIONS, HEARTBEAT, AUDIT_CHAIN, CAPABILITIES, PAYMENTS, MEMORY_STATS, RECALLS,
-    TOPICS, KG, I18N,
+    TOPICS, KG, I18N, LANGUAGES,
     AUTONOMY, BUILD, OBSERVE, INTEROP, COMMS, ADMIN,
     FINANCE, HEALTH, KNOWLEDGE, FAMILY };
 

@@ -185,3 +185,209 @@ def test_unknown_provider_never_uses_optional_router_bypass(dh):
     with pytest.raises(ValueError, match='provider is unknown'), dh.auxiliary_request_scope(
             router, object(), 'synthetic-model', role='review'):
         pytest.fail('unknown backend cannot dispatch')
+
+
+# ── H414: run_oneshot — one stateless call on the same rail ───────────────────────
+#
+# Hermes' ``run_oneshot()`` is a public helper for an arbitrary side call that never
+# touches history. Nerva's version is the same rail the fixed tasks use: the strict-local
+# backend, the auxiliary data-handling scope, the job-pin exclusion and the model usage
+# scope all come from ``prepare_local_auxiliary``; nothing here opens a second route.
+
+
+@pytest.fixture
+def oneshot(monkeypatch):
+    from agents.core.llm import auxiliary_text
+
+    monkeypatch.delenv('JARVIS_AUX_ONESHOT_MODEL', raising=False)
+    monkeypatch.setattr(auxiliary_text, '_ONESHOT_USAGE', {})
+    calls = []
+
+    async def generate(**kwargs):
+        calls.append(('generate', kwargs))
+        return 'local answer'
+
+    async def generate_stream(**kwargs):
+        calls.append(('stream', kwargs))
+        await kwargs['on_token']('local ')
+        await kwargs['on_token']('answer')
+        return 'local answer'
+
+    backend = SimpleNamespace(profile=get_profile('lm-studio'), base_url='http://127.0.0.1:1234',
+                              generate=generate, generate_stream=generate_stream)
+    router = SimpleNamespace(local_backend=backend, active_model='active-local',
+                             _backend=backend, _local_model='active-local')
+    return SimpleNamespace(router=router, backend=backend, calls=calls, module=auxiliary_text)
+
+
+async def test_run_oneshot_runs_on_the_local_rail_and_records_its_purpose(oneshot):
+    from agents.core.llm.model_config import DEFAULT_LOCAL_MODEL
+
+    answer = await oneshot.module.run_oneshot(
+        oneshot.router, 'private prompt', system='side system', purpose='btw',
+        max_tokens=64, temperature=0.1)
+    assert answer == 'local answer'
+    # Like the other side tasks (not the cosmetic title), a one-shot runs on the local
+    # model already loaded for chat unless its own override names another.
+    assert oneshot.calls == [('generate', {
+        'model': 'active-local', 'system': 'side system', 'prompt': 'private prompt',
+        'max_tokens': 64, 'temperature': 0.1,
+    })]
+    usage = oneshot.module.oneshot_usage()
+    assert usage['btw']['calls'] == 1 and usage['btw']['answered'] == 1
+    assert usage['btw']['prompt_chars'] == len('side system') + len('private prompt')
+    assert usage['btw']['max_tokens'] == 64 and usage['btw']['model'] == 'active-local'
+    # The ledger is a copy: a caller cannot edit the record it was shown.
+    usage['btw']['calls'] = 99
+    assert oneshot.module.oneshot_usage()['btw']['calls'] == 1
+    oneshot.router.active_model = None
+    await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8)
+    assert oneshot.calls[-1][1]['model'] == DEFAULT_LOCAL_MODEL
+    assert oneshot.module.oneshot_usage()['btw']['calls'] == 2
+
+
+async def test_run_oneshot_honours_its_own_model_override_not_the_active_chat_model(oneshot, monkeypatch):
+    oneshot.router.active_model = 'large-chat-70b'
+    await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='plugin:probe', max_tokens=8)
+    assert oneshot.calls[-1][1]['model'] == 'large-chat-70b'
+    monkeypatch.setenv('JARVIS_AUX_ONESHOT_MODEL', 'configured-oneshot')
+    await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='plugin:probe', max_tokens=8)
+    assert oneshot.calls[-1][1]['model'] == 'configured-oneshot'
+    assert oneshot.router.active_model == 'large-chat-70b'
+    assert oneshot.module.oneshot_usage()['plugin:probe']['calls'] == 2
+
+
+async def test_run_oneshot_streams_through_the_same_rail_when_asked(oneshot):
+    seen = []
+
+    async def hook(text):
+        seen.append(text)
+
+    answer = await oneshot.module.run_oneshot(
+        oneshot.router, 'p', purpose='plugin:probe', max_tokens=8, on_token=hook)
+    assert answer == 'local answer' and seen == ['local ', 'answer']
+    assert oneshot.calls[0][0] == 'stream' and oneshot.calls[0][1]['on_token'] is hook
+
+
+@pytest.mark.parametrize('bad', [
+    {'purpose': ''}, {'purpose': 'Side Question'}, {'purpose': 'x' * 65}, {'purpose': 7},
+    {'max_tokens': 0}, {'max_tokens': 'many'}, {'max_tokens': True},
+    {'prompt': ''}, {'prompt': 'x' * 48_001}, {'prompt': None},
+    {'system': 'x' * 48_001}, {'temperature': -1}, {'temperature': 2.5},
+])
+async def test_run_oneshot_refuses_an_unbounded_or_mislabelled_call_before_dispatch(oneshot, bad):
+    from agents.core.llm.auxiliary_text import AuxiliaryConfigError
+
+    kwargs = {'prompt': 'p', 'purpose': 'btw', 'max_tokens': 8, 'temperature': 0.2, 'system': None}
+    kwargs.update(bad)
+    prompt = kwargs.pop('prompt')
+    with pytest.raises(AuxiliaryConfigError):
+        await oneshot.module.run_oneshot(oneshot.router, prompt, **kwargs)
+    assert oneshot.calls == [] and oneshot.module.oneshot_usage() == {}
+
+
+async def test_run_oneshot_caps_the_output_budget(oneshot):
+    from agents.core.llm.auxiliary_text import MAX_ONESHOT_TOKENS, AuxiliaryConfigError
+
+    with pytest.raises(AuxiliaryConfigError):
+        await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=MAX_ONESHOT_TOKENS + 1)
+    assert oneshot.calls == []
+    await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=MAX_ONESHOT_TOKENS)
+    assert oneshot.calls[0][1]['max_tokens'] == MAX_ONESHOT_TOKENS
+
+
+async def test_run_oneshot_is_excluded_by_a_job_model_pin(oneshot):
+    from agents.core.llm.job_selection import SelectionError, selection_scope
+
+    with selection_scope({'model': 'pinned-model'}), pytest.raises(SelectionError):
+        await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8)
+    assert oneshot.calls == []
+    row = oneshot.module.oneshot_usage()['btw']
+    assert row == {'calls': 1, 'answered': 0, 'refused': 1, 'prompt_chars': 1,
+                   'max_tokens': 8, 'model': None, 'last_at': row['last_at']}
+
+
+async def test_run_oneshot_never_falls_through_to_a_cloud_backend(oneshot):
+    class Router:
+        active_model = None
+
+        @property
+        def local_backend(self):
+            raise RuntimeError('No local LLM backend available (strict-local path).')
+
+    with pytest.raises(RuntimeError, match='strict-local'):
+        await oneshot.module.run_oneshot(Router(), 'p', purpose='btw', max_tokens=8)
+    assert oneshot.calls == []
+
+
+async def test_run_oneshot_inherits_the_auxiliary_consent_boundary(dh):
+    """An owner turn cannot authorize an unattended one-shot on a warned route."""
+    from agents.core.llm.auxiliary_text import run_oneshot
+
+    router, backend = route()
+    sent = []
+
+    async def generate(**kwargs):
+        sent.append(kwargs)
+        return 'answer'
+
+    backend.generate = generate
+    principal_token = bind_turn_principal(Principal(channel='web', admin=True))
+    try:
+        with pytest.raises(dh.DataHandlingRefused, match='audited acknowledgment'):
+            await run_oneshot(router, 'private prompt', purpose='btw', max_tokens=8)
+    finally:
+        reset_turn_principal(principal_token)
+    assert sent == []
+
+
+async def test_run_oneshot_keeps_the_purpose_ledger_bounded(oneshot):
+    from agents.core.llm.auxiliary_text import MAX_ONESHOT_PURPOSES
+
+    for index in range(MAX_ONESHOT_PURPOSES + 5):
+        await oneshot.module.run_oneshot(oneshot.router, 'p', purpose=f'plugin:p{index}', max_tokens=8)
+    usage = oneshot.module.oneshot_usage()
+    assert len(usage) == MAX_ONESHOT_PURPOSES and f'plugin:p{MAX_ONESHOT_PURPOSES + 4}' in usage
+
+
+@pytest.mark.parametrize('text', [
+    "⚠️ I can't reach the local LM Studio model right now. Start it.",
+    "⚠️ The local Ollama model hit an error and couldn't answer.",
+    "⚠️ No local language model is available. Start one.",
+    "[Claude API error 500]",
+])
+async def test_run_oneshot_counts_a_backend_failure_text_as_unanswered(oneshot, text):
+    """The local backends answer a failed call with a fixed text instead of raising."""
+    async def degraded(**kwargs):
+        return text
+
+    oneshot.backend.generate = degraded
+    with pytest.raises(oneshot.module.AuxiliaryBackendFailure):
+        await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8)
+    row = oneshot.module.oneshot_usage()['btw']
+    assert row['calls'] == 1 and row['answered'] == 0 and row['refused'] == 1
+
+
+async def test_run_oneshot_keeps_an_answer_that_merely_looks_like_a_list(oneshot):
+    async def listy(**kwargs):
+        return "[1] first point\n[2] second point"
+
+    oneshot.backend.generate = listy
+    assert (await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8)).startswith('[1]')
+    assert oneshot.module.oneshot_usage()['btw']['answered'] == 1
+
+
+async def test_run_oneshot_does_not_record_a_cancelled_call_as_refused(oneshot):
+    started = asyncio.Event()
+
+    async def slow(**kwargs):
+        started.set()
+        await asyncio.sleep(30)
+
+    oneshot.backend.generate = slow
+    task = asyncio.create_task(oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert oneshot.module.oneshot_usage() == {}

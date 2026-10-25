@@ -133,6 +133,15 @@ input { font-family: inherit; }
 .tool-btn:hover { color:var(--accent-light); border-color:var(--accent-dim); }
 .tool-btn.on { color:var(--accent-light); border-color:var(--accent-dim); background:var(--accent-faint); }
 
+/* H221 — language menu under the globe */
+.lang-menu { position:relative; }
+.lang-menu-list { position:absolute; right:0; top:calc(100% + 6px); min-width:150px; z-index:30; display:flex; flex-direction:column; gap:2px; padding:4px; background:var(--void-2); border:1px solid var(--accent-dim); border-radius:var(--radius); box-shadow:0 24px 60px -24px #000, 0 0 0 1px var(--accent-faint); animation:pal-fade .16s; }
+.lang-menu-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border:0; border-radius:var(--radius); background:transparent; color:var(--ink-2); font-size:12px; text-align:left; cursor:pointer; }
+.lang-menu-item::before { content:''; width:6px; height:6px; border-radius:50%; border:1px solid var(--ink-3); flex:none; }
+.lang-menu-item:hover, .lang-menu-item:focus-visible { background:var(--accent-faint); color:var(--accent-light); outline:none; }
+.lang-menu-item[aria-checked="true"] { color:var(--ink); }
+.lang-menu-item[aria-checked="true"]::before { background:var(--accent); border-color:var(--accent); }
+
 /* TICKER */
 .ticker { display:flex; align-items:center; height:32px; border-bottom:1px solid var(--panel-line); overflow:hidden; flex:none; }
 .ticker-head { display:flex; align-items:center; gap:8px; padding:0 16px; width:240px; flex:none; border-right:1px solid var(--panel-line); height:100%; }

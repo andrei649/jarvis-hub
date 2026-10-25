@@ -527,6 +527,10 @@ MACHINE_FACING: dict[str, str] = {
     "/v1/capabilities":
         "protocol discovery for external HTTP chat/session clients; packaged HUD/native "
         "clients retain their fixed tested contract, with no discovery control",
+    "/api/capabilities/skills/{name}/verify":
+        "H354: the owner CLI runs one skill's reality-harness case now (`nerva skills verify`, "
+        "agents/cli/nerva.py); the HUD reads the verdict off the capability record "
+        "(detail.evidence via /api/capabilities) and does not trigger runs",
     "/sessions/continue":
         "explicit owner CLI creation via `nerva sessions continue`; the returned child is "
         "addressed by `nerva chat --session` without changing the HUD default session",

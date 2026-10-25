@@ -59,6 +59,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from .env_config import env_flag
 from .iteration_budget import IterationBudget
+from .tool_rpc import current_tool_turn
 
 logger = logging.getLogger("jarvis.subagents")
 
@@ -81,6 +82,12 @@ STEER_MAX_CHARS = 4000
 
 # Default-off persistence flag (observability only).
 SPAWN_LOG_ENV = "JARVIS_SUBAGENT_SPAWN_LOG"
+
+# H486: spawns one tool-loop turn may make (Hermes: 50 delegate_task calls per turn),
+# the shipped value of ``llm.tool_loop_subagent_spawn_cap``; and how many finished
+# turns' counts are kept before the oldest is dropped.
+DEFAULT_TURN_SPAWN_CAP = 50
+TURN_SPAWN_HISTORY = 64
 
 # Spawn lifecycle. `stopping` is the window between stop() and the child task
 # unwinding; every other move is a terminal write.
@@ -382,7 +389,8 @@ class SubAgentManager:
                  persist: Optional[bool] = None,
                  decision_hook: Optional[Callable[..., Awaitable[Any]]] = None,
                  selection_defaults: Optional[Callable[[], dict]] = None,
-                 fallback_probe: Optional[Callable[[str], Optional[str]]] = None) -> None:
+                 fallback_probe: Optional[Callable[[str], Optional[str]]] = None,
+                 turn_cap: Any = DEFAULT_TURN_SPAWN_CAP) -> None:
         self._runner = runner or NullRunner()
         # H681: where a child's model comes from when its spawn names none (the
         # autonomy.subagent_* settings in prod), and what it would run on without it.
@@ -394,6 +402,13 @@ class SubAgentManager:
         # H20.6 hardening: total-spawn budget (refundable IterationBudget) on top
         # of the concurrency cap — None keeps today's unbounded-total behavior.
         self.budget = budget
+        # H486: how many spawns one tool-loop turn may make (Hermes caps delegate_task at
+        # 50 per turn). Read at each spawn (a setting reader in prod); 0 = no ceiling, an
+        # unreadable value = the shipped ceiling. Keyed on the tool loop's own turn token,
+        # so a spawn outside any turn is left to the per-boot budget. DORMANT today: the
+        # model has no spawn tool and the only callers (the HTTP routes) run outside a turn.
+        self._turn_cap = turn_cap
+        self._turn_spawns: dict[str, int] = {}
         # Capability scoping for children (hermes DELEGATE_BLOCKED_TOOLS analog).
         self.blocked = frozenset(blocked) if blocked is not None else DELEGATE_BLOCKED_CAPABILITIES
         self._runner_takes_blocked = _runner_accepts_blocked(self._runner)
@@ -419,6 +434,32 @@ class SubAgentManager:
         self._tasks: dict[str, asyncio.Future] = {}
         self._active = 0
         self._counter = 0
+
+    # ── the per-turn ceiling (H486) ──────────────────────────────
+    def turn_cap(self) -> int:
+        """The spawns one tool-loop turn may make: a whole number, 0 = no ceiling; an
+        unreadable or failing reader is the shipped ceiling, never "off"."""
+        raw = self._turn_cap
+        if callable(raw):
+            try:
+                raw = raw()
+            except Exception:
+                logger.warning("sub-agent turn ceiling unreadable; the shipped ceiling applies")
+                return DEFAULT_TURN_SPAWN_CAP
+        if isinstance(raw, bool):
+            return DEFAULT_TURN_SPAWN_CAP
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError, OverflowError):
+            return DEFAULT_TURN_SPAWN_CAP
+
+    def _note_turn_spawn(self, turn: str) -> None:
+        # Re-insert so the table is ordered by recency of the last spawn.
+        self._turn_spawns[turn] = self._turn_spawns.pop(turn, 0) + 1
+        # Turn tokens are fresh per run; keep only the most recent few so a long-lived
+        # process does not grow a table of finished turns.
+        while len(self._turn_spawns) > TURN_SPAWN_HISTORY:
+            del self._turn_spawns[next(iter(self._turn_spawns))]
 
     # ── introspection ────────────────────────────────────────────
     def _active_count(self) -> int:
@@ -504,9 +545,15 @@ class SubAgentManager:
             selection, ov = self._resolve_selection(model, provider, overrides)
         except ValueError as exc:
             return {"ok": False, "reason": "invalid_selection", "detail": str(exc)[:DETAIL_MAX]}
+        turn, cap = current_tool_turn(), self.turn_cap()
+        if turn is not None and cap > 0 and self._turn_spawns.get(turn, 0) >= cap:
+            return {"ok": False, "reason": "turn_spawn_cap",
+                    "spawned": self._turn_spawns[turn], "cap": cap}
         if self.budget is not None and not self.budget.consume():
             return {"ok": False, "reason": "spawn_budget_exhausted",
                     "used": self.budget.used, "max_total": self.budget.max_total}
+        if turn is not None:
+            self._note_turn_spawn(turn)
         self._counter += 1
         spawn_id = f"sub-{parent}-{self._counter}"
         session_id = f"session::{spawn_id}"   # isolated session
@@ -815,6 +862,9 @@ class SubAgentManager:
                "cost_usd": round(cost_usd, 6)}
         if self.budget is not None:
             out["budget"] = self.budget.status()
+        turn = current_tool_turn()
+        out["turn_cap"] = {"cap": self.turn_cap(),
+                           "spawned_this_turn": self._turn_spawns.get(turn, 0) if turn else 0}
         return out
 
 

@@ -21,6 +21,7 @@ class AppearancePatch(BaseModel):
     motion: str | None = Field(None, max_length=32)
     scanline: str | None = Field(None, max_length=32)
     dotgrid: str | None = Field(None, max_length=32)
+    lang: str | None = Field(None, max_length=32)
 
 
 @router.get('/api/preferences/appearance')

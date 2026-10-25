@@ -141,6 +141,13 @@ _usage: dict[str, dict] = defaultdict(
 )
 # Spend per UTC day, so a daily cap has something to read and last month is answerable.
 _daily: dict[str, float] = defaultdict(float)
+# H403: usage per conversation, split by purpose — the turns themselves ("turn") and the
+# work done on the session's behalf after a reply, such as the background review
+# ("background_review"), which runs outside the request's own receipt (`turn_usage`) and
+# would otherwise be attributed to nobody. Bounded like `_daily`: a rollup, not a log.
+_sessions: dict[str, dict] = {}
+_MAX_SESSIONS = 500
+_MAX_SESSION_ID = 200
 # Mutable holder rather than a bare module boolean rebound from two functions via
 # `global`. Same behaviour, one place that owns the flag, no rebinding — and it drops a
 # CodeQL py/unused-global-variable alert on the old pattern. (The old variable WAS read;
@@ -178,13 +185,44 @@ def _load_unlocked() -> None:
             _daily[str(day)] = float(spend)
         except (TypeError, ValueError):
             continue
+    sessions = raw.get("sessions")
+    if isinstance(sessions, dict):
+        for sid, data in sessions.items():
+            row = _session_row(data)
+            if row is not None:
+                _sessions[str(sid)] = row
+
+
+_SESSION_COUNTS = ("calls", "input_tokens", "output_tokens", "cost_usd")
+
+
+def _session_row(data) -> dict | None:
+    """A stored session row with every counter present and numeric (a hand-edited or
+    older row starts the missing ones at 0, as the per-agent loader does), or None."""
+    if not isinstance(data, dict) or not isinstance(data.get("purposes"), dict):
+        return None
+
+    def counts(part: dict) -> dict:
+        out = {}
+        for key in _SESSION_COUNTS:
+            value = part.get(key, 0)
+            out[key] = value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+        return out
+
+    row = counts(data)
+    updated = data.get("updated_at", 0.0)
+    row["updated_at"] = float(updated) if isinstance(updated, (int, float)) else 0.0
+    row["purposes"] = {str(name): counts(slot) for name, slot in data["purposes"].items()
+                       if isinstance(slot, dict)}
+    return row
 
 
 def _save_unlocked() -> None:
     if len(_daily) > _MAX_DAYS:
         for day in sorted(_daily)[:-_MAX_DAYS]:
             _daily.pop(day, None)
-    payload = {"agents": dict(_usage), "daily": dict(_daily), "saved_at": time.time()}
+    payload = {"agents": dict(_usage), "daily": dict(_daily), "sessions": dict(_sessions),
+               "saved_at": time.time()}
     try:
         path = _store_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,8 +330,15 @@ def _price_for(model: str, route: str = "") -> dict | None:
 
 
 def record(agent_name: str, input_tokens: int, output_tokens: int,
-           model: str = UNPRICED_MODEL, route: str = ""):
+           model: str = UNPRICED_MODEL, route: str = "", *,
+           session_id: str = "", purpose: str = ""):
     """Record token usage for an agent, pricing each call at its own model.
+
+    H403: a call made for a conversation also names it — ``session_id`` with the
+    ``purpose`` it served ("turn" when unsaid; "background_review" for the per-turn
+    review, which runs after the reply and outside its receipt) — so what a session cost,
+    reviews included, is readable through ``session_usage``. An unnamed session is the
+    per-agent rollup alone, as before.
 
     Cost is accumulated per call so mixed local+cloud usage is priced correctly.
     Previously only the last model was retained and get_summary() re-priced the
@@ -342,7 +387,45 @@ def record(agent_name: str, input_tokens: int, output_tokens: int,
             slot["unpriced_calls"] += 1
         if call_cost:
             _daily[_today()] = round(_daily[_today()] + call_cost, 6)
+        _record_session_unlocked(session_id, purpose, input_tokens, output_tokens, call_cost)
         _save_unlocked()
+
+
+def _record_session_unlocked(session_id, purpose, input_tokens: int, output_tokens: int,
+                             call_cost: float) -> None:
+    """Add one call to its session's row, under its purpose; the oldest rows go first
+    when the table is full. A malformed id is no session."""
+    if not isinstance(session_id, str) or not 1 <= len(session_id) <= _MAX_SESSION_ID:
+        return
+    name = str(purpose or "turn")[:64]
+    row = _sessions.get(session_id)
+    if row is None:
+        if len(_sessions) >= _MAX_SESSIONS:
+            for stale in sorted(_sessions, key=lambda k: _sessions[k].get("updated_at", 0.0))[
+                    :len(_sessions) - _MAX_SESSIONS + 1]:
+                _sessions.pop(stale, None)
+        row = _sessions[session_id] = {"input_tokens": 0, "output_tokens": 0, "calls": 0,
+                                       "cost_usd": 0.0, "purposes": {}, "updated_at": 0.0}
+    slot = row["purposes"].setdefault(
+        name, {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0})
+    for part in (row, slot):
+        part["calls"] += 1
+        part["input_tokens"] += input_tokens
+        part["output_tokens"] += output_tokens
+        part["cost_usd"] = round(part["cost_usd"] + call_cost, 6)
+    row["updated_at"] = time.time()
+
+
+def session_usage(session_id: str) -> dict | None:
+    """H403 — what one conversation has used so far, in all and by purpose (``"turn"``,
+    ``"background_review"``), or ``None`` for a session the ledger has no row for."""
+    with _lock:
+        _load_unlocked()
+        row = _sessions.get(session_id) if isinstance(session_id, str) else None
+        if row is None:
+            return None
+        return {**{k: v for k, v in row.items() if k != "purposes"},
+                "purposes": {name: dict(slot) for name, slot in row["purposes"].items()}}
 
 
 def get_summary() -> dict:
@@ -461,6 +544,7 @@ def reset():
     with _lock:
         _usage.clear()
         _daily.clear()
+        _sessions.clear()
         # Do not re-read the on-disk rollup after an explicit reset — an isolated test
         # that resets and then records must not inherit another run's spend.
         _state["loaded"] = True

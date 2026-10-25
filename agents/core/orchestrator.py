@@ -6,6 +6,7 @@ skills system, checkpointing, agent handoff, promotion/demotion.
 
 import asyncio
 import contextvars
+import functools
 import hashlib
 import inspect
 import logging
@@ -50,7 +51,14 @@ from .action_origin import (
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from .turn_outcome import measure_turn_latency
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
-from .commands import ADMIN, CommandOutcome, Principal, build_default_registry, checkpoint_command_name
+from .commands import (
+    ADMIN,
+    CommandOutcome,
+    Principal,
+    build_default_registry,
+    checkpoint_command_name,
+    side_question_command_name,
+)
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
@@ -136,6 +144,15 @@ def _log_task_result(task: "asyncio.Task") -> None:
         logger.error("background task %r failed: %s",
                      task.get_name(), exc, exc_info=exc)
 
+
+#: H403: how many sessions' background-review summaries wait for a reply that can show
+#: them (one line per session; the oldest goes first), and how many one reply shows.
+_REVIEW_NOTICES_LIMIT = 64
+_REVIEW_NOTICE_LINES = 4
+#: H403: the channels whose reply is text a person reads, where an ``ℹ`` footer is safe.
+#: Voice (the reply is spoken), email, webhook and gateway replies (machine-consumed)
+#: are not: their turns open no notice collector, so the summary waits for a HUD or chat.
+_NOTICE_FOOTER_CHANNELS = frozenset({"telegram", "slack", "discord", "ntfy"})
 
 HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
@@ -892,6 +909,11 @@ class Orchestrator:
         # H423: the rings reread once per prompt key, with its drift notes; a forget drops it.
         self._core_rings_reread: Optional[tuple] = None
         self.reviewer = None            # BackgroundReviewer, built in load_agents
+        # H403: the one in-flight per-turn review per session, so a new user turn on the
+        # session cancels it (the model is for the reply), and each session's last review
+        # summary waiting for a reply that can show it to the owner (H674 notices).
+        self._review_tasks: dict[str, asyncio.Task] = {}
+        self._review_notices: dict[str, str] = {}
         self.curator = None             # SkillCurator, built in load_agents
         # Daily Reflection & Graph Consolidation (H5.15)
         self.reflector: Optional[DailyReflector] = None
@@ -1667,7 +1689,9 @@ class Orchestrator:
             # token, so a silent turn leaves no placeholder behind.
             cross_channel = self.get_setting("memory.cross_channel_sessions", False)
             from . import code_interruptions
-            if not observe_only and code_interruptions.is_admitted_channel(channel):
+            # H414: a /btw side question asks beside the running work; it must not interrupt it.
+            if (not observe_only and code_interruptions.is_admitted_channel(channel)
+                    and side_question_command_name(text) is None):
                 self._interrupt_for_channel_source(source, cross_channel=cross_channel)
             draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
             from .channels.session_lifecycle import UNAVAILABLE, lifecycle
@@ -1714,8 +1738,11 @@ class Orchestrator:
             reset_action_origin(origin_token)
 
     def interrupt_channel_message(self, *, channel: str, sender: str,
-                                  chat_id=None, message_thread_id=None) -> bool:
-        """Trusted adapter hook, before its chat lane occupies the turn queue."""
+                                  chat_id=None, message_thread_id=None, text: str = "") -> bool:
+        """Trusted adapter hook, before its chat lane occupies the turn queue. A ``/btw``
+        side question (H414) is asked beside the running work and never interrupts it."""
+        if side_question_command_name(text) is not None:
+            return False
         thread_id = str(chat_id) if chat_id is not None else None
         if channel == "telegram" and message_thread_id:
             thread_id = f"{thread_id}:topic:{message_thread_id}"
@@ -1950,6 +1977,20 @@ class Orchestrator:
                                else "checkpoint.unavailable", outcome.reply)
         return outcome
 
+    async def _dispatch_preappend_command(self, text: str):
+        """The commands answered before the turn is appended, so neither they nor their
+        replies become turns: the checkpoint operations, and (H414) the ``/btw`` side
+        question, which asks ABOUT the conversation and must leave it exactly as it was."""
+        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        if outcome is not None:
+            return outcome
+        name = side_question_command_name(text)
+        if name is None:
+            return None
+        outcome = await self._dispatch_command(text)
+        return outcome if outcome is not None else CommandOutcome(
+            name, "failed", f"/{name} failed — check the hub log.")
+
     async def _direct_session_command(self, text: str, channel: str, session_id: str | None):
         """Switch web/CLI to a concrete new ID before appending a command turn."""
         if channel not in {"web", "cli"} or (session_id is None and _session_is_shared.get() is False):
@@ -2006,18 +2047,39 @@ class Orchestrator:
             if WARMUP.warming:   # H677: named, so a slow first reply is not a mystery
                 logger.info("%s turn served while the local model is still warming up", channel)
             from .channels.session_lifecycle import note_session_activity
+            from .turn_notices import open_turn_notices, reset_turn_notices
             from . import code_interruptions
             note_session_activity()
             conversation_token = code_interruptions.bind_conversation(str(self.session_id or ""))
+            # H403/H674: an OWNER's turn on a text-chat channel collects its notices like
+            # /chat does, and the reply carries them (a Telegram owner has no HUD to show
+            # them beside it). Anyone else's turn, and a channel whose reply is spoken or
+            # read by a machine, opens no collector: the notices stay for the owner.
+            carries = channel in _NOTICE_FOOTER_CHANNELS and current_principal().admin is True
+            notices, notices_token = open_turn_notices() if carries else ([], None)
             try:
                 if draft is not None:
                     async def push(token):
                         note_session_activity()
                         await draft.push(token)
-                    return await self.handle_input_stream(text, channel, on_token=push)
-                return await self.handle_input(text, channel)
+                    reply = await self.handle_input_stream(text, channel, on_token=push)
+                else:
+                    reply = await self.handle_input(text, channel)
             finally:
+                reset_turn_notices(notices_token)
                 code_interruptions.reset_conversation(conversation_token)
+            return self._with_channel_notices(reply, notices)
+
+    @staticmethod
+    def _with_channel_notices(reply, notices: list) -> Optional[str]:
+        """The turn's notices as system lines under a channel reply (the HUD's ``ℹ``
+        lines, H674). A silent turn stays silent, and a typed reply (an ephemeral system
+        notice is a ``str`` subclass) is left exactly as it is. Only an owner's turn on a
+        text-chat channel collects any (see ``_channel_turn``)."""
+        lines = [f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
+        if not lines or type(reply) is not str or not reply.strip():
+            return reply
+        return reply.rstrip() + "\n\n" + "\n".join(lines)
 
     async def _run_channel_session_turn(self, session_id, text, channel, *, observe_only, draft):
         # BUG-5: request-local binding never mutates the owner's default session.
@@ -2025,6 +2087,18 @@ class Orchestrator:
         shared_token = _session_is_shared.set(session_id == self._session_id_default)
         try:
             return await self._channel_turn(text, channel, observe_only=observe_only, draft=draft)
+        finally:
+            _session_is_shared.reset(shared_token)
+            _active_session.reset(token)
+
+    async def _run_side_question(self, session_id, text, channel):
+        """H414: answer a ``/btw`` on *session_id* without the turn lease, without a channel
+        activity mark and without appending anything; it reads a snapshot of the session
+        and the main turn, if one is running, carries on undisturbed."""
+        token = _active_session.set(session_id)
+        shared_token = _session_is_shared.set(session_id == self._session_id_default)
+        try:
+            return await self.handle_input(text, channel)
         finally:
             _session_is_shared.reset(shared_token)
             _active_session.reset(token)
@@ -2478,13 +2552,14 @@ class Orchestrator:
         # single-shared-session behavior (or to honor a session a caller like
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
+        await self._settle_background_review(self.session_id)   # H403: a new turn, the model is its
         await self._guard_foreign_turn(self.session_id)
         await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             return session_reply
 
-        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        outcome = await self._dispatch_preappend_command(text)
         if outcome is not None:
             self.last_cognition = self._command_cognition(outcome)
             return outcome.reply
@@ -2701,6 +2776,7 @@ class Orchestrator:
         # BUG-5: see handle_input — pin this turn to its own session so it can
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
+        await self._settle_background_review(self.session_id)   # H403: see _handle_input
         await self._guard_foreign_turn(self.session_id)
         await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
@@ -2711,7 +2787,7 @@ class Orchestrator:
                     await emitted
             return session_reply
 
-        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        outcome = await self._dispatch_preappend_command(text)
         if outcome is not None:
             if on_token:
                 emitted = on_token(outcome.reply)
@@ -4095,12 +4171,83 @@ class Orchestrator:
             if not ok:
                 logger.debug("background review skipped (%s)", reason)
                 return
+            # H403: one review per session at a time — the newer turn's pass replaces an
+            # older one still waiting on the model. Tolerate a bare instance (test doubles
+            # build the orchestrator without __init__), as the turn leases do.
+            key = self._review_key(self.session_id)
+            tasks = self.__dict__.setdefault("_review_tasks", {})
+            previous = tasks.pop(key, None)
+            if previous is not None and not previous.done():
+                previous.cancel()
             from .turn_usage import detached_turn_usage
             with detached_turn_usage():
                 task = asyncio.create_task(self._background_review_task(text, synthesized))
+            tasks[key] = task
             task.add_done_callback(_log_task_result)
+            task.add_done_callback(functools.partial(self._forget_review_task, key))
         except Exception:
             logger.debug("background review spawn skipped", exc_info=True)
+
+    @staticmethod
+    def _review_key(session_id: Optional[str]) -> str:
+        """The session's key in the review registry and the cost ledger: the shared
+        default session (no id bound) is "default" for its turns and its reviews alike."""
+        return str(session_id or "default")
+
+    def _forget_review_task(self, key: str, task: "asyncio.Task") -> None:
+        """Done-callback: the registry holds a task only while it runs."""
+        tasks = self.__dict__.get("_review_tasks") or {}
+        if tasks.get(key) is task:
+            del tasks[key]
+
+    async def cancel_background_review(self, session_id: Optional[str] = None) -> bool:
+        """H403 — cancel the session's in-flight per-turn review, if any, and wait for it
+        to end so the local model is free for the turn that arrived. Whether one was
+        cancelled. The review's own cancellation is absorbed here; the caller's is not."""
+        task = (self.__dict__.get("_review_tasks") or {}).pop(self._review_key(session_id), None)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+        except Exception:
+            logger.debug("cancelled background review ended with an error", exc_info=True)
+        return True
+
+    async def _settle_background_review(self, session_id: Optional[str]) -> bool:
+        """H403 — a new user turn on the session: its in-flight review is cancelled, and
+        the review summaries waiting for the owner are shown beside this reply (H674
+        notices): this conversation's first, then the others named by conversation, so a
+        review that finished after a conversation's last reply still reaches the owner
+        on their next turn anywhere. A turn with no notice collector keeps them all for
+        one that has it. The summaries are the owner's (they come from the owner's
+        private conversations): a turn whose principal is not an admin neither receives
+        nor consumes any, whatever session it shares. Never raises into the turn;
+        returns whether a review was cancelled."""
+        from .turn_notices import record_turn_notice
+
+        key = self._review_key(session_id)
+        try:
+            cancelled = await self.cancel_background_review(key)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("background review cancel skipped", exc_info=True)
+            cancelled = False
+        if current_principal().admin is not True:
+            return cancelled
+        notices = self.__dict__.get("_review_notices") or {}
+        shown = [key] if key in notices else []
+        shown += [sid for sid in notices if sid != key][:_REVIEW_NOTICE_LINES - len(shown)]
+        lines = [notices[sid] if sid == key else f"{notices[sid]} (conversation {sid})" for sid in shown]
+        if lines and record_turn_notice("background_review", "\n".join(lines)):
+            for sid in shown:
+                notices.pop(sid, None)
+        return cancelled
 
     async def refine(self, focus: str = "", session_id: Optional[str] = None) -> dict:
         """H465 — review this conversation now (``/refine [focus]``), as Hermes' /refine does.
@@ -4175,13 +4322,65 @@ class Orchestrator:
                 for t in (turns or []))
         except Exception:
             logger.debug("review history gather skipped", exc_info=True)
-        result = await self.reviewer.run(text, synthesized, history=history)
+        from .turn_usage import turn_usage_scope
+
+        # H403: the task was spawned outside the reply's receipt (detached_turn_usage);
+        # its own collector takes the review call's provider-certified counts, which are
+        # then attributed to the session the review was for.
+        with turn_usage_scope() as collector:
+            result = await self.reviewer.run(text, synthesized, history=history)
+        self._attribute_review_usage(self.session_id, result, collector.snapshot())
         if not result.get("ran"):
             # Why a pass did not run, so a loop that keeps failing leaves a trace
             # (review-H465c nit 6); a cut-off is also logged once a day at INFO.
             logger.debug("learning review skipped: %s", result.get("reason"))
         for action in result.get("actions", []):
             logger.info("learning review: %s", action)
+        self._queue_review_summary(self.session_id, result)
+
+    def _attribute_review_usage(self, session_id: Optional[str], result: dict, usage: dict) -> None:
+        """H403 — the review's usage goes to the parent session in the cost ledger under
+        the ``background_review`` purpose (and to a ``background_review`` row of the
+        per-agent meter), and onto the result the learning status shows. Counts the
+        provider did not certify are reported unknown, never invented."""
+        key = self._review_key(session_id)
+        inputs, outputs = usage.get("input_tokens"), usage.get("output_tokens")
+        try:
+            result["usage"] = {
+                "session_id": key, "purpose": "background_review",
+                "input_tokens": inputs, "output_tokens": outputs,
+                "model": usage.get("model"), "provider": usage.get("provider"),
+                "usage_basis": usage.get("usage_basis"), "cost_basis": usage.get("cost_basis"),
+            }
+        except TypeError:
+            return
+        if not usage.get("api_calls") or inputs is None or outputs is None:
+            return
+        try:
+            from agents.core import cost_tracker
+            # Strict-local by construction (_review_llm): the route that bills nothing.
+            cost_tracker.record("background_review", inputs, outputs,
+                                model=usage.get("model") or cost_tracker.UNPRICED_MODEL,
+                                route="local", session_id=key, purpose="background_review")
+        except Exception:
+            logger.debug("review cost record skipped", exc_info=True)
+
+    def _queue_review_summary(self, session_id: Optional[str], result: dict) -> None:
+        """H403 — keep the pass's action summary for the session's next reply; a pass
+        that did nothing leaves no notice. Bounded per process, oldest session first.
+        Only the owner's own turns queue one: a stranger's review (a group chat, a
+        non-admin token) must not put its summary in the pool the owner's replies drain,
+        and the pool is never shown to anyone else (``_settle_background_review``)."""
+        from .learning.background_review import action_summary
+
+        summary = action_summary(result)
+        if not summary or current_principal().admin is not True:
+            return
+        notices = self.__dict__.setdefault("_review_notices", {})
+        notices.pop(self._review_key(session_id), None)
+        while len(notices) >= _REVIEW_NOTICES_LIMIT:
+            del notices[next(iter(notices))]
+        notices[self._review_key(session_id)] = summary
 
     async def _record_living_memory_after_turn(
         self,
@@ -5261,6 +5460,10 @@ class Orchestrator:
                         # an Ollama tag, and pricing the local families on the string
                         # alone metered a whole provider class at a measured $0.00.
                         route=agent_route or "",
+                        # H403: the conversation this turn served, under the key its
+                        # background review records under, so what a session cost —
+                        # reviews included — is one row.
+                        session_id=Orchestrator._review_key(getattr(self, "session_id", None)), purpose="turn",
                     )
                 except Exception:
                     logger.debug("cost record skipped", exc_info=True)
