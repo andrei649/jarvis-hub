@@ -14,6 +14,8 @@ the rest of the app reads off the facade (``orch.oracle_bridge``, ``orch.argus``
 No top-level import of Orchestrator — no import cycle.
 """
 
+import asyncio
+import inspect
 import logging
 
 from agents.core.env_provenance import load_hub_env
@@ -59,6 +61,65 @@ class PluginLLMRefused(RuntimeError):
     """A plugin asked for a model call its manifest or the gate does not allow."""
 
 
+#: The most pieces of a streamed answer queued for a plugin's callback at once, and how
+#: long the stream waits for a callback to catch up when the answer is complete.
+STREAM_QUEUE_LIMIT = 64
+STREAM_DRAIN_SECONDS = 1.0
+
+
+class _StreamObserver:
+    """Hand a plugin's stream callback the answer's pieces without letting it slow them.
+
+    The model's token loop only ever does ``put_nowait`` here. One worker task awaits the
+    plugin's callback in order; when the callback falls behind and the bounded queue is
+    full, the OLDEST queued piece is dropped (and counted), so a stalled or slow callback
+    can neither stall generation nor grow memory. A callback that raises is logged and
+    skipped, never propagated into the generation."""
+
+    def __init__(self, callback, plugin_id: str) -> None:
+        self._callback = callback
+        self._plugin_id = plugin_id
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=STREAM_QUEUE_LIMIT)
+        self._worker = asyncio.create_task(self._run())
+        self.dropped = 0
+
+    async def push(self, text: str) -> None:
+        while True:
+            try:
+                self._queue.put_nowait(text)
+                return
+            except asyncio.QueueFull:
+                try:
+                    self._queue.get_nowait()
+                    self._queue.task_done()
+                    self.dropped += 1
+                except asyncio.QueueEmpty:
+                    pass
+
+    async def _run(self) -> None:
+        while True:
+            text = await self._queue.get()
+            try:
+                result = self._callback(text)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                logger.warning("plugin %s stream callback failed", self._plugin_id, exc_info=True)
+            finally:
+                self._queue.task_done()
+
+    async def close(self) -> None:
+        """Give the callback a bounded moment to drain, then stop it; never blocks longer."""
+        try:
+            await asyncio.wait_for(self._queue.join(), STREAM_DRAIN_SECONDS)
+        except TimeoutError:
+            logger.warning("plugin %s stream callback did not keep up; its remaining pieces were dropped",
+                           self._plugin_id)
+        finally:
+            self._worker.cancel()
+            await asyncio.gather(self._worker, return_exceptions=True)
+
+
 class PluginLLM:
     """H414 — the plugin LLM facade (Hermes' ``ctx.llm``) for a trusted in-tree plugin.
 
@@ -76,6 +137,8 @@ class PluginLLM:
         self.plugin_id = plugin_id
         self._gate = gate            # callable -> PermissionGate | None
         self._router = router        # callable -> LLMRouter | None
+        #: Pieces of streamed answers dropped because the plugin's callback fell behind.
+        self.dropped_tokens = 0
 
     def _check(self):
         gate = self._gate()
@@ -108,14 +171,23 @@ class PluginLLM:
     async def stream(self, prompt: str, *, on_token, system: str | None = None,
                      max_tokens: int | None = None, temperature: float = 0.2) -> str:
         """The same call, with each piece of the answer handed to ``on_token`` as it
-        arrives; returns the whole answer."""
+        arrives; returns the whole answer.
+
+        The callback runs on its own worker behind a bounded queue (``_StreamObserver``):
+        it cannot stall generation, and when it falls behind the oldest pieces are
+        dropped and counted in ``dropped_tokens``. The returned answer is always whole."""
         from .llm.auxiliary_text import DEFAULT_ONESHOT_TOKENS, run_oneshot
 
         router = self._check()
-        return await run_oneshot(
-            router, prompt, purpose=f"plugin:{self.plugin_id}", system=system,
-            max_tokens=DEFAULT_ONESHOT_TOKENS if max_tokens is None else max_tokens,
-            temperature=temperature, on_token=on_token)
+        observer = _StreamObserver(on_token, self.plugin_id)
+        try:
+            return await run_oneshot(
+                router, prompt, purpose=f"plugin:{self.plugin_id}", system=system,
+                max_tokens=DEFAULT_ONESHOT_TOKENS if max_tokens is None else max_tokens,
+                temperature=temperature, on_token=observer.push)
+        finally:
+            await observer.close()
+            self.dropped_tokens += observer.dropped
 
 
 class PluginManager:

@@ -425,10 +425,13 @@ gateway: Gateway = None
 
 
 @asynccontextmanager
-async def _turn_lease(orchestrator, session_id=None):
-    """The session's turn lease (Hermes absorption 0.5) — a no-op for a stand-in without one."""
+async def _turn_lease(orchestrator, session_id=None, *, side_question=False):
+    """The session's turn lease (Hermes absorption 0.5) — a no-op for a stand-in without one.
+
+    A ``/btw`` side question (H414) holds no lease: it reads a snapshot and writes nothing,
+    and it exists to be asked while the main turn is still running."""
     lease = getattr(orchestrator, "turn_lease", None)
-    if lease is None:
+    if lease is None or side_question:
         yield True
         return
     async with (lease(session_id) if session_id is not None else lease()) as acquired:
@@ -1356,7 +1359,10 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                 return JSONResponse({"error": exc.reason, "usage": collector.snapshot(),
                                      "runtime_stops": stops.snapshot()}, status_code=exc.status)
         from agents.core import code_interruptions
-        code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
+        from agents.core.commands import side_question_command_name
+        side_question = side_question_command_name(req.message) is not None
+        if not side_question:   # H414: a side question must not interrupt the running work
+            code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
         # H579: @file:path references in the owner's own message are attached for this turn:
         # the model reads them after the message, which itself goes on as typed.
         from agents.core import context_refs
@@ -1392,7 +1398,7 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
         warming = WARMUP.warming
         try:
             with reasoning_scope(req.reasoning):
-                async with _turn_lease(orch, req.session_id) as acquired:
+                async with _turn_lease(orch, req.session_id, side_question=side_question) as acquired:
                     if not acquired:
                         return ChatResponse(reply=TURN_BUSY_REPLY, usage=collector.snapshot(),
                                             runtime_stops=stops.snapshot())
@@ -1489,7 +1495,9 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
 
         try:
             with reasoning_scope(reasoning):
-                async with _turn_lease(orch, session_id) as acquired:
+                from agents.core.commands import side_question_command_name
+                async with _turn_lease(orch, session_id,
+                                       side_question=side_question_command_name(own_words or message) is not None) as acquired:
                     if not acquired:
                         await end(TURN_BUSY_REPLY)
                         return
@@ -1587,7 +1595,10 @@ async def chat_stream(req: ChatRequest, request: Request):
         except ContinuationRefused as exc:
             return JSONResponse({"error": exc.reason}, status_code=exc.status)
     from agents.core import code_interruptions
-    code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
+    from agents.core.commands import side_question_command_name
+    side_question = side_question_command_name(req.message) is not None   # H414, see /chat
+    if not side_question:
+        code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
     agent_override = req.agent if req.agent != "jarvis" else None
     # H579: @file:path references are attached for the turn here too, as on /chat.
     from agents.core import context_refs

@@ -95,7 +95,7 @@ async def test_a_declared_plugin_streams_to_its_own_hook_on_the_rail(manager, ra
     llm = manager.manager.llm_for("probe")
     assert await llm.stream("private prompt", on_token=on_token, max_tokens=16) == "local answer"
     assert seen == ["local ", "answer"]
-    assert rail.calls[0][0] == "stream" and rail.calls[0][1]["on_token"] is on_token
+    assert rail.calls[0][0] == "stream"
     assert auxiliary_text.oneshot_usage()["plugin:probe"]["calls"] == 1
 
 
@@ -190,3 +190,93 @@ def test_build_hands_the_facade_to_plugins_that_ask_for_it(rail, monkeypatch):
     assert len(attached) == 1 and isinstance(attached[0], pm.PluginLLM)
     assert attached[0].plugin_id == "asking"
     assert manager.llm_for("weather").plugin_id == "weather"
+
+
+# ── a stalled callback cannot stall generation ────────────────────────────────────
+
+
+async def test_a_stalled_stream_callback_cannot_block_the_token_loop(manager, rail, monkeypatch):
+    """The callback runs on its own worker behind a bounded queue: tokens keep flowing,
+    the oldest queued pieces are dropped and counted, and the answer is still whole."""
+    import asyncio
+
+    monkeypatch.setattr(pm, "STREAM_DRAIN_SECONDS", 0.05)
+    release = asyncio.Event()
+    delivered = []
+
+    async def stalled(text):
+        await release.wait()
+        delivered.append(text)
+
+    async def generate_stream(**kwargs):
+        for index in range(pm.STREAM_QUEUE_LIMIT * 3):
+            await kwargs["on_token"](f"t{index} ")
+        return "whole answer"
+
+    rail.backend.generate_stream = generate_stream
+    llm = manager.manager.llm_for("probe")
+    answer = await asyncio.wait_for(llm.stream("p", on_token=stalled), timeout=5)
+    assert answer == "whole answer"
+    assert llm.dropped_tokens >= pm.STREAM_QUEUE_LIMIT
+    assert delivered == []          # the worker was cancelled while stalled, never awaited inline
+
+
+async def test_a_failing_stream_callback_is_skipped_not_propagated(manager, rail):
+    seen = []
+
+    def flaky(text):
+        seen.append(text)
+        if text == "local ":
+            raise ValueError("callback bug")
+
+    llm = manager.manager.llm_for("probe")
+    assert await llm.stream("p", on_token=flaky) == "local answer"
+    assert seen == ["local ", "answer"] and llm.dropped_tokens == 0
+
+
+# ── reachable through PluginManager.build with a real manifest ────────────────────
+
+
+async def test_build_attaches_a_working_facade_to_a_plugin_whose_manifest_declares_it(rail, monkeypatch):
+    monkeypatch.setattr(pm, "load_hub_env", lambda: None)
+    monkeypatch.setattr(pm, "_oauth_init", lambda: None)
+    monkeypatch.setattr(pm, "_load_token", lambda provider: None)
+    gate = PermissionGate(least_privilege=False)
+    gate.register(_manifest("digest"))
+    orch = SimpleNamespace(get_setting=lambda key, default=None: default, permission_gate=gate,
+                           llm_router=rail.router)
+    manager = pm.PluginManager()
+
+    class Digest:
+        llm = None
+
+        def attach_llm(self, llm):
+            self.llm = llm
+
+    # Built through the real build(); the plugin joins the registry the way a shipped
+    # one would, and attach_llm hands it the facade bound to its own gate id.
+    original = pm.PluginManager._drop_switched_off
+
+    def add_then_drop(self):
+        self.plugins["digest"] = Digest()
+        original(self)
+
+    monkeypatch.setattr(pm.PluginManager, "_drop_switched_off", add_then_drop)
+    manager.build(orch)
+    plugin = manager.plugins["digest"]
+    assert plugin.llm.plugin_id == "digest"
+    assert await plugin.llm.complete("summarise this") == "local answer"
+    assert auxiliary_text.oneshot_usage()["plugin:digest"]["answered"] == 1
+    gate.plugins["digest"].llm_access = False       # the manifest is asked at every call
+    with pytest.raises(pm.PluginLLMRefused, match="does not declare llm_access"):
+        await plugin.llm.complete("again")
+
+
+async def test_a_backend_failure_text_is_a_refusal_for_a_plugin_too(manager, rail):
+    async def degraded(**kwargs):
+        return "⚠️ I can't reach the local LM Studio model right now."
+
+    rail.backend.generate = degraded
+    with pytest.raises(auxiliary_text.AuxiliaryBackendFailure):
+        await manager.manager.llm_for("probe").complete("p")
+    assert auxiliary_text.oneshot_usage()["plugin:probe"]["refused"] == 1

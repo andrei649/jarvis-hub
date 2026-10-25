@@ -1689,7 +1689,9 @@ class Orchestrator:
             # token, so a silent turn leaves no placeholder behind.
             cross_channel = self.get_setting("memory.cross_channel_sessions", False)
             from . import code_interruptions
-            if not observe_only and code_interruptions.is_admitted_channel(channel):
+            # H414: a /btw side question asks beside the running work; it must not interrupt it.
+            if (not observe_only and code_interruptions.is_admitted_channel(channel)
+                    and side_question_command_name(text) is None):
                 self._interrupt_for_channel_source(source, cross_channel=cross_channel)
             draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
             from .channels.session_lifecycle import UNAVAILABLE, lifecycle
@@ -2082,6 +2084,18 @@ class Orchestrator:
         shared_token = _session_is_shared.set(session_id == self._session_id_default)
         try:
             return await self._channel_turn(text, channel, observe_only=observe_only, draft=draft)
+        finally:
+            _session_is_shared.reset(shared_token)
+            _active_session.reset(token)
+
+    async def _run_side_question(self, session_id, text, channel):
+        """H414: answer a ``/btw`` on *session_id* without the turn lease, without a channel
+        activity mark and without appending anything; it reads a snapshot of the session
+        and the main turn, if one is running, carries on undisturbed."""
+        token = _active_session.set(session_id)
+        shared_token = _session_is_shared.set(session_id == self._session_id_default)
+        try:
+            return await self.handle_input(text, channel)
         finally:
             _session_is_shared.reset(shared_token)
             _active_session.reset(token)

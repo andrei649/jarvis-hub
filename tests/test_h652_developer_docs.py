@@ -18,6 +18,7 @@ REPO = Path(__file__).resolve().parents[1]
 DOCS = [
     REPO / "docs/developer/adding-a-tool.md",
     REPO / "docs/developer/agent-loop.md",
+    REPO / "docs/developer/plugin-llm.md",
     REPO / "docs/decisions/2026-10-21-no-cli-extension-hooks.md",
 ]
 _SYMBOL_REF = re.compile(r"`([\w./-]+\.py)::([\w.]+)`")

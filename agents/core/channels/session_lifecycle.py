@@ -14,6 +14,7 @@ from contextlib import AsyncExitStack, contextmanager
 from datetime import UTC, datetime
 from time import time
 
+from ..commands import side_question_command_name
 from ..paths import data_path
 from .session import SessionSource, build_session_key, session_type
 from .session_reset import (
@@ -133,6 +134,8 @@ class ChannelSessionLifecycle:
                 raise SessionResetError("Session lifecycle is closed")
             if observe_only:
                 return await self._observe(source, text, base=base, kind=kind, draft=draft, shared=shared)
+            if side_question_command_name(text) is not None:
+                return await self._side_question(source, text, base=base, shared=shared)
             async with self.orch.turn_lease(base) as acquired:
                 if not acquired:
                     return TURN_BUSY_REPLY
@@ -190,6 +193,28 @@ class ChannelSessionLifecycle:
         except (SessionResetError, RewindRefused, OverflowError, OSError):
             logger.warning("channel session lifecycle unavailable")
             return UNAVAILABLE
+
+    async def _side_question(self, source: SessionSource, text: str, *, base: str, shared: bool) -> str:
+        """H414: a ``/btw`` is a read-only peek at the route's current session.
+
+        It takes no turn lease (it is asked while the main turn runs), never touches the
+        route's activity clock (it must not extend the idle window), never rotates or
+        creates a session (so it cannot answer about a fresh empty one), and appends
+        nothing. A route whose session is not loaded is resumed only when the route is
+        already known; an unknown route has no conversation to ask about."""
+        none_yet = "There is no conversation here to ask about yet."
+        state = self.store.state(base)
+        default = self.orch._session_id_default
+        selected = self.orch._channel_sessions.get(base)
+        if selected is None:
+            selected = default if shared and state.generation == 0 else generation_key(base, state.generation)
+        sessions = getattr(getattr(self.orch.memory, "conversation", None), "sessions", {})
+        if selected not in sessions:
+            if not (state.active or selected == default or base in self.orch._channel_sessions):
+                return none_yet
+            if not await self.orch.memory.resume_session(selected):
+                return none_yet
+        return await self.orch._run_side_question(selected, text, source.channel)
 
     async def undo(self, source: SessionSource, *, shared=False) -> str:
         """Start a fresh route from the transcript before its last user exchange."""

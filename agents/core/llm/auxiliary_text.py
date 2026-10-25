@@ -35,6 +35,10 @@ class AuxiliaryConfigError(ValueError):
     """An auxiliary task or explicit model override is invalid."""
 
 
+class AuxiliaryBackendFailure(RuntimeError):
+    """The local backend answered a one-shot with its fixed failure text, not an answer."""
+
+
 _TASKS: Mapping[str, tuple[str, str, bool]] = MappingProxyType({
     "session_title": ("JARVIS_AUX_SESSION_TITLE_MODEL", DEFAULT_LOCAL_MODEL, True),
     "query_rewrite": ("JARVIS_AUX_QUERY_REWRITE_MODEL", DEFAULT_LOCAL_MODEL, True),
@@ -282,6 +286,12 @@ async def run_oneshot(
         model = resolve_auxiliary_model("oneshot", getattr(router, "active_model", None))
         answer = await generate(system=system, prompt=prompt, max_tokens=max_tokens,
                                 temperature=temperature, on_token=on_token)
+        # The local backends answer a failed call with a fixed degraded text instead of
+        # raising (H681); that is a failure, not an answer, and the ledger says so.
+        from .base import is_backend_failure_reply
+
+        if is_backend_failure_reply(answer):
+            raise AuxiliaryBackendFailure("the local model did not answer")
     except BaseException:
         _record_oneshot(purpose, prompt_chars=prompt_chars, max_tokens=max_tokens,
                         model=model, answered=False)

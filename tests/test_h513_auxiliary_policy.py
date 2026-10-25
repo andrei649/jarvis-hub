@@ -348,3 +348,30 @@ async def test_run_oneshot_keeps_the_purpose_ledger_bounded(oneshot):
         await oneshot.module.run_oneshot(oneshot.router, 'p', purpose=f'plugin:p{index}', max_tokens=8)
     usage = oneshot.module.oneshot_usage()
     assert len(usage) == MAX_ONESHOT_PURPOSES and f'plugin:p{MAX_ONESHOT_PURPOSES + 4}' in usage
+
+
+@pytest.mark.parametrize('text', [
+    "⚠️ I can't reach the local LM Studio model right now. Start it.",
+    "⚠️ The local Ollama model hit an error and couldn't answer.",
+    "⚠️ No local language model is available. Start one.",
+    "[Claude API error 500]",
+])
+async def test_run_oneshot_counts_a_backend_failure_text_as_unanswered(oneshot, text):
+    """The local backends answer a failed call with a fixed text instead of raising."""
+    async def degraded(**kwargs):
+        return text
+
+    oneshot.backend.generate = degraded
+    with pytest.raises(oneshot.module.AuxiliaryBackendFailure):
+        await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8)
+    row = oneshot.module.oneshot_usage()['btw']
+    assert row['calls'] == 1 and row['answered'] == 0 and row['refused'] == 1
+
+
+async def test_run_oneshot_keeps_an_answer_that_merely_looks_like_a_list(oneshot):
+    async def listy(**kwargs):
+        return "[1] first point\n[2] second point"
+
+    oneshot.backend.generate = listy
+    assert (await oneshot.module.run_oneshot(oneshot.router, 'p', purpose='btw', max_tokens=8)).startswith('[1]')
+    assert oneshot.module.oneshot_usage()['btw']['answered'] == 1

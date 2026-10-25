@@ -465,12 +465,17 @@ async def _btw(ctx: CommandContext) -> str:
     from agents.core.llm.job_selection import SelectionError
 
     turns = await memory.get_history(session)
-    snapshot = conversation_snapshot(turns, limit=BTW_SNAPSHOT_CHARS, per_turn=REFINE_TURN_CHARS)
-    if not snapshot:
-        return "There is no conversation here to ask about yet."
+    # Redact each turn's WHOLE content before anything is cut: cutting first can split a
+    # key so that no pattern matches and its prefix survives (the Redactor's own rule).
+    # The snapshot then bounds each turn and the total, over text that is already clean;
+    # the redactor also folds whitespace, so a turn cannot forge a role line.
     redact = default_redactor()
-    # Redacted line by line so the role lines survive (the redactor folds whitespace).
-    transcript = "\n".join(redact(line, limit=REFINE_TURN_CHARS + 16) for line in snapshot.splitlines())
+    clean = [dict(turn, content=redact(turn["content"], limit=max(1, len(str(turn["content"])))))
+             if isinstance(turn, dict) and turn.get("content") is not None else turn
+             for turn in turns or []]
+    transcript = conversation_snapshot(clean, limit=BTW_SNAPSHOT_CHARS, per_turn=REFINE_TURN_CHARS)
+    if not transcript:
+        return "There is no conversation here to ask about yet."
     prompt = f"Conversation:\n{transcript}\n\nQuestion about this conversation: {question}"
     try:
         answer = await run_oneshot(router, prompt, system=_BTW_SYSTEM, purpose="btw",

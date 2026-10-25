@@ -881,7 +881,7 @@ fetching a URL source again; local-file checks can reread bytes to verify their
 approved hash. Results expose fixed attempt categories and the successful model,
 without failed provider bodies, destination paths or credentials.
 
-**Shared local auxiliary models (H277).** Seven optional model IDs select a model
+**Shared local auxiliary models (H277).** Eight optional model IDs select a model
 on the router's existing local backend independently of the conversation model:
 
 | Setting | Consumer | Fallback when unset or ASCII-space-only |
@@ -893,6 +893,7 @@ on the router's existing local backend independently of the conversation model:
 | `JARVIS_AUX_ACQUISITION_CAPABILITY_MODEL` | Governed capability generation | Active local model, then `local` |
 | `JARVIS_AUX_ACQUISITION_DRAFT_MODEL` | Grounded acquisition plan drafting | Active local model, then `local` |
 | `JARVIS_AUX_SOUL_DESCRIPTION_MODEL` | Local SOUL description proposal | Active local model, then `qwen3:7b` |
+| `JARVIS_AUX_ONESHOT_MODEL` | `run_oneshot` side calls: `/btw`, the plugin LLM facade | Active local model, then `qwen3:7b` |
 
 Read when each operation starts; changing one does not change the active
 conversation model or the other auxiliary tasks. Acquisition captures the backend
