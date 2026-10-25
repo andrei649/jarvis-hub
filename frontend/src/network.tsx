@@ -36,11 +36,31 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
     }
     const rings = { CNS:84, BIZ:150, SEC:150, FND:210 };
     const pos = {};
-    // distribute: CNS inner full circle; BIZ left arc; SEC right arc; FND outer ring
-    tiers.CNS.forEach((a,i)=>{ const ang=(i*(360/tiers.CNS.length)-90)*Math.PI/180; pos[a.id]={x:CX+Math.cos(ang)*rings.CNS, y:CY+Math.sin(ang)*rings.CNS, a}; });
-    tiers.BIZ.forEach((a,i)=>{ const ang=(150 + i*(120/Math.max(1,tiers.BIZ.length-1)))*Math.PI/180; pos[a.id]={x:CX+Math.cos(ang)*rings.BIZ, y:CY+Math.sin(ang)*rings.BIZ, a}; });
-    tiers.SEC.forEach((a,i)=>{ const ang=(-30 + i*(120/Math.max(1,tiers.SEC.length-1)))*Math.PI/180; pos[a.id]={x:CX+Math.cos(ang)*rings.SEC, y:CY+Math.sin(ang)*rings.SEC, a}; });
-    tiers.FND.forEach((a,i)=>{ const ang=(60 + i*(360/tiers.FND.length))*Math.PI/180; pos[a.id]={x:CX+Math.cos(ang)*rings.FND, y:CY+Math.sin(ang)*rings.FND, a}; });
+    // Bolt Optimization: Use indexed for-loops over tier arrays to avoid function closure allocations
+    const cns = tiers.CNS, cnsLen = cns.length;
+    for (let i = 0; i < cnsLen; i++) {
+      const a = cns[i];
+      const ang = (i * (360 / cnsLen) - 90) * Math.PI / 180;
+      pos[a.id] = { x: CX + Math.cos(ang) * rings.CNS, y: CY + Math.sin(ang) * rings.CNS, a };
+    }
+    const biz = tiers.BIZ, bizLen = biz.length;
+    for (let i = 0; i < bizLen; i++) {
+      const a = biz[i];
+      const ang = (150 + i * (120 / Math.max(1, bizLen - 1))) * Math.PI / 180;
+      pos[a.id] = { x: CX + Math.cos(ang) * rings.BIZ, y: CY + Math.sin(ang) * rings.BIZ, a };
+    }
+    const sec = tiers.SEC, secLen = sec.length;
+    for (let i = 0; i < secLen; i++) {
+      const a = sec[i];
+      const ang = (-30 + i * (120 / Math.max(1, secLen - 1))) * Math.PI / 180;
+      pos[a.id] = { x: CX + Math.cos(ang) * rings.SEC, y: CY + Math.sin(ang) * rings.SEC, a };
+    }
+    const fnd = tiers.FND, fndLen = fnd.length;
+    for (let i = 0; i < fndLen; i++) {
+      const a = fnd[i];
+      const ang = (60 + i * (360 / fndLen)) * Math.PI / 180;
+      pos[a.id] = { x: CX + Math.cos(ang) * rings.FND, y: CY + Math.sin(ang) * rings.FND, a };
+    }
     return pos;
   }, [agents]);
 
@@ -138,17 +158,30 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
   }, [tasks, layout]);
 
   // When an agent is focused, fan its tasks around it (closer arc) for legibility.
+  // Bolt Optimization: Single-pass indexed loop avoids intermediate array allocations from .filter().map()
   const focusedTaskPos = useMemo(() => {
     if (!focused || !layout[focused]) return [];
     const p = layout[focused];
     const dir = Math.atan2(p.y - CY, p.x - CX);
-    const list = positionedTasks.filter(tk => tk.owner === focused);
-    const n = list.length; const span = Math.PI * 0.55; const R = 84;
-    return list.map((tk, i) => {
-      const frac = n === 1 ? 0.5 : i / (n - 1);
-      const a = dir + (frac - 0.5) * span;
-      return { ...tk, x: p.x + Math.cos(a) * R, y: p.y + Math.sin(a) * R };
-    });
+    let n = 0;
+    const numTasks = positionedTasks.length;
+    for (let i = 0; i < numTasks; i++) {
+      if (positionedTasks[i].owner === focused) n++;
+    }
+    if (n === 0) return [];
+    const span = Math.PI * 0.55; const R = 84;
+    const res = [];
+    let idx = 0;
+    for (let i = 0; i < numTasks; i++) {
+      const tk = positionedTasks[i];
+      if (tk.owner === focused) {
+        const frac = n === 1 ? 0.5 : idx / (n - 1);
+        const a = dir + (frac - 0.5) * span;
+        res.push({ ...tk, x: p.x + Math.cos(a) * R, y: p.y + Math.sin(a) * R });
+        idx++;
+      }
+    }
+    return res;
   }, [focused, positionedTasks, layout]);
   const drawTasks = focused ? focusedTaskPos : positionedTasks;
   const taskColor = s => (s==='running'||s==='active') ? 'var(--accent)' : (s==='blocked'||s==='held'||s==='pending') ? 'var(--amber)' : (s==='error'||s==='failed'||s==='denied') ? 'var(--red)' : 'var(--ink-3)';
