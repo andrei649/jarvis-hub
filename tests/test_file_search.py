@@ -11,6 +11,7 @@ killable child process; ripgrep is deliberately not used) and a glob file-findin
 """
 import os
 import re
+import subprocess  # nosec B404 - fixed argv below
 import sys
 import time
 from pathlib import Path
@@ -708,6 +709,22 @@ async def test_ripgrep_is_not_used_even_when_it_is_on_the_path(tmp_path, monkeyp
     assert not hasattr(file_tools, "_rg_search") and not hasattr(file_tools, "shutil")
 
 
+_MEMORY_DRIVER = """
+import asyncio, resource, sys
+from agents.core.file_tools import FileScope, FileTools
+
+
+async def main(root):
+    tools = FileTools(FileScope([root]), max_bytes=2_000_000)
+    for pattern in (r"\\w", "a", r"\\w+", r"."):
+        await tools.search_files({"pattern": pattern, "regex": True, "max_matches": 100})
+    print(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
+
+
+asyncio.run(main(sys.argv[1]))
+"""
+
+
 # ── H303 round 3: output and memory stay bounded ─────────────────────────────
 
 async def test_a_two_megabyte_single_line_is_searched_within_the_deadline_and_memory(tmp_path):
@@ -720,7 +737,7 @@ async def test_a_two_megabyte_single_line_is_searched_within_the_deadline_and_me
     (root / "a2.txt").write_text("a" * 1_990_000, encoding="utf-8")
     (root / "many.txt").write_text("x\n" * 500_000, encoding="utf-8")
     tools = _loose(root, max_bytes=2_000_000)
-    rss_before, kids_before = (resource.getrusage(who).ru_maxrss for who in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN))
+    rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     for pattern in (r"\w", "a", r"\w+", r"."):
         started = time.monotonic()
         out = await tools.search_files({"pattern": pattern, "regex": True, "max_matches": 100})
@@ -737,8 +754,14 @@ async def test_a_two_megabyte_single_line_is_searched_within_the_deadline_and_me
         assert len(by_file.get("many.txt", [])) <= file_tools.MAX_MATCHES_PER_FILE
         assert len(out["matches"]) <= 2 + 2 + file_tools.MAX_MATCHES_PER_FILE
     if sys.platform.startswith("linux"):                 # ru_maxrss is KiB there
-        assert resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss <= max(kids_before, 399_999)  # a high-water mark: an earlier test's child may own it
         assert resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss_before < 400_000
+        # A child's ru_maxrss starts at the peak of the process that forked it, so inside
+        # this suite's big pytest process it measures the suite, not the scan: the worker's
+        # own peak is read from a small fresh interpreter that runs the same four searches.
+        done = subprocess.run(  # nosec B603 - fixed argv, no shell
+            [sys.executable, "-c", _MEMORY_DRIVER, str(root)], capture_output=True, text=True,
+            timeout=120, check=True, cwd=Path(__file__).resolve().parents[1])
+        assert int(done.stdout.split()[-1]) < 400_000, done.stdout
 
 
 async def test_the_child_output_is_bounded_by_the_batch_not_by_the_matches(tmp_path):
