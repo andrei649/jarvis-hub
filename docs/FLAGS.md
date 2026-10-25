@@ -170,8 +170,13 @@ allowlist at all**.
 **ON:** `file_read` / `file_list` / `file_search` are ungated *inside* `JARVIS_FILE_ROOTS`
 (no `..`, no symlink escape, secret-looking names refused, bytes/entries/matches bounded;
 `file_search` is a *literal* content search by default, a regex search with `regex=true` (ripgrep
-when installed, Python `re` with the same results otherwise; a nested unbounded repeat such as
-`(a+)+` is refused on both) and a recursive file finder with `glob` alone — each reports every cap
+when installed; otherwise a Python `re` child process killed at the 10 s deadline, so no pattern can
+pin the host; both give the same rows, refuse a nested unbounded repeat such as `(a+)+` and a
+construct the two read differently such as `[[:alpha:]]`, and a pattern Python cannot finish stops
+with `stopped_by: "deadline"`) and a recursive file finder with `glob` alone (`*.{py,md}`
+alternation, a leading `!` to negate); `node_modules`, `venv`/`.venv`, `__pycache__`, `dist`,
+`build`, `target`, `.tox`, tool caches and plain directory names in the root's `.gitignore` are not
+entered unless `include_ignored=true` (reported as `ignored`) — each reports every cap
 it hit; `file_read` returns a `.pdf`/`.docx` as extracted text when `pypdf`/`python-docx` is
 installed — both are declared in `requirements.txt` / `requirements-beta.txt` and their
 hash-pinned locks, so a default install has them — and names the missing parser otherwise);

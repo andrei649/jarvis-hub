@@ -12,6 +12,8 @@ Python ``re`` fallback with the same results otherwise) and a glob file-finding 
 import os
 import shutil
 import sys
+import time
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -206,10 +208,15 @@ def test_spec_is_closed_ungated_and_literal_by_default():
     schema = spec["input_schema"]
     assert schema["additionalProperties"] is False and "required" not in schema
     assert schema["properties"]["regex"] == {"type": "boolean"}
+    assert schema["properties"]["include_ignored"] == {"type": "boolean"}
     assert set(schema["properties"]) == {
         "pattern", "path", "glob", "case_sensitive", "whole_word", "max_matches", "regex",
+        "include_ignored",
     }
-    for word in ("regex", "ripgrep", "glob"):
+    # The model-facing description documents the glob syntax, the pruned directories and
+    # the regex refusals (H303 round 2), not just the argument names.
+    for word in ("regex", "ripgrep", "glob", "Glob syntax", "{py,md}", "negates", "include_ignored",
+                 "node_modules", ".gitignore", "bad_regex", "regex_too_complex", "deadline"):
         assert word in spec["description"], word
 
 
@@ -405,8 +412,12 @@ async def test_ripgrep_is_run_without_a_shell_and_within_the_deadline(tools, mon
 
 
 async def test_a_ripgrep_failure_falls_back_instead_of_failing_the_search(tools, monkeypatch):
+    real = file_tools.subprocess.run
+
     def broken(argv, *args, **kwargs):
-        raise OSError("rg vanished")
+        if argv[0] == "/nonexistent/rg":
+            raise OSError("rg vanished")
+        return real(argv, *args, **kwargs)        # the Python child still runs
 
     monkeypatch.setattr(file_tools.shutil, "which", lambda name, *a, **k: "/nonexistent/rg")
     monkeypatch.setattr(file_tools.subprocess, "run", broken)
@@ -476,10 +487,15 @@ async def test_glob_mode_is_bounded_and_names_the_cap(tools, monkeypatch):
     out = await tools.search_files({"glob": "*", "max_matches": 2})
     assert _names(out) == ["blob.bin", "notes.txt"]
     assert out["truncated"] is True and out["stopped_by"] == "max_matches"
+    # A glob search is bounded by the files it VISITS (MAX_WALK_FILES), not by the files
+    # whose contents are searched (MAX_SEARCH_FILES, which it never reads).
     monkeypatch.setattr(file_tools, "MAX_SEARCH_FILES", 1)
+    assert len((await tools.search_files({"glob": "*"}))["files"]) == 3
+    monkeypatch.setattr(file_tools, "MAX_SEARCH_FILES", 5000)
+    monkeypatch.setattr(file_tools, "MAX_WALK_FILES", 1)
     out = await tools.search_files({"glob": "*"})
     assert _names(out) == ["blob.bin"] and out["stopped_by"] == "max_files"
-    monkeypatch.setattr(file_tools, "MAX_SEARCH_FILES", 5000)
+    monkeypatch.setattr(file_tools, "MAX_WALK_FILES", 100_000)
     monkeypatch.setattr(file_tools, "MAX_SEARCH_SECONDS", -1.0)
     out = await tools.search_files({"glob": "*"})
     assert out["files"] == [] and out["stopped_by"] == "deadline"
@@ -519,3 +535,468 @@ async def test_the_audit_names_the_mode(workspace, tmp_path):
     assert record["why"].endswith(": glob *.md")
     await tools.search_files({"pattern": "bud.et", "regex": True})
     assert audit.calls[-1]["why"].endswith(": regex bud.et") and audit.calls[-1]["metadata"]["matches"] == 4
+
+
+# ── H303 round 2: the Python regex engine cannot hang the host ───────────────
+
+def _no_ripgrep(monkeypatch):
+    monkeypatch.setattr(file_tools.shutil, "which", lambda name, *a, **k: None)
+
+
+def _loose(root, **kw):
+    return FileTools(FileScope([root]), max_bytes=kw.pop("max_bytes", 100_000), **kw)
+
+
+# Patterns whose Python backtracking is exponential on a line that does not match. The
+# star-height guard accepts every one of them (none nests an unbounded repeat in
+# another), so what protects the host is the killable worker, not the guard.
+REDOS = [
+    (r"(a|aa)+$", "a" * 44 + "b", True),
+    (r"(a|a)+$", "a" * 44 + "b", True),
+    (r"(.|.)*x", "a" * 44, True),
+    # CPython happens to finish these two on 40+ characters; they are in the reviewer's
+    # list of patterns the guard accepts, so they must stay bounded either way.
+    (r"(\w|\d)+$", "1" * 44 + "!", False),
+    (r"(a?){30}a{30}", "a" * 29, False),
+]
+
+
+@pytest.mark.parametrize("pattern,line,hangs", REDOS)
+async def test_a_backtracking_pattern_cannot_hang_the_python_engine(tmp_path, monkeypatch,
+                                                                    pattern, line, hangs):
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "x.txt").write_text(line + "\n", encoding="utf-8")
+    assert not file_tools._regex_too_complex(pattern)        # the guard does not catch it
+    _no_ripgrep(monkeypatch)
+    monkeypatch.setattr(file_tools, "MAX_SEARCH_SECONDS", 1.5)
+    started = time.monotonic()
+    out = await _loose(root).search_files({"pattern": pattern, "regex": True})
+    assert time.monotonic() - started < 8, "the search outlived its deadline"
+    assert out["ok"] is True and out["engine"] == "python" and out["matches"] == []
+    if hangs:
+        assert out["truncated"] is True and out["stopped_by"] == "deadline"
+    else:
+        assert out["stopped_by"] in (None, "deadline")
+
+
+async def test_rows_found_before_the_deadline_are_kept(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "a_first.txt").write_text("aaa\n", encoding="utf-8")
+    (root / "z_slow.txt").write_text("a" * 44 + "b\n", encoding="utf-8")
+    _no_ripgrep(monkeypatch)
+    monkeypatch.setattr(file_tools, "MAX_SEARCH_SECONDS", 1.5)
+    out = await _loose(root).search_files({"pattern": r"(a|aa)+$", "regex": True})
+    assert [(os.path.basename(m["path"]), m["line"]) for m in out["matches"]] == [("a_first.txt", 1)]
+    assert out["stopped_by"] == "deadline" and out["truncated"] is True
+    # Only the file whose search finished is counted; the one the kill cut is not.
+    assert out["files_scanned"] == 1 and out["files_matched"] == 1
+
+
+# Backtracking patterns the static guard cannot see, each with a line it cannot finish
+# on. `(?=a)` is a look-ahead that ripgrep rejects, so with ripgrep installed that one
+# is answered by the (killable) Python child; the others are linear in ripgrep.
+HEAVY = [
+    (r"(a|a)*b", "a" * 5000),
+    (r"(?=a)(a|a)*b", "a" * 5000),
+    (r"(a|aa)+$", "a" * 5000 + "b"),
+    (r"(.*)(.*)x", "a" * 5000),
+]
+
+
+@pytest.mark.parametrize("pattern,line", HEAVY)
+@pytest.mark.parametrize("use_rg", [True, False], ids=["ripgrep", "no-ripgrep"])
+async def test_heavy_patterns_are_refused_or_return_within_the_deadline(
+        tmp_path, monkeypatch, pattern, line, use_rg):
+    if use_rg and not HAVE_RG:
+        pytest.skip("ripgrep is not installed here")
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "x.txt").write_text(line + "\n", encoding="utf-8")
+    if not use_rg:
+        _no_ripgrep(monkeypatch)
+    monkeypatch.setattr(file_tools, "MAX_SEARCH_SECONDS", 1.5)
+    started = time.monotonic()
+    out = await _loose(root).search_files({"pattern": pattern, "regex": True})
+    assert time.monotonic() - started < 8, "the search outlived its deadline"
+    if out["ok"]:
+        assert out["stopped_by"] in (None, "deadline"), out
+        if out["stopped_by"] is None:
+            assert out["engine"] == "ripgrep" and out["matches"] == []   # finished: only rg can
+    else:
+        assert out["reason"] in ("bad_regex", "regex_too_complex"), out
+
+
+def test_the_subprocess_import_carries_its_bandit_waiver():
+    # security.yml runs bandit against .bandit-baseline.json: a new finding fails CI.
+    source = Path(file_tools.__file__).read_text(encoding="utf-8")
+    assert "import subprocess  # nosec B404" in source
+    assert source.count("subprocess.run(  # nosec B603") == 2
+
+
+@pytest.mark.skipif(not HAVE_RG, reason="ripgrep is not installed here")
+@pytest.mark.parametrize("pattern,line", [(pat, text) for pat, text, _ in REDOS])
+async def test_ripgrep_answers_the_same_patterns_in_linear_time(tmp_path, pattern, line):
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "x.txt").write_text(line + "\n", encoding="utf-8")
+    started = time.monotonic()
+    out = await _loose(root).search_files({"pattern": pattern, "regex": True})
+    assert time.monotonic() - started < 5
+    assert out["engine"] == "ripgrep" and out["stopped_by"] is None and out["matches"] == []
+
+
+async def test_the_python_worker_is_a_child_process_with_no_shell(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "x.txt").write_text("needle\n", encoding="utf-8")
+    _no_ripgrep(monkeypatch)
+    seen = {}
+    real = file_tools.subprocess.run
+
+    def spy(argv, *args, **kwargs):
+        seen["argv"], seen["kwargs"] = argv, kwargs
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(file_tools.subprocess, "run", spy)
+    out = await _loose(root).search_files({"pattern": "need.e", "regex": True})
+    assert len(out["matches"]) == 1 and out["engine"] == "python"
+    argv = seen["argv"]
+    assert argv[0] == sys.executable and argv[1:3] == ["-I", "-S"]
+    assert seen["kwargs"].get("shell", False) is False
+    assert 0 < seen["kwargs"]["timeout"] <= file_tools.MAX_SEARCH_SECONDS
+    assert set(seen["kwargs"]["env"]) <= {"PATH", "SYSTEMROOT", "WINDIR", "LANG", "LC_ALL"}
+
+
+async def test_a_build_without_a_python_child_says_so_instead_of_pretending(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "x.txt").write_text("needle\n", encoding="utf-8")
+    _no_ripgrep(monkeypatch)
+    monkeypatch.setattr(file_tools.sys, "executable", "")      # no interpreter to start a child with
+    out = await _loose(root).search_files({"pattern": "need.e", "regex": True})
+    assert out["ok"] is False and out["reason"] == "regex_unavailable" and "ripgrep" in out["detail"]
+    # A literal search needs no child and still works.
+    assert (await _loose(root).search_files({"pattern": "needle"}))["ok"] is True
+
+
+def test_the_worker_snippet_is_the_parents_snippet(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    cases = {
+        "mid.txt": "x" * 500 + " needle " + "y" * 500,
+        "short.txt": "a short needle line",
+        "end.txt": "n" * 300 + "needle",
+        "start.txt": "needle" + "z" * 300,
+    }
+    for name, line in cases.items():
+        (root / name).write_text(line + "\n", encoding="utf-8")
+    files = [root / name for name in cases]
+    found, timed_out = file_tools._py_regex_scan(
+        files, "needle", ignore_case=False, deadline=time.monotonic() + 20, max_bytes=100_000)
+    assert timed_out is False
+    for name, line in cases.items():
+        rows, capped = found[root / name]
+        assert capped is False and len(rows) == 1
+        assert rows[0]["text"] == file_tools._snippet(line, line.index("needle"), 6), name
+
+
+# ── H303 round 2: both engines give the same answer ──────────────────────────
+
+@pytest.fixture
+def corpus(tmp_path):
+    root = tmp_path / "corpus"
+    root.mkdir()
+    (root / "long.txt").write_text("a" * 9000 + " needle tail\nshort needle\n", encoding="utf-8")
+    (root / "latin1.txt").write_bytes(b"caf\xe9 needle\nneedle \xff\xfe end\nplain needle\n")
+    (root / "multi.txt").write_text(
+        "日本語 needle 日本語\nÜnï needle café\nneedle\u2028x\n", encoding="utf-8")
+    (root / "crlf.txt").write_bytes(b"alpha needle\r\nneedle\r\nlast\r\n")
+    (root / "ff.txt").write_text("needle\x0cneedle\nneedle", encoding="utf-8")
+    (root / "posix.txt").write_text("alpha beta\n123\n", encoding="utf-8")
+    (root / "blank.txt").write_text("one\n\ntwo\n", encoding="utf-8")
+    # Anchored matches past the 8 KiB mark of a very long line must be found by both engines.
+    (root / "long2.txt").write_text("b" * 20000 + "needle\n" + "c" * 20000 + "\n", encoding="utf-8")
+    return root
+
+
+def _summary(result):
+    keys = ("ok", "reason", "files_scanned", "files_matched", "files_capped", "hidden", "ignored",
+            "skipped", "non_utf8", "stopped_by", "truncated")
+    return {key: result.get(key) for key in keys}
+
+
+async def _both(root, args, monkeypatch):
+    """The same search under ripgrep and under the Python child."""
+    with_rg = await _loose(root).search_files(args)
+    with monkeypatch.context() as scope:
+        scope.setattr(file_tools.shutil, "which", lambda name, *a, **k: None)
+        without = await _loose(root).search_files(args)
+    return with_rg, without
+
+
+PARITY_CASES = [
+    {"pattern": "needle"},
+    {"pattern": "needle", "case_sensitive": True},
+    {"pattern": "NEEDLE"},
+    {"pattern": "needle", "whole_word": True},
+    {"pattern": "needle$"},
+    {"pattern": "^needle$"},
+    {"pattern": r"needle tail$"},          # past the first 8 KiB of a 9 KiB line
+    {"pattern": r"b{3}needle$"},           # $-anchored, 20 000 characters in
+    {"pattern": r"c$"},                    # the end of a 20 000-character line
+    {"pattern": r"^b+needle$"},
+    {"pattern": r"a{3} needle"},
+    {"pattern": "caf."},                   # the invalid byte of a latin-1 file
+    {"pattern": r"needle \S+ end"},
+    {"pattern": r"\w+ needle"},
+    {"pattern": "日本."},
+    {"pattern": r"é|ï"},
+    {"pattern": r"needle\s"},
+    {"pattern": r"\x0c"},
+    {"pattern": r"^$"},
+    {"pattern": r"o*"},
+    {"pattern": r"(?<=caf.) needle"},      # look-behind: ripgrep refuses, Python answers
+    {"pattern": r"needle", "max_matches": 3},
+    {"pattern": r"needle", "max_matches": 1},
+    {"pattern": r"needle", "glob": "*.txt"},
+    {"pattern": r"needle", "glob": "!l*"},
+]
+
+
+@pytest.mark.skipif(not HAVE_RG, reason="ripgrep is not installed here")
+@pytest.mark.parametrize("case", PARITY_CASES, ids=[c["pattern"] + str(sorted(c)) for c in PARITY_CASES])
+async def test_the_two_engines_agree_on_a_hard_corpus(corpus, monkeypatch, case):
+    args = {**case, "regex": True}
+    with_rg, without = await _both(corpus, args, monkeypatch)
+    assert without["engine"] == "python"
+    assert _rows(with_rg) == _rows(without)
+    assert _summary(with_rg) == _summary(without)
+    assert with_rg["ok"] is True and with_rg["matches"], case
+
+
+@pytest.mark.skipif(not HAVE_RG, reason="ripgrep is not installed here")
+async def test_the_corpus_specifics_both_engines_share(corpus, monkeypatch):
+    # (a) a match past the first 8 KiB of a line is found by both, snippet still bounded;
+    # (b) a latin-1 file is searched with replacement characters, and counted;
+    # a CRLF file's `$` matches before the \r\n; `\u2028` does not split a line.
+    for engine_args in ({"pattern": r"needle tail$", "regex": True},):
+        for out in await _both(corpus, engine_args, monkeypatch):
+            assert _rows(out) == [("long.txt", 1, out["matches"][0]["text"])]
+            assert len(out["matches"][0]["text"]) <= file_tools.SNIPPET_CHARS + 2
+    for out in await _both(corpus, {"pattern": "caf.", "regex": True}, monkeypatch):
+        assert ("latin1.txt", 1, "caf� needle") in _rows(out) and out["non_utf8"] == 1
+    for out in await _both(corpus, {"pattern": "^needle$", "regex": True, "glob": "crlf.txt"}, monkeypatch):
+        assert _rows(out) == [("crlf.txt", 2, "needle")]
+    for out in await _both(corpus, {"pattern": "x$", "regex": True, "glob": "multi.txt"}, monkeypatch):
+        assert _rows(out) == [("multi.txt", 3, "needle\u2028x")]
+    # (d) files_scanned stops at the file that reached max_matches, in both engines
+    # (blank.txt has no match, crlf.txt is the first with one).
+    first, second = await _both(corpus, {"pattern": "needle", "regex": True, "max_matches": 1}, monkeypatch)
+    assert first["files_scanned"] == second["files_scanned"] == 2
+    assert first["stopped_by"] == second["stopped_by"] == "max_matches"
+
+
+@pytest.mark.parametrize("pattern", [
+    r"[[:alpha:]]+", r"[[:digit:]]", r"[a&&b]", r"[a--b]", r"[a~~b]", r"[a||b]",
+    r"\<needle\>", r"needle\>", r"[x[y]]", r"\p{L}+",
+])
+async def test_a_non_portable_regex_is_refused_by_name_on_both_engines(corpus, monkeypatch, pattern):
+    args = {"pattern": pattern, "regex": True}
+    # \p{L} is not a portability case: Python's own parser rejects it, which is the point —
+    # whichever engine would have run, the pattern is refused before either does.
+    assert file_tools._portability_error(pattern) is not None or pattern == r"\p{L}+"
+    outs = [await _loose(corpus).search_files(args)]
+    with monkeypatch.context() as scope:
+        scope.setattr(file_tools.shutil, "which", lambda name, *a, **k: None)
+        outs.append(await _loose(corpus).search_files(args))
+    for out in outs:
+        assert out["ok"] is False and out["reason"] == "bad_regex" and out["detail"], pattern
+    with pytest.raises(ToolRPCValidationError) as info:
+        FILE_TOOL_SPECS["file_search"]["preflight"](args)
+    assert info.value.reason == "bad_regex"
+
+
+@pytest.mark.parametrize("pattern", [r"[\[]", r"[]a]", r"[^]a]", r"[a-z]+", r"\\<", r"[a\-z]", r"[\w-]+",
+                                     r"needle\b", r"[ab]{2}", r"x[-a]", r"\[\[:alpha:\]\]"])
+def test_ordinary_classes_and_escapes_stay_portable(pattern):
+    assert file_tools._portability_error(pattern) is None
+
+
+# ── H303 round 2: directories nobody searches ────────────────────────────────
+
+def _tree(tmp_path, *, noise_files=0):
+    root = tmp_path / "ws"
+    (root / "node_modules" / "pkg").mkdir(parents=True)
+    for i in range(noise_files):
+        (root / "node_modules" / "pkg" / f"f{i:05d}.js").write_text("x\n", encoding="utf-8")
+    (root / "src").mkdir()
+    (root / "src" / "target_file.py").write_text("needle\n", encoding="utf-8")
+    return root
+
+
+async def test_a_glob_finds_a_file_behind_a_5200_file_dependency_tree(tmp_path):
+    root = _tree(tmp_path, noise_files=5200)
+    (root / ".git").mkdir()
+    (root / ".git" / "config").write_text("needle\n", encoding="utf-8")
+    tools = _loose(root)
+    out = await tools.search_files({"glob": "target_file.py"})
+    assert [os.path.relpath(f["path"], root) for f in out["files"]] == ["src/target_file.py"]
+    assert out["truncated"] is False and out["stopped_by"] is None
+    assert out["ignored"] == 1 and out["hidden"] == 1 and out["include_ignored"] is False
+    # Opting in walks node_modules too, and still finds the target: a glob search is bounded
+    # by files visited (MAX_WALK_FILES), not by the 5 000 whose contents are searched.
+    out = await tools.search_files({"glob": "*.js", "include_ignored": True, "max_matches": 500})
+    assert len(out["files"]) == 500 and out["ignored"] == 0
+    out = await tools.search_files({"glob": "target_file.py", "include_ignored": True})
+    assert [os.path.basename(f["path"]) for f in out["files"]] == ["target_file.py"]
+    assert out["files_scanned"] == 5201 and out["truncated"] is False
+
+
+async def test_a_content_search_skips_noise_directories_unless_asked(tmp_path, monkeypatch, engine):
+    root = _tree(tmp_path, noise_files=120)
+    monkeypatch.setattr(file_tools, "MAX_SEARCH_FILES", 50)
+    tools = _loose(root)
+    for args in ({"pattern": "needle"}, {"pattern": "needle", "regex": True}):
+        out = await tools.search_files(args)
+        assert [os.path.relpath(m["path"], root) for m in out["matches"]] == ["src/target_file.py"]
+        assert out["ignored"] == 1 and out["stopped_by"] is None
+        # With the tree included, the 50-file budget runs out in node_modules first.
+        out = await tools.search_files({**args, "include_ignored": True})
+        assert out["matches"] == [] and out["stopped_by"] == "max_files" and out["ignored"] == 0
+
+
+async def test_every_well_known_heavy_directory_is_pruned_and_a_path_inside_one_is_searched(tmp_path):
+    root = tmp_path / "ws"
+    names = ["node_modules", "venv", ".venv", "__pycache__", "dist", "build", "target", ".tox",
+             ".mypy_cache"]
+    for name in names:
+        (root / name).mkdir(parents=True)
+        (root / name / "f.txt").write_text("needle\n", encoding="utf-8")
+    (root / "keep").mkdir()
+    (root / "keep" / "f.txt").write_text("needle\n", encoding="utf-8")
+    tools = _loose(root)
+    out = await tools.search_files({"pattern": "needle"})
+    assert [os.path.relpath(m["path"], root) for m in out["matches"]] == ["keep/f.txt"]
+    assert out["ignored"] == len(names)
+    assert len((await tools.search_files({"pattern": "needle", "include_ignored": True}))["matches"]) == 10
+    # Pruning applies below the searched directory only: naming one searches it.
+    inside = await tools.search_files({"pattern": "needle", "path": "node_modules"})
+    assert [os.path.relpath(m["path"], root) for m in inside["matches"]] == ["node_modules/f.txt"]
+    assert inside["ignored"] == 0
+    with pytest.raises(ToolRPCValidationError) as info:
+        FILE_TOOL_SPECS["file_search"]["preflight"]({"pattern": "x", "include_ignored": "yes"})
+    assert info.value.reason == "bad_flag"
+
+
+async def test_plain_directory_names_in_the_root_gitignore_are_honoured(tmp_path):
+    root = tmp_path / "ws"
+    for rel in ("generated", "out", "a/out", "docs/_build", "docs", "src"):
+        (root / rel).mkdir(parents=True, exist_ok=True)
+    for rel in ("generated/x.txt", "out/y.txt", "a/out/z.txt", "docs/_build/w.txt", "docs/keep.txt",
+                "root.log", "src/s.txt"):
+        (root / rel).write_text("needle\n", encoding="utf-8")
+    (root / ".gitignore").write_text(
+        "# build output\ngenerated/\n/out\n*.log\ndocs/_build\n\n", encoding="utf-8")
+    tools = _loose(root)
+    out = await tools.search_files({"pattern": "needle"})
+    # `generated` anywhere, `/out` and `docs/_build` only where they are written; the
+    # wildcard line is not read, so root.log is searched.
+    assert sorted(os.path.relpath(m["path"], root) for m in out["matches"]) == [
+        "a/out/z.txt", "docs/keep.txt", "root.log", "src/s.txt"]
+    assert out["ignored"] == 3
+    assert len((await tools.search_files({"pattern": "needle", "include_ignored": True}))["matches"]) == 7
+    # One re-include line makes the file untrustworthy, so none of it is applied.
+    (root / ".gitignore").write_text("generated/\n!generated/keep.txt\n", encoding="utf-8")
+    out = await tools.search_files({"pattern": "needle"})
+    assert out["ignored"] == 0 and len(out["matches"]) == 7
+
+
+async def test_files_that_do_not_match_a_glob_do_not_use_up_the_file_budget(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    for i in range(10):
+        (root / f"aaa{i}").mkdir(parents=True)
+        (root / f"aaa{i}" / "noise.txt").write_text("x\n", encoding="utf-8")
+    (root / "zzz").mkdir()
+    (root / "zzz" / "target.py").write_text("needle\n", encoding="utf-8")
+    monkeypatch.setattr(file_tools, "MAX_SEARCH_FILES", 3)
+    tools = _loose(root)
+    out = await tools.search_files({"glob": "target.py"})
+    assert [os.path.basename(f["path"]) for f in out["files"]] == ["target.py"]
+    assert out["stopped_by"] is None
+    # The same holds for a content search narrowed by a glob: only files searched count.
+    out = await tools.search_files({"pattern": "needle", "glob": "*.py"})
+    assert [os.path.basename(m["path"]) for m in out["matches"]] == ["target.py"]
+    assert out["files_scanned"] == 1 and out["stopped_by"] is None
+
+
+# ── H303 round 2: the glob syntax the description promises ───────────────────
+
+@pytest.fixture
+def globs(tmp_path):
+    root = tmp_path / "ws"
+    (root / "src" / "deep").mkdir(parents=True)
+    for rel in ("a.py", "b.md", "c.txt", "app.min.js", "app.js", "src/m.py", "src/n.md",
+                "src/deep/o.py", "x{y}.txt"):
+        (root / rel).write_text("needle\n", encoding="utf-8")
+    return root
+
+
+def _found(result, root):
+    return sorted(os.path.relpath(f["path"], root) for f in result["files"])
+
+
+async def test_brace_alternation_and_negation_are_supported(globs):
+    tools = _loose(globs)
+    assert _found(await tools.search_files({"glob": "*.{py,md}"}), globs) == [
+        "a.py", "b.md", "src/deep/o.py", "src/m.py", "src/n.md"]
+    assert _found(await tools.search_files({"glob": "src/*.{py,md}"}), globs) == [
+        "src/deep/o.py", "src/m.py", "src/n.md"]
+    assert _found(await tools.search_files({"glob": "{a,b}.*"}), globs) == ["a.py", "b.md"]
+    # Each alternative is its own glob: `a.*` is a name glob, `src/m.*` a path glob.
+    assert _found(await tools.search_files({"glob": "{a,src/{m,n}}.*"}), globs) == [
+        "a.py", "src/m.py", "src/n.md"]
+    assert _found(await tools.search_files({"glob": "src/{m,n}.*"}), globs) == ["src/m.py", "src/n.md"]
+    # `**/` also matches at depth zero; the empty alternative `**/*.` matches no file.
+    assert _found(await tools.search_files({"glob": "**/*.{py,}"}), globs) == [
+        "a.py", "src/deep/o.py", "src/m.py"]
+    # A negated glob lists what does NOT match.
+    not_py = _found(await tools.search_files({"glob": "!*.py"}), globs)
+    assert "a.py" not in not_py and "src/m.py" not in not_py and "b.md" in not_py and "c.txt" in not_py
+    assert _found(await tools.search_files({"glob": "!*.{py,md,txt,js}"}), globs) == []
+    only_src = _found(await tools.search_files({"glob": "!src/*"}), globs)
+    assert not any(name.startswith("src/") for name in only_src) and "a.py" in only_src
+    # A brace with no comma, or an unclosed one, is an ordinary character.
+    assert _found(await tools.search_files({"glob": "x{y}.txt"}), globs) == ["x{y}.txt"]
+    assert _found(await tools.search_files({"glob": "x{y.txt"}), globs) == []
+
+
+async def test_braces_and_negation_narrow_a_content_search_too(globs):
+    tools = _loose(globs)
+    out = await tools.search_files({"pattern": "needle", "glob": "*.{md,txt}"})
+    assert sorted(os.path.relpath(m["path"], globs) for m in out["matches"]) == [
+        "b.md", "c.txt", "src/n.md", "x{y}.txt"]
+    out = await tools.search_files({"pattern": "needle", "glob": "!*.{py,md,txt}", "regex": True})
+    assert sorted(os.path.relpath(m["path"], globs) for m in out["matches"]) == ["app.js", "app.min.js"]
+    out = await tools.search_files({"pattern": "needle", "glob": "!*.min.js"})
+    assert "app.min.js" not in {os.path.relpath(m["path"], globs) for m in out["matches"]}
+
+
+@pytest.mark.parametrize("glob", [
+    "!", "!/etc/*", "/etc/*", "{/etc,src}/*", "*.{" + ",".join("abcdefg") + "}{" + ",".join("hijklmn") + "}x",
+    "{" + ",".join(str(i) for i in range(33)) + "}",
+])
+async def test_a_glob_that_cannot_be_honoured_is_refused_by_name(globs, glob):
+    with pytest.raises(ToolRPCValidationError) as info:
+        FILE_TOOL_SPECS["file_search"]["preflight"]({"glob": glob})
+    assert info.value.reason == "bad_glob"
+    assert await _loose(globs).search_files({"glob": glob}) == {"ok": False, "reason": "bad_glob"}
+
+
+def test_brace_expansion_is_bounded():
+    assert file_tools._expand_braces("{a,b}{c,d}") == ["ac", "ad", "bc", "bd"]
+    assert file_tools._expand_braces("{a,{b,c}}") == ["a", "b", "c"]
+    assert len(file_tools._expand_braces("{" + ",".join(str(i) for i in range(32)) + "}")) == 32
+    assert file_tools._expand_braces("{" + ",".join(str(i) for i in range(33)) + "}") is None
+    assert file_tools._compile_glob("!*.py") == (True, ("*.py",))
