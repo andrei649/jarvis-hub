@@ -720,7 +720,7 @@ async def test_a_two_megabyte_single_line_is_searched_within_the_deadline_and_me
     (root / "a2.txt").write_text("a" * 1_990_000, encoding="utf-8")
     (root / "many.txt").write_text("x\n" * 500_000, encoding="utf-8")
     tools = _loose(root, max_bytes=2_000_000)
-    rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    rss_before, kids_before = (resource.getrusage(who).ru_maxrss for who in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN))
     for pattern in (r"\w", "a", r"\w+", r"."):
         started = time.monotonic()
         out = await tools.search_files({"pattern": pattern, "regex": True, "max_matches": 100})
@@ -737,7 +737,7 @@ async def test_a_two_megabyte_single_line_is_searched_within_the_deadline_and_me
         assert len(by_file.get("many.txt", [])) <= file_tools.MAX_MATCHES_PER_FILE
         assert len(out["matches"]) <= 2 + 2 + file_tools.MAX_MATCHES_PER_FILE
     if sys.platform.startswith("linux"):                 # ru_maxrss is KiB there
-        assert resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss < 400_000
+        assert resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss <= max(kids_before, 399_999)  # a high-water mark: an earlier test's child may own it
         assert resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss_before < 400_000
 
 
