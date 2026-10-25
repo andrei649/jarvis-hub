@@ -107,7 +107,7 @@ it('shows loading and a true empty roles state, then refreshes on demand', async
     ? new Promise<Response>(resolve => { finish = resolve; }) : response(queue([])));
   global.fetch = fetcher;
   const view = mount();
-  await waitFor(() => expect(view.getByText(/Loading model roles/)).toBeTruthy());
+  await waitFor(() => { expect(view.getByText(/Loading model roles/)).toBeTruthy(); expect(finish).toBeTypeOf('function'); });
   await act(async () => finish(response({ roles: [], reachable: null })));
   expect(view.getByText(/No model roles configured/)).toBeTruthy();
   fireEvent.click(view.getByText('Refresh roles'));
