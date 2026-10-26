@@ -143,7 +143,11 @@ def test_blocked_sink_does_not_hold_token_response_or_queue_private_values(rig, 
             "/api/mcp/token", headers={"X-Admin-Token": "fixture-admin-secret"},
             json={"subject": "private-queued-subject", "scopes": ["mcp"]},
         )
-        assert time.monotonic() - started < 1
+        # The sink above holds its thread for up to 3 s. A response that waited on it
+        # would take at least that long, so 2 s still proves the request was not held
+        # while leaving headroom for a loaded CI runner (1.46 s was measured under xdist
+        # on 2026-10-26 with a 1 s bound).
+        assert time.monotonic() - started < 2
         assert response.status_code == 200
         assert entered.wait(1)
         queued = repr(list(auth_audit._queue.queue))
