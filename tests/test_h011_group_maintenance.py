@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from agents.core.file_checkpoint_history import FileCheckpointHistory
+from agents.core.file_checkpoint_history import HISTORY_SUPPORTED, FileCheckpointHistory
 from agents.core.file_tools import FileScope, SnapshotStore
+
+# History is a POSIX facility (O_DIRECTORY dir-fd locking); on Windows it refuses
+# with history_unsupported_platform by design, so these end-to-end cases cannot run.
+pytestmark = pytest.mark.skipif(
+    not HISTORY_SUPPORTED,
+    reason="file checkpoint history needs O_DIRECTORY (POSIX only)")
 
 
 def test_excluded_tree_is_never_a_restore_deletion_candidate(tmp_path):

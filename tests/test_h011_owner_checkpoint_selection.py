@@ -5,9 +5,15 @@ import shlex
 
 import pytest
 
-from agents.core.file_checkpoint_history import FileCheckpointHistory
+from agents.core.file_checkpoint_history import HISTORY_SUPPORTED, FileCheckpointHistory
 from agents.core.file_tools import FileScope
 from tests.test_h011_owner_checkpoint_commands import command, owner_store
+
+# History is a POSIX facility (O_DIRECTORY dir-fd locking); on Windows it refuses
+# with history_unsupported_platform by design, so these end-to-end cases cannot run.
+pytestmark = pytest.mark.skipif(
+    not HISTORY_SUPPORTED,
+    reason="file checkpoint history needs O_DIRECTORY (POSIX only)")
 
 
 @pytest.mark.asyncio
