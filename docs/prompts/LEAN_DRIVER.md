@@ -28,8 +28,10 @@ Reply to the owner in Romanian; code, commits and PR text stay in English.
   `tail -40`. Builds and installs are piped through `tail -5`. Never `cat` a log.
 - **Caps:** at most **60 tool calls** and **75 minutes** of wall time per session. When either
   is near, go straight to §4 with whatever is green, mark the PR `WIP:` in the title, and stop.
-- **Model discipline:** this session runs on the model it was started with (Sonnet). Do not ask
-  for Opus; a slice that needs it is too big for this protocol and gets split in the queue.
+- **Model discipline:** the orchestrator starts you on the model the queue's `model` column names
+  for your row (`sonnet` for bounded work, `opus` for rows needing design judgement across many
+  files). Never ask for another model; a row marked `L, split` is delivered as the PR its
+  description names, one PR per run.
 
 ## 1. Ignition — 5 tool calls, no more
 
@@ -40,7 +42,9 @@ Reply to the owner in Romanian; code, commits and PR text stay in English.
    **unfinished work to continue**, and it outranks the queue — check that branch out, read the
    "remaining" line in its queue row and its PR body, and carry on there (no new branch).
    Likewise a `lean/*` PR red on CI for more than 24 h is the first pick (pick order (a) of
-   `BACKLOG_DRIVER.md`).
+   `BACKLOG_DRIVER.md`), and so is an open `lean/*` PR with an **unresolved Codex P1** finding
+   (`mcp__github__pull_request_read` → `get_review_comments`): fix it on its branch, reply on the
+   thread, resolve it, and only then take new work if budget remains.
 3. `sed -n 1,200p docs/prompts/LEAN_QUEUE.md` — otherwise pick the **first** row that is not
    locked, not ticked and whose "needs" column says `ai`.
 4. `python3 scripts/backlog.py show <ID>` for the row's BACKLOG id (when it has one).
@@ -90,6 +94,13 @@ green. Check `$?` after each gate; a `&&` chain only continues on success.
 The **full** backend suite (29K tests), the Windows job and the security scans run on CI, not
 here. Do not run `pytest tests/` without a path.
 
+**Adversarial self-review before the push (one pass, no tool fan-out):** `git diff origin/main
+--stat`, then read your whole diff once in `sed -n` chunks and answer in the PR body's "Risk"
+line: what would make CI reject this (a guard test, a snapshot, the bundle check, the ledger)?
+What would a reviewer call a defect (an unbounded loop or payload, a cross-user leak through
+process-wide state, a claim in docs for a path no caller reaches, redact-after-truncate, double
+counting — the classes the Hermes reviewers kept finding)? Fix what you find before pushing.
+
 ## 4. Ship and stop
 
 1. Update your row in `docs/prompts/LEAN_QUEUE.md` in the **same** commit as the code:
@@ -110,6 +121,12 @@ here. Do not run `pytest tests/` without a path.
    (What / Why / How verified). The design block from §2 goes under "What". Then **mark the PR
    ready for review** (`update_pull_request` with `draft: false`) unless its title is `WIP:` — the
    lane is owner-out-of-loop, and a draft is never merged.
+   **Review gate, one round:** marking ready starts the Codex code and security reviews, which post
+   within a few minutes. Do steps 4's bookkeeping first, then fetch the review comments **once**
+   (`pull_request_read` → `get_review_comments`). Fix every **P1**, and any P2 that is a real
+   defect in your diff (not style); push once; reply on each thread in one line; resolve the
+   threads you fixed. One round only — if Codex has not posted yet, stop: §1.2 makes an unresolved
+   P1 the first pick of the next run, and a PR that merged meanwhile gets a follow-up there.
 4. Reply to the owner in at most twelve lines: slice, PR link, what is green locally, what CI
    still has to prove, and the next slug the queue will serve. End with
    `■ lean: <slug> — next: <slug>`.
