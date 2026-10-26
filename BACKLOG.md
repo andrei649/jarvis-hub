@@ -225,16 +225,20 @@
   to D1–D4.
 - [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** A PDF without a text layer fails with `no_text`; the original is
   kept, so a re-index works once text exists. Needs a local OCR engine with its own time and memory bounds.
+  Remaining (recounted 2026-10-26): all of it — `extract.py` still ends in `no_text` for a PDF without a text layer and no OCR engine is wired; blocked behind NWS-11's child process for the time/memory bounds.
 - [ ] ⬜ **NWS-11 — a killable extraction subprocess.** pypdf has no checkpoint inside a page, so one
   pathological page keeps a pool thread busy past the 60 s bound (the document is still marked `timeout`).
   Run extraction in a subprocess with `RLIMIT_AS` and a hard kill.
+  Remaining (recounted 2026-10-26): all of it — `agents/core/workspace/extract.py` still runs pypdf in a pool thread via `run_in_executor` (L953) and uses no `RLIMIT_AS` or child process.
 - [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
   lazy-load the admin console and reports to cut the first load.
+  Remaining (recounted 2026-10-26): all of it — `grep -rn "React.lazy\|lazy(" frontend/src/workspace` finds nothing; admin console and reports are in the one chunk.
 - [ ] ⬜ **NWS-21 — the pilot tag (owner).** No release tag holds the workspace yet (`v1.0.0` is older);
   pilot guide §2 installs from `<eticheta-pilotului>` (§15 upgrades from tag to tag) and says the
   owner cuts it after approving the pilot work, without naming it. Owner lane: merge PR #1256, tag,
   and give the tag's name to the installer — the row „NWS-21 — merge the Nerva Workspace pilot PR
   (#1256) and cut the pilot tag" in `docs/OWNER_TASKS.md` (owner gates).
+  Remaining (recounted 2026-10-26): the tag only — PR #1256 merged as `ed95528`; the owner cuts the tag and names it to the installer (`docs/OWNER_TASKS.md`).
 - [ ] ⬜ **NWS-23 — round-3 residual minors (found while fixing NWS-22, not yet fixed).** One line each:
   - The reports list („Rapoarte", `ReportsList.tsx`) scrolls sideways inside its frame between 768
     and 1180 px (at 1024 „Următoarea rulare" and „Livrare pe email" sit behind the scroll; the sticky
@@ -252,9 +256,11 @@
   - In a shared `business/` target, a foreign file whose name starts with `workspace.db-` or
     `secrets.enc.` matches `db.own_entry` and is tightened to 0600 (narrow the sibling patterns to
     the exact `-wal`/`-shm`/`-journal` and the secret store's own temp names).
+  Remaining (recounted 2026-10-26): all five bullets stand — `ws-run-meta__wide` is not applied to the visibility badge, `backup.py:875/1785` still prints `is not empty` for a dangling symlink, and `db.own_entry` (`db.py:381-383`) still matches by prefix `workspace.db-` / `secrets.enc.`.
 - [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
   `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
   contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.
+  Remaining (recounted 2026-10-26): partly done — `documents.py` already offloads its store/hash/read steps with `asyncio.to_thread` (L900-1039) and password hashing is offloaded in `workspace_auth.py`; every `db.tx` (`auth.py`, `approvals.py`, `audit.py`, `documents.py:402/808`) and the FTS queries in the handlers still run on the event loop. Decision still open: thread offload workspace-wide vs one executor.
 
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
@@ -3831,6 +3837,7 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
 - [ ] Kernel default flip PR (criteria-gated) — one agent PR flipping `JARVIS_ACTION_KERNEL` +
   `JARVIS_UNIFIED_ACTION_API` to default-on (flags kept as kill-switches) once (a)–(c) above are
   evidenced; not before.
+  Remaining (recounted 2026-10-26): criteria (a)–(c) above are still to be evidenced; no flip PR exists.
 
 ---
 
@@ -4334,6 +4341,7 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   was Telegram/web/email; HA-4i-comms below extends it. Regression coverage: `tests/test_nerva_send.py` (25 cases),
   plus the existing CLI and Safe Comms suites (64 passed combined). Native UI plugin injection
   remains an explicit **skip** in the inventory; it is not included in the SDK work above.
+  Remaining (recounted 2026-10-26): Slack/Discord streaming edits are not shipped — `slack.py:473` uses `chat_update` only for approval cards, Discord has no edit path; HUD desktop mode, agent-side plugin SDK, kernel sessions and local image generation are tracked in the progress notes above.
 
   **2026-09-09 — Slack/Discord governed reply foundation shipped (HA-4i-comms).** Paired inbound
   messages persist in the same inbox as other channels; rooms and Slack subthreads have
@@ -6135,6 +6143,7 @@ written here when the review lands.
   copy, not by a designed bind-on-entry / reset-on-exit, plus a regression pinning that behaviour.
   Original wording: proactive/recall/ambient payloads rebuilt outside an
   inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
+  Remaining (recounted 2026-10-26): unchanged — see the L6138 re-measurement; do not tick until `process()` taint is bound and pinned by a test.
 - [ ] 🟡 **Re-measured 2026-09-05, and the residual above is described wrongly — the route is not
   the leak.** A slice was written to add a bind/reset around the HTTP recall route, reviewed
   independently, and **withdrawn**, because the premise did not survive the review. Recording what
@@ -6184,6 +6193,7 @@ written here when the review lands.
 6 refuted · 3 new from the completeness critic).** Its headline is a compliment: independent agents
 trying hard to embarrass this codebase mostly re-discovered SEC-B1…B6 above. Two need owner triage
 because they are **not** on that list:
+  Remaining (recounted 2026-10-26): the unbounded `Orchestrator.process()` recall path named above; the HTTP-route bind/reset stays withdrawn (it would fail open).
 
 - [x] ✅ **AUDIT-1 (High, confirmed) — the audit chain is forgeable in hardened mode.** **FIXED** — `verify_chain`
   recomputes each row with *the row's own* `hash_algo`, and `_digest` demands the key only when that
@@ -6242,6 +6252,7 @@ owner's machine in 30 seconds, read-only.
   recorded, not on the decision alone. *Follow-up delivered:* the export/purge-drift gap is closed — #900
   (`2f81029`, Max «copper-nectar») added `tests/test_forget_export_purge_parity.py` asserting
   nothing an export names may sit on the forget KEEP list.
+  Remaining (recounted 2026-10-26): the independent post-merge PASS/HOLD review of #896 against `docs/security/SEC-B6-open-reads-evidence.md` is not recorded; tick only with that recorded verdict.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
@@ -6412,6 +6423,7 @@ was never made responsive. Two facts frame the decision:
   desktop surface and `mobile-chrome` should come **out** of the matrix rather than stay permanently
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
+  Remaining: owner call — keep `mobile-chrome` out of the matrix (RN app is the phone story) or build the stacked-layout breakpoint.
 
 - [x] ✅ **The chat input bar was unreachable at ≤1100px — fixed 2026-09-04.** Not the phone
   question: 1100px, 1000px, 900px and 800px are ordinary laptop and split-screen widths the product
@@ -6629,6 +6641,7 @@ three times as much**, which is the more useful fact:
       pushes the node to y=1122. And in the other direction AGENTS' `scrollable-region-focusable`
       **disappears at 1920×1080**, because the panel stops overflowing. No single viewport sees
       everything; two is a floor, not a proof.
+  Remaining: none to build — a recorded measurement limit; a per-surface readiness signal (L6782) is the real close.
 - [x] ✅ **`--ink-3` retired from HUD text — local candidate (2026-10-09).**
       The original measurement found about 2.80:1 and 276 text-bearing elements;
       83 CSS foreground occurrences and 453 TSX literals now use readable `--ink-2`.
@@ -6758,6 +6771,7 @@ three times as much**, which is the more useful fact:
       `incomplete` entry per rule id with every node inside its `nodes[]`, so entry counts are mode
       counts. The artifact now reports `contrastIncompleteNodes` (order of 1,100–1,800 per lane, run-variable)
       beside `contrastIncompleteModes` (16); an earlier draft printed 16 and read as a node count.
+  Remaining: (1) gate mode-surface color-contrast nodes with a pixel measurement instead of the rule-id exemption; (2) a `pull_request` trigger for `e2e.yml` is the owner's CI-posture call (`docs/restore/`, group K).
 - [x] ✅ **The fixed WORLD toggle sits on top of two real rail controls.** `world_app.tsx` renders
       `button.tool-btn` (World Intelligence) at `position:fixed; left:16; bottom:16; zIndex:60`,
       over the bottom of the mode rail. Measured at 1440×900: it covers the **action point of the
@@ -6791,6 +6805,7 @@ three times as much**, which is the more useful fact:
       rather than a longer sleep, so the gate stops inferring completeness from stillness. Until
       then `nodes` and `pending` are recorded per scan so a short scan is visible in the artifact
       rather than silently counted as coverage.
+  Remaining: a per-surface readiness signal for every Admin/Cockpit mode (only the EstopCard slice exists).
 
       **Local EstopCard slice 2026-10-09:** the card exposes explicit pending/ready/unavailable
       state and `aria-busy`; the Admin walk waits for the card to settle before its DOM-quiet/axe
@@ -7069,6 +7084,7 @@ caught it.
       chains pass, and a `// @ts-nocheck` header opts a spec out entirely: it is a
       syntax-and-signature gate (parse errors, unresolved names, `page.goto(42)` → `TS2345`), not a
       strictness gate.
+  Remaining: running the specs on a PR needs the `e2e.yml` `pull_request` trigger (owner call, `docs/restore/` group K); strict typing for the specs is not planned.
 - [x] ✅ **Closed: `frontend/vite.config.ts` is compiled now** — the same defect class, one word
       away in the include array, deliberately left out of that slice because closing it was not
       free. It was measured then and reproduced on `main` at `39ce740b` now: adding the file to
@@ -7173,6 +7189,7 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       data — firefox is also non-Chromium and passes **24 of 24**, and this worker never mediates the
       request anyway (`sw-v2.js` returns early on `req.method !== 'GET'`; the chat stream is a POST).
       The worker is causally involved **on WebKit specifically**, by a path not established here.
+  Remaining: root-cause the WebKit-only service-worker path; nothing else is claimed or open.
 - [x] ✅ **The cost, stated rather than hand-waved — and now recovered (2026-09-07).** The lane no
       longer registers the worker. That cost **no assertion** at the time: there were zero PWA
       assertions in `frontend/e2e/`, and the worker's `fetch` handler served no request in any spec,
@@ -7192,6 +7209,7 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       `/api/kg/entities` and the rest in the diff, exactly the leak `forget` could never reach.
 - [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Measured at
       `n=3`: **9 failures, down from 22**, and all nine are that one decision.
+  Remaining: the 3 mobile-chrome pointer cases = the owner call at L6410.
 - [x] ✅ **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).
       Found the hard way: a block comment containing `*` + `/` closed itself early, tsc passed clean,
       and only Playwright's loader rejected the file. Adding `e2e` to `include` needs `@types/node`
@@ -7260,6 +7278,7 @@ class as `frontend/e2e` (above), in a second package, found by asking which trac
       The `ingestion`, `mcp` and container-backed `integration` jobs were **not** verified here:
       this box has no `worldview/mcp/node_modules` and no `aiokafka`/`sgp4`, so their local failures
       are missing dependencies, not evidence either way.
+  Remaining: a `pull_request` trigger for `worldview.yml` (owner call, `docs/restore/` group K); the ingestion/mcp/integration jobs were not verified locally.
 
 **A red reality run now names the case that broke the verdict (2026-09-04).** The reality verdict is
 arithmetic — `passed + expected_seam + owner_live >= total` — so `reality_evidence.main()` could print
@@ -7289,6 +7308,7 @@ local 132/136 ⇒ exactly one unexcused case) but **not named**.
       #1017 comment records what was ruled out. And it is a *diagnosis* improvement: today all three
       offline siblings pass, so the `live` guard is protecting against a future regression rather than
       catching a present one.
+  Remaining: identify the flake's cause (#1017 lists what was ruled out); nothing is broken today.
 
 **Consent copy failed AA contrast, and the a11y gate could not see it (2026-09-04).** An axe
 sweep forcing `color-contrast` over the ten mode hotkeys found **8 failing elements** (six
@@ -7343,6 +7363,7 @@ modal changes. Every one was inside `FirstRunGate`.
       invisible everywhere, and that is a smaller claim than fixed. Closing it means either
       retiring `--ink-3` as a text colour (the 🔴 row above) or turning `failing` into an
       assertion, which cannot land before the palette does or the lane goes red on day one.
+  Remaining: gating (not just measuring) the chrome contrast failures in `contrast.spec.ts`'s `failing` list — owner packet in `docs/OWNER_TASKS.md` carries the options.
 - [ ] 🔴 **The gate is structurally blind here.** The live 1280×720 lane of `a11y-modes.spec.ts`
       records **701 `incomplete` `color-contrast` nodes against 0 violations** (899/954/1198 on
       the other three lanes), of which **630 — 90%, not all —** are the gradient message; the rest
@@ -7356,6 +7377,7 @@ modal changes. Every one was inside `FirstRunGate`.
       opens 12/12 on a fresh `JARVIS_HOME`. An e2e pin for it was written and withdrawn as
       unnecessary once the token pin covered the contract deterministically. Owner packet
       (`docs/OWNER_TASKS.md`) carries the options, including fixing the palette.
+  Remaining: gate on `incomplete` color-contrast nodes or fix the palette — owner packet in `docs/OWNER_TASKS.md`.
 
 ---
 
@@ -7380,12 +7402,19 @@ modal changes. Every one was inside `FirstRunGate`.
 
 **Config-wins — flip to LIVE with no new code (owner action, see `docs/OWNER_TASKS.md`):**
 - [ ] Google OAuth → email + calendar
+  Remaining: owner action — Google OAuth credentials and consent.
 - [ ] Spotify OAuth → real playback control
+  Remaining: owner action — Spotify OAuth credentials.
 - [ ] Install engines: `faster-whisper` (STT), `edge-tts`/`kokoro` (TTS), `playwright` (browser operator), `beautifulsoup4` (DDG search), `discord.py`/`slack_sdk` (Discord/Slack channels — adapters exist, SDKs not in base requirements)
+  Remaining: owner action — install the listed engines on the host.
 - [ ] LAN Home Assistant + `JARVIS_HOUSE_BRAIN`/`JARVIS_HOME_ASSISTANT` → house read + control
+  Remaining: owner action — LAN Home Assistant URL/token and the two env flags.
 - [ ] Frigate NVR + household consent → the camera + ambient stack
+  Remaining: owner action — Frigate NVR and household consent.
 - [ ] Flip cognition master posture + a local LLM → the reflect-and-rewrite learn loop
+  Remaining: owner action — flip the cognition master posture and run a local LLM.
 - [ ] Telegram bot token → `channel.reply` (the one real autonomy side-effect)
+  Remaining: owner action — Telegram bot token.
 
 **Genuinely unbuilt — needs real code:**
 - [x] Tuya real signer (done, Tranche 1)
@@ -7425,12 +7454,15 @@ modal changes. Every one was inside `FirstRunGate`.
   to open a merchant account, supply credentials, accept liability and name a production mandate ceiling
   (DRA-20).
 - [ ] Media / desktop / node actuators (owner-wired host seams)
+  Remaining: owner-wired host seams (media/desktop/node actuators) need the owner's host.
 - [ ] `agents/vision`, `agents/argus` — real implementation (currently persona markdown, zero code).
   Argus's SOUL was completed 2026-08-18 (Scope/Rules/Dependencies/Memory/Channels — it had 4 of the
   roster's 9 sections); the code gap below it is unchanged.
+  Remaining: no code exists under `agents/vision` or `agents/argus` (SOUL/HEARTBEAT only) — a real implementation slice, not yet scoped.
 - [ ] `agents/hestia` — the House Brain agent added 2026-08-18 owns `agents/core/house/**` (graph,
   presence, actuation, home_assistant) in *persona* only. ORIZONT 30 shipped the modules and the
   router; wiring Hestia's reads/proposals onto them is the remaining slice.
+  Remaining (recounted 2026-10-26): `agents/hestia` still holds only `SOUL.md`; wiring Hestia's reads/proposals onto `agents/core/house/**` is not done.
 - [x] **HUD seed roster is 3 agents behind the backend.** `frontend/src/data.ts` hardcodes 15 agents
   (`AGENTS`, `GLYPHS`, `COLLAB`, `DOSSIER`, routing keywords) — it never gained **howard** or **argus**,
   and now not **hestia** either, while the registry is at 18. Found 2026-08-18 during the roster pass and
