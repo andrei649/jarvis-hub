@@ -20,7 +20,8 @@ Reply to the owner in Romanian; code, commits and PR text stay in English.
   `subscribe_pr_activity`. No reviewer agents, no check-ins, no PR watching. CI reviews the PR.
 - **Context load ≤ 25K tokens.** Read only: this file, `docs/prompts/LEAN_QUEUE.md`,
   `python3 scripts/backlog.py show <ID>` for your row, `sed -n 82,110p AGENTS.md` (delivery
-  rules), and the code the row names. Never open `BACKLOG.md`, `docs/ARCHITECTURE.md`,
+  rules), the machine-readable policy (`python3 -c 'import json; p=json.load(open("selfdev-policy.json")); print(p["protected_paths"]); print(p["merge"])'`,
+  one call), and the code the row names. Never open `BACKLOG.md`, `docs/ARCHITECTURE.md`,
   `MOONSHOT.md`, `NERVA.md`, `docs/AI_CONTEXT.md` or any skill bundle. Never read a file whole
   when it is over 300 lines: `grep -n` first, then `sed -n A,Bp` ranges.
 - **Tool output stays small.** Tests run with `-q -p no:cacheprovider` and are piped through
@@ -34,10 +35,14 @@ Reply to the owner in Romanian; code, commits and PR text stay in English.
 
 1. `git fetch -q origin main && git log -1 --format='%h %cs %s' origin/main`
 2. `git ls-remote --heads origin 'lean/*'` — every `lean/<slug>` branch is a **lock**: that slice
-   is taken (a PR exists or a previous run is mid-flight). Skip those slugs.
-3. `sed -n 1,200p docs/prompts/LEAN_QUEUE.md` — pick the **first** row that is not locked, not
-   ticked and whose "needs" column says `ai`. If a `lean/*` PR is red on CI and nobody fixed it
-   for 24 h, that fix outranks the queue (pick order (a) of `BACKLOG_DRIVER.md`).
+   is taken (a PR exists or a previous run is mid-flight). Skip those slugs, with one exception:
+   a `lean/*` PR whose title starts with `WIP:` and whose last commit is older than 24 h is
+   **unfinished work to continue**, and it outranks the queue — check that branch out, read the
+   "remaining" line in its queue row and its PR body, and carry on there (no new branch).
+   Likewise a `lean/*` PR red on CI for more than 24 h is the first pick (pick order (a) of
+   `BACKLOG_DRIVER.md`).
+3. `sed -n 1,200p docs/prompts/LEAN_QUEUE.md` — otherwise pick the **first** row that is not
+   locked, not ticked and whose "needs" column says `ai`.
 4. `python3 scripts/backlog.py show <ID>` for the row's BACKLOG id (when it has one).
 5. `git checkout -b lean/<slug> origin/main`
 
@@ -57,21 +62,25 @@ Open with one line and start: `▶ lean: <slug> — <one-line intent>`.
   (`MOONSHOT.md` §5 is binding even though you do not load it).
 - Protected paths are **workable** (owner directive 2026-10-26: "scoate protecțiile ca să îți faci
   treaba liniștit"; `selfdev-policy.json` → `local_development.allow_protected_changes` is already
-  `true`): `agents/core/{kernel,security,secrets}/**`, `.github/**`, `scripts/selfdev_policy.py`
-  and the security-path Hermes rows may be changed when the slice needs it. Two consequences you
-  must state in the PR body: (1) a PR touching them is classified `control_plane`, so the hourly
-  auto-merge skips it and the owner merges it by hand; (2) the change is reviewed against the
-  **trusted `main` copy** of the classifier, so never weaken the classifier, the kernel, a security
-  boundary or a workflow gate in the same PR that relies on it. `MOONSHOT.md`, `NERVA_VISION.md`,
-  `LICENSE`, `TRADEMARKS.md` and `docs/legal/**` stay the owner's words.
+  `true`). The authoritative list is `protected_paths` in `selfdev-policy.json`, never a copy in
+  this file; `LICENSE`, `TRADEMARKS.md`, `MOONSHOT.md`, `NERVA_VISION.md` and `docs/legal/**` are
+  in it and stay the owner's words even though you may edit them. Two consequences you must
+  state in the PR body: (1) a change touching a protected path is classified `control_plane` by
+  `scripts/selfdev_policy.py` (you run it in §4), so the hourly auto-merge skips the PR and the
+  owner merges it by hand; (2) the classification is made with the **trusted `main` copy** of the
+  policy and classifier, so never weaken the classifier, the kernel, a security boundary or a
+  workflow gate in the same PR that relies on it.
 
 ## 3. Gates — targeted locally, full on CI
 
-Run only what your diff touches, in this order, each piped through `tail`:
+Run only what your diff touches, in this order. Every gate runs as
+`bash -o pipefail -c '<gate> 2>&1 | tail -N'` (or after one `set -o pipefail` in the same shell
+call): without `pipefail` the pipeline returns `tail`'s exit status and a failed check reads as
+green. Check `$?` after each gate; a `&&` chain only continues on success.
 
 - `ruff check <changed files>`
 - `python3 -m pytest <the test files you touched or that import the changed modules> -q -p no:cacheprovider 2>&1 | tail -40`
-- Frontend touched: `cd frontend && npx tsc --noEmit 2>&1 | tail -5 && npx vitest run <affected test files> 2>&1 | tail -20 && npm run build 2>&1 | tail -3`, then commit the rebuilt `agents/web/v2` (the `hud-v2-build` check compares it).
+- Frontend touched: `bash -o pipefail -c 'cd frontend && npx tsc --noEmit 2>&1 | tail -5 && npx vitest run <affected test files> 2>&1 | tail -20 && npm run build 2>&1 | tail -3'`, then commit **both** rebuilt bundles, `agents/web/v2` (HUD) and `agents/web/workspace` (Nerva Workspace, written by `frontend/vite.workspace.config.ts`): the `hud-v2-build` check fails on a stale or untracked file under either directory.
 - Tests added or removed: `python3 scripts/status_sync.py --reuse-js-counts && python3 scripts/status_sync.py --check` (the "Tracked backend test count" CI step fails otherwise).
 - Routes added, moved or removed: `python3 scripts/gen_api_sweep.py`; re-seed the route/auth snapshots the failing guard test names; add a HUD caller or a `MACHINE_FACING` / `UNCALLED_BACKLOG` entry in `tests/test_hud_v2_parity.py`.
 - Any file under `agents/` or `tests/` changed: `python3 scripts/hermes_status.py check 2>&1 | tail -15`. A stale ledger row means a `path:line` citation moved: re-cite it with `scripts/hermes_restamp.py cite <ID>` + `stamp` (process note 2 of `docs/handoff-hermes-2026-10-25.md`). If that alone would blow the budget, say so in the PR body and leave the PR `WIP:`.
@@ -82,9 +91,17 @@ here. Do not run `pytest tests/` without a path.
 
 ## 4. Ship and stop
 
-1. Tick your row in `docs/prompts/LEAN_QUEUE.md` (`[x]`, PR number once known, one line of what
-   landed and what did not) and tick exactly the BACKLOG ids you closed — in the **same** commit.
-   Append one row to the run log at the bottom of the queue file.
+1. Update your row in `docs/prompts/LEAN_QUEUE.md` in the **same** commit as the code:
+   - the slice meets its "done" column → tick it `[x]`, add the PR number and one line of what
+     landed, and tick exactly the BACKLOG ids you closed;
+   - a cap stopped you first → leave it `[ ]`, prefix the "what done means" cell with
+     `WIP: PR #<n> — remaining: <one line>`, title the PR `WIP: …`, and tick nothing in BACKLOG.
+     The branch stays as the lock; the next run continues it (§1.2).
+   Append one row to the run log at the bottom of the queue file either way.
+   Then classify your diff and write the verdict in the PR body:
+   `git diff --name-only origin/main | python3 scripts/selfdev_policy.py classify --stdin`
+   (`autonomous_merge` → auto-merge once the owner marks it ready; `control_plane` → the owner
+   merges by hand).
 2. One commit (or a few coherent ones), message in the imperative, with the attribution trailer the
    session reminder gives you. Do not disable commit signing.
 3. `git push -u origin lean/<slug>`. The environment opens a **draft** PR automatically; if it does
