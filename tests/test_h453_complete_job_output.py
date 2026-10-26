@@ -1,9 +1,15 @@
 """A scheduled producer publishes only complete substantive output."""
 import hashlib
+import os
 
 import pytest
 
 from tests.test_job_scripts import make_runtime, scripts  # noqa: F401
+
+# snapshot_script binds a script through O_DIRECTORY/O_NOFOLLOW dir_fd descriptors and refuses
+# a non-POSIX host by design (agents/core/autonomy/jobs_scripts.py), so every case that fires a
+# script job is a Unix-only facility.
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="scheduled scripts need O_NOFOLLOW dir_fd (POSIX only)")
 
 
 def complete(task, stdout, *, snapshot_complete=True):

@@ -197,8 +197,13 @@ def test_multiline_strings_keep_line_breaks_and_tabs():
 
 
 @pytest.mark.parametrize("body", [
-    b'{"a": NaN}', b'{"a": Infinity}', b'{"a": -Infinity}', b'{"a": 1e999}', b'{"a": -1e999}',
-    b'{"a": ' + b"[" * 20000 + b"]" * 20000 + b"}",
+    pytest.param(b'{"a": NaN}', id="nan"),
+    pytest.param(b'{"a": Infinity}', id="inf"),
+    pytest.param(b'{"a": -Infinity}', id="-inf"),
+    pytest.param(b'{"a": 1e999}', id="1e999"),
+    pytest.param(b'{"a": -1e999}', id="-1e999"),
+    # explicit id: a 40K-character id overflows the Windows environment-variable cap
+    pytest.param(b'{"a": ' + b"[" * 20000 + b"]" * 20000 + b"}", id="deep-nesting"),
 ])
 def test_read_json_refuses_numbers_json_cannot_carry_and_runaway_nesting(body):
     r = _client().post("/api/workspace/echo-large", content=body,
