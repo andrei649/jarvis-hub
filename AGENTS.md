@@ -87,11 +87,16 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
   `scripts/selfdev_policy.py`, and **at least one automated check is reported with every reported
   check completed as success/neutral/skipped**. Pending, failed, cancelled, empty or unreadable
   check state does not merge. Branch names — including `nerva2/*` — are not manual gates anymore.
-- A candidate touching a protected root-of-trust path is classified `control_plane` and skipped by
-  unattended merge. That includes the self-development policy/classifier, **all GitHub workflows
-  and actions**, Action Kernel/security roots, and the other paths named in `selfdev-policy.json`.
-  Routine feature, refactor, test and documentation work outside that boundary does **not** wait for
-  owner approval.
+- A candidate touching a protected root-of-trust path (the self-development policy/classifier,
+  **all GitHub workflows and actions**, Action Kernel/security roots, and the other paths named in
+  `selfdev-policy.json`) is still classified and its `protected_hits` recorded, but since the
+  **owner directive of 2026-10-26** (`merge.deny_protected_changes=false` with the dated
+  `merge.protected_merge_directive` on record) it is **no longer skipped** by unattended merge: it
+  merges under exactly the same proof floor as routine work. Withdrawing the directive
+  (`deny_protected_changes=true`) restores the skip without touching the workflow. Nothing waits
+  for owner approval any more; the remaining guards are structural — `validate_policy` refuses a
+  policy missing the mandatory protected paths, the check floor or the deploy/rollback invariants,
+  and the hourly workflow fails closed on an invalid trusted policy instead of merging with it.
 - The automated-check rule is enforced by the auto-merge workflow itself and does not depend on
   whether branch-protection settings happen to mark a check "required". The existing PR checks
   (`test` incl. test-count drift, `hud-v2-build`, security scans, `lockfile-drift`, and any future

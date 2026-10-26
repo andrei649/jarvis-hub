@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "policy_id": "nerva.selfdev.v1",
-  "owner_directive_date": "2026-09-27",
+  "owner_directive_date": "2026-10-26",
   "autonomous_default": true,
-  "description": "The owner authorizes autonomous local development across the entire repository, including kernel, security, workflows and this policy, without further owner approval. This local authorization does not authorize pushing, merging or deploying this sprint. Remote merge eligibility retains the trusted control-plane classification and automated proof requirements; autonomous deployment remains a target until its enforcement lands.",
+  "description": "The owner authorizes autonomous development across the entire repository, including kernel, security, workflows and this policy, without further owner approval. Since the owner directive of 2026-10-26 (merge.protected_merge_directive) that authorization covers unattended MERGE as well: a change touching a protected path is still classified and recorded as control-plane, but it merges when the pinned automated proof set and every other reported check are green on a CLEAN non-draft head. The remaining guard is structural: validate_policy refuses a policy without the mandatory protected paths, the check floor or the deploy/rollback invariants, and the hourly workflow fails closed on an invalid trusted policy instead of merging with it. Autonomous deployment remains a target until its enforcement lands.",
   "local_development": {
     "enabled": true,
     "allow_protected_changes": true,
@@ -42,9 +42,21 @@
       "SAST (bandit — blocking gate)",
       "in-sync"
     ],
-    "required_check_conclusions": ["success", "neutral"],
-    "other_check_conclusions": ["success", "neutral", "skipped"],
-    "deny_protected_changes": true,
+    "required_check_conclusions": [
+      "success",
+      "neutral"
+    ],
+    "other_check_conclusions": [
+      "success",
+      "neutral",
+      "skipped"
+    ],
+    "deny_protected_changes": false,
+    "protected_merge_directive": {
+      "date": "2026-10-26",
+      "owner": "andrei649",
+      "statement": "Scoate și gate-ul din control_plane pentru auto-merge; vreau să poată fi dezvoltat autonom, fără intervenția mea."
+    },
     "method": "squash"
   },
   "deploy": {

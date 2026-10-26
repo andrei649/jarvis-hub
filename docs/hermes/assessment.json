@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "9060519fe029d48e323cc56553b473e82f840cb7",
-  "assessed_at": "2026-10-25T15:11:16Z",
+  "base_sha": "454f70834c36ae6e7146a30753c99d570c13b323",
+  "assessed_at": "2026-10-26T07:29:37Z",
   "reviews": [
     {
       "id": "H001",
@@ -29639,7 +29639,7 @@
       "id": "H655",
       "row_sha256": "df1733a35a8cce5e71ef5a1059ea895bda115df1432a9f5fd334f248d70e6d4b",
       "status": "partial",
-      "summary": "Fresh assessment 2026-10-14 (3d688255): ARCHITECTURE.md has a module index (:70), AGENTS.md and .claude/skills give AI contributors recipes, and snapshot gates (action_auth, route parity) fail CI on drift. But CONTRIBUTING.md is stale: it says new endpoints go in agents/web.py (:114) and expects 909 tests (:62). It also has no security or cross-platform rules, and there is no ownership map. Re-read 2026-10-21 after main (#1256 Nerva Workspace, deps #1271/#1272/#1275): the merge added the workspace routers, ws_user/ws_admin route tiers, the backup CLI archive-name check and pypdf/tzdata; every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read 2026-10-21 (batch 2: H051 pairing HUD statuses + nerva pairing verbs; H133 live status chrome; H297 multimodal tool results and bounded error messages; H326 grouped skill index with snapshot cache; H399 parallel-safety tool planner and heartbeats; H473 repo discovery; H688 dotted config paths; H665 atomic multi-skill batch): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read 2026-10-21 after merging #1251 (H283 host identity, H310/H537 web search, H206 memory explorer) into this branch: every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read after the batch 3 Hermes rows (H164 H288 H331 H444 H557 H574 H592 H652) changed files this row pins Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins",
+      "summary": "Fresh assessment 2026-10-14 (3d688255): ARCHITECTURE.md has a module index (:70), AGENTS.md and .claude/skills give AI contributors recipes, and snapshot gates (action_auth, route parity) fail CI on drift. But CONTRIBUTING.md is stale: it says new endpoints go in agents/web.py (:114) and expects 909 tests (:62). It also has no security or cross-platform rules, and there is no ownership map. Re-read 2026-10-21 after main (#1256 Nerva Workspace, deps #1271/#1272/#1275): the merge added the workspace routers, ws_user/ws_admin route tiers, the backup CLI archive-name check and pypdf/tzdata; every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read 2026-10-21 (batch 2: H051 pairing HUD statuses + nerva pairing verbs; H133 live status chrome; H297 multimodal tool results and bounded error messages; H326 grouped skill index with snapshot cache; H399 parallel-safety tool planner and heartbeats; H473 repo discovery; H688 dotted config paths; H665 atomic multi-skill batch): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read 2026-10-21 after merging #1251 (H283 host identity, H310/H537 web search, H206 memory explorer) into this branch: every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read after the batch 3 Hermes rows (H164 H288 H331 H444 H557 H574 H592 H652) changed files this row pins Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins Re-read 2026-10-26 after the owner directive that lets protected paths merge unattended (AGENTS.md → Delivery workflow, selfdev-policy.json → merge.protected_merge_directive): the row's claims (module index, AI recipes, snapshot gates failing CI on drift, stale CONTRIBUTING.md, no ownership map) are unchanged; the merge rule changed, not the contribution invariants.",
       "remaining": "- Refresh CONTRIBUTING.md and add security and cross-platform rules\n- A subsystem -> directories -> doc-to-read ownership map\n- Reviewer checklists any review agent can load",
       "evidence": [
         {
@@ -29648,7 +29648,7 @@
         },
         {
           "path": "AGENTS.md",
-          "sha256": "c31ee4eda898b22310ece05021a57091f9e9690753f2b692e30fff61ff4a6e55"
+          "sha256": "f439e4c7dce71af915660b53d5a2ce7a30e1e97e069e67d078214393bc25a2d9"
         },
         {
           "path": "CONTRIBUTING.md",

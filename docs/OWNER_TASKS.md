@@ -48,7 +48,7 @@
   `git tag v1.0.0 && git push origin v1.0.0` on `main`. Findings from the post-tag §0 run are 1.0.1.
 - [ ] **NWS-21 — merge the Nerva Workspace pilot PR (#1256) and cut the pilot tag** — added
   2026-10-19. *Why this is yours:* the PR touches `.github/workflows/ci.yml` and `e2e.yml`
-  (control-plane: owner merges, [spec §11](business/WORKSPACE_PILOT_SPEC.md)), and the pilot
+  (control-plane at the time: owner merged, [spec §11](business/WORKSPACE_PILOT_SPEC.md); unattended since 2026-10-26), and the pilot
   guide §2 installs only from a named tag that you cut after approving the pilot work — today none
   exists (`v1.0.0` is older than the workspace). (1) Review and merge
   [#1256](https://github.com/andrei649/jarvis-hub/pull/1256) (`claude/nerva-ai-os-product-tm5yzr`)
