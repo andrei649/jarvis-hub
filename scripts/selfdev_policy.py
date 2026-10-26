@@ -2,9 +2,12 @@
 """Classify autonomous Nerva development changes against the trusted control plane.
 
 Routine engineering is owner-out-of-loop when the trusted policy says a change
-is eligible. The exception is the small control plane that defines whether an
-autonomous change may merge or deploy at all. Those paths are the root of trust
-and may not self-authorize their own relaxation.
+is eligible. The small control plane that defines whether an autonomous change
+may merge or deploy at all is still classified and recorded as such; whether a
+change touching it may *merge* unattended is the owner's call, written in
+``merge.deny_protected_changes`` (``true`` blocks it; ``false`` needs the dated
+``merge.protected_merge_directive`` on record — owner directive 2026-10-26).
+Deploy never self-authorizes a protected change.
 
 This module is deliberately stdlib-only. The hourly auto-merge workflow checks
 out ``main`` and executes *that trusted copy* of this classifier before it
@@ -31,6 +34,7 @@ import argparse
 import copy
 import fnmatch
 import json
+import re
 import sys
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -142,8 +146,18 @@ def validate_policy(policy: dict[str, Any]) -> None:
     merge = policy.get("merge")
     if not isinstance(merge, dict) or _require_bool(merge, "enabled") is not True:
         raise PolicyError("merge.enabled must be true")
-    if merge.get("deny_protected_changes") is not True:
-        raise PolicyError("merge must deny protected-path changes")
+    if _require_bool(merge, "deny_protected_changes") is False:
+        directive = merge.get("protected_merge_directive")
+        if not isinstance(directive, dict):
+            raise PolicyError(
+                "merge.deny_protected_changes=false needs merge.protected_merge_directive on record"
+            )
+        for key in ("date", "owner", "statement"):
+            value = directive.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise PolicyError(f"protected_merge_directive.{key} must be a non-empty string")
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", directive["date"]):
+            raise PolicyError("protected_merge_directive.date must be YYYY-MM-DD")
     if merge.get("require_non_draft") is not True:
         raise PolicyError("merge must require a non-draft PR")
     if merge.get("require_clean_merge_state") is not True:
@@ -231,7 +245,10 @@ def classify(paths: list[str], policy: dict[str, Any]) -> dict[str, Any]:
 
     has_paths = bool(clean_paths)
     protected = bool(hits)
-    autonomous = has_paths and not protected and policy["autonomous_default"] is True
+    merge_blocked = protected and policy["merge"]["deny_protected_changes"] is True
+    autonomous = has_paths and not merge_blocked and policy["autonomous_default"] is True
+    # Deploy never self-authorizes a protected change, whatever the merge directive says.
+    deployable = has_paths and not protected and policy["autonomous_default"] is True
     local = policy.get("local_development", {})
     local_autonomous = (
         has_paths
@@ -245,11 +262,17 @@ def classify(paths: list[str], policy: dict[str, Any]) -> dict[str, Any]:
         "protected_hits": hits,
         "autonomous_local_development": local_autonomous,
         "autonomous_merge": autonomous and policy["merge"]["enabled"],
-        "autonomous_deploy": autonomous and policy["deploy"]["enabled"],
+        "autonomous_deploy": deployable and policy["deploy"]["enabled"],
         "independent_review_enforced": policy["review"]["independent_reviewer_required"],
         "decision": "autonomous" if autonomous else "control_plane",
         "reason": (
-            "protected_path" if protected else "no_paths" if not has_paths else "policy_disabled"
+            "protected_path_owner_directive"
+            if protected and not merge_blocked
+            else "protected_path"
+            if protected
+            else "no_paths"
+            if not has_paths
+            else "policy_disabled"
         ),
     }
 
@@ -264,6 +287,11 @@ def selftest(policy: dict[str, Any]) -> None:
     if normal["autonomous_deploy"] is not False:
         raise PolicyError("selftest: deploy must not be claimed live before its slice lands")
 
+    protected_merges = policy["merge"]["deny_protected_changes"] is False
+    strict = copy.deepcopy(policy)
+    strict["merge"]["deny_protected_changes"] = True
+    strict["merge"].pop("protected_merge_directive", None)
+    validate_policy(strict)
     for path in (
         "selfdev-policy.json",
         "scripts/selfdev_policy.py",
@@ -279,12 +307,27 @@ def selftest(policy: dict[str, Any]) -> None:
         "MAX.md",
     ):
         result = classify([path], policy)
-        if result["decision"] != "control_plane" or result["autonomous_merge"] is not False:
-            raise PolicyError(f"selftest: root-of-trust path self-authorized: {path}")
+        if not result["protected_hits"] or result["autonomous_deploy"] is not False:
+            raise PolicyError(f"selftest: root-of-trust path not recorded: {path}")
+        if result["autonomous_merge"] is not protected_merges:
+            raise PolicyError(f"selftest: merge of a protected path ignores the directive: {path}")
+        locked = classify([path], strict)
+        if locked["decision"] != "control_plane" or locked["autonomous_merge"] is not False:
+            raise PolicyError(f"selftest: root-of-trust path self-authorized under deny: {path}")
 
-    mixed = classify(["frontend/src/app.tsx", "agents/core/kernel/registry.py"], policy)
+    mixed = classify(["frontend/src/app.tsx", "agents/core/kernel/registry.py"], strict)
     if mixed["autonomous_merge"] is not False or not mixed["protected_hits"]:
-        raise PolicyError("selftest: one protected path must block a mixed candidate")
+        raise PolicyError("selftest: one protected path must block a mixed candidate under deny")
+
+    undirected = copy.deepcopy(policy)
+    undirected["merge"]["deny_protected_changes"] = False
+    undirected["merge"].pop("protected_merge_directive", None)
+    try:
+        validate_policy(undirected)
+    except PolicyError:
+        pass
+    else:
+        raise PolicyError("selftest: protected merge was allowed without an owner directive")
 
     empty = classify([], policy)
     if empty["reason"] != "no_paths" or empty["autonomous_merge"] is not False:

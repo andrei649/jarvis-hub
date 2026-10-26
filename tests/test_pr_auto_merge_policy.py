@@ -3,7 +3,9 @@
 This file intentionally keeps the same collected-case count as the policy suite it
 replaces. The old contract pinned ``nerva2/*`` as manual-only; the 2026-09-09
 owner directive replaces branch-name ceremony with a trusted, machine-readable
-root-of-trust policy plus a mandatory automated proof floor.
+root-of-trust policy plus a mandatory automated proof floor. The 2026-10-26 owner
+directive (``merge.protected_merge_directive``) lets protected paths merge unattended
+too; the structural invariants below are what remains non-removable.
 """
 
 from __future__ import annotations
@@ -149,7 +151,7 @@ POLICY_MUTATIONS = [
     "remove-kernel-protection",
     "disable-autonomous-default",
     "disable-merge",
-    "allow-protected-merge",
+    "allow-protected-merge-without-directive",
     "allow-draft-merge",
     "allow-nonclean-merge",
     "allow-no-checks",
@@ -205,6 +207,15 @@ def _merge_script() -> str:
 
 def _policy() -> dict:
     return selfdev_policy.load_policy(POLICY_PATH)
+
+
+def _strict_merge_policy(policy: dict | None = None) -> dict:
+    """A copy with the owner's protected-merge directive withdrawn (deny=true)."""
+    strict = copy.deepcopy(policy or _policy())
+    strict["merge"]["deny_protected_changes"] = True
+    strict["merge"].pop("protected_merge_directive", None)
+    selfdev_policy.validate_policy(strict)
+    return strict
 
 
 def test_workflow_preserves_schedule_concurrency_and_minimum_permissions() -> None:
@@ -276,12 +287,19 @@ def test_policy_pins_each_mandatory_automated_proof(check_name: str) -> None:
 
 
 @pytest.mark.parametrize("path", PROTECTED_CASES)
-def test_root_of_trust_paths_cannot_self_authorize(path: str) -> None:
-    result = selfdev_policy.classify([path], _policy())
-    assert result["decision"] == "control_plane"
-    assert result["autonomous_merge"] is False
-    assert result["autonomous_deploy"] is False
+def test_root_of_trust_paths_are_recorded_and_merge_only_by_owner_directive(path: str) -> None:
+    policy = _policy()
+    result = selfdev_policy.classify([path], policy)
     assert result["protected_hits"]
+    assert result["autonomous_deploy"] is False
+    directive = policy["merge"]["deny_protected_changes"] is False
+    assert result["autonomous_merge"] is directive
+    assert result["decision"] == ("autonomous" if directive else "control_plane")
+    assert result["reason"] == ("protected_path_owner_directive" if directive else "protected_path")
+    locked = selfdev_policy.classify([path], _strict_merge_policy(policy))
+    assert locked["decision"] == "control_plane"
+    assert locked["autonomous_merge"] is False
+    assert locked["reason"] == "protected_path"
 
 
 #: The owner's local-development grant as it reads when given in full.
@@ -326,16 +344,23 @@ def test_owner_authorizes_local_development_on_every_repository_path() -> None:
 
 def test_local_authorization_does_not_grant_merge_or_deploy() -> None:
     """The structural invariant, and the one test here that reads the committed file:
-    protected paths never merge or deploy autonomously, whatever local_development says."""
+    local_development never moves a merge or deploy decision. Protected paths never
+    deploy autonomously; they merge only under merge.protected_merge_directive, and
+    withdrawing that directive locks them again whatever local_development says."""
     variants = [_policy(), _with_local_development(LOCAL_GRANT), _with_local_development(None)]
     variants += [_with_local_development(revoke(LOCAL_GRANT)) for revoke in GRANT_REVOCATIONS.values()
                  if revoke(LOCAL_GRANT) is not None]
+    committed = _policy()["merge"]["deny_protected_changes"] is False
     for policy in variants:
+        strict = _strict_merge_policy(policy)
         for paths in [PROTECTED_CASES] + [[path] for path in PROTECTED_CASES]:
             result = selfdev_policy.classify(paths, policy)
-            assert result["autonomous_merge"] is False, paths
+            assert result["autonomous_merge"] is committed, paths
             assert result["autonomous_deploy"] is False, paths
-            assert result["decision"] == "control_plane", paths
+            locked = selfdev_policy.classify(paths, strict)
+            assert locked["autonomous_merge"] is False, paths
+            assert locked["autonomous_deploy"] is False, paths
+            assert locked["decision"] == "control_plane", paths
 
 
 def test_local_authorization_can_be_revoked_and_is_not_inferred() -> None:
@@ -417,8 +442,9 @@ def _mutated_policy(case: str) -> dict:
         policy["autonomous_default"] = False
     elif case == "disable-merge":
         policy["merge"]["enabled"] = False
-    elif case == "allow-protected-merge":
+    elif case == "allow-protected-merge-without-directive":
         policy["merge"]["deny_protected_changes"] = False
+        policy["merge"].pop("protected_merge_directive", None)
     elif case == "allow-draft-merge":
         policy["merge"]["require_non_draft"] = False
     elif case == "allow-nonclean-merge":

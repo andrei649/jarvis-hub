@@ -5,6 +5,21 @@
 
 ---
 
+## Decision — Protected paths merge unattended (2026-10-26)
+
+Owner directive, verbatim in `selfdev-policy.json` → `merge.protected_merge_directive`: *„Scoate și
+gate-ul din control_plane pentru auto-merge; vreau să poată fi dezvoltat autonom, fără intervenția
+mea."* `merge.deny_protected_changes` flips to `false`; `scripts/selfdev_policy.py` keeps recording
+`protected_hits` and the `protected_path_owner_directive` reason, refuses `false` without the dated
+directive, and still never deploys a protected change autonomously. The hourly `pr-auto-merge.yml`
+is unchanged in logic: it reads `autonomous_merge` from the trusted `main` copy, so the flip takes
+effect only after this change itself was merged by the owner (the last control-plane click). What
+remains non-removable: the mandatory protected-path list, the pinned check floor, the deploy and
+rollback invariants, and fail-closed on an invalid trusted policy. Companion protocol:
+`docs/prompts/LEAN_DRIVER.md` (budgeted single-slice runs that mark their PRs ready themselves).
+
+---
+
 ## Decision — Product rename to Nerva executed in-product (2026-07-19)
 
 Owner decision (MOONSHOT §7.4): the product identity is **Nerva** (published by Digitaholic),

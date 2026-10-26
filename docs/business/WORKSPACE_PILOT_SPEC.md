@@ -1376,7 +1376,7 @@ literals assigned to `*password*/*token*/*secret*` names); semgrep `p/python` + 
 scripts/status_sync.py` after adding tests; frontend `npx tsc --noEmit`, `npm run typecheck:e2e`,
 `npm test`, `npm run build` (both bundles committed; CI checks both); `./scripts/lock_deps.sh --check`
 and `pip-audit -r requirements-beta.lock`; `frontend/playwright.config.ts` ignores `workspace*.spec.ts`.
-The `ci.yml` and `e2e.yml` changes make the PR control-plane (owner merges).
+The `ci.yml` and `e2e.yml` changes made the PR control-plane (owner merged); since the owner directive of 2026-10-26 such PRs merge unattended too (`selfdev-policy.json` → `merge.protected_merge_directive`).
 
 ## 12. Quality rubric (pilot must score ≥ 9 on each)
 
@@ -1667,6 +1667,6 @@ traceback.
   `UMask`. A `restore` whose target is a symlink that leads nowhere is reported as `target … is
   not empty, nothing restored` (exit 1): `mkdir` raises `FileExistsError` on the link, which the
   CLI maps to that line; nothing is restored and the link's destination is not created.
-- Protected paths make a PR control-plane: `.github/workflows/**`, `agents/core/kernel/**`,
-  `agents/core/security/**`, `agents/core/secret*`, `AGENTS.md`, `MOONSHOT.md`. The plan touches only
-  `ci.yml` and (v3.1) `e2e.yml` among them.
+- Protected paths are recorded as such by the classifier (`.github/workflows/**`, `agents/core/kernel/**`,
+  `agents/core/security/**`, `agents/core/secret*`, `AGENTS.md`, `MOONSHOT.md`); since 2026-10-26 they no
+  longer block unattended merge. The plan touches only `ci.yml` and (v3.1) `e2e.yml` among them.

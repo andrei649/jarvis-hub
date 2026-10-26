@@ -15,8 +15,11 @@ name: Hourly PR Auto-Merge
 # check set, or allowed conclusions that judge themselves.
 #
 # Changes to the policy, ANY workflow/action, owner north-star/legal files, the
-# Action Kernel/security roots, and the other root-of-trust paths are skipped
-# rather than self-authorized.
+# Action Kernel/security roots, and the other root-of-trust paths are recorded
+# as protected hits; whether they merge unattended is the trusted policy's
+# `merge.deny_protected_changes` (false since the owner directive of 2026-10-26,
+# see `merge.protected_merge_directive`). The trusted-main evaluation still
+# holds: a candidate never judges itself with its own copy of the policy.
 #
 # Safety rules:
 #   - draft PRs are never touched;
