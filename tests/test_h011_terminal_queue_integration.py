@@ -11,9 +11,15 @@ from agents.core.approval_outcomes import (
 )
 from agents.core.commands import Principal
 from agents.core.environments.local_transport import LocalHostTransport
-from agents.core.file_checkpoint_history import FileCheckpointHistory
+from agents.core.file_checkpoint_history import HISTORY_SUPPORTED, FileCheckpointHistory
 from agents.core.file_tools import FileScope, SnapshotStore
 from tests.test_h277_smart_terminal_integration import runtime, use_real_kernel  # noqa: F401
+
+# History is a POSIX facility (O_DIRECTORY dir-fd locking); on Windows it refuses
+# with history_unsupported_platform by design, so these end-to-end cases cannot run.
+pytestmark = pytest.mark.skipif(
+    not HISTORY_SUPPORTED,
+    reason="file checkpoint history needs O_DIRECTORY (POSIX only)")
 
 
 @pytest.mark.asyncio

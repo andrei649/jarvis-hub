@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
-from agents.core.file_checkpoint_history import FileCheckpointHistory
+import pytest
+
+from agents.core.file_checkpoint_history import HISTORY_SUPPORTED, FileCheckpointHistory
 from agents.core.file_tools import FileScope, SnapshotStore
+
+# History is a POSIX facility (O_DIRECTORY dir-fd locking); on Windows it refuses
+# with history_unsupported_platform by design, so these end-to-end cases cannot run.
+pytestmark = pytest.mark.skipif(
+    not HISTORY_SUPPORTED,
+    reason="file checkpoint history needs O_DIRECTORY (POSIX only)")
 
 
 def _history(tmp_path):
