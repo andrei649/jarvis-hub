@@ -5,6 +5,11 @@
 > supervision. It is the operational twin of [`MAX.md`](../../MAX.md): Max defines *how* a run
 > behaves; this prompt defines *what gets picked next and when to stop*. Owner: Andrei ·
 > Created 2026-09-06 · Referenced from [`docs/NERVA_2_ROADMAP.md`](../NERVA_2_ROADMAP.md) §8.
+>
+> **Budget note (2026-10-26):** this protocol runs until the session budget is spent and was
+> written for long-lived sessions with agent fan-out. On a subscription plan use
+> [`LEAN_DRIVER.md`](LEAN_DRIVER.md) instead: one fresh session, one slice from
+> [`LEAN_QUEUE.md`](LEAN_QUEUE.md), no sub-agents, hard stop after the push.
 
 ---
 
