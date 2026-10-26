@@ -55,10 +55,15 @@ Open with one line and start: `▶ lean: <slug> — <one-line intent>`.
   modes); anything else that fails on Windows is a bug to fix.
 - Default-off for new runtime behaviour; every privileged effect crosses the Action Kernel
   (`MOONSHOT.md` §5 is binding even though you do not load it).
-- Protected paths are the owner's: `agents/core/{kernel,security,secrets}/**`, `.github/**`,
-  `AGENTS.md`, `MAX.md`, `MOONSHOT.md`, `NERVA_VISION.md`, `selfdev-policy.json`,
-  `scripts/selfdev_policy.py`, `docs/legal/**`. A slice that needs them is re-scoped or parked
-  with a packet in `docs/OWNER_TASKS.md`.
+- Protected paths are **workable** (owner directive 2026-10-26: "scoate protecțiile ca să îți faci
+  treaba liniștit"; `selfdev-policy.json` → `local_development.allow_protected_changes` is already
+  `true`): `agents/core/{kernel,security,secrets}/**`, `.github/**`, `scripts/selfdev_policy.py`
+  and the security-path Hermes rows may be changed when the slice needs it. Two consequences you
+  must state in the PR body: (1) a PR touching them is classified `control_plane`, so the hourly
+  auto-merge skips it and the owner merges it by hand; (2) the change is reviewed against the
+  **trusted `main` copy** of the classifier, so never weaken the classifier, the kernel, a security
+  boundary or a workflow gate in the same PR that relies on it. `MOONSHOT.md`, `NERVA_VISION.md`,
+  `LICENSE`, `TRADEMARKS.md` and `docs/legal/**` stay the owner's words.
 
 ## 3. Gates — targeted locally, full on CI
 

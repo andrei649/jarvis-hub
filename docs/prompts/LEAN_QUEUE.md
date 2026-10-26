@@ -3,9 +3,12 @@
 > Ranked 2026-10-26 from `scripts/backlog.py open` (44 open rows) and the Hermes handoff of
 > 2026-10-25. One row = one fresh session = one draft PR. **Lock:** a remote branch
 > `lean/<slug>` means the row is taken. **needs:** `ai` = a session may pick it; `owner` = never
-> picked (hardware, credentials, GitHub settings, a decision D1–D3, or a security path the owner
-> reserved on 2026-10-21: "leave the security at the end, I'll fix it"). Re-rank by editing this
-> file in a PR; never reorder silently.
+> picked (hardware, credentials, GitHub settings, or a decision D1–D3). Security paths and
+> workflows are no longer reserved (owner directive 2026-10-26, see `LEAN_DRIVER.md` §2); a PR
+> touching them needs the owner's manual merge. **North star for ranking:** Nerva better than
+> Hermes on the S1–S8 bar of `NERVA_VISION.md` §8 — equivalence rows (HEQ) and the hands/24×7
+> milestones of `docs/NERVA_2_ROADMAP.md` outrank polish. Re-rank by editing this file in a PR;
+> never reorder silently.
 
 | # | slug | BACKLOG id | size | needs | what "done" means |
 |---|------|------------|------|-------|-------------------|
@@ -19,9 +22,12 @@
 | [ ] 8 | `nws-10-ocr-scanned-pdf` | NWS-10 | M | ai | Optional, default-off OCR for PDFs without a text layer: lazy import of a local engine (`pytesseract` / `ocrmypdf` if present), per-page time and memory bounds reusing slice 4's child process, result marked `ocr` so a re-index works. No new mandatory dependency; `no_text` stays the answer when the engine is absent. Spec updated in the same PR. |
 | [ ] 9 | `heq-next-row` | HEQ-1 (one Hermes row per run) | M | ai | Take the first row still `partial` from this list, in order: H019 H046 H047 H058 H120 H137 H258 H322 H336 H349 H367 H379 H381 H382 H411 H422 H434 H470 H491 H510 H519 H534 H577 H632 H646 H655 H697. Follow process notes 1–4 of `docs/handoff-hermes-2026-10-25.md` (implement → targeted tests → `hermes_status.py write && check`). Branch `lean/heq-<ROW>`. This row never ticks; it is re-served until the list is empty. Security-path rows (H481 H495 H502 H512) are the owner's. |
 | [ ] 10 | `ha-4i-streaming-edits` | HA-4i | M | ai | Streaming edits on Slack and Discord replies, which the channel descriptors already claim: edit-in-place of the in-flight reply through the existing governed reply broker, bounded edit rate, honest fallback to a final message when the platform refuses the edit. Tests on the gateway with fake transports. |
+| [ ] 11 | `heq-security-row` | HEQ-1 (security-path Hermes rows) | M | ai | Same protocol as row 9 for the rows that were owner-reserved until 2026-10-26: H481 H495 H502 H512 (and any `partial` row whose files sit under `agents/core/security/**`, `kernel/**`, `secrets/**`). One row per run, `lean/heq-<ROW>`; the PR is `control_plane`, so the owner merges it. Never loosen a hard floor, a deny list or a kernel contract to reach equivalence: equivalence means Hermes's capability **under** Nerva's governance. |
+| [ ] 12 | `sec-b5-dataflow-taint` | SEC-B5 | M | ai | Taint by dataflow, not only by declared origin: the residual named at `BACKLOG.md` ~L6121–L6138 (recounted 2026-08-29 / 2026-09-05). Re-measure first with the row's own test names; implement the smallest propagation that closes the measured gap; red-first tests. `control_plane` PR. |
+| [ ] 13 | `sec-b6-gate-hardening` | SEC-B6 | S | ai | The gate-hardening residual after #896 (`BACKLOG.md` ~L6226). Recount against `agents/core/security/**`; ship only what the row still names. `control_plane` PR. |
+| [ ] 14 | `kernel-default-flip-check` | L3831 | S→M | ai | Evaluate criteria (a)–(c) recorded above `BACKLOG.md:3831` against the code and the evidence receipts. If all three hold, flip `JARVIS_ACTION_KERNEL` + `JARVIS_UNIFIED_ACTION_API` to default-on with the flags kept as kill-switches and the full affected suites listed in the PR; if any does not, record exactly which one and why in the row, no flip. `control_plane` PR either way. |
 | — | — | NWS-8, NWS-9 | — | owner | Native OIDC and ERP/CRM connectors wait for the owner's answers D1–D3 (`docs/decisions/2026-10-14-nerva-business-suite-kickoff-questions.md`). |
 | — | — | NWS-21 | — | owner | The pilot release tag. |
-| — | — | SEC-B5, SEC-B6, L3831 | — | owner | Security residuals and the kernel default flip: owner-reserved / criteria-gated. |
 | — | — | DRA-08 … DRA-62, GAP-0, GAP-4 | — | owner | Hardware, live accounts, GitHub settings, measured benchmarks, the Hermes head-to-head on the owner box. |
 | — | — | L6138 … L7431 (no id) | — | owner | Owner-wired integrations (Google/Spotify OAuth, Home Assistant, Frigate, Telegram token, engines install) and host-only proofs. |
 
