@@ -46,13 +46,12 @@
   has accumulated above the cut section); (2) check the `release.yml` `workflow_dispatch` `dry_run`
   triggered 2026-09-02 by the coordinator — the workflow has never run on GitHub before; (3)
   `git tag v1.0.0 && git push origin v1.0.0` on `main`. Findings from the post-tag §0 run are 1.0.1.
-- [ ] **NWS-21 — merge the Nerva Workspace pilot PR (#1256) and cut the pilot tag** — added
+- [ ] **NWS-21 — cut the Nerva Workspace pilot tag** (PR #1256 merged as `ed95528`, recounted 2026-10-26; only the tag remains) — added
   2026-10-19. *Why this is yours:* the PR touches `.github/workflows/ci.yml` and `e2e.yml`
   (control-plane at the time: owner merged, [spec §11](business/WORKSPACE_PILOT_SPEC.md); unattended since 2026-10-26), and the pilot
   guide §2 installs only from a named tag that you cut after approving the pilot work — today none
-  exists (`v1.0.0` is older than the workspace). (1) Review and merge
-  [#1256](https://github.com/andrei649/jarvis-hub/pull/1256) (`claude/nerva-ai-os-product-tm5yzr`)
-  into `main`. (2) Choose the tag's name and tag the merge commit on `main` (`git tag <name> && git
+  exists (`v1.0.0` is older than the workspace). (1) ~~Review and merge
+  [#1256](https://github.com/andrei649/jarvis-hub/pull/1256)~~ — merged. (2) Choose the tag's name and tag the merge commit on `main` (`git tag <name> && git
   push origin <name>`); the guide deliberately names no tag, so nothing in the docs has to change.
   (3) Give that name to the installer (pilot guide §2 `<eticheta-pilotului>`, §15 upgrades from tag
   to tag). Tracked in [BACKLOG.md](../BACKLOG.md) NWS-21.

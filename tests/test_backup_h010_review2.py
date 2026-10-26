@@ -394,6 +394,8 @@ def test_a_restore_never_prunes_an_owners_quick_backups(root, quick_restore):
 
 @pytest.fixture
 def notify_socket(monkeypatch):
+    if not hasattr(socket, "AF_UNIX"):
+        pytest.skip("sd_notify talks over an AF_UNIX datagram socket (no Windows equivalent)")
     folder = tempfile.mkdtemp(prefix="sdn-")
     path = os.path.join(folder, "n.sock")
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)

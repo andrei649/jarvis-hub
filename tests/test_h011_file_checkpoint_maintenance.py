@@ -4,7 +4,14 @@ import shutil
 
 import pytest
 
+from agents.core.file_checkpoint_history import HISTORY_SUPPORTED
 from agents.core.file_tools import FileScope, FileTools, SnapshotStore
+
+# History is a POSIX facility (O_DIRECTORY dir-fd locking); on Windows it refuses
+# with history_unsupported_platform by design, so these end-to-end cases cannot run.
+pytestmark = pytest.mark.skipif(
+    not HISTORY_SUPPORTED,
+    reason="file checkpoint history needs O_DIRECTORY (POSIX only)")
 
 
 def _legacy_layout(tools):

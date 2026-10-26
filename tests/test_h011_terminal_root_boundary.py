@@ -7,7 +7,14 @@ import pytest
 from agents.core.environments import TargetAuditChain, TargetRegistry, TerminalTarget
 from agents.core.environments.execution import GovernedTargetRunner
 from agents.core.environments.local_transport import LocalHostTransport
+from agents.core.file_checkpoint_history import HISTORY_SUPPORTED
 from agents.core.kernel import Decision, Verdict
+
+# History is a POSIX facility (O_DIRECTORY dir-fd locking); on Windows it refuses
+# with history_unsupported_platform by design, so these end-to-end cases cannot run.
+pytestmark = pytest.mark.skipif(
+    not HISTORY_SUPPORTED,
+    reason="file checkpoint history needs O_DIRECTORY (POSIX only)")
 
 
 @pytest.mark.asyncio
