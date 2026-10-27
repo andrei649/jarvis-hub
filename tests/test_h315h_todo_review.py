@@ -24,6 +24,10 @@ import pytest
 
 from tests.test_h315g_todo_review import _host_sandbox, _manager
 
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the owner lock is fcntl.flock, a Unix-only facility: Windows has no module-level kernel owner lock to test")
+
 
 def _key(session="s"):
     from agents.core import session_kernels as sk

@@ -1,5 +1,6 @@
 """Actual parent worker and independently approved file effects share no permit."""
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,6 +11,8 @@ from agents.core.kanban.context import KanbanContext, kanban_scope
 from agents.core.kanban.upstream import kanban_db as kb
 from tests.test_hermes_file_coordinator_intake import wire
 from tests.test_hermes_kanban_dispatcher import OWNER, create, read
+
+NO_BIN_PWD = pytest.mark.skipif(sys.platform == "win32", reason="the child runs /bin/pwd, a Unix executable")
 
 
 async def propose_child(tmp_path, monkeypatch, tool="file_write", *, content="worker after", source_lane="ready"):
@@ -126,6 +129,7 @@ async def test_rejected_child_keeps_parent_and_workspace_without_file_effect(tmp
 
 
 @pytest.mark.asyncio
+@NO_BIN_PWD
 async def test_independently_approved_terminal_child_runs_real_local_process_at_signed_cwd(tmp_path, monkeypatch):
     _, orch, root, cwd, _, child = await propose_child(tmp_path, monkeypatch, "terminal_run")
     assert child.payload["args"]["cwd"] == str(cwd.resolve())
@@ -139,6 +143,7 @@ async def test_independently_approved_terminal_child_runs_real_local_process_at_
 
 
 @pytest.mark.asyncio
+@NO_BIN_PWD
 async def test_terminal_child_checks_workspace_again_at_process_spawn(tmp_path, monkeypatch):
     from agents.core.environments.local_transport import LocalHostTransport
 
@@ -163,6 +168,7 @@ async def test_terminal_child_checks_workspace_again_at_process_spawn(tmp_path, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool", ["file_write", "file_delete"])
+@pytest.mark.skipif(sys.platform == "win32", reason="file checkpoint history is POSIX-only (openat/dir fds)")
 async def test_child_revocation_during_checkpoint_persistence_prevents_physical_effect(tmp_path, monkeypatch, tool):
     from agents.core.file_checkpoint_history import FileCheckpointHistory
 
