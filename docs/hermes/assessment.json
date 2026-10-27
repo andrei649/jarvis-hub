@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "1836b730b570de74cc07eaba393c2cbf7076fca9",
-  "assessed_at": "2026-10-27T17:30:03Z",
+  "base_sha": "815e176e34fe659b1a6abeae4a67ba4b85b22384",
+  "assessed_at": "2026-10-27T18:14:47Z",
   "reviews": [
     {
       "id": "H001",
@@ -12120,7 +12120,7 @@
       "id": "H293",
       "row_sha256": "0d9ef412a859ff4ecf5d04b46997d6707c7fca0b9f4b55a66a15e25242bd5a6b",
       "status": "partial",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): Nerva has its own test harness with most of the same knobs: per-test timeout and loopback-only sockets with an explicit opt-out marker (pytest.ini:16), a disposable data root per process and per xdist worker (tests/conftest.py:14), parallel CI with `-n auto --dist loadfile` (.github/workflows/ci.yml:72), live-service lanes gated by env such as JARVIS_NEO4J_LIVE (.github/workflows/reality.yml:106), a browser E2E lane with a repeat/soak input (.github/workflows/e2e.yml:1), and a hermetic operator benchmark (scripts/operator_bench.py:1). Re-read 2026-10-21 after main (#1256 Nerva Workspace, deps #1271/#1272/#1275): the merge added the workspace routers, ws_user/ws_admin route tiers, the backup CLI archive-name check and pypdf/tzdata; every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed.",
+      "summary": "Fresh assessment 2026-10-13 (9f92d937): Nerva has its own test harness with most of the same knobs: per-test timeout and loopback-only sockets with an explicit opt-out marker (pytest.ini:16), a disposable data root per process and per xdist worker (tests/conftest.py:14), parallel CI with `-n auto --dist loadfile` (.github/workflows/ci.yml:72), live-service lanes gated by env such as JARVIS_NEO4J_LIVE (.github/workflows/reality.yml:106), a browser E2E lane with a repeat/soak input (.github/workflows/e2e.yml:1), and a hermetic operator benchmark (scripts/operator_bench.py:1). Re-read 2026-10-21 after main (#1256 Nerva Workspace, deps #1271/#1272/#1275): the merge added the workspace routers, ws_user/ws_admin route tiers, the backup CLI archive-name check and pypdf/tzdata; every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Action-pin re-read 2026-10-27: upstream release refs verified; workflow commands, conditions, inputs and permissions are structurally unchanged. Existing partial status and remaining limits are preserved.",
       "remaining": "- No test-file retry/rerun knob (HERMES_TEST_FILE_RETRIES equivalent)\n- No deterministic slice/shard selection env for splitting the suite across machines\n- No browser-agent benchmark harness comparable to BUBENCH/ABEVAL/TS_BENCH against a CDP URL\n- No PTY test gate",
       "evidence": [
         {
@@ -12133,15 +12133,15 @@
         },
         {
           "path": ".github/workflows/ci.yml",
-          "sha256": "5aa77e87c909fe21fdcfad6db2bad5f51edc8134f59fdf6cc37804393dcc1beb"
+          "sha256": "267dd955f7d1ade4e0c11476d10865054265eecc2f9f915102979dc0fbf05a27"
         },
         {
           "path": ".github/workflows/reality.yml",
-          "sha256": "00fc0cb02f21ff90e2498430176ca977d6eee28f99f3e4035c4da30f663dde48"
+          "sha256": "8791cf958b50a993761e3a42a6475f292c3aa84764c2ad74215cf4b968c25135"
         },
         {
           "path": ".github/workflows/e2e.yml",
-          "sha256": "eed2d06a7b937d03d167fc38c7564e4db0251a9f1de463842171064b10089fce"
+          "sha256": "6ff7f96c8231613b3ef063bf63ec992188ec27b4de7f1173f4f812c3dd4a7393"
         },
         {
           "path": "scripts/operator_bench.py",
@@ -28606,12 +28606,12 @@
       "id": "H625",
       "row_sha256": "bba58d7ec1ef030a6ab7c1ccf6e49b32704b817544e3099a27313935a4fca3db",
       "status": "partial",
-      "summary": "Fresh assessment 2026-10-13 (ff8641a7): A container product now exists. The release workflow publishes a multi-arch image to GHCR (.github/workflows/release.yml:96 image job, .github/workflows/release.yml:124 tags). The Dockerfile binds loopback by default (Dockerfile:30 JARVIS_HOST=127.0.0.1) and keeps data in a volume (Dockerfile:45 VOLUME [\"/data\"]), pinned by tests/test_package_manifests.py:335 and tests/test_package_manifests.py:352. docker-compose.quickstart.yml:34 uses host networking with JARVIS_HOST=127.0.0.1 so host-local LM Studio/Ollama are reachable (docker-compose.quickstart.yml:13). The developer stack docker-compose.yml now runs serve.py with host networking and JARVIS_HOST=127.0.0.1, publishing no hub port (docker-compose.yml:20-26). Re-read 2026-10-21 (batch 1c): H010 replaced the developer compose hub's raw `uvicorn --host 0.0.0.0` command with serve.py (docker-compose.yml:20), which applies a staged restore at boot and can restart itself. It is now on host networking with a loopback bind and no published port (docker-compose.yml:21, docker-compose.yml:26), and its data is in the nerva_data volume at /data (docker-compose.yml:28, docker-compose.yml:31-32). tests/test_backup_h010_review4.py:141-144 pins the loopback posture and passes. The old citation of the compose file's line 13 (the deleted uvicorn command) was replaced, and the remaining item 'The developer docker-compose.yml still binds 0.0.0.0' is closed and removed. The other remaining items are untouched, so the status stays partial.",
+      "summary": "Fresh assessment 2026-10-13 (ff8641a7): A container product now exists. The release workflow publishes a multi-arch image to GHCR (.github/workflows/release.yml:96 image job, .github/workflows/release.yml:124 tags). The Dockerfile binds loopback by default (Dockerfile:30 JARVIS_HOST=127.0.0.1) and keeps data in a volume (Dockerfile:45 VOLUME [\"/data\"]), pinned by tests/test_package_manifests.py:335 and tests/test_package_manifests.py:352. docker-compose.quickstart.yml:34 uses host networking with JARVIS_HOST=127.0.0.1 so host-local LM Studio/Ollama are reachable (docker-compose.quickstart.yml:13). The developer stack docker-compose.yml now runs serve.py with host networking and JARVIS_HOST=127.0.0.1, publishing no hub port (docker-compose.yml:20-26). Re-read 2026-10-21 (batch 1c): H010 replaced the developer compose hub's raw `uvicorn --host 0.0.0.0` command with serve.py (docker-compose.yml:20), which applies a staged restore at boot and can restart itself. It is now on host networking with a loopback bind and no published port (docker-compose.yml:21, docker-compose.yml:26), and its data is in the nerva_data volume at /data (docker-compose.yml:28, docker-compose.yml:31-32). tests/test_backup_h010_review4.py:141-144 pins the loopback posture and passes. The old citation of the compose file's line 13 (the deleted uvicorn command) was replaced, and the remaining item 'The developer docker-compose.yml still binds 0.0.0.0' is closed and removed. The other remaining items are untouched, so the status stays partial. Action-pin re-read 2026-10-27: upstream release refs verified; workflow commands, conditions, inputs and permissions are structurally unchanged. Existing partial status and remaining limits are preserved.",
       "remaining": "- Documented dashboard / interactive CLI modes inside the container, log handling and env forwarding\n- Multi-profile supervision, audio bridge, resource limits, upgrade path and adding tools inside the image\n- An updater that refuses cleanly inside an image-managed install",
       "evidence": [
         {
           "path": ".github/workflows/release.yml",
-          "sha256": "5d470ae3d010db9d37b5fc1e62b6cfb9c379c8095af089d98e97504363d6252e"
+          "sha256": "d76450694c49a0a1d7a53438f76f0e2b7304ba1198c1f04fbc21e94204dafc7c"
         },
         {
           "path": "Dockerfile",
