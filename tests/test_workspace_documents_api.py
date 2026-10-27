@@ -142,6 +142,22 @@ def test_extraction_timeouts_fail_the_document(env, monkeypatch):
     assert (body["status"], body["error"]) == ("failed", "timeout")
 
 
+def test_real_child_timeout_is_stored_as_failed(env, monkeypatch):
+    conn, company, client = env
+    csrf = _as(client, company.member_a)
+    monkeypatch.setenv("NERVA_WORKSPACE_KILLABLE_EXTRACTION", "1")
+    real = documents.extract.extract_document
+
+    async def bounded(data, kind, *, timeout=60.0):
+        return await real(data, kind, timeout=0.001)
+
+    monkeypatch.setattr(documents.extract, "extract_document", bounded)
+    body = upload(client, csrf, company.dept_a, "slow.pdf", samples.build_pdf()).json()
+    assert (body["status"], body["error"]) == ("failed", "timeout")
+    assert conn.execute("SELECT status, error FROM documents WHERE id = ?",
+                        (body["id"],)).fetchone()["error"] == "timeout"
+
+
 def test_a_crash_inside_extraction_still_ends_failed(env, monkeypatch, caplog):
     conn, company, client = env
     csrf = _as(client, company.member_a)

@@ -738,7 +738,16 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   burst of long extractions cannot starve scrypt hashing and the hub's other `to_thread` users, and
   pure-Python parsing is GIL-bound anyway — under a 60 s bound that **counts queue time**, plus a
   cooperative deadline inside the worker (a thread stops at its next page, row or sheet checkpoint; it
-  cannot be killed mid-page). Any extraction problem → document `failed` with a stable `error` code
+  cannot be killed mid-page). **Opt-in containment (NWS-11):**
+  `NERVA_WORKSPACE_KILLABLE_EXTRACTION=1` (default off) moves PDF/DOCX extraction to fresh child
+  interpreters, at most two per hub process across request loops. The same 60 s deadline includes
+  queue and startup time; timeout or cancellation kills and reaps the child before releasing its
+  slot, and removes its parent-owned temporary directory. POSIX children set `RLIMIT_AS` to at most
+  512 MiB before loading the parser; Windows enforces time only, with `memory_unavailable` in the
+  internal `Extracted.limits` result (`wall_time`, `address_space` on POSIX). This is resource
+  containment, not a filesystem or network sandbox. Text/CSV/XLSX retain the cooperative pool.
+  A child that crashes or cannot start gives `invalid_file`; a deadline gives `timeout`.
+  Any extraction problem → document `failed` with a stable `error` code
   (`invalid_file`, `encrypted_pdf`, `too_many_pages`, `no_text`, `timeout`, `too_much_text` — over
   10 000 000 extracted characters; v3.2 `interrupted`, set by the scheduler's sweep, §9, for an
   extraction that died with its process). Stored as `files/<id>.bin`, moved into place inside the transaction
