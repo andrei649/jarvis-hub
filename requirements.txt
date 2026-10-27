@@ -6,7 +6,7 @@
 pyyaml>=6.0.3
 apscheduler>=3.11.3
 httpx>=0.28.1
-websockets>=17.2,<18
+websockets>=17.3,<18
 pillow>=13.0.0,<14
 python-dotenv>=1.2.4
 
@@ -19,8 +19,8 @@ ollama>=0.6.3
 # fastapi 0.137 route-introspection change handled by tests/_route_introspect.py;
 # starlette pinned below the untested 2.x major. See
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
-fastapi>=0.143.3,<0.144
-starlette>=1.8.0,<2.0
+fastapi>=0.162.0,<0.163
+starlette>=1.10.0,<2.0
 uvicorn>=0.54.0
 
 # Security
@@ -31,14 +31,14 @@ defusedxml>=0.7.1
 
 # Nerva Workspace (docs/business/WORKSPACE_PILOT_SPEC.md)
 # pypdf: text extraction from uploaded PDF documents (pure Python, no system deps).
-pypdf>=6.0,<7
+pypdf>=6.21.2,<7
 # python-docx: Word (.docx) text extraction for file_read (local_docs)
 # (H444: tables, text boxes, headers/footers, notes in document order). Without it
 # a .docx read returns parser_missing.
-python-docx>=1.1,<2
+python-docx>=1.2.0,<2
 # tzdata: IANA zones for zoneinfo on hosts without a system zone database (report
 # schedules run in each report's timezone; slim Linux images and Windows lack one).
-tzdata>=2024.1
+tzdata>=2026.5
 
 # Voice (optional — install manually or use requirements-beta.txt)
 # openwakeword

@@ -10,7 +10,7 @@
 pyyaml>=6.0.3
 apscheduler>=3.11.3
 httpx>=0.28.1
-websockets>=17.2,<18
+websockets>=17.3,<18
 pillow>=13.0.0,<14
 cryptography>=50.0.2
 defusedxml>=0.7.1  # hardened parsing of untrusted RSS/Atom feeds (news + digest)
@@ -19,20 +19,20 @@ ollama>=0.6.3
 # fastapi 0.137 wraps include_router results in an opaque _IncludedRouter instead of
 # flattening them into app.routes. The app is unaffected (routes serve + appear in
 # OpenAPI); the route-parity / auth-matrix guards now flatten the wrappers via
-# tests/_route_introspect.iter_effective_routes. starlette is pinned below the 1.x
+# tests/_route_introspect.iter_effective_routes. starlette is pinned below the 2.x
 # major (untested with this fastapi). Background:
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
-fastapi>=0.143.3,<0.144
-starlette>=1.8.0,<2.0
+fastapi>=0.162.0,<0.163
+starlette>=1.10.0,<2.0
 uvicorn>=0.54.0
 psutil>=7.2.2
 # Nerva Workspace: PDF text extraction for uploaded documents, and IANA zones for
 # zoneinfo on hosts without a system zone database (report schedules).
-pypdf>=6.0,<7
+pypdf>=6.21.2,<7
 # python-docx: Word (.docx) text extraction for file_read (H444); without it a .docx
 # read returns parser_missing.
-python-docx>=1.1,<2
-tzdata>=2024.1
+python-docx>=1.2.0,<2
+tzdata>=2026.5
 
 # === Memory (optional — improves with numpy) ===
 # numpy 2.5+ dropped Python 3.11; the marker keeps the install working on 3.11 boxes
