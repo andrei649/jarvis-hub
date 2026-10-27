@@ -1,13 +1,13 @@
 """OSINT investigator pack (P2, Track P) — governed correlation over untrusted evidence.
 
 `POST /api/osint/correlate` takes a batch of evidence items (gathered however the caller
-likes — WorldView/Argus, web, RSS, manual) and returns the evidence-drawer: findings
+likes — operator-supplied OSINT, web, RSS, manual) and returns the evidence-drawer: findings
 grouped by indicator, each with a provenance chain, a corroboration-based confidence, and
 a **taint flag** (set for any finding backed by an untrusted source). `GET /api/osint/brief`
 is the compact top-N "world brief" over the same input.
 
 Honest + offline: this *correlates* the evidence you provide — it does not fetch. Live
-collection (SpiderFoot modules, the WorldView REST, news feeds) is owner-gated wiring
+collection (SpiderFoot modules, news feeds) is owner-gated wiring
 (`docs/OWNER_TASKS.md`). Untrusted findings carry taint into any write-back, so the Action
 Kernel escalates them to approval — intel from an untrusted source can never auto-execute.
 """

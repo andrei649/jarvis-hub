@@ -7267,7 +7267,8 @@ class as `frontend/e2e` (above), in a second package, found by asking which trac
       without changing it, and a caret range would let the next lock regeneration move it. Verified
       against `main`'s lockfile: **added** `node_modules/@types/ws`, **removed** nothing,
       **version-changed** nothing.
-- [ ] 🟡 **What this is NOT: a PR gate.** `worldview.yml` has no `pull_request` trigger — #981
+- [x] 🟡 **What this is NOT: a PR gate.** `worldview.yml` has no `pull_request` trigger — #981
+      **Closed by owner retirement (2026-10-27, PR #1305):** the WorldView stack and dedicated workflow are removed. The trigger/restore proposal below is historical and must not be restored.
       removed it as an owner de-gate decision (2026-08-30), and it is restorable as group **K**
       (`pr-triggers-7-workflows`) in [`docs/restore/`](docs/restore/README.md). So every check in
       that workflow, this new one included, runs **after** a merge to `main`. It is a real gate on
