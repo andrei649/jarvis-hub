@@ -37,7 +37,20 @@ async def offload[T](fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
     connection is opened ``check_same_thread=False`` and used by one thread at a time
     (the caller awaits this), and the context variables (action origin) are copied.
     """
-    return await asyncio.to_thread(fn, *args, **kwargs)
+    worker = asyncio.ensure_future(asyncio.to_thread(fn, *args, **kwargs))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        # The thread cannot be interrupted, and FastAPI closes the request connection as soon
+        # as the cancellation unwinds: drain the worker first so it never meets a closed database.
+        while not worker.done():
+            try:
+                await asyncio.wait({worker})
+            except asyncio.CancelledError:
+                continue
+        if not worker.cancelled():
+            worker.exception()  # retrieved: nothing may log "never retrieved"
+        raise
 
 
 NO_STORE = {"Cache-Control": "no-store"}

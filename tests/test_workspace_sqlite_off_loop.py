@@ -106,3 +106,46 @@ async def test_a_held_write_lock_does_not_block_an_upload_of_another_user(env):
         holder.close()
         response = await asyncio.wait_for(blocked, 10)
     assert response.status_code == 201
+
+
+async def test_a_cancelled_offload_waits_for_its_worker():
+    import threading
+    started, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+    def work() -> None:
+        started.set()
+        release.wait(5)
+        finished.set()
+
+    task = asyncio.ensure_future(workspace_http.offload(work))
+    while not started.is_set():
+        await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.sleep(0.1)
+    assert not task.done()  # the cancellation waits for the worker, so the connection stays open
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert finished.is_set()
+
+
+def test_setup_throttle_counts_parallel_wrong_codes(env, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from agents.core.workspace import auth as workspace_auth_module
+
+    conn = env[0]
+    conn.execute("DELETE FROM org")
+    app_client = docs_client()
+    limit = 10
+    codes: list[int] = []
+
+    def attempt(_: int) -> int:
+        return app_client.post("/api/workspace/setup", json={
+            "setup_code": "wrong", "org_name": "X", "name": "A", "email": "a@example.com",
+            "password": "x" * 20}, headers={"Origin": "http://testserver"}).status_code
+
+    assert workspace_auth_module  # the limit is the module's own
+    with ThreadPoolExecutor(16) as pool:
+        codes = list(pool.map(attempt, range(16)))
+    assert sum(code == 429 for code in codes) >= 16 - limit

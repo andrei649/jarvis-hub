@@ -16,6 +16,7 @@ import hmac
 import json
 import logging
 import sqlite3
+import threading
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Request, Response
@@ -125,6 +126,11 @@ def session_state(request: Request, conn: Db, _on: Enabled) -> JSONResponse:
     return ws_json(payload)
 
 
+# The throttle reads the attempt log and then records into it; handlers run in worker threads
+# now, so the public check-then-record pairs are serialized (one process serves one workspace).
+_THROTTLE_LOCK = threading.Lock()
+
+
 @router.post("/setup")
 async def setup(request: Request, conn: Db, _on: Enabled) -> JSONResponse:
     """First-run: create the organisation, the „General" department and the first admin."""
@@ -132,21 +138,22 @@ async def setup(request: Request, conn: Db, _on: Enabled) -> JSONResponse:
     body = await read_json(request, max_bytes=8192)
 
     def _sync_2():
-        if identity.ensure_org(conn) is not None:
-            raise WorkspaceError("already_setup", "the workspace is already set up", 409)
-        ip = auth.client_ip(request)
-        auth.check_setup_throttle(conn, ip=ip)
-        code = require_str(body, "setup_code", max_len=200, min_len=1)
-        if not hmac.compare_digest(code.encode("utf-8"), config.setup_code().encode("utf-8")):
-            auth.record_attempt(conn, ip=ip, email="", ok=False, kind="setup")
-            raise WorkspaceError("invalid_setup_code", "the setup code is not correct", 403)
-        org_name = require_str(body, "org_name", max_len=200, min_len=1)
-        name = require_str(body, "name", max_len=200, min_len=1)
-        email = require_email(body, "email")
-        password = require_str(body, "password", max_len=MAX_PASSWORD_INPUT, min_len=1, strip=False)
-        locale = require_choice(body, "locale", identity.LOCALES, default="ro")
-        identity.validate_password(password, email=email)
-        return email, ip, locale, name, org_name, password
+        with _THROTTLE_LOCK:
+            if identity.ensure_org(conn) is not None:
+                raise WorkspaceError("already_setup", "the workspace is already set up", 409)
+            ip = auth.client_ip(request)
+            auth.check_setup_throttle(conn, ip=ip)
+            code = require_str(body, "setup_code", max_len=200, min_len=1)
+            if not hmac.compare_digest(code.encode("utf-8"), config.setup_code().encode("utf-8")):
+                auth.record_attempt(conn, ip=ip, email="", ok=False, kind="setup")
+                raise WorkspaceError("invalid_setup_code", "the setup code is not correct", 403)
+            org_name = require_str(body, "org_name", max_len=200, min_len=1)
+            name = require_str(body, "name", max_len=200, min_len=1)
+            email = require_email(body, "email")
+            password = require_str(body, "password", max_len=MAX_PASSWORD_INPUT, min_len=1, strip=False)
+            locale = require_choice(body, "locale", identity.LOCALES, default="ro")
+            identity.validate_password(password, email=email)
+            return email, ip, locale, name, org_name, password
 
     email, ip, locale, name, org_name, password = await offload(_sync_2)
     password_hash = await asyncio.to_thread(identity.hash_password, password)
@@ -310,10 +317,11 @@ async def invite_lookup(request: Request, conn: Db, _on: Enabled) -> JSONRespons
     ip = auth.client_ip(request)
 
     def _sync_1():
-        auth.check_invite_throttle(conn, ip=ip)
-        row = auth.find_invite(conn, body.get("token"))
-        auth.record_attempt(conn, ip=ip, email=row["email"] if row is not None else "",
-                            ok=row is not None, kind="invite_lookup")
+        with _THROTTLE_LOCK:
+            auth.check_invite_throttle(conn, ip=ip)
+            row = auth.find_invite(conn, body.get("token"))
+            auth.record_attempt(conn, ip=ip, email=row["email"] if row is not None else "",
+                                ok=row is not None, kind="invite_lookup")
         if row is None:
             raise WorkspaceError("invite_invalid", "this link is invalid, used or expired", 404)
         org = identity.ensure_org(conn)
