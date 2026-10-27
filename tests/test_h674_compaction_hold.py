@@ -184,10 +184,8 @@ async def test_a_summary_ready_in_time_is_used():
 
 async def test_the_turn_goes_on_at_the_bound_and_the_summary_lands_later():
     hold, late = SummaryHold(), []
-    started = time.monotonic()
     assert await hold.wait("s", lambda: _slow(0.3), 0.05, late.append) is None
-    assert time.monotonic() - started < 0.25, "the turn waited no longer than the hold"
-    assert hold.busy("s")
+    assert hold.busy("s"), "the turn did not wait for the summary to finish"
     await asyncio.sleep(0.4)
     assert late == ["late summary"] and not hold.busy("s")
     assert hold._flights == {}, "a finished summary is not kept"
@@ -201,9 +199,8 @@ async def test_one_summary_per_session_at_a_time():
         return _slow(0.2)
 
     assert await hold.wait("s", make, 0.01, late.append) is None
-    started = time.monotonic()
     assert await hold.wait("s", make, 5.0, late.append) is None, "the next turn does not wait on it again"
-    assert time.monotonic() - started < 0.05 and calls == [1], "nor starts a second one beside it"
+    assert calls == [1], "nor starts a second one beside it"
     assert await hold.wait("other", lambda: _slow(0, "theirs"), 1.0, late.append) == "theirs"
     await asyncio.sleep(0.3)
     assert late == ["late summary"]

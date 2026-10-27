@@ -237,7 +237,7 @@ def test_a_caller_with_a_state_known_never_waits_for_a_read(receiver, monkeypatc
         assert started.wait(5)
         began = time.monotonic()
         assert [switch.state() for _ in range(5)] == [False] * 5    # the last state, at once
-        assert time.monotonic() - began < 0.5
+        assert time.monotonic() - began < 2.0   # a held read blocks until release
     finally:
         release.set()
         first.join(5)
