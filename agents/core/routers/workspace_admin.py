@@ -35,6 +35,7 @@ from agents.core.workspace.errors import WorkspaceError
 from agents.core.workspace.http import (
     MAX_ID,
     invalid,
+    offload,
     optional_bool,
     optional_choice,
     optional_id_list,
@@ -153,10 +154,15 @@ async def _email_link(conn: sqlite3.Connection, request: Request, admin: Workspa
         mailer = importlib.import_module(MAILER_MODULE)
     except ImportError:
         return "smtp_not_configured"
-    org = identity.ensure_org(conn)
-    subject, text = _link_email(user.locale, org_name=org["name"] if org else "",
-                                admin_name=admin.name, user_name=user.name, url=url, purpose=purpose)
-    error: str | None = None
+
+    def _sync_2():
+        org = identity.ensure_org(conn)
+        subject, text = _link_email(user.locale, org_name=org["name"] if org else "",
+                                    admin_name=admin.name, user_name=user.name, url=url, purpose=purpose)
+        error: str | None = None
+        return error, subject, text
+
+    error, subject, text = await offload(_sync_2)
     try:
         # Reading the settings can fail too (an unreadable secret store): the user and
         # the link already exist, so any failure is reported, never raised.
@@ -168,12 +174,16 @@ async def _email_link(conn: sqlite3.Connection, request: Request, admin: Workspa
     except Exception:  # an SMTP library failure must never undo the user's creation
         logger.exception("sending the %s email failed", purpose)
         error = "smtp_failed"
-    with tx(conn):
-        audit.record(conn, actor=admin, action="email.failed" if error else "email.sent",
-                     target_type="user", target_id=user.id, ip=auth.client_ip(request),
-                     details={"purpose": purpose, "recipients": 1,
-                              **({"error_code": error} if error else {})})
-    return error
+
+    def _sync_1():
+        with tx(conn):
+            audit.record(conn, actor=admin, action="email.failed" if error else "email.sent",
+                         target_type="user", target_id=user.id, ip=auth.client_ip(request),
+                         details={"purpose": purpose, "recipients": 1,
+                                  **({"error_code": error} if error else {})})
+        return error
+
+    return await offload(_sync_1)
 
 
 async def _link_payload(conn: sqlite3.Connection, request: Request, admin: WorkspaceUser,
@@ -205,28 +215,37 @@ async def create_user(request: Request, admin: WsAdmin, conn: Db) -> JSONRespons
     department_ids = require_id_list(body, "department_ids", min_items=1)
     send_email = bool(optional_bool(body, "send_email", default=False))
     ip = auth.client_ip(request)
-    with tx(conn):
-        _check_departments(conn, department_ids, already=[])
-        if identity.get_user_by_email(conn, email) is not None:
-            raise WorkspaceError("email_taken", "a user with this email already exists", 409,
-                                 field="email")
-        org = identity.ensure_org(conn)
-        user_id = int(conn.execute(
-            "INSERT INTO users (email, name, role, status, locale, created_at) "
-            "VALUES (?, ?, ?, 'invited', ?, ?)",
-            (email, name, role, org["default_locale"] if org else "ro", db.now()),
-        ).lastrowid)
-        _set_memberships(conn, user_id, department_ids)
-        token, expires_at = auth.issue_invite(conn, user_id, purpose="invite", created_by=admin.id)
-        audit.record(conn, actor=admin, action="user.created", target_type="user",
-                     target_id=user_id, ip=ip,
-                     details={"role": role, "department_ids": department_ids})
-        audit.record(conn, actor=admin, action="user.invite_issued", target_type="user",
-                     target_id=user_id, ip=ip, details={"purpose": "invite", "expires_at": expires_at})
-    user = _loaded(conn, user_id)
+
+    def _sync_2():
+        with tx(conn):
+            _check_departments(conn, department_ids, already=[])
+            if identity.get_user_by_email(conn, email) is not None:
+                raise WorkspaceError("email_taken", "a user with this email already exists", 409,
+                                     field="email")
+            org = identity.ensure_org(conn)
+            user_id = int(conn.execute(
+                "INSERT INTO users (email, name, role, status, locale, created_at) "
+                "VALUES (?, ?, ?, 'invited', ?, ?)",
+                (email, name, role, org["default_locale"] if org else "ro", db.now()),
+            ).lastrowid)
+            _set_memberships(conn, user_id, department_ids)
+            token, expires_at = auth.issue_invite(conn, user_id, purpose="invite", created_by=admin.id)
+            audit.record(conn, actor=admin, action="user.created", target_type="user",
+                         target_id=user_id, ip=ip,
+                         details={"role": role, "department_ids": department_ids})
+            audit.record(conn, actor=admin, action="user.invite_issued", target_type="user",
+                         target_id=user_id, ip=ip, details={"purpose": "invite", "expires_at": expires_at})
+        user = _loaded(conn, user_id)
+        return token, user
+
+    token, user = await offload(_sync_2)
     payload = await _link_payload(conn, request, admin, user, token, "invite", send_email)
     payload.pop("purpose")
-    return ws_json({"user": admin_user_json(conn, user), **payload}, 201)
+
+    def _sync_1():
+        return ws_json({"user": admin_user_json(conn, user), **payload}, 201)
+
+    return await offload(_sync_1)
 
 
 def _next_status(target_status: str, requested: str | None, has_password: bool) -> str:
@@ -247,51 +266,55 @@ async def update_user(request: Request, user_id: UserId, admin: WsAdmin, conn: D
     department_ids = optional_id_list(body, "department_ids", min_items=1)
     status = optional_choice(body, "status", ("active", "disabled"))
     ip = auth.client_ip(request)
-    with tx(conn):
-        target = _loaded(conn, user_id)
-        has_password = conn.execute("SELECT password_hash IS NOT NULL AS p FROM users WHERE id = ?",
-                                    (user_id,)).fetchone()["p"]
-        new_role = role or target.role
-        new_status = _next_status(target.status, status, bool(has_password))
-        if new_status == "disabled" and target.id == admin.id:
-            raise WorkspaceError("cannot_disable_self", "you cannot disable your own account", 409)
-        loses_admin = (target.is_admin and target.status == "active"
-                       and (new_role != "admin" or new_status != "active"))
-        if loses_admin and not notifications.admins(conn, exclude=target.id):
-            raise WorkspaceError("last_admin", "the workspace needs at least one active admin", 409)
-        changed: list[str] = []
-        current_memberships = identity.member_department_ids(conn, user_id)
-        if department_ids is not None and sorted(department_ids) != current_memberships:
-            _check_departments(conn, department_ids, already=current_memberships)
-            _set_memberships(conn, user_id, department_ids)
-            changed.append("department_ids")
-        if name is not None and name != target.name:
-            changed.append("name")
-        conn.execute("UPDATE users SET name = COALESCE(?, name), role = ?, status = ? WHERE id = ?",
-                     (name, new_role, new_status, user_id))
-        role_changed = new_role != target.role
-        status_changed = new_status != target.status
-        if role_changed or (status_changed and new_status == "disabled"):
-            auth.revoke_user_sessions(conn, user_id)
-        if status_changed and new_status == "disabled":
-            conn.execute("DELETE FROM invites WHERE user_id = ? AND used_at IS NULL", (user_id,))
-        if status_changed:
-            audit.record(conn, actor=admin,
-                         action="user.disabled" if new_status == "disabled" else "user.enabled",
-                         target_type="user", target_id=user_id, ip=ip,
-                         details={"from": target.status, "to": new_status})
-        if role_changed:
-            audit.record(conn, actor=admin,
-                         action="user.promoted" if new_role == "admin" else "user.updated",
-                         target_type="user", target_id=user_id, ip=ip,
-                         details={"fields": ["role"], "from": target.role, "to": new_role})
-        if changed:
-            details: dict = {"fields": changed}
-            if "department_ids" in changed:
-                details["department_ids"] = department_ids
-            audit.record(conn, actor=admin, action="user.updated", target_type="user",
-                         target_id=user_id, ip=ip, details=details)
-    return ws_json({"user": admin_user_json(conn, _loaded(conn, user_id))})
+
+    def _sync_1():
+        with tx(conn):
+            target = _loaded(conn, user_id)
+            has_password = conn.execute("SELECT password_hash IS NOT NULL AS p FROM users WHERE id = ?",
+                                        (user_id,)).fetchone()["p"]
+            new_role = role or target.role
+            new_status = _next_status(target.status, status, bool(has_password))
+            if new_status == "disabled" and target.id == admin.id:
+                raise WorkspaceError("cannot_disable_self", "you cannot disable your own account", 409)
+            loses_admin = (target.is_admin and target.status == "active"
+                           and (new_role != "admin" or new_status != "active"))
+            if loses_admin and not notifications.admins(conn, exclude=target.id):
+                raise WorkspaceError("last_admin", "the workspace needs at least one active admin", 409)
+            changed: list[str] = []
+            current_memberships = identity.member_department_ids(conn, user_id)
+            if department_ids is not None and sorted(department_ids) != current_memberships:
+                _check_departments(conn, department_ids, already=current_memberships)
+                _set_memberships(conn, user_id, department_ids)
+                changed.append("department_ids")
+            if name is not None and name != target.name:
+                changed.append("name")
+            conn.execute("UPDATE users SET name = COALESCE(?, name), role = ?, status = ? WHERE id = ?",
+                         (name, new_role, new_status, user_id))
+            role_changed = new_role != target.role
+            status_changed = new_status != target.status
+            if role_changed or (status_changed and new_status == "disabled"):
+                auth.revoke_user_sessions(conn, user_id)
+            if status_changed and new_status == "disabled":
+                conn.execute("DELETE FROM invites WHERE user_id = ? AND used_at IS NULL", (user_id,))
+            if status_changed:
+                audit.record(conn, actor=admin,
+                             action="user.disabled" if new_status == "disabled" else "user.enabled",
+                             target_type="user", target_id=user_id, ip=ip,
+                             details={"from": target.status, "to": new_status})
+            if role_changed:
+                audit.record(conn, actor=admin,
+                             action="user.promoted" if new_role == "admin" else "user.updated",
+                             target_type="user", target_id=user_id, ip=ip,
+                             details={"fields": ["role"], "from": target.role, "to": new_role})
+            if changed:
+                details: dict = {"fields": changed}
+                if "department_ids" in changed:
+                    details["department_ids"] = department_ids
+                audit.record(conn, actor=admin, action="user.updated", target_type="user",
+                             target_id=user_id, ip=ip, details=details)
+        return ws_json({"user": admin_user_json(conn, _loaded(conn, user_id))})
+
+    return await offload(_sync_1)
 
 
 @router.post("/admin/users/{user_id}/invite")
@@ -299,16 +322,21 @@ async def reissue_link(request: Request, user_id: UserId, admin: WsAdmin, conn: 
     """A new invite (invited user) or password-reset link (active user); older ones die."""
     body = await read_json(request, max_bytes=4096, allow_empty=True)
     send_email = bool(optional_bool(body, "send_email", default=False))
-    with tx(conn):
-        target = _loaded(conn, user_id)
-        purpose = auth.invite_purpose_for(target.status)
-        if purpose is None:
-            raise WorkspaceError("user_disabled", "enable the user before issuing a link", 409)
-        token, expires_at = auth.issue_invite(conn, user_id, purpose=purpose, created_by=admin.id)
-        audit.record(conn, actor=admin,
-                     action="user.invite_issued" if purpose == "invite" else "auth.reset_link_issued",
-                     target_type="user", target_id=user_id, ip=auth.client_ip(request),
-                     details={"purpose": purpose, "expires_at": expires_at})
+
+    def _sync_1():
+        with tx(conn):
+            target = _loaded(conn, user_id)
+            purpose = auth.invite_purpose_for(target.status)
+            if purpose is None:
+                raise WorkspaceError("user_disabled", "enable the user before issuing a link", 409)
+            token, expires_at = auth.issue_invite(conn, user_id, purpose=purpose, created_by=admin.id)
+            audit.record(conn, actor=admin,
+                         action="user.invite_issued" if purpose == "invite" else "auth.reset_link_issued",
+                         target_type="user", target_id=user_id, ip=auth.client_ip(request),
+                         details={"purpose": purpose, "expires_at": expires_at})
+        return expires_at, purpose, target, token
+
+    expires_at, purpose, target, token = await offload(_sync_1)
     payload = await _link_payload(conn, request, admin, target, token, purpose, send_email)
     return ws_json({**payload, "expires_at": expires_at})
 
@@ -367,18 +395,22 @@ async def create_department(request: Request, admin: WsAdmin, conn: Db) -> JSONR
     description = require_str(body, "description", max_len=MAX_TEXT, required=False, multiline=True)
     instructions = require_str(body, "assistant_instructions", max_len=MAX_TEXT, required=False,
                                multiline=True)
-    with tx(conn):
-        _check_unique_name(conn, name)
-        slug = identity.unique_department_slug(conn, name)
-        dept_id = int(conn.execute(
-            "INSERT INTO departments (slug, name, description, assistant_instructions, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (slug, name, description, instructions, db.now()),
-        ).lastrowid)
-        audit.record(conn, actor=admin, action="department.created", target_type="department",
-                     target_id=dept_id, department_id=dept_id, ip=auth.client_ip(request),
-                     details={"name": name, "slug": slug})
-    return ws_json(_department(conn, dept_id), 201)
+
+    def _sync_1():
+        with tx(conn):
+            _check_unique_name(conn, name)
+            slug = identity.unique_department_slug(conn, name)
+            dept_id = int(conn.execute(
+                "INSERT INTO departments (slug, name, description, assistant_instructions, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (slug, name, description, instructions, db.now()),
+            ).lastrowid)
+            audit.record(conn, actor=admin, action="department.created", target_type="department",
+                         target_id=dept_id, department_id=dept_id, ip=auth.client_ip(request),
+                         details={"name": name, "slug": slug})
+        return ws_json(_department(conn, dept_id), 201)
+
+    return await offload(_sync_1)
 
 
 @router.patch("/admin/departments/{department_id}")
@@ -394,28 +426,32 @@ async def update_department(request: Request, department_id: DepartmentId, admin
     }
     archived = optional_bool(body, "archived")
     ip = auth.client_ip(request)
-    with tx(conn):
-        current = _department(conn, department_id)
-        if changes["name"] is not None:
-            _check_unique_name(conn, changes["name"], exclude=department_id)
-        fields = [key for key, value in changes.items() if value is not None and value != current[key]]
-        conn.execute(
-            "UPDATE departments SET name = COALESCE(?, name), description = COALESCE(?, description), "
-            "assistant_instructions = COALESCE(?, assistant_instructions), "
-            "archived = COALESCE(?, archived) WHERE id = ?",
-            (changes["name"], changes["description"], changes["assistant_instructions"],
-             None if archived is None else int(archived), department_id),
-        )
-        if archived is True and not current["archived"]:
-            audit.record(conn, actor=admin, action="department.archived", target_type="department",
-                         target_id=department_id, department_id=department_id, ip=ip)
-        elif archived is False and current["archived"]:
-            fields.append("archived")
-        if fields:
-            audit.record(conn, actor=admin, action="department.updated", target_type="department",
-                         target_id=department_id, department_id=department_id, ip=ip,
-                         details={"fields": fields})
-    return ws_json(_department(conn, department_id))
+
+    def _sync_1():
+        with tx(conn):
+            current = _department(conn, department_id)
+            if changes["name"] is not None:
+                _check_unique_name(conn, changes["name"], exclude=department_id)
+            fields = [key for key, value in changes.items() if value is not None and value != current[key]]
+            conn.execute(
+                "UPDATE departments SET name = COALESCE(?, name), description = COALESCE(?, description), "
+                "assistant_instructions = COALESCE(?, assistant_instructions), "
+                "archived = COALESCE(?, archived) WHERE id = ?",
+                (changes["name"], changes["description"], changes["assistant_instructions"],
+                 None if archived is None else int(archived), department_id),
+            )
+            if archived is True and not current["archived"]:
+                audit.record(conn, actor=admin, action="department.archived", target_type="department",
+                             target_id=department_id, department_id=department_id, ip=ip)
+            elif archived is False and current["archived"]:
+                fields.append("archived")
+            if fields:
+                audit.record(conn, actor=admin, action="department.updated", target_type="department",
+                             target_id=department_id, department_id=department_id, ip=ip,
+                             details={"fields": fields})
+        return ws_json(_department(conn, department_id))
+
+    return await offload(_sync_1)
 
 
 @router.delete("/admin/departments/{department_id}")
@@ -466,23 +502,27 @@ async def update_org(request: Request, admin: WsAdmin, conn: Db) -> JSONResponse
         "default_locale": optional_choice(body, "default_locale", identity.LOCALES),
         "model_policy": optional_choice(body, "model_policy", ("local_only", "allow_cloud")),
     }
-    with tx(conn):
-        current = identity.org_to_json(_org(conn))
-        changed = {key: value for key, value in changes.items()
-                   if value is not None and value != current[key]}
-        if changed:
-            conn.execute(
-                "UPDATE org SET name = COALESCE(?, name), default_locale = COALESCE(?, default_locale), "
-                "model_policy = COALESCE(?, model_policy) WHERE id = 1",
-                (changed.get("name"), changed.get("default_locale"), changed.get("model_policy")),
-            )
-            details: dict = {"fields": sorted(changed)}
-            if "model_policy" in changed:
-                details["model_policy"] = {"from": current["model_policy"],
-                                           "to": changed["model_policy"]}
-            audit.record(conn, actor=admin, action="org.updated", target_type="org", target_id=1,
-                         ip=auth.client_ip(request), details=details)
-    return ws_json(identity.org_to_json(_org(conn)))
+
+    def _sync_1():
+        with tx(conn):
+            current = identity.org_to_json(_org(conn))
+            changed = {key: value for key, value in changes.items()
+                       if value is not None and value != current[key]}
+            if changed:
+                conn.execute(
+                    "UPDATE org SET name = COALESCE(?, name), default_locale = COALESCE(?, default_locale), "
+                    "model_policy = COALESCE(?, model_policy) WHERE id = 1",
+                    (changed.get("name"), changed.get("default_locale"), changed.get("model_policy")),
+                )
+                details: dict = {"fields": sorted(changed)}
+                if "model_policy" in changed:
+                    details["model_policy"] = {"from": current["model_policy"],
+                                               "to": changed["model_policy"]}
+                audit.record(conn, actor=admin, action="org.updated", target_type="org", target_id=1,
+                             ip=auth.client_ip(request), details=details)
+        return ws_json(identity.org_to_json(_org(conn)))
+
+    return await offload(_sync_1)
 
 
 # ── audit ────────────────────────────────────────────────────────────────────────────

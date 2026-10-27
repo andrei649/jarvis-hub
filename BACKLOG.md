@@ -258,7 +258,7 @@
     `secrets.enc.` matches `db.own_entry` and is tightened to 0600 (narrow the sibling patterns to
     the exact `-wal`/`-shm`/`-journal` and the secret store's own temp names).
   Remaining (recounted 2026-10-26): all five bullets stand — `ws-run-meta__wide` is not applied to the visibility badge, `backup.py:875/1785` still prints `is not empty` for a dangling symlink, and `db.own_entry` (`db.py:381-383`) still matches by prefix `workspace.db-` / `secrets.enc.`.
-- [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
+- [x] ✅ **NWS-13 — synchronous SQLite work off the event loop.** DONE 2026-10-27 (`http.offload`, spec §3; only the rare client-cancelled answer store stays inline). Uploads, chat and report routes run short
   `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
   contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.
   Remaining (recounted 2026-10-26): partly done — `documents.py` already offloads its store/hash/read steps with `asyncio.to_thread` (L900-1039) and password hashing is offloaded in `workspace_auth.py`; every `db.tx` (`auth.py`, `approvals.py`, `audit.py`, `documents.py:402/808`) and the FTS queries in the handlers still run on the event loop. Decision still open: thread offload workspace-wide vs one executor.

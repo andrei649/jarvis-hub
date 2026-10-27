@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from agents.core.workspace import auth, reports
 from agents.core.workspace.auth import WsUser
 from agents.core.workspace.db import Db
-from agents.core.workspace.http import MAX_ID, read_json, ws_json, ws_no_content
+from agents.core.workspace.http import MAX_ID, offload, read_json, ws_json, ws_no_content
 
 logger = logging.getLogger("nerva.workspace.routers.reports")
 
@@ -45,8 +45,12 @@ def list_reports(user: WsUser, conn: Db, department_id: DepartmentFilter = None)
 async def create_report(request: Request, user: WsUser, conn: Db) -> JSONResponse:
     """Define a report; recipients open a delivery approval in the same transaction."""
     body = await read_json(request)
-    report_id = reports.create_report(conn, user, body, ip=auth.client_ip(request))
-    return ws_json(reports.get_report(conn, user, report_id), 201)
+    ip = auth.client_ip(request)
+
+    def work() -> dict:
+        return reports.get_report(conn, user, reports.create_report(conn, user, body, ip=ip))
+
+    return ws_json(await offload(work), 201)
 
 
 @router.get("/reports/{report_id}")
@@ -60,8 +64,13 @@ async def update_report(report_id: ReportId, request: Request, user: WsUser,
                         conn: Db) -> JSONResponse:
     """Edit a report; changed recipients re-open the delivery approval."""
     body = await read_json(request)
-    reports.update_report(conn, user, report_id, body, ip=auth.client_ip(request))
-    return ws_json(reports.get_report(conn, user, report_id))
+    ip = auth.client_ip(request)
+
+    def work() -> dict:
+        reports.update_report(conn, user, report_id, body, ip=ip)
+        return reports.get_report(conn, user, report_id)
+
+    return ws_json(await offload(work))
 
 
 @router.delete("/reports/{report_id}")
@@ -75,9 +84,14 @@ def delete_report(report_id: ReportId, request: Request, user: WsUser, conn: Db)
 async def run_report(report_id: ReportId, request: Request, user: WsUser,
                      conn: Db) -> JSONResponse:
     """Queue a run now (``202``); it executes in the background."""
-    run_id = reports.start_manual_run(conn, user, report_id, ip=auth.client_ip(request))
+    ip = auth.client_ip(request)
+
+    def queue() -> int:
+        return reports.start_manual_run(conn, user, report_id, ip=ip)
+
+    run_id = await offload(queue)
     reports.spawn_run(run_id)
-    return ws_json({"run": reports.get_run(conn, user, run_id)}, 202)
+    return ws_json({"run": await offload(reports.get_run, conn, user, run_id)}, 202)
 
 
 @router.get("/reports/{report_id}/runs")

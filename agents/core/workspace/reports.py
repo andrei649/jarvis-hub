@@ -63,6 +63,7 @@ from agents.core.workspace.effects_api import EffectSpec, ValidatedRequest, regi
 from agents.core.workspace.errors import WorkspaceError
 from agents.core.workspace.http import (
     invalid,
+    offload,
     optional_id_list,
     optional_int,
     optional_str,
@@ -1870,8 +1871,7 @@ def _validate_delivery(conn: sqlite3.Connection, requester: WorkspaceUser,
                             payload={"report_id": report_id, "emails": sorted(emails)})
 
 
-async def _execute_delivery(approval: dict, requester: WorkspaceUser,
-                            decider: WorkspaceUser) -> dict:
+def _apply_delivery(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
     """Approved: snapshot the recipients; every later successful run is mailed to them."""
     payload = approval["payload"]
     report_id = require_int(payload, "report_id", minimum=1)
@@ -1891,6 +1891,11 @@ async def _execute_delivery(approval: dict, requester: WorkspaceUser,
     finally:
         conn.close()
     return {"report_id": report_id, "approved_recipients": emails}
+
+
+async def _execute_delivery(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
+    """Run :func:`_apply_delivery` off the event loop (a write transaction may wait for the lock)."""
+    return await offload(_apply_delivery, approval, requester, decider)
 
 
 # ── effect: report.share_company (admins) ────────────────────────────────────────────
@@ -1913,7 +1918,7 @@ def _validate_share(conn: sqlite3.Connection, requester: WorkspaceUser,
                             payload={"run_id": run_id})
 
 
-async def _execute_share(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
+def _apply_share(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
     """Approved: everyone in the company can read this run from now on."""
     run_id = require_int(approval["payload"], "run_id", minimum=1)
     conn = db.connect()
@@ -1931,6 +1936,11 @@ async def _execute_share(approval: dict, requester: WorkspaceUser, decider: Work
     finally:
         conn.close()
     return {"run_id": run_id, "shared_company": True}
+
+
+async def _execute_share(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
+    """Run :func:`_apply_share` off the event loop (a write transaction may wait for the lock)."""
+    return await offload(_apply_share, approval, requester, decider)
 
 
 # ── effect: email.send (department approvers) ────────────────────────────────────────
