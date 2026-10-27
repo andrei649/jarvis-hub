@@ -157,6 +157,44 @@ async def test_feature_is_default_off(monkeypatch):
     assert result.limits == ()
 
 
+async def test_frozen_worker_uses_early_dispatch_without_booting_hub(monkeypatch, tmp_path):
+    from agents.core.workspace import extract_process
+
+    real_spawn = asyncio.create_subprocess_exec
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "unused-home"))
+    monkeypatch.setenv("JARVIS_PROFILE", "../must-not-boot")
+
+    async def spawn(*args, **kwargs):
+        assert args[1] == "--nerva-workspace-extract-worker"
+        assert "-m" not in args
+        return await real_spawn(sys.executable, str(extract_process._REPO / "serve.py"),
+                                *args[1:], **kwargs)
+
+    monkeypatch.setattr(extract_process.asyncio, "create_subprocess_exec", spawn)
+    result = await extract.extract_document(samples.build_docx(), "docx")
+    assert result.char_count > 0
+    assert not (tmp_path / "unused-home").exists()
+
+
+async def test_page_memory_exhaustion_fails_the_whole_child_result(monkeypatch):
+    from agents.core.workspace import extract_process
+
+    real_spawn = asyncio.create_subprocess_exec
+    handler = ('calls = 0\ndef page(*a, **kw):\n global calls\n calls += 1\n'
+               ' if calls == 2: raise MemoryError("page ceiling")\n return "first page text"')
+    script = (f"from pypdf import PageObject; exec({handler!r}); PageObject.extract_text = page; "
+              "from agents.core.workspace.extract_process import _worker; _worker()")
+
+    async def spawn(*args, **kwargs):
+        return await real_spawn(sys.executable, "-c", script, *args[-2:], **kwargs)
+
+    monkeypatch.setattr(extract_process.asyncio, "create_subprocess_exec", spawn)
+    with pytest.raises(extract.ExtractionError) as caught:
+        await extract.extract_document(samples.build_pdf(), "pdf")
+    assert caught.value.code == "too_much_text"
+
+
 @pytest.mark.skipif(os.name == "nt", reason="RLIMIT_AS is a POSIX-only resource limit")
 async def test_child_sets_an_actual_address_space_ceiling(monkeypatch):
     from agents.core.workspace import extract_process

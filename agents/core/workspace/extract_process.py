@@ -36,12 +36,12 @@ def _apply_memory_limit() -> tuple[str, ...]:
     return ("wall_time", "address_space")
 
 
-def _worker() -> None:
+def _worker(argv: list[str] | None = None) -> None:
     # Apply the cap before importing pypdf or reading the upload. Never import the hub.
     limits = _apply_memory_limit()
     from agents.core.workspace.extract import ExtractionError, extract_bytes
 
-    kind, seconds = sys.argv[1:3]
+    kind, seconds = (sys.argv[1:] if argv is None else argv)[:2]
     try:
         result = extract_bytes(sys.stdin.buffer.read(), kind, timeout=float(seconds))
         payload = {"segments": [[s.page, s.text] for s in result.segments],
@@ -75,8 +75,11 @@ async def extract_in_child(data: bytes, kind: str, *, timeout: float) -> Extract
             with tempfile.TemporaryDirectory(prefix="nerva-ws-extract-") as scratch:
                 try:
                     env = dict(os.environ, TMPDIR=scratch, TEMP=scratch, TMP=scratch)
+                    command = ([sys.executable, "--nerva-workspace-extract-worker"]
+                               if getattr(sys, "frozen", False) else
+                               [sys.executable, "-m", "agents.core.workspace.extract_process"])
                     launch = asyncio.create_task(asyncio.create_subprocess_exec(
-                        sys.executable, "-m", "agents.core.workspace.extract_process",
+                        *command,
                         kind, str(max(0.0, deadline - loop.time())), cwd=_REPO, env=env,
                         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.DEVNULL))

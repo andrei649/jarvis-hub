@@ -315,6 +315,9 @@ def _needs_password(reader: PdfReader) -> bool:
 def _page_text(reader: PdfReader, index: int) -> str:
     try:
         return reader.pages[index].extract_text() or ""
+    except MemoryError:
+        # A resource ceiling is a document failure, never a silently omitted page.
+        raise
     except Exception as exc:  # one damaged page must not lose the whole document
         logger.warning("PDF page %d could not be read (%s); it is skipped",
                        index + 1, type(exc).__name__)
