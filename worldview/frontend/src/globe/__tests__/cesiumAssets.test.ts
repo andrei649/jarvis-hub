@@ -12,8 +12,13 @@ const packageJson = require.resolve("cesium/package.json");
 const cesiumRoot = join(dirname(packageJson), "Build", "Cesium");
 
 test("cesium is pinned to an exact version", () => {
+  const pinnedVersion = "1.146.0";
+  const manifest = JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8"));
+  const lock = JSON.parse(readFileSync(new URL("../../../../package-lock.json", import.meta.url), "utf8"));
   const version = JSON.parse(readFileSync(packageJson, "utf8")).version as string;
-  expect(version).toBe("1.144.0");
+  expect(manifest.dependencies.cesium).toBe(pinnedVersion);
+  expect(lock.packages["node_modules/cesium"].version).toBe(pinnedVersion);
+  expect(version).toBe(pinnedVersion);
 });
 
 test("the bundled Natural Earth II basemap ships inside the package", () => {
