@@ -851,7 +851,7 @@ test('audit names the person behind every action, the chain verifies, and the CS
 
   // An entry's drawer reads the codes it recorded as words, never raw (UX-13): the email settings'
   // security and password change, as the admin saved them.
-  await table.getByRole('row').filter({ hasText: 'Setări de email modificate' }).first().getByRole('button', { name: /^Detaliile intrării/ }).click();
+  await table.getByRole('row').filter({ hasText: 'Setări de email modificate' }).first().getByRole('button', { name: /^Detalii: Detaliile intrării/ }).click();
   const entry = page.getByRole('dialog', { name: /^Intrarea #\d+ din jurnal$/ });
   await expect(entry.getByText('Fără criptare', { exact: true })).toBeVisible();
   await expect(entry.getByText('Parola a rămas neschimbată', { exact: true })).toBeVisible();

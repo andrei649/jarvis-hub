@@ -203,19 +203,19 @@ describe('Admin → Audit details read as words (UX-13)', () => {
       'GET /api/workspace/admin/users': { users: [makeAdminUser(), COLLEAGUE] },
       'GET /api/workspace/admin/audit': { items: [login, failed, promoted, run, emailed, smtp, immediate], next_before_id: null },
     });
-    let drawer = await openEntry(21, /^Detaliile intrării „Conectare”/);
+    let drawer = await openEntry(21, /^Detalii: Detaliile intrării „Conectare”/);
     expect(within(drawer).getByText('Mod de conectare')).toBeTruthy();
     expect(within(drawer).getByText('Parolă')).toBeTruthy();
     expect(within(drawer).queryByText('password')).toBeNull();
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
 
-    drawer = await openEntry(22, /^Detaliile intrării „Conectare eșuată”/);
+    drawer = await openEntry(22, /^Detalii: Detaliile intrării „Conectare eșuată”/);
     expect(within(drawer).getByText('Contul companiei (SSO)')).toBeTruthy();
     expect(within(drawer).getByText('Nu există un cont cu această adresă')).toBeTruthy();
     expect(within(drawer).queryByText('unknown_user')).toBeNull();
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
 
-    drawer = await openEntry(23, /^Detaliile intrării „Utilizator modificat”/);
+    drawer = await openEntry(23, /^Detalii: Detaliile intrării „Utilizator modificat”/);
     expect(within(drawer).getByText('Înainte')).toBeTruthy();
     expect(within(drawer).getByText('Membru')).toBeTruthy();
     expect(within(drawer).getByText('După')).toBeTruthy();
@@ -226,23 +226,23 @@ describe('Admin → Audit details read as words (UX-13)', () => {
     const table = screen.getByRole('table', { name: 'Audit' });
     expect(within(table).getByText('Planificatorul automat')).toBeTruthy();
     expect(within(table).queryByText('scheduler')).toBeNull();
-    drawer = await openEntry(24, /^Detaliile intrării „Rulare de raport pornită”/);
+    drawer = await openEntry(24, /^Detalii: Detaliile intrării „Rulare de raport pornită”/);
     expect(within(drawer).getByText('Programată')).toBeTruthy();
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
 
-    drawer = await openEntry(25, /^Detaliile intrării „Email trimis”/);
+    drawer = await openEntry(25, /^Detalii: Detaliile intrării „Email trimis”/);
     expect(within(drawer).getByText('Mesajul #12')).toBeTruthy();
     expect(within(drawer).getByText('Către')).toBeTruthy();
     expect(within(drawer).getByText('ion@client.ro')).toBeTruthy();
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
 
-    drawer = await openEntry(26, /^Detaliile intrării „Setări de email modificate”/);
+    drawer = await openEntry(26, /^Detalii: Detaliile intrării „Setări de email modificate”/);
     expect(within(drawer).getByText('Fără criptare')).toBeTruthy();
     expect(within(drawer).getByText('Parola a rămas neschimbată')).toBeTruthy();
     expect(within(drawer).queryByText('kept')).toBeNull();
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
 
-    drawer = await openEntry(27, /^Detaliile intrării „Cerere aprobată”/);
+    drawer = await openEntry(27, /^Detalii: Detaliile intrării „Cerere aprobată”/);
     expect(within(drawer).getByText('Aplicată imediat: cererea unui administrator')).toBeTruthy();
     expect(within(drawer).queryByText('admin action')).toBeNull();
   });
@@ -280,7 +280,7 @@ describe('Admin → Audit after a re-key (OPS2-01 follow-up)', () => {
     expect(await within(table).findByText('Cheia de audit înlocuită (din linia de comandă)')).toBeTruthy();
     expect(within(table).getByText('Jurnalul de audit, până la intrarea #3')).toBeTruthy();
     expect(within(table).getByText('Linia de comandă a serverului')).toBeTruthy();
-    fireEvent.click(within(table).getByRole('button', { name: /^Detaliile intrării „Cheia de audit înlocuită/ }));
+    fireEvent.click(within(table).getByRole('button', { name: /^Detalii: Detaliile intrării „Cheia de audit înlocuită/ }));
     const drawer = await screen.findByRole('dialog', { name: 'Intrarea #4 din jurnal' });
     expect(within(drawer).getByText('Cheia veche (amprentă)')).toBeTruthy();
     expect(within(drawer).getByText('Intrări care nu mai pot fi verificate')).toBeTruthy();

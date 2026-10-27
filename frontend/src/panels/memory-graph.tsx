@@ -427,7 +427,7 @@ export function MemoryGraphExplorer() {
           <button className="tool-btn" style={btn} aria-label="Zoom out" onClick={() => setCam(zoomBy(cam, 0.8))}>−</button>
           <button className="tool-btn" style={btn} aria-label="Reset view" onClick={reset}>⌂</button>
         </div>
-        <ul role="group" aria-label="Legend" style={{ position: 'absolute', left: 8, bottom: 8, margin: 0, padding: '6px 8px', listStyle: 'none', fontSize: 10, background: 'rgba(0,0,0,.45)', borderRadius: 4, maxWidth: '55%', maxHeight: '60%', overflowY: 'auto', pointerEvents: 'none' }}>
+        <ul aria-label="Legend" style={{ position: 'absolute', left: 8, bottom: 8, margin: 0, padding: '6px 8px', listStyle: 'none', fontSize: 10, background: 'rgba(0,0,0,.45)', borderRadius: 4, maxWidth: '55%', maxHeight: '60%', overflowY: 'auto', pointerEvents: 'none' }}>
           {types.map(([type, count]) => <li key={type} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <i style={{ width: 8, height: 8, transform: 'rotate(45deg)', background: typeColour(type), display: 'inline-block' }} /><span>{type}</span> <b>{count}</b></li>)}
           {skillCount > 0 && <li style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
