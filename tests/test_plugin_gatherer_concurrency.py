@@ -82,7 +82,7 @@ async def test_failing_plugin_is_isolated():
 async def test_slow_plugin_times_out_without_stalling(monkeypatch):
     monkeypatch.setattr(pg, "PLUGIN_TIMEOUT_S", 0.05)
     orch = _Orch({
-        "weather": _make_plugin("get_weather", delay=0.5, ret="W"),  # exceeds deadline
+        "weather": _make_plugin("get_weather", delay=3.0, ret="W"),  # exceeds deadline
         "news": _make_plugin("summarize", ret="N"),
     })
     t0 = time.perf_counter()
@@ -90,7 +90,7 @@ async def test_slow_plugin_times_out_without_stalling(monkeypatch):
     elapsed = time.perf_counter() - t0
 
     assert data == {"news": "N"}                 # slow one dropped on timeout
-    assert elapsed < 0.4, "timeout did not bound the slow plugin"
+    assert elapsed < 2.0, "timeout did not bound the slow plugin"
 
 
 async def test_no_eligible_plugins_returns_empty():

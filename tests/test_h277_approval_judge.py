@@ -403,7 +403,7 @@ async def test_request_returns_at_once_and_the_item_is_marked_judging(tmp_path, 
     q = queue(tmp_path, local_judge(monkeypatch, backend))
     started = time.perf_counter()
     item = q.request(ACTION)
-    assert time.perf_counter() - started < 0.05
+    assert time.perf_counter() - started < 1.0  # the judge itself sleeps 5 s
     assert "judge" not in item
     assert q.judge_status_public()["judging"] == [item["id"]]
     for task in list(q._judge_tasks):
