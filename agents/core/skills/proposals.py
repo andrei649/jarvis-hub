@@ -127,7 +127,10 @@ def _write_atomic(path: Path, data: bytes) -> None:
 
 
 def _write_via(tmp: Path, path: Path, data: bytes, mode: int) -> None:
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode & 0o777)
+    # O_BINARY: on Windows ``os.open`` defaults to text mode and ``os.write`` would turn every
+    # "\n" into "\r\n", so the bytes on disk would never equal the approved text.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(tmp, flags, mode & 0o777)
     try:
         try:
             view = memoryview(data)

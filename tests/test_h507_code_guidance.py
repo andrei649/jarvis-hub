@@ -425,14 +425,16 @@ def test_the_setting_row_is_declared():
 
 # F1 — the scan runs on the hub's event loop (the card is labelled before it exists),
 # so no line may cost more than linear time and no file more than a bounded wall time.
+# ids are explicit: pytest exports the test id in PYTEST_CURRENT_TEST, and a megabyte id
+# overflows the 32,767-character cap on one Windows environment variable.
 @pytest.mark.parametrize("path,text", [
-    ("x.html", "<script " * 125_000),
-    ("x.py", "yaml.load(" * 100_000 + "Loader=SafeLoader"),
-    ("x.py", "torch.load(" * 90_000 + "weights_only=True"),
-    ("x.py", "hashlib.md5(" * 80_000),
-    ("x.py", "cur.execute(" * 80_000),
-    ("x.js", "require('child_process')\n" + "exec(" * 190_000),
-    ("x.py", ("yaml.load(" * 50 + "Loader=SafeLoader\n") * 1900),
+    pytest.param("x.html", "<script " * 125_000, id="html-script"),
+    pytest.param("x.py", "yaml.load(" * 100_000 + "Loader=SafeLoader", id="yaml-load"),
+    pytest.param("x.py", "torch.load(" * 90_000 + "weights_only=True", id="torch-load"),
+    pytest.param("x.py", "hashlib.md5(" * 80_000, id="md5"),
+    pytest.param("x.py", "cur.execute(" * 80_000, id="execute"),
+    pytest.param("x.js", "require('child_process')\n" + "exec(" * 190_000, id="js-exec"),
+    pytest.param("x.py", ("yaml.load(" * 50 + "Loader=SafeLoader\n") * 1900, id="yaml-lines"),
 ])
 def test_a_crafted_megabyte_scans_in_under_a_second(path, text):
     started = time.monotonic()

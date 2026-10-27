@@ -14,10 +14,17 @@ from __future__ import annotations
 
 import errno
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 from tests.test_h315g_todo_review import _manager
 from tests.test_h315h_todo_review import _key
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the owner lock is fcntl.flock, a Unix-only facility: Windows has no module-level kernel owner lock to test")
 
 # ── m2: a gone fd never breaks a start ───────────────────────────────────────────
 

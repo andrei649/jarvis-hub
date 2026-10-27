@@ -9,10 +9,15 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 import pytest
 
 from agents.core.sandbox import Sandbox
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the owner lock is fcntl.flock, a Unix-only facility: Windows has no module-level kernel owner lock to test")
 
 
 def _host_sandbox(tmp_path, timeout=20):
