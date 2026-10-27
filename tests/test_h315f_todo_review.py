@@ -31,6 +31,10 @@ from agents.core import tool_rpc_runtime
 from agents.core.session_kernels import KernelKey, KernelRefused
 from agents.core.todo_tool import TodoStore
 from tests.test_h315c_todo_review import _fetching_server, _tool_messages, _turn
+
+_NO_FLOCK = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the owner lock is fcntl.flock, a Unix-only facility (no owner lock on Windows)")
 from tests.test_h315d_todo_review import _k1, _k2
 from tests.test_h315e_todo_review import _FailingBackend, _manager, _mark
 
@@ -57,6 +61,7 @@ def _dead_pid():
 # ── m1 / n1: liveness is the owner's lock, not its pid ─────────────────────────────
 
 @pytest.mark.timeout(120)
+@_NO_FLOCK
 def test_a_live_owner_keeps_its_mounts_whatever_its_pid_says_and_loses_them_when_it_ends(tmp_path):
     root = tmp_path / "kernel-rpc"
     child = subprocess.Popen([sys.executable, "-c", CHILD, str(root)], cwd=ROOT, text=True,
@@ -76,6 +81,7 @@ def test_a_live_owner_keeps_its_mounts_whatever_its_pid_says_and_loses_them_when
     assert not seen.exists()                                  # its process ended: swept
 
 
+@_NO_FLOCK
 def test_a_restarted_containers_dead_pid_1_is_swept_though_pid_1_runs(tmp_path):
     root = tmp_path / "kernel-rpc"
     for name in ("p1-feedface", f"p{os.getpid()}-0ddba11a"):   # pids that run here
@@ -86,6 +92,7 @@ def test_a_restarted_containers_dead_pid_1_is_swept_though_pid_1_runs(tmp_path):
     assert sorted(p.name for p in root.iterdir() if p.name.startswith(("p1-", f"p{os.getpid()}-0dd"))) == []
 
 
+@_NO_FLOCK
 def test_a_stray_directory_with_an_out_of_range_pid_breaks_no_start(tmp_path):
     root = tmp_path / "kernel-rpc"
     (root / "p9999999999-deadbeef" / "k").mkdir(parents=True)
@@ -104,6 +111,7 @@ def test_each_interpreter_of_one_key_gets_a_directory_of_its_own(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("error", [KernelRefused("kernel_unavailable"), None], ids=["refused", "cancelled"])
+@_NO_FLOCK
 async def test_a_start_that_is_refused_or_cancelled_leaves_no_mount(tmp_path, error):
     class Stalling(_FailingBackend):
         async def start(self, key, *, rpc_dir="", child_rpc_dir=""):

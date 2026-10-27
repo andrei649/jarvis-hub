@@ -1,5 +1,7 @@
 """Completed child effects propose a fresh permit instead of restarting a worker."""
 
+import sys
+
 import pytest
 
 from agents.core.kanban import child_store
@@ -12,7 +14,11 @@ from tests.test_hermes_kanban_dispatcher import read
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tool", ["file_write", "file_delete", "terminal_run"])
+@pytest.mark.parametrize("tool", [
+    "file_write", "file_delete",
+    pytest.param("terminal_run", marks=pytest.mark.skipif(
+        sys.platform == "win32", reason="the child runs /bin/pwd, a Unix executable")),
+])
 async def test_successful_child_proposes_one_independently_approved_parent_resume(tmp_path, monkeypatch, tool):
     coordinator, orch, root, cwd, tid, child = await propose_child(tmp_path, monkeypatch, tool)
     original_run = child.payload["kanban_child"]["run_id"]

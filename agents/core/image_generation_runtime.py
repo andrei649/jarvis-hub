@@ -100,6 +100,10 @@ def _write_exclusive(path, value):
     # Sync ancestors even when they already exist: a previous failed call may
     # have created them without durably recording their entries. Never remove
     # the marker after failure; a surviving entry continues to refuse replay.
+    if os.name != "posix":
+        # Windows cannot open a directory with os.open (PermissionError), so a directory entry
+        # cannot be fsync'd there; the marker's own fsync above is all the host offers.
+        return
     directory = path.parent.resolve()
     for parent in (directory, *directory.parents):
         fd = os.open(str(parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))

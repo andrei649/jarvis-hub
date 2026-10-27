@@ -83,8 +83,10 @@ async def test_redirect_never_sends_second_get(rig, status, headers, body):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('headers,body', [({'content-encoding':'gzip'}, b'not-gzip'),
-    ({}, b'x'*(262144+1)), ({}, b'\xff')])
+@pytest.mark.parametrize('headers,body', [
+    pytest.param({'content-encoding':'gzip'}, b'not-gzip', id='bad-gzip'),
+    pytest.param({}, b'x'*(262144+1), id='oversize'),  # short id: a long one overflows Windows' env cap
+    pytest.param({}, b'\xff', id='bad-utf8')])
 async def test_bad_representation_never_returns_observation(rig, headers, body):
     rig.state.response=lambda: httpx.Response(200, headers=headers, stream=httpx.ByteStream(body))
     task=await approved(rig)

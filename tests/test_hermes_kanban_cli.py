@@ -181,6 +181,7 @@ async def test_concurrent_dispatch_output_and_real_principal_are_isolated(tmp_pa
 
     first, second = await asyncio.gather(call(tmp_path / "one"), call(tmp_path / "two"))
     assert first["ok"] and second["ok"]
-    assert str(tmp_path / "one") in first["output"] and str(tmp_path / "two") not in first["output"]
-    assert str(tmp_path / "two") in second["output"] and str(tmp_path / "one") not in second["output"]
+    one, two = (json.dumps(str(tmp_path / name))[1:-1] for name in ("one", "two"))   # the output is JSON: "\\" for "\"
+    assert one in first["output"] and two not in first["output"]
+    assert two in second["output"] and one not in second["output"]
     assert all(item[0] is OWNER and item[3] == 4 for item in controller.seen)

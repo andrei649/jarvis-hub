@@ -7,12 +7,18 @@ tests do not assert the separate signed worker-approval protocol.
 from __future__ import annotations
 
 import hashlib
+import os
 
 import pytest
 
 from agents.core.environments.execution import GovernedTargetRunner
 from tests.test_job_scripts import make_runtime, scripts  # noqa: F401
 from tests.test_local_transport import _FakeSandbox, _grant, _local_registry
+
+# snapshot_script binds a script through O_DIRECTORY/O_NOFOLLOW dir_fd descriptors and refuses
+# a non-POSIX host by design (agents/core/autonomy/jobs_scripts.py), so every case that fires a
+# script job is a Unix-only facility.
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="scheduled scripts need O_NOFOLLOW dir_fd (POSIX only)")
 
 
 async def _run_local_attempt(runner, job, tasks):
