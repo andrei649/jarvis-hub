@@ -46,7 +46,7 @@ describe('Admin → Audit, readable', () => {
     expect(within(table).queryByText(/error_code=/)).toBeNull();
     expect(within(table).queryByText('10.0.0.7')).toBeNull();
 
-    fireEvent.click(within(table).getByRole('button', { name: /^Detaliile intrării „Rulare de raport eșuată”/ }));
+    fireEvent.click(within(table).getByRole('button', { name: /^Detalii: Detaliile intrării „Rulare de raport eșuată”/ }));
     const drawer = await screen.findByRole('dialog', { name: 'Intrarea #8 din jurnal' });
     expect(within(drawer).getByText('Motivul eșecului')).toBeTruthy();
     expect(within(drawer).getByText('Modelul AI nu este disponibil acum.')).toBeTruthy();
@@ -55,7 +55,7 @@ describe('Admin → Audit, readable', () => {
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Închide' })[0]);
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Intrarea #8 din jurnal' })).toBeNull());
 
-    fireEvent.click(within(table).getByRole('button', { name: /^Detaliile intrării „Preferințe schimbate/ }));
+    fireEvent.click(within(table).getByRole('button', { name: /^Detalii: Detaliile intrării „Preferințe schimbate/ }));
     const second = await screen.findByRole('dialog', { name: 'Intrarea #9 din jurnal' });
     expect(within(second).getByText('10.0.0.7')).toBeTruthy();
     expect(within(second).getByText('Câmpuri modificate')).toBeTruthy();
