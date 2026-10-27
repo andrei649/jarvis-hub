@@ -20,10 +20,12 @@ host, so each format is opened with the narrowest safe tool:
 * Text formats (``.txt``, ``.md``, ``.csv``) are decoded as UTF-8 (with or without a
   BOM), else as cp1250 — the Windows code page Romanian offices still export CSV in.
 
-Extraction runs on a small thread pool of its own, bounded at
+By default extraction runs on a small thread pool of its own, bounded at
 :data:`EXTRACT_TIMEOUT_SECONDS`, and the worker also checks that deadline between pages,
-rows and sheets, so a timed-out extraction stops instead of burning a core in the
-background. Every failure is an
+rows and sheets. A parser stuck within one page cannot be stopped in that mode.
+With ``NERVA_WORKSPACE_KILLABLE_EXTRACTION=1`` (default off), PDF/DOCX instead use
+killable children with a POSIX address-space cap; see :mod:`.extract_process`.
+Every failure is an
 :class:`ExtractionError` carrying one stable ``code`` from :data:`ERROR_CODES`; the
 document row stores it and the UI translates it.
 
@@ -59,7 +61,7 @@ from defusedxml.ElementTree import ParseError, iterparse
 from pypdf import PasswordType, PdfReader
 
 from agents.core.archive_safe import ArchiveLimits, ArchiveRejected, extract_zip_bytes
-from agents.core.env_config import truthy
+from agents.core.env_config import env_flag, truthy
 
 logger = logging.getLogger("nerva.workspace.extract")
 
@@ -162,6 +164,8 @@ class Extracted:
 
     segments: tuple[Segment, ...]
     page_count: int | None
+    #: Enforced isolation limits; empty for the legacy pool. Windows has no RLIMIT_AS.
+    limits: tuple[str, ...] = ()
 
     @property
     def char_count(self) -> int:
@@ -945,11 +949,16 @@ def extract_bytes(data: bytes, kind: str, *, timeout: float | None = None) -> Ex
 
 async def extract_document(data: bytes, kind: str, *,
                            timeout: float = EXTRACT_TIMEOUT_SECONDS) -> Extracted:
-    """:func:`extract_bytes` on the extraction pool, bounded at *timeout* → ``timeout``.
+    """:func:`extract_bytes` off-loop, bounded at *timeout* → ``timeout``.
 
     The bound counts from submission, so under a burst a queued file times out rather
-    than waiting without limit; the worker stops itself at its own deadline too.
+    than waiting without limit. Opt-in PDF/DOCX children are killed and reaped before
+    returning; legacy pool workers stop only at their cooperative checkpoints.
     """
+    if kind in {"pdf", "docx"} and env_flag("NERVA_WORKSPACE_KILLABLE_EXTRACTION", False):
+        from agents.core.workspace.extract_process import extract_in_child
+
+        return await extract_in_child(data, kind, timeout=timeout)
     job = asyncio.get_running_loop().run_in_executor(
         _POOL, functools.partial(extract_bytes, data, kind, timeout=timeout))
     try:
