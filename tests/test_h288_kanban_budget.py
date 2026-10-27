@@ -35,20 +35,28 @@ async def test_build_executor_exempts_the_kanban_worker_from_the_global_budget(m
     coordinator = _coordinator({})
     coordinator._orch.autonomy.execution_allowed = lambda task: True
     controller = coordinator.kanban_dispatcher()
+    entered, release = asyncio.Event(), asyncio.Event()
 
     async def long_card(task):
-        # a card whose own max_runtime_seconds is above the executor's budget
-        await asyncio.sleep(BUDGET * 2)
+        entered.set()
+        await release.wait()
         return {"status": "ok", "task_id": task.id}
 
     monkeypatch.setattr(controller, "execute", long_card)
     executor = coordinator.build_executor()
     assert executor.max_wall_seconds == BUDGET
 
-    started = time.monotonic()
-    result = await asyncio.wait_for(executor.execute(queue_task()), 5)
+    running = asyncio.create_task(executor.execute(queue_task()))
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        # It is still running beyond the global budget, until the card itself
+        # finishes. Windows timer granularity need not equal the requested sleep.
+        await asyncio.sleep(BUDGET * 2)
+        assert not running.done()
+    finally:
+        release.set()
+    result = await asyncio.wait_for(running, 5)
     assert result == {"status": "ok", "task_id": 17}  # not wall_time_budget_exceeded
-    assert time.monotonic() - started >= BUDGET * 2
     assert executor.budget_for(KanbanDispatcher.KIND) is None
     assert executor.budget_for("summarize the week") == BUDGET
 

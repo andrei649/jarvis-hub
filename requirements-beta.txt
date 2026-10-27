@@ -19,7 +19,7 @@ ollama>=0.6.3
 # fastapi 0.137 wraps include_router results in an opaque _IncludedRouter instead of
 # flattening them into app.routes. The app is unaffected (routes serve + appear in
 # OpenAPI); the route-parity / auth-matrix guards now flatten the wrappers via
-# tests/_route_introspect.iter_effective_routes. starlette is pinned below the 1.x
+# tests/_route_introspect.iter_effective_routes. starlette is pinned below the 2.x
 # major (untested with this fastapi). Background:
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
 fastapi>=0.162.0,<0.163

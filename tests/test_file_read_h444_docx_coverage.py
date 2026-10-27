@@ -348,7 +348,7 @@ async def test_kanban_worker_reads_share_the_document_cache(tmp_path, monkeypatc
 
 @pytest.mark.asyncio
 async def test_offset_zero_beside_a_line_window_is_the_absent_offset(root):
-    (root / "notes.txt").write_text("one\ntwo\nthree\n")
+    (root / "notes.txt").write_bytes(b"one\ntwo\nthree\n")
     tools = FileTools(FileScope([root]))
     out = await tools.read_file({"path": "notes.txt", "offset": 0, "line_offset": 2, "line_limit": 1})
     assert out["ok"] is True and out["content"] == "two\n"
