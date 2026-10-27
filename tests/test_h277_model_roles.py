@@ -303,7 +303,7 @@ def test_video_configuration_is_confined_to_policy_and_pure_route_parser():
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         if re.search(r"resolve\(\s*[\"']video[\"']", text) or "JARVIS_ROLE_VIDEO" in text:
-            offenders.append(str(path.relative_to(REPO)))
+            offenders.append(path.relative_to(REPO).as_posix())
     assert sorted(offenders) == [
         "agents/core/llm/video_policy.py", "agents/core/llm/video_retry.py",
         "agents/core/llm/video_routes.py",
