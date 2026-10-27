@@ -48,7 +48,17 @@ export function useApi(path, auto = true, admin = false) {
   useEffect(() => { if (auto) reload(); }, [auto, reload]);
   return { d, e, status, refusal, loading, reload };
 }
-export const arr = (x, ...k) => (Array.isArray(x) ? x : (k.map((kk) => x && x[kk]).find(Array.isArray) || []));
+// Bolt Optimization: Replace k.map().find() with indexed for loop to eliminate intermediate array and closure allocations
+export const arr = (x: any, ...k: any[]): any[] => {
+  if (Array.isArray(x)) return x;
+  if (x && k.length > 0) {
+    for (let i = 0; i < k.length; i++) {
+      const val = x[k[i]];
+      if (Array.isArray(val)) return val;
+    }
+  }
+  return [];
+};
 export const mono = { fontFamily: 'var(--font-mono)', fontSize: 11 };
 
 /* Per-panel LIVE/SEED honesty chip (TASK-2 tail). Distinct from LiveSourceChip
