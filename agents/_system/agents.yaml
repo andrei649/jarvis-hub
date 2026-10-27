@@ -108,7 +108,7 @@ agents:
     channel: web-dashboard
     heartbeat: "6h"
     llm_policy: claude
-    plugins: [worldview, cloud-llm]
+    plugins: [signal-layer, cloud-llm]
 
   steve:
     name: Steve

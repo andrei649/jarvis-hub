@@ -1,6 +1,6 @@
 """Tests for the Argus geospatial-OSINT agent (H19.3.6).
 
-Verifies Argus is registered (agents.yaml), permission-gated to the WorldView
+Verifies Argus is registered (agents.yaml), permission-gated to the Signal Layer
 plugin, that geospatial queries route to him, and that his SOUL loads.
 """
 
@@ -13,19 +13,19 @@ from agents.core.plugin_gate import PermissionGate
 from agents.core.router import IntentRouter
 
 
-def test_argus_registered_active_with_worldview_plugin():
+def test_argus_registered_active_with_signal_layer_plugin():
     cfg = JarvisConfig()
     assert "argus" in cfg.agents, "argus missing from agents.yaml"
     argus = cfg.agents["argus"]
     assert argus.status == "active"
-    assert "worldview" in argus.plugins  # Argus's primary tool is WorldView
+    assert "signal-layer" in argus.plugins  # Argus's primary tool is Signal Layer
 
 
-def test_worldview_plugin_serves_argus():
+def test_signal_layer_plugin_serves_argus():
     gate = PermissionGate()
-    # Argus may call the gated WorldView plugin; an unrelated agent may not.
-    assert gate.check_call("worldview", "argus") is True
-    assert gate.check_call("worldview", "frigga") is False
+    # Argus may call the gated Signal Layer plugin; an unrelated agent may not.
+    assert gate.check_call("signal-layer", "argus") is True
+    assert gate.check_call("signal-layer", "frigga") is False
 
 
 async def test_geospatial_queries_route_to_argus():
@@ -34,7 +34,7 @@ async def test_geospatial_queries_route_to_argus():
         "when is the next satellite recon pass over Hormuz",
         "any dark vessel in the strait right now",
         "show me the AOI overflight schedule",
-        "is there gps jamming near the worldview AOI",
+        "is there gps jamming near the watched area",
     ):
         intent = await router.classify(query, {})
         assert "argus" in (intent.target_agents or []), f"{query!r} -> {intent.target_agents}"

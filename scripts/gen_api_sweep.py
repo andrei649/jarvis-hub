@@ -57,7 +57,7 @@ OWNER = {
     "subagents": "06", "support": "11", "swarm": "06", "sync": "04", "system": "01",
     "system-profiles": "05", "toolrpc": "05", "tools": "05", "traces": "09",
     "transcripts": "05", "trust": "04", "vlm": "05", "voice": "11", "webhooks": "11",
-    "widget": "06", "workflows": "10", "worldview": "06", "wyoming": "11",
+    "widget": "06", "workflows": "10", "wyoming": "11",
     # Nerva Workspace is a separate product surface; its contract is the pilot spec.
     "workspace": WORKSPACE_OWNER,
     # non-/api groups (prefixed "~" while grouping)

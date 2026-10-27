@@ -318,8 +318,6 @@
   "GET /api/workspace/reports/{report_id}/runs",
   "GET /api/workspace/session",
   "GET /api/workspace/shared-reports",
-  "GET /api/worldview/overview",
-  "GET /api/worldview/status",
   "GET /autonomy/approvals",
   "GET /autonomy/brief",
   "GET /autonomy/interrupts",

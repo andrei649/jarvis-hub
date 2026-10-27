@@ -95,7 +95,7 @@ INTENT_RULES: dict[str, tuple[list[str], tuple[str, ...], float]] = {
                                "gaseste", "investigheaza"), W_NORMAL),
     "geoint":    (["argus"], ("satellite", "satelit", "recon", "overflight", "overpass",
                               "orbit", "vessel", "tanker", "aircraft", "adsb", "ais",
-                              "hormuz", "strait", "geospatial", "geoint", "worldview",
+                              "hormuz", "strait", "geospatial", "geoint",
                               "jamming", "bruiaj", "footprint", "aoi"), W_STRONG),
     "kpi":       (["stark"], ("kpi", "board", "raiffeisen", "analytics", "ga4",
                               "indicatori", "raport"), W_STRONG),

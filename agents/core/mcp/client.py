@@ -41,8 +41,7 @@ remedy is ``JARVIS_MCP_STDIO_ALLOWED_ENV`` (see :func:`stdio_env_extra_allowed`)
 a comma-separated list of host variable names stdio MCP servers may keep
 inheriting. The per-server ``env`` block also wins over the baseline, but it has no
 owner-facing configuration surface today — it is settable only in-process and is
-not persisted (see :meth:`MCPManager.to_config`), so first-party callers such as
-``worldview_write`` are its only users. ``JARVIS_MCP_STDIO_ENV_BASELINE=0`` is the
+not persisted (see :meth:`MCPManager.to_config`), so only in-process callers can supply it. ``JARVIS_MCP_STDIO_ENV_BASELINE=0`` is the
 blunt escape hatch back to the historical full-inherit behaviour, for every server
 on the box at once.
 """

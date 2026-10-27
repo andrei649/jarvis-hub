@@ -1,4 +1,4 @@
-"""Tests for the Argus governed interface over Signal Layer + WorldView."""
+"""Tests for the Argus governed interface over Signal Layer."""
 
 import pytest
 
@@ -24,30 +24,13 @@ class _SignalStub:
         raise ConnectionError("refused")
 
 
-class _WorldViewStub:
-    async def state_at(self, layer, t, bbox="", lod=""):
-        return {"status": "ok", "layer": layer, "t": t}
-
-    async def recon_overview(self, lead=None):
-        return {"status": "ok", "lead": lead}
 
 
-class _WorldViewWriteStub:
-    def __init__(self):
-        self.calls = []
-
-    async def watch_aoi(self, aoi_id, rule, *, lead=None, origin="generated"):
-        self.calls.append(("watch_aoi", aoi_id, rule, lead, origin))
-        return {"status": "ok", "tool": "watch_aoi"}
-
-    async def reconstruct_event(self, from_t, to_t, *, bbox="", layers=None, origin="generated"):
-        self.calls.append(("reconstruct_event", from_t, to_t, bbox, layers, origin))
-        return {"status": "ok", "tool": "reconstruct_event"}
 
 
 async def test_argus_routes_signal_layer_when_permitted():
     sig = _SignalStub()
-    argus = ArgusInterface(PermissionGate(), signal_layer=sig, worldview=_WorldViewStub())
+    argus = ArgusInterface(PermissionGate(), signal_layer=sig)
     out = await argus.ask_world("what changed overnight", mode="overnight_brief", country="RO", limit=8)
     assert out["status"] == "ok"
     assert sig.calls[0] == ("ask_world", "what changed overnight", "overnight_brief", "RO", 8)
@@ -58,45 +41,19 @@ async def test_argus_routes_signal_layer_when_permitted():
     assert risk["assessment"]["subject"]["id"] == "RO"
 
 
-async def test_argus_routes_worldview():
-    argus = ArgusInterface(PermissionGate(), signal_layer=_SignalStub(), worldview=_WorldViewStub())
-    state = await argus.worldview_state("aircraft", 123.0, bbox="x")
-    assert state["status"] == "ok" and state["layer"] == "aircraft"
-    recon = await argus.recon_overview(lead=30)
-    assert recon["lead"] == 30
 
 
-async def test_argus_routes_worldview_write_when_wired():
-    writer = _WorldViewWriteStub()
-    argus = ArgusInterface(
-        PermissionGate(),
-        signal_layer=_SignalStub(),
-        worldview=_WorldViewStub(),
-        worldview_write=writer,
-    )
-
-    watch = await argus.watch_aoi("hormuz", "recon_due", lead=900, origin="generated")
-    replay = await argus.reconstruct_event(100.0, 200.0, bbox="20,40,30,45", layers=["ais"])
-
-    assert watch["tool"] == "watch_aoi"
-    assert replay["tool"] == "reconstruct_event"
-    assert writer.calls == [
-        ("watch_aoi", "hormuz", "recon_due", 900, "generated"),
-        ("reconstruct_event", 100.0, 200.0, "20,40,30,45", ["ais"], "generated"),
-    ]
 
 
 async def test_argus_forbids_unpermitted_agent():
     # 'frigga' is not in agents_served for these manifests → must be blocked.
-    argus = ArgusInterface(PermissionGate(), signal_layer=_SignalStub(), worldview=_WorldViewStub(), agent_id="frigga")
+    argus = ArgusInterface(PermissionGate(), signal_layer=_SignalStub(), agent_id="frigga")
     out = await argus.ask_world("x")
     assert out["status"] == "forbidden" and out["plugin"] == "signal-layer"
-    wv = await argus.worldview_state("aircraft", 1.0)
-    assert wv["status"] == "forbidden" and wv["plugin"] == "worldview"
 
 
 async def test_argus_unavailable_when_backend_not_wired():
-    argus = ArgusInterface(PermissionGate(), signal_layer=None, worldview=None)
+    argus = ArgusInterface(PermissionGate(), signal_layer=None)
     out = await argus.world_brief()
     assert out["status"] == "unavailable" and out["plugin"] == "signal-layer"
 
@@ -124,15 +81,9 @@ def test_argus_capabilities_reflects_gate_and_wiring():
     argus = ArgusInterface(
         PermissionGate(),
         signal_layer=_SignalStub(),
-        worldview=None,
-        worldview_write=_WorldViewWriteStub(),
     )
     caps = argus.capabilities()
     assert caps["agent"] == "argus"
     assert caps["signal_layer"]["permitted"] is True
     assert caps["signal_layer"]["wired"] is True
-    assert caps["worldview"]["permitted"] is True
-    assert caps["worldview"]["wired"] is False
-    assert caps["worldview_write"]["permitted"] is True
-    assert caps["worldview_write"]["wired"] is True
-    assert caps["worldview_write"]["methods"] == ["watch_aoi", "reconstruct_event"]
+    assert set(caps) == {"agent", "signal_layer"}
