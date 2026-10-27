@@ -226,10 +226,11 @@
 - [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** A PDF without a text layer fails with `no_text`; the original is
   kept, so a re-index works once text exists. Needs a local OCR engine with its own time and memory bounds.
   Remaining (recounted 2026-10-26): all of it — `extract.py` still ends in `no_text` for a PDF without a text layer and no OCR engine is wired; blocked behind NWS-11's child process for the time/memory bounds.
-- [ ] ⬜ **NWS-11 — a killable extraction subprocess.** pypdf has no checkpoint inside a page, so one
-  pathological page keeps a pool thread busy past the 60 s bound (the document is still marked `timeout`).
-  Run extraction in a subprocess with `RLIMIT_AS` and a hard kill.
-  Remaining (recounted 2026-10-26): all of it — `agents/core/workspace/extract.py` still runs pypdf in a pool thread via `run_in_executor` (L953) and uses no `RLIMIT_AS` or child process.
+- [x] ✅ **NWS-11 — a killable extraction subprocess.** PR #1296: opt-in
+  `NERVA_WORKSPACE_KILLABLE_EXTRACTION=1` (default off) runs PDF/DOCX in at most two killable children;
+  the existing 60 s bound includes queue/startup time, and timeout/cancellation kills and reaps the child.
+  POSIX applies a 512 MiB `RLIMIT_AS`; Windows reports `memory_unavailable` and enforces time only.
+  Real-format, pathological-page, cancellation, queue and persisted-timeout regressions prove the path.
 - [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
   lazy-load the admin console and reports to cut the first load.
   Remaining (recounted 2026-10-26): all of it — `grep -rn "React.lazy\|lazy(" frontend/src/workspace` finds nothing; admin console and reports are in the one chunk.

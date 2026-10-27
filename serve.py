@@ -10,6 +10,14 @@ import sys
 import warnings
 from pathlib import Path
 
+# A frozen sys.executable is this launcher, not a Python interpreter. Dispatch
+# resource-contained parsing before dependency probes, stores, restores or the hub.
+if __name__ == "__main__" and sys.argv[1:2] == ["--nerva-workspace-extract-worker"]:
+    from agents.core.workspace.extract_process import _worker
+
+    _worker(sys.argv[2:])
+    raise SystemExit(0)
+
 sys.path.insert(0, str(Path(__file__).parent / "agents"))
 
 SAFE_MODE_SWITCH = "--safe-mode"

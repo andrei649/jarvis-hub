@@ -118,6 +118,55 @@ def _root_fds(pid: int, root: Path) -> dict[str, str]:
     return out
 
 
+def _assert_open_files_current(pid: int, fds: dict[str, str]) -> None:
+    """Check live descriptors; a transient file may close after /proc was listed."""
+    checked = 0
+    for fd, target in fds.items():
+        proc_fd = f"/proc/{pid}/fd/{fd}"
+        try:
+            held, current = os.stat(proc_fd), os.stat(target)
+        except FileNotFoundError:
+            # Ignore only a descriptor that actually closed. A live descriptor to
+            # a missing/restored-away file must still fail this invariant.
+            try:
+                os.lstat(proc_fd)
+            except FileNotFoundError:
+                continue
+            raise
+        assert (held.st_dev, held.st_ino) == (current.st_dev, current.st_ino), target
+        checked += 1
+    assert checked, "no live file descriptor was verified"
+
+
+@pytest.mark.parametrize("defect", [None, "wrong_inode", "missing_target"])
+def test_proc_snapshot_tolerates_closed_fds_but_rejects_stale_live_files(monkeypatch, defect):
+    from types import SimpleNamespace
+
+    real_stat = os.stat
+
+    def stat(path, *args, **kwargs):
+        if not str(path).startswith(("/proc/123/", "/root/")):
+            return real_stat(path, *args, **kwargs)
+        if str(path).endswith("/16"):
+            raise FileNotFoundError(path)
+        if defect == "missing_target" and str(path) == "/root/live.db":
+            raise FileNotFoundError(path)
+        inode = 2 if defect == "wrong_inode" and str(path) == "/root/live.db" else 1
+        return SimpleNamespace(st_dev=1, st_ino=inode)
+
+    monkeypatch.setattr(os, "stat", stat)
+    monkeypatch.setattr(os, "lstat", stat)
+    fds = {"16": "/root/transient.tmp", "17": "/root/live.db"}
+    if defect == "wrong_inode":
+        with pytest.raises(AssertionError, match="live.db"):
+            _assert_open_files_current(123, fds)
+    elif defect == "missing_target":
+        with pytest.raises(FileNotFoundError):
+            _assert_open_files_current(123, fds)
+    else:
+        _assert_open_files_current(123, fds)
+
+
 def _db_fds(pid: int, root: Path) -> dict[str, str]:
     return {fd: t for fd, t in _root_fds(pid, root).items()
             if t.removesuffix(" (deleted)").endswith((".db", ".db-wal", ".db-shm"))}
@@ -170,9 +219,9 @@ def test_the_real_coordinator_holds_nothing_under_the_root_and_reopens_the_resto
         assert not Path(f"/proc/{first}").exists()                      # the old one is gone
         fds = _root_fds(second, root)
         assert not [t for t in fds.values() if t.endswith("(deleted)")], fds
-        for fd, target in fds.items():
-            # Every open file IS the file on disk now: writes land in the restored root.
-            assert os.stat(f"/proc/{second}/fd/{fd}").st_ino == os.stat(target).st_ino, target
+        # Every still-open file IS the file on disk now. Short-lived atomic-write
+        # descriptors can legitimately close between listing /proc and stat().
+        _assert_open_files_current(second, fds)
         kinds = [(e.get("supervisor_event"), e.get("exit_code")) for e in _events(run_log)]
         assert ("child_exited", coordinator.RESTORE_YIELD_EXIT) in kinds, kinds
         assert ("respawned", None) in kinds
