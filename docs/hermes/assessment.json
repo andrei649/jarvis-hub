@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "379a0950fe005148567d162ebb4361c47738102c",
-  "assessed_at": "2026-10-27T16:23:42Z",
+  "base_sha": "0a0fa9377195517cf8d7bb6b93c82f2ef3bac1f4",
+  "assessed_at": "2026-10-27T16:31:26Z",
   "reviews": [
     {
       "id": "H001",
@@ -27781,7 +27781,7 @@
       "id": "H606",
       "row_sha256": "5045edde39477a6c4d1ce9182f7b0e9bc382d161914579d3319da480c5a52f64",
       "status": "partial",
-      "summary": "Fresh assessment 2026-10-13 (ff8641a7): Resilience is real but implicit rather than a declared chain. agents/core/llm/hybrid_router.py:208 holds an owner knob (llm.cloud_fallback: never/on-demand/always) and agents/core/llm/hybrid_router.py:579 keeps strict-local agents failing closed instead of falling to cloud. Auxiliary work has its own resolution: agents/core/llm/auxiliary_text.py:43 lists seven tasks each with an env model override, and agents/core/llm/auxiliary_text.py:166 binds them to router.local_backend only. agents/core/llm/quota.py:173 QuotaStore records provider quota headers and 429 holds across processes; agents/core/llm/model_roles.py:8 resolves per-role provider/model/base_url. Tests: tests/test_hybrid_router.py, tests/test_h373_provider_quota.py, tests/test_h277_model_roles.py. Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins",
+      "summary": "Fresh assessment 2026-10-13 (ff8641a7): Resilience is real but implicit rather than a declared chain. agents/core/llm/hybrid_router.py:208 holds an owner knob (llm.cloud_fallback: never/on-demand/always) and agents/core/llm/hybrid_router.py:579 keeps strict-local agents failing closed instead of falling to cloud. Auxiliary work has its own resolution: agents/core/llm/auxiliary_text.py:43 lists seven tasks each with an env model override, and agents/core/llm/auxiliary_text.py:166 binds them to router.local_backend only. agents/core/llm/quota.py:173 QuotaStore records provider quota headers and 429 holds across processes; agents/core/llm/model_roles.py:8 resolves per-role provider/model/base_url. Tests: tests/test_hybrid_router.py, tests/test_h373_provider_quota.py, tests/test_h277_model_roles.py. Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins Re-read 2026-10-27 (PR #1297 Windows portability): the video-configuration ownership guard now renders its collected repository-relative paths with as_posix before comparing the exact same three allowed modules. Source enumeration, policy ownership and all assertions are unchanged; 104 model-role cases passed. No parity upgrade.",
       "remaining": "- A declarative, owner-configurable ordered fallback chain for the primary model with per-entry timeouts and reset-aware trigger conditions\n- A per-task fallback chain for auxiliary tasks (local-only entries enforced by construction)\n- Classification of provider quota/capacity error phrases that triggers the next hop without waiting for a timeout\n- Each hop visible in the turn trace",
       "evidence": [
         {
@@ -27810,7 +27810,7 @@
         },
         {
           "path": "tests/test_h277_model_roles.py",
-          "sha256": "487b95a7f5f1775c211fbc6c00c7473a012d9afb4a3b5ddbe642cc3427eeb96c"
+          "sha256": "3cf7a80fc9f4815c58381df7e25389c3c0847fd5b64393e09199e053c2e59dcd"
         }
       ]
     },
@@ -28849,7 +28849,7 @@
       "id": "H633",
       "row_sha256": "459ef4e013068a9f990870718ca27ed7a9fa6bf7bd5bd7380a5ae3eae6faa83b",
       "status": "partial",
-      "summary": "Fresh assessment 2026-10-13 (ff8641a7): Provider breadth has grown but stays a fixed catalog. agents/core/llm/providers/__init__.py:189 BUILTIN_PROFILES declares ten profiles (LM Studio, Ollama, Gemini, Anthropic, OpenRouter, DeepInfra, Nous, xAI, OpenAI Responses, and one Custom OpenAI-compatible at agents/core/llm/providers/__init__.py:283 configured by a single OPENAI_BASE_URL/OPENAI_API_KEY pair). Nous Portal device-auth exists (agents/core/llm/nous_auth.py:1). Per-role provider/model/base_url selection is in agents/core/llm/model_roles.py:8, and every model choice passes cost/data-policy guards (agents/core/llm/selection_guards.py:38). Tests: tests/test_h277_model_roles.py, tests/test_h277_nous_auth.py.",
+      "summary": "Fresh assessment 2026-10-13 (ff8641a7): Provider breadth has grown but stays a fixed catalog. agents/core/llm/providers/__init__.py:189 BUILTIN_PROFILES declares ten profiles (LM Studio, Ollama, Gemini, Anthropic, OpenRouter, DeepInfra, Nous, xAI, OpenAI Responses, and one Custom OpenAI-compatible at agents/core/llm/providers/__init__.py:283 configured by a single OPENAI_BASE_URL/OPENAI_API_KEY pair). Nous Portal device-auth exists (agents/core/llm/nous_auth.py:1). Per-role provider/model/base_url selection is in agents/core/llm/model_roles.py:8, and every model choice passes cost/data-policy guards (agents/core/llm/selection_guards.py:38). Tests: tests/test_h277_model_roles.py, tests/test_h277_nous_auth.py. Re-read 2026-10-27 (PR #1297 Windows portability): the video-configuration ownership guard now renders its collected repository-relative paths with as_posix before comparing the exact same three allowed modules. Source enumeration, policy ownership and all assertions are unchanged; 104 model-role cases passed. No parity upgrade.",
       "remaining": "- A named dict of arbitrary custom OpenAI-compatible endpoints (base_url, api_key, extra_headers/extra_body) switchable mid-session\n- key_cmd for command-minted short-lived credentials\n- A model/provider wizard and setup guides (Bedrock, Azure, Vertex, OAuth over SSH)\n- Subscription OAuth paths beyond Nous (Copilot, Codex, Grok) and a plan-semantics table",
       "evidence": [
         {
@@ -28870,7 +28870,7 @@
         },
         {
           "path": "tests/test_h277_model_roles.py",
-          "sha256": "487b95a7f5f1775c211fbc6c00c7473a012d9afb4a3b5ddbe642cc3427eeb96c"
+          "sha256": "3cf7a80fc9f4815c58381df7e25389c3c0847fd5b64393e09199e053c2e59dcd"
         },
         {
           "path": "tests/test_h277_nous_auth.py",
