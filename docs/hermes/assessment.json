@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "a26eebfe3f7ba73c0f66f122eec3517a604a3da2",
-  "assessed_at": "2026-10-26T09:03:25Z",
+  "base_sha": "bd19005e380c8ee889b7430951d34f7f6bcf76b5",
+  "assessed_at": "2026-10-27T12:36:49Z",
   "reviews": [
     {
       "id": "H001",
@@ -1575,7 +1575,7 @@
       "evidence": [
         {
           "path": "agents/core/webhooks.py",
-          "sha256": "d97ab171e50882b25592ee894e6973993024f18ce307321a3f6a800bf258101c"
+          "sha256": "29283d350d9b6a445e816e949ed24b718ca3a98a767dff904e6c4a495a686a0a"
         },
         {
           "path": "agents/core/routers/webhooks.py",
@@ -1591,7 +1591,7 @@
         },
         {
           "path": "tests/test_h153_webhook_subscriptions.py",
-          "sha256": "3106db7cae550ae839ea94b6ff8b6e4fc2b943c9c938af3ed7c9c15850fd4633"
+          "sha256": "fe2f6d8160d94c61a57719cd3f3cef48304d0194a704f260ff2ca5b7391bc65d"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -6121,7 +6121,7 @@
         },
         {
           "path": "agents/core/webhooks.py",
-          "sha256": "d97ab171e50882b25592ee894e6973993024f18ce307321a3f6a800bf258101c"
+          "sha256": "29283d350d9b6a445e816e949ed24b718ca3a98a767dff904e6c4a495a686a0a"
         },
         {
           "path": "agents/core/routers/admin.py",
@@ -6173,7 +6173,7 @@
         },
         {
           "path": "tests/test_h153_webhook_subscriptions.py",
-          "sha256": "3106db7cae550ae839ea94b6ff8b6e4fc2b943c9c938af3ed7c9c15850fd4633"
+          "sha256": "fe2f6d8160d94c61a57719cd3f3cef48304d0194a704f260ff2ca5b7391bc65d"
         },
         {
           "path": "tests/test_h153b_webhook_delivery.py",
@@ -6185,7 +6185,7 @@
         },
         {
           "path": "tests/test_h153d_webhook_review.py",
-          "sha256": "7b216f95a524553bfdc57341a5fd3e92c92c9f11d18c01c92af7803e1ace1e1f"
+          "sha256": "6c63f0b23d2078bb6a22e8c65725213e543ed2a3e064b6872caa8f2158d952ff"
         },
         {
           "path": "tests/test_h10_8_webhooks.py",
@@ -6209,7 +6209,7 @@
         },
         {
           "path": "tests/test_h153e_webhook_review.py",
-          "sha256": "5fd7202ec626834b6e68d4f79fe98d7751e150fb256f37d331281d5f67d61799"
+          "sha256": "75ca0ff15bfedb48a309dee12b5212628a0223d89cbcd70f1347dd5572cab705"
         },
         {
           "path": "frontend/src/test/panel-state.test.tsx",
@@ -7614,7 +7614,7 @@
         },
         {
           "path": "agents/core/webhooks.py",
-          "sha256": "d97ab171e50882b25592ee894e6973993024f18ce307321a3f6a800bf258101c"
+          "sha256": "29283d350d9b6a445e816e949ed24b718ca3a98a767dff904e6c4a495a686a0a"
         },
         {
           "path": "frontend/src/panels/webhooks.tsx",
@@ -17407,7 +17407,7 @@
       "evidence": [
         {
           "path": "agents/core/webhooks.py",
-          "sha256": "d97ab171e50882b25592ee894e6973993024f18ce307321a3f6a800bf258101c"
+          "sha256": "29283d350d9b6a445e816e949ed24b718ca3a98a767dff904e6c4a495a686a0a"
         },
         {
           "path": "agents/core/extensions/events.py",
