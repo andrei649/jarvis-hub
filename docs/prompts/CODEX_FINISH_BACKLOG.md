@@ -29,9 +29,12 @@ quarantined to get green.
 
 1. **Argument.** If the owner's message after this prompt names a row (`row 7`), a slug
    (`nws-12-code-splitting`), a PR (`PR #1300`) or pastes review findings, that is your slice:
-   a row or slug replaces the pick in §1.3; a PR or pasted findings means *check out that PR's
-   branch, fix every P1 and every P2 that is a real defect, push once, stop*. With no argument,
-   pick as §1 says.
+   a row or slug replaces the pick in §1.3. A PR or pasted findings means: fix every P1 and every
+   P2 that is a real defect, push once, stop — on the PR's own branch while the PR is **open**
+   (`git ls-remote --heads origin <branch>` finds it and `git log origin/main..origin/<branch>`
+   is non-empty); when the PR is already **merged** (its branch is gone or fully contained in
+   `origin/main`), start from `origin/main` on a new branch `lean/<slug>-followup` and open a new
+   PR that names the merged PR and the finding. With no argument, pick as §1 says.
 2. **Locks without GitHub tools.** `git ls-remote --heads origin` is your only view of other
    runs: a remote branch whose name contains a row's slug is a lock on that row (a PR exists or a
    task is mid-flight). Name your branch `lean/<slug>` so the next task sees your lock; when the
@@ -61,10 +64,15 @@ row, then edit only that row in `BACKLOG.md` — never load the file whole), one
 bottom of the queue file. A row that turns out to be already shipped is ticked with the commit
 that shipped it and you take the next row in the same task if budget remains.
 
-### A.3 Refill — when no `ai` row is left in the queue
+### A.3 Refill — when no actionable `ai` row is left in the queue
 
-Do **not** stop with `queue empty` while `python3 scripts/backlog.py open` still lists rows that
-the AI lane can close. Deliver a **refill slice** instead (docs only, slug `refill-queue-<date>`):
+An unticked `ai` row is **actionable** unless it is a dispatcher row whose concrete candidates
+are exhausted: row 14 `heq-next-row` never ticks by its own definition — it is actionable only
+while its H-list still names a row that is unresolved and unlocked (it says how to tell); a
+`WIP:` row is actionable (§1.2). "No `ai` row left" in this prompt always means *no actionable
+one*. Do **not** stop with `queue empty` while `python3 scripts/backlog.py open` still lists rows
+that the AI lane can close. Deliver a **refill slice** instead (docs only, slug
+`refill-queue-<date>`):
 
 1. Pick order, strict, from `docs/prompts/BACKLOG_DRIVER.md` §1 (read only that section):
    (a) red `main` (`git log -1 origin/main` and the last push-to-main run named in the newest
@@ -87,8 +95,9 @@ the AI lane can close. Deliver a **refill slice** instead (docs only, slug `refi
 
 ### A.4 Finished — the only time you reply `queue empty`
 
-All of these hold at once: `LEAN_QUEUE.md` has no unticked `ai` row; `python3 scripts/backlog.py
-open` lists only rows that have a packet in `docs/OWNER_TASKS.md`; every row of the current
+All of these hold at once: `LEAN_QUEUE.md` has no actionable `ai` row (A.3's definition — a
+dispatcher row with every candidate resolved does not count); `python3 scripts/backlog.py open`
+lists only rows that have a packet in `docs/OWNER_TASKS.md`; every row of the current
 roadmap milestone that does not need the owner is ✅ in `BACKLOG.md` and §3 of
 `docs/NERVA_2_ROADMAP.md` says so honestly. Then reply:
 `■ lean: queue empty — AI lane finished; owner lane: <n> packets in docs/OWNER_TASKS.md`.
@@ -120,11 +129,12 @@ will serve (or `refill`). End with `■ lean: <slug> — next: <slug>`.
   sweep (or merge the green PR yourself), paste §A again. The queue, the locks and the `WIP:`
   rule make the sequence self-healing.
 - **Parallel tasks** work only with an argument each (`row 7`, `row 8`, …), because two tasks that
-  start together see the same unlocked first row. Rows 5–11 are independent of each other;
-  rows 15–18 (S1/S3 lanes) are not — one at a time.
+  start together see the same unlocked first row. Rows 5, 6, 7, 8, 10 and 11 are independent
+  of each other; row 9 (OCR) reuses row 5's child process, so it starts only after row 5 has
+  merged; rows 15–18 (S1/S3 lanes) are not independent — one at a time.
 - **Review follow-up:** when a Codex review on a merged or open PR has a P1, paste the finding
-  with the PR number as the argument; that task fixes it on the branch (open PR) or as a
-  follow-up PR (merged).
+  with the PR number as the argument; A.1.1 makes that task fix it on the branch (open PR) or
+  from `main` as a `lean/<slug>-followup` PR (merged).
 - Codex's own GitHub review runs on every non-draft PR; the hourly sweep merges on green checks
   only, so a review comment never blocks a merge. Read the P1s once a day.
 
