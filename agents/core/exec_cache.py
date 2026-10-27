@@ -121,6 +121,11 @@ def _as_root(raw: str) -> Path | None:
     a NUL or a newline, is never part of one: review-H667b nit 1)."""
     if any(ord(ch) < 0x20 or ch == "\x7f" for ch in raw):
         return None
+    if os.name == "nt" and raw.startswith("~") and raw[1:2] not in ("", "/", "\\"):
+        # Windows cannot look another account up: ``expanduser`` swaps ``~name`` for a
+        # sibling of the current home whether or not that account exists, so only this
+        # user's own ``~`` is a root there.
+        return None
     try:
         chosen = Path(raw).expanduser()
     except (RuntimeError, ValueError):       # ~nosuchuser

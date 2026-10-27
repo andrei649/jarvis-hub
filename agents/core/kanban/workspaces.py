@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import selectors
 import shutil
@@ -17,6 +18,7 @@ import sqlite3
 import stat
 import subprocess  # nosec B404 - bounded local Git adapter; no shell/network commands
 import tempfile
+import threading
 import time
 import unicodedata
 from collections.abc import Callable, Mapping
@@ -44,6 +46,67 @@ class WorkspaceSpec(dict):
     __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = _immutable
 
 
+def _collect(proc: subprocess.Popen[bytes], argv: list[str], deadline: float, output: bytearray) -> bool:
+    """Read *proc*'s merged output into *output* until EOF, killing it at *deadline*
+    (TimeoutExpired) or past ``_GIT_OUTPUT`` bytes (returns False)."""
+    stdout = proc.stdout
+    if stdout is None:
+        raise RuntimeError("Git output pipe is unavailable")
+    if os.name == "nt":
+        # ``select`` takes sockets only on Windows (WinError 10038 on a pipe): a reader
+        # thread feeds a queue, which the same deadline and size bounds drain.
+        chunks: queue.Queue[bytes] = queue.Queue()
+
+        def pump() -> None:
+            try:
+                while True:
+                    chunk = os.read(stdout.fileno(), 4096)
+                    chunks.put(chunk)
+                    if not chunk:
+                        return
+            except OSError:
+                chunks.put(b"")
+
+        threading.Thread(target=pump, daemon=True).start()
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                proc.kill()
+                proc.wait()
+                raise subprocess.TimeoutExpired(argv, _GIT_TIMEOUT)
+            try:
+                chunk = chunks.get(timeout=remaining)
+            except queue.Empty:
+                continue
+            if not chunk:
+                return True
+            output.extend(chunk)
+            if len(output) > _GIT_OUTPUT:
+                proc.kill()
+                proc.wait()
+                return False
+    with selectors.DefaultSelector() as selector:
+        selector.register(stdout, selectors.EVENT_READ)
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                proc.kill()
+                proc.wait()
+                raise subprocess.TimeoutExpired(argv, _GIT_TIMEOUT)
+            if not selector.select(remaining):
+                continue
+            chunk = os.read(stdout.fileno(), min(4096, _GIT_OUTPUT + 1 - len(output)))
+            if not chunk:
+                selector.unregister(stdout)
+            else:
+                output.extend(chunk)
+                if len(output) > _GIT_OUTPUT:
+                    proc.kill()
+                    proc.wait()
+                    return False
+    return True
+
+
 def _git(cwd: Path, *args: str, mutate: bool = False) -> subprocess.CompletedProcess[str]:
     # Explicit argv/cwd and a clean Git environment prevent ambient overrides,
     # hooks, fsmonitor and network prompts from changing the operation.
@@ -64,25 +127,8 @@ def _git(cwd: Path, *args: str, mutate: bool = False) -> subprocess.CompletedPro
             raise RuntimeError("Git output pipe is unavailable")
         output = bytearray()
         deadline = time.monotonic() + _GIT_TIMEOUT
-        with selectors.DefaultSelector() as selector:
-            selector.register(proc.stdout, selectors.EVENT_READ)
-            while selector.get_map():
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    proc.kill()
-                    proc.wait()
-                    raise subprocess.TimeoutExpired(argv, _GIT_TIMEOUT)
-                if not selector.select(remaining):
-                    continue
-                chunk = os.read(proc.stdout.fileno(), min(4096, _GIT_OUTPUT + 1 - len(output)))
-                if not chunk:
-                    selector.unregister(proc.stdout)
-                else:
-                    output.extend(chunk)
-                    if len(output) > _GIT_OUTPUT:
-                        proc.kill()
-                        proc.wait()
-                        return subprocess.CompletedProcess(argv, 1, "", "Git output exceeded bound")
+        if not _collect(proc, argv, deadline, output):
+            return subprocess.CompletedProcess(argv, 1, "", "Git output exceeded bound")
         remaining = deadline - time.monotonic()
         try:
             code = proc.wait(timeout=max(0.001, remaining))
