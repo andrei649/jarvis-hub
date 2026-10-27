@@ -5,15 +5,20 @@
    anyway, and a hidden area should not advertise itself. */
 import React from 'react';
 import { useUser } from './app/session';
-import { AdminArea } from './pages/admin/AdminArea';
+import { useI18n } from './i18n';
 import { ApprovalsPage } from './pages/approvals';
 import { AssistantPage } from './pages/assistant';
 import { DocumentsPage } from './pages/documents';
 import { ProfilePage } from './pages/profile/ProfilePage';
-import { ReportsPage } from './pages/reports';
 import { SharedReportsPage } from './pages/shared-reports';
 import { NotFoundPage } from './pages/system';
 import { Redirect, resolveRoute, type RouteDef } from './router';
+import { Spinner } from './ui';
+
+// The admin console and the reports views load on demand, so the first chunk carries only the
+// screens every user opens (NWS-12). Both keep their named exports; lazy() wants a default.
+const AdminArea = React.lazy(() => import('./pages/admin/AdminArea').then((m) => ({ default: m.AdminArea })));
+const ReportsPage = React.lazy(() => import('./pages/reports').then((m) => ({ default: m.ReportsPage })));
 
 export const ADMIN_SECTIONS = ['users', 'departments', 'organisation', 'email', 'audit', 'usage'] as const;
 export type AdminSection = typeof ADMIN_SECTIONS[number];
@@ -50,8 +55,13 @@ export const ROUTES: RouteDef[] = [
   },
 ];
 
+function RouteFallback() {
+  const { t } = useI18n();
+  return <Spinner label={t('common.loading')} />;
+}
+
 export function SignedInRoutes({ path }: { path: string }) {
   const match = resolveRoute(ROUTES, path);
   if (!match) return <NotFoundPage />;
-  return <>{match.route.render(match.params)}</>;
+  return <React.Suspense fallback={<RouteFallback />}>{match.route.render(match.params)}</React.Suspense>;
 }
