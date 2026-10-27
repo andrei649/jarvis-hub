@@ -130,21 +130,24 @@ def _split_fence(content, *, source):
 @pytest.mark.asyncio
 async def test_untrusted_tool_result_is_fenced_and_turn_is_recall_tainted():
     log, events = [], []
-    bind_action_origin("generated")
-    backend = _Backend([("web_fetch", {"n": 1})])
-    assert await _run(_runtime(_server(log)), backend, events) == "done"
-    (content,) = _tool_contents(backend)
-    assert content.startswith("<<UNTRUSTED source=web_fetch>>")
-    assert content.endswith("<<END UNTRUSTED>>")
-    middle = _split_fence(content, source="web_fetch")
-    envelope = {"ok": True, "tool": "web_fetch", "result": {"page": "a plain page about coffee"}}
-    assert middle == _encoded(envelope)
-    assert json.loads(middle) == envelope
-    # Raised from the turn's own context — a mark set in the handler's child task would
-    # never be visible here after run() returned.
-    assert current_action_origin() == TAINTED_RECALL_ORIGIN
-    (event,) = _untrusted_events(events)
-    assert event["reasons"] == ["untrusted_tool"] and event["suspicious"] is False
+    token = bind_action_origin("generated")
+    try:
+        backend = _Backend([("web_fetch", {"n": 1})])
+        assert await _run(_runtime(_server(log)), backend, events) == "done"
+        (content,) = _tool_contents(backend)
+        assert content.startswith("<<UNTRUSTED source=web_fetch>>")
+        assert content.endswith("<<END UNTRUSTED>>")
+        middle = _split_fence(content, source="web_fetch")
+        envelope = {"ok": True, "tool": "web_fetch", "result": {"page": "a plain page about coffee"}}
+        assert middle == _encoded(envelope)
+        assert json.loads(middle) == envelope
+        # Raised from the turn's own context — a mark set in the handler's child task would
+        # never be visible here after run() returned.
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+        (event,) = _untrusted_events(events)
+        assert event["reasons"] == ["untrusted_tool"] and event["suspicious"] is False
+    finally:
+        reset_action_origin(token)
 
 
 @pytest.mark.asyncio
@@ -155,61 +158,73 @@ async def test_missing_ok_external_error_still_fences_and_taints_the_turn():
         return {"error": "remote text unavailable"}
 
     server.register_tool("web_fetch", fetch, untrusted_output=True)
-    bind_action_origin("generated")
-    backend = _Backend([("web_fetch", {"n": 1})])
-    events = []
-    assert await _run(_runtime(server), backend, events) == "done"
-    (content,) = _tool_contents(backend)
-    assert json.loads(_split_fence(content, source="web_fetch"))["result"] == {
-        "error": "remote text unavailable",
-    }
-    assert current_action_origin() == TAINTED_RECALL_ORIGIN
-    assert _untrusted_events(events)[0]["reasons"] == ["untrusted_tool"]
+    token = bind_action_origin("generated")
+    try:
+        backend = _Backend([("web_fetch", {"n": 1})])
+        events = []
+        assert await _run(_runtime(server), backend, events) == "done"
+        (content,) = _tool_contents(backend)
+        assert json.loads(_split_fence(content, source="web_fetch"))["result"] == {
+            "error": "remote text unavailable",
+        }
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+        assert _untrusted_events(events)[0]["reasons"] == ["untrusted_tool"]
+    finally:
+        reset_action_origin(token)
 
 
 @pytest.mark.asyncio
 async def test_trusted_tool_result_is_byte_identical_to_today():
     log, events = [], []
-    bind_action_origin("generated")
-    backend = _Backend([("lookup", {"n": 7})])
-    assert await _run(_runtime(_server(log)), backend, events) == "done"
-    (content,) = _tool_contents(backend)
-    assert content == _encoded({"ok": True, "tool": "lookup", "result": {"n": 7}})
-    assert "UNTRUSTED" not in content
-    assert current_action_origin() == "generated"
-    assert _untrusted_events(events) == []
+    token = bind_action_origin("generated")
+    try:
+        backend = _Backend([("lookup", {"n": 7})])
+        assert await _run(_runtime(_server(log)), backend, events) == "done"
+        (content,) = _tool_contents(backend)
+        assert content == _encoded({"ok": True, "tool": "lookup", "result": {"n": 7}})
+        assert "UNTRUSTED" not in content
+        assert current_action_origin() == "generated"
+        assert _untrusted_events(events) == []
+    finally:
+        reset_action_origin(token)
 
 
 @pytest.mark.asyncio
 async def test_injection_flagged_trusted_result_is_fenced_and_tainted():
     log, events = [], []
-    bind_action_origin("generated")
-    backend = _Backend([("lookup", {"n": 1})])
-    server = _server(log, trusted_payload={"text": _INJECT})
-    assert await _run(_runtime(server), backend, events) == "done"
-    (content,) = _tool_contents(backend)
-    middle = _split_fence(content, source="lookup")
-    assert json.loads(middle) == {"ok": True, "tool": "lookup", "result": {"text": _INJECT}}
-    assert current_action_origin() == TAINTED_RECALL_ORIGIN
-    (event,) = _untrusted_events(events)
-    assert event["reasons"] == ["injection_flags"] and event["suspicious"] is True
-    assert event["injection_flags"]
+    token = bind_action_origin("generated")
+    try:
+        backend = _Backend([("lookup", {"n": 1})])
+        server = _server(log, trusted_payload={"text": _INJECT})
+        assert await _run(_runtime(server), backend, events) == "done"
+        (content,) = _tool_contents(backend)
+        middle = _split_fence(content, source="lookup")
+        assert json.loads(middle) == {"ok": True, "tool": "lookup", "result": {"text": _INJECT}}
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+        (event,) = _untrusted_events(events)
+        assert event["reasons"] == ["injection_flags"] and event["suspicious"] is True
+        assert event["injection_flags"]
+    finally:
+        reset_action_origin(token)
 
 
 @pytest.mark.asyncio
 async def test_declared_taint_fences_and_marks():
     log, events = [], []
-    bind_action_origin("generated")
-    backend = _Backend([("lookup", {"n": 1})])
-    hits = [{"id": "m-1", "text": "dark vessel in the strait", "tainted": True}]
-    server = _server(log, trusted_payload={"tainted": True, "hits": hits})
-    assert await _run(_runtime(server), backend, events) == "done"
-    (content,) = _tool_contents(backend)
-    middle = _split_fence(content, source="lookup")
-    assert json.loads(middle)["result"] == {"tainted": True, "hits": hits}
-    assert current_action_origin() == TAINTED_RECALL_ORIGIN
-    (event,) = _untrusted_events(events)
-    assert event["reasons"] == ["declared_taint"] and event["suspicious"] is False
+    token = bind_action_origin("generated")
+    try:
+        backend = _Backend([("lookup", {"n": 1})])
+        hits = [{"id": "m-1", "text": "dark vessel in the strait", "tainted": True}]
+        server = _server(log, trusted_payload={"tainted": True, "hits": hits})
+        assert await _run(_runtime(server), backend, events) == "done"
+        (content,) = _tool_contents(backend)
+        middle = _split_fence(content, source="lookup")
+        assert json.loads(middle)["result"] == {"tainted": True, "hits": hits}
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+        (event,) = _untrusted_events(events)
+        assert event["reasons"] == ["declared_taint"] and event["suspicious"] is False
+    finally:
+        reset_action_origin(token)
 
 
 @pytest.mark.asyncio
@@ -251,11 +266,14 @@ async def test_tool_result_untrusted_event_carries_flags_never_content():
 @pytest.mark.asyncio
 async def test_escalate_only_an_already_inbound_origin_keeps_its_label():
     log = []
-    bind_action_origin(INBOUND_ACTION_ORIGIN)
-    backend = _Backend([("web_fetch", {"n": 1})])
-    assert await _run(_runtime(_server(log)), backend) == "done"
-    assert "<<UNTRUSTED" in _tool_contents(backend)[0]
-    assert current_action_origin() == INBOUND_ACTION_ORIGIN
+    token = bind_action_origin(INBOUND_ACTION_ORIGIN)
+    try:
+        backend = _Backend([("web_fetch", {"n": 1})])
+        assert await _run(_runtime(_server(log)), backend) == "done"
+        assert "<<UNTRUSTED" in _tool_contents(backend)[0]
+        assert current_action_origin() == INBOUND_ACTION_ORIGIN
+    finally:
+        reset_action_origin(token)
 
 
 @pytest.mark.asyncio
@@ -283,16 +301,19 @@ async def test_duplicate_stub_matches_on_the_raw_payload_not_the_fence():
 @pytest.mark.asyncio
 async def test_local_failure_of_an_untrusted_tool_is_not_fenced():
     log, events = [], []
-    bind_action_origin("generated")
-    # Non-dict arguments never reach the handler: the loop refuses the call locally.
-    backend = _Backend([("web_fetch", ["not", "a", "dict"])])
-    assert await _run(_runtime(_server(log)), backend, events) == "done"
-    assert log == []
-    (content,) = _tool_contents(backend)
-    assert "UNTRUSTED" not in content
-    assert json.loads(content) == {"ok": False, "reason": "bad_tool_arguments", "tool": "web_fetch"}
-    assert current_action_origin() == "generated"
-    assert _untrusted_events(events) == []
+    token = bind_action_origin("generated")
+    try:
+        # Non-dict arguments never reach the handler: the loop refuses the call locally.
+        backend = _Backend([("web_fetch", ["not", "a", "dict"])])
+        assert await _run(_runtime(_server(log)), backend, events) == "done"
+        assert log == []
+        (content,) = _tool_contents(backend)
+        assert "UNTRUSTED" not in content
+        assert json.loads(content) == {"ok": False, "reason": "bad_tool_arguments", "tool": "web_fetch"}
+        assert current_action_origin() == "generated"
+        assert _untrusted_events(events) == []
+    finally:
+        reset_action_origin(token)
 
 
 # ── the registry row ───────────────────────────────────────────────────────────
@@ -355,38 +376,44 @@ async def test_registry_mode_keeps_the_untrusted_declaration():
     """Registry planning re-projects every offered row through the capability snapshot;
     the declaration must ride along, or the fence would vanish when a setting flips."""
     log, events = [], []
-    bind_action_origin("generated")
-    server = _server(log, capability_ids=True)
-    runtime = _runtime(server, registry_enabled=lambda: True,
-                       capability_snapshot=lambda: _REGISTRY_SNAPSHOT)
-    rows = {row["name"]: row for row in runtime._registry_metadata(server.tools())}
-    assert rows["web_fetch"]["untrusted_output"] is True
-    assert "untrusted_output" not in rows["lookup"]               # an undeclared row is unchanged
-    backend = _Backend([("web_fetch", {"n": 1})])
-    assert await _run(runtime, backend, events) == "done"
-    (content,) = _tool_contents(backend)
-    middle = _split_fence(content, source="web_fetch")
-    assert json.loads(middle)["result"] == {"page": "a plain page about coffee"}
-    assert current_action_origin() == TAINTED_RECALL_ORIGIN
-    (event,) = _untrusted_events(events)
-    assert event["reasons"] == ["untrusted_tool"]
+    token = bind_action_origin("generated")
+    try:
+        server = _server(log, capability_ids=True)
+        runtime = _runtime(server, registry_enabled=lambda: True,
+                           capability_snapshot=lambda: _REGISTRY_SNAPSHOT)
+        rows = {row["name"]: row for row in runtime._registry_metadata(server.tools())}
+        assert rows["web_fetch"]["untrusted_output"] is True
+        assert "untrusted_output" not in rows["lookup"]               # an undeclared row is unchanged
+        backend = _Backend([("web_fetch", {"n": 1})])
+        assert await _run(runtime, backend, events) == "done"
+        (content,) = _tool_contents(backend)
+        middle = _split_fence(content, source="web_fetch")
+        assert json.loads(middle)["result"] == {"page": "a plain page about coffee"}
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+        (event,) = _untrusted_events(events)
+        assert event["reasons"] == ["untrusted_tool"]
+    finally:
+        reset_action_origin(token)
 
 
 @pytest.mark.asyncio
 async def test_registry_mode_fences_when_the_flag_reader_fails_closed():
     """A raising flag reader selects registry mode; the fence must survive that path too."""
     log = []
-    bind_action_origin("generated")
+    token = bind_action_origin("generated")
+    try:
 
-    def boom():
-        raise RuntimeError("setting store down")
+        def boom():
+            raise RuntimeError("setting store down")
 
-    runtime = _runtime(_server(log, capability_ids=True), registry_enabled=boom,
-                       capability_snapshot=lambda: _REGISTRY_SNAPSHOT)
-    backend = _Backend([("web_fetch", {"n": 1})])
-    assert await _run(runtime, backend) == "done"
-    assert _tool_contents(backend)[0].startswith("<<UNTRUSTED source=web_fetch>>")
-    assert current_action_origin() == TAINTED_RECALL_ORIGIN
+        runtime = _runtime(_server(log, capability_ids=True), registry_enabled=boom,
+                           capability_snapshot=lambda: _REGISTRY_SNAPSHOT)
+        backend = _Backend([("web_fetch", {"n": 1})])
+        assert await _run(runtime, backend) == "done"
+        assert _tool_contents(backend)[0].startswith("<<UNTRUSTED source=web_fetch>>")
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+    finally:
+        reset_action_origin(token)
 
 
 # ── compaction keeps a fenced result fenced and truthful ───────────────────────
@@ -414,18 +441,21 @@ async def test_compaction_in_the_loop_keeps_the_fence_around_an_untrusted_result
     monkeypatch.setattr(agent_runtime, "estimate_messages",
                         lambda messages: sum(len(str(m.get("content", ""))) for m in messages) // 4)
     log, events = [], []
-    bind_action_origin("generated")
-    server = _server(log, page="w" * 12_000)
-    runtime = _runtime(server, context_budget_tokens=lambda: 2_048, compaction_keep_recent=0,
-                       compacted_result_bytes=300)
-    backend = _Backend([("web_fetch", {"n": 1})])
-    assert await _run(runtime, backend, events) == "done"
-    assert [e["compacted"] for e in events if e["event"] == "tool_context_compacted"] == [1]
-    (content,) = _tool_contents(backend)                           # the transcript after folding
-    inner = _split_fence(content, source="web_fetch")
-    parsed = json.loads(inner)
-    assert parsed["ok"] is True and parsed["tool"] == "web_fetch" and parsed["truncated"] is True
-    assert current_action_origin() == TAINTED_RECALL_ORIGIN
+    token = bind_action_origin("generated")
+    try:
+        server = _server(log, page="w" * 12_000)
+        runtime = _runtime(server, context_budget_tokens=lambda: 2_048, compaction_keep_recent=0,
+                           compacted_result_bytes=300)
+        backend = _Backend([("web_fetch", {"n": 1})])
+        assert await _run(runtime, backend, events) == "done"
+        assert [e["compacted"] for e in events if e["event"] == "tool_context_compacted"] == [1]
+        (content,) = _tool_contents(backend)                           # the transcript after folding
+        inner = _split_fence(content, source="web_fetch")
+        parsed = json.loads(inner)
+        assert parsed["ok"] is True and parsed["tool"] == "web_fetch" and parsed["truncated"] is True
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+    finally:
+        reset_action_origin(token)
 
 
 def test_split_fenced_tool_result_recognises_only_a_whole_fence():

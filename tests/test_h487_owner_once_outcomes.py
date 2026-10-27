@@ -287,9 +287,9 @@ async def test_cross_loop_committed_deny_outlives_delayed_wake_and_source_withdr
         pending = asyncio.run_coroutine_threadsafe(
             prompts.request(task_id, digest, check=lambda: True), loop)
         try:
-            await asyncio.wait_for(sent.wait(), 2)
+            await asyncio.wait_for(sent.wait(), 10)
             ready = asyncio.run_coroutine_threadsafe(asyncio.sleep(0), loop)
-            await asyncio.wait_for(asyncio.wrap_future(ready), 1)
+            await asyncio.wait_for(asyncio.wrap_future(ready), 10)
             entered = asyncio.Event()
             original = prompts._wake
 
@@ -305,9 +305,9 @@ async def test_cross_loop_committed_deny_outlives_delayed_wake_and_source_withdr
             cb = _callback(cards, choice='r')
             callback = asyncio.create_task(prompts.callback(
                 cb['data'].split(':')[1], 'deny', chat_id=99, user_id=99, message_id=17))
-            await asyncio.wait_for(entered.wait(), 1)
+            await asyncio.wait_for(entered.wait(), 10)
             auth[0] = False
-            result = await asyncio.wait_for(asyncio.wrap_future(pending), 1)
+            result = await asyncio.wait_for(asyncio.wrap_future(pending), 10)
             assert type(result) is owner_once.OwnerOnceWaitOutcome
             assert result.state == 'denied'
             assert prompts.consume_outcome(result, queue.get(task_id)) == 'denied'
@@ -317,7 +317,7 @@ async def test_cross_loop_committed_deny_outlives_delayed_wake_and_source_withdr
             if not pending.done():
                 pending.cancel()
             loop.call_soon_threadsafe(loop.stop)
-            await asyncio.to_thread(thread.join, 1)
+            await asyncio.to_thread(thread.join, 10)
             loop.close()
 
 

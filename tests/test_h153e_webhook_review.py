@@ -203,6 +203,6 @@ async def test_a_burst_through_astate_holds_one_thread_and_leaves_the_pool_free(
     await asyncio.sleep(0.1)
     started = time.perf_counter()
     await asyncio.to_thread(lambda: None)
-    assert time.perf_counter() - started < 0.5
+    assert time.perf_counter() - started < 2.0   # the held first read waits 5 s
     slow_store.set()
     assert await asyncio.gather(*callers) == [True] * 100
