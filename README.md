@@ -5,7 +5,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-29619-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-29620-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -93,12 +93,12 @@ support: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md); tester-level answers:
 ### Signal Layer
 
 
-The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at `:8787`. It turns provider data into evidence, signals, relevance, assessments, briefs, and approval-gated recommendations. It starts in deterministic replay mode by default and can later use a WorldMonitor sidecar as provider #1. The WorldMonitor sidecar convention is `:3100`. See [`docs/worldview/worldview-worldmonitor-fusion.md`](docs/worldview/worldview-worldmonitor-fusion.md).
+The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at `:8787`. It turns provider data into evidence, signals, relevance, assessments, briefs, and approval-gated recommendations. It starts in deterministic replay mode by default and can later use a WorldMonitor sidecar as provider #1. The WorldMonitor sidecar convention is `:3100`. See [`services/signal-layer/README.md`](services/signal-layer/README.md).
 
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **29,619** · frontend **2,202** · mobile **359**. Route surface: **707**.
+Generated test matrix: backend **29,620** · frontend **2,202** · mobile **359**. Route surface: **707**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -140,18 +140,16 @@ python serve.py              # → http://127.0.0.1:8080
 python -m pytest             # full offline suite — current count auto-synced in STATUS.md
 ```
 
-_Also on Windows:_ **`UPDATE.bat`** pulls the latest and reinstalls. The optional companions are
-**opt-in** on every platform: `JARVIS_WORLDVIEW=1` also starts the 4D OSINT globe (`:3000`),
-`JARVIS_SIGNAL_LAYER=1` also starts the Signal Layer (`:8787`). If something you added breaks the hub (a persona
+_Also on Windows:_ **`UPDATE.bat`** pulls the latest and reinstalls. The optional Signal Layer
+is **opt-in** on every platform: `JARVIS_SIGNAL_LAYER=1` starts it at `:8787`. If something you added breaks the hub (a persona
 overlay, a skill, a scheduled job, an MCP server), **`python serve.py --safe-mode`** starts it with
 only what ships: nothing of yours is deleted, the HUD says SAFE MODE, and a normal restart brings it all back.
 
 _Changed your mind?_ `./uninstall.sh --confirm` (`UNINSTALL.bat` on Windows) removes the
-installer-created software footprint (`.venv/`, WorldView's `node_modules/` + env files).
+installer-created Python environment (`.venv/`). Files outside the current installer footprint are preserved.
 Your data is never touched unless you also pass `--purge-data`.
 
 - **HUD:** http://127.0.0.1:8080/ — the **V2 cockpit** (primary HUD; legacy HUD at `/v1`, override with `JARVIS_HUD=v1`)
-- **WorldView (4D OSINT):** http://localhost:3000 (separate stack, auto-started by START.bat/start.sh — see above)
 - **Signal Layer:** http://127.0.0.1:8787/healthz (replay mode by default; opt out with `JARVIS_SIGNAL_LAYER=0`)
 - **Admin panel:** http://127.0.0.1:8080/admin
 - **CLI REPL:** `python agents/run.py`
@@ -172,13 +170,11 @@ Your data is never touched unless you also pass `--purge-data`.
 - **`GO_LIVE_PLAN.md`** — features + marketing brief + v1.0 launch checklist · **`docs/VALUATION_AND_PRICING.md`** — valuation, pricing & unit economics.
 - **`docs/MANUAL_TESTING.md`** — human pre-release checklist: everything the offline test suite can't verify (real LLMs, channels, services, HUD rendering).
 - **`docs/2026-06-08-future-developments-report.md`** — forward roadmap: remaining v1.0 gate, WorldView follow-ups, audit-debt hardening, post-1.0 horizons (Hermes, Cognition), and recommended sequencing.
-- **`worldview/README.md`** — the WorldView (4D OSINT) companion stack.
-- **`docs/worldview/worldview-worldmonitor-fusion.md`** — how Jarvis fuses WorldView, WorldMonitor, Signal Layer, and Argus without collapsing their boundaries.
 
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **29,619** · frontend **2,202** · mobile **359** · **707** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 21 open or blocked of 310 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `f801d57a8632`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **29,620** · frontend **2,202** · mobile **359** · **707** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 21 open or blocked of 310 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `f801d57a8632`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for evidence-based situational awareness, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

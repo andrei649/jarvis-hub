@@ -47,7 +47,7 @@ def is_valid_session_id(session_id: object) -> bool:
 # graph write path, and hard-rejected (400) on the direct write API.
 #
 # KG_LABELS / KG_REL_TYPES document the canonical vocabulary the system emits
-# (seeds, conversation extraction, WorldView sync). They are the *expected* set
+# (seeds and conversation extraction). They are the *expected* set
 # for reference and tests — NOT the enforcement boundary (any other safe
 # identifier is still accepted), so novel-but-legitimate types are never lost.
 KG_LABELS: frozenset[str] = frozenset({

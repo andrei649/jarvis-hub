@@ -1,3 +1,5 @@
+> Historical reference — WorldView was retired from Nerva on 2026-10-27. The stack, bridge, workers and commands described below are not shipped or supported. Do not use this document to restore or schedule WorldView work.
+
 # Jarvis Signal Layer Sprint
 
 A drop-in starter implementation for **Jarvis Situational Awareness** using **WorldMonitor as provider #1** and the existing Jarvis **WorldView** stack as the geospatial surface.

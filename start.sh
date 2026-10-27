@@ -6,8 +6,7 @@
 #   ./start.sh --no-browser same, without opening a browser (also: NERVA_NO_BROWSER=1)
 #   ./start.sh --doctor     run the install check-up (scripts/doctor.py) instead of starting
 #
-# WorldView (4D OSINT) and the Signal Layer are OPT-IN companions:
-# start them with JARVIS_WORLDVIEW=1 / JARVIS_SIGNAL_LAYER=1.
+# Signal Layer is an opt-in companion: JARVIS_SIGNAL_LAYER=1.
 # Serves the V2 cockpit HUD by default (set JARVIS_HUD=v1 for the legacy HUD).
 # The bind stays loopback (127.0.0.1) — a phone or second device is a documented,
 # token-gated decision: docs/PHONE_ACCESS.md.
@@ -26,28 +25,10 @@ for arg in "$@"; do
   esac
 done
 
-# --- WorldView (4D OSINT) — opt-IN with JARVIS_WORLDVIEW=1 ---
-if [ "${JARVIS_WORLDVIEW:-0}" = "1" ] && [ -f worldview/package.json ]; then
-  if command -v docker >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 && [ -d worldview/node_modules ]; then
-    echo "[WorldView] starting infra (TimescaleDB + Redis + Redpanda)…"
-    if ( cd worldview && docker compose up -d ); then
-      echo "[WorldView] starting API (:4000) and frontend (:3000) in the background…"
-      ( cd worldview && nohup npm run dev:api      >/tmp/worldview-api.log      2>&1 & )
-      ( cd worldview && nohup npm run dev:frontend >/tmp/worldview-frontend.log 2>&1 & )
-      echo "[WorldView] UI at http://localhost:3000 (first build takes a bit). Logs: /tmp/worldview-*.log"
-      echo "[WorldView] demo data: cd worldview && npm run db:seed"
-    else
-      echo "[WorldView] docker compose failed — is Docker running? Skipping WorldView."
-    fi
-  else
-    echo "[WorldView] skipped (need Docker + Node, and 'cd worldview && npm install' once). Starting Nerva only."
-  fi
-fi
-
 # --- Jarvis Signal Layer — opt-IN with JARVIS_SIGNAL_LAYER=1 ---
 if [ "${JARVIS_SIGNAL_LAYER:-0}" = "1" ] && [ -f services/signal-layer/src/index.mjs ]; then
   if command -v node >/dev/null 2>&1; then
-    export JARVIS_SIGNAL_LAYER_MODE="${JARVIS_SIGNAL_LAYER_MODE:-${JARVIS_WORLDVIEW_MODE:-replay}}"
+    export JARVIS_SIGNAL_LAYER_MODE="${JARVIS_SIGNAL_LAYER_MODE:-replay}"
     export SIGNAL_LAYER_HOST="${SIGNAL_LAYER_HOST:-127.0.0.1}"
     export SIGNAL_LAYER_PORT="${SIGNAL_LAYER_PORT:-8787}"
     export WORLDMONITOR_BASE_URL="${WORLDMONITOR_BASE_URL:-http://localhost:3100}"

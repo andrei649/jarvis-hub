@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # uninstall.sh — remove Nerva's installer-created software footprint (Linux/macOS).
-# Mirrors install.sh's steps in reverse: removes .venv/ + WorldView's node_modules/ and
-# generated env files. Your DATA is never touched — memory_logs/ (or $JARVIS_HOME) is
+# Mirrors install.sh's software footprint: removes .venv/. Your DATA is never touched — memory_logs/ (or $JARVIS_HOME) is
 # untouched by default; pass --purge-data to also erase it (backup-first, irreversible,
 # and only after you type the data folder's name back — or pass --yes-purge=<absolute data-root path>).
 #
@@ -42,7 +41,7 @@ echo "  JARVIS HUB — uninstall (Linux/macOS)"
 echo "============================================================"
 
 if [ "$CONFIRM" != "1" ] && [ "$DRY_RUN" != "1" ] && [ "$GUI_SUMMARY" != "1" ]; then
-  echo "This removes: .venv/, worldview/node_modules/, and WorldView's generated .env files."
+  echo "This removes the installer-created .venv/."
   echo "Your data (memory_logs/ or \$JARVIS_HOME) is NOT touched unless you also pass --purge-data."
   echo
   echo "Preview first:                     ./uninstall.sh --dry-run"

@@ -20,7 +20,7 @@ Safe mode only takes things away. It leaves out, at boot and at every later relo
   compaction boundary (H672), so a session cannot pick an overlay back up;
 - the owner's scheduled jobs: none is put on the scheduler;
 - (H490) the plugins: none is built, so no integration is reached and no plugin data
-  (WorldView, the Signal Layer) enters a prompt, and the plugin toggle refuses;
+  (the Signal Layer) enters a prompt, and the plugin toggle refuses;
 - (H490) the outbound webhooks: the owner-configured webhook channels and ntfy are not
   started, the proactive sends to the owner's channels refuse, and the inbound webhook
   receiver answers 503;

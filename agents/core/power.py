@@ -20,7 +20,7 @@ power awareness at all. Here:
   ``GET /api/power/stream`` pushes every change to connected clients; the HUD shows it.
 - **Battery-aware throttling.** Below ``system.battery_defer_percent`` (50 by default;
   0 never, 100 always) on battery, the heavy background jobs — memory maintenance, the
-  tech scout, the learning loop, prompt evolution and the WorldView KG sync — skip their
+  tech scout, the learning loop and prompt evolution — skip their
   run and say ``deferred_on_battery``. Nothing the owner asked for is deferred.
 """
 from __future__ import annotations

@@ -36,11 +36,11 @@ IGNORE_FILES = {
 # Profiles (see docs/AI_CONTEXT.md for measured sizes):
 #   --research: the whole hub product without junk or provenance — code + HUD
 #               source + tests + current docs. Excludes the standalone stacks
-#               (worldview/mobile/desktop/rust) and historical spec/research
+#               (mobile/desktop/rust) and historical spec/research
 #               archives. Target: fits 1M tokens with headroom.
 #   --core:     --research minus tests (smallest useful code+docs bundle).
 RESEARCH_EXTRA_IGNORE_DIRS = {
-    "worldview", "mobile", "desktop", "rust",   # separate stacks — load on demand
+    "mobile", "desktop", "rust",   # separate stacks — load on demand
     "superpowers", "research",                  # docs provenance (dated, immutable)
 }
 CORE_EXTRA_IGNORE_DIRS = RESEARCH_EXTRA_IGNORE_DIRS | {"tests"}

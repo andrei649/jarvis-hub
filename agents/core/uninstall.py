@@ -2,8 +2,7 @@
 
 Mirrors the forget/export invariant (``data_purge.py``): a forget erases everything an
 export can reveal about the user's *content*; this module removes everything
-``install.sh``/``INSTALL.bat`` put on disk for the *software* — the venv(s), WorldView's
-Node dependencies and the generated env files — while leaving the data root
+``install.sh``/``INSTALL.bat`` put on disk for the *software* — the Python environment — while leaving the data root
 (``memory_logs/`` or ``$JARVIS_HOME``) alone **by construction**. That matches the promise
 ``paths.py`` already documents for a packaged install ("Uninstall: delete the app install
 directory; this folder is yours and is never touched by an uninstall").
@@ -42,7 +41,7 @@ shell's own per-identifier webview/cache/preference/log dirs and launcher entrie
 source-built shell's cargo output tree (``desktop/src-tauri/target``, the binary and any
 ``bundle/``), which is how the desktop app is obtained today (no CI job ships a bundle).
 ``--gui-only`` is Hermes' ``uninstall --gui``: it removes *only* the desktop shell and leaves
-the engine (venvs, WorldView) and the data alone. ``--gui-summary`` is the read-only JSON probe
+the engine (.venv) and the data alone. ``--gui-summary`` is the read-only JSON probe
 (installed or not — OS install or source build —, app paths, source-built artifacts, userdata
 paths, package-managed copies, ``engine_installed``, ``platform``, ``app_root``) a desktop app can
 use to gate its own uninstall choice. A copy owned by a system package manager (``.deb``/``.rpm``
@@ -82,12 +81,6 @@ logger = logging.getLogger("jarvis.uninstall")
 # app at runtime — so removing them cannot touch anything the user typed or Nerva learned.
 UNINSTALL_TARGETS: tuple[str, ...] = (
     ".venv",
-    "worldview/node_modules",
-    "worldview/.env",
-    "worldview/backend-api/.env",
-    "worldview/frontend/.env.local",
-    "worldview/ingestion-workers/.env",
-    "worldview/ingestion-workers/.venv",
 )
 
 # The Tauri desktop shell's identity (desktop/src-tauri/tauri.conf.json + Cargo.toml);
@@ -103,7 +96,7 @@ DESKTOP_PACKAGE = "jarvis-hub"
 DESKTOP_SOURCE_TARGET = "desktop/src-tauri/target"
 
 # Signals that the engine (not just its source) is installed under the app root.
-ENGINE_MARKERS: tuple[str, ...] = (".venv", "worldview/node_modules")
+ENGINE_MARKERS: tuple[str, ...] = (".venv",)
 
 # What a packaged user home holds next to the data root, which --purge-data does NOT erase.
 USER_HOME_KEPT: tuple[str, ...] = (".env", "skills", "souls")
@@ -670,13 +663,10 @@ def _main(argv=None, *, out=None, inp=None) -> int:
     inp = inp if inp is not None else sys.stdin
     ap = argparse.ArgumentParser(
         prog="python -m agents.core.uninstall",
-        description="Remove Nerva's installer-created software footprint (venv(s), "
-                     "WorldView's Node deps and generated env files). Your data is never "
-                     "touched unless --purge-data is also given.",
+        description="Remove Nerva's installer-created .venv. Your data is never touched unless --purge-data is also given.",
     )
     ap.add_argument("--confirm", action="store_true",
-                    help="required: acknowledge this removes .venv/ and WorldView's "
-                         "node_modules/ + generated env files")
+                    help='required: acknowledge this removes the installer-created .venv')
     ap.add_argument("--dry-run", action="store_true",
                     help="print what would be removed (and whether data would be purged); "
                          "remove nothing")
@@ -693,8 +683,7 @@ def _main(argv=None, *, out=None, inp=None) -> int:
     ap.add_argument("--gui", action="store_true",
                     help="also remove the desktop app (Tauri shell) and its webview caches")
     ap.add_argument("--gui-only", action="store_true",
-                    help="remove ONLY the desktop app; keep the engine (venvs, WorldView) "
-                         "and your data")
+                    help='remove ONLY the desktop app; keep the engine (.venv) and your data')
     ap.add_argument("--gui-summary", action="store_true",
                     help="print a JSON probe of the desktop app (installed, paths); remove nothing")
     ap.add_argument("--purge-only", action="store_true",
@@ -739,8 +728,7 @@ def _main(argv=None, *, out=None, inp=None) -> int:
         return 0
 
     if not args.confirm:
-        out.write("refusing to uninstall without --confirm (this removes .venv/ and "
-                  "WorldView's node_modules/ + generated env files)\n")
+        out.write('refusing to uninstall without --confirm (this removes the installer-created .venv)\n')
         return 2
 
     keep_venv = _keep_venv(args, root)
