@@ -63,7 +63,7 @@ milestone on their own; they block the *proof* the next milestone needs.
 
 | Version | Theme | Exit gate | Status |
 |---|---|---|---|
-| **1.1.0** | **Hands, company, activation** — the one-PR delivery (§4) | full backend + frontend + mobile suites green; every new privileged kind in `action_auth.json`; every driver refuses honestly off-box; company mode default-off with a hermetic seven-night simulation green; `install_smoke` passes from the new bootstrap; BACKLOG synced | 🔨 this PR |
+| **1.1.0** | **Hands, company, activation** — the one-PR delivery (§4) | full backend + frontend + mobile suites green; every new privileged kind in `action_auth.json`; every driver refuses honestly off-box; company mode default-off with a hermetic seven-night simulation green; `install_smoke` passes from the new bootstrap; BACKLOG synced | 🟡 **delivered in waves, gate not yet met** — PR #1039 (2026-09-06) landed 17 slices; follow-up waves in `BACKLOG.md` since closed the driver factory + macOS/Linux/Windows drivers (OP-DRV-1…5), the S1 benchmark twin (OP-BENCH), the browser kernel kind (OP-BROWSER-KERNEL, `browser.step`), the keyboard (OP-DESKTOP-KEYS) and company mode end to end (CO-RUN-1…9, CO-RUNTIME, CO-HITL). Recounted 2026-10-27 against `BACKLOG.md`; the §4 ⬜ marks for those slices are a 2026-09-06 snapshot and BACKLOG wins. Still without a ✅ row there: `llm-tool-turns`/`runtime-breakers` and `first-action-activation`; the gate itself (full suites, seven-night simulation, `install_smoke` from the new bootstrap) is a CI/owner proof, not a tick |
 | 1.2.0 | **Proven hands** — owner-hardware validation of the Windows/macOS/Linux drivers, browser transport and local terminal (the 2026-09-07 marker change made those rows ✅ **delivered**; this milestone is where they become **proven**, and only an owner-live `nerva.evidence.v1` receipt counts — a green CI run does not); isolated operator session (dedicated browser profile, second Windows session); presence-gated *watch mode* with take-over; `credential.fill` kernel kind over the OS keychain; consent ledger completed (OS input persistence, MCP servers, HA devices); AUD-6 httpOnly tokens | 20-task operator benchmark scored on the owner box under kernel ON with zero ungoverned actions; every driver row ✅ with a receipt | ⬜ |
 | 1.3.0 | **Night Shift E5.1** — company mode under `JARVIS_TASK_MEDIATION=enforce` (B7 evidence for #906); scheduled continuity live; HA WebSocket observer and physical-context-gated autonomy; MCP server exposure of the governed operator; record-then-replay v0 for recurring chores; T-0.21 pack catalog; browser wake word (H5.16); config dry-run (H10.28) | seven real nights of owner dogfood with `company.enabled` on: every "done" in the morning brief carries a receipt, zero unmediated privileged tasks, interrupt budget never exceeded | ⬜ |
 | 1.4.0 | **Fast adoption** — hosted one-line installer on the owner's domain; Telegram pairing default in the design-partner posture; package presence from the generated Homebrew/winget/GHCR manifests (signing is owner-gated); the public demo instance (H23.30 R3); T-0.49 approval-gated timeline; activation and D7 measured with ≥3 design partners; proof-of-action receipts as the share loop | activation_30m and D7 (≥1 accepted action) computed locally for ≥3 design partners from opt-in aggregate export; GAP-0 closed | ⬜ |
@@ -75,7 +75,9 @@ milestone on their own; they block the *proof* the next milestone needs.
 Order inside a milestone follows `docs/prompts/BACKLOG_DRIVER.md` §1: red `main` first, then the
 milestone's rows (PARTIAL before MISSING), then 1.0.1 defects, then DRA/SEC residuals, then debt.
 
-## 4. The 1.1.0 delivery (this PR) — by theme
+## 4. The 1.1.0 delivery (PR #1039 + follow-up waves) — by theme
+
+> **Recount 2026-10-27:** the ⬜ marks below record the state on 2026-09-06 and are not rewritten line by line. Slices later delivered by their own PRs are listed in the §3 status cell; `BACKLOG.md` is the source of truth for every row.
 
 Each line is one file-disjoint slice built by one builder, checked by an independent adversarial
 reviewer, with one fix round. Backlog ids in brackets are the rows the slice closes. Anything that
@@ -179,6 +181,7 @@ did not make it is listed honestly in §5.
 | T-0.49 approval-gated timeline | under-specified; write the spec first | 1.4.0 |
 | H18.24 / H18.25 native renderers | device-gated (no mic pipeline, no graphics dependency) | 1.5.0 |
 | H12.24 media generation backend, H12.26 artifact store wave 2, LVP node mesh transport, LVP-vision-argus-code, H16.1 external IdP | reach work behind a real consumer | 1.6.0 |
+| `llm-tool-turns`, `runtime-breakers`, `first-action-activation` | no ✅ row in `BACKLOG.md` at the 2026-10-27 recount; re-pick from the owner's order, not silently | 1.2.0 |
 | A11Y-incomplete-reporting-limits, E2E-settle-readiness-signal | e2e lane quality; needs per-mode readiness attributes across shared HUD files | 1.2.0 |
 
 ## 6. The owner lane (only you can do these)
