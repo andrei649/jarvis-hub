@@ -963,3 +963,18 @@ def test_a_stored_round_one_regex_rule_is_unreadable_and_never_evaluated(pattern
     rules = [_rule("x", op, "a") for op in ("eq", "ne", "contains", "startswith", "endswith", "glob")]
     rules += [_rule("x", "in", ["a"]), _rule("x", "exists"), _rule("x", "missing")]
     filter_verdict(rules, {"x": "a" * 512}, "")
+
+
+def test_hook_ids_never_open_with_a_dash_so_the_cli_can_name_them(tmp_path, monkeypatch):
+    # secrets.token_urlsafe may open with "-"; argparse then reads "-hMn51RYzys" as -h (help,
+    # exit 0, nothing on ctx.out) and `webhook remove` silently does nothing (CI 2026-10-27).
+    import agents.core.webhooks as wh
+
+    real = wh.secrets.token_urlsafe
+    monkeypatch.setattr(wh.secrets, "token_urlsafe", lambda n=32: "-h" + real(n)[2:])
+    hub = _RouteHub(tmp_path, monkeypatch)
+    rec = hub.store.create("jarvis", name="ci")
+    assert "-" not in rec["id"] and len(rec["id"]) == len(real(8))
+    code, out, _err = _cli(["webhook", "remove", rec["id"]], hub)
+    assert code == EXIT_OK and f"removed {rec['id']}" in out
+    assert hub.store.list() == []

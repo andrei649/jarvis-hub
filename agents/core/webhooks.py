@@ -683,7 +683,7 @@ class WebhookStore(JsonStore):
                    or (filter_problem(filter) if filter is not None else ""))
         if problem:
             raise ValueError(problem)
-        hook_id = secrets.token_urlsafe(8)
+        hook_id = secrets.token_urlsafe(8).replace("-", "_")  # a CLI positional: never "-h…"
         token = secrets.token_urlsafe(24)
         record = {
             "id": hook_id,
