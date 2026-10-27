@@ -231,9 +231,9 @@
   the existing 60 s bound includes queue/startup time, and timeout/cancellation kills and reaps the child.
   POSIX applies a 512 MiB `RLIMIT_AS`; Windows reports `memory_unavailable` and enforces time only.
   Real-format, pathological-page, cancellation, queue and persisted-timeout regressions prove the path.
-- [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
+- [x] ✅ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
   lazy-load the admin console and reports to cut the first load.
-  Remaining (recounted 2026-10-26): all of it — `grep -rn "React.lazy\|lazy(" frontend/src/workspace` finds nothing; admin console and reports are in the one chunk.
+  Done (PR lean/nws-12-code-splitting, 2026-10-27): `React.lazy` + `Suspense` in `frontend/src/workspace/routes.tsx` for `AdminArea` and `ReportsPage`; first chunk 618.60 → 550.43 kB raw (174.6 → 158.5 kB gzip), `AdminArea` 52.9 kB and `reports` 20.1 kB load on demand. `shared-reports` still imports `reports/RunView` statically (kept in the first chunk by design).
 - [ ] ⬜ **NWS-21 — the pilot tag (owner).** No release tag holds the workspace yet (`v1.0.0` is older);
   pilot guide §2 installs from `<eticheta-pilotului>` (§15 upgrades from tag to tag) and says the
   owner cuts it after approving the pilot work, without naming it. Owner lane: merge PR #1256, tag,
