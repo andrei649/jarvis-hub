@@ -24,12 +24,6 @@
       "path": "agents/core/routers/brain.py",
       "license": "LICENSES/axon-MIT.txt",
       "note": "One-time visualization adaptation, not a tracked dependency \u2014 review manually if Axon changes; no version to pin."
-    },
-    {
-      "name": "gods-eye-view",
-      "kind": "influence (no code vendored)",
-      "path": "worldview/frontend/",
-      "note": "WorldView's frontend is built in the shape of Bilawal Sidhu's God's Eye View (bilawalsidhu/gods-eye-view, MIT) \u2014 Vite + CesiumJS, no UI framework, sensor grades, follow cam \u2014 but shares no source with it and is wired to WorldView's own 4D API. Nothing to pin; review manually only if upstream code is ever adopted. See docs/decisions/2026-08-25-worldview-cesium-renderer.md."
     }
   ]
 }
