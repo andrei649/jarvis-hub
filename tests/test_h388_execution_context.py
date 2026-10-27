@@ -50,17 +50,18 @@ def test_docker_offer_has_container_shell_cwd_and_no_host_facts(monkeypatch):
     assert 'toolchain' not in result['environment']
 
 
-def test_local_and_ssh_descriptions_use_transport_cwd_rules(monkeypatch):
+def test_local_and_ssh_descriptions_use_transport_cwd_rules(monkeypatch, tmp_path):
     monkeypatch.setenv('JARVIS_TERMINAL_TARGETS', '1')
     monkeypatch.setenv('JARVIS_TERMINAL_LOCAL_HOST', '1')
     monkeypatch.setenv('JARVIS_TERMINAL_SSH_HOST', '1')
-    monkeypatch.setenv('JARVIS_TERMINAL_LOCAL_ROOTS', '/tmp/h388-test-root')
+    local_root = str(tmp_path.resolve())
+    monkeypatch.setenv('JARVIS_TERMINAL_LOCAL_ROOTS', local_root)
     monkeypatch.setenv('JARVIS_TERMINAL_SSH_HOSTS', '{"remote":{"user":"test","hostname":"remote.example","roots":["/srv/work"]}}')
     monkeypatch.setenv('JARVIS_TERMINAL_SSH_KNOWN_HOSTS', '/tmp/h388-known-hosts')
     coordinator = _coordinator([_target('host', 'local'), _target('remote', 'ssh')])
     result = execution_guidance_context(coordinator, 'jarvis')
     text = result['environment']['targets']
-    assert 'host' in text and 'local' in text and '/tmp/h388-test-root' in text
+    assert 'host' in text and 'local' in text and local_root in text
     assert 'argv' in text and 'no shell' in text
     assert 'remote' in text and 'ssh' in text and '/srv/work' in text
     assert 'OS unknown' in text

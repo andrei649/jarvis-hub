@@ -1,5 +1,7 @@
 """Owner quick commands adapt Hermes dispatch while retaining Nerva approval."""
 
+import shlex
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -118,7 +120,8 @@ def governed_terminal(request, tmp_path, monkeypatch):
 async def test_owner_quick_exec_runs_only_after_signed_human_approval(governed_terminal, tmp_path, monkeypatch):
     _, _, queue, worker, executor, _, kernel_calls = governed_terminal
     server = executor.resolve("toolrpc").__self__
-    registry, orch = host({"where": {"type": "exec", "command": "/bin/pwd"}}, monkeypatch, server)
+    command = shlex.join([sys.executable, "-c", "import os; print(os.getcwd())"])
+    registry, orch = host({"where": {"type": "exec", "command": command}}, monkeypatch, server)
     reply = await registry.dispatch("/where", orch=orch, principal=OWNER)
     assert reply.status == "queued"
     [task] = queue.list()
@@ -150,7 +153,8 @@ async def test_exec_response_redacts_unregistered_sensitive_values(monkeypatch):
 async def test_approved_quick_output_is_redacted_before_durable_result(governed_terminal, tmp_path, monkeypatch):
     _, _, queue, worker, executor, _, _ = governed_terminal
     server = executor.resolve("toolrpc").__self__
-    command = "/usr/bin/printf 'Authorization: Bearer synthetic-sensitive-token\\n'"
+    command = shlex.join([sys.executable, "-c",
+                          "print('Authorization: Bearer synthetic-sensitive-token')"])
     registry, orch = host({"probe": {"type": "exec", "command": command}}, monkeypatch, server)
     result = await registry.dispatch("/probe", orch=orch, principal=OWNER)
     assert result.status == "queued"
