@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "bd19005e380c8ee889b7430951d34f7f6bcf76b5",
-  "assessed_at": "2026-10-27T12:36:49Z",
+  "base_sha": "e6cffcee77504235dc702a7d0c5de7bff8291764",
+  "assessed_at": "2026-10-27T12:39:40Z",
   "reviews": [
     {
       "id": "H001",
@@ -6153,7 +6153,7 @@
         },
         {
           "path": "frontend/src/panel-kit.tsx",
-          "sha256": "ac86084aea6530343ce5184b5f23fc5def2ad24aa5945d11300ec1c826a9f7a3"
+          "sha256": "48d0673f52328b9d1a6d9e90f2dec32da0ffeb82d28a2c1aa53f1d8752ff2bd9"
         },
         {
           "path": "frontend/src/api/client.ts",
