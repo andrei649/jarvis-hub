@@ -80,7 +80,7 @@ def test_local_only_violation_proof():
 
 def test_clean_when_only_local_or_blocked():
     m = EgressMonitor()
-    m.record("worldview", "127.0.0.1", "GET", allowed=True, local=True)        # LAN, local → fine
+    m.record("signal-layer", "127.0.0.1", "GET", allowed=True, local=True)        # LAN, local → fine
     m.record("system-control", "8.8.8.8", "GET", allowed=False, local=False)   # blocked → fine
     snap = m.snapshot()
     assert snap["local_only_violations"] == []
@@ -98,10 +98,10 @@ async def test_blocked_call_is_recorded_and_raises():
 
 
 async def test_allowed_local_call_is_recorded():
-    c = _mock(PluginHTTPClient("worldview"))  # LAN → localhost allowed
+    c = _mock(PluginHTTPClient("signal-layer"))  # LAN → localhost allowed
     resp = await c.get("http://127.0.0.1:4000/history")
     assert resp.status_code == 200
-    st = EGRESS_MONITOR.snapshot()["plugins"]["worldview"]
+    st = EGRESS_MONITOR.snapshot()["plugins"]["signal-layer"]
     assert st["allowed"] == 1 and st["external"] == 0  # local → not external
     await c.close()
 

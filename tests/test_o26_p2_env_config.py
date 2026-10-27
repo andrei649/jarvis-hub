@@ -148,7 +148,7 @@ _ENV_READ = re.compile(r"getenv|environ|env\.get")
 _HELPER_DEF = re.compile(r"def\s+(_env_truthy|_env_flag|_env_int|_env_bool|truthy|env_flag)\s*\(")
 
 # Runtime code only: agents/ + serve.py. tests/ set env, scripts/ are dev
-# tooling, worldview/ is a separate stack.
+# tooling.
 _SCAN_ROOTS = ["agents", "serve.py"]
 _EXEMPT = {
     "agents/core/env_config.py",   # the one home for the convention
@@ -299,7 +299,7 @@ _RAW_ENV_READ = re.compile(r"os\.getenv\(|os\.environ\.get\(|os\.environ\[")
 
 # Lower this when you migrate reads. Raising it should be a deliberate,
 # explained choice in the PR — not a reflex to get CI green.
-MAX_RAW_ENV_READS = 117
+MAX_RAW_ENV_READS = 110
 
 
 def _raw_env_read_sites():

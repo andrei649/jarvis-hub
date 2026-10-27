@@ -5,7 +5,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-29622-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-29619-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -42,7 +42,7 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 - **Stark** — Internal Corporate Intel. Day-job KPIs, board prep, channels.
 - **Veronica** — The Voice. Drafts emails, posts, captions in 5 voice profiles.
 - **Vision** — Deep Researcher + OSINT. Cited synthesis, regulatory watch.
-- **Argus** — Geoint Sentinel. Read-only, governed bridge to WorldView (4D OSINT) and the Signal Layer.
+- **Argus** — Geoint Sentinel. Read-only, governed bridge to the Signal Layer.
 
 **Tech tier** — 3 agents:
 - **Steve** — CTO + Infrastructure. Bonobo + Pi + models + backups.
@@ -90,16 +90,15 @@ support: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md); tester-level answers:
 - **Channels:** web (SSE), voice, telegram, discord, email, slack
 - **Security:** PII/secret scanner, SSRF protection, audit log (Merkle chain), guardrails (WARN/REDACT/BLOCK)
 
-### WorldView (4D OSINT) + Signal Layer
+### Signal Layer
 
-A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldview/`](worldview/) (frontend `:3000`, API `:4000`, infra via Docker: Redpanda/TimescaleDB/Redis) — a time-scrubbable 3D globe fusing air/sea/space/cyber OSINT. It shares no runtime with `agents/` and is **opt-in**: install with `JARVIS_WORLDVIEW=1 ./install.sh` and start with `JARVIS_WORLDVIEW=1` (same variable for `START.bat`). Out of the box it has **no live feeds** — run `npm run db:seed` for clearly-badged demo data; live providers are owner-configured. The **Argus** agent queries it read-only and governed. No Mapbox token or API keys are needed for the demo (`npm run db:seed`). See [`worldview/README.md`](worldview/README.md).
 
-The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at `:8787`. It turns provider data into evidence, signals, relevance, assessments, briefs, and approval-gated recommendations. It starts in deterministic replay mode by default and can later use a WorldMonitor sidecar as provider #1. Keep WorldMonitor off `:3000`; Jarvis convention is `:3100` because WorldView already owns `:3000`. See [`docs/worldview/worldview-worldmonitor-fusion.md`](docs/worldview/worldview-worldmonitor-fusion.md).
+The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at `:8787`. It turns provider data into evidence, signals, relevance, assessments, briefs, and approval-gated recommendations. It starts in deterministic replay mode by default and can later use a WorldMonitor sidecar as provider #1. The WorldMonitor sidecar convention is `:3100`. See [`docs/worldview/worldview-worldmonitor-fusion.md`](docs/worldview/worldview-worldmonitor-fusion.md).
 
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **29,622** · frontend **2,202** · mobile **359**. Route surface: **707**.
+Generated test matrix: backend **29,619** · frontend **2,202** · mobile **359**. Route surface: **707**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -179,10 +178,10 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **29,622** · frontend **2,202** · mobile **359** · **707** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 21 open or blocked of 310 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `815e176e34fe`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **29,619** · frontend **2,202** · mobile **359** · **707** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 21 open or blocked of 310 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `f801d57a8632`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
-**v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for evidence-based situational awareness, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge

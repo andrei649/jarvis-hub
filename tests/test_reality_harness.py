@@ -46,7 +46,7 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
     # Six default-off image-provider manifests now have separate policy cases.
-    assert len(cases) == len(records) == 85
+    assert len(cases) == len(records) == 84
     assert results["plugin:ntfy"] is True
     # The six disabled cloud-image plugins still have real manifest egress rails;
     # proving that policy does not change their default-off readiness state.
@@ -164,7 +164,8 @@ async def test_seeded_cases_prove_rails_and_promote():
     snap = cr.snapshot()  # plugins derive statically (no orch needed)
     states = {c["id"]: c["state"] for c in snap["capabilities"]}
     assert states["plugin:system-control"] == cr.VERIFIED
-    assert states["plugin:worldview"] == cr.VERIFIED
+    assert "plugin:worldview" not in states
+    assert states["plugin:signal-layer"] == cr.VERIFIED
     assert snap["harness_pending"] is False  # something is now genuinely verified
 
 

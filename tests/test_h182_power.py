@@ -664,9 +664,6 @@ def _sched_orch(**kw):
         calls.append("evolve")
         return []
 
-    async def kg():
-        calls.append("kg")
-        return {"synced": 1}
 
     scout = SimpleNamespace(queries=[], scan=None)
 
@@ -676,12 +673,12 @@ def _sched_orch(**kw):
 
     scout.scan = scan
     orch = SimpleNamespace(cognition=cog, get_setting=lambda k, d=None: d, tech_scout=scout,
-                           _run_learning_loop=learn, _run_prompt_evolution=evolve, _run_worldview_kg_sync=kg,
+                           _run_learning_loop=learn, _run_prompt_evolution=evolve,
                            **kw)
     return orch, living, calls
 
 
-@pytest.mark.parametrize("job", ["run_learning_loop", "run_prompt_evolution", "run_worldview_kg_sync",
+@pytest.mark.parametrize("job", ["run_learning_loop", "run_prompt_evolution",
                                  "run_tech_scout", "run_memory_maintenance"])
 def test_heavy_jobs_skip_their_run_on_battery(monkeypatch, job):
     from agents.core.scheduler_health import _returned_status
@@ -697,7 +694,7 @@ def test_heavy_jobs_skip_their_run_on_battery(monkeypatch, job):
 
 
 @pytest.mark.parametrize("job, ran", [("run_learning_loop", "learn"), ("run_prompt_evolution", "evolve"),
-                                      ("run_worldview_kg_sync", "kg"), ("run_tech_scout", "scout")])
+                                      ("run_tech_scout", "scout")])
 def test_heavy_jobs_run_when_plugged_in_or_when_the_state_is_unknown(monkeypatch, job, ran):
     from agents.core.scheduler_service import SchedulerService
 
@@ -741,8 +738,6 @@ def test_the_scheduled_jobs_go_through_the_deferral():
     service.schedule_learning_loop()
     assert sched.jobs["learning-loop-promotions"] == service.run_learning_loop
     assert sched.jobs["learning-loop-prompt-evolution"] == service.run_prompt_evolution
-    src = inspect.getsource(SchedulerService.schedule_worldview_kg_sync)
-    assert "self.run_worldview_kg_sync" in src and "self._orch._run_worldview_kg_sync" not in src
 
 
 def test_the_power_monitor_ticks_every_minute(monkeypatch):
