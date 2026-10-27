@@ -286,7 +286,7 @@ export function AuditSection() {
     {
       key: 'actions', header: '', srHeader: t('audit.col.details'), align: 'end',
       render: (e) => (
-        <Button size="sm" variant="ghost" onClick={() => setOpenEntry(e)} aria-label={t('audit.entry.open', { action: auditActionLabel(i18n, e), date: fmt.dateTime(e.ts) })}>
+        <Button size="sm" variant="ghost" onClick={() => setOpenEntry(e)} aria-label={`${t('audit.col.details')}: ${t('audit.entry.open', { action: auditActionLabel(i18n, e), date: fmt.dateTime(e.ts) })}`}>
           {t('audit.col.details')}
         </Button>
       ),

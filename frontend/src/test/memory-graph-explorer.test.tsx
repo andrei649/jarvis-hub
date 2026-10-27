@@ -146,7 +146,7 @@ describe('camera', () => {
 describe('legend', () => {
   it('lists the distinct entity types with counts, skills, and the edge styles', async () => {
     await ready();
-    const legend = screen.getByRole('group', { name: 'Legend' });
+    const legend = screen.getByRole('list', { name: 'Legend' });
     for (const [type, n] of [['person', 1], ['city', 1], ['car', 1], ['unknown', 1]] as const) {
       hasText(within(legend).getByText(type).closest('li'), new RegExp(type + '\\s*' + n));
     }
@@ -157,7 +157,7 @@ describe('legend', () => {
 
   it('gives an untyped entity the neutral swatch', async () => {
     await ready();
-    const swatch = within(screen.getByRole('group', { name: 'Legend' })).getByText('unknown').closest('li')!.querySelector('i') as HTMLElement;
+    const swatch = within(screen.getByRole('list', { name: 'Legend' })).getByText('unknown').closest('li')!.querySelector('i') as HTMLElement;
     expect(swatch.style.background).toBe('var(--ink-2)');
   });
 });
@@ -313,7 +313,7 @@ describe('node editor', () => {
     hasText(alert, 'Refused');
     hasText(alert, 'kernel denied: halted');
     expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(within(screen.getByRole('group', { name: 'Legend' })).getByText('person')).toBeTruthy();
+    expect(within(screen.getByRole('list', { name: 'Legend' })).getByText('person')).toBeTruthy();
     expect(api.loadMemoryMap).toHaveBeenCalledTimes(1);
   });
 

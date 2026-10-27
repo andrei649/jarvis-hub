@@ -9,7 +9,7 @@ import { useErrorText } from '../app/errors';
 import { useSession, useUser } from '../app/session';
 import { useI18n } from '../i18n';
 import { navigate } from '../router';
-import { Avatar, Icon, Menu, useToast, type MenuEntry } from '../ui';
+import { Icon, Menu, useToast, type MenuEntry } from '../ui';
 
 export const THEMES: Theme[] = ['light', 'dark', 'system'];
 export const LANGUAGES: Locale[] = ['ro', 'en'];
@@ -91,7 +91,7 @@ export function UserMenu() {
       items={items}
       trigger={(props) => (
         <button type="button" className="ws-user-btn" {...props} aria-label={t('userMenu.trigger', { name: user.name })}>
-          <Avatar name={user.name} size={30} />
+          <Icon name="user" size={30} />
           <span className="ws-user-btn__name">{user.name}</span>
           <Icon name="chevronDown" size={16} />
         </button>
