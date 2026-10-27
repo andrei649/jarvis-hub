@@ -50,7 +50,8 @@ def _collect(proc: subprocess.Popen[bytes], argv: list[str], deadline: float, ou
     """Read *proc*'s merged output into *output* until EOF, killing it at *deadline*
     (TimeoutExpired) or past ``_GIT_OUTPUT`` bytes (returns False)."""
     stdout = proc.stdout
-    assert stdout is not None
+    if stdout is None:
+        raise RuntimeError("Git output pipe is unavailable")
     if os.name == "nt":
         # ``select`` takes sockets only on Windows (WinError 10038 on a pipe): a reader
         # thread feeds a queue, which the same deadline and size bounds drain.
