@@ -83,7 +83,7 @@ function WorldAwareApp() {
             <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
             <div className="panel-head">
               <Icon d={ICONS.globe} size={14}/><span className="ttl">WORLD INTELLIGENCE</span>
-              <span className="st">Signal Layer · WorldView · Argus</span>
+              <span className="st">Signal Layer · Argus</span>
               <button className="tool-btn" style={{ marginLeft: 10 }} onClick={() => setOpen(false)}>close · esc</button>
             </div>
           </div>

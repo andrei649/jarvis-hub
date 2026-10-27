@@ -1,4 +1,4 @@
-/* HUD v2 · signal-layer client (WorldView). Reads the optional external signal-layer
+/* HUD v2 · signal-layer client. Reads the optional external signal-layer
    service; every request degrades to null/[] so a missing service never breaks a panel.
    CDX-9: typed (was @ts-nocheck). `import.meta.env` is cast because the project has no
    vite/client types wired; `getJson` stays `any` (arbitrary external JSON). */

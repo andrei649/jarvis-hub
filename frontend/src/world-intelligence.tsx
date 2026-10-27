@@ -112,7 +112,7 @@ export function WorldIntelligencePanel() {
           <SubH style={{ marginTop: 16 }}>PROVIDER HEALTH</SubH>
           <Cap title="Signal Layer" detail={data.baseUrl || 'http://localhost:8787'} tag={health.ok ? 'ONLINE' : 'UNKNOWN'} kind={health.ok ? 'allow' : 'gated'} />
           <Cap title="WorldMonitor provider" detail={`${provider.provider || 'worldmonitor'} · ${provider.status || 'replay/unknown'}`} tag={provider.mode || health.mode || 'replay'} />
-          <Cap title="Port boundaries" detail="WorldView :3000/:4000 · Signal Layer :8787 · WorldMonitor :3100" tag="CLEAN" kind="allow" />
+          <Cap title="Port boundaries" detail="Signal Layer :8787 · WorldMonitor :3100" tag="CLEAN" kind="allow" />
         </div>
       </div>
     </>
