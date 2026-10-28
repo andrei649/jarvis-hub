@@ -24,6 +24,7 @@
  "payment": "kernel",
  "permission.grant": "kernel",
  "plugin.egress": "kernel",
+ "plugin.load": "kernel",
  "repo.sync": "kernel",
  "report.export": "kernel",
  "research": "kernel",

@@ -351,6 +351,20 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.acquisition.promotion:PromotionBroker.propose",
         contract_ref="agents.core.skills.marketplace:SKILL_INSTALL_CONTRACT",
     ),
+    "plugin.load": _action(
+        "plugin.load",
+        "Admit a signed model-provider package after permanent owner approval.",
+        required=("provider_id", "artifact_id", "package_hash", "profile", "hooks", "sandbox"),
+        risk="irreversible_or_money",
+        supports=("promote", "execute"),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Revoke the package and discard pending hook results before dispatch.",
+            limitations="Already completed provider requests cannot be recalled.",
+        ),
+        implementation="agents.core.llm.providers.packages:ProviderPackageStore.promote",
+        contract_ref="agents.core.llm.providers.admission_contract:PROVIDER_LOAD_CONTRACT",
+    ),
     "media.present": _action(
         "media.present",
         "Present content (media, webpage, camera, dashboard) on a registered output device.",

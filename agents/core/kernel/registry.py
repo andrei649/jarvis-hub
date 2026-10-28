@@ -110,6 +110,7 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # PromotionProposal exists (make_skill_install_kernel_gate); even a kernel
     # GRANT cannot bypass the permanent owner-approval floor (GAP-3).
     "skill.install": Mediation.KERNEL,
+    "plugin.load": Mediation.KERNEL,
     # 1.1.0 operator wave — widening what Nerva may touch is itself a privileged
     # act: the consent ledger crosses the kernel at request time and the grant is
     # written only from the approved task's execution (never by the requester).
@@ -169,6 +170,8 @@ def known_broker_action_kinds() -> set[str]:
     kinds.add(CHANNEL_REPLY_TASK_KIND)
     from ..skills.marketplace import SKILL_INSTALL_CONTRACT_KIND
     kinds.add(SKILL_INSTALL_CONTRACT_KIND)
+    from ..llm.providers.packages import KIND as PROVIDER_LOAD_KIND
+    kinds.add(PROVIDER_LOAD_KIND)
     from ..voice.command_settings import APPROVAL_KIND as VOICE_COMMAND_KIND
     kinds.add(VOICE_COMMAND_KIND)
     from ..checkpoint_controller import CHECKPOINT_KINDS

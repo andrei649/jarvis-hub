@@ -92,11 +92,14 @@ class OpenRouterBackend(LLMBackend):
     supports_tools = True
 
     def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE, client=None, *, profile=None, reasoning_effort="", effort_declarations=None, provider_routing=None) -> None:
-        from .provider_request import profile_with_declarations
+        from .provider_request import profile_with_declarations, require_profile_kind
         from .providers import DEFAULT_REGISTRY
         self.profile = profile_with_declarations(
             profile or DEFAULT_REGISTRY.get("openrouter"), effort_declarations,
         )
+        require_profile_kind(self.profile, "openai-compatible", "chat_completions")
+        if profile is not None and base_url == OPENROUTER_BASE:
+            base_url = self.profile.default_base_url or base_url
         self.reasoning_effort = reasoning_effort
         # H583 — OpenRouter's `provider` object (sort/only/ignore/order/
         # require_parameters/data_collection). `provider_routing` is the knob dict,
@@ -109,7 +112,7 @@ class OpenRouterBackend(LLMBackend):
         self._current_block()  # raises ProviderRoutingInvalid on a bad knob
         self.api_key = api_key
         self.base_url = base_url
-        self.client = client or llm_async_client("openrouter", base_url=base_url, timeout=120.0)
+        self.client = client or llm_async_client(self.profile.id, base_url=base_url, timeout=120.0)
 
     @staticmethod
     def _block_from(knobs) -> dict | None:
@@ -154,12 +157,24 @@ class OpenRouterBackend(LLMBackend):
         except Exception:  # pragma: no cover - best-effort
             pass
 
-    def _shape(self, payload: dict, block: dict | None) -> dict:
+    def _shape(self, payload: dict, block: dict | None, *, profile=None) -> dict:
         """Add the per-request extras: reasoning / cache parameters, a delegated child's
         ``extra_body`` (H681, never over a key the hub owns), then routing."""
-        from .provider_request import compatible_parameters
+        from .provider_request import (
+            apply_profile_request,
+            compatible_parameters,
+            prepare_profile_messages,
+            profile_reasoning_config,
+        )
         from .request_context import merge_extra_body, reconcile_payload
-        payload.update(compatible_parameters(self.profile, payload["model"], self.reasoning_effort))
+        profile = self.profile if profile is None else profile
+        payload["messages"] = prepare_profile_messages(profile, payload["messages"])
+        reasoning_config = profile_reasoning_config(
+            profile, payload["model"], self.reasoning_effort,
+            supports_wire="reasoning-effort" in profile.capabilities)
+        apply_profile_request(profile, payload,
+                              context={"reasoning_config": reasoning_config})
+        payload.update(compatible_parameters(profile, payload["model"], self.reasoning_effort))
         merge_extra_body(payload)
         reconcile_payload(payload)
         if self.profile.id == "openrouter":
@@ -167,6 +182,18 @@ class OpenRouterBackend(LLMBackend):
         if block:
             payload["provider"] = block
         return payload
+
+    async def _shape_async(self, payload: dict, block: dict | None) -> dict:
+        from .provider_request import profile_reasoning_config
+        from .providers.admitted_profiles import prepare_admitted_profile
+
+        configuration = profile_reasoning_config(
+            self.profile, payload['model'], self.reasoning_effort,
+            supports_wire='reasoning-effort' in self.profile.capabilities)
+        profile = await prepare_admitted_profile(
+            self.profile, model=payload['model'], messages=payload['messages'],
+            reasoning_config=configuration)
+        return self._shape(payload, block, profile=profile)
 
     @staticmethod
     def _explain_routing_refusal(resp, block: dict | None) -> None:
@@ -190,10 +217,12 @@ class OpenRouterBackend(LLMBackend):
             log_safe(json.dumps(block, sort_keys=True), 300), _ROUTING_SETTINGS)
 
     def _headers(self) -> dict:
+        from .provider_request import profile_headers
+
         h = {"Content-Type": "application/json"}
         if self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
-        return h
+        return profile_headers(self.profile, h)
 
     async def generate(self, model: str, prompt: str, system: str = "",
                        max_tokens: int = 1024, temperature: float = 0.7) -> str:
@@ -207,7 +236,7 @@ class OpenRouterBackend(LLMBackend):
             block = await self._provider_block_now()
         except _RoutingUnavailable:
             return _ERROR
-        self._shape(payload, block)
+        await self._shape_async(payload, block)
         try:
             resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
             self._explain_routing_refusal(resp, block)
@@ -215,7 +244,6 @@ class OpenRouterBackend(LLMBackend):
             data = resp.json()
             choice = data["choices"][0]
             content = (choice["message"].get("content", "") or "")
-            # H393: a reply cut at the output cap that is a repetition loop is dropped.
             answer = self._finalize_cloud(content, choice.get("finish_reason"), model)
             if self.profile.backend_kind == "openai-compatible":
                 report_text_usage(compatible_usage(data))
@@ -248,7 +276,7 @@ class OpenRouterBackend(LLMBackend):
             block = await self._provider_block_now()
         except _RoutingUnavailable:
             return ToolTurn(content=_ERROR)
-        self._shape(payload, block)
+        await self._shape_async(payload, block)
         try:
             resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
             self._explain_routing_refusal(resp, block)

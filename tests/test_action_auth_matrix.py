@@ -528,6 +528,34 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         )
         proposal = broker.propose(package.artifact_id, contract=contract)
         assert proposal.status == "pending"  # the owner floor holds even on GRANT
+    elif kind == "plugin.load":
+        from agents.core.acquisition.managed_signing import ManagedSigningKeyStore
+        from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
+        from agents.core.llm.providers import ProviderProfile
+        from agents.core.llm.providers.packages import ProviderPackageError, ProviderPackageStore
+
+        signing = ManagedSigningKeyStore(tmp_path / "provider-signing")
+        signing.provision(key_id="synthetic-matrix", version=1, key=b"x" * 32)
+        source = tmp_path / "provider-source"
+        source.mkdir()
+        (source / "provider.json").write_text(json.dumps(
+            {"schema_version": 1, "id": "matrix-provider", "aliases": []}))
+        (source / "main.py").write_text("def register_provider():\n    return {}\n")
+        packages = ProviderPackageStore(tmp_path / "provider-packages", signing=signing,
+                                        authorizer=spy, enabled=lambda: True,
+                                        owner_authorizer=lambda *_: True)
+        record = packages.stage(
+            source, profile=ProviderProfile(id="matrix-provider", display_name="Synthetic",
+                                            backend_kind="openai-compatible",
+                                            is_user_defined=True),
+            hooks=("prepare_messages",), source="user", home="synthetic",
+            sandbox_profile=AcquisitionSandboxProfile(image="synthetic.invalid/worker@sha256:" + "a" * 64))
+        proposal = packages.propose(record.artifact_id)
+        packages.decide(proposal, approved=True, actor="owner", permanent=True)
+        import contextlib
+
+        with contextlib.suppress(ProviderPackageError):
+            packages.promote(proposal)
     elif kind == "desktop.step":
         # The optional real host seam must cross CapabilityActionAPI immediately
         # before driver execution. The unified facade stays default-off; the outer
