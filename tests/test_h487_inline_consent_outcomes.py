@@ -50,11 +50,12 @@ async def _post(app, task_id, *, revision, choice, reason=None):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('choice', ['session', 'always', 'deny'])
-async def test_actual_http_choice_wakes_native_inline_tool(consent_runtime, monkeypatch, choice):
+@pytest.mark.parametrize('completion_delay', [0, 0.85], ids=['immediate', 'delayed'])
+async def test_actual_http_choice_wakes_native_inline_tool(consent_runtime, monkeypatch, choice, completion_delay):
     runtime = consent_runtime
     h = await _telegram(runtime, monkeypatch, via_model=True, model_options={
         'tool_timeout_seconds': 2, 'max_wall_seconds': 3,
-    })
+    }, completion_delay=completion_delay)
     app = _admin_app(runtime, monkeypatch)
     try:
         task = await _delivered(h, runtime)
@@ -62,7 +63,8 @@ async def test_actual_http_choice_wakes_native_inline_tool(consent_runtime, monk
         response = await _post(app, task.id, revision=offer.revision, choice=choice)
         assert response.status_code == 200 and response.json()['ok'] is True
         assert runtime.q.get(task.id).human_decision['action'] == choice
-        await asyncio.sleep(0.75)
+        # Completion includes the model response within its unchanged wall budget.
+        await asyncio.wait_for(h.finished.wait(), 3)
         assert h.finished.is_set(), 'committed cross-surface choice must wake its exact native tool'
         assert len(h.replies) == 1
         assert runtime.q.get(task.id).decided_by == 'admin'

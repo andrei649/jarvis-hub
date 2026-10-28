@@ -19,7 +19,7 @@ from agents.core.commands import Principal
 from tests.test_h487_consent_runtime_integration import _Process, ask, consent_runtime  # noqa: F401
 
 
-async def _telegram(runtime, monkeypatch, *, via_model=False, model_options=None):
+async def _telegram(runtime, monkeypatch, *, via_model=False, model_options=None, completion_delay=0):
     cards, answers, effects, replies = [], [], [], []
     card_ready, finished = asyncio.Event(), asyncio.Event()
     model_answers = []
@@ -67,6 +67,8 @@ async def _telegram(runtime, monkeypatch, *, via_model=False, model_options=None
                                 return ToolTurn(tool_calls=(call,))
                             tool_message = next(m for m in reversed(kwargs['messages'])
                                                 if m['role'] == 'tool')
+                            if completion_delay:
+                                await asyncio.sleep(completion_delay)
                             replies.append(json.loads(tool_message['content']))
                             return ToolTurn(content='Synthetic tool turn complete.')
 
