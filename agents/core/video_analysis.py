@@ -102,6 +102,7 @@ def is_video_task(task) -> bool:
 def _source(source: str, scope: FileScope):
     if not isinstance(source, str) or not source or len(source) > MAX_URL_CHARS or source != source.strip():
         raise ToolRPCValidationError("bad_video_source")
+    native_drive = os.name == "nt" and re.match(r"^[A-Za-z]:[\\/]", source) is not None
     parts = urlsplit(source)
     if parts.scheme in {"http", "https"}:
         if (not parts.hostname or parts.username or parts.password or parts.fragment
@@ -115,7 +116,7 @@ def _source(source: str, scope: FileScope):
         if suffix not in VIDEO_MIME:
             raise ToolRPCValidationError("unsupported_video_format")
         return "url", source, VIDEO_MIME[suffix]
-    if parts.scheme:
+    if parts.scheme and not native_drive:
         raise ToolRPCValidationError("bad_video_url")
     try:
         path = scope.resolve(source)

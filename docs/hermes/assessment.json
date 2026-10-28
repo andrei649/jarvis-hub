@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "da13670f8e75d7714717c1e1e1cc6504bdd38801",
-  "assessed_at": "2026-10-28T07:53:14Z",
+  "base_sha": "e7b75167cc112ff13fbc343cb649effab7199b64",
+  "assessed_at": "2026-10-28T08:43:56Z",
   "reviews": [
     {
       "id": "H001",
@@ -10469,7 +10469,7 @@
         },
         {
           "path": "agents/core/video_analysis.py",
-          "sha256": "9865d53cfe1ca9300f5c352ace9ebcae370391d253c5d9cb92db743b55fd0301"
+          "sha256": "dc50115ef08d50d86dad1aff44e44ce3db13c34d9860114c0304be480264ed46"
         },
         {
           "path": "agents/core/llm/video_policy.py",
@@ -12891,7 +12891,7 @@
         },
         {
           "path": "agents/core/video_analysis.py",
-          "sha256": "9865d53cfe1ca9300f5c352ace9ebcae370391d253c5d9cb92db743b55fd0301"
+          "sha256": "dc50115ef08d50d86dad1aff44e44ce3db13c34d9860114c0304be480264ed46"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -24253,7 +24253,7 @@
       "id": "H521",
       "row_sha256": "3df43a625058b1f097241a53516ff367bd6c22103afdaeafeab2f53d3bf8f65f",
       "status": "equivalent",
-      "summary": "Fresh assessment 2026-10-13 (ff8641a7): A model-callable `video_analyze` ToolRPC tool is registered when the owner sets JARVIS_VIDEO_ANALYSIS (agents/core/autonomy_coordinator.py:894, registered at :901), separate from the image vision path. VideoAnalysisTool (agents/core/video_analysis.py:219) accepts a public HTTP(S) URL or a workspace-scoped file path (agents/core/video_analysis.py:102: credentials-in-URL, localhost and private IPs refused; paths resolved through FileScope), downloads URLs through an IP-pinned client that re-checks redirects with a byte cap (agents/core/video_analysis.py:180, MAX_VIDEO_BYTES at :48), and sends the video to a Gemini-native body or an OpenAI-compatible video_url message (agents/core/video_analysis.py:362). Every call is owner-approved. Tests: tests/test_h277_video_analysis.py:127 (unsafe URLs refused), :133 (pinned client, private redirect refused), :112 (scoped file, symlink swap refused), :82 (worker path sends video only after approval); tests/test_h277_video_gemini.py:57 covers the Gemini route. Ran test_h277_video_{analysis,boundaries,gemini,native,provider_chain,failures}.py: 247 passed. Re-read 2026-10-21 (batch 1c: H393 repetition-loop guard in every backend finalizer plus a live stream guard; H010 quick state snapshot, nerva backup verbs with the irreversible-tier confirmation, and an in-place restore staged for the next boot with a hub self-restart): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read 2026-10-21 (batch 2: H051 pairing HUD statuses + nerva pairing verbs; H133 live status chrome; H297 multimodal tool results and bounded error messages; H326 grouped skill index with snapshot cache; H399 parallel-safety tool planner and heartbeats; H473 repo discovery; H688 dotted config paths; H665 atomic multi-skill batch): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read after the batch 3 Hermes rows (H164 H288 H331 H444 H557 H574 H592 H652) changed files this row pins Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins",
+      "summary": "Fresh assessment 2026-10-13 (ff8641a7): A model-callable `video_analyze` ToolRPC tool is registered when the owner sets JARVIS_VIDEO_ANALYSIS (agents/core/autonomy_coordinator.py:894, registered at :901), separate from the image vision path. VideoAnalysisTool (agents/core/video_analysis.py:220) accepts a public HTTP(S) URL or a workspace-scoped file path (agents/core/video_analysis.py:102: credentials-in-URL, localhost and private IPs refused; paths resolved through FileScope), downloads URLs through an IP-pinned client that re-checks redirects with a byte cap (agents/core/video_analysis.py:181, MAX_VIDEO_BYTES at :48), and sends the video to a Gemini-native body or an OpenAI-compatible video_url message (agents/core/video_analysis.py:363). Every call is owner-approved. Tests: tests/test_h277_video_analysis.py:127 (unsafe URLs refused), :133 (pinned client, private redirect refused), :112 (scoped file, symlink swap refused), :82 (worker path sends video only after approval); tests/test_h277_video_gemini.py:57 covers the Gemini route. Ran test_h277_video_{analysis,boundaries,gemini,native,provider_chain,failures}.py: 247 passed. Re-read 2026-10-21 (batch 1c: H393 repetition-loop guard in every backend finalizer plus a live stream guard; H010 quick state snapshot, nerva backup verbs with the irreversible-tier confirmation, and an in-place restore staged for the next boot with a hub self-restart): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read 2026-10-21 (batch 2: H051 pairing HUD statuses + nerva pairing verbs; H133 live status chrome; H297 multimodal tool results and bounded error messages; H326 grouped skill index with snapshot cache; H399 parallel-safety tool planner and heartbeats; H473 repo discovery; H688 dotted config paths; H665 atomic multi-skill batch): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read after the batch 3 Hermes rows (H164 H288 H331 H444 H557 H574 H592 H652) changed files this row pins Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins",
       "remaining": "",
       "evidence": [
         {
@@ -24262,7 +24262,7 @@
         },
         {
           "path": "agents/core/video_analysis.py",
-          "sha256": "9865d53cfe1ca9300f5c352ace9ebcae370391d253c5d9cb92db743b55fd0301"
+          "sha256": "dc50115ef08d50d86dad1aff44e44ce3db13c34d9860114c0304be480264ed46"
         },
         {
           "path": "tests/test_h277_video_analysis.py",
