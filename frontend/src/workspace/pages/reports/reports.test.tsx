@@ -4,6 +4,8 @@ import type { Report, ReportRunDetail, WorkspaceDocument } from '../../api/types
 import { renderApp } from '../../test/render';
 import { apiError, json, makeUser, mockFetch, shellRoutes, signedIn, type RouteHandler } from '../../test/mockApi';
 import { RUN_POLL_MS } from './RunView';
+import { navigate } from '../../router';
+import { consumeStartedRun, startRun } from './startRun';
 
 const NOW = Date.now() / 1000;
 
@@ -184,6 +186,54 @@ describe('Reports → runs', () => {
     expect(await screen.findByRole('dialog', { name: 'Sursa [1]' })).toBeTruthy();
   });
 
+  it('speaks the outcome of a run that has already failed when the page was reached from "Run now" (NWS-23)', async () => {
+    boot('/workspace/reports', {
+      'POST /api/workspace/reports/3/run': json(202, { run: run({ status: 'queued', content_md: null }) }),
+      'GET /api/workspace/report-runs/40': run({ status: 'failed', content_md: null, error_code: 'no_documents' }),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Rulează acum „Raport lunar contracte”' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/workspace/report-runs/40'));
+    await waitFor(() => expect(window.document.querySelector('p.ws-sr-only[role="status"]')?.textContent).toMatch(/^Raportul nu a putut fi generat/));
+  });
+
+  it('announces nothing for a failed run opened directly, the page is the notice (NWS-23)', async () => {
+    boot('/workspace/report-runs/40', { 'GET /api/workspace/report-runs/40': run({ status: 'failed', content_md: null, error_code: 'no_documents' }) });
+    expect(await screen.findByText('Raportul nu a putut fi generat', { selector: '.ws-notice__title' })).toBeTruthy();
+    expect(window.document.querySelector('p.ws-sr-only[role="status"]')?.textContent).toBe('');
+  });
+
+  it('does not announce an abandoned run as newly started after its origin expires', async () => {
+    boot('/workspace/reports', {
+      'POST /api/workspace/reports/3/run': json(202, { run: run({ status: 'queued', content_md: null }) }),
+      'GET /api/workspace/report-runs/40': run({ status: 'failed', content_md: null, error_code: 'no_documents' }),
+    });
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      await startRun(3);
+      clock.mockReturnValue(now + 31_000);
+      expect(consumeStartedRun(40)).toBe(false);
+      navigate('/report-runs/40');
+      expect(await screen.findByText('Raportul nu a putut fi generat', { selector: '.ws-notice__title' })).toBeTruthy();
+      expect(window.document.querySelector('p.ws-sr-only[role="status"]')?.textContent).toBe('');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('forgets a new-run origin when its first view is abandoned before the response', async () => {
+    let reads = 0;
+    boot('/workspace/reports', {
+      'POST /api/workspace/reports/3/run': json(202, { run: run({ status: 'queued', content_md: null }) }),
+      'GET /api/workspace/report-runs/40': () => { reads += 1; return new Promise<ReportRunDetail>(() => undefined); },
+    });
+    await startRun(3);
+    act(() => navigate('/report-runs/40'));
+    await waitFor(() => expect(reads).toBe(1));
+    act(() => navigate('/reports'));
+    expect(consumeStartedRun(40)).toBe(false);
+  });
+
   it('opens the run already in progress instead of reporting run_in_progress', async () => {
     const mock = boot('/workspace/reports', {
       'POST /api/workspace/reports/3/run': apiError(409, 'run_in_progress', { run_id: 40 }),
@@ -317,6 +367,8 @@ describe('Shared reports', () => {
     expect(screen.queryByRole('button', { name: 'Partajează în companie' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Trimite pe email' })).toBeNull();
     expect(screen.getByText('Partajat în companie')).toBeTruthy();
+    // The badge's row takes the card's full width where it is narrow, so the pill never wraps (NWS-23).
+    expect(screen.getByText('Vizibilitate').className).toBe('ws-run-meta__wide');
   });
 
   it('names the department of a run shared from a department the reader is not in', async () => {

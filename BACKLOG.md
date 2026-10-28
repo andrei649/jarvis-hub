@@ -231,33 +231,36 @@
   the existing 60 s bound includes queue/startup time, and timeout/cancellation kills and reaps the child.
   POSIX applies a 512 MiB `RLIMIT_AS`; Windows reports `memory_unavailable` and enforces time only.
   Real-format, pathological-page, cancellation, queue and persisted-timeout regressions prove the path.
-- [ ] ⬜ **NWS-12 — route-level code splitting of the web app.** One JS chunk (~600 kB raw / ~170 kB gzip);
-  lazy-load the admin console and reports to cut the first load.
-  Remaining (recounted 2026-10-26): all of it — `grep -rn "React.lazy\|lazy(" frontend/src/workspace` finds nothing; admin console and reports are in the one chunk.
+- [x] ✅ **NWS-12 — route-level code splitting of the web app.** Admin and report routes now load
+  through `React.lazy`/`Suspense`, with unchanged admin guards, deep-link/focus behavior and an
+  accessible localized retry screen for a failed chunk. Initial Workspace JS falls from 618,604
+  to 551,049 raw bytes (172,863 to 156,990 bytes with gzip -9); admin/reports are deferred chunks.
+  Delivered locally 2026-10-28: current HUD/Workspace builds, 2,675 frontend tests and the 31-case
+  isolated browser journey pass. The initial chunk remains above Vite's 500 kB advisory threshold.
 - [ ] ⬜ **NWS-21 — the pilot tag (owner).** No release tag holds the workspace yet (`v1.0.0` is older);
   pilot guide §2 installs from `<eticheta-pilotului>` (§15 upgrades from tag to tag) and says the
   owner cuts it after approving the pilot work, without naming it. Owner lane: merge PR #1256, tag,
   and give the tag's name to the installer — the row „NWS-21 — merge the Nerva Workspace pilot PR
   (#1256) and cut the pilot tag" in `docs/OWNER_TASKS.md` (owner gates).
   Remaining (recounted 2026-10-26): the tag only — PR #1256 merged as `ed95528`; the owner cuts the tag and names it to the installer (`docs/OWNER_TASKS.md`).
-- [ ] ⬜ **NWS-23 — round-3 residual minors (found while fixing NWS-22, not yet fixed).** One line each:
-  - The reports list („Rapoarte", `ReportsList.tsx`) scrolls sideways inside its frame between 768
-    and 1180 px (at 1024 „Următoarea rulare" and „Livrare pe email" sit behind the scroll; the sticky
-    actions column keeps the row menu reachable). Needs a small design call (icon-only run button,
-    or merged columns in that range).
-  - At 320 px the run view's „Vizibilitate" badge „Partajat în companie" wraps inside its pill (the
-    `ws-run-meta__wide` row treatment would fix it).
-  - A run page opened on a run that has already failed announces nothing to a screen reader (the
-    notice is the page); with the model server down a run fails in milliseconds, so after „Rulează
-    acum" the outcome is usually not spoken. Announce it when the page was reached from „Rulează
-    acum" / „Rulează din nou".
-  - `backup restore <archive> <target>` with a dangling-symlink target says `target … is not empty`
-    (`mkdir` → `FileExistsError` → that line); nothing is restored, only the wording is wrong
-    (documented in pilot guide §17; any `agents/core/backup.py` edit re-opens Hermes H503's review).
-  - In a shared `business/` target, a foreign file whose name starts with `workspace.db-` or
-    `secrets.enc.` matches `db.own_entry` and is tightened to 0600 (narrow the sibling patterns to
-    the exact `-wal`/`-shm`/`-journal` and the secret store's own temp names).
-  Remaining (recounted 2026-10-26): all five bullets stand — `ws-run-meta__wide` is not applied to the visibility badge, `backup.py:875/1785` still prints `is not empty` for a dangling symlink, and `db.own_entry` (`db.py:381-383`) still matches by prefix `workspace.db-` / `secrets.enc.`.
+- [x] ✅ **NWS-23 — round-3 residual minors.** All five original residuals are fixed locally
+  (2026-10-28), with the affected Hermes evidence re-read without adding equivalence credit:
+  - Reports use compact spacing and accessible icon-only run controls at 768–1180 px; read-only
+    populated lists receive the same layout. Browser checks prove no internal horizontal scroll
+    at 768, 1024 and 1180 px for runnable and read-only rows.
+  - The shared visibility badge uses the wide metadata row and stays on one line at 320 px.
+  - A terminal outcome reached directly from Run now/Run again is announced, including a run that
+    failed before its first GET. The bounded one-use origin is discarded on abandoned navigation;
+    ordinary direct opens stay quiet.
+  - Backup restore refuses a dangling destination link before mkdir, with an accurate no-restore
+    message even with --force, preserving the link, missing destination and archive bytes.
+  - Shared storage tightens only exact SQLite sidecars, secret salt/key names and the real private
+    temporary-file patterns; foreign prefix siblings retain their modes. Denied-chmod advice names
+    refused entries without broad globs or recursive commands.
+  Evidence: 367 backup/archive/storage/ESTOP passes with four existing platform skips; 2,675 full
+  frontend passes; 31 isolated browser journey passes plus a targeted read-only table probe.
+  The browser journey also exposed/fixed transient usage-chart resize overflow. A real macOS
+  coordinator-yield regression exposed/fixed native zombie-state detection, without timeout changes.
 - [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
   `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
   contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.

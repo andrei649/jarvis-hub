@@ -95,7 +95,7 @@ export function ReportsList() {
         <span className="ws-row-actions">
           {r.can_run !== false && (
             <Button size="sm" icon="play" busy={runningId === r.id} onClick={() => void run(r)} aria-label={t('reports.action.runNamed', { name: r.name })}>
-              {t('reports.action.run')}
+              <span className="ws-run-label">{t('reports.action.run')}</span>
             </Button>
           )}
           <Menu
@@ -118,10 +118,12 @@ export function ReportsList() {
           {describeError(i18n, reports.error)}
         </Notice>
       ) : (
-        <Table
-          caption={t('nav.reports')} columns={columns} rows={reports.data} rowKey={(r) => r.id} loading={reports.loading}
-          empty={<EmptyState icon="chart" title={t('reports.empty')} body={t('reports.emptyBody')} action={<Button variant="primary" icon="plus" onClick={() => setCreating(true)}>{t('reports.new')}</Button>} />}
-        />
+        <div className="ws-reports-list">
+          <Table
+            caption={t('nav.reports')} columns={columns} rows={reports.data} rowKey={(r) => r.id} loading={reports.loading}
+            empty={<EmptyState icon="chart" title={t('reports.empty')} body={t('reports.emptyBody')} action={<Button variant="primary" icon="plus" onClick={() => setCreating(true)}>{t('reports.new')}</Button>} />}
+          />
+        </div>
       )}
       {(creating || editing) && departmentId !== null && (
         <ReportForm

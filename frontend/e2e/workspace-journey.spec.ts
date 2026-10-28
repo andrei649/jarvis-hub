@@ -691,6 +691,52 @@ test('the member creates a daily report and runs it now: it succeeds as Markdown
   await expect(list.getByText('Gata', { exact: true })).toBeVisible();
   await expect(list.getByText('Zilnic, la 08:15')).toBeVisible();
   await checkPage(page, 'reports');
+  for (const width of [768, 1024, 1180]) {
+    await page.setViewportSize({ width, height: 800 });
+    expect(await tableScrollsSideways(page, 'Rapoarte'), `reports list scrolls sideways at ${width} px`).toBe(0);
+    await expect(list.getByRole('button', { name: `Rulează acum „${REPORT_NAME}”` })).toBeVisible();
+  }
+  await page.setViewportSize(DESKTOP);
+
+  // A fresh deep link whose deferred reports chunk fails keeps the shell usable; reloading
+  // after the network recovers fetches the chunk and reaches the report list.
+  const retryPage = await page.context().newPage();
+  const reportsChunk = '**/assets/reports-*.js';
+  await retryPage.route(reportsChunk, (route) => route.abort('failed'));
+  try {
+    await retryPage.goto('/workspace/reports');
+    await expect(retryPage.getByRole('alert').getByText('Pagina nu s-a putut încărca')).toBeVisible();
+    await retryPage.unroute(reportsChunk);
+    await retryPage.getByRole('button', { name: 'Încearcă din nou' }).click();
+    await expect(retryPage.getByRole('table', { name: 'Rapoarte' })).toBeVisible();
+  } finally {
+    await retryPage.close();
+  }
+
+  // A member may see reports they cannot run. Their table still needs the same compact layout.
+  const readonlyPage = await page.context().newPage();
+  guard(readonlyPage, 'read-only reports');
+  await readonlyPage.route('**/api/workspace/reports**', async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() !== 'GET' || url.pathname !== '/api/workspace/reports') return route.continue();
+    const response = await route.fetch();
+    const body = await response.json() as { reports: Record<string, unknown>[] };
+    await route.fulfill({ response, json: { ...body, reports: body.reports.map((report) => ({ ...report, can_run: false })) } });
+  });
+  try {
+    await readonlyPage.goto('/workspace/reports');
+    const readonlyTable = readonlyPage.getByRole('table', { name: 'Rapoarte' });
+    await expect(readonlyTable.getByRole('row')).toHaveCount(2);
+    await expect(readonlyTable.getByRole('button', { name: /Rulează acum/ })).toHaveCount(0);
+    for (const width of [768, 1024, 1180]) {
+      await readonlyPage.setViewportSize({ width, height: 800 });
+      expect(await tableScrollsSideways(readonlyPage, 'Rapoarte'), `read-only reports scroll at ${width}px`).toBe(0);
+      const padding = await readonlyTable.locator('th').first().evaluate((th) => parseFloat(getComputedStyle(th).paddingLeft));
+      expect(padding, `read-only reports have compact cells at ${width}px`).toBe(8);
+    }
+  } finally {
+    await readonlyPage.close();
+  }
 });
 
 test('a company-wide share request is approved by the admin, and the Financiar member reads the shared report', async () => {
@@ -738,6 +784,11 @@ test('a company-wide share request is approved by the admin, and the Financiar m
   // After: the run is marked shared, and the Financiar member finds and opens it.
   await member.reload();
   await expect(member.locator('.ws-run-meta').getByText('Partajat în companie')).toBeVisible();
+  await member.setViewportSize({ width: 320, height: 640 });
+  const visibilityBadge = member.locator('.ws-run-meta').getByText('Partajat în companie');
+  const badgeHeight = await visibilityBadge.evaluate((badge) => badge.getBoundingClientRect().height);
+  expect(badgeHeight, 'shared visibility badge wraps at 320 px').toBeLessThanOrEqual(24);
+  await member.setViewportSize(DESKTOP);
   await finance.reload();
   const shared = finance.getByRole('table', { name: 'Rapoarte partajate' });
   const row = shared.getByRole('row').filter({ hasText: REPORT_NAME });
@@ -841,9 +892,15 @@ test('audit names the person behind every action, the chain verifies, and the CS
   const users = await pageGet<{ users: { id: number; email: string }[] }>(page, '/api/workspace/admin/users');
   const memberId = users.body.users.find((u) => u.email === SALES_MEMBER.email)?.id;
   await page.getByLabel('Persoana').selectOption(String(memberId));
+  const filteredResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/workspace/admin/audit' && url.searchParams.get('actor_id') === String(memberId);
+  });
   await page.getByRole('button', { name: 'Aplică filtrele' }).click();
-  await expect(table.getByRole('row').filter({ hasText: 'Document încărcat' })).toHaveCount(4);
+  const filtered = await (await filteredResponse).json() as { items: ApiAudit[] };
   const rows = table.getByRole('row');
+  await expect(rows).toHaveCount(filtered.items.length + 1);
+  await expect(table.getByRole('row').filter({ hasText: 'Document încărcat' })).toHaveCount(4);
   const count = await rows.count();
   expect(count).toBeGreaterThan(5);
   for (let i = 1; i < count; i += 1) await expect(rows.nth(i)).toContainText(SALES_MEMBER.name);
@@ -903,6 +960,25 @@ test('usage shows the real activity, and the organisation page tests the model',
   await expect(kpi('Întrebări în perioadă')).toHaveText('3');
   await expect(kpi('Răspunsuri apreciate')).toHaveText(/^100\s?%$/);
   await expect(page.getByRole('table', { name: 'Pe departamente' }).getByRole('row').filter({ hasText: SALES })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 320, height: 640 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth), 'usage chart widens the page during narrow resize').toBeLessThanOrEqual(321);
+  const plot = page.locator('.ws-chart__plot').first();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await plot.focus();
+  await expect(page.locator('.ws-chart__tip').first()).toBeVisible();
+  await page.setViewportSize({ width: 320, height: 640 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth), 'focused usage tooltip widens the page').toBeLessThanOrEqual(321);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await plot.locator('.ws-chart__hit').last().hover();
+  await expect(page.locator('.ws-chart__tip').first()).toBeVisible();
+  await page.setViewportSize({ width: 320, height: 640 });
+  const hovered = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, tipRight: document.querySelector('.ws-chart__tip')?.getBoundingClientRect().right ?? 0 }));
+  expect(hovered.scroll, 'hovered usage tooltip widens the page').toBeLessThanOrEqual(321);
+  expect(hovered.tipRight, 'hovered usage tooltip leaves the viewport').toBeLessThanOrEqual(321);
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.setViewportSize(DESKTOP);
   await checkPage(page, 'admin-usage');
 
   await sections.getByRole('link', { name: 'Organizație' }).click();
@@ -1469,9 +1545,7 @@ test('with the model server stopped, the chat and a report run say why in Romani
     await expect(notice).toContainText(MODEL_DOWN_HINT);
     await expect(notice.getByRole('button', { name: 'Rulează din nou' })).toBeVisible();
     await expect(page.locator('.ws-run-meta').getByText('Eșuat', { exact: true })).toBeVisible();
-    // (No status-region check here: with the server down the run fails within milliseconds, so the
-    // page usually opens on it already failed, and a page opened on a finished run announces
-    // nothing — the notice is the page. The live announcement is reports-round4.test.tsx's.)
+    await expect(page.locator('p.ws-sr-only[role="status"]')).toContainText('Raportul nu a putut fi generat');
     await expect(page.getByRole('button', { name: 'Modelul AI: Indisponibil' })).toBeVisible();
     await expect(page.getByText(RAW_MODEL_ERROR)).toHaveCount(0);
     const run = await pageGet<RunDelivery>(page, `/api/workspace/report-runs/${runId}`);
