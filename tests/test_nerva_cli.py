@@ -1649,3 +1649,36 @@ def test_company_clear_wait_that_lost_a_race_says_what_the_run_waits_on_now():
     code, out, _err, _hub = _run(["company", "clear-wait", "r1"], hub)
     assert code == EXIT_OK
     assert out.strip() == "not cleared: it is now waiting on task 8 to finish"
+
+
+def test_config_edit_refuses_an_invalid_executable_image_without_writing(temp_settings, tmp_path):
+    editor = tmp_path / "invalid-editor.exe"
+    editor.write_bytes(b"not an executable image\n")
+    editor.chmod(0o700)
+    previous = settings_db.get_value("llm", "tool_loop_max_iterations")
+    code, _out, err, _hub = _run(["config", "edit"], environ={"EDITOR": str(editor)})
+    assert code == EXIT_FAILED and "not executable" in err and "nothing changed" in err
+    assert settings_db.get_value("llm", "tool_loop_max_iterations") == previous
+
+
+@pytest.mark.parametrize('error_name', ['EAGAIN', 'EIO'])
+def test_config_edit_refuses_other_launch_errors_without_writing_or_leaking(
+    temp_settings, tmp_path, monkeypatch, error_name,
+):
+    import errno
+
+    from agents.cli import nerva as nerva_module
+
+    previous = settings_db.get_value('llm', 'tool_loop_max_iterations')
+    temporary_files = []
+
+    def fail(_argv, path):
+        temporary_files.append(Path(path))
+        raise OSError(getattr(errno, error_name), 'internal-editor-detail')
+
+    monkeypatch.setattr(nerva_module, '_run_editor', fail)
+    code, out, err, _hub = _run(['config', 'edit'], environ={'EDITOR': 'owner-editor'})
+    assert code == EXIT_FAILED and 'could not start' in err and 'nothing changed' in err
+    assert 'internal-editor-detail' not in out + err
+    assert settings_db.get_value('llm', 'tool_loop_max_iterations') == previous
+    assert temporary_files and all(not path.exists() for path in temporary_files)
