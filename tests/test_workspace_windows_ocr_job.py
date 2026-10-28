@@ -50,7 +50,7 @@ def test_job_spawn_sets_limits_and_atomic_ownership_before_resume():
     api = FakeKernel()
     owner = OwnedJobProcess.spawn(['worker'], cwd='C:\\scratch', env={},
                                   memory_limit=512 * 1024 * 1024, api=api)
-    assert owner.job == 'job' and owner.process == 'process'
+    assert owner.job == 'job' and owner.process_handle == 'process'
     assert api.events[:6] == [
         'job', ('limits', 'job', 512 * 1024 * 1024), 'stdio',
         ('inherit', ('child-in', 'child-out', 'child-err'),

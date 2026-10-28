@@ -61,7 +61,7 @@ def test_stt_engine_uses_configured_model_size(monkeypatch):
             captured["model_size"] = model_size
 
     monkeypatch.setattr("core.voice.stt.STTEngine", FakeSTT)
-    monkeypatch.setattr("core.settings_db.get_value",
+    monkeypatch.setattr("agents.core.settings_db.get_value",
                         lambda cat, key, default=None: "small" if key == "stt_model_size" else default)
     monkeypatch.setattr(voice_router, "_STT_ENGINE", None)  # bust the cache
     voice_router._stt_engine()
@@ -73,7 +73,7 @@ def test_stt_lang_falls_back_to_setting(client, monkeypatch):
     # No ?lang= → use voice.stt_language from /admin instead of the old "ro" literal.
     fake = AsyncMock()
     fake.transcribe_async = AsyncMock(return_value="hello world")
-    monkeypatch.setattr("core.settings_db.get_value",
+    monkeypatch.setattr("agents.core.settings_db.get_value",
                         lambda cat, key, default=None: "en" if key == "stt_language" else default)
     with patch.object(voice_router, "_stt_engine", return_value=fake):
         resp = client.post("/api/voice/stt", content=b"fake-audio-bytes")

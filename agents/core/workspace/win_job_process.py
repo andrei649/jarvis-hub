@@ -343,8 +343,8 @@ class _Win32Kernel:
 class OwnedJobProcess:
     """Handle owner retained through termination, pipe drain and ActiveProcesses=0."""
 
-    def __init__(self, api, job, process, thread, parent_input, parent_output):
-        self.api, self.job, self.process, self.thread = api, job, process, thread
+    def __init__(self, api, job, process_handle, thread, parent_input, parent_output):
+        self.api, self.job, self.process_handle, self.thread = api, job, process_handle, thread
         self.parent_input, self.parent_output = parent_input, parent_output
         self.reader = self.writer = None
         self.read_transport = self.write_transport = None
@@ -355,7 +355,7 @@ class OwnedJobProcess:
     @classmethod
     def spawn(cls, command, *, cwd, env, memory_limit, api=None):
         api = _Win32Kernel() if api is None else api
-        job = process = thread = None
+        job = process_handle = thread = None
         stdio = None
         live_stdio = []
         owned = False
@@ -368,30 +368,30 @@ class OwnedJobProcess:
             child = (child_input, child_output, child_error)
             parent = (parent_input, parent_output)
             api.mark_inheritance(child, parent, job)
-            process, thread = api.create_process(
+            process_handle, thread = api.create_process(
                 command, cwd, env, job=job, stdio=child, inherit_handles=child,
                 suspended=True, breakaway=False)
-            if not api.is_process_in_job(process, job):
+            if not api.is_process_in_job(process_handle, job):
                 raise OSError('atomic Windows OCR Job assignment failed')
             owned = True
             api.resume_thread(thread)
             for handle in child:
                 api.close_handle(handle)
                 live_stdio.remove(handle)
-            return cls(api, job, process, thread, parent_input, parent_output)
+            return cls(api, job, process_handle, thread, parent_input, parent_output)
         except BaseException:
-            if process is not None:
+            if process_handle is not None:
                 try:
                     if owned:
                         api.terminate_job(job)
                     else:
-                        api.terminate_process(process)
-                    if not api.wait_process(process, 5000):
+                        api.terminate_process(process_handle)
+                    if not api.wait_process(process_handle, 5000):
                         raise OSError('Windows OCR launch child did not terminate')
                     if owned and api.active_processes(job) != 0:
                         raise OSError('Windows OCR launch Job still has active descendants')
                 except BaseException as exc:
-                    _UNVERIFIED_OWNERS.append((api, job, process, thread, tuple(live_stdio)))
+                    _UNVERIFIED_OWNERS.append((api, job, process_handle, thread, tuple(live_stdio)))
                     raise JobCleanupUnverified('Windows OCR launch cleanup unverified') from exc
             close_error = None
             uncertain_stdio = []
@@ -403,7 +403,7 @@ class OwnedJobProcess:
                     uncertain_stdio.append(handle)
                     close_error = close_error or exc
             uncertain = {}
-            for name, handle in (('thread', thread), ('process', process), ('job', job)):
+            for name, handle in (('thread', thread), ('process_handle', process_handle), ('job', job)):
                 if handle is not None:
                     try:
                         api.close_handle(handle)
@@ -415,7 +415,7 @@ class OwnedJobProcess:
                 # is still an uncertain owner. Do not advertise a clean launch
                 # or automatically retry numeric values that Windows may reuse.
                 _UNVERIFIED_OWNERS.append((
-                    api, uncertain.get('job'), uncertain.get('process'),
+                    api, uncertain.get('job'), uncertain.get('process_handle'),
                     uncertain.get('thread'), tuple(uncertain_stdio)))
                 raise JobCleanupUnverified('Windows OCR launch handle cleanup unverified') from close_error
             raise
@@ -489,7 +489,7 @@ class OwnedJobProcess:
                 deadline = time.monotonic() + _DRAIN_SECONDS
                 while True:
                     active = await asyncio.to_thread(self.api.active_processes, self.job)
-                    reaped = await asyncio.to_thread(self.api.wait_process, self.process, 50)
+                    reaped = await asyncio.to_thread(self.api.wait_process, self.process_handle, 50)
                     if active == 0 and reaped:
                         break
                     if time.monotonic() >= deadline:
@@ -509,7 +509,7 @@ class OwnedJobProcess:
     def close(self):
         if not self.drained:
             raise OSError('Windows OCR Job cannot close before verified drain')
-        for name in ('thread', 'process', 'job'):
+        for name in ('thread', 'process_handle', 'job'):
             handle = getattr(self, name)
             if handle is not None:
                 self.api.close_handle(handle)
