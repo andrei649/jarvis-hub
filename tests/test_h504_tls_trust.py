@@ -158,6 +158,18 @@ def test_a_pinned_self_signed_server_certificate_counts_as_an_anchor(tmp_path):
     assert tls_trust.validate_ca_environment({"JARVIS_CA_BUNDLE": str(_self_signed_leaf(tmp_path))}) == []
 
 
+def test_crl_only_input_is_not_a_certificate_despite_runtime_preload(tmp_path):
+    crl = _crl_only(tmp_path)
+    baseline = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).cert_store_stats()["x509"]
+    assert tls_trust._check_file(str(crl)) == "holds no certificate", baseline
+
+
+def test_duplicate_valid_anchor_in_one_bundle_is_accepted(tmp_path):
+    ca, _key, _cert = _make_ca(tmp_path)
+    ca.write_bytes(ca.read_bytes() * 2)
+    assert tls_trust._check_file(str(ca)) is None
+
+
 @pytest.mark.parametrize("variable", tls_trust.CA_FILE_VARIABLES)
 def test_every_file_variable_is_checked_and_named(tmp_path, variable):
     empty = tmp_path / "empty.pem"
@@ -365,17 +377,25 @@ def test_trust_context_is_always_a_verifying_context(monkeypatch, tmp_path):
 
 
 def test_the_anchor_is_certifi_plus_the_owners_root(monkeypatch, tmp_path):
-    """certifi's roots are in every context this module builds — with the owner's root
-    added, and alone when there is none (never the bare system store)."""
+    """Add owner/certifi anchors to the runtime's baseline without leaking old roots."""
     import certifi
 
     fake_certifi, _k, _c = _make_ca(tmp_path, "stand-in-certifi-root")
     monkeypatch.setattr(certifi, "where", lambda: str(fake_certifi))
     owner, _k, _c = _make_ca(tmp_path, "owner-root")
+    default_baseline = _subjects(ssl.create_default_context())
+    explicit_baseline = _subjects(ssl.create_default_context(cafile=str(fake_certifi)))
+    assert "owner-root" not in default_baseline | explicit_baseline
     monkeypatch.setenv("JARVIS_CA_BUNDLE", str(owner))
-    assert {"stand-in-certifi-root", "owner-root"} <= _subjects(tls_trust.tls_verify())
+    with_owner = tls_trust.tls_verify()
+    assert isinstance(with_owner, ssl.SSLContext)
+    assert with_owner.check_hostname and with_owner.verify_mode == ssl.CERT_REQUIRED
+    assert _subjects(with_owner) == default_baseline | {"stand-in-certifi-root", "owner-root"}
     monkeypatch.delenv("JARVIS_CA_BUNDLE")
-    assert _subjects(tls_trust.trust_context()) == {"stand-in-certifi-root"}
+    without_owner = tls_trust.trust_context()
+    assert without_owner.check_hostname and without_owner.verify_mode == ssl.CERT_REQUIRED
+    assert _subjects(without_owner) == explicit_baseline
+    assert "owner-root" not in _subjects(without_owner)
 
 
 # ── the per-target switch ────────────────────────────────────────────────────

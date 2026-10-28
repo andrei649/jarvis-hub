@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import ssl
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -38,6 +39,8 @@ INSECURE_TARGETS_ENV = "JARVIS_TLS_INSECURE_TARGETS"
 CA_FILE_VARIABLES = ("JARVIS_CA_BUNDLE", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")
 CA_DIR_VARIABLE = "SSL_CERT_DIR"
 CERTIFI_MIN_BYTES = 1024
+_PEM_CERTIFICATE = re.compile(
+    rb"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", re.DOTALL)
 
 
 def _env(name: str) -> str:
@@ -134,14 +137,6 @@ def _set_in(variable: str) -> str:
     return ""
 
 
-def _count_certs(load: Callable[[ssl.SSLContext], None]) -> int:
-    """How many certificates *load* put in a fresh store — any certificate, not only a
-    CA-flagged one: a pinned self-signed server certificate is a valid anchor too."""
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    load(context)
-    return int(context.cert_store_stats().get("x509", 0))
-
-
 def _check_file(value: str, *, min_bytes: int = 1) -> str | None:
     path = Path(value)
     if not path.exists():
@@ -152,10 +147,30 @@ def _check_file(value: str, *, min_bytes: int = 1) -> str | None:
         size = path.stat().st_size
         if size < min_bytes:
             return f"is too small to be a CA bundle ({size} bytes)"
-        count = _count_certs(lambda ctx: ctx.load_verify_locations(cafile=str(path)))
+        # OpenSSL must accept the file as trust material, but its store count is
+        # not input evidence: the bundled SSL runtime preloads a rejected root.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations(cafile=str(path))
+        from cryptography import x509
+
+        supplied = path.read_bytes()
+        has_certificate = False
+        for block in _PEM_CERTIFICATE.finditer(supplied):
+            try:
+                x509.load_pem_x509_certificate(block.group())
+            except ValueError:
+                continue
+            has_certificate = True
+            break
+        if not has_certificate:
+            try:
+                x509.load_der_x509_certificate(supplied)
+                has_certificate = True
+            except ValueError:
+                pass
     except (OSError, ValueError) as exc:   # unreadable, vanished, or not PEM/DER (ssl.SSLError is an OSError)
         return f"does not load as a CA bundle ({type(exc).__name__})"
-    if count < 1:
+    if not has_certificate:
         return "holds no certificate"
     return None
 
