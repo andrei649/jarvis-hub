@@ -1,7 +1,7 @@
 """osint/correlate.py — P2 OSINT pack: governed correlation over untrusted evidence.
 
-ORIZONT 24 Track P (P2 — OSINT / WorldView). The investigator's core: take *evidence
-items* gathered from untrusted external sources (WorldView/Argus, web, RSS, news), mark
+ORIZONT 24 Track P (P2 — OSINT). The investigator's core: take *evidence
+items* gathered from untrusted external sources (operator-supplied OSINT, web, RSS, news), mark
 them tainted at the **ingestion boundary** (``security.taint``), correlate them by shared
 indicators into findings carrying a provenance chain + a corroboration-based confidence,
 and assemble an evidence-drawer "world brief".
@@ -14,10 +14,10 @@ Two properties make this the *governance* surface P2 is meant to be:
   (``kernel.authorize``, H23.6) — untrusted intel can **never auto-execute**.
 * **Honest, never fabricated.** Confidence is a transparent function of corroboration
   (how many *distinct* sources agree) and volume — not a model guess. Zero evidence →
-  zero findings (no invented intel; OSINT degrades to silence, like the WorldView plugin).
+  zero findings (no invented intel; OSINT degrades to silence, with honest unavailable results).
 
 Offline by design: this correlates the evidence the caller hands it. *Live* collection
-(SpiderFoot modules, the WorldView REST, a real news feed) is a separate, owner-gated
+(SpiderFoot modules or a real news feed) is a separate, owner-gated
 wiring — the engine here is the deterministic, hermetically-verifiable rail.
 """
 

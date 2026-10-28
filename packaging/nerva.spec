@@ -89,7 +89,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     # Dev/test-only trees that must never ship.
-    excludes=["pytest", "tests", "worldview", "mobile", "frontend"],
+    excludes=["pytest", "tests", "mobile", "frontend"],
     noarchive=False,
 )
 

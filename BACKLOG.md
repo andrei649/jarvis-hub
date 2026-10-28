@@ -7267,7 +7267,8 @@ class as `frontend/e2e` (above), in a second package, found by asking which trac
       without changing it, and a caret range would let the next lock regeneration move it. Verified
       against `main`'s lockfile: **added** `node_modules/@types/ws`, **removed** nothing,
       **version-changed** nothing.
-- [ ] 🟡 **What this is NOT: a PR gate.** `worldview.yml` has no `pull_request` trigger — #981
+- [x] 🟡 **What this is NOT: a PR gate.** `worldview.yml` has no `pull_request` trigger — #981
+      **Closed by owner retirement (2026-10-27, PR #1305):** the WorldView stack and dedicated workflow are removed. The trigger/restore proposal below is historical and must not be restored.
       removed it as an owner de-gate decision (2026-08-30), and it is restorable as group **K**
       (`pr-triggers-7-workflows`) in [`docs/restore/`](docs/restore/README.md). So every check in
       that workflow, this new one included, runs **after** a merge to `main`. It is a real gate on
@@ -9262,9 +9263,9 @@ Native integration evidence (2026-10-09, local/unpublished): H18.24–H18.31 can
 > sunt desenabile pe Cesium → `VITE_TILE_URL` acceptă doar raster):
 > [`docs/decisions/2026-08-25-worldview-cesium-renderer.md`](docs/decisions/2026-08-25-worldview-cesium-renderer.md).
 >
-> **Strategie & feature-pick:** [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md) ·
+> **Strategie & feature-pick:** `worldview/docs/ROADMAP.md` (historical source: <https://github.com/andrei649/jarvis-hub/blob/815e176e34fe659b1a6abeae4a67ba4b85b22384/worldview/docs/ROADMAP.md>) ·
 > **Planul de arhitectură & livrare (scale model, deep-dives, ADRs, exit gates):**
-> [`worldview/docs/02-platform-architecture-and-delivery-plan.md`](worldview/docs/02-platform-architecture-and-delivery-plan.md).
+> `worldview/docs/02-platform-architecture-and-delivery-plan.md` (historical source: <https://github.com/andrei649/jarvis-hub/blob/815e176e34fe659b1a6abeae4a67ba4b85b22384/worldview/docs/02-platform-architecture-and-delivery-plan.md>).
 > Ticketele de mai jos = cele 5 workstream-uri (WS1–WS5) din plan, fiecare cu **criteriu de acceptanță măsurabil (AC)**.
 >
 > **Teza de integrare:** *JARVIS este „AIP"-ul local-first al WorldView* — operatorul în limbaj natural + cortexul
@@ -9339,7 +9340,7 @@ Native integration evidence (2026-10-09, local/unpublished): H18.24–H18.31 can
 > **Total ORIZONT 19:** 33 items, ~208 SP (WS1 38 · WS2 45 · WS3 31 · WS4 39 · WS5 55). **Primele 5 (the next concrete things):**
 > H19.1.1 (ADS-B real) → H19.2.1+H19.2.2 (recon-window + alertă, wow maxim, reutilizează SGP4) → H19.3.1 (MCP server) →
 > H19.3.4 (un watcher = bucla proactivă) → H19.4.3+H19.4.4 (provenance + audit). Plan complet & ADR-uri:
-> [`worldview/docs/02-platform-architecture-and-delivery-plan.md`](worldview/docs/02-platform-architecture-and-delivery-plan.md).
+> `worldview/docs/02-platform-architecture-and-delivery-plan.md` (historical source: <https://github.com/andrei649/jarvis-hub/blob/815e176e34fe659b1a6abeae4a67ba4b85b22384/worldview/docs/02-platform-architecture-and-delivery-plan.md>).
 
 ---
 

@@ -1,3 +1,5 @@
+> Historical reference — WorldView was retired from Nerva on 2026-10-27. The stack, bridge, workers and commands described below are not shipped or supported. Do not use this document to restore or schedule WorldView work.
+
 # Jarvis World Intelligence — Continuation Handoff
 
 _Last updated: 2026-06-20 — **Signal Layer shipped to `main`** (PR #248 + child lanes). Primary branch is now `main`. Only open item: governance bridge **#280 (draft, awaiting owner review)**._

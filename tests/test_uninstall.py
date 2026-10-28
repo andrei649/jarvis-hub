@@ -29,12 +29,6 @@ INSTALL_MARKERS = {
     # install.sh / INSTALL.bat hand the venv step to scripts/bootstrap.py (ensure_venv),
     # so the marker for .venv lives there.
     ".venv": ("scripts/bootstrap.py", 'VENV_DIR = ".venv"'),
-    "worldview/node_modules": ("install.sh", "cd worldview && npm install"),
-    "worldview/.env": ("install.sh", "worldview/.env.example"),
-    "worldview/backend-api/.env": ("install.sh", "worldview/backend-api/.env.example"),
-    "worldview/frontend/.env.local": ("install.sh", "worldview/frontend/.env.local.example"),
-    "worldview/ingestion-workers/.env": ("INSTALL.bat", "worldview\\ingestion-workers\\.env.example"),
-    "worldview/ingestion-workers/.venv": ("INSTALL.bat", "worldview\\ingestion-workers\\.venv"),
 }
 
 
@@ -82,24 +76,19 @@ def test_plan_reports_existing_and_absent(app_root):
     by_path = {t["path"]: t for t in plan["targets"]}
     assert by_path[".venv"]["exists"] is True
     assert by_path[".venv"]["kind"] == "dir"
-    assert by_path["worldview/.env"]["kind"] == "file"
-    assert by_path["worldview/ingestion-workers/.venv"]["exists"] is False
-    assert by_path["worldview/ingestion-workers/.venv"]["kind"] == "absent"
+    assert 'worldview/.env' not in by_path
+    assert 'worldview/ingestion-workers/.venv' not in by_path
+    assert 'worldview/ingestion-workers/.venv' not in by_path
 
 
 def test_run_removes_only_installer_targets(app_root):
     report = un.run_uninstall(app_root)
     assert report["ok"] is True
-    assert set(report["removed"]) == {
-        ".venv", "worldview/node_modules", "worldview/.env",
-        "worldview/backend-api/.env", "worldview/frontend/.env.local",
-    }
-    assert set(report["already_absent"]) == {
-        "worldview/ingestion-workers/.env", "worldview/ingestion-workers/.venv",
-    }
+    assert set(report["removed"]) == {'.venv'}
+    assert set(report["already_absent"]) == set()
     assert not (app_root / ".venv").exists()
-    assert not (app_root / "worldview" / "node_modules").exists()
-    assert not (app_root / "worldview" / ".env").exists()
+    assert (app_root / "worldview" / "node_modules").exists()
+    assert (app_root / "worldview" / ".env").exists()
     # Untouched: source tree and the user's data root.
     assert (app_root / "agents" / "core" / "uninstall.py").exists()
     assert (app_root / "memory_logs" / "settings.db").read_text() == "not-a-real-db"
@@ -246,7 +235,7 @@ def test_cli_dry_run_prints_plan_and_removes_nothing(app_root, monkeypatch):
     assert plan["data_root"] == str(data_root())
     by_path = {t["path"]: t for t in plan["targets"]}
     assert by_path[".venv"]["exists"] is True
-    assert by_path["worldview/ingestion-workers/.venv"]["exists"] is False
+    assert 'worldview/ingestion-workers/.venv' not in by_path
     assert _snapshot(app_root) == before
     assert calls == []
 
@@ -827,7 +816,8 @@ def test_gui_summary_reports_engine_platform_and_root(app_root, tmp_path):
     assert s["engine_installed"] is True and s["platform"] == "linux"
     assert s["app_root"] == str(app_root)
     shutil.rmtree(app_root / ".venv")
-    assert un.gui_summary(**_linux_desktop(tmp_path), app_root=app_root)["engine_installed"] is True
+    # A retired component directory is not a current Nerva engine installation.
+    assert un.gui_summary(**_linux_desktop(tmp_path), app_root=app_root)["engine_installed"] is False
     shutil.rmtree(app_root / "worldview" / "node_modules")
     assert un.gui_summary(**_linux_desktop(tmp_path), app_root=app_root)["engine_installed"] is False
 
@@ -1214,9 +1204,9 @@ def test_windows_bat_venv_fallback_removes_everything_but_the_venv(app_root, mon
     assert ".venv" not in report["removed"]
     assert "delete" in report["venv_left_behind"] and "by hand" in report["venv_left_behind"]
     assert (app_root / ".venv" / "bin" / "python").exists()  # never half-deleted
-    assert not (app_root / "worldview" / "node_modules").exists()
-    assert not (app_root / "worldview" / ".env").exists()
-    assert not (app_root / "worldview" / "frontend" / ".env.local").exists()
+    assert (app_root / "worldview" / "node_modules").exists()
+    assert (app_root / "worldview" / ".env").exists()
+    assert (app_root / "worldview" / "frontend" / ".env.local").exists()
     assert (app_root / "memory_logs" / "settings.db").exists()
 
 
@@ -1234,7 +1224,7 @@ def test_windows_bat_venv_fallback_purges_in_process(app_root, monkeypatch):
     assert rc == 1 and calls == [True]
     assert report["data_purge"]["ok"] is True
     assert report["not_removed"] == [".venv"]
-    assert not (app_root / "worldview" / "node_modules").exists()
+    assert (app_root / "worldview" / "node_modules").exists()
     assert (app_root / ".venv").exists()
 
 
@@ -1281,3 +1271,14 @@ def test_nerva_uninstall_verb_does_not_expose_allow_locked_venv():
     """The opt-in is the bat fallback's alone; `nerva uninstall` keeps the refusal."""
     src = (REPO_ROOT / "agents" / "cli" / "nerva.py").read_text(encoding="utf-8")
     assert "allow-locked-venv" not in src and "allow_locked_venv" not in src
+
+
+def test_retired_component_files_are_outside_current_uninstall_scope(app_root):
+    """Removing Nerva cannot erase files outside its current installer footprint."""
+    legacy_env = app_root / 'worldview' / '.env'
+    original = legacy_env.read_bytes()
+    result = un.run_uninstall(app_root)
+    assert result['ok'] is True
+    assert not (app_root / '.venv').exists()
+    assert legacy_env.read_bytes() == original
+    assert (app_root / 'worldview' / 'node_modules' / 'some-pkg').is_dir()

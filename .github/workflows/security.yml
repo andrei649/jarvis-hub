@@ -84,7 +84,7 @@ jobs:
           python -m pip install --quiet 'semgrep==1.167.0'
           semgrep scan --config p/python --config p/security-audit \
             --error --quiet --metrics off --disable-version-check \
-            agents worldview
+            agents
 
   dependency-audit:
     name: Dependency audit (pip-audit)

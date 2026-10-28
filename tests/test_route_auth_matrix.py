@@ -159,7 +159,6 @@ PUBLIC_READS = {
     "GET /api/oauth/callback",   # provider redirect; verify_state() gates the exchange, page shows only the service name
     "GET /api/oracle/status",
     # WorldView liveness booleans; the overview (recon/alerts) is guarded.
-    "GET /api/worldview/status",
     # Nerva Workspace (spec §7). The SPA shell serves the built markup with no user data
     # (404 while NERVA_WORKSPACE is off); the session probe tells an anonymous caller
     # only the setup/SSO booleans — the user, org and CSRF token come back solely for a

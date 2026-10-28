@@ -2,10 +2,7 @@
 signal_layer.py — Jarvis Signal Layer plugin.
 
 This is the agent-facing bridge to the provider-neutral situational-awareness
-service. It complements the existing WorldView 4D OSINT plugin:
-
-- WorldViewPlugin: geospatial/4D layer queries from the local WorldView stack.
-- SignalLayerPlugin: evidence-backed signals, briefs, assessments, and relevance
+service. SignalLayerPlugin provides evidence-backed signals, briefs, assessments, and relevance
   from the Jarvis Signal Layer, with WorldMonitor as provider #1.
 
 Read-only and fail-safe: if the Signal Layer is unreachable the methods return a

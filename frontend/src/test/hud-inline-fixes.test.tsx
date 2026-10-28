@@ -279,7 +279,7 @@ describe('the demo roster covers the whole registry', () => {
     // Every field below is in agents/_system/agents.yaml. If one is edited here without
     // the registry agreeing, this is the test that notices.
     expect(V2.DOSSIER.argus.channel).toBe('web-dashboard');
-    expect(V2.DOSSIER.argus.plugins).toEqual(['worldview', 'cloud-llm']);
+    expect(V2.DOSSIER.argus.plugins).toEqual(['signal-layer', 'cloud-llm']);
     expect(V2.DOSSIER.hestia.policy).toBe('local');
     expect(V2.DOSSIER.hestia.plugins).toEqual(['homebridge', 'iot-control']);
     expect(V2.DOSSIER.howard.heartbeat).toBe('no');

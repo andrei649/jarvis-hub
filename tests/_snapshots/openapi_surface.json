@@ -318,8 +318,6 @@
   "GET /api/workspace/reports/{report_id}/runs": "list_runs_api_workspace_reports__report_id__runs_get",
   "GET /api/workspace/session": "session_state_api_workspace_session_get",
   "GET /api/workspace/shared-reports": "shared_reports_api_workspace_shared_reports_get",
-  "GET /api/worldview/overview": "worldview_overview_api_worldview_overview_get",
-  "GET /api/worldview/status": "worldview_status_api_worldview_status_get",
   "GET /autonomy/approvals": "autonomy_approvals_autonomy_approvals_get",
   "GET /autonomy/brief": "autonomy_brief_autonomy_brief_get",
   "GET /autonomy/interrupts": "autonomy_interrupts_autonomy_interrupts_get",

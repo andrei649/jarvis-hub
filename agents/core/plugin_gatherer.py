@@ -1,7 +1,7 @@
 """plugin_gatherer.py — live-plugin data gathering extracted from the Orchestrator (CLN-2).
 
 Owns the keyword-triggered fan-out to the real-time plugins (weather, news,
-calendar, gmail, websearch, worldview, signal-layer), the small location heuristic,
+calendar, gmail, websearch, signal-layer), the small location heuristic,
 the prompt block formatter, and the two routing helpers it depends on. Every
 function takes the orchestrator as an explicit collaborator and reads its live state
 (``plugins``, ``permission_gate``) at call time — the same delegation pattern as
@@ -48,8 +48,7 @@ def wants_signal_layer(text_lower: str, keywords: list[str]) -> bool:
     # trigger this, which fired a Signal Layer fan-out on any news query and added
     # latency to unrelated requests — require explicit world/global signals instead.
     return (
-        "worldview" in keywords
-        or any(w in text_lower for w in [
+        any(w in text_lower for w in [
             "world brief", "global brief", "world intelligence", "signal layer",
             "what changed overnight", "changed overnight", "overnight",
             "geopolitic", "country risk", "risk for romania", "risk for uae",
@@ -228,21 +227,6 @@ def _eligible_plugins(orch, text: str, intent) -> list[tuple[str, Callable[[], o
             wp = orch.plugins.get("websearch")
             if wp:
                 specs.append(("websearch", lambda wp=wp: wp.search(text, max_results=5)))
-
-    if "worldview" in keywords or any(w in text_lower for w in [
-        "satellite", "satelit", "recon", "overflight", "overpass", "satpass",
-        "geospatial", "osint", "hormuz", "strait", "dark vessel",
-        "jamming", "bruiaj", "footprint", "overhead pass",
-    ]):
-        if any_agent_can(orch, "worldview", intent):
-            wv = orch.plugins.get("worldview")
-            if wv:
-                # Route through the governed facade so the WorldView recon shares
-                # one gated path with the rest of world-intel (recon_overview
-                # accepts the facade's optional ``lead`` arg).
-                specs.append(("worldview", lambda: _argus(orch).recon_overview()))
-        else:
-            log_error(logger, E_PLUGIN_BLOCKED, name="worldview")
 
     if any(w in text_lower for w in ["revenue", "mrr", "subscription", "subscriptions",
                                      "venituri", "abonament", "abonamente", "revenuecat"]):

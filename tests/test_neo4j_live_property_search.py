@@ -34,7 +34,6 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from core.memory.graph import Neo4jGraph, _neo4j_property_value  # noqa: E402
-from core.memory.worldview_sync import _details  # noqa: E402
 
 
 @pytest.fixture
@@ -114,7 +113,7 @@ def test_live_property_search_finds_the_real_worldview_sync_shape(live_graph):
         "source": None,                 # provenance is routinely absent
         "valid_time": 1780865129.713659,
         "jarvis_tainted": True,
-        **_details(obj),
+        **{"details": obj["properties"]},
     })
     assert ok is True, "real Neo4j refused the geo-event the WorldView sync writes"
     match = next(r for r in live_graph.search(marker) if r["name"] == name)
@@ -239,9 +238,9 @@ def test_add_entity_serialises_a_map_valued_property():
     assert params["p_jarvis_tainted"] is True
 
 
-def test_worldview_sync_details_shape_survives_the_neo4j_boundary():
-    """Pin the coupling: the sync's own output must be storable."""
+def test_nested_properties_shape_survives_the_neo4j_boundary():
+    """Historical nested properties must remain storable."""
     obj = {"properties": {"mmsi": "412331100", "status": "dark", "gapSeconds": 60}}
-    coerced = {k: _neo4j_property_value(v) for k, v in _details(obj).items()}
+    coerced = {k: _neo4j_property_value(v) for k, v in {"details": obj["properties"]}.items()}
     assert isinstance(coerced["details"], str)
     assert "412331100" in coerced["details"]

@@ -1,5 +1,7 @@
 # AI Context Map — loading this repo into a 1M-token assistant
 
+> WorldView was retired on 2026-10-27 and is no longer installed, started or exposed by Nerva. Any WorldView stack or bridge references below are historical; Signal Layer remains independent.
+
 > How to feed Nerva (repo: jarvis-hub) to a large-context model (Claude Fable 5, 1M tokens) without wasting
 > the window or missing the load-bearing files. Humans: this is also the fastest "what do I read
 > first" guide.

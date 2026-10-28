@@ -1,5 +1,7 @@
 # AI System Prompt — Repo Architecture Analysis (jarvis-hub / Nerva)
 
+> WorldView was retired by the owner on 2026-10-27. It is not a shipped sibling stack, tool or backlog target. Historical references must not restore it; use the retained Signal Layer for supported world-intelligence reads.
+
 > Generated architecture analysis + actionable system prompt for AI-driven development in this
 > repository. Canonical sources it condenses: `AGENTS.md` (workflow policy), `docs/ARCHITECTURE.md`
 > (module index + lifecycle), `NERVA.md` (architecture overview), `MOONSHOT.md` §5 (non-negotiables),
@@ -31,7 +33,6 @@ capability-acquisition pipeline.
 | Channels | Web SSE, Voice, Telegram, Discord, Slack, Email (SMTP/IMAP), webhook bridges (WhatsApp/Signal/Matrix/Teams/Google Chat) |
 | Integrations | ~25 plugins (Gmail, Google Calendar, Spotify, Tavily/SearXNG, n8n, Homebridge, Tuya, Twilio, Notion, RevenueCat, Meta Ads, Postiz, …) behind a per-agent permission gate |
 | Protocols | MCP client (**stdio only** — remote transports refused at the admin API) **and** MCP server (governed route tools); A2A inbound (HMAC + contract) |
-| Sibling stack | **WorldView** (4D OSINT) under `worldview/`: Vite/Next + CesiumJS + Fastify (ports 3000/4000, Docker); shares *no* runtime — bridged only via the versioned read-only contract `docs/contracts/worldview-bridge.md` through the **Argus** agent |
 | Tooling | pytest (`asyncio_mode=auto`, offline, socket-blocked), Ruff, Bandit, vulture; `scripts/code_health.py`; `scripts/status_sync.py` (generated counters) |
 
 **Architecture Pattern:** **Modular multi-agent monolith** — a single FastAPI app-shell
@@ -74,7 +75,6 @@ agents/core/
 skills/<name>/{SKILL.md,main.py}   Skill packs, auto-discovered
 frontend/src/                  React HUD (voice.ts, orb.tsx, burst.tsx, wall.tsx, panels)
 mobile/                        React Native companion (read-mostly parity)
-worldview/                     Separate OSINT stack (own CI/tests; only coupling = bridge contract)
 tests/                         pytest suite (~6,900+ backend tests, offline by default)
 memory_logs/                   All persistent state (SQLite DBs, JSONL, embedding cache) — gitignored
 scripts/                       status_sync.py, code_health.py, runtime_supervisor.py

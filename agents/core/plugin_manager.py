@@ -49,7 +49,6 @@ from .plugins.telegram_bot import TelegramBotPlugin
 from .plugins.weather import WeatherPlugin
 from .plugins.websearch import WebSearchPlugin
 from .plugins.whatsapp_bridge import WhatsAppBridgePlugin
-from .plugins.worldview import WorldViewPlugin
 
 logger = logging.getLogger("jarvis.plugins.manager")
 
@@ -334,10 +333,6 @@ class PluginManager:
             secret=orch.get_setting("plugins.tuya_secret", ""),
             device_id=orch.get_setting("plugins.tuya_device_id", ""),
         )
-        # WorldView 4D OSINT (local-first; override host with WORLDVIEW_API_URL).
-        self.plugins["worldview"] = WorldViewPlugin(
-            api_url=env_str("WORLDVIEW_API_URL"),
-        )
         # Signal Layer — provider-neutral world intelligence (local-first; :8787).
         # Read-only + fail-safe: a down service returns {"status":"unavailable"}.
         self.plugins["signal-layer"] = SignalLayerPlugin(
@@ -364,15 +359,15 @@ class PluginManager:
         bind_external_orchestrator_attribute(
             orch, "oracle_bridge", self.plugins.get("oracle-bridge")
         )
-        # Argus — one governed facade over WorldView + Signal Layer for world-intel
-        # queries. Built after both backends are registered; every call is gated.
+        # Argus — one governed facade over Signal Layer for world-intel
+        # queries. Built after its backend is registered; every call is gated.
         bind_external_orchestrator_attribute(
             orch, "argus", ArgusInterface.from_orchestrator(orch)
         )
 
     def _drop_switched_off(self) -> None:
         """H285: a plugin the owner's load set switches off is not kept, as safe mode
-        keeps none: the probes, the dashboard and WorldView reach ``orch.plugins``
+        keeps none: the probes and the dashboard reach ``orch.plugins``
         without asking the gate. The lists name gate ids."""
         from . import load_set
 

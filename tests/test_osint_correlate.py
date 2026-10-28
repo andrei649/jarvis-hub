@@ -139,7 +139,7 @@ def teardown_function():
 async def test_osint_reality_case_present_and_passes():
     case = next((c for c in CASES if c.name == "osint-untrusted-ingestion-queued"), None)
     assert case is not None, "the P2 OSINT governance reality case must be registered"
-    assert case.capability_id == "plugin:worldview" and case.live is False
+    assert case.capability_id == "plugin:osint-enrich" and case.live is False
     out = await run_reality([case], now="2026-06-28T00:00:00+00:00")
     assert out["passed"] == 1 and out["total"] == 1
-    assert "plugin:worldview" in out["promoted"]
+    assert "plugin:osint-enrich" in out["promoted"]

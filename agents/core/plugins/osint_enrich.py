@@ -15,7 +15,7 @@ Two rules shape the resolver table:
 * **No key, no claim.** Only ``domain→ip`` and ``ip→domain`` have a keyless resolver. Every
   other pair reports ``supports() is False``, which the scaffold records as
   ``provider_not_configured`` — the honest boundary where the owner's paid providers
-  (Shodan, HIBP, SpiderFoot modules, the WorldView REST) would later plug in as extra
+  (Shodan, HIBP, SpiderFoot modules) would later plug in as extra
   branches rather than a redesign.
 
 ``ip→asn`` used to be listed here against ``rdap.org``. It never worked and was removed

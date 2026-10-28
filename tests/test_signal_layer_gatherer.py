@@ -122,8 +122,8 @@ def test_wants_signal_layer_triggers_on_world_intent():
     assert plugin_gatherer.wants_signal_layer("give me a world brief", []) is True
     assert plugin_gatherer.wants_signal_layer("what is the country risk for romania", []) is True
     assert plugin_gatherer.wants_signal_layer("what changed overnight", []) is True
-    # WorldView OSINT surface keyword stays an explicit trigger.
-    assert plugin_gatherer.wants_signal_layer("open the map", ["worldview"]) is True
+    # A retired plugin keyword must not trigger unrelated provider traffic.
+    assert plugin_gatherer.wants_signal_layer("open the map", ["worldview"]) is False
 
 
 def test_resolve_country_iso2_covers_watchlist():

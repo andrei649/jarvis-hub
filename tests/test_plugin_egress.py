@@ -74,7 +74,7 @@ def test_none_plugin_always_blocks():
 
 
 def test_lan_allows_localhost_blocks_public_under_strict(monkeypatch):
-    c = PluginHTTPClient.for_plugin("worldview")  # LAN
+    c = PluginHTTPClient.for_plugin("signal-layer")  # LAN
     c._enforce_egress("http://localhost:4000/history/adsb")  # local → ok
     c._enforce_egress("http://192.168.1.50:8080/x")          # private IP → ok
     monkeypatch.setenv("JARVIS_STRICT_EGRESS", "1")
@@ -120,7 +120,7 @@ REAL_HOSTS = {
     "whatsapp-bridge": ["192.168.1.100", "localhost"],
     "apple-health": ["192.168.1.100"],
     "homebridge": ["192.168.1.100"],
-    "worldview": ["localhost"],
+    "signal-layer": ["localhost"],
     # SEC-5b: previously-unmanifested plugins with static hosts.
     "balance": ["api.ing.com", "api.libra.ro"],
     "analytics": ["analyticsdata.googleapis.com", "oauth2.googleapis.com"],
@@ -159,7 +159,7 @@ def test_real_for_plugin_names_match_a_manifest():
     EXPECTED = {
         "weather", "news", "cloud-llm", "telegram", "gmail", "google-calendar",
         "spotify", "sms-alerts", "crm-sync", "iot-control", "oracle-bridge",
-        "whatsapp-bridge", "apple-health", "homebridge", "worldview",
+        "whatsapp-bridge", "apple-health", "homebridge", "signal-layer",
         # SEC-5b: string-literal for_plugin ids living under agents/core/plugins.
         "balance", "analytics", "websearch", "n8n",
         # Hermes absorption 5a: the page reader dials under its own identity.

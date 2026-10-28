@@ -1,8 +1,7 @@
 @echo off
 REM ============================================================
 REM  JARVIS HUB - UNINSTALL (Windows 11, double-click)
-REM  Removes the installer-created software footprint: .venv\,
-REM  WorldView's node_modules\ and generated .env files. Your
+REM  Removes the installer-created software footprint: .venv\. Your
 REM  DATA (memory_logs\ or %JARVIS_HOME%) is NOT touched unless
 REM  you also pass /PURGEDATA - and even then only after you type
 REM  the data folder's name back when asked.
@@ -62,8 +61,7 @@ echo ============================================================
 echo   JARVIS HUB - UNINSTALL
 echo ============================================================
 echo.
-echo This removes: .venv\, worldview\node_modules\, and WorldView's
-echo generated .env files. Your data (memory_logs\ or %%JARVIS_HOME%%)
+echo This removes the installer-created .venv\. Your data (memory_logs\ or %%JARVIS_HOME%%)
 echo is NOT touched unless /PURGEDATA is also given.
 echo.
 

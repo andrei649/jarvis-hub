@@ -20,7 +20,6 @@ LEGACY_SOURCE_OWNERSHIP = (
     {"source": "digital.calendar", "legacy_owner": "EventWatcher", "ambient_adapter": "watcher.calendar"},
     {"source": "digital.finance", "legacy_owner": "EventWatcher", "ambient_adapter": "watcher.finance"},
     {"source": "digital.health", "legacy_owner": "EventWatcher", "ambient_adapter": "watcher.health"},
-    {"source": "digital.worldview", "legacy_owner": "EventWatcher", "ambient_adapter": "watcher.worldview"},
 )
 
 

@@ -1,3 +1,5 @@
+> Owner override (2026-10-27): WorldView is permanently retired. Historical restore packets may mention its workflow, but do not restore worldview/, worldview.yml, dependency jobs or integration. Other restoration work retains its existing rules.
+
 # Restoring the development gates removed in #981
 
 On 2026-08-30 the owner de-gated the development workflow: every PR-blocking CI gate and

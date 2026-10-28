@@ -1,3 +1,5 @@
+> Historical reference — WorldView was retired from Nerva on 2026-10-27. The stack, bridge, workers and commands described below are not shipped or supported. Do not use this document to restore or schedule WorldView work.
+
 # Startup Verification — World Intelligence launchers
 
 _Lane: `feature/world-intelligence-startup-verify`. Verifies the demo launch path without

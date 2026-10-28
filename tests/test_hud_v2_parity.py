@@ -195,7 +195,6 @@ RULES = [
     ("/api/integrations/", "interop"),
     ("/api/sync", "interop"),  # E2E device sync (H12.13)
     ("/api/nodes", "interop"),  # governed node mesh (H12.17)
-    ("/api/worldview/", "interop"),  # WorldView bridge liveness — HUD World tab
     # comms (rooms / notes / channel sender pairing / mic satellites)
     ("/api/rooms", "comms"),
     ("/api/notes", "comms"),
@@ -502,7 +501,6 @@ _CLIENT_GLOBS = (
     # a shipping page had been calling it all along. A route the operator can already reach
     # is not a gap, and listing it as one sends the next reader to build a duplicate panel.
     "agents/web/*.html",
-    "worldview/frontend/**/*.ts", "worldview/frontend/**/*.tsx",
     "desktop/**/*.ts", "desktop/**/*.tsx",
 )
 
@@ -685,11 +683,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # over a byte-identical payload. Whether to keep the alias or delete the route is an
     # API decision for the owner, not something to paper over with a second panel.
     "/api/metrics/capabilities",
-    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). A strict SUBSET of
-    # /api/worldview/overview, which returns {**status, "recon": ...} (worldview.py:34-49)
-    # and is what the World tab actually renders (frontend/src/modes_world.tsx:22). Its
-    # docstring aims it at "the HUD World tab", but the HUD chose the superset. A status
-    # chip would re-render data already on screen.
     # RESTORED 2026-09-01 — see /api/desktop/plan. In-process consumer at
     # autonomy_coordinator.py:535 `from .operator_router import plan_payload`.
     "/api/operator/plan",
@@ -702,7 +695,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # render_snippet inlines colour/title/greeting INTO the emitted snippet, and the snippet's
     # only fetch (widget.py:118) posts to the /message route. Nothing fetches the config read.
     "/api/widget/{token}/config",
-    "/api/worldview/status",
 ])
 
 

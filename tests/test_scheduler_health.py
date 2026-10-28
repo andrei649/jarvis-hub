@@ -225,15 +225,6 @@ async def test_partial_memory_maintenance_failure_reaches_health(health):
     assert store.scheduler_results()["native-backup"]["status"] == "failed"
 
 
-@pytest.mark.asyncio
-async def test_caught_worldview_failure_has_explicit_result(monkeypatch):
-    from agents.core.memory.worldview_sync import WorldViewKGSync
-    from agents.core.orchestrator import Orchestrator
-    async def fail(*args, **kwargs):
-        raise RuntimeError("private worldview details")
-    monkeypatch.setattr(WorldViewKGSync, "sync", fail)
-    orch = SimpleNamespace(plugins={"worldview": object()}, memory=object())
-    assert await Orchestrator._run_worldview_kg_sync(orch) == {"_scheduler_status": "failed"}
 
 
 @pytest.mark.asyncio

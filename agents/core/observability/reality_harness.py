@@ -178,7 +178,7 @@ async def _probe_none_blocks_external() -> bool:
 async def _probe_lan_allows_local() -> bool:
     from agents.core.http_client import PluginEgressError, PluginHTTPClient
 
-    c = PluginHTTPClient("worldview")  # LAN manifest
+    c = PluginHTTPClient("signal-layer")  # LAN manifest
     try:
         c._enforce_egress("http://127.0.0.1:4000/x")  # local → must be allowed (no raise)
         return True
@@ -797,13 +797,13 @@ CASES: list[RealityCase] = [
         _probe_none_blocks_external,
     ),
     RealityCase(
-        "plugin:worldview",
+        "plugin:signal-layer",
         "egress-lan-allows-local",
         "a LAN plugin's localhost call is allowed by the egress gate",
         _probe_lan_allows_local,
     ),
     RealityCase(
-        "plugin:worldview",
+        "plugin:osint-enrich",
         "osint-untrusted-ingestion-queued",
         "an OSINT write-back from an untrusted source is escalated GRANT→QUEUE by the kernel",
         _probe_osint_untrusted_ingestion_queued,

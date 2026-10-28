@@ -1,5 +1,7 @@
 # Nerva — Developer Instructions & Long-Range Development Roadmap
 
+> Owner scope update (2026-10-27): WorldView is retired. Any WorldView delivery or planning entries below are historical and must not become new AI queue work. Signal Layer remains independent.
+
 > For any developer (human or AI) joining jarvis-hub/Nerva: **Part I** is how to work here,
 > **Part II** is what to build and in what order. Grounded against `main` @ `a2d9556`
 > (2026-08-31, post-#990), with Part II re-swept entry-by-entry against the backlog-zero branch
@@ -177,7 +179,7 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-41 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
+40 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
 `tests/test_doc_reference_integrity.py` keeps this number honest). The owner-jobs routes under
 `/api/jobs` added 2026-09-07 (Hermes absorption, wave 2) were on this list for one commit — the

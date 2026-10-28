@@ -101,7 +101,7 @@ def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope
     **Boundary (the whole point of this slice):** only the externally-driven ``/api/kg/*``
     HTTP handlers call this. The high-frequency *internal* ingestion path — incremental
     ``IncrementalKGUpdater.ingest`` from ``orchestrator._record_interactions``, ``seed_graph``,
-    reflection/worldview promotion — writes ``graph.add_entity``/``add_relation`` DIRECTLY and
+    reflection promotion — writes ``graph.add_entity``/``add_relation`` DIRECTLY and
     never traverses these handlers, so it pays no per-write kernel cost and a halt never
     freezes per-turn memory. (``POST /api/memory/remember`` is a vector-store write, and
     ``/consolidate`` returns a plan with no mutation, and ``/decay/forget`` is an ACT-R decay

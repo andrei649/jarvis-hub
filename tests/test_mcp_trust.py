@@ -140,12 +140,6 @@ async def test_the_manager_surfaces_a_trust_denial_by_name():
     assert (await manager.call_tool("read"))["content"] == [{"text": "done"}]
 
 
-def test_worldviews_own_server_is_full_trust():
-    from agents.core.mcp import worldview_write
-
-    assert worldview_write.TRUST_FULL == TRUST_FULL
-    source = Path(worldview_write.__file__).read_text(encoding="utf-8")
-    assert "trust=TRUST_FULL" in source
 
 
 # ── the admin route ──────────────────────────────────────────────────────────

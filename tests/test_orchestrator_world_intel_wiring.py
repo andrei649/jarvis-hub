@@ -15,14 +15,14 @@ async def test_orchestrator_wires_signal_layer_and_argus():
     # Signal Layer plugin is registered at startup (no longer lazily created).
     assert isinstance(orch.plugins.get("signal-layer"), SignalLayerPlugin)
 
-    # Argus facade is instantiated and wired to both backends.
+    # Argus facade is instantiated and wired to Signal Layer only.
     assert isinstance(orch.argus, ArgusInterface)
     caps = orch.argus.capabilities()
     assert caps["signal_layer"]["wired"] is True
-    assert caps["worldview"]["wired"] is True
-    # 'argus' is permitted on both manifests, so the facade can reach them.
+    assert set(caps) == {"agent", "signal_layer"}
+    assert "worldview" not in orch.plugins
+    # Argus remains permitted on the retained Signal Layer manifest.
     assert caps["signal_layer"]["permitted"] is True
-    assert caps["worldview"]["permitted"] is True
     # (Fail-safe behavior of the facade itself is covered by test_argus_interface.py;
     # we avoid making a real world_brief() call here because resilient_call's shared
     # circuit breaker for "plugin:signal-layer" would leak across tests.)

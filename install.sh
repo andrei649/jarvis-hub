@@ -21,7 +21,6 @@
 # the install smoke. This wrapper only finds an interpreter and the checkout.
 # It never writes a bind other than 127.0.0.1 and never asks for a cloud key.
 #
-# WorldView (4D OSINT) stays a separate, OPT-IN companion: JARVIS_WORLDVIEW=1 ./install.sh
 set -euo pipefail
 
 NERVA_DIR="${NERVA_DIR:-$HOME/nerva}"
@@ -82,32 +81,10 @@ if [ -z "$PY" ] && [ -z "$FALLBACK" ]; then
   exit 1
 fi
 PY="${PY:-$FALLBACK}"
-echo "[1/3] Using $PY ($("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])'))"
+echo "[1/2] Using $PY ($("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])'))"
 
-# 2. WorldView (4D OSINT) — a separate companion stack, OPT-IN via JARVIS_WORLDVIEW=1.
-if [ "${JARVIS_WORLDVIEW:-0}" = "1" ] && [ -f worldview/package.json ]; then
-  echo "[2/3] WorldView setup (opt-in)…"
-  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-    node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-    if [ "${node_major:-0}" -lt 20 ]; then
-      echo "      [WARN] Node $(node -v 2>/dev/null) is < 20 — WorldView needs Node 20+. Skipping npm install."
-    else
-      [ -f worldview/.env ] || cp worldview/.env.example worldview/.env
-      [ -f worldview/backend-api/.env ] || cp worldview/backend-api/.env.example worldview/backend-api/.env
-      [ -f worldview/frontend/.env.local ] || cp worldview/frontend/.env.local.example worldview/frontend/.env.local
-      echo "      .env files ready; installing Node deps (a few minutes the first time)…"
-      ( cd worldview && npm install ) || echo "      [WARN] npm install reported errors — see output above."
-    fi
-  else
-    echo "      [SKIP] Node/npm not found (need Node 20+) — WorldView not set up. Nerva works without it."
-  fi
-  command -v docker >/dev/null 2>&1 || echo "      [NOTE] Docker not found — WorldView infra needs it."
-else
-  echo "[2/3] WorldView: not requested (opt-in: JARVIS_WORLDVIEW=1 ./install.sh)."
-fi
-
-# 3. The install itself — stdlib-only, exits non-zero with a named reason on failure.
-echo "[3/3] Bootstrapping (venv + locked deps + smoke)…"
+# 2. The install itself — stdlib-only, exits non-zero with a named reason on failure.
+echo "[2/2] Bootstrapping (venv + locked deps + smoke)…"
 "$PY" scripts/bootstrap.py "${FORWARD[@]+"${FORWARD[@]}"}"
 
 if [ "$DEV" = "1" ]; then

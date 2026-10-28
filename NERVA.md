@@ -1,10 +1,11 @@
 # Jarvis — AI Agent Orchestration System
 
+> WorldView was retired on 2026-10-27 and is no longer installed, started or exposed by Nerva. Any WorldView stack or bridge references below are historical; Signal Layer remains independent.
+
 ## Overview
 
-Jarvis is a local-first multi-agent AI orchestration system. 18 active agents across 4 tiers (incl. Argus, the WorldView bridge, Howard, the emerging digital twin, and Hestia, the House Brain), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
+Jarvis is a local-first multi-agent AI orchestration system. 18 active agents across 4 tiers (incl. Argus, the Signal Layer facade, Howard, the emerging digital twin, and Hestia, the House Brain), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
-> **Related stack — WorldView (4D OSINT):** a separate, self-contained Next.js + Fastify product under [`worldview/`](worldview/) (ports 3000/4000, Docker infra) that shares **no runtime** with this Python system. The **Argus** agent (`agents/argus/`) is the read-only, governed bridge between JARVIS and WorldView; the entire integration surface is the versioned contract in [`docs/contracts/worldview-bridge.md`](docs/contracts/worldview-bridge.md) (6 read-only endpoints, contract-tested on both sides). It is installed and auto-started by `INSTALL.bat`/`START.bat`. See [`worldview/README.md`](worldview/README.md).
 
 **Stack:** Python 3.12 + FastAPI + LM Studio (OpenAI-compatible API)  
 **Server:** http://127.0.0.1:8080  
@@ -205,9 +206,9 @@ curl.exe http://127.0.0.1:8080/status
 
 <!-- project-status:jarvis-stats:start -->
 - 18 active agents; registry-derived
-- 709 HTTP routes; parity-snapshot-derived
-- Tests: backend **29,681** · frontend **2,202** · mobile **359**
-- Version: **v1.0.0** · source commit `c071f9b3ae7b`
+- 707 HTTP routes; parity-snapshot-derived
+- Tests: backend **29,624** · frontend **2,202** · mobile **359**
+- Version: **v1.0.0** · source commit `7e96648f6004`
 - Backlog ledger: 289 done · 21 open or blocked of 310 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
 - H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6
 <!-- project-status:jarvis-stats:end -->

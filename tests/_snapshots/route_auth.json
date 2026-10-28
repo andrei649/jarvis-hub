@@ -318,8 +318,6 @@
   "GET /api/workspace/reports/{report_id}/runs": "ws_user",
   "GET /api/workspace/session": "open",
   "GET /api/workspace/shared-reports": "ws_user",
-  "GET /api/worldview/overview": "user",
-  "GET /api/worldview/status": "open",
   "GET /autonomy/approvals": "admin",
   "GET /autonomy/brief": "admin",
   "GET /autonomy/interrupts": "admin",

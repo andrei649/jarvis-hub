@@ -1,6 +1,6 @@
 # 14. API surface sweep — every route, every tier
 
-> **Scope.** A complete, generated enumeration of the HTTP surface: **709 app routes** (the figure `project-status.json` → `routes` reports) **plus 4 FastAPI doc routes** = **713 enumerated below** — the two numbers are not a contradiction, they count different things. Across **139** groups, each with its guard tier and a copy-pasteable probe. This chapter proves a route **exists and is guarded correctly**; the *owning section* proves it **behaves correctly** — follow the §-pointer in each group heading.
+> **Scope.** A complete, generated enumeration of the HTTP surface: **707 app routes** (the figure `project-status.json` → `routes` reports) **plus 4 FastAPI doc routes** = **711 enumerated below** — the two numbers are not a contradiction, they count different things. Across **138** groups, each with its guard tier and a copy-pasteable probe. This chapter proves a route **exists and is guarded correctly**; the *owning section* proves it **behaves correctly** — follow the §-pointer in each group heading.
 > **Prereqs.** A booted server and both tokens exported. `export B=http://127.0.0.1:8080` first — every probe uses `$B`. For the Nerva Workspace groups also start the hub with `NERVA_WORKSPACE=1` and export the `nerva_ws_session` cookie values of a signed-in member (`NERVA_WS_SESSION`) and admin (`NERVA_WS_ADMIN_SESSION`); while the flag is off every `/api/workspace` route answers 404 `workspace_disabled`, which is itself a check.
 > **Time.** ~90 min for the read-route sweep with the loop in 14.1; the mutating routes are exercised by their owning sections, not here.
 
@@ -17,11 +17,11 @@ Sources: `tests/_snapshots/route_surface.json` + `tests/_snapshots/route_auth.js
 
 | Tier | Routes | Guard | Sweep meaning |
 |---|---|---|---|
-| `user` | 293 | `user_guard` (`X-User-Token`) | 403 when `JARVIS_USER_TOKEN` is unset, 401 when set but missing/wrong |
+| `user` | 292 | `user_guard` (`X-User-Token`) | 403 when `JARVIS_USER_TOKEN` is unset, 401 when set but missing/wrong |
 | `admin` | 278 | `admin_guard` (`X-Admin-Token`) | must reject a user token as well as no token |
 | `ws_user` | 40 | `ws_user_guard` (cookie `nerva_ws_session`, `X-CSRF-Token` on writes) | Nerva Workspace: **401** `auth_required` without a session, **403** `csrf_failed` for a write without the token; a hub token opens nothing here |
 | `ws_admin` | 18 | `ws_admin_guard` (a workspace admin's session) | must reject a member's or approver's session with **403** `forbidden` |
-| `open` | 84 | none by design | must expose nothing tier-gated — the highest-value leak hunt in this chapter |
+| `open` | 83 | none by design | must expose nothing tier-gated — the highest-value leak hunt in this chapter |
 
 > ⚠️ **The localhost trap — read before you sweep.** Tokenless requests from the box itself are allowed **by design** (`agents/web.py` `_admin_guard`). So a sweep run on the server host proves *routing*, not *authorization*: everything will answer 200 and you will learn nothing about the guards. Every tier assertion in 14.1 must be re-run 🌐 **from a second device on the LAN** (the owner's phone works). A sweep run only on localhost must be recorded as **partial — localhost bypass**, never as a passing auth test. The `ws_user`/`ws_admin` tiers have no localhost bypass: a workspace session is required from every address, so those rows test authorization even on the server host.
 
@@ -1196,298 +1196,291 @@ EOF
 | API-618 | `POST` | `/api/workspace/setup` | `open` | mutating — needs a body; exercise it in §7 of `docs/business/WORKSPACE_PILOT_SPEC.md` | **401/403** with no token · state actually changes only on a valid call |
 | API-619 | `GET` | `/api/workspace/shared-reports` | `ws_user` | `curl -sS -b "nerva_ws_session=$NERVA_WS_SESSION" -o /dev/null -w "%{http_code}\n" $B/api/workspace/shared-reports` | **200** — or a documented 4xx/503 whose body says honestly why |
 
-## 14.3.worldview `/api/worldview` — 2 routes · behaviour owned by §06
-
-| ID | Method | Path | Tier | Probe | Expect |
-|----|--------|------|------|-------|--------|
-| API-620 | `GET` | `/api/worldview/overview` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/api/worldview/overview` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-621 | `GET` | `/api/worldview/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/api/worldview/status` | **200** — or a documented 4xx/503 whose body says honestly why |
-
 ## 14.3.(root) `(root)` — 1 routes · behaviour owned by §03
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-622 | `GET` | `/` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-620 | `GET` | `/` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3..well-known `.well-known` — 2 routes · behaviour owned by §08
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-623 | `GET` | `/.well-known/agent-card` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/.well-known/agent-card` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-624 | `GET` | `/.well-known/oauth-protected-resource` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/.well-known/oauth-protected-resource` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-621 | `GET` | `/.well-known/agent-card` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/.well-known/agent-card` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-622 | `GET` | `/.well-known/oauth-protected-resource` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/.well-known/oauth-protected-resource` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.admin `admin` — 1 routes · behaviour owned by §03 · 06
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-625 | `GET` | `/admin` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/admin` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-623 | `GET` | `/admin` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/admin` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.agents `agents` — 1 routes · behaviour owned by §02
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-626 | `GET` | `/agents` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/agents` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-624 | `GET` | `/agents` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/agents` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.autonomy `autonomy` — 17 routes · behaviour owned by §07
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-627 | `GET` | `/autonomy/approvals` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/approvals` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-628 | `GET` | `/autonomy/brief` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/brief` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-629 | `GET` | `/autonomy/interrupts` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/interrupts` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-630 | `GET` | `/autonomy/mediation` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/mediation` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-631 | `GET` | `/autonomy/mode` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/mode` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-632 | `POST` | `/autonomy/mode` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-633 | `GET` | `/autonomy/observer` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/observer` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-634 | `POST` | `/autonomy/observer/run` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-635 | `GET` | `/autonomy/policy` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/policy` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-636 | `POST` | `/autonomy/policy` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-637 | `GET` | `/autonomy/preferences/suggestions` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/preferences/suggestions` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-638 | `GET` | `/autonomy/status` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/status` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-639 | `GET` | `/autonomy/tasks` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/tasks` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-640 | `POST` | `/autonomy/tasks` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-641 | `POST` | `/autonomy/tasks/groups/{group_id}/reject` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-642 | `POST` | `/autonomy/tasks/{task_id}/consent` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-643 | `POST` | `/autonomy/tasks/{task_id}/decision` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-625 | `GET` | `/autonomy/approvals` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/approvals` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-626 | `GET` | `/autonomy/brief` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/brief` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-627 | `GET` | `/autonomy/interrupts` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/interrupts` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-628 | `GET` | `/autonomy/mediation` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/mediation` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-629 | `GET` | `/autonomy/mode` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/mode` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-630 | `POST` | `/autonomy/mode` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-631 | `GET` | `/autonomy/observer` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/observer` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-632 | `POST` | `/autonomy/observer/run` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-633 | `GET` | `/autonomy/policy` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/policy` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-634 | `POST` | `/autonomy/policy` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-635 | `GET` | `/autonomy/preferences/suggestions` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/preferences/suggestions` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-636 | `GET` | `/autonomy/status` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/status` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-637 | `GET` | `/autonomy/tasks` | `admin` | `curl -sS -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -o /dev/null -w "%{http_code}\n" $B/autonomy/tasks` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-638 | `POST` | `/autonomy/tasks` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-639 | `POST` | `/autonomy/tasks/groups/{group_id}/reject` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-640 | `POST` | `/autonomy/tasks/{task_id}/consent` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-641 | `POST` | `/autonomy/tasks/{task_id}/decision` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
 
 ## 14.3.bench `bench` — 2 routes · behaviour owned by §10
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-644 | `GET` | `/bench` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/bench` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-645 | `GET` | `/bench/stats` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/bench/stats` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-642 | `GET` | `/bench` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/bench` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-643 | `GET` | `/bench/stats` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/bench/stats` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.brain `brain` — 1 routes · behaviour owned by §06
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-646 | `GET` | `/brain` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/brain` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-644 | `GET` | `/brain` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/brain` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.chat `chat` — 4 routes · behaviour owned by §02
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-647 | `POST` | `/chat` | `user` | mutating — needs a body; exercise it in §02 | **401/403** with no token · state actually changes only on a valid call |
-| API-648 | `GET` | `/chat/pending` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/chat/pending` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-649 | `POST` | `/chat/pending/{prompt_id}/answer` | `user` | mutating — needs a body; exercise it in §02 | **401/403** with no token · state actually changes only on a valid call |
-| API-650 | `POST` | `/chat/stream` | `user` | mutating — needs a body; exercise it in §02 | **401/403** with no token · state actually changes only on a valid call |
+| API-645 | `POST` | `/chat` | `user` | mutating — needs a body; exercise it in §02 | **401/403** with no token · state actually changes only on a valid call |
+| API-646 | `GET` | `/chat/pending` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/chat/pending` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-647 | `POST` | `/chat/pending/{prompt_id}/answer` | `user` | mutating — needs a body; exercise it in §02 | **401/403** with no token · state actually changes only on a valid call |
+| API-648 | `POST` | `/chat/stream` | `user` | mutating — needs a body; exercise it in §02 | **401/403** with no token · state actually changes only on a valid call |
 
 ## 14.3.dashboard `dashboard` — 1 routes · behaviour owned by §05
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-651 | `GET` | `/dashboard` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/dashboard` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-649 | `GET` | `/dashboard` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/dashboard` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.docs `docs` — 2 routes · behaviour owned by §01
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-652 | `GET` | `/docs` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/docs` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-653 | `GET` | `/docs/oauth2-redirect` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/docs/oauth2-redirect` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-650 | `GET` | `/docs` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/docs` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-651 | `GET` | `/docs/oauth2-redirect` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/docs/oauth2-redirect` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.favicon.ico `favicon.ico` — 1 routes · behaviour owned by §03
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-654 | `GET` | `/favicon.ico` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/favicon.ico` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-652 | `GET` | `/favicon.ico` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/favicon.ico` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.healthz `healthz` — 1 routes · behaviour owned by §01
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-655 | `GET` | `/healthz` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/healthz` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-653 | `GET` | `/healthz` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/healthz` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.heartbeat `heartbeat` — 4 routes · behaviour owned by §07
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-656 | `GET` | `/heartbeat/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/heartbeat/status` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-657 | `POST` | `/heartbeat/{agent_id}/run` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-658 | `POST` | `/heartbeat/{agent_id}/start` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-659 | `POST` | `/heartbeat/{agent_id}/stop` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-654 | `GET` | `/heartbeat/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/heartbeat/status` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-655 | `POST` | `/heartbeat/{agent_id}/run` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-656 | `POST` | `/heartbeat/{agent_id}/start` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-657 | `POST` | `/heartbeat/{agent_id}/stop` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
 
 ## 14.3.learning `learning` — 3 routes · behaviour owned by §07
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-660 | `GET` | `/learning` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/learning` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-661 | `POST` | `/learning/promote` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
-| API-662 | `GET` | `/learning/stats` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/learning/stats` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-658 | `GET` | `/learning` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/learning` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-659 | `POST` | `/learning/promote` | `admin` | mutating — needs a body; exercise it in §07 | **401/403** with no token · state actually changes only on a valid call |
+| API-660 | `GET` | `/learning/stats` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/learning/stats` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.manifest.webmanifest `manifest.webmanifest` — 1 routes · behaviour owned by §—
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-663 | `GET` | `/manifest.webmanifest` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/manifest.webmanifest` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-661 | `GET` | `/manifest.webmanifest` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/manifest.webmanifest` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.map `map` — 1 routes · behaviour owned by §—
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-664 | `GET` | `/map` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/map` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-662 | `GET` | `/map` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/map` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.memory `memory` — 4 routes · behaviour owned by §09
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-665 | `GET` | `/memory` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/memory` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-666 | `POST` | `/memory/clear` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-667 | `GET` | `/memory/stats` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/memory/stats` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-668 | `GET` | `/memory/{agent_id}` | `user` | `GET $B/memory/{agent_id}` with a real id from this group's list route | **200** for a live id · **404** for a bogus one — never a fabricated record |
+| API-663 | `GET` | `/memory` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/memory` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-664 | `POST` | `/memory/clear` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-665 | `GET` | `/memory/stats` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/memory/stats` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-666 | `GET` | `/memory/{agent_id}` | `user` | `GET $B/memory/{agent_id}` with a real id from this group's list route | **200** for a live id · **404** for a bogus one — never a fabricated record |
 
 ## 14.3.metrics `metrics` — 1 routes · behaviour owned by §07
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-669 | `GET` | `/metrics` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/metrics` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-667 | `GET` | `/metrics` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/metrics` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.mission-control `mission-control` — 1 routes · behaviour owned by §06
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-670 | `GET` | `/mission-control` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/mission-control` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-668 | `GET` | `/mission-control` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/mission-control` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.openapi.json `openapi.json` — 1 routes · behaviour owned by §01
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-671 | `GET` | `/openapi.json` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/openapi.json` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-669 | `GET` | `/openapi.json` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/openapi.json` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.plugins `plugins` — 2 routes · behaviour owned by §02
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-672 | `GET` | `/plugins` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/plugins` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-673 | `PUT` | `/plugins/{plugin_id}/toggle` | `admin` | mutating — needs a body; exercise it in §02 | **401/403** with no token · state actually changes only on a valid call |
+| API-670 | `GET` | `/plugins` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/plugins` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-671 | `PUT` | `/plugins/{plugin_id}/toggle` | `admin` | mutating — needs a body; exercise it in §02 | **401/403** with no token · state actually changes only on a valid call |
 
 ## 14.3.readyz `readyz` — 1 routes · behaviour owned by §01
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-674 | `GET` | `/readyz` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/readyz` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-672 | `GET` | `/readyz` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/readyz` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.redoc `redoc` — 1 routes · behaviour owned by §01
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-675 | `GET` | `/redoc` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/redoc` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-673 | `GET` | `/redoc` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/redoc` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.sandbox `sandbox` — 4 routes · behaviour owned by §08
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-676 | `POST` | `/sandbox/execute` | `user` | mutating — needs a body; exercise it in §08 | **401/403** with no token · state actually changes only on a valid call |
-| API-677 | `GET` | `/sandbox/kernels` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/sandbox/kernels` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-678 | `POST` | `/sandbox/kernels/reset` | `user` | mutating — needs a body; exercise it in §08 | **401/403** with no token · state actually changes only on a valid call |
-| API-679 | `GET` | `/sandbox/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/sandbox/status` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-674 | `POST` | `/sandbox/execute` | `user` | mutating — needs a body; exercise it in §08 | **401/403** with no token · state actually changes only on a valid call |
+| API-675 | `GET` | `/sandbox/kernels` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/sandbox/kernels` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-676 | `POST` | `/sandbox/kernels/reset` | `user` | mutating — needs a body; exercise it in §08 | **401/403** with no token · state actually changes only on a valid call |
+| API-677 | `GET` | `/sandbox/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/sandbox/status` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.security `security` — 2 routes · behaviour owned by §08
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-680 | `GET` | `/security` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/security` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-681 | `GET` | `/security/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/security/status` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-678 | `GET` | `/security` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/security` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-679 | `GET` | `/security/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/security/status` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.sessions `sessions` — 13 routes · behaviour owned by §09
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-682 | `GET` | `/sessions` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/sessions` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-683 | `POST` | `/sessions/continue` | `admin` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-684 | `POST` | `/sessions/import` | `admin` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-685 | `POST` | `/sessions/resolve` | `admin` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-686 | `POST` | `/sessions/resume` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-687 | `GET` | `/sessions/todo` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/sessions/todo` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-688 | `DELETE` | `/sessions/{session_id}` | `admin` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-689 | `POST` | `/sessions/{session_id}/archive` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-690 | `POST` | `/sessions/{session_id}/pin` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-691 | `GET` | `/sessions/{session_id}/todo` | `user` | `GET $B/sessions/{session_id}/todo` with a real id from this group's list route | **200** with the plan for a live id · **200** with an empty list for an unknown one (no plan is kept for it) · **400** for an id that is not a session id — never a fabricated plan |
-| API-692 | `GET` | `/sessions/{session_id}/trajectories` | `admin` | `GET $B/sessions/{session_id}/trajectories` with a real id from this group's list route | **200** for a live id · **404** for a bogus one — never a fabricated record |
-| API-693 | `POST` | `/sessions/{session_id}/unarchive` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
-| API-694 | `POST` | `/sessions/{session_id}/unpin` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-680 | `GET` | `/sessions` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/sessions` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-681 | `POST` | `/sessions/continue` | `admin` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-682 | `POST` | `/sessions/import` | `admin` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-683 | `POST` | `/sessions/resolve` | `admin` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-684 | `POST` | `/sessions/resume` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-685 | `GET` | `/sessions/todo` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/sessions/todo` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-686 | `DELETE` | `/sessions/{session_id}` | `admin` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-687 | `POST` | `/sessions/{session_id}/archive` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-688 | `POST` | `/sessions/{session_id}/pin` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-689 | `GET` | `/sessions/{session_id}/todo` | `user` | `GET $B/sessions/{session_id}/todo` with a real id from this group's list route | **200** with the plan for a live id · **200** with an empty list for an unknown one (no plan is kept for it) · **400** for an id that is not a session id — never a fabricated plan |
+| API-690 | `GET` | `/sessions/{session_id}/trajectories` | `admin` | `GET $B/sessions/{session_id}/trajectories` with a real id from this group's list route | **200** for a live id · **404** for a bogus one — never a fabricated record |
+| API-691 | `POST` | `/sessions/{session_id}/unarchive` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
+| API-692 | `POST` | `/sessions/{session_id}/unpin` | `user` | mutating — needs a body; exercise it in §09 | **401/403** with no token · state actually changes only on a valid call |
 
 ## 14.3.skills `skills` — 3 routes · behaviour owned by §08
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-695 | `GET` | `/skills` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/skills` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-696 | `POST` | `/skills/import` | `user` | mutating — needs a body; exercise it in §08 | **401/403** with no token · state actually changes only on a valid call |
-| API-697 | `GET` | `/skills/imported` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/skills/imported` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-693 | `GET` | `/skills` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/skills` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-694 | `POST` | `/skills/import` | `user` | mutating — needs a body; exercise it in §08 | **401/403** with no token · state actually changes only on a valid call |
+| API-695 | `GET` | `/skills/imported` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/skills/imported` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.status `status` — 1 routes · behaviour owned by §01
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-698 | `GET` | `/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/status` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-696 | `GET` | `/status` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/status` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.sw-v2.js `sw-v2.js` — 1 routes · behaviour owned by §—
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-699 | `GET` | `/sw-v2.js` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/sw-v2.js` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-697 | `GET` | `/sw-v2.js` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/sw-v2.js` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.sw.js `sw.js` — 1 routes · behaviour owned by §06
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-700 | `GET` | `/sw.js` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/sw.js` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-698 | `GET` | `/sw.js` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/sw.js` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.tasks `tasks` — 1 routes · behaviour owned by §07
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-701 | `GET` | `/tasks` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/tasks` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-699 | `GET` | `/tasks` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/tasks` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.ticker `ticker` — 1 routes · behaviour owned by §03
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-702 | `GET` | `/ticker` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/ticker` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-700 | `GET` | `/ticker` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/ticker` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.tts `tts` — 2 routes · behaviour owned by §11
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-703 | `POST` | `/tts` | `user` | mutating — needs a body; exercise it in §11 | **401/403** with no token · state actually changes only on a valid call |
-| API-704 | `POST` | `/tts/stream` | `user` | mutating — needs a body; exercise it in §11 | **401/403** with no token · state actually changes only on a valid call |
+| API-701 | `POST` | `/tts` | `user` | mutating — needs a body; exercise it in §11 | **401/403** with no token · state actually changes only on a valid call |
+| API-702 | `POST` | `/tts/stream` | `user` | mutating — needs a body; exercise it in §11 | **401/403** with no token · state actually changes only on a valid call |
 
 ## 14.3.v1 `v1` — 2 routes · behaviour owned by §03
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-705 | `GET` | `/v1` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/v1` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-706 | `GET` | `/v1/capabilities` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/v1/capabilities` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-703 | `GET` | `/v1` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/v1` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-704 | `GET` | `/v1/capabilities` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/v1/capabilities` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.v2 `v2` — 4 routes · behaviour owned by §03
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-707 | `GET` | `/v2` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/v2` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-708 | `GET` | `/v2/manifest.webmanifest` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/v2/manifest.webmanifest` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-709 | `GET` | `/v2/sw-v2.js` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/v2/sw-v2.js` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-710 | `GET` | `/v2/{path:path}` | `open` | `GET $B/v2/{path:path}` with a real id from this group's list route | **200** for a live id · **404** for a bogus one — never a fabricated record |
+| API-705 | `GET` | `/v2` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/v2` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-706 | `GET` | `/v2/manifest.webmanifest` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/v2/manifest.webmanifest` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-707 | `GET` | `/v2/sw-v2.js` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/v2/sw-v2.js` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-708 | `GET` | `/v2/{path:path}` | `open` | `GET $B/v2/{path:path}` with a real id from this group's list route | **200** for a live id · **404** for a bogus one — never a fabricated record |
 
 ## 14.3.workspace `workspace` — 3 routes · behaviour owned by §7 of `docs/business/WORKSPACE_PILOT_SPEC.md`
 
 | ID | Method | Path | Tier | Probe | Expect |
 |----|--------|------|------|-------|--------|
-| API-711 | `GET` | `/workspace` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/workspace` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-712 | `GET` | `/workspace/` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/workspace/` | **200** — or a documented 4xx/503 whose body says honestly why |
-| API-713 | `GET` | `/workspace/{path:path}` | `open` | `GET $B/workspace/{path:path}` with a real id from this group's list route | **200** for a live id · **404** for a bogus one — never a fabricated record |
+| API-709 | `GET` | `/workspace` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/workspace` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-710 | `GET` | `/workspace/` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/workspace/` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-711 | `GET` | `/workspace/{path:path}` | `open` | `GET $B/workspace/{path:path}` with a real id from this group's list route | **200** for a live id · **404** for a bogus one — never a fabricated record |
 
 ## 14.Z Coverage ledger
 
 | Pass | Routes | Needs | Records |
 |---|---|---|---|
-| A — existence & honesty | 287 read routes | booted server | one line per non-200 |
-| B — tier enforcement | ≥20 sampled + all 84 `open` | 🌐 second device | expected vs actual code per route |
+| A — existence & honesty | 285 read routes | booted server | one line per non-200 |
+| B — tier enforcement | ≥20 sampled + all 83 `open` | 🌐 second device | expected vs actual code per route |
 | C — payload leak hunt | every `user`/`open` collection route | booted server | body excerpt per suspected leak |
 | Mutating routes | 371 | see the §-pointer per group | exercised by owning section, not here |
-| **Total enumerated** | **713** | — | — |
+| **Total enumerated** | **711** | — | — |
 
 ## Open gaps found while writing
 
-- The `open` tier is the largest unaudited attack surface in the sweep (84 routes). Pass C is the only thing standing between it and a tier leak; budget real time for it rather than treating it as a formality.
+- The `open` tier is the largest unaudited attack surface in the sweep (83 routes). Pass C is the only thing standing between it and a tier leak; budget real time for it rather than treating it as a formality.
 - Templated read routes (`{id}` paths) are skipped by the Pass-A driver because they need a live id. They are covered by their owning sections — but that means a broken templated route can only be caught there, so do not treat a green Pass A as full read coverage.
 - Mutating routes are deliberately not fired here. A sweep that POSTs blindly across 371 routes would mutate the owner's real state — the opposite of a safe manual.
 

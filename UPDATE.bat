@@ -1,7 +1,7 @@
 @echo off
 REM ============================================================
 REM  JARVIS HUB - UPDATE & TEST  (Windows 11, double-click)
-REM  Pulls latest from GitHub, installs deps (JARVIS + WorldView), runs the tests.
+REM  Pulls latest from GitHub, installs deps (Nerva), runs the tests.
 REM  No terminal knowledge needed - just double-click this file.
 REM ============================================================
 setlocal enabledelayedexpansion
@@ -26,7 +26,7 @@ if %errorlevel% neq 0 (
 )
 
 REM --- 2. Pull latest from GitHub -----------------------------
-echo [1/5] Pulling the latest changes from GitHub...
+echo [1/4] Pulling the latest changes from GitHub...
 git pull --rebase origin main
 if %errorlevel% neq 0 (
   echo.
@@ -37,37 +37,20 @@ if %errorlevel% neq 0 (
 echo.
 
 REM --- 3. Virtual env + dependencies --------------------------
-echo [2/5] Preparing the Python environment (.venv)...
+echo [2/4] Preparing the Python environment (.venv)...
 if not exist ".venv\Scripts\python.exe" (
   echo     Creating the virtual environment for the first time...
   %PY% -m venv .venv
 )
 set "VPY=.venv\Scripts\python.exe"
 
-echo [3/5] Installing JARVIS dependencies...
+echo [3/4] Installing JARVIS dependencies...
 "%VPY%" -m pip install --quiet --upgrade pip
 "%VPY%" -m pip install --quiet -r requirements-beta.txt
 echo.
 
-REM --- 4. WorldView: refresh Node dependencies (if present) ----
-echo [4/5] WorldView: updating Node dependencies...
-if exist "worldview\package.json" (
-  where npm >nul 2>&1
-  if !errorlevel!==0 (
-    pushd worldview
-    call npm install
-    popd
-    echo   [OK] WorldView updated.
-  ) else (
-    echo   [SKIP] npm not found - skipping WorldView ^(JARVIS is updated^).
-  )
-) else (
-  echo   [SKIP] worldview is missing in this checkout.
-)
-echo.
-
-REM --- 5. Run the tests ---------------------------------------
-echo [5/5] Running the tests...
+REM --- 4. Run the tests ---------------------------------------
+echo [4/4] Running the tests...
 echo ------------------------------------------------------------
 "%VPY%" -m pytest -q
 set "TESTRC=%errorlevel%"

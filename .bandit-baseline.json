@@ -3148,19 +3148,6 @@
       "nosec": 0,
       "skipped_tests": 0
     },
-    "agents/core/mcp/worldview_write.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 187,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
     "agents/core/media_catalog.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -3561,19 +3548,6 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 115,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "agents/core/memory/worldview_sync.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 134,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4523,19 +4497,6 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 56,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "agents/core/plugins/worldview.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 141,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -5592,19 +5553,6 @@
       "nosec": 0,
       "skipped_tests": 0
     },
-    "agents/core/routers/worldview.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 40,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
     "agents/core/routers/wyoming.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -5927,19 +5875,6 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 46,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "agents/core/security/worldview_mcp.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 114,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -8387,34 +8322,6 @@
         18,
         19,
         20
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b107_hardcoded_password_default.html",
-      "test_id": "B107",
-      "test_name": "hardcoded_password_default"
-    },
-    {
-      "code": "38 \n39     def __init__(self, api_url: str = \"\", api_token: str = \"\"):\n40         # Local-first default; override with WORLDVIEW_API_URL for a remote deployment.\n41         self.api_url = (api_url or DEFAULT_API_URL).rstrip(\"/\")\n42         # F-06: when WorldView auth is enabled (authSecret), the bridge must present a\n43         # read-scoped bearer token. Off by default (local, auth-disabled) \u2192 no header,\n44         # unchanged behavior. Set WORLDVIEW_API_TOKEN to authenticate the bridge.\n45         import os\n46         self.api_token = (api_token or os.environ.get(\"WORLDVIEW_API_TOKEN\", \"\")).strip()\n47         self.client = PluginHTTPClient.for_plugin(\"worldview\")\n48 \n",
-      "col_offset": 4,
-      "end_col_offset": 62,
-      "filename": "agents/core/plugins/worldview.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 259,
-        "link": "https://cwe.mitre.org/data/definitions/259.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Possible hardcoded password: ''",
-      "line_number": 39,
-      "line_range": [
-        39,
-        40,
-        41,
-        42,
-        43,
-        44,
-        45,
-        46,
-        47
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b107_hardcoded_password_default.html",
       "test_id": "B107",

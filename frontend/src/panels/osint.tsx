@@ -6,7 +6,7 @@
 
    1. /api/osint/correlate and /api/osint/brief FETCH NOTHING. They are pure functions of
       the body (correlate.py:143 / :196) — no network, no store, no action. Live collection
-      (SpiderFoot, the WorldView REST, news feeds) is owner-gated wiring, not reachable from
+      (SpiderFoot, news feeds) is owner-gated wiring, not reachable from
       here, and nothing survives a reload. So the evidence editor is the real, designed input:
       `_TRUSTED_EVIDENCE_SOURCES = {"manual", "operator"}` (correlate.py:33) are labels that
       exist ONLY for a human typing evidence — no agent path posts to these HTTP routes.
@@ -331,8 +331,7 @@ export function OsintPanel() {
         <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
           User-tier POST (X-User-Token), not admin. {CORRELATE_PATH} and {BRIEF_PATH} correlate only the
           evidence typed above: they never fetch, never store and never act, so nothing survives a reload
-          and nothing here is queued, escalated or written back. Live collection (SpiderFoot, the WorldView
-          REST, news feeds) is owner-gated wiring and is not reachable from this panel. The brief view calls
+          and nothing here is queued, escalated or written back. Live collection (SpiderFoot, news feeds) is owner-gated wiring and is not reachable from this panel. The brief view calls
           the correlator internally, so its counts are the same numbers over the same drawer — only the
           headline and the top-N truncation are new.
         </div>

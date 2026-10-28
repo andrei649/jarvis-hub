@@ -9,7 +9,7 @@
  * assert the SAME vector file (tests/_fixtures/orb_visual_vectors.json) from
  * their own suite — this file covers the browser, and
  * `mobile/src/voice/__tests__/orbVisual.test.ts` covers native. That mirrors the
- * repo's existing cross-language WorldView capability vectors (a shared fixture
+ * repo's prior cross-language WorldView capability vectors (a shared fixture
  * checked by two independent suites) rather than importing across the two
  * tsconfig boundaries, which does not resolve (mobile extends expo's base).
  */

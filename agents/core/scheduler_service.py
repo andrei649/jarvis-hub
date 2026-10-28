@@ -1,16 +1,14 @@
 """scheduler_service.py — APScheduler wiring extracted from the Orchestrator (CLN-2).
 
 Owns the registration of the cron/interval jobs (daily digests, the autonomy
-budget reset, the learning-loop promotions, the log-bug scans, and the optional
-WorldView KG sync) plus the job bodies that have no external callers. It holds a
+budget reset, the learning-loop promotions, the log-bug scans) plus the job bodies that have no external callers. It holds a
 back-reference to the orchestrator and reads its live collaborators
 (heartbeat_scheduler, autonomy, log_scanner, channels, settings) at call time —
 the same delegation pattern as ComponentRegistry / ChannelManager.
 
-Two job bodies deliberately stay on the Orchestrator because callers reach them
-there: ``_run_learning_loop`` (the admin endpoint ``POST /api/learning/propose``)
-and ``_run_worldview_kg_sync`` (invoked unbound in tests). This service registers
-those via the orchestrator back-ref.
+The learning-loop job body stays on the Orchestrator because the admin endpoint
+``POST /api/learning/propose`` reaches it there. This service registers it via
+the orchestrator back-reference.
 """
 
 from __future__ import annotations
@@ -40,7 +38,6 @@ class SchedulerService:
         self.schedule_log_scans()
         self.schedule_learning_loop()
         self.schedule_daily_budget_reset()
-        self.schedule_worldview_kg_sync()
         self.schedule_retention()
         self.schedule_session_lifecycle()
         self.schedule_exec_cache_prune()
@@ -154,33 +151,6 @@ class SchedulerService:
         except Exception as e:
             logger.warning(f"Failed to schedule log scans: {e}")
 
-    def schedule_worldview_kg_sync(self):
-        """Periodically sync the WorldView ontology into the knowledge graph (H19.3.5).
-
-        OFF by default — like the Oracle watcher, a privacy-first local product should not
-        poll a service unsolicited. Enable with JARVIS_WORLDVIEW_KG_SYNC=1 or the
-        `worldview.kg_sync_enabled` setting. Each pass degrades to a no-op when WorldView
-        is unreachable (the plugin fails closed), so an enabled-but-offline deployment is
-        harmless. Skipped under JARVIS_TESTING.
-        """
-        from agents.core.env_config import env_flag
-        if env_flag("JARVIS_TESTING"):
-            return
-        enabled = env_flag("JARVIS_WORLDVIEW_KG_SYNC") or self._orch.get_setting(
-            "worldview.kg_sync_enabled", False
-        )
-        if not enabled:
-            return
-        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        interval = max(60, int(self._orch.get_setting("worldview.kg_sync_interval", 900)))
-        try:
-            sched.add_job(self.run_worldview_kg_sync, "interval", seconds=interval,
-                          id="worldview-kg-sync", replace_existing=True)
-            logger.info("Scheduled WorldView KG sync every %ss", interval)
-        except Exception as e:
-            logger.warning(f"Failed to schedule WorldView KG sync: {e}")
 
     def schedule_retention(self):
         """The data lifecycle sweep (H23.10, H262) — archive idle chats, prune what is past
@@ -509,10 +479,6 @@ class SchedulerService:
             return dict(DEFERRED_ON_BATTERY)
         return await self._orch._run_prompt_evolution()
 
-    async def run_worldview_kg_sync(self):
-        if await self._deferred_on_battery():
-            return dict(DEFERRED_ON_BATTERY)
-        return await self._orch._run_worldview_kg_sync()
 
     async def run_tech_scout(self):
         """Run one tech-scout pass, reading live settings each time (H27-self-improve)."""
