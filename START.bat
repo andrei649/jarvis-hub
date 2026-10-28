@@ -86,8 +86,6 @@ if not exist "services\signal-layer\src\index.mjs" (
   echo [SKIP] services\signal-layer is missing - skipping Signal Layer.
   goto :eof
 )
-if not defined JARVIS_SIGNAL_LAYER_MODE (
-)
 if not defined JARVIS_SIGNAL_LAYER_MODE set "JARVIS_SIGNAL_LAYER_MODE=replay"
 if not defined SIGNAL_LAYER_HOST set "SIGNAL_LAYER_HOST=127.0.0.1"
 if not defined SIGNAL_LAYER_PORT set "SIGNAL_LAYER_PORT=8787"
