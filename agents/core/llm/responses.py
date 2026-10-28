@@ -64,9 +64,14 @@ class ResponsesBackend(AdmittedClientMixin, LLMBackend):
         self.retention = retention
         self.profile = profile or DEFAULT_REGISTRY.get("openai-responses")
         require_profile_kind(self.profile, "openai-responses", "responses")
-        require_profile_base(self.profile, ENDPOINT.rsplit("/", 1)[0])
+        from .providers.selected_runtime import current_construction
+        selected = current_construction()
+        if selected is None:
+            require_profile_base(self.profile, ENDPOINT.rsplit("/", 1)[0])
+        self.endpoint = (str(self.profile.default_base_url).rstrip('/') + '/responses'
+                         if selected is not None else ENDPOINT)
         if isinstance(self.profile, AdmittedProviderProfile):
-            if (model not in MODELS
+            if (model not in (self.profile.fallback_models if selected is not None else MODELS)
                     or transport is not None and type(transport) is not httpx.MockTransport):
                 raise ResponsesRefused()
             self.client = native_admitted_client(
@@ -84,7 +89,8 @@ class ResponsesBackend(AdmittedClientMixin, LLMBackend):
         from .provider_replay import KEY
 
         profile = profile or self.profile
-        if not isinstance(model, str) or model not in MODELS:
+        allowed = self.profile.fallback_models if isinstance(self.profile, AdmittedProviderProfile) else MODELS
+        if not isinstance(model, str) or model not in allowed:
             raise ResponsesRefused()
         if any(type(row) is dict and KEY in row for row in messages):
             raise ResponsesRefused()
@@ -122,7 +128,8 @@ class ResponsesBackend(AdmittedClientMixin, LLMBackend):
 
 
     async def _prepared_payload(self, model, messages, max_tokens, temperature, tools=()):
-        if not isinstance(model, str) or model not in MODELS:
+        allowed = self.profile.fallback_models if isinstance(self.profile, AdmittedProviderProfile) else MODELS
+        if not isinstance(model, str) or model not in allowed:
             raise ResponsesRefused()
         profile = await prepare_admitted_profile(
             self.profile, model=model, messages=messages,

@@ -21,6 +21,7 @@ Set JARVIS_DEEP_MODEL env var to override the deep-slot model name.
 Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -206,6 +207,8 @@ class HybridRouter(LLMRouter):
         # policies like athena are policy, not fallback). Re-synced live by the
         # orchestrator's settings watcher via set_cloud_fallback_mode().
         self._cloud_fallback_mode = "on-demand"
+        self._selected_provider_runtime = None
+        self._selected_provider_required = False
 
         # Routing size thresholds (prompt INPUT tokens), live-tunable from /admin
         # via set_local_max / set_flash_max (settings watcher). Default to the
@@ -290,6 +293,15 @@ class HybridRouter(LLMRouter):
         )
 
     async def detect(self):
+        previous_selected = getattr(self, '_selected_provider_runtime', None)
+        if previous_selected is not None:
+            previous_selected.retire()
+        previous_builtin = getattr(self, '_before_selected_compatible', None)
+        if previous_builtin is not None:
+            await self._close_backend(previous_builtin[0])
+            self._before_selected_compatible = None
+        self._selected_provider_runtime = None
+        self._selected_provider_required = False
         # Re-detection (admin "reconnect") rebuilds the cloud/Ollama backends;
         # close the prior instances first so their pooled httpx.AsyncClient
         # sockets are not leaked until process exit (mirrors aclose()).
@@ -454,10 +466,79 @@ class HybridRouter(LLMRouter):
         else:
             logger.warning("Ollama not available — Howard will fall back to default backend")
 
+        # A signed owner choice is independent of the legacy compatible pair.
+        # Read/construct off the loop; a stale selected choice never becomes a
+        # reason to route to some other cloud provider.
+        from agents.core.app_state import get_orch
+
+        from .providers.install_service import get_install_service
+        service = get_install_service(get_orch())
+        if service is not None:
+            await self.refresh_selected(service)
+
         # Re-stamp: `super().detect()` stamped after the LOCAL probe, but the cloud,
         # Claude and Ollama flags above were measured after that. The age reported by
         # `/readyz` must cover every flag this method sets, not just the first.
         self._mark_probed()
+
+    async def refresh_selected(self, service):
+        """Apply an owner CAS locally without probing providers or changing local routes."""
+        from .backend_factory import construct_selected_backend
+        from .provider_selection import read_selection
+
+        selected = await asyncio.to_thread(read_selection)
+        previous = self._selected_provider_runtime
+        if selected is None:
+            if previous is not None or self._selected_provider_required:
+                if previous is not None:
+                    previous.retire()
+                old = self._compatible_backend if previous is not None else None
+                baseline = getattr(self, '_before_selected_compatible', None)
+                if baseline is not None:
+                    (self._compatible_backend, self._compatible_model,
+                     self._compatible_provider_id, self._cloud_available) = baseline
+                else:
+                    self._compatible_backend = None
+                self._before_selected_compatible = None
+                self._selected_provider_runtime = None
+                if old is not None:
+                    await self._close_backend(old)
+            self._selected_provider_required = False
+            return
+        self._selected_provider_required = True
+        if previous is not None and previous.active and previous.selection == selected:
+            return
+        if previous is None and getattr(self, '_before_selected_compatible', None) is None:
+            self._before_selected_compatible = (self._compatible_backend,
+                                                self._compatible_model,
+                                                self._compatible_provider_id,
+                                                self._cloud_available)
+        backend = None
+        try:
+            runtime = await asyncio.to_thread(service.selected_runtime)
+            if runtime is None or runtime.selection != selected:
+                raise ValueError('selected binding changed')
+            backend = construct_selected_backend(runtime)
+            runtime.bind_backend(backend, self)
+            await asyncio.to_thread(runtime.check)
+        except Exception:
+            logger.error('selected signed provider construction refused')
+            if backend is not None:
+                await self._close_backend(backend)
+            if previous is not None:
+                previous.retire()
+                await self._close_backend(self._compatible_backend)
+            self._selected_provider_runtime = None
+            self._compatible_backend = None
+            return
+        if previous is not None:
+            previous.retire()
+            await self._close_backend(self._compatible_backend)
+        self._selected_provider_runtime = runtime
+        self._compatible_backend = backend
+        self._compatible_provider_id = runtime.binding.provider_id
+        self._compatible_model = runtime.binding.model
+        self._cloud_available = True
 
     def _availability_changed(self, lm_up: bool, ol_up: bool) -> bool:
         """Howard's Ollama is tracked separately from the primary backend.
@@ -520,6 +601,7 @@ class HybridRouter(LLMRouter):
         compatible = getattr(self, "_compatible_backend", None)
         if compatible is not None and route.startswith("cloud"):
             backend, model, route = compatible, self._compatible_model, "cloud-compatible"
+        self._check_selected_cloud_route(backend, model, route)
         if (getattr(self, "_compatible_provider_id", "") == "deepinfra"
                 and route.startswith("cloud") and compatible is None):
             raise LocalBackendUnavailableError("explicit DeepInfra main route is unavailable")
@@ -535,6 +617,7 @@ class HybridRouter(LLMRouter):
             backend, model, route = compatible, self._compatible_model, "cloud-compatible"
         from .job_selection import apply_selection
         backend, model, route = apply_selection(self, agent_id, backend, model, route)
+        self._check_selected_cloud_route(backend, model, route)
         if (getattr(self, "_compatible_provider_id", "") == "deepinfra"
                 and route.startswith("cloud")
                 and getattr(self, "_compatible_backend", None) is None):
@@ -542,6 +625,35 @@ class HybridRouter(LLMRouter):
                 "explicit DeepInfra main route is unavailable")
         self._enforce_approved_models(agent_id, model, route)
         return backend, model, route
+
+    def _check_selected_cloud_route(self, backend, model, route):
+        """A changed cross-process selection cannot fall through a stale router."""
+        if not route.startswith('cloud'):
+            return
+        from pathlib import Path
+
+        from agents.core import settings_db
+
+        from .provider_selection import read_selection
+        from .providers import selection_gates
+
+        runtime = getattr(self, '_selected_provider_runtime', None)
+        if selection_gates.fcntl is None and runtime is None:
+            return  # Signed selection cannot be committed on this host.
+        if not Path(settings_db.DB_PATH).exists() and runtime is None:
+            return
+        try:
+            selected = read_selection()
+        except Exception as exc:
+            raise LocalBackendUnavailableError('selected signed provider state is unreadable') from exc
+        if selected is None:
+            if runtime is not None or getattr(self, '_selected_provider_required', False):
+                raise LocalBackendUnavailableError('selected signed provider changed')
+            return
+        effective = getattr(backend, '_backend', backend)
+        if (runtime is None or runtime.selection != selected or not runtime.active
+                or effective is not runtime.backend or model != runtime.binding.model):
+            raise LocalBackendUnavailableError('selected signed provider is unavailable')
 
     def check_data_handling(self, backend, model, route="", *, actual_use=True):
         """Fresh H513 dispatch check; never wrap or replace the selected backend."""
@@ -803,3 +915,7 @@ class HybridRouter(LLMRouter):
             if backend is not None:
                 await self._close_backend(backend)
                 setattr(self, attr, None)
+        baseline = getattr(self, '_before_selected_compatible', None)
+        if baseline is not None:
+            await self._close_backend(baseline[0])
+            self._before_selected_compatible = None

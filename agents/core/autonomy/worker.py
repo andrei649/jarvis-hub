@@ -233,6 +233,10 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # Signed provider admission runs in ProviderPackageStore.promote through the
     # Action Kernel. This worker has no plugin.load executor returning `failed`.
     "plugin.load": (),
+    # Owner credential and selection mutations run in ProviderInstallService
+    # under their own exact Kernel receipts. This worker runs neither action.
+    "provider.credential": (),
+    "provider.selection": (),
     # node.dispatch — NodeMesh.execute re-authorises at action time: NodeMesh._authorize
     # and security.capability.authorize (``kill-switch engaged for scope '<scope>'``
     # matches by prefix, below). ``capability_broker_unavailable`` is not one: the

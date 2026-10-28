@@ -71,6 +71,8 @@ class AdmittedProviderProfile(ProviderProfile):
         configured = self.auth_type == 'none'
         result['configured'] = configured
         result['auth']['configured'] = configured
+        result['selection_required'] = True
+        result['routable'] = False
         return result
 
 

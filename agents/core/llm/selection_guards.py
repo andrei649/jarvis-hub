@@ -130,6 +130,11 @@ def register(guard: Guard) -> Guard:
 def cost_guard(choice: Choice) -> Finding | None:
     if not choice.model:
         return None
+    if _current_signed_choice(choice):
+        # The static table describes built-in billing only. Selection already
+        # required an audited unknown-price acknowledgement for this exact
+        # signed binding; a matching model name does not supply vendor pricing.
+        return None
     line = _cost_line()
     price = price_of(choice.model)
     if line <= 0 or price is None or price["output"] < line:
@@ -140,12 +145,43 @@ def cost_guard(choice: Choice) -> Finding | None:
                    {"input": price["input"], "output": price["output"], "threshold": line})
 
 
+def _current_signed_choice(choice: Choice) -> bool:
+    if not choice.provider or not choice.model:
+        return False
+    _service, selected = _selected_service_record()
+    return (selected is not None and selected.binding.provider_id == choice.provider
+            and selected.binding.model == choice.model)
+
+
+def _selected_service_record():
+    from agents.core.app_state import get_orch
+
+    from .provider_selection import read_selection
+    from .providers.install_service import get_install_service
+
+    orch = get_orch()
+    if get_install_service(orch) is None:
+        return None, None
+    runtime = getattr(getattr(orch, 'llm_router', None), '_selected_provider_runtime', None)
+    return runtime, read_selection()
+
+
 def _profiles_for(provider: str):
     if provider:
+        runtime, selected = _selected_service_record()
+        if selected is not None and selected.binding.provider_id == provider:
+            # A signed replacement can use a built-in identity. The signed
+            # declaration wins over the name in the built-in profile table.
+            from .providers.selected_runtime import SelectedProviderRuntime
+
+            return ([runtime.profile] if type(runtime) is SelectedProviderRuntime
+                    and runtime.active and runtime.selection == selected else [])
         try:
             return [get_profile(provider)]
         except KeyError:
-            pass
+            # An explicit unknown provider never inherits another vendor's
+            # declaration just because no signed runtime is currently ready.
+            return []
     return list_profiles()
 
 

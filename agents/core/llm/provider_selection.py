@@ -40,6 +40,8 @@ class SelectionBinding:
     endpoint: str
     auth_type: str
     credential_generation: int
+    unknown_price_ack: bool = False
+    data_policy_ack: bool = False
 
     def __post_init__(self):
         try:
@@ -62,7 +64,9 @@ class SelectionBinding:
                 or self.auth_type not in {'bearer', 'api-key', 'none'}
                 or type(self.credential_generation) is not int
                 or not 0 <= self.credential_generation < 2**63 - 1
-                or (self.credential_generation == 0) != (self.auth_type == 'none')):
+                or (self.credential_generation == 0) != (self.auth_type == 'none')
+                or type(self.unknown_price_ack) is not bool
+                or type(self.data_policy_ack) is not bool):
             raise SelectionInvalid('invalid signed selection metadata')
 
 
@@ -172,3 +176,33 @@ def compare_and_swap(path: str | Path | None, binding: SelectionBinding,
         if _read(target) != (next_revision, binding):
             raise SelectionInvalid('selection durable readback failed')
     return SelectionRecord(next_revision, binding)
+
+
+def compare_and_clear(path: str | Path | None = None, *, expected_revision: int) -> int:
+    """Clear the exact revision under the same signed gate as selection CAS."""
+    from agents.core import settings_db
+
+    if type(expected_revision) is not int or expected_revision < 0:
+        raise SelectionInvalid('invalid signed selection clear')
+    target = _path(path)
+    with selection_gates.exclusive(target, signed=True):
+        settings_db._ensure_init()
+        conn = settings_db.get_conn()
+        next_revision = expected_revision + 1
+        try:
+            with conn:
+                revision, binding = _row(conn)
+                if revision != expected_revision:
+                    raise SelectionConflict('selection revision changed')
+                if binding is None:
+                    raise SelectionInvalid('no signed selection to clear')
+                cur = conn.execute(
+                    'UPDATE signed_provider_selection SET revision=?,record_json=NULL,record_hash=NULL '
+                    'WHERE singleton=1 AND revision=?', (next_revision, expected_revision))
+                if cur.rowcount != 1 or _row(conn) != (next_revision, None):
+                    raise SelectionInvalid('selection clear readback failed')
+        finally:
+            conn.close()
+        if _read(target) != (next_revision, None):
+            raise SelectionInvalid('selection clear durable readback failed')
+    return next_revision

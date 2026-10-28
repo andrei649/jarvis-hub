@@ -663,7 +663,21 @@ async def provider_packages_decision(proposal_id: str, body: ProviderPackageDeci
 @router.post("/api/llm/provider-packages/proposals/{proposal_id}/promote",
              dependencies=[Depends(admin_guard)])
 async def provider_packages_promote(proposal_id: str, request: Request):
-    return await _provider_install_call(request, "promote", proposal_id)
+    from agents.core.llm.providers import lifecycle_gates
+    from agents.core.llm.providers.packages import ProviderPackageError
+
+    try:
+        service, actor = await _provider_install_worker(_provider_install_context, request)
+        provider = await _provider_install_worker(
+            lambda: service.promotion_target(proposal_id, actor=actor))
+        store = await _provider_install_worker(lambda: service._store(actor=actor))
+        await lifecycle_gates.quiesce(service.root, provider, store)
+        result = await _provider_install_worker(lambda: service.promote(proposal_id, actor=actor))
+        return nocache_json(result)
+    except HTTPException:
+        raise
+    except (ProviderPackageError, ValueError, TypeError, KeyError, OSError):
+        raise HTTPException(status_code=409, detail="provider_install_refused") from None
 
 
 @router.post("/api/llm/provider-packages/{provider_id}/revoke",

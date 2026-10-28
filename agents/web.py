@@ -1789,6 +1789,7 @@ from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E
 from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 from agents.core.routers.provider_credentials import router as _provider_credentials_router  # noqa: E402
+from agents.core.routers.provider_selection import router as _provider_selection_router  # noqa: E402
 from agents.core.routers.multimodal import router as _multimodal_router  # noqa: E402
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.provenance import router as _provenance_router  # noqa: E402
@@ -1874,6 +1875,7 @@ app.include_router(_hermes_runtime_router)
 app.include_router(_missions_router)
 app.include_router(_models_llm_router)
 app.include_router(_provider_credentials_router)
+app.include_router(_provider_selection_router)
 app.include_router(_oauth_router)
 app.include_router(_brain_router)
 app.include_router(_swarm_router)

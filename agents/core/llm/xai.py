@@ -63,10 +63,16 @@ class XAIBackend(ResponsesBackend):
                         profile_with_declarations(
                             profile or XAI_PROFILE, effort_declarations, defaults=GROK_LEVELS))
         require_profile_kind(self.profile, 'xai-responses', 'responses')
-        require_profile_base(self.profile, self.endpoint.rsplit('/', 1)[0])
+        from .providers.selected_runtime import current_construction
+        selected = current_construction()
+        if selected is None:
+            require_profile_base(self.profile, self.endpoint.rsplit('/', 1)[0])
+        else:
+            self.endpoint = str(self.profile.default_base_url).rstrip('/') + '/responses'
         self._replay_owner = object()
         if isinstance(self.profile, AdmittedProviderProfile):
-            if (model not in XAI_PROFILE.fallback_models
+            if (model not in (self.profile.fallback_models if selected is not None
+                              else XAI_PROFILE.fallback_models)
                     or transport is not None and type(transport) is not httpx.MockTransport):
                 raise ResponsesRefused()
             self.client = native_admitted_client(

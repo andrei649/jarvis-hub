@@ -6,6 +6,7 @@ actor string or ambient principal can become permanent approval authority.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import tempfile
@@ -37,6 +38,8 @@ _PREVIEW_CAPABILITIES = {'chat', 'cloud', 'local', 'vision', 'streaming',
                          'model-catalog', 'long-context'}
 _CREDENTIAL_RECEIPT: ContextVar[tuple | None] = ContextVar(
     'signed_provider_credential_receipt', default=None)
+_SELECTION_RECEIPT: ContextVar[tuple | None] = ContextVar(
+    'signed_provider_selection_receipt', default=None)
 
 
 def _owner_current(actor):
@@ -53,6 +56,13 @@ def credential_receipt_matches(action):
     return (receipt is not None and receipt[2] is action
             and receipt[4] == threading.get_ident()
             and receipt[0].enabled() is True and _owner_current(receipt[3]))
+
+
+def selection_receipt_matches(action):
+    receipt = _SELECTION_RECEIPT.get()
+    return (receipt is not None and receipt[1] is action
+            and receipt[3] == threading.get_ident()
+            and receipt[0].enabled() is True and _owner_current(receipt[2]))
 
 
 class ProviderInstallService:
@@ -208,16 +218,47 @@ class ProviderInstallService:
 
     def promote(self, proposal_id, *, actor):
         self._owner(actor)
-        return {'status': 'active', **self.preview(self._store(actor=actor).promote(proposal_id))}
+        from . import lifecycle_gates
+
+        store = self._store(actor=actor)
+        with store._locked():
+            state = store._load()
+            proposal = state['proposals'].get(proposal_id)
+            if proposal is None:
+                raise ProviderPackageError('provider proposal unavailable')
+            record = store._record(state['artifacts'][proposal['artifact_id']])
+        with lifecycle_gates.exclusive(self.root, record.provider_id):
+            self._owner(actor)
+            return {'status': 'active', **self.preview(store.promote(proposal_id))}
+
+    def promotion_target(self, proposal_id, *, actor):
+        """Nonsecret provider identity for the owner's pre-mutation reader drain."""
+        self._owner(actor)
+        store = self._store(actor=actor)
+        with store._locked():
+            state = store._load()
+            proposal = state['proposals'].get(proposal_id)
+            if proposal is None:
+                raise ProviderPackageError('provider proposal unavailable')
+            return store._record(state['artifacts'][proposal['artifact_id']]).provider_id
 
     def revoke(self, provider_id, *, actor):
+        from . import lifecycle_gates
+
         self._owner(actor)
-        self._store().revoke(provider_id)
+        with lifecycle_gates.exclusive(self.root, provider_id):
+            self._owner(actor)
+            self._store().revoke(provider_id)
         return {'provider_id': provider_id, 'status': 'revoked'}
 
     async def revoke_async(self, provider_id, *, actor):
+        from . import lifecycle_gates
+
         self._owner(actor)
-        await self._store().revoke_async(provider_id)
+        await lifecycle_gates.quiesce(self.root, provider_id, self._store(actor=actor))
+        with lifecycle_gates.exclusive(self.root, provider_id):
+            self._owner(actor)
+            await self._store().revoke_async(provider_id)
         return {'provider_id': provider_id, 'status': 'revoked'}
 
     def _credentials(self):
@@ -243,6 +284,14 @@ class ProviderInstallService:
             return self._credentials().status(credential_binding(record, self.home))
 
     def _credential_mutation(self, provider_id, package_hash, value, *, actor, operation):
+        from . import lifecycle_gates
+
+        self._owner(actor)
+        with lifecycle_gates.exclusive(self.root, provider_id):
+            return self._credential_mutation_locked(provider_id, package_hash, value,
+                                                    actor=actor, operation=operation)
+
+    def _credential_mutation_locked(self, provider_id, package_hash, value, *, actor, operation):
         from agents.core.action_origin import current_action_origin
         from agents.core.kernel import kernel_enabled
         from agents.core.security.types import SecurityEvent, SecurityEventType
@@ -304,6 +353,176 @@ class ProviderInstallService:
     def delete_credential(self, provider_id, package_hash, *, actor):
         return self._credential_mutation(provider_id, package_hash, None,
                                          actor=actor, operation='delete')
+
+    def selection_status(self, *, actor):
+        from agents.core.llm.provider_selection import read_selection
+
+        from .selected_runtime import SelectedProviderRuntime
+
+        self._owner(actor)
+        selected = read_selection()
+        if selected is None:
+            return {'status': 'unselected'}
+        b = selected.binding
+        try:
+            SelectedProviderRuntime(self, selected)
+            state = 'selected'
+        except (ProviderPackageError, KeyError, ValueError):
+            state = 'stale'
+        return {'status': state, 'provider': b.provider_id, 'model': b.model,
+                'package_hash': b.package_hash, 'revision': selected.revision,
+                'credential_generation': b.credential_generation}
+
+    def selected_runtime(self):
+        from agents.core.llm.provider_selection import read_selection
+
+        from .selected_runtime import SelectedProviderRuntime
+
+        self._ready()
+        selection = read_selection()
+        return SelectedProviderRuntime(self, selection) if selection is not None else None
+
+    def _selection_authorize(self, binding, *, operation, revision, actor,
+                             price_ack, data_ack):
+        from agents.core.action_origin import current_action_origin
+        from agents.core.kernel import kernel_enabled
+        from agents.core.security.types import SecurityEvent, SecurityEventType
+
+        if not kernel_enabled() or not callable(getattr(self.audit, 'log', None)):
+            raise ProviderPackageError('selection kernel or audit unavailable')
+        scope_digest = hashlib.sha256(json.dumps(
+            [binding.authority, binding.home, binding.provider_id, binding.source,
+             binding.artifact_id, binding.package_hash, binding.endpoint, binding.model,
+             binding.credential_generation, revision + 1, operation],
+            sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        action = Action(
+            kind='provider.selection', agent='jarvis',
+            title='Owner signed provider selection', origin=current_action_origin(),
+            scope='provider:' + binding.provider_id,
+            payload={'schema': 'provider-selection-v1', 'authority': binding.authority,
+                     'home': binding.home, 'provider_id': binding.provider_id,
+                     'source': binding.source, 'artifact_id': binding.artifact_id,
+                     'package_hash': binding.package_hash, 'endpoint': binding.endpoint,
+                     'auth_type': binding.auth_type, 'model': binding.model,
+                     'operation': operation, 'current_revision': revision,
+                     'selected_revision': revision + 1,
+                     'credential_generation': binding.credential_generation,
+                     'scope_sha256': scope_digest,
+                     'price_ack': price_ack, 'data_ack': data_ack,
+                     'risk_tier': 3, 'irreversible': True})
+        token = _SELECTION_RECEIPT.set((self, action, actor, threading.get_ident()))
+        try:
+            gate = self.kernel()
+            if not callable(gate):
+                raise ProviderPackageError('selection kernel unavailable')
+            decision = gate(action, approval_check=lambda candidate: candidate is action
+                            and selection_receipt_matches(action))
+        finally:
+            _SELECTION_RECEIPT.reset(token)
+        if (type(decision) is not Decision or decision.verdict is not Verdict.GRANT
+                or decision.tier != 3):
+            raise ProviderPackageError('selection mutation refused')
+        try:
+            self.audit.log(SecurityEvent(
+                event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
+                action_taken='provider_selection_' + operation + '_authorized',
+                content_preview=(f'provider={binding.provider_id}; '
+                                 f'artifact={binding.artifact_id}; revision={revision + 1}; '
+                                 f'credential_generation={binding.credential_generation}; '
+                                 f'scope_sha256={scope_digest}')))
+            if operation == 'select':
+                self.audit.log(SecurityEvent(
+                    event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
+                    action_taken='provider_selection_unknown_price_acknowledged',
+                    content_preview=(f'provider={binding.provider_id}; '
+                                     f'artifact={binding.artifact_id}; scope_sha256={scope_digest}')))
+                if data_ack:
+                    self.audit.log(SecurityEvent(
+                        event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
+                        action_taken='provider_selection_data_policy_acknowledged',
+                        content_preview=(f'provider={binding.provider_id}; '
+                                         f'artifact={binding.artifact_id}; scope_sha256={scope_digest}')))
+        except Exception:
+            raise ProviderPackageError('selection consent audit unavailable') from None
+
+    def select_provider(self, provider_id, package_hash, model, *, expected_revision,
+                        acknowledge_unknown_price=False, acknowledge_data_policy=False,
+                        actor):
+        from agents.core import settings_db
+        from agents.core.llm import provider_selection
+        from agents.core.llm.providers import selection_gates
+
+        from .credentials import credential_binding
+
+        self._owner(actor)
+        if (type(expected_revision) is not int or expected_revision < 0
+                or type(acknowledge_unknown_price) is not bool
+                or type(acknowledge_data_policy) is not bool):
+            raise ProviderPackageError('invalid selection request')
+        with selection_gates.exclusive(settings_db.DB_PATH, signed=True):
+            settings_db._ensure_init()
+            current, _ = provider_selection._read(settings_db.DB_PATH)
+            if current != expected_revision:
+                raise provider_selection.SelectionConflict('selection revision changed')
+            store = self._store(actor=actor)
+            with store._locked():
+                record = self._credential_record_locked(store, provider_id, package_hash)
+                if (type(model) is not str or not model
+                        or model not in record.profile.fallback_models
+                        or record.profile.backend_kind not in {
+                            'openai-compatible', 'deepinfra-chat', 'openai-responses',
+                            'xai-responses', 'gemini', 'anthropic'}):
+                    raise ProviderPackageError('model is not declared by signed provider')
+                scope = credential_binding(record, self.home)
+                vault = self._credentials()
+                status = vault.status(scope)
+                if scope.auth_type != 'none' and not status['configured']:
+                    raise ProviderPackageError('host credential unavailable')
+                policy, _note = record.profile.data_policy_for(model)
+                if acknowledge_unknown_price is not True or (policy in {
+                        'unknown', 'trains-on-inputs'} and acknowledge_data_policy is not True):
+                    raise ProviderPackageError('explicit selected provider risk acknowledgement required')
+                binding = provider_selection.SelectionBinding(
+                    'local-owner-v1', self.home, record.provider_id, model,
+                    record.source, record.artifact_id, record.package_hash,
+                    scope.endpoint, scope.auth_type, status['generation'],
+                    unknown_price_ack=True,
+                    data_policy_ack=acknowledge_data_policy)
+                self._owner(actor)
+                self._selection_authorize(binding, operation='select', revision=current,
+                                          actor=actor, price_ack=True,
+                                          data_ack=acknowledge_data_policy)
+                self._owner(actor)
+                if self._credential_record_locked(store, provider_id, package_hash) != record:
+                    raise ProviderPackageError('signed provider changed before selection')
+                saved = provider_selection.compare_and_swap(
+                    settings_db.DB_PATH, binding, expected_revision=current)
+        return {'status': 'selected', 'provider': binding.provider_id, 'model': binding.model,
+                'package_hash': binding.package_hash, 'revision': saved.revision,
+                'credential_generation': binding.credential_generation}
+
+    def clear_selection(self, *, expected_revision, actor):
+        from agents.core import settings_db
+        from agents.core.llm import provider_selection
+        from agents.core.llm.providers import selection_gates
+
+        self._owner(actor)
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ProviderPackageError('invalid selection revision')
+        with selection_gates.exclusive(settings_db.DB_PATH, signed=True):
+            settings_db._ensure_init()
+            current, binding = provider_selection._read(settings_db.DB_PATH)
+            if current != expected_revision:
+                raise provider_selection.SelectionConflict('selection revision changed')
+            if binding is None:
+                raise ProviderPackageError('no signed provider selected')
+            self._owner(actor)
+            self._selection_authorize(binding, operation='clear', revision=current,
+                                      actor=actor, price_ack=False, data_ack=False)
+            self._owner(actor)
+            revision = provider_selection.compare_and_clear(
+                settings_db.DB_PATH, expected_revision=current)
+        return {'status': 'cleared', 'revision': revision}
 
     def registry(self):
         from . import DEFAULT_REGISTRY

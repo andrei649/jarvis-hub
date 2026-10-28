@@ -143,3 +143,54 @@ PROVIDER_CREDENTIAL_CONTRACT = ContractTemplate(
     constraints=(predicate('bounded_provider_credential', _bounded_credential,
                            reason='invalid_provider_credential'),),
 )
+
+
+def _bounded_selection(view, _now):
+    """A narrow owner selection shape; live signed/owner authority is the receipt."""
+    required = {'schema', 'authority', 'home', 'provider_id', 'source', 'artifact_id',
+                'package_hash', 'endpoint', 'auth_type', 'model', 'operation',
+                'current_revision', 'selected_revision', 'scope_sha256',
+                'credential_generation', 'price_ack', 'data_ack',
+                'risk_tier', 'irreversible'}
+    if (type(view) is not dict or set(view) != required
+            or view['schema'] != 'provider-selection-v1'
+            or view['authority'] != 'local-owner-v1'
+            or view['operation'] not in {'select', 'clear'}
+            or view['source'] not in {'user', 'legacy', 'bundled'}
+            or view['auth_type'] not in {'bearer', 'api-key', 'none'}
+            or type(view['current_revision']) is not int or view['current_revision'] < 0
+            or type(view['selected_revision']) is not int
+            or view['selected_revision'] != view['current_revision'] + 1
+            or type(view['scope_sha256']) is not str
+            or re.fullmatch(r'[a-f0-9]{64}', view['scope_sha256']) is None
+            or type(view['credential_generation']) is not int
+            or not 0 <= view['credential_generation'] < 2**63 - 1
+            or type(view['price_ack']) is not bool or type(view['data_ack']) is not bool
+            or type(view['risk_tier']) is not int or view['risk_tier'] != 3
+            or view['irreversible'] is not True
+            or type(view['provider_id']) is not str
+            or re.fullmatch(r'[a-z0-9][a-z0-9._:-]{0,127}', view['provider_id']) is None
+            or type(view['artifact_id']) is not str
+            or re.fullmatch(r'[a-f0-9]{32}', view['artifact_id']) is None
+            or type(view['package_hash']) is not str
+            or re.fullmatch(r'[a-f0-9]{64}', view['package_hash']) is None
+            or type(view['home']) is not str or not view['home'] or len(view['home']) > 2048
+            or type(view['model']) is not str or not 1 <= len(view['model']) <= 256
+            or type(view['endpoint']) is not str or len(view['endpoint']) > 2048):
+        return False
+    try:
+        endpoint = urlsplit(view['endpoint'])
+        return (endpoint.scheme == 'https' and bool(endpoint.hostname)
+                and endpoint.port != 0 and endpoint.username is None
+                and endpoint.password is None and not endpoint.query and not endpoint.fragment
+                and all(33 <= ord(char) <= 126 for char in view['endpoint']))
+    except (ValueError, TypeError):
+        return False
+
+
+PROVIDER_SELECTION_CONTRACT = ContractTemplate(
+    kind='provider.selection',
+    description='Select or clear one exact owner-managed signed provider binding.',
+    constraints=(predicate('bounded_provider_selection', _bounded_selection,
+                           reason='invalid_provider_selection'),),
+)

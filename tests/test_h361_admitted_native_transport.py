@@ -1,5 +1,8 @@
 """Synthetic physical-send accounting and authority checks for native dialects."""
 import asyncio
+import json
+import multiprocessing
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -9,7 +12,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from agents.core.kernel import Decision, Verdict
+from agents.core import settings_db
+from agents.core.kernel import Verdict
+from agents.core.llm.data_handling import physical_request_scope
 from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.providers.admitted_profiles import (
     AdmittedProviderProfile,
@@ -22,9 +27,11 @@ from agents.core.llm.providers.native_transport import (
     native_post,
 )
 from agents.core.llm.providers.packages import ProviderPackageError, ProviderPackageStore
+from agents.core.llm.providers.selected_runtime import AUTH_MARKER, construction_scope
 from agents.core.llm.quota import ProviderRateLimited
 from agents.core.observability.egress_monitor import EgressMonitor
 from agents.core.turn_usage import turn_usage_scope
+from tests.test_h361_provider_install_service import owner
 
 CASES = (
     ('anthropic', 'anthropic_messages', 'https://api.anthropic.com/v1', '/messages', 'x-api-key'),
@@ -34,73 +41,123 @@ CASES = (
      '/chat/completions', 'authorization'),
     ('openai-responses', 'responses', 'https://api.openai.com/v1', '/responses', 'authorization'),
     ('xai-responses', 'responses', 'https://api.x.ai/v1', '/responses', 'authorization'),
+    ('openai-compatible', 'chat_completions', 'https://synthetic.invalid/v1',
+     '/chat/completions', 'authorization'),
 )
 
 
+@pytest.fixture(autouse=True)
+def selected_test_environment(tmp_path, monkeypatch):
+    from agents.core.llm import data_handling
+    from agents.core.llm.providers import selected_runtime
+
+    monkeypatch.setenv('JARVIS_ACTION_KERNEL', '1')
+    monkeypatch.setattr(settings_db, 'DB_PATH', tmp_path / 'settings.db')
+    monkeypatch.setattr(settings_db, '_initialized', False)
+    settings_db.init_db(force=True)
+    monkeypatch.setattr(selected_runtime, 'resolve_and_validate',
+                        lambda host, mode: (['93.184.216.34'], None))
+    monkeypatch.setattr(data_handling, '_scope_key', lambda: b'x' * 32)
+
+
 def client_for(tmp_path, case, handler):
+    """Real signed owner/Kernel/Vault selection; only DNS and HTTP are synthetic."""
+    from agents.core.acquisition.managed_signing import ManagedSigningKeyStore
+    from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
+    from agents.core.llm.provider_selection import current_revision
+    from agents.core.llm.providers.install_service import ProviderInstallService
+    from tests.test_h361_provider_hook_runtime import IMAGE, SimulatedSealedRunner
+    from tests.test_h361_provider_install_kernel import _bind_real_kernel
+    from tests.test_h361_provider_install_service import owner
+
     kind, mode, base, suffix, auth = case
-    store = object.__new__(ProviderPackageStore)
-    store._lock_path = tmp_path / 'registry.lock'
-    store._root_identity = (tmp_path.stat().st_dev, tmp_path.stat().st_ino)
-    store.revoked = False
-    record = None
-
-    def require_record(provider_id, expected_hash, home):
-        if store.revoked:
-            raise ProviderPackageError('revoked')
-        return record
-
-    store._require_runnable_locked = require_record
-
-    def revoke(provider_id):
-        with store._locked():
-            store.revoked = True
-
-    store.revoke = revoke
-    calls = []
-    store.authorizer = lambda action: (calls.append(action) or Decision(Verdict.GRANT, tier=3))
-
-    class Runtime:
-        packages = store
-
-        async def evaluate(self, provider_id, **kwargs):
-            return {'prepared_messages': kwargs['messages'], 'extra_body': {},
-                    'api_kwargs': {'extra_body': {}, 'kwargs': {}}, 'max_tokens': 64,
-                    'reasoning_vocabulary': None}
-
-        @asynccontextmanager
-        async def dispatch_lease(self, provider_id, *, package_hash, home):
-            async with store.dispatch_lease(provider_id, expected_hash=package_hash, home=home):
-                yield
-
-    profile = AdmittedProviderProfile(
-        id='admitted-' + kind, display_name='Native fixture', backend_kind=kind,
-        api_mode=mode, auth_type='bearer', default_base_url=base,
+    identity = 'admitted-' + kind
+    root = tmp_path / ('selected-' + kind)
+    signing = ManagedSigningKeyStore(root / 'signing')
+    signing.provision(key_id='synthetic-transport', version=1, key=b'x' * 32)
+    service = ProviderInstallService(
+        root=root / 'service', signing=signing,
+        profile=AcquisitionSandboxProfile(image=IMAGE, uid=os.getuid(), gid=os.getgid()),
+        kernel=lambda: None, enabled=lambda: True, home='synthetic-home',
+        runner=SimulatedSealedRunner(), audit=SimpleNamespace(log=lambda _event: None))
+    service, _orch, _kill, _seen = _bind_real_kernel((service, None, None, None), root)
+    source = service.incoming('user') / 'addon'
+    source.mkdir(parents=True)
+    (source / 'provider.json').write_text(json.dumps(
+        {'schema_version': 1, 'id': identity, 'aliases': []}))
+    hooks = ('prepare_messages', 'build_extra_body', 'build_api_kwargs_extras')
+    (source / 'main.py').write_text(
+        'def register_provider():\n    return ' + repr({'id': identity, 'hooks': list(hooks)}) + '\n'
+        'def prepare_messages(messages):\n    return messages\n'
+        'def build_extra_body(**kwargs):\n    return {}\n'
+        'def build_api_kwargs_extras(**kwargs):\n    return {}, {}\n')
+    profile = ProviderProfile(identity, 'Native fixture', kind, api_mode=mode,
+        auth_type='bearer', default_base_url=base,
         capabilities=frozenset({'chat', 'cloud'}), fallback_models=('m',),
-        _hook_runtime=Runtime(), _package_hash='f' * 64,
-    )
-    record = SimpleNamespace(
-        provider_id=profile.id, artifact_id='a' * 32, package_hash=profile._package_hash,
-        source='bundled', home=profile._home,
-        profile=ProviderProfile(**{field.name: getattr(profile, field.name)
-                                   for field in fields(ProviderProfile)}))
-    client = native_admitted_client(profile, 'host-secret', 'm', inner=httpx.MockTransport(handler))
-    headers = {auth: 'host-secret' if auth != 'authorization' else 'Bearer host-secret'}
+        default_max_tokens=64, is_user_defined=True)
+    artifact = service.stage('addon', profile=profile, hooks=hooks, source='user', actor=owner())
+    offer = service.propose(artifact['artifact_id'], actor=owner())
+    service.decide(offer['proposal_id'], artifact_id=artifact['artifact_id'],
+                   package_hash=artifact['package_hash'], approved=True, permanent=True,
+                   actor=owner())
+    service.promote(offer['proposal_id'], actor=owner())
+    service.put_credential(identity, artifact['package_hash'], 'host-secret', actor=owner())
+    service.select_provider(identity, artifact['package_hash'], 'm',
+        expected_revision=current_revision(), acknowledge_unknown_price=True,
+        acknowledge_data_policy=True, actor=owner())
+    runtime = service.selected_runtime()
+    fake_backend = SimpleNamespace(profile=runtime.profile, _selected_provider_runtime=runtime)
+    runtime.bind_backend(fake_backend, SimpleNamespace(_data_handling_used={}))
+    with construction_scope(runtime):
+        client = native_admitted_client(runtime.profile, AUTH_MARKER, 'm',
+                                        inner=httpx.MockTransport(handler))
+    calls = []
+    store = runtime.profile._hook_runtime.packages
+    authorize = store.authorizer
+
+    def record_action(action):
+        if action.kind == 'plugin.egress':
+            calls.append(action)
+        return authorize(action)
+
+    store.authorizer = record_action
+    client._selected_test_service = service
+    headers = {auth: AUTH_MARKER if auth != 'authorization' else 'Bearer ' + AUTH_MARKER}
     return client, base + suffix, headers, calls
+
+
+def _hold_selected_leases(db_path, root, provider, conn):
+    from pathlib import Path
+
+    from agents.core import settings_db
+    from agents.core.llm.providers import lifecycle_gates, selection_gates
+
+    settings_db.DB_PATH = Path(db_path)
+    selection = selection_gates.acquire_shared(db_path)
+    lifecycle = lifecycle_gates.acquire(root, provider, exclusive=False)
+    try:
+        conn.send('held')
+        conn.recv()
+    finally:
+        lifecycle.close()
+        selection.close()
+        conn.close()
 
 
 async def prepared_post(client, url, headers, body):
     profile = client._transport.profile
     prepared = await prepare_admitted_profile(
         profile, model='m', messages=[{'role': 'user', 'content': 'signed fixture'}])
-    return await native_post(profile, prepared, client, url, headers=headers, json=body)
+    with physical_request_scope(lambda: None):
+        return await native_post(profile, prepared, client, url, headers=headers, json=body)
 
 
 async def prepared_open_stream(client, url, headers, body):
     profile = client._transport.profile
     prepared = await prepare_admitted_profile(
         profile, model='m', messages=[{'role': 'user', 'content': 'signed stream fixture'}])
-    with _attempt_scope(profile, prepared, client, 'POST', url, headers=headers, json_body=body):
+    with physical_request_scope(lambda: None), _attempt_scope(
+            profile, prepared, client, 'POST', url, headers=headers, json_body=body):
         request = client.build_request('POST', url, headers=headers, json=body)
         return await client.send(request, stream=True)
 
@@ -187,14 +244,15 @@ async def test_native_direct_and_changed_or_replayed_attempts_refuse_before_tran
     client, url, headers, actions = client_for(
         tmp_path, CASES[0], lambda request: seen.append(request) or httpx.Response(200))
     body = {'model': 'm', 'messages': [{'role': 'user', 'content': 'prepared'}]}
-    with pytest.raises(ProviderHookRuntimeError, match='native_preparation_unavailable'):
+    with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
         await client.post(url, headers=headers, json=body)
     assert not seen and not actions
 
     profile = client._transport.profile
     prepared = await prepare_admitted_profile(
         profile, model='m', messages=[{'role': 'user', 'content': 'prepared'}])
-    with _attempt_scope(profile, prepared, client, 'POST', url, headers=headers, json_body=body):
+    with physical_request_scope(lambda: None), _attempt_scope(
+            profile, prepared, client, 'POST', url, headers=headers, json_body=body):
         with pytest.raises(ProviderHookRuntimeError, match='native_preparation_unavailable'):
             await client.post(url, headers=headers, json={**body, 'messages': []})
         with pytest.raises(ProviderHookRuntimeError, match='native_preparation_unavailable'):
@@ -203,15 +261,17 @@ async def test_native_direct_and_changed_or_replayed_attempts_refuse_before_tran
         with pytest.raises(ProviderHookRuntimeError, match='native_preparation_unavailable'):
             await client.post(url, headers=headers, json=body)
     assert len(seen) == len(actions) == 1
-    assert (await native_post(profile, prepared, client, url,
-                              headers=headers, json=body)).status_code == 200
+    with physical_request_scope(lambda: None):
+        assert (await native_post(profile, prepared, client, url,
+                                  headers=headers, json=body)).status_code == 200
     assert len(seen) == len(actions) == 2
     newest = await prepare_admitted_profile(
         profile, model='m', messages=[{'role': 'user', 'content': 'newer batch'}])
     with pytest.raises(ProviderHookRuntimeError, match='native_preparation_unavailable'):
         await native_post(profile, prepared, client, url, headers=headers, json=body)
-    assert (await native_post(profile, newest, client, url,
-                              headers=headers, json=body)).status_code == 200
+    with physical_request_scope(lambda: None):
+        assert (await native_post(profile, newest, client, url,
+                                  headers=headers, json=body)).status_code == 200
     assert len(seen) == len(actions) == 3
     assert (await prepared_post(client, url, headers, body)).status_code == 200
     assert len(seen) == len(actions) == 4
@@ -244,6 +304,27 @@ async def test_native_guard_records_one_physical_attempt_per_dialect(tmp_path, c
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('case', CASES)
+async def test_selected_retry_prepares_a_fresh_ticket_and_counts_each_wire_attempt(tmp_path, case):
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(503) if len(seen) == 1 else httpx.Response(200, json={'ok': True})
+
+    client, url, headers, actions = client_for(tmp_path, case, handler)
+    with turn_usage_scope() as usage:
+        first = await prepared_post(client, url, headers, {'model': 'm'})
+        assert first.status_code == 503
+        second = await prepared_post(client, url, headers, {'model': 'm'})
+        assert second.status_code == 200
+    assert len(seen) == len(actions) == usage.snapshot()['api_calls'] == 2
+    assert all(action.kind == 'plugin.egress' for action in actions)
+    assert all('host-secret' not in repr(action) for action in actions)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_native_egress_action_matches_manifest_and_real_kernel_refusals(tmp_path):
     from copy import deepcopy
 
@@ -261,7 +342,11 @@ async def test_native_egress_action_matches_manifest_and_real_kernel_refusals(tm
         return authorize(action, policy=AutonomyPolicy(mode='ask'),
                          approval_check=lambda candidate: candidate == snapshot)
 
-    client._transport.profile._hook_runtime.packages.authorizer = owner_bound_authorize
+    store = client._transport.profile._hook_runtime.packages
+    original_authorizer = store.authorizer
+    store.authorizer = lambda action: (owner_bound_authorize(action)
+                                       if action.kind == 'plugin.egress'
+                                       else original_authorizer(action))
     with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
         await prepared_post(client, url, headers, {'model': 'm'})
     assert not seen
@@ -278,15 +363,17 @@ async def test_native_egress_action_matches_manifest_and_real_kernel_refusals(tm
         assert authorize(forged, policy=AutonomyPolicy(),
                          approval_check=lambda candidate, expected=forged:
                              candidate == expected).verdict is Verdict.QUEUE
-    client._transport.profile._hook_runtime.packages.authorizer = lambda action: (
+    store.authorizer = lambda action: (
         actions.append(action) or authorize(action, policy=AutonomyPolicy(),
-                                            kill_switch=SimpleNamespace(is_halted=lambda scope: True)))
+                                            kill_switch=SimpleNamespace(is_halted=lambda scope: True))
+        if action.kind == 'plugin.egress' else original_authorizer(action))
     with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
         await prepared_post(client, url, headers, {'model': 'm'})
     assert not seen and len(actions) == 2
-    client._transport.profile._hook_runtime.packages.authorizer = lambda action: (
+    store.authorizer = lambda action: (
         actions.append(action) or authorize(action, policy=AutonomyPolicy(),
-                                            approval_check=lambda candidate: candidate == action))
+                                            approval_check=lambda candidate: candidate == action)
+        if action.kind == 'plugin.egress' else original_authorizer(action))
     token = bind_action_origin('inbound')
     try:
         with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
@@ -382,7 +469,7 @@ async def test_native_guard_async_revoke_cancels_inflight_and_blocks_later_send(
     await asyncio.wait_for(store.revoke_async('admitted-anthropic'), 1)
     with pytest.raises(asyncio.CancelledError):
         await first
-    with pytest.raises(ProviderPackageError):
+    with pytest.raises(ProviderHookRuntimeError, match='not_runnable'):
         await prepared_post(client, url, headers, {'model': 'm'})
     assert len(seen) == 1
     await client.aclose()
@@ -408,11 +495,12 @@ async def test_revoke_stops_transferred_body_reader_after_headers(tmp_path, alia
     reader = asyncio.create_task(consume())
     await asyncio.wait_for(body.entered.wait(), 1)
     if not alias_root:
-        other, other_url, other_headers, other_actions = client_for(
-            tmp_path, CASES[1], lambda request: httpx.Response(200, json={'ok': True}))
-        assert (await prepared_post(other, other_url, other_headers, {'model': 'm'})).status_code == 200
-        assert len(other_actions) == 1
-        await other.aclose()
+        from agents.core.llm.providers.selection_gates import SelectionBusy
+        with pytest.raises(SelectionBusy):
+            client._selected_test_service.clear_selection(
+                expected_revision=client._transport.selected.selection.revision,
+                actor=__import__('tests.test_h361_provider_install_service',
+                                 fromlist=['owner']).owner())
     store = client._transport.profile._hook_runtime.packages
     revoker = store
     if alias_root:
@@ -424,7 +512,7 @@ async def test_revoke_stops_transferred_body_reader_after_headers(tmp_path, alia
     with pytest.raises(asyncio.CancelledError):
         await reader
     assert not _DISPATCH_READERS.get(store._root_identity, {}).get('admitted-anthropic')
-    with pytest.raises(ProviderPackageError):
+    with pytest.raises(ProviderHookRuntimeError, match='not_runnable'):
         await prepared_post(client, url, headers, {'model': 'm'})
     assert len(seen) == len(actions) == 1
     await client.aclose()
@@ -476,6 +564,68 @@ async def test_client_close_releases_unread_response_body(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_owner_routes_check_live_actor_before_draining_selected_body(tmp_path, monkeypatch):
+    from agents.core.routers import models_llm, provider_credentials, provider_selection
+
+    body = BlockingBody()
+    client, url, headers, _ = client_for(
+        tmp_path, CASES[0], lambda _request: httpx.Response(200, stream=body))
+    response = await prepared_open_stream(client, url, headers, {'model': 'm'})
+    service = client._selected_test_service
+    revision = client._transport.selected.selection.revision
+    monkeypatch.setattr(models_llm, '_provider_install_context',
+                        lambda _request: (service, owner(lambda: False)))
+    refused_clear = await provider_selection._call(
+        object(), 'clear_selection', {'expected_revision': revision})
+    refused_key = await provider_credentials._call(
+        object(), 'delete_credential', 'admitted-anthropic',
+        client._transport.profile._package_hash)
+    assert refused_clear.status_code == refused_key.status_code == 409
+    assert not body.closed
+    monkeypatch.setattr(models_llm, '_provider_install_context',
+                        lambda _request: (service, owner()))
+    cleared = await provider_selection._call(
+        object(), 'clear_selection', {'expected_revision': revision})
+    assert cleared.status_code == 200 and body.closed
+    with pytest.raises(ProviderPackageError):
+        await response.aread()
+    await client.aclose()
+
+
+def test_cross_process_body_leases_refuse_all_owner_mutations_without_partial_state(tmp_path):
+    from agents.core.llm import provider_selection
+    from agents.core.llm.providers.lifecycle_gates import LifecycleBusy
+    from agents.core.llm.providers.selection_gates import SelectionBusy
+
+    client, _url, _headers, _ = client_for(
+        tmp_path, CASES[0], lambda _request: httpx.Response(200))
+    service = client._selected_test_service
+    revision = provider_selection.current_revision()
+    target = ('admitted-anthropic', client._transport.profile._package_hash)
+    ctx = multiprocessing.get_context('spawn')
+    parent, child = ctx.Pipe()
+    process = ctx.Process(target=_hold_selected_leases,
+                          args=(str(settings_db.DB_PATH), str(service.root), target[0], child))
+    process.start()
+    try:
+        assert parent.poll(5) and parent.recv() == 'held'
+        with pytest.raises(LifecycleBusy):
+            service.put_credential(*target, 'rotated-key', actor=owner())
+        with pytest.raises(LifecycleBusy):
+            service.revoke(target[0], actor=owner())
+        with pytest.raises(SelectionBusy):
+            service.clear_selection(expected_revision=revision, actor=owner())
+        assert service.credential_status(*target, actor=owner())['generation'] == 1
+        assert provider_selection.current_revision() == revision
+        assert service._store().require_runnable(target[0], expected_hash=target[1],
+                                                home=service.home)
+    finally:
+        parent.send('release')
+        process.join(5)
+        assert process.exitcode == 0
+
+
+@pytest.mark.asyncio
 async def test_client_close_stops_active_reader_before_unregistration(tmp_path):
     from agents.core.llm.providers.packages import _DISPATCH_READERS
 
@@ -508,10 +658,10 @@ async def test_concurrent_reader_finalizers_do_not_wait_on_each_other(tmp_path):
     readers = [asyncio.create_task(consume()) for _ in range(2)]
     await asyncio.wait_for(body.entered.wait(), 1)
     for _ in range(100):
-        if len(stream.tasks) == 2:
+        if len(stream.inner.tasks) == 2:
             break
         await asyncio.sleep(0.001)
-    assert len(stream.tasks) == 2
+    assert len(stream.inner.tasks) == 2
     for reader in readers:
         reader.cancel()
     results = await asyncio.wait_for(asyncio.gather(*readers, return_exceptions=True), 1)
@@ -537,17 +687,17 @@ async def test_external_close_and_revoke_drain_concurrent_finalizers(tmp_path):
     readers = [asyncio.create_task(consume()) for _ in range(2)]
     await asyncio.wait_for(body.entered.wait(), 1)
     for _ in range(100):
-        if len(stream.tasks) == 2:
+        if len(stream.inner.tasks) == 2:
             break
         await asyncio.sleep(0.001)
-    assert len(stream.tasks) == 2
+    assert len(stream.inner.tasks) == 2
     store = client._transport.profile._hook_runtime.packages
     await asyncio.wait_for(asyncio.gather(
         asyncio.create_task(client.aclose()),
         asyncio.create_task(store.revoke_async('admitted-anthropic'))), 1)
     results = await asyncio.gather(*readers, return_exceptions=True)
     assert all(isinstance(result, asyncio.CancelledError) for result in results)
-    assert body.closed and len(actions) == 1 and not stream.tasks
+    assert body.closed and len(actions) == 1 and not stream.inner.tasks
     assert not _DISPATCH_READERS.get(store._root_identity, {}).get('admitted-anthropic')
 
 
@@ -624,7 +774,8 @@ async def test_revoke_surfaces_failed_underlying_close(tmp_path):
     store = client._transport.profile._hook_runtime.packages
     with pytest.raises(RuntimeError, match='synthetic close failure'):
         await asyncio.wait_for(store.revoke_async('admitted-anthropic'), 1)
-    assert store.revoked
+    with pytest.raises(ProviderPackageError):
+        store.require_runnable('admitted-anthropic', home='synthetic-home')
     assert _DISPATCH_READERS.get(store._root_identity, {}).get('admitted-anthropic')
     with pytest.raises(RuntimeError, match='synthetic close failure'):
         await client.aclose()

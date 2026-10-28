@@ -99,10 +99,14 @@ class GeminiBackend(AdmittedClientMixin, LLMBackend):
                             effort_declarations, defaults=GEMINI_LEVELS))
         if isinstance(self.profile, AdmittedProviderProfile):
             require_profile_kind(self.profile, "gemini", "gemini_generate_content")
-            require_profile_base(self.profile, GEMINI_API_BASE)
+            from .providers.selected_runtime import current_construction
+            if current_construction() is None:
+                require_profile_base(self.profile, GEMINI_API_BASE)
             if auth_pool is not None:
                 raise ValueError("admitted Gemini auth pool is unavailable")
         self.reasoning_effort = reasoning_effort
+        self._signed_base = (str(self.profile.default_base_url).rstrip('/')
+                             if isinstance(self.profile, AdmittedProviderProfile) else GEMINI_API_BASE)
         self.api_key = api_key
         self.model = model
         self.auth_pool = auth_pool
@@ -153,7 +157,7 @@ class GeminiBackend(AdmittedClientMixin, LLMBackend):
     def _build_url(self, model: str, *, streaming: bool = False) -> str:
         action = "streamGenerateContent" if streaming else "generateContent"
         suffix = "?alt=sse" if streaming else ""
-        return f"{GEMINI_API_BASE}/models/{model}:{action}{suffix}"
+        return f"{self._signed_base}/models/{model}:{action}{suffix}"
 
 
     async def _request_profile(self, model, messages):

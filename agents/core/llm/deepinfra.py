@@ -76,7 +76,9 @@ class DeepInfraBackend(AdmittedClientMixin, LLMBackend):
 
     def __init__(self, api_key: str, base_url: str = DEEPINFRA_VISION_BASE,
                  client=None, *, profile=None, model=None, reasoning_effort="", effort_declarations=None) -> None:
-        base = validated_main_base(base_url)
+        from .providers.selected_runtime import current_construction
+        selected = current_construction()
+        base = str(base_url).rstrip('/') if selected is not None else validated_main_base(base_url)
         if (not isinstance(api_key, str) or not api_key or len(api_key) > 4096
                 or any(ord(char) < 33 or ord(char) > 126 for char in api_key)):
             raise ValueError("invalid DeepInfra main key")
@@ -85,7 +87,8 @@ class DeepInfraBackend(AdmittedClientMixin, LLMBackend):
                             profile or DEFAULT_REGISTRY.get("deepinfra"), effort_declarations))
         if isinstance(self.profile, AdmittedProviderProfile):
             require_profile_kind(self.profile, "deepinfra-chat", "chat_completions")
-            if validated_main_base(self.profile.default_base_url) != base:
+            if (str(self.profile.default_base_url).rstrip('/') if selected is not None
+                    else validated_main_base(self.profile.default_base_url)) != base:
                 raise ValueError("profile destination differs from DeepInfra adapter")
             if client is not None:
                 raise ValueError("admitted DeepInfra client injection is unavailable")
@@ -161,7 +164,8 @@ class DeepInfraBackend(AdmittedClientMixin, LLMBackend):
         )
 
     async def _send(self, payload: dict) -> dict:
-        url = validated_main_base(self.base_url) + "/chat/completions"
+        url = (self.base_url if isinstance(self.profile, AdmittedProviderProfile)
+               else validated_main_base(self.base_url)) + "/chat/completions"
         if not isinstance(self.profile, AdmittedProviderProfile):
             require_direct_async_transport(self.client, url)
         hooks = self.client.event_hooks["request"]
@@ -235,7 +239,8 @@ class DeepInfraBackend(AdmittedClientMixin, LLMBackend):
         completed = False
         usage = None
         try:
-            url = validated_main_base(self.base_url) + "/chat/completions"
+            url = (self.base_url if isinstance(self.profile, AdmittedProviderProfile)
+                   else validated_main_base(self.base_url)) + "/chat/completions"
             if not isinstance(self.profile, AdmittedProviderProfile):
                 require_direct_async_transport(self.client, url)
             hooks = self.client.event_hooks["request"]

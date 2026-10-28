@@ -379,6 +379,20 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.llm.providers.install_service:ProviderInstallService.put_credential",
         contract_ref="agents.core.llm.providers.admission_contract:PROVIDER_CREDENTIAL_CONTRACT",
     ),
+    "provider.selection": _action(
+        "provider.selection",
+        "Select or clear one exact owner-managed signed provider binding.",
+        required=("provider_id", "artifact_id", "package_hash", "model", "operation"),
+        risk="irreversible_or_money",
+        supports=("select", "clear"),
+        rollback=RollbackContract(
+            mode="revoke",
+            description="Clear the selected signed provider binding.",
+            limitations="A previously sent request cannot be recalled.",
+        ),
+        implementation="agents.core.llm.providers.install_service:ProviderInstallService.select_provider",
+        contract_ref="agents.core.llm.providers.admission_contract:PROVIDER_SELECTION_CONTRACT",
+    ),
     "media.present": _action(
         "media.present",
         "Present content (media, webpage, camera, dashboard) on a registered output device.",

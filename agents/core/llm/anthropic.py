@@ -10,7 +10,6 @@ from typing import Any, Callable
 
 import httpx
 
-from ..tool_rpc import MAX_IMAGE_B64_CHARS, image_signature_ok
 from .auth_rotation import is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
@@ -69,6 +68,10 @@ def _builtin_tool_history_limit(messages: list[dict]) -> int:
     built-in image path can carry up to 20 MB of base64, and the JSON ownership
     copy must accommodate those bytes without granting extra text history.
     """
+    # Loading the LLM package while tool_rpc is initializing must not import its
+    # image validators before that module has defined them.
+    from ..tool_rpc import MAX_IMAGE_B64_CHARS, image_signature_ok
+
     count = total = 0
     for row in messages:
         if type(row) is not dict or row.get("role") != "tool":
@@ -124,7 +127,9 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
         self.profile = profile or DEFAULT_REGISTRY.get("anthropic")
         if isinstance(self.profile, AdmittedProviderProfile):
             require_profile_kind(self.profile, "anthropic", "anthropic_messages")
-            require_profile_base(self.profile, ANTHROPIC_API_BASE)
+            from .providers.selected_runtime import current_construction
+            if current_construction() is None:
+                require_profile_base(self.profile, ANTHROPIC_API_BASE)
             if auth_pool is not None:
                 raise ValueError("admitted Anthropic auth pool is unavailable")
         # H364 — one ladder rung for this install, clamped per model at send time.
@@ -132,6 +137,8 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
         # The override map is the escape hatch for a family whose contract moves
         # under us: it can widen or, by naming an empty list, silence a model.
         self.reasoning_effort = str(reasoning_effort or "")
+        self._signed_base = (str(self.profile.default_base_url).rstrip('/')
+                             if isinstance(self.profile, AdmittedProviderProfile) else ANTHROPIC_API_BASE)
         self.effort_overrides = parse_overrides(effort_overrides)
         # H12.20 — optional multi-key auth pool. When set, the active key is drawn
         # from the pool and a rotatable error (401/403/429) fails over to the next
@@ -289,7 +296,7 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
             key = self._active_key()
             try:
                 resp = await native_post(self.profile, attempt_profile, self.client,
-                    f"{ANTHROPIC_API_BASE}/messages",
+                    f"{self._signed_base}/messages",
                     headers=self._headers(attempt_profile),
                     json=attempt_payload,
                 )
@@ -410,7 +417,7 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
             try:
                 async with native_stream(self.profile, profile, self.client,
                     "POST",
-                    f"{ANTHROPIC_API_BASE}/messages",
+                    f"{self._signed_base}/messages",
                     headers=self._headers(profile),
                     json=payload,
                 ) as resp:

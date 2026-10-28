@@ -41,13 +41,12 @@ import json
 import logging
 from typing import Any, Optional
 
-import httpx
-
 from ..log_safe import log_safe
 from .base import LLMBackend, cloud_cap
 from .egress import llm_async_client
 from .provider_errors import note_provider_failure
 from .provider_routing import SETTINGS_KEYS, build_provider_block
+from .providers.admitted_profiles import AdmittedProviderProfile
 from .providers.hook_runtime import ProviderHookRuntimeError
 from .tool_dialects import compatible_usage
 from .tool_protocol import TokenUsage, ToolSpec, ToolTurn, parse_openai_tool_calls
@@ -55,54 +54,6 @@ from .usage_context import report_text_usage
 
 logger = logging.getLogger("jarvis.llm.openrouter")
 
-
-class _AdmittedTransport(httpx.AsyncBaseTransport):
-    """Hold an exact signed grant through connection, write and response headers."""
-
-    def __init__(self, backend, inner):
-        self.backend, self.inner = backend, inner
-
-    async def handle_async_request(self, request):
-        from agents.core.turn_usage import record_dispatch
-
-        from .egress import _record, is_admitted_request
-
-        backend = self.backend
-        profile = backend.profile
-        expected = httpx.URL(str(profile.default_base_url).rstrip('/') + '/chat/completions')
-        if (not is_admitted_request(request) or request.method != 'POST'
-                or request.url != expected
-                or (profile.auth_type != 'none'
-                    and request.headers.get('authorization') != 'Bearer ' + backend.api_key)
-                or (profile.auth_type == 'none' and 'authorization' in request.headers)):
-            _record(profile.id, request, allowed=False, reason='admitted request binding refused')
-            raise ProviderHookRuntimeError('native_egress_unavailable')
-        entered_transport = False
-        accounted = False
-        try:
-            async with profile._hook_runtime.dispatch_lease(
-                    profile.id, package_hash=profile._package_hash, home=profile._home):
-                entered_transport = True
-                response = await self.inner.handle_async_request(request)
-                accounted = True
-                _record(profile.id, request, allowed=True)
-                record_dispatch(profile.id, request)
-                return response
-        except BaseException as exc:
-            if not accounted:
-                if entered_transport:
-                    # An arbitrary transport may have written bytes before it failed.
-                    # Count the attempt without claiming response or delivery.
-                    _record(profile.id, request, allowed=True,
-                            reason=f'admitted transport entered; request possibly sent; {type(exc).__name__}')
-                    record_dispatch(profile.id, request)
-                else:
-                    _record(profile.id, request, allowed=False,
-                            reason='admitted physical request refused before transport')
-            raise
-
-    async def aclose(self):
-        await self.inner.aclose()
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 _ERROR = "[OpenRouter error]"
@@ -143,12 +94,13 @@ class OpenRouterBackend(LLMBackend):
     # OpenRouter speaks the runtime's dialect natively (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE, client=None, *, profile=None, reasoning_effort="", effort_declarations=None, provider_routing=None) -> None:
+    def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE, client=None, *, profile=None, reasoning_effort="", effort_declarations=None, provider_routing=None, model=None) -> None:
         from .provider_request import profile_with_declarations, require_profile_kind
         from .providers import DEFAULT_REGISTRY
-        self.profile = profile_with_declarations(
-            profile or DEFAULT_REGISTRY.get("openrouter"), effort_declarations,
-        )
+        from .providers.admitted_profiles import AdmittedProviderProfile
+        self.profile = (profile if isinstance(profile, AdmittedProviderProfile) else
+                        profile_with_declarations(
+                            profile or DEFAULT_REGISTRY.get("openrouter"), effort_declarations))
         require_profile_kind(self.profile, "openai-compatible", "chat_completions")
         if profile is not None and base_url == OPENROUTER_BASE:
             base_url = self.profile.default_base_url or base_url
@@ -164,58 +116,25 @@ class OpenRouterBackend(LLMBackend):
         self._current_block()  # raises ProviderRoutingInvalid on a bad knob
         self.api_key = api_key
         self.base_url = base_url
-        self._admission_guard = None
-        from .providers.admitted_profiles import AdmittedProviderProfile
         admitted = isinstance(self.profile, AdmittedProviderProfile)
-        self.client = client or llm_async_client(
-            self.profile.id, base_url=base_url, timeout=120.0,
-            **({'trust_env': False, 'follow_redirects': False} if admitted else {}))
+        if admitted and client is not None:
+            raise ProviderHookRuntimeError('native_egress_unavailable')
         if admitted:
-            async def guard(request):
-                from .egress import _record, mark_admitted_request
-                try:
-                    if self.client._transport_for_url(request.url) is not self.client._transport:
-                        raise ProviderHookRuntimeError('native_egress_unavailable')
-                    await self.profile._hook_runtime.assert_runnable(
-                        self.profile.id, package_hash=self.profile._package_hash,
-                        home=self.profile._home)
-                except Exception:
-                    _record(self.profile.id, request, allowed=False,
-                            reason='admitted package check refused')
-                    raise
-                mark_admitted_request(request)
-            self._admission_guard = guard
+            from .providers.native_transport import native_admitted_client
+            self.client = native_admitted_client(self.profile, api_key,
+                                                 model or self.profile.fallback_models[0])
+        else:
+            self.client = client or llm_async_client(self.profile.id, base_url=base_url,
+                                                     timeout=120.0)
 
     def _send_client(self):
-        """Place the live admission recheck last, directly before HTTPX transport."""
-        if self._admission_guard is None:
-            return self.client
-        if not isinstance(self.client, httpx.AsyncClient):
-            raise ProviderHookRuntimeError("native_egress_unavailable")
-        if self.client.follow_redirects:
-            raise ProviderHookRuntimeError("native_egress_unavailable")
-        hooks = self.client.event_hooks.get('request', [])
-        recorders = [hook for hook in hooks if getattr(hook, '_nerva_egress_recorder', False)]
-        if len(recorders) != 1:
-            raise ProviderHookRuntimeError("native_egress_unavailable")
-        transport = self.client._transport
-        if isinstance(transport, _AdmittedTransport):
-            if transport.backend is not self:
-                raise ProviderHookRuntimeError("native_egress_unavailable")
-        else:
-            transport = _AdmittedTransport(self, transport)
-            self.client._transport = transport
-        if self.client._transport_for_url(httpx.URL(self.base_url)) is not transport:
-            raise ProviderHookRuntimeError("native_egress_unavailable")
-        self.client.event_hooks['request'] = [
-            hook for hook in hooks if hook is not self._admission_guard and hook is not recorders[0]
-        ] + [self._admission_guard, recorders[0]]
+        if isinstance(self.profile, AdmittedProviderProfile):
+            from .providers.native_transport import require_native_client
+            return require_native_client(self.client, self.profile)
         return self.client
 
     @staticmethod
     def _block_from(knobs) -> dict | None:
-        # A new dict (and new lists) per call, so a transport or test double that
-        # keeps or mutates one request's payload cannot reach the next one's.
         return build_provider_block(**knobs) if knobs else None
 
     def _current_block(self) -> dict | None:
@@ -224,10 +143,6 @@ class OpenRouterBackend(LLMBackend):
 
     @property
     def provider_block(self) -> dict | None:
-        """The ``provider`` object the next request would carry; ``None`` = none sent.
-
-        Raises ``ProviderRoutingInvalid`` when a knob is invalid.
-        """
         return self._current_block()
 
     async def _provider_block_now(self) -> dict | None:
@@ -283,7 +198,7 @@ class OpenRouterBackend(LLMBackend):
             payload["provider"] = block
         return payload
 
-    async def _shape_async(self, payload: dict, block: dict | None) -> dict:
+    async def _shape_async(self, payload: dict, block: dict | None):
         from .provider_request import profile_reasoning_config
         from .providers.admitted_profiles import prepare_admitted_profile
 
@@ -293,7 +208,8 @@ class OpenRouterBackend(LLMBackend):
         profile = await prepare_admitted_profile(
             self.profile, model=payload['model'], messages=payload['messages'],
             reasoning_config=configuration)
-        return self._shape(payload, block, profile=profile)
+        self._shape(payload, block, profile=profile)
+        return profile
 
     @staticmethod
     def _explain_routing_refusal(resp, block: dict | None) -> None:
@@ -336,9 +252,14 @@ class OpenRouterBackend(LLMBackend):
             block = await self._provider_block_now()
         except _RoutingUnavailable:
             return _ERROR
-        await self._shape_async(payload, block)
+        prepared = await self._shape_async(payload, block)
         try:
-            resp = await self._send_client().post("/chat/completions", json=payload, headers=self._headers())
+            if isinstance(self.profile, AdmittedProviderProfile):
+                from .providers.native_transport import native_post
+                resp = await native_post(self.profile, prepared, self._send_client(),
+                                         '/chat/completions', headers=self._headers(), json=payload)
+            else:
+                resp = await self._send_client().post("/chat/completions", json=payload, headers=self._headers())
             self._explain_routing_refusal(resp, block)
             resp.raise_for_status()
             data = resp.json()
@@ -378,9 +299,14 @@ class OpenRouterBackend(LLMBackend):
             block = await self._provider_block_now()
         except _RoutingUnavailable:
             return ToolTurn(content=_ERROR)
-        await self._shape_async(payload, block)
+        prepared = await self._shape_async(payload, block)
         try:
-            resp = await self._send_client().post("/chat/completions", json=payload, headers=self._headers())
+            if isinstance(self.profile, AdmittedProviderProfile):
+                from .providers.native_transport import native_post
+                resp = await native_post(self.profile, prepared, self._send_client(),
+                                         '/chat/completions', headers=self._headers(), json=payload)
+            else:
+                resp = await self._send_client().post("/chat/completions", json=payload, headers=self._headers())
             self._explain_routing_refusal(resp, block)
             resp.raise_for_status()
             data = resp.json()

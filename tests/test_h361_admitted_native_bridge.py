@@ -16,7 +16,6 @@ from agents.core.llm.providers.admitted_profiles import AdmittedProviderProfile
 from agents.core.llm.providers.hook_runtime import ProviderHookRuntimeError
 from agents.core.llm.providers.native_transport import native_admitted_client
 from agents.core.llm.providers.packages import ProviderPackageStore
-from tests.test_h361_signed_native_integration import setup as signed_setup
 from tests.test_openai_responses import completed as openai_completed
 from tests.test_xai_responses import completed as xai_completed
 
@@ -55,73 +54,100 @@ def response(kind, path):
     return httpx.Response(200, json=data)
 
 
-def setup_backend(tmp_path, monkeypatch, case, path):
+def setup_backend(tmp_path, monkeypatch, case, path, *, identity=None):
+    """Real signed owner, selection, Kernel and Vault; fake DNS/HTTP only."""
+    import os
+
+    from agents.core import settings_db
+    from agents.core.acquisition.managed_signing import ManagedSigningKeyStore
+    from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
+    from agents.core.llm import data_handling, provider_selection
+    from agents.core.llm.backend_factory import construct_selected_backend
+    from agents.core.llm.data_handling import physical_request_scope
+    from agents.core.llm.providers import selected_runtime
+    from agents.core.llm.providers.install_service import ProviderInstallService
+    from tests.test_h361_provider_hook_runtime import IMAGE, SimulatedSealedRunner
+    from tests.test_h361_provider_install_kernel import _bind_real_kernel
+    from tests.test_h361_provider_install_service import owner
+
     native, kind, mode, base, model = case
-    signed = replace(DEFAULT_REGISTRY.get(native), id='signed-' + native,
-                     backend_kind=kind, api_mode=mode, default_base_url=base,
-                     fallback_models=(model,), default_max_tokens=64,
-                     reasoning_declarations=None)
-    store = object.__new__(ProviderPackageStore)
-    store._lock_path = tmp_path / 'registry.lock'
-    store._root_identity = (tmp_path.stat().st_dev, tmp_path.stat().st_ino)
-    actions = []
-    store.authorizer = lambda action: (actions.append(action) or Decision(Verdict.GRANT, tier=3))
-    calls = []
-
-    class Runtime:
-        packages = store
-
-        async def evaluate(self, provider_id, **kwargs):
-            calls.append((provider_id, kwargs))
-            messages = json.loads(json.dumps(kwargs['messages']))
-            for row in messages:
-                if row.get('role') == 'user' and type(row.get('content')) is str:
-                    row['content'] += ' [sealed]'
-            declared = signed.supported_reasoning_efforts(kwargs['model'])
-            return {'prepared_messages': messages, 'extra_body': {},
-                    'api_kwargs': {'extra_body': {}, 'kwargs': {}}, 'max_tokens': 64,
-                    'reasoning_vocabulary': list(declared) if declared is not None else None}
-
-        @asynccontextmanager
-        async def dispatch_lease(self, provider_id, *, package_hash, home):
-            async with store.dispatch_lease(provider_id, expected_hash=package_hash, home=home):
-                yield
-
-    profile = AdmittedProviderProfile.from_record(
-        SimpleNamespace(profile=signed, package_hash='f' * 64, home='synthetic-home'), Runtime())
-    store._require_runnable_locked = lambda *_: SimpleNamespace(
-        provider_id=profile.id, artifact_id='a' * 32, package_hash=profile._package_hash,
-        source='user', home=profile._home, profile=signed)
-    seen = []
+    monkeypatch.setenv('JARVIS_ACTION_KERNEL', '1')
+    monkeypatch.setattr(settings_db, 'DB_PATH', tmp_path / 'settings.db')
+    monkeypatch.setattr(settings_db, '_initialized', False)
+    settings_db.init_db(force=True)
+    monkeypatch.setattr(selected_runtime, 'resolve_and_validate',
+                        lambda host, mode: (['93.184.216.34'], None))
+    monkeypatch.setattr(data_handling, '_scope_key', lambda: b'x' * 32)
+    signing = ManagedSigningKeyStore(tmp_path / 'signing')
+    signing.provision(key_id='synthetic-bridge', version=1, key=b'x' * 32)
+    runner = SimulatedSealedRunner()
+    service = ProviderInstallService(root=tmp_path / 'service', signing=signing,
+        profile=AcquisitionSandboxProfile(image=IMAGE, uid=os.getuid(), gid=os.getgid()),
+        kernel=lambda: None, enabled=lambda: True, home='synthetic-home', runner=runner,
+        audit=SimpleNamespace(log=lambda _event: None))
+    service, orch, kill, kernel_actions = _bind_real_kernel((service, None, None, None), tmp_path)
+    identity = identity or 'signed-' + native
+    source = service.incoming('user') / 'addon'
+    source.mkdir(parents=True)
+    (source / 'provider.json').write_text(json.dumps(
+        {'schema_version': 1, 'id': identity, 'aliases': []}))
+    (source / 'helper.py').write_text("def marker():\n    return 'signed-worker'\n")
+    hooks = ('prepare_messages', 'build_extra_body', 'build_api_kwargs_extras')
+    (source / 'main.py').write_text(
+        'from helper import marker\n'
+        'def register_provider():\n    return ' + repr({'id': identity, 'hooks': list(hooks)}) + '\n'
+        'def prepare_messages(messages):\n    return messages\n'
+        'def build_extra_body(**kwargs):\n    return {"plugin_marker": marker()}\n'
+        'def build_api_kwargs_extras(**kwargs):\n    return {}, {}\n')
+    signed = replace(DEFAULT_REGISTRY.get(native), id=identity, display_name='Signed native fixture',
+        aliases=(), backend_kind=kind, api_mode=mode, default_base_url=base,
+        fallback_models=(model,), default_max_tokens=64, reasoning_declarations=None,
+        auth_env=None, env_vars=(), base_url_env=None, auth_type='bearer',
+        capabilities=frozenset({'chat', 'cloud'}), is_user_defined=True)
+    artifact = service.stage('addon', profile=signed, hooks=hooks, source='user', actor=owner())
+    offer = service.propose(artifact['artifact_id'], actor=owner())
+    service.decide(offer['proposal_id'], artifact_id=artifact['artifact_id'],
+                   package_hash=artifact['package_hash'], approved=True, permanent=True,
+                   actor=owner())
+    service.promote(offer['proposal_id'], actor=owner())
+    service.put_credential(identity, artifact['package_hash'], 'host-secret', actor=owner())
+    service.select_provider(identity, artifact['package_hash'], model,
+        expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    runtime = service.selected_runtime()
+    backend = construct_selected_backend(runtime)
+    router = SimpleNamespace(_data_handling_used={})
+    runtime.bind_backend(backend, router)
+    wire = []
 
     def handler(request):
-        seen.append(request)
+        wire.append(request)
         return response(native, path)
 
-    def synthetic_client(profile, credential, model, **kwargs):
-        kwargs.pop('inner', None)
-        return native_admitted_client(profile, credential, model,
-                                      inner=httpx.MockTransport(handler), **kwargs)
-
-    module = __import__('agents.core.llm.' + ('responses' if native == 'openai-responses' else native),
-                        fromlist=['native_admitted_client'])
-    monkeypatch.setattr(module, 'native_admitted_client', synthetic_client)
-    if native == 'anthropic':
-        from agents.core.llm.anthropic import ClaudeBackend
-        backend = ClaudeBackend('host-secret', model=model, profile=profile)
-    elif native == 'gemini':
-        from agents.core.llm.gemini import GeminiBackend
-        backend = GeminiBackend('host-secret', model=model, profile=profile)
-    elif native == 'deepinfra':
-        from agents.core.llm.deepinfra import DeepInfraBackend
-        backend = DeepInfraBackend('host-secret', base_url=base, profile=profile, model=model)
-    elif native == 'openai-responses':
-        from agents.core.llm.responses import ResponsesBackend
-        backend = ResponsesBackend('host-secret', profile=profile, model=model)
-    else:
-        from agents.core.llm.xai import XAIBackend
-        backend = XAIBackend('host-secret', profile=profile, model=model)
-    return backend, model, calls, seen, actions
+    backend.client._transport.inner = httpx.MockTransport(handler)
+    # These adapter-level tests emulate the routed H513 scope. The physical
+    # guard still rechecks exact selected consent and the current signed record.
+    for method in ('generate', 'generate_tool_turn', 'generate_stream'):
+        original = getattr(backend, method, None)
+        if original is None:
+            continue
+        async def guarded(*args, _original=original, **kwargs):
+            with physical_request_scope(lambda: None):
+                return await _original(*args, **kwargs)
+        setattr(backend, method, guarded)
+    actions = [action for action, _decision in kernel_actions if action.kind == 'plugin.egress']
+    store = runtime.profile._hook_runtime.packages
+    authorize = store.authorizer
+    def record_action(action):
+        if action.kind == 'plugin.egress':
+            actions.append(action)
+        return authorize(action)
+    store.authorizer = record_action
+    backend._selected_test_service = service
+    backend._selected_test_kernel = (orch, kill, kernel_actions)
+    backend._selected_test_runner = runner
+    backend._selected_test_source = source
+    return backend, model, runner.commands, wire, actions
 
 
 @pytest.mark.asyncio
@@ -158,115 +184,68 @@ async def test_admitted_native_text_tool_stream_use_signed_hook_and_physical_lea
 @pytest.mark.asyncio
 @pytest.mark.parametrize('case', CASES)
 async def test_trusted_signed_registry_constructs_native_guarded_backend(tmp_path, monkeypatch, case):
-    native, kind, mode, base, model = case
-    profile = replace(DEFAULT_REGISTRY.get(native), id='signed-addon',
-                      display_name='Signed native fixture', aliases=('signed-alias',),
-                      backend_kind=kind, api_mode=mode, default_base_url=base,
-                      fallback_models=(model,), default_max_tokens=64,
-                      capabilities=frozenset({'chat', 'cloud'}),
-                      reasoning_declarations=None, is_user_defined=True)
-    seen = []
+    from tests.test_h361_provider_install_service import owner
 
-    def synthetic_client(profile, credential, model, **kwargs):
-        kwargs.pop('inner', None)
-        return native_admitted_client(profile, credential, model,
-            inner=httpx.MockTransport(lambda request: seen.append(request) or response(native, 'text')),
-            **kwargs)
-
-    module = __import__('agents.core.llm.' + ('responses' if native == 'openai-responses' else native),
-                        fromlist=['native_admitted_client'])
-    monkeypatch.setattr(module, 'native_admitted_client', synthetic_client)
-    backend, _, runner, actions, owners, _ = signed_setup(
-        tmp_path, monkeypatch, profile_override=profile, model=model)
+    backend, model, calls, wire, actions = setup_backend(tmp_path, monkeypatch, case, 'text')
     try:
+        runtime = backend._selected_provider_runtime
+        assert runtime.service.selection_status(actor=owner())['status'] == 'selected'
+        assert runtime.profile is backend.profile
         assert await backend.generate(model, 'hello') == 'ok'
-        assert len(seen) == len(runner.commands) == 1
-        assert owners and any(action.kind == 'plugin.egress' for action in actions)
+        assert len(wire) == len(calls) == len(actions) == 1
+        assert actions[0].kind == 'plugin.egress'
     finally:
         if hasattr(backend, 'aclose'):
             await backend.aclose()
-        elif hasattr(backend, 'close'):
+        else:
             await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_signed_owner_approval_and_real_kernel_authorize_native_egress(tmp_path, monkeypatch):
-    from agents.core.autonomy.policy import AutonomyPolicy
     from agents.core.capability_manifests import manifest_for_action
-    from agents.core.kernel import authorize
-    from agents.core.llm.providers.install_service import ProviderInstallService
+    from agents.core.kernel import Verdict
 
-    native, kind, mode, base, model = CASES[0]
-    profile = replace(DEFAULT_REGISTRY.get(native), id='signed-addon',
-                      display_name='Signed native fixture', aliases=('signed-alias',),
-                      backend_kind=kind, api_mode=mode, default_base_url=base,
-                      fallback_models=(model,), default_max_tokens=64,
-                      capabilities=frozenset({'chat', 'cloud'}),
-                      reasoning_declarations=None, is_user_defined=True)
-    seen = []
-
-    def synthetic_client(profile, credential, model, **kwargs):
-        kwargs.pop('inner', None)
-        return native_admitted_client(profile, credential, model,
-            inner=httpx.MockTransport(lambda request: seen.append(request) or response(native, 'text')),
-            **kwargs)
-
-    monkeypatch.setattr('agents.core.llm.anthropic.native_admitted_client', synthetic_client)
-    backend, packages, runner, actions, owners, _ = signed_setup(
-        tmp_path, monkeypatch, profile_override=profile, model=model)
-
-    verdicts = []
-
-    policy = AutonomyPolicy()
-
-    def bound_kernel(action, *, approval_check):
-        actions.append(action)
-        decision = authorize(action, policy=policy, approval_check=approval_check)
-        verdicts.append((action.kind, decision.verdict, decision.reason))
-        return decision
-
-    service = ProviderInstallService(
-        root=tmp_path, signing=packages.signing, profile=None,
-        kernel=lambda: bound_kernel, enabled=lambda: True, home='synthetic-home')
-    service_store = service._store()
-    backend.profile._hook_runtime.packages = service_store
+    case = CASES[0]
+    backend, model, calls, wire, actions = setup_backend(tmp_path, monkeypatch, case, 'text')
+    runtime = backend._selected_provider_runtime
+    service_store = runtime.profile._hook_runtime.packages
+    policy = backend._selected_test_kernel[0].autonomy.policy
     try:
-        with pytest.raises(ProviderHookRuntimeError, match='native_preparation_unavailable'):
+        with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
             await backend.client.post(
-                base + '/messages', headers={'x-api-key': 'synthetic-host-key'},
+                case[3] + '/messages', headers={'x-api-key': 'nerva-selected-host-credential'},
                 json={'model': model, 'messages': [{'role': 'user', 'content': 'no hook preparation'}]})
-        assert not seen and not runner.commands
-        assert owners and await backend.generate(model, 'hello') == 'ok', verdicts
-        assert len(runner.commands) == len(seen) == 1
-        egress = [action for action in actions if action.kind == 'plugin.egress']
-        assert len(egress) == 1
-        assert all(key in egress[0].payload for key in
+        assert not wire and not calls
+        assert await backend.generate(model, 'hello') == 'ok'
+        assert len(calls) == len(wire) == 1
+        assert len(actions) == 1
+        egress = actions[0]
+        assert all(key in egress.payload for key in
                    manifest_for_action('plugin.egress').inputs['required'])
-        assert egress[0].payload['request_sha256'] == hashlib.sha256(seen[0].content).hexdigest()
-        assert 'synthetic-host-key' not in repr(egress[0])
-        assert 'hello' not in repr(egress[0])
-        # The exact previously granted Action is no longer a receipt outside the send.
-        assert service_store.authorizer(egress[0]).verdict is Verdict.DENY
+        assert egress.payload['request_sha256'] == hashlib.sha256(wire[0].content).hexdigest()
+        assert 'host-secret' not in repr(egress)
+        assert 'hello' not in repr(egress)
+        assert service_store.authorizer(egress).verdict is Verdict.DENY
         async with service_store.dispatch_lease(
-                'signed-addon', expected_hash=egress[0].payload['package_hash'],
-                home='synthetic-home'):
-            # A live package lease alone cannot bless a fabricated egress Action.
-            assert service_store.authorizer(egress[0]).verdict is Verdict.DENY
+                runtime.profile.id, expected_hash=egress.payload['package_hash'],
+                home=runtime.service.home):
+            assert service_store.authorizer(egress).verdict is Verdict.DENY
         for field, changed in [('url', 'https://elsewhere.invalid/v1/messages'),
                                ('model', 'other'), ('package_hash', '0' * 64),
                                ('receipt_id', '0' * 32)]:
-            forged = deepcopy(egress[0])
+            forged = deepcopy(egress)
             forged.payload[field] = changed
             assert service_store.authorizer(forged).verdict is Verdict.DENY
         policy.mode = 'ask'
         with pytest.raises(ProviderHookRuntimeError, match='not_runnable'):
             await backend.generate(model, 'again')
-        assert len(seen) == 1 and verdicts[-1][1] is Verdict.QUEUE
+        assert len(wire) == 1
         policy.mode = 'auto'
-        await service_store.revoke_async('signed-addon')
+        await service_store.revoke_async(runtime.profile.id)
         with pytest.raises(ProviderHookRuntimeError, match='not_runnable'):
             await backend.generate(model, 'revoked')
-        assert len(seen) == 1
+        assert len(wire) == 1
     finally:
         await backend.aclose()
 

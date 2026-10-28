@@ -237,6 +237,7 @@ def authorize(action: Action,
         sealed_provider = False
         sealed_provider_egress = False
         sealed_provider_credential = False
+        sealed_provider_selection = False
         if action.kind == "plugin.load":
             from ..llm.providers.admission_contract import PROVIDER_LOAD_CONTRACT
             with contextlib.suppress(Exception):
@@ -252,6 +253,13 @@ def authorize(action: Action,
                 sealed_provider_credential = (
                     PROVIDER_CREDENTIAL_CONTRACT.evaluate(action.payload).admissible
                     and credential_receipt_matches(action))
+        elif action.kind == "provider.selection":
+            from ..llm.providers.admission_contract import PROVIDER_SELECTION_CONTRACT
+            from ..llm.providers.install_service import selection_receipt_matches
+            with contextlib.suppress(Exception):
+                sealed_provider_selection = (
+                    PROVIDER_SELECTION_CONTRACT.evaluate(action.payload).admissible
+                    and selection_receipt_matches(action))
         task_receipt = (
             (sealed_terminal or sealed_checkpoint or sealed_hermes)
             and isinstance(approved_task_id, int)
@@ -259,7 +267,8 @@ def authorize(action: Action,
             and approved_task_id > 0
         )
         if (
-            (task_receipt or sealed_provider or sealed_provider_egress or sealed_provider_credential)
+            (task_receipt or sealed_provider or sealed_provider_egress or sealed_provider_credential
+             or sealed_provider_selection)
             and pdec.outcome == ASK
             and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
             and callable(approval_check)
@@ -275,6 +284,7 @@ def authorize(action: Action,
                            "sealed_provider_approval" if sealed_provider else
                            "sealed_provider_egress_approval" if sealed_provider_egress else
                            "sealed_provider_credential_approval" if sealed_provider_credential else
+                           "sealed_provider_selection_approval" if sealed_provider_selection else
                            "sealed_hermes_approval")
             decision = Decision(Verdict.GRANT, reason=f"{seal_reason}; {pdec.reason}", tier=tier,
                                 task_id=approved_task_id if task_receipt else None)

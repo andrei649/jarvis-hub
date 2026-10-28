@@ -27,20 +27,24 @@ def _compatible(profile, key, base, model, settings, pool):
         caps.add("reasoning-effort")
     if _setting(settings, "compatible_prompt_cache_key", False):
         caps.add("prompt-cache-key")
-    profile = replace(profile, capabilities=frozenset(caps))
+    from .providers.admitted_profiles import AdmittedProviderProfile
+    if not isinstance(profile, AdmittedProviderProfile):
+        profile = replace(profile, capabilities=frozenset(caps))
     return OpenRouterBackend(
         key, base_url=base, profile=profile,
         reasoning_effort=_setting(settings, "reasoning_effort", ""),
         effort_declarations=_setting(settings, "compatible_effort_declarations", ""),
         provider_routing=lambda: provider_routing_from_settings(
             lambda name, default: _setting(settings, name, default)),
+        **({'model': model} if isinstance(profile, AdmittedProviderProfile) else {}),
     )
 
 
 def _deepinfra(profile, key, base, model, settings, pool):
     from .deepinfra import DeepInfraBackend, validated_main_base
     from .providers.admitted_profiles import AdmittedProviderProfile
-    return DeepInfraBackend(key, base_url=validated_main_base(base),
+    from .providers.selected_runtime import current_construction
+    return DeepInfraBackend(key, base_url=base if current_construction() is not None else validated_main_base(base),
                            reasoning_effort=_setting(settings, "reasoning_effort", ""),
                            effort_declarations=_setting(settings, "compatible_effort_declarations", ""),
                            **({'profile': profile, 'model': model}
@@ -49,8 +53,9 @@ def _deepinfra(profile, key, base, model, settings, pool):
 
 def _responses(profile, key, base, model, settings, pool):
     from .providers.admitted_profiles import AdmittedProviderProfile
+    from .providers.selected_runtime import current_construction
     from .responses import ResponsesBackend
-    if base.rstrip("/") != "https://api.openai.com/v1":
+    if current_construction() is None and base.rstrip("/") != "https://api.openai.com/v1":
         raise BackendUnavailable("Responses requires its fixed OpenAI authority")
     return ResponsesBackend(key,
                             retention=_setting(settings, "responses_cache_retention", "in_memory"),
@@ -60,8 +65,9 @@ def _responses(profile, key, base, model, settings, pool):
 
 def _xai(profile, key, base, model, settings, pool):
     from .providers.admitted_profiles import AdmittedProviderProfile
+    from .providers.selected_runtime import current_construction
     from .xai import XAIBackend
-    if base.rstrip("/") != "https://api.x.ai/v1":
+    if current_construction() is None and base.rstrip("/") != "https://api.x.ai/v1":
         raise BackendUnavailable("xAI requires its fixed authority")
     return XAIBackend(key, reasoning_effort=_setting(settings, "reasoning_effort", ""),
                       effort_declarations=_setting(settings, "compatible_effort_declarations", ""),
@@ -126,13 +132,21 @@ def construct_backend(provider_id, *, model="", api_key=None, base_url=None, set
     from .host_protocol import protocol_refusal
 
     registry = providers.DEFAULT_REGISTRY if registry is None else registry
-    try:
-        profile = registry.get(provider_id)
-    except KeyError as exc:
-        raise BackendUnavailable("provider declaration is unknown") from exc
+    from .providers.selected_runtime import current_construction
+    selected = current_construction()
+    if selected is not None and provider_id == selected.binding.provider_id:
+        profile = selected.profile
+    else:
+        try:
+            profile = registry.get(provider_id)
+        except KeyError as exc:
+            raise BackendUnavailable("provider declaration is unknown") from exc
     from .providers.admitted_profiles import AdmittedProviderProfile
     if isinstance(profile, AdmittedProviderProfile):
         from .providers.admitted_registry import AdmittedProviderRegistry
+        if (selected is None or selected.profile is not profile
+                or selected.binding.provider_id != profile.id):
+            raise BackendUnavailable('admitted provider requires owner selected capability')
         if ((profile.backend_kind != 'openai-compatible'
                 and type(registry) is not AdmittedProviderRegistry)
                 or profile.backend_kind not in ADMITTED_BACKEND_KINDS
@@ -173,10 +187,9 @@ def construct_backend(provider_id, *, model="", api_key=None, base_url=None, set
         # never grants a package the right to select a host credential.
         if auth_pool is not None:
             raise BackendUnavailable("admitted provider requires an explicit host credential")
-        if profile.backend_kind != 'openai-compatible':
-            if not profile.fallback_models or (model and model not in profile.fallback_models):
-                raise BackendUnavailable("admitted provider model is not signed")
-            model = model or profile.fallback_models[0]
+        if not profile.fallback_models or (model and model not in profile.fallback_models):
+            raise BackendUnavailable("admitted provider model is not signed")
+        model = model or profile.fallback_models[0]
         if profile.auth_type == "none":
             if api_key not in (None, ""):
                 raise BackendUnavailable("credential supplied to a no-auth provider")
@@ -196,3 +209,19 @@ def construct_backend(provider_id, *, model="", api_key=None, base_url=None, set
         if isinstance(exc, ProviderRoutingInvalid):
             raise BackendUnavailable("provider routing configuration refused") from exc
         raise BackendUnavailable("provider native construction refused") from exc
+
+
+def construct_selected_backend(runtime, *, settings=None):
+    """Only a fresh service-owned selected runtime can construct marker-only clients."""
+    from .providers.selected_runtime import AUTH_MARKER, SelectedProviderRuntime, construction_scope
+
+    if type(runtime) is not SelectedProviderRuntime:
+        raise BackendUnavailable('selected runtime authority unavailable')
+    runtime.check()
+    with construction_scope(runtime):
+        backend = construct_backend(
+            runtime.binding.provider_id, model=runtime.binding.model,
+            api_key='' if runtime.binding.auth_type == 'none' else AUTH_MARKER,
+            registry=runtime.registry, settings=settings)
+    backend._selected_provider_runtime = runtime
+    return backend

@@ -55,6 +55,15 @@ async def _call(request, method, *args):
     from .models_llm import _provider_install_worker
 
     try:
+        if method in {'put_credential', 'delete_credential'}:
+            from agents.core.llm.providers import lifecycle_gates
+
+            from .models_llm import _provider_install_context
+
+            service, actor = await _provider_install_worker(_provider_install_context, request)
+            await _provider_install_worker(service._owner, actor)
+            store = await _provider_install_worker(lambda: service._store(actor=actor))
+            await lifecycle_gates.quiesce(service.root, args[0], store)
         return nocache_json(await _provider_install_worker(_sync, request, method, args))
     except HTTPException:
         raise
