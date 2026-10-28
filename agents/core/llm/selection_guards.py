@@ -22,6 +22,8 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -118,6 +120,23 @@ def _usd(amount: float) -> str:
 
 Guard = Callable[[Choice], "Finding | None"]
 GUARDS: list[Guard] = []
+_SIGNED_CANDIDATE: ContextVar[tuple | None] = ContextVar('signed_guard_candidate', default=None)
+
+
+@contextmanager
+def _signed_candidate(profile, provider: str, model: str):
+    """Use the already verified signed declaration while its owner choice is checked.
+
+    The current selection may be absent or stale, and looking it up while the
+    selection/package leases are held would reacquire a nonreentrant lock.
+    """
+    if profile.id != provider or model not in profile.fallback_models:
+        raise ValueError('signed guard candidate changed')
+    token = _SIGNED_CANDIDATE.set((provider, model, profile))
+    try:
+        yield
+    finally:
+        _SIGNED_CANDIDATE.reset(token)
 
 
 def register(guard: Guard) -> Guard:
@@ -148,6 +167,9 @@ def cost_guard(choice: Choice) -> Finding | None:
 def _current_signed_choice(choice: Choice) -> bool:
     if not choice.provider or not choice.model:
         return False
+    candidate = _SIGNED_CANDIDATE.get()
+    if candidate is not None and (choice.provider, choice.model) == candidate[:2]:
+        return True
     _service, selected = _selected_service_record()
     return (selected is not None and selected.binding.provider_id == choice.provider
             and selected.binding.model == choice.model)
@@ -166,8 +188,11 @@ def _selected_service_record():
     return runtime, read_selection()
 
 
-def _profiles_for(provider: str):
+def _profiles_for(provider: str, model: str | None = None):
     if provider:
+        candidate = _SIGNED_CANDIDATE.get()
+        if candidate is not None and (provider, model) == candidate[:2]:
+            return [candidate[2]]
         runtime, selected = _selected_service_record()
         if selected is not None and selected.binding.provider_id == provider:
             # A signed replacement can use a built-in identity. The signed
@@ -196,7 +221,7 @@ def data_policy_guard(choice: Choice) -> Finding | None:
         return None
     # An unknown provider (a job pin without one) is checked against every profile's
     # model rows: the stricter answer, since the pin may be served by any of them.
-    for profile in _profiles_for(choice.provider):
+    for profile in _profiles_for(choice.provider, choice.model):
         policy, note = profile.data_policy_for(choice.model)
         if policy == "trains-on-inputs":
             return Finding("data_policy", ACKNOWLEDGE_TRAINING, choice,

@@ -52,6 +52,7 @@ def _sync(request, method, kwargs):
 
 
 async def _call(request, method, kwargs):
+    from agents.core.llm import selection_guards
     from agents.core.llm.provider_selection import SelectionConflict, SelectionInvalid
     from agents.core.llm.providers.packages import ProviderPackageError
     from agents.core.llm.providers.selection_gates import SelectionBusy, SelectionUnavailable
@@ -87,6 +88,12 @@ async def _call(request, method, kwargs):
         return nocache_json({'error': 'provider_selection_stale_or_busy'}, status_code=409)
     except SelectionUnavailable:
         return nocache_json({'error': 'provider_selection_unavailable'}, status_code=503)
+    except selection_guards.SelectionRefused as exc:
+        needs = (['acknowledge_data_policy']
+                 if selection_guards.ACKNOWLEDGE_TRAINING in exc.missing else [])
+        if any(flag != selection_guards.ACKNOWLEDGE_TRAINING for flag in exc.missing):
+            needs.append('additional_guard')
+        return nocache_json({'error': 'selection_guard', 'needs': needs}, status_code=409)
     except (ProviderPackageError, SelectionInvalid, ValueError, TypeError, KeyError, OSError):
         return nocache_json({'error': 'provider_selection_refused'}, status_code=409)
 

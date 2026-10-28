@@ -1,4 +1,5 @@
 """Owner selected metadata uses a live signed record, vault HWM and real Kernel."""
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ from agents.core.kernel import Verdict
 from agents.core.llm import provider_selection
 from agents.core.llm.providers.packages import ProviderPackageError
 from tests.test_h361_provider_credentials import active
+from tests.test_h361_provider_install_kernel import _bind_real_kernel
 from tests.test_h361_provider_install_routes import HEADERS, client
 from tests.test_h361_provider_install_service import owner, service
 
@@ -174,3 +176,193 @@ def test_signed_guard_uses_exact_profile_and_unknown_price_ack(
     (exact,) = selection_guards._profiles_for('synthetic-addon')
     assert exact.id == 'synthetic-addon'
     assert exact._package_hash == artifact['package_hash']
+
+
+def test_owner_selection_runs_registered_guard_once_before_cas(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm import selection_guards as sg
+
+    svc, _, _, seen, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-registry-key', actor=owner())
+    observed = []
+
+    def extra(choice):
+        observed.append(choice)
+        return sg.Finding('synthetic_review_guard', 'uncleared_guard', choice,
+                          'registered review required')
+
+    monkeypatch.setattr(sg, 'GUARDS', [*sg.GUARDS, extra])
+    before = provider_selection.current_revision()
+    with pytest.raises(sg.SelectionRefused) as refused:
+        svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+            expected_revision=before, acknowledge_unknown_price=True,
+            acknowledge_data_policy=True, actor=owner())
+    assert refused.value.missing == ['uncleared_guard']
+    assert len(observed) == 1
+    assert observed[0] == sg.Choice('provider.selection', 'synthetic-addon', 'synthetic-model')
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+    assert not [action for action, _decision in seen if action.kind == 'provider.selection']
+
+
+def test_owner_selection_guard_exception_keeps_revision_and_binding(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm import selection_guards as sg
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-registry-key', actor=owner())
+    calls = []
+
+    def broken(choice):
+        calls.append(choice)
+        raise RuntimeError('synthetic secret in guard failure')
+
+    monkeypatch.setattr(sg, 'GUARDS', [*sg.GUARDS, broken])
+    before = provider_selection.current_revision()
+    with pytest.raises(ProviderPackageError, match='guard unavailable') as refused:
+        svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+            expected_revision=before, acknowledge_unknown_price=True,
+            acknowledge_data_policy=True, actor=owner())
+    assert 'synthetic secret' not in str(refused.value)
+    assert len(calls) == 1
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+
+
+def _active_with_signed_policy(service, tmp_path, *, provider_id='synthetic-addon',
+                               model='synthetic-model', policy='no-training'):
+    svc, profile, hooks, _ = service
+    svc, _, _, _ = _bind_real_kernel(service, tmp_path)
+    events = []
+    svc.audit = SimpleNamespace(log=events.append)
+    if provider_id != profile.id:
+        source = svc.incoming('user') / 'addon'
+        (source / 'provider.json').write_text(json.dumps(
+            {'schema_version': 1, 'id': provider_id, 'aliases': [],
+             'replacement_target': provider_id}))
+        script = source / 'main.py'
+        script.write_text(script.read_text().replace(profile.id, provider_id))
+    profile = replace(profile, id=provider_id, auth_type='bearer',
+                      fallback_models=(model,), data_policy=policy)
+    artifact = svc.stage('addon', profile=profile, hooks=hooks, source='user',
+                         replacement_target=provider_id if provider_id == 'openrouter' else None,
+                         actor=owner())
+    offer = svc.propose(artifact['artifact_id'], actor=owner())
+    svc.decide(offer['proposal_id'], artifact_id=artifact['artifact_id'],
+               package_hash=artifact['package_hash'], approved=True, permanent=True,
+               actor=owner())
+    svc.promote(offer['proposal_id'], actor=owner())
+    svc.put_credential(provider_id, artifact['package_hash'], 'synthetic-policy-key', actor=owner())
+    return svc, artifact, events
+
+
+def test_signed_owner_choice_uses_candidate_policy_and_never_builtin_collision(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm import selection_guards as sg
+
+    model = 'anthropic/claude-fable-5:free'
+    svc, artifact, _ = _active_with_signed_policy(
+        service, tmp_path, provider_id='openrouter', model=model)
+    seen = []
+
+    def inspect(choice):
+        seen.append((sg._current_signed_choice(choice),
+                     sg._profiles_for(choice.provider, choice.model)[0].data_policy))
+
+    def no_stale_lookup():
+        raise AssertionError('stale selection lookup')
+
+    monkeypatch.setattr(sg, '_selected_service_record', no_stale_lookup)
+    monkeypatch.setattr(sg, 'GUARDS', [*sg.GUARDS, inspect])
+    before = provider_selection.current_revision()
+    chosen = svc.select_provider('openrouter', artifact['package_hash'], model,
+        expected_revision=before, acknowledge_unknown_price=True,
+        acknowledge_data_policy=False, actor=owner())
+    assert chosen['revision'] == before + 1
+    assert seen == [(True, 'no-training')]
+    assert provider_selection.read_selection().binding.data_policy_ack is False
+
+
+def test_signed_training_guard_requires_audit_and_fails_closed(
+        service, tmp_path, selected_store):
+    svc, artifact, events = _active_with_signed_policy(
+        service, tmp_path, policy='trains-on-inputs')
+    before = provider_selection.current_revision()
+    with pytest.raises(ProviderPackageError, match='risk acknowledgement'):
+        svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+            expected_revision=before, acknowledge_unknown_price=True, actor=owner())
+    assert provider_selection.current_revision() == before
+    original = svc.audit.log
+
+    def fail_guard_audit(event):
+        if event.action_taken == 'model_training_consent':
+            raise OSError('synthetic audit failure')
+        original(event)
+
+    svc.audit = SimpleNamespace(log=fail_guard_audit)
+    with pytest.raises(ProviderPackageError, match='guard consent audit unavailable'):
+        svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+            expected_revision=before, acknowledge_unknown_price=True,
+            acknowledge_data_policy=True, actor=owner())
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+    svc.audit = SimpleNamespace(log=events.append)
+    chosen = svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+        expected_revision=before, acknowledge_unknown_price=True,
+        acknowledge_data_policy=True, actor=owner())
+    assert chosen['revision'] == before + 1
+    assert [event.action_taken for event in events].count('model_training_consent') == 1
+    assert [event.action_taken for event in events].count(
+        'provider_selection_unknown_price_acknowledged') == 2
+    assert [event.action_taken for event in events].count(
+        'provider_selection_data_policy_acknowledged') == 2
+
+
+def test_registered_guard_denial_preserves_existing_signed_binding(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm import selection_guards as sg
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-registry-key', actor=owner())
+    saved = svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+        expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    before = provider_selection.read_selection()
+
+    def blocking(choice):
+        return sg.Finding('extra_review', 'unprovided_flag', choice, 'extra review')
+
+    monkeypatch.setattr(sg, 'GUARDS', [*sg.GUARDS, blocking])
+    with pytest.raises(sg.SelectionRefused):
+        svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+            expected_revision=saved['revision'], acknowledge_unknown_price=True,
+            acknowledge_data_policy=True, actor=owner())
+    assert provider_selection.read_selection() == before
+    assert provider_selection.current_revision() == saved['revision']
+
+
+def test_owner_route_reports_bounded_guard_requirement_without_message_echo(
+        client, service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm import selection_guards as sg
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    secret = 'synthetic-guard-secret-not-echoed'
+    svc.put_credential('synthetic-addon', artifact['package_hash'], secret, actor=owner())
+
+    def extra(choice):
+        return sg.Finding('private-guard', secret, choice, secret)
+
+    monkeypatch.setattr(sg, 'GUARDS', [*sg.GUARDS, extra])
+    before = provider_selection.current_revision()
+    response = client.put('/api/admin/llm/provider-selection', headers=HEADERS,
+        json={'provider': 'synthetic-addon', 'package_hash': artifact['package_hash'],
+              'model': 'synthetic-model', 'expected_revision': before,
+              'acknowledge_unknown_price': True, 'acknowledge_data_policy': True})
+    assert response.status_code == 409
+    assert response.json() == {'error': 'selection_guard', 'needs': ['additional_guard']}
+    assert secret not in response.text
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None

@@ -449,7 +449,7 @@ class ProviderInstallService:
                         acknowledge_unknown_price=False, acknowledge_data_policy=False,
                         actor):
         from agents.core import settings_db
-        from agents.core.llm import provider_selection
+        from agents.core.llm import provider_selection, selection_guards
         from agents.core.llm.providers import selection_gates
 
         from .credentials import credential_binding
@@ -482,6 +482,15 @@ class ProviderInstallService:
                 if acknowledge_unknown_price is not True or (policy in {
                         'unknown', 'trains-on-inputs'} and acknowledge_data_policy is not True):
                     raise ProviderPackageError('explicit selected provider risk acknowledgement required')
+                choice = selection_guards.Choice('provider.selection', provider_id, model)
+                try:
+                    with selection_guards._signed_candidate(record.profile, provider_id, model):
+                        findings = selection_guards.enforce(
+                            [choice], acknowledge_training=acknowledge_data_policy)
+                except selection_guards.SelectionRefused:
+                    raise
+                except Exception:
+                    raise ProviderPackageError('selection guard unavailable') from None
                 binding = provider_selection.SelectionBinding(
                     'local-owner-v1', self.home, record.provider_id, model,
                     record.source, record.artifact_id, record.package_hash,
@@ -492,6 +501,10 @@ class ProviderInstallService:
                 self._selection_authorize(binding, operation='select', revision=current,
                                           actor=actor, price_ack=True,
                                           data_ack=acknowledge_data_policy)
+                try:
+                    selection_guards.record(findings, 'signed provider selection', self.audit)
+                except Exception:
+                    raise ProviderPackageError('selection guard consent audit unavailable') from None
                 self._owner(actor)
                 if self._credential_record_locked(store, provider_id, package_hash) != record:
                     raise ProviderPackageError('signed provider changed before selection')
