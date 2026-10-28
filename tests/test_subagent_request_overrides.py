@@ -659,6 +659,8 @@ async def test_a_temperature_the_model_family_refuses_is_recorded_as_ignored():
     async def runner(task, session_id, agent):
         rc.apply_generation_overrides(1024, 0.7)                 # what _gen_params does
         backend = ClaudeBackend.__new__(ClaudeBackend)
+        from agents.core.llm.providers import DEFAULT_REGISTRY
+        backend.profile = DEFAULT_REGISTRY.get("anthropic")
         backend.model, backend.reasoning_effort, backend.effort_overrides = "claude-x", "", {}
         payload = {"model": "claude-x", "max_tokens": 64, "temperature": 0.1}
         # A family that takes no sampling: the wire fit drops temperature.

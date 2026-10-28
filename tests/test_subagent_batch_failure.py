@@ -382,6 +382,7 @@ async def test_the_openrouter_backend_notes_its_failure():
 
 async def test_the_claude_backend_notes_its_failure():
     from agents.core.llm.anthropic import ClaudeBackend
+    from agents.core.llm.providers import DEFAULT_REGISTRY
 
     def handler(request):
         return httpx.Response(404, json={"type": "error", "error": {"type": "not_found_error",
@@ -389,6 +390,7 @@ async def test_the_claude_backend_notes_its_failure():
                               request=request)
 
     backend = ClaudeBackend.__new__(ClaudeBackend)
+    backend.profile = DEFAULT_REGISTRY.get("anthropic")
     backend.api_key, backend.model, backend.auth_pool = "sk-ant-test", "claude-nope", None
     backend.reasoning_effort, backend.effort_overrides = "", {}
     backend.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
