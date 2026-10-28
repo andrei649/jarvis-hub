@@ -101,7 +101,7 @@ EXPECT_OVERRIDES = {
 PROBE_OVERRIDES = {
     "GET /api/llm/provider-packages/{artifact_id}": (
         "`GET $B/api/llm/provider-packages/{artifact_id}` with the artifact_id "
-        "from a successful owner stage receipt (§02)",
+        "from a successful owner stage receipt",
         "**200** for that signed staged artifact · **409** `provider_install_refused` "
         "for an unknown id — no package list route exists",
     ),

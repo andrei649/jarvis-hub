@@ -122,4 +122,5 @@ def test_provider_inspect_probe_uses_stage_receipt_and_actual_unknown_status():
     command, expectation = gen.probe(
         'GET', '/api/llm/provider-packages/{artifact_id}', 'admin')
     assert 'stage' in command and 'list route' not in command
+    assert '§02' not in command
     assert '409' in expectation and '404' not in expectation
