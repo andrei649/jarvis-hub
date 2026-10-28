@@ -1037,11 +1037,23 @@ def runtime_running_elsewhere(source_root=None) -> bool:
 
 def _zombie(pid: int) -> bool:
     """A coordinator that exited for a restore leaves its mark (H010 review r3): once it
-    is dead it holds nothing, even before its parent has reaped it (Linux state ``Z``)."""
+    is dead it holds nothing, even before its parent has reaped it (state ``Z``).
+
+    Linux exposes that state in /proc. On macOS the already-pinned psutil backend
+    reads it through the native process API. An unavailable probe never releases a
+    root that may still have a live holder.
+    """
     try:
         stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
     except OSError:
-        return False
+        try:
+            import psutil
+        except ImportError:
+            return False
+        try:
+            return psutil.Process(pid).status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+        except psutil.Error:
+            return False
     fields = stat.rsplit(")", 1)[-1].split()
     return bool(fields) and fields[0] in ("Z", "X")
 

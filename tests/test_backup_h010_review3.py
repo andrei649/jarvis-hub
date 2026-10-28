@@ -542,15 +542,46 @@ def test_the_grace_comes_from_the_environment(monkeypatch):
     assert bk.runtime_restore_grace_seconds() == bk.RUNTIME_RESTORE_GRACE_DEFAULT
 
 
-@pytest.mark.skipif(not _LINUX_PROC, reason="reads the process state from /proc")
+@pytest.mark.skipif(os.name != "posix", reason="POSIX unreaped child process")
 def test_an_exited_coordinator_not_yet_reaped_no_longer_holds_the_root(root):
     """The yield leaves the mark to a pid that is dead; before its parent reaps it the pid
     is a zombie, which holds no file, so the restore must not wait for it."""
+    import psutil
+
     child = subprocess.Popen([sys.executable, "-c", "pass"])  # nosec B603
     (root / "runtime.pid").write_text(str(child.pid), encoding="ascii")
     try:
-        _wait_for(lambda: Path(f"/proc/{child.pid}/stat").read_text().rsplit(")", 1)[-1].split()[0]
-                  == "Z", timeout=10, what="the zombie state")
+        _wait_for(lambda: psutil.Process(child.pid).status() == psutil.STATUS_ZOMBIE,
+                  timeout=10, what="the zombie state")
         assert bk.runtime_running_elsewhere(root) is False
     finally:
         child.wait()
+
+
+@pytest.mark.parametrize("denied", [False, True])
+def test_a_live_runtime_still_holds_the_root_when_proc_is_unavailable(root, monkeypatch, denied):
+    import psutil
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])  # nosec B603
+    (root / "runtime.pid").write_text(str(child.pid), encoding="ascii")
+    read_text = Path.read_text
+
+    def without_proc(path, *args, **kwargs):
+        if str(path).startswith("/proc/"):
+            raise FileNotFoundError(str(path))
+        return read_text(path, *args, **kwargs)
+
+    class NativeProcess:
+        def status(self):
+            if denied:
+                raise psutil.AccessDenied(child.pid)
+            return psutil.STATUS_RUNNING
+
+    monkeypatch.setattr(Path, "read_text", without_proc)
+    monkeypatch.setattr(psutil, "Process", lambda pid: NativeProcess())
+    try:
+        assert bk.runtime_running_elsewhere(root) is True
+        assert bk.wait_for_runtime_yield(root, timeout=0) is False
+    finally:
+        child.terminate()
+        child.wait(timeout=5)
