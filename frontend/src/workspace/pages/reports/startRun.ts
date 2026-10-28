@@ -11,9 +11,23 @@ export interface StartedRun {
   alreadyRunning: boolean;
 }
 
+/** Runs the person has just started from this page: the run page announces their outcome even
+    when it is already final on arrival. Bounded: only the latest few are kept. */
+const startedRuns: number[] = [];
+
+export function consumeStartedRun(runId: number): boolean {
+  const index = startedRuns.indexOf(runId);
+  if (index < 0) return false;
+  startedRuns.splice(index, 1);
+  return true;
+}
+
 export async function startRun(reportId: number): Promise<StartedRun> {
   try {
-    return { runId: (await runReport(reportId)).id, alreadyRunning: false };
+    const runId = (await runReport(reportId)).id;
+    startedRuns.push(runId);
+    if (startedRuns.length > 8) startedRuns.shift();
+    return { runId, alreadyRunning: false };
   } catch (err) {
     const running = err instanceof WorkspaceApiError && err.code === 'run_in_progress' ? Number(err.extra.run_id) : Number.NaN;
     if (Number.isInteger(running) && running > 0) return { runId: running, alreadyRunning: true };

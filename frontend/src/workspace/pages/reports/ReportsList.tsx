@@ -95,7 +95,7 @@ export function ReportsList() {
         <span className="ws-row-actions">
           {r.can_run !== false && (
             <Button size="sm" icon="play" busy={runningId === r.id} onClick={() => void run(r)} aria-label={t('reports.action.runNamed', { name: r.name })}>
-              {t('reports.action.run')}
+              <span className="ws-run-label">{t('reports.action.run')}</span>
             </Button>
           )}
           <Menu
