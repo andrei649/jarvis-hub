@@ -879,7 +879,7 @@ class AgentToolRuntime:
                         agent_id=agent_id, event_sink=event_sink,
                         output_risks=output_risks,
                     ):
-                        return _CONTEXT_REPLY
+                        return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
             # H513: every round rechecks revocation after tool/profile awaits.
             # Errors propagate before provider I/O; an unreadable gate never widens.
             if before_model_call is not None:
