@@ -48,7 +48,6 @@ import functools
 import io
 import logging
 import math
-import os
 import posixpath
 import re
 import tempfile
@@ -67,7 +66,7 @@ from defusedxml.ElementTree import ParseError, iterparse
 from pypdf import PasswordType, PdfReader
 
 from agents.core.archive_safe import ArchiveLimits, ArchiveRejected, extract_zip_bytes
-from agents.core.env_config import env_flag, truthy
+from agents.core.env_config import env_flag, env_str, truthy
 
 logger = logging.getLogger("nerva.workspace.extract")
 
@@ -376,7 +375,7 @@ def _ocr_engine() -> Callable[[bytes, int, float], str] | None:
         import pytesseract
     except ImportError:
         return None
-    lang = os.environ.get("NERVA_WORKSPACE_OCR_LANG", "").strip() or "eng"
+    lang = env_str("NERVA_WORKSPACE_OCR_LANG").strip() or "eng"
 
     def read(data: bytes, index: int, seconds: float) -> str:
         document = pypdfium2.PdfDocument(data)
