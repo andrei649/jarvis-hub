@@ -101,6 +101,17 @@ class CheckpointManager:
                 compaction_sha256 TEXT NOT NULL DEFAULT ''
             )
         """)
+        self._conn.execute("""CREATE TABLE IF NOT EXISTS session_micro_views (
+            session_id TEXT PRIMARY KEY,
+            instance_id TEXT NOT NULL,
+            clock_revision INTEGER NOT NULL,
+            view_sha256 TEXT NOT NULL,
+            payload TEXT NOT NULL
+        )""")
+        self._conn.execute("""CREATE TRIGGER IF NOT EXISTS session_micro_view_on_delete
+            AFTER DELETE ON sessions BEGIN
+            DELETE FROM session_micro_views WHERE session_id=OLD.id;
+        END""")
         # H262 — one row per maintenance job: when it last claimed a run (a compare-and-set
         # both processes on this data root share) and what it keeps between runs.
         self._conn.execute("""
@@ -670,6 +681,7 @@ class CheckpointManager:
         from .conversation_clock import ClockSnapshot
         if not self._conn or not isinstance(snapshot, ClockSnapshot):
             return None
+
         moment = now or datetime.now(timezone.utc)
         # A wall-clock correction must not move an accepted rebuild backwards.
         if moment.astimezone() < snapshot.rebuilt_at.astimezone():
@@ -694,6 +706,22 @@ class CheckpointManager:
         except Exception:
             logger.warning("compaction clock commit refused", exc_info=True)
             return None
+
+    def commit_micro_view(self, snapshot, *, history_revision: int,
+                          history_digest: str, covered_count: int, summary: str,
+                          protected_count: int = 0, lifetime=None,
+                          tier: str = "local-digest") -> bool:
+        from .memory.compaction_state import commit
+
+        return commit(self, snapshot, history_revision=history_revision,
+                      history_digest=history_digest, covered_count=covered_count,
+                      summary=summary, protected_count=protected_count,
+                      lifetime=lifetime, tier=tier)
+
+    def load_micro_view(self, session_id: str) -> dict | None:
+        from .memory.compaction_state import load
+
+        return load(self, session_id)
 
     def update_session(self, session_id: str, turn_count: int = None, summary: str = None):
         if not self._conn:

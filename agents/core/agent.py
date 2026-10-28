@@ -960,7 +960,25 @@ class Agent:
             self._check_prepared_budget(
                 prepared_route, prompt, system, cached_input_tokens=cached_input_tokens,
             )
+        from .turn_compaction import active_compaction
+        compaction = active_compaction()
+        if compaction is not None and compaction.session_id == sid:
+            compaction.guard_request(
+                prompt=prompt, system=system, model=model,
+                window_tokens=effective_window.tokens if effective_window is not None else None,
+                max_tokens=max_tokens,
+            )
         sink = usage_sink if usage_sink is not None else current_observer()
+        reported_prompt_usage = []
+        if compaction is not None and compaction.session_id == sid and compaction.enabled:
+            upstream_sink = sink
+
+            def capture_h391_usage(usage):
+                reported_prompt_usage.append(usage)
+                if upstream_sink is not None:
+                    upstream_sink(usage)
+
+            sink = capture_h391_usage
         from . import trajectory  # H652: the whole turn, kept for training export (opt-in)
 
         with (clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer,
@@ -978,6 +996,14 @@ class Agent:
                 is_backend_failure_reply,
                 is_degraded_reply,
             )
+            if (compaction is not None and len(reported_prompt_usage) == 1
+                    and response != THINKING_EXHAUSTED_REPLY):
+                compaction.observe_usage(
+                    reported_prompt_usage[0],
+                    provider_succeeded=(not is_degraded_reply(response)
+                                        and not is_backend_failure_reply(
+                                            response.lstrip() if isinstance(response, str) else response)),
+                )
             if response == THINKING_EXHAUSTED_REPLY:
                 from .turn_stops import record_runtime_stop
                 record_runtime_stop("thinking_exhausted")

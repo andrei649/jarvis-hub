@@ -319,6 +319,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="context_window",   value=6,                     label="Context window (turns)",kind="number"),
     dict(category="memory",  key="context_compression", value=False,              label="Compress long context (hot path)", kind="toggle"),
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
+    dict(category="memory",  key="compression_max_attempts", value=3,             label="Maximum compaction attempts before provider evidence (1-10)", kind="number"),
+    dict(category="memory",  key="compression_preflight_timeout_seconds", value=120, label="Maximum seconds for one context compaction pass", kind="number"),
+    dict(category="memory",  key="compression_idle_after_seconds", value=0,        label="Compact on session resume after idle seconds (0 = off)", kind="number"),
+    dict(category="memory",  key="compression_micro_compact", value=False,         label="Roll older exchanges into a durable prompt summary after a turn", kind="toggle"),
+    dict(category="memory",  key="compression_micro_every_n_turns", value=1,       label="Post-turn micro-compaction cadence", kind="number"),
+    dict(category="memory",  key="compression_micro_defrag_threshold_tokens", value=2000, label="Rolling summary defragmentation threshold (tokens)", kind="number"),
     # H427: fail closed when the pre-compression checkpoint did not land (Hermes compression.checkpoint_required).
     dict(category="memory",  key="compression_checkpoint_required", value=False, label="Keep the transcript uncompressed unless its evicted turns were archived", kind="toggle"),
     dict(category="memory",  key="compression_summarizer", value=False,           label="LLM summarizer for evicted context (strict-local only)", kind="toggle"),

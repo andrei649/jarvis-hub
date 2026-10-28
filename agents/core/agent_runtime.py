@@ -668,6 +668,17 @@ class AgentToolRuntime:
         if usage is not None:
             from .turn_usage import record_usage
             record_usage(usage)
+            from .turn_compaction import active_compaction
+            state = active_compaction()
+            if state is not None:
+                from .llm.base import is_degraded_reply
+                from .llm.tool_protocol import PROVIDER_REJECTED_FINISH
+
+                state.observe_usage(
+                    usage,
+                    provider_succeeded=(getattr(turn, "finish_reason", None) != PROVIDER_REJECTED_FINISH
+                                        and not is_degraded_reply(getattr(turn, "content", ""))),
+                )
         if usage_sink is None or usage is None:
             return
         complete = getattr(usage, "counts_complete", None)
