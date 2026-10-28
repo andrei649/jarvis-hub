@@ -1374,8 +1374,24 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
                 "change it in the HUD, Settings → Retention, which asks for approval"]
     # H378 — a model choice passes the selection guards here as on the hub's routes.
     from agents.core.llm import selection_guards as guards
+    from agents.core.llm.provider_selection import SelectionConflict
+    from agents.core.llm.providers.selection_gates import SelectionBusy, SelectionUnavailable
 
-    choices = guards.choices_from_settings(category, {key: value}, lambda k: settings.get_value(category, k))
+    try:
+        pair_state = (settings.compatible_pair_state()
+                      if category == 'llm' and key in {'compatible_provider', 'compatible_model'}
+                      else None)
+    except (SelectionBusy, SelectionUnavailable) as exc:
+        return [f'{name}: {exc} — not changed, retry']
+
+    def current(other_key):
+        if pair_state is not None and other_key == 'compatible_provider':
+            return pair_state[1]
+        if pair_state is not None and other_key == 'compatible_model':
+            return pair_state[2]
+        return settings.get_value(category, other_key)
+
+    choices = guards.choices_from_settings(category, {key: value}, current)
     if choices:
         try:
             findings = guards.enforce(choices, confirm_expensive=getattr(ns, "confirm_expensive", False),
@@ -1390,7 +1406,13 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
         except guards.ConsentNotRecorded as exc:
             return [f"{name}: {exc}"]
     try:
-        settings.put_category(category, {key: value})
+        if pair_state is not None:
+            settings.put_category(category, {key: value},
+                                  expected_pair_revision=pair_state[0])
+        else:
+            settings.put_category(category, {key: value})
+    except (SelectionConflict, SelectionBusy, SelectionUnavailable):
+        return [f'{name}: compatible provider/model changed or busy — not changed, retry']
     except sqlite3.OperationalError as exc:
         return [f"{name}: {_busy(exc)}"]
     if f"{category}.{key}" in retention.RETENTION_KEYS:
