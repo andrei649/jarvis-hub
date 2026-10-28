@@ -4124,7 +4124,13 @@ def _read_image(path: str) -> tuple[bytes | None, str]:
     except FileNotFoundError:
         return None, f"--image {path}: not a file"
     except OSError as exc:
-        if isinstance(exc, IsADirectoryError):
+        # Metadata after a denied open only explains refusal; it never admits a read.
+        try:
+            directory = isinstance(exc, IsADirectoryError) or (
+                isinstance(exc, PermissionError) and target.is_dir())
+        except OSError:
+            directory = False
+        if directory:
             return None, f"--image {path}: not a file"
         return None, f"--image {path}: cannot be read ({exc.strerror or exc.__class__.__name__})"
     try:
