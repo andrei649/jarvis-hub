@@ -1,6 +1,7 @@
 [
   "DELETE /api/a2a/peers/{peer_id}",
   "DELETE /api/admin/backup/restore",
+  "DELETE /api/admin/llm/provider-credentials",
   "DELETE /api/admin/mcp/{name}",
   "DELETE /api/admin/widgets/{token}",
   "DELETE /api/ambient/monitors/{monitor_id}",
@@ -55,6 +56,7 @@
   "GET /api/admin/env",
   "GET /api/admin/env/sources",
   "GET /api/admin/inspector",
+  "GET /api/admin/llm/provider-credentials",
   "GET /api/admin/logs",
   "GET /api/admin/mcp",
   "GET /api/admin/network/calls",
@@ -703,6 +705,7 @@
   "POST /tts/stream",
   "PUT /api/admin/agents/{agent_id}",
   "PUT /api/admin/agents/{agent_id}/soul",
+  "PUT /api/admin/llm/provider-credentials",
   "PUT /api/admin/settings/{category}",
   "PUT /api/ambient/monitors/{monitor_id}",
   "PUT /api/jobs/{job_id}/notepad",

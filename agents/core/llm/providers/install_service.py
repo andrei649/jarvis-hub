@@ -11,11 +11,12 @@ import re
 import tempfile
 import threading
 import time
+from contextvars import ContextVar
 from copy import deepcopy
 from urllib.parse import urlsplit
 
 from agents.core.autonomy.consent_types import OwnerConsentActor
-from agents.core.kernel import Decision, Verdict
+from agents.core.kernel import Action, Decision, Verdict
 
 from .admitted_registry import AdmittedProviderRegistry
 from .candidates import Candidate
@@ -33,6 +34,8 @@ _PREVIEW_AUTH = {'none', 'bearer', 'api-key'}
 _PREVIEW_CAPABILITIES = {'chat', 'cloud', 'local', 'vision', 'streaming',
                          'reasoning', 'reasoning-effort', 'prompt-cache-key',
                          'model-catalog', 'long-context'}
+_CREDENTIAL_RECEIPT: ContextVar[tuple | None] = ContextVar(
+    'signed_provider_credential_receipt', default=None)
 
 
 def _owner_current(actor):
@@ -43,13 +46,21 @@ def _owner_current(actor):
         return False
 
 
+def credential_receipt_matches(action):
+    """Kernel-visible proof of this exact live service operation."""
+    receipt = _CREDENTIAL_RECEIPT.get()
+    return (receipt is not None and receipt[2] is action
+            and receipt[4] == threading.get_ident()
+            and receipt[0].enabled() is True and _owner_current(receipt[3]))
+
+
 class ProviderInstallService:
     def __init__(self, *, root, signing, profile, kernel, enabled=lambda: False,
-                 home, runner=None):
+                 home, runner=None, audit=None):
         from pathlib import Path
         self.root = Path(root)
         self.signing, self.profile, self.kernel = signing, profile, kernel
-        self.enabled, self.home, self.runner = enabled, home, runner
+        self.enabled, self.home, self.runner, self.audit = enabled, home, runner, audit
 
     def _ready(self):
         if self.enabled() is not True:
@@ -76,6 +87,11 @@ class ProviderInstallService:
             if (action.kind == 'plugin.egress'
                     and (store is None or not store._native_egress_receipt_matches(action))):
                 return Decision(Verdict.DENY, reason='signed provider egress receipt unavailable')
+            if action.kind == 'provider.credential':
+                receipt = _CREDENTIAL_RECEIPT.get()
+                if (store is None or receipt is None or receipt[0] is not self
+                        or receipt[1] is not store or not credential_receipt_matches(action)):
+                    return Decision(Verdict.DENY, reason='signed provider credential receipt unavailable')
             gate = self.kernel()
             if not callable(gate):
                 return Decision(Verdict.DENY, reason='bound action kernel unavailable')
@@ -83,7 +99,9 @@ class ProviderInstallService:
             # permanent owner approval. Bind that receipt to the complete Action;
             # a wider or changed action cannot borrow it.
             snapshot = deepcopy(action)
-            return gate(action, approval_check=lambda candidate: candidate == snapshot)
+            return gate(action, approval_check=lambda candidate: candidate == snapshot
+                        and (action.kind != 'provider.credential'
+                             or candidate is action and credential_receipt_matches(action)))
         store = ProviderPackageStore(self.root / 'packages', signing=self.signing,
             authorizer=authorize, enabled=self.enabled, owner_authorizer=owner_authorizer)
         return store
@@ -201,6 +219,91 @@ class ProviderInstallService:
         await self._store().revoke_async(provider_id)
         return {'provider_id': provider_id, 'status': 'revoked'}
 
+    def _credentials(self):
+        from .credentials import ProviderCredentialStore
+        self._ready()
+        return ProviderCredentialStore(self.root / 'credentials')
+
+    def _credential_record_locked(self, store, provider_id, package_hash):
+        if (type(provider_id) is not str or type(package_hash) is not str
+                or re.fullmatch(r'[a-f0-9]{64}', package_hash) is None):
+            raise ProviderPackageError('exact signed credential target required')
+        record = store._require_runnable_locked(provider_id, package_hash, self.home)
+        if record.provider_id != provider_id or record.package_hash != package_hash:
+            raise ProviderPackageError('signed credential target changed')
+        return record
+
+    def credential_status(self, provider_id, package_hash, *, actor):
+        from .credentials import credential_binding
+        self._owner(actor)
+        store = self._store(actor=actor)
+        with store._locked():
+            record = self._credential_record_locked(store, provider_id, package_hash)
+            return self._credentials().status(credential_binding(record, self.home))
+
+    def _credential_mutation(self, provider_id, package_hash, value, *, actor, operation):
+        from agents.core.action_origin import current_action_origin
+        from agents.core.kernel import kernel_enabled
+        from agents.core.security.types import SecurityEvent, SecurityEventType
+
+        from .credentials import credential_binding
+        self._owner(actor)
+        if not kernel_enabled() or not callable(getattr(self.audit, 'log', None)):
+            raise ProviderPackageError('credential kernel or audit unavailable')
+        store = self._store(actor=actor)
+        with store._locked():
+            record = self._credential_record_locked(store, provider_id, package_hash)
+            binding = credential_binding(record, self.home)
+            if binding.auth_type == 'none':
+                raise ProviderPackageError('provider does not accept a host credential')
+            vault = self._credentials()
+            before = {'generation': vault.high_water(binding)}
+            action = Action(
+                kind='provider.credential', agent='jarvis',
+                title='Owner signed provider credential mutation',
+                origin=current_action_origin(), scope='provider:' + record.provider_id,
+                payload={'schema': 'provider-credential-v1',
+                         'authority': binding.authority, 'home': binding.home,
+                         'provider_id': record.provider_id, 'source': record.source,
+                         'artifact_id': record.artifact_id, 'package_hash': record.package_hash,
+                         'endpoint': binding.endpoint, 'auth_type': binding.auth_type,
+                         'operation': operation, 'current_generation': before['generation'],
+                         'risk_tier': 3, 'irreversible': True})
+            receipt = _CREDENTIAL_RECEIPT.set((self, store, action, actor, threading.get_ident()))
+            try:
+                gate = self.kernel()
+                if not callable(gate):
+                    raise ProviderPackageError('credential kernel unavailable')
+                decision = gate(action, approval_check=lambda candidate: candidate is action
+                                and credential_receipt_matches(action))
+            finally:
+                _CREDENTIAL_RECEIPT.reset(receipt)
+            if (type(decision) is not Decision or decision.verdict is not Verdict.GRANT
+                    or decision.tier != 3):
+                raise ProviderPackageError('credential mutation refused')
+            try:
+                self.audit.log(SecurityEvent(
+                    event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
+                    action_taken='provider_credential_' + operation + '_authorized',
+                    content_preview=(f'provider={record.provider_id}; '
+                                     f'artifact={record.artifact_id}; '
+                                     f'generation={before["generation"]}')))
+            except Exception:
+                raise ProviderPackageError('credential mutation audit unavailable') from None
+            self._owner(actor)
+            if self._credential_record_locked(store, provider_id, package_hash) != record:
+                raise ProviderPackageError('signed credential record changed')
+            return (vault.put(binding, value) if operation == 'write'
+                    else vault.delete(binding))
+
+    def put_credential(self, provider_id, package_hash, value, *, actor):
+        return self._credential_mutation(provider_id, package_hash, value,
+                                         actor=actor, operation='write')
+
+    def delete_credential(self, provider_id, package_hash, *, actor):
+        return self._credential_mutation(provider_id, package_hash, None,
+                                         actor=actor, operation='delete')
+
     def registry(self):
         from . import DEFAULT_REGISTRY
         store = self._store()
@@ -255,6 +358,7 @@ def get_install_service(orch):
     service = ProviderInstallService(root=root,
         signing=ManagedSigningKeyStore(data_path('acquisition') / 'signing'),
         profile=AcquisitionSandboxProfile(image=os.environ.get('JARVIS_ACQUISITION_SANDBOX_IMAGE','')),
-        kernel=lambda: make_action_kernel(orch), enabled=enabled, home=str(root))
+        kernel=lambda: make_action_kernel(orch), enabled=enabled, home=str(root),
+        audit=getattr(orch, 'audit', None))
     orch.provider_install_service = service
     return service

@@ -101,3 +101,45 @@ PROVIDER_EGRESS_CONTRACT = ContractTemplate(
                  predicate('bounded_provider_egress', _bounded_egress,
                            reason='invalid_provider_egress')),
 )
+
+
+def _bounded_credential(view, _now):
+    """Only signed-record metadata and one owner operation; never secret bytes."""
+    required = {'schema', 'authority', 'home', 'provider_id', 'source',
+                'artifact_id', 'package_hash', 'endpoint', 'auth_type',
+                'operation', 'current_generation', 'risk_tier', 'irreversible'}
+    if (type(view) is not dict or set(view) != required
+            or view['schema'] != 'provider-credential-v1'
+            or view['authority'] != 'local-owner-v1'
+            or view['source'] not in {'user', 'legacy', 'bundled'}
+            or view['auth_type'] not in {'bearer', 'api-key'}
+            or view['operation'] not in {'write', 'delete'}
+            or type(view['current_generation']) is not int
+            or not 0 <= view['current_generation'] < 2**63 - 1
+            or type(view['risk_tier']) is not int or view['risk_tier'] != 3
+            or view['irreversible'] is not True
+            or type(view['provider_id']) is not str
+            or re.fullmatch(r'[a-z0-9][a-z0-9._:-]{0,127}', view['provider_id']) is None
+            or type(view['artifact_id']) is not str
+            or re.fullmatch(r'[a-f0-9]{32}', view['artifact_id']) is None
+            or type(view['package_hash']) is not str
+            or re.fullmatch(r'[a-f0-9]{64}', view['package_hash']) is None
+            or type(view['home']) is not str or not view['home'] or len(view['home']) > 2048
+            or type(view['endpoint']) is not str or len(view['endpoint']) > 2048):
+        return False
+    try:
+        endpoint = urlsplit(view['endpoint'])
+        return (endpoint.scheme == 'https' and bool(endpoint.hostname)
+                and endpoint.port != 0 and endpoint.username is None
+                and endpoint.password is None and not endpoint.query and not endpoint.fragment
+                and all(33 <= ord(char) <= 126 for char in view['endpoint']))
+    except (ValueError, TypeError):
+        return False
+
+
+PROVIDER_CREDENTIAL_CONTRACT = ContractTemplate(
+    kind='provider.credential',
+    description='Mutate one exact owner-managed signed provider credential.',
+    constraints=(predicate('bounded_provider_credential', _bounded_credential,
+                           reason='invalid_provider_credential'),),
+)

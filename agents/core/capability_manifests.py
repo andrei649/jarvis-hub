@@ -365,6 +365,20 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.llm.providers.packages:ProviderPackageStore.promote",
         contract_ref="agents.core.llm.providers.admission_contract:PROVIDER_LOAD_CONTRACT",
     ),
+    "provider.credential": _action(
+        "provider.credential",
+        "Write or delete one exact owner-managed signed provider credential.",
+        required=("provider_id", "artifact_id", "package_hash", "operation"),
+        risk="irreversible_or_money",
+        supports=("write", "delete"),
+        rollback=RollbackContract(
+            mode="revoke",
+            description="Delete the encrypted credential envelope.",
+            limitations="A previously sent request cannot be recalled.",
+        ),
+        implementation="agents.core.llm.providers.install_service:ProviderInstallService.put_credential",
+        contract_ref="agents.core.llm.providers.admission_contract:PROVIDER_CREDENTIAL_CONTRACT",
+    ),
     "media.present": _action(
         "media.present",
         "Present content (media, webpage, camera, dashboard) on a registered output device.",

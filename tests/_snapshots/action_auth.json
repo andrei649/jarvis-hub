@@ -25,6 +25,7 @@
  "permission.grant": "kernel",
  "plugin.egress": "kernel",
  "plugin.load": "kernel",
+ "provider.credential": "kernel",
  "repo.sync": "kernel",
  "report.export": "kernel",
  "research": "kernel",

@@ -1,6 +1,7 @@
 {
   "DELETE /api/a2a/peers/{peer_id}": "a2a_remove_peer_api_a2a_peers__peer_id__delete",
   "DELETE /api/admin/backup/restore": "backup_restore_cancel_api_admin_backup_restore_delete",
+  "DELETE /api/admin/llm/provider-credentials": "delete_credential_api_admin_llm_provider_credentials_delete",
   "DELETE /api/admin/mcp/{name}": "admin_mcp_remove_api_admin_mcp__name__delete",
   "DELETE /api/admin/widgets/{token}": "widgets_revoke_api_admin_widgets__token__delete",
   "DELETE /api/ambient/monitors/{monitor_id}": "ambient_monitor_delete_api_ambient_monitors__monitor_id__delete",
@@ -55,6 +56,7 @@
   "GET /api/admin/env": "admin_get_env_api_admin_env_get",
   "GET /api/admin/env/sources": "admin_env_sources_api_admin_env_sources_get",
   "GET /api/admin/inspector": "admin_inspector_api_admin_inspector_get",
+  "GET /api/admin/llm/provider-credentials": "credential_status_api_admin_llm_provider_credentials_get",
   "GET /api/admin/logs": "admin_logs_api_admin_logs_get",
   "GET /api/admin/mcp": "admin_mcp_list_api_admin_mcp_get",
   "GET /api/admin/network/calls": "admin_network_calls_api_admin_network_calls_get",
@@ -703,6 +705,7 @@
   "POST /tts/stream": "tts_stream_endpoint_tts_stream_post",
   "PUT /api/admin/agents/{agent_id}": "admin_agents_put_api_admin_agents__agent_id__put",
   "PUT /api/admin/agents/{agent_id}/soul": "put_agent_soul_api_admin_agents__agent_id__soul_put",
+  "PUT /api/admin/llm/provider-credentials": "put_credential_api_admin_llm_provider_credentials_put",
   "PUT /api/admin/settings/{category}": "admin_put_category_api_admin_settings__category__put",
   "PUT /api/ambient/monitors/{monitor_id}": "ambient_monitor_update_api_ambient_monitors__monitor_id__put",
   "PUT /api/jobs/{job_id}/notepad": "jobs_notepad_api_jobs__job_id__notepad_put",

@@ -657,6 +657,15 @@ selections remain visible as unavailable. Image and speech dispatch now use the
 common registry. Full vendor/plugin/setup breadth remains open under H517/H613;
 native mobile provider configuration is still a gap.
 
+Task 10A (2026-10-28) adds default-off, owner-only API metadata and encrypted
+put/delete for one exact signed model-provider credential at
+GET/PUT/DELETE /api/admin/llm/provider-credentials. Responses expose only
+configured state and a generation counter; the submitted value is never returned.
+There is no HUD key-entry or selected-provider control in this slice. Task 10B
+must wire selection, routed physical sends, DNS/IP/SNI pinning and lifecycle
+rotation before this credential can be used by an admitted backend; no live
+provider or key readiness is claimed.
+
 H512 authentication audit continuation (2026-10-09): the existing admin audit reader
 shows typed HTTP guard and managed token lifecycle events through `GET /api/admin/audit`.
 No new route or dashboard control is added. The native audit reader remains open

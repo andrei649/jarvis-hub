@@ -1,6 +1,7 @@
 {
   "DELETE /api/a2a/peers/{peer_id}": "admin",
   "DELETE /api/admin/backup/restore": "admin",
+  "DELETE /api/admin/llm/provider-credentials": "admin",
   "DELETE /api/admin/mcp/{name}": "admin",
   "DELETE /api/admin/widgets/{token}": "admin",
   "DELETE /api/ambient/monitors/{monitor_id}": "admin",
@@ -55,6 +56,7 @@
   "GET /api/admin/env": "admin",
   "GET /api/admin/env/sources": "admin",
   "GET /api/admin/inspector": "admin",
+  "GET /api/admin/llm/provider-credentials": "admin",
   "GET /api/admin/logs": "admin",
   "GET /api/admin/mcp": "admin",
   "GET /api/admin/network/calls": "admin",
@@ -707,6 +709,7 @@
   "POST /tts/stream": "user",
   "PUT /api/admin/agents/{agent_id}": "admin",
   "PUT /api/admin/agents/{agent_id}/soul": "admin",
+  "PUT /api/admin/llm/provider-credentials": "admin",
   "PUT /api/admin/settings/{category}": "admin",
   "PUT /api/ambient/monitors/{monitor_id}": "admin",
   "PUT /api/jobs/{job_id}/notepad": "admin",

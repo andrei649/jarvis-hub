@@ -556,6 +556,33 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
 
         with contextlib.suppress(ProviderPackageError):
             packages.promote(proposal)
+    elif kind == "provider.credential":
+        # Drive the real signed owner service through its credential mutation.
+        from dataclasses import replace
+        from types import SimpleNamespace
+
+        from agents.core.kernel import kernel_enabled
+        from agents.core.llm.providers.packages import ProviderPackageError
+        from tests.test_h361_provider_install_service import owner, service
+
+        enabled = kernel_enabled()
+        monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+        svc, profile, hooks, _ = service.__wrapped__(tmp_path, monkeypatch)
+        svc.kernel = lambda: lambda _action, **_kwargs: Decision(Verdict.GRANT, tier=3)
+        artifact = svc.stage("addon", profile=replace(profile, auth_type="bearer"),
+                             hooks=hooks, source="user", actor=owner())
+        offer = svc.propose(artifact["artifact_id"], actor=owner())
+        svc.decide(offer["proposal_id"], artifact_id=artifact["artifact_id"],
+                   package_hash=artifact["package_hash"], approved=True,
+                   permanent=True, actor=owner())
+        svc.promote(offer["proposal_id"], actor=owner())
+        svc.audit = SimpleNamespace(log=lambda _event: None)
+        svc.kernel = lambda: lambda action, **_kwargs: spy(action)
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        with suppress(ProviderPackageError):
+            svc.put_credential("synthetic-addon", artifact["package_hash"],
+                               "synthetic-matrix-key", actor=owner())
     elif kind == "desktop.step":
         # The optional real host seam must cross CapabilityActionAPI immediately
         # before driver execution. The unified facade stays default-off; the outer
@@ -906,6 +933,10 @@ def test_kernel_kinds_actually_invoke_kernel(kind, monkeypatch, tmp_path):
     assert spy.calls, f"{kind} is classified KERNEL but request() did not invoke the kernel"
     if kind.endswith(".*"):
         assert spy.calls[-1].kind.startswith(kind[:-1])
+    elif kind == "provider.credential":
+        # The service rechecks the signed record through plugin.load after
+        # credential authorization and before writing the envelope.
+        assert any(action.kind == kind for action in spy.calls)
     else:
         assert spy.calls[-1].kind == kind
 
