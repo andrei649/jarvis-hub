@@ -14,10 +14,11 @@ and tabs only.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from fastapi import Request, Response
@@ -26,6 +27,31 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import Receive, Scope, Send
 
 from agents.core.workspace.errors import WorkspaceError
+
+
+async def offload[T](fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+    """Run synchronous SQLite work (``BEGIN IMMEDIATE``, FTS) off the event loop.
+
+    A write transaction waits up to the 5 s busy timeout for the lock; run inline in an
+    ``async def`` handler that wait would freeze every other request. The request's one
+    connection is opened ``check_same_thread=False`` and used by one thread at a time
+    (the caller awaits this), and the context variables (action origin) are copied.
+    """
+    worker = asyncio.ensure_future(asyncio.to_thread(fn, *args, **kwargs))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        # The thread cannot be interrupted, and FastAPI closes the request connection as soon
+        # as the cancellation unwinds: drain the worker first so it never meets a closed database.
+        while not worker.done():
+            try:
+                await asyncio.wait({worker})
+            except asyncio.CancelledError:
+                continue
+        if not worker.cancelled():
+            worker.exception()  # retrieved: nothing may log "never retrieved"
+        raise
+
 
 NO_STORE = {"Cache-Control": "no-store"}
 MAX_EMAIL_LEN = 254

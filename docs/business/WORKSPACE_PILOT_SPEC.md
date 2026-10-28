@@ -357,6 +357,16 @@ def connect() -> sqlite3.Connection
     # sqlite3.connect(path, check_same_thread=False, isolation_level=None)  ← autocommit
     # PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000; row_factory=sqlite3.Row
     # schema ensured on every connect (one cheap PRAGMA user_version read; migrations by user_version)
+    # NWS-13: FastAPI runs sync `def` routes/dependencies in its thread pool. Every synchronous
+    # SQLite read, FTS query, and complete BEGIN IMMEDIATE transaction reachable from an async
+    # Workspace route or background coroutine runs through `await http.offload(fn, *args)`.
+    # That helper copies contextvars with asyncio.to_thread and shields/drains the worker before
+    # propagating cancellation, so a request-owned connection is never closed while its worker
+    # still uses it. One request uses its connection in one awaited unit at a time. The 5 s busy
+    # timeout and audit/authorization semantics remain; no transaction spans a model or SMTP await.
+    # A held writer delays only contending database work, not other async requests or heartbeats.
+    # The real-lock, cancellation, rollback, and FTS regressions are in
+    # tests/test_workspace_sqlite_off_loop.py.
 def connect_read_only(path: Path) -> sqlite3.Connection   # no migration, no write, no new file, no chmod
 MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3)]   # v3.4: v2, v3 (§4)
 def schema_version() -> int                # MIGRATIONS[-1][0] = 3
