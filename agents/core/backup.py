@@ -870,6 +870,10 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
     if not arc.exists():
         raise FileNotFoundError(f"backup not found: {arc}")
     target = Path(target_root)
+    if target.is_symlink() and not target.exists():
+        raise NotADirectoryError(
+            f"target {target} is a dangling symlink, nothing restored — "
+            "restore into a new, empty directory")
     if target.exists() and any(target.iterdir()) and not force:
         raise FileExistsError(
             f"target {target} is not empty — pass force=True to overwrite")
