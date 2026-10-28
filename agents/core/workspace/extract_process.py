@@ -45,7 +45,7 @@ def _worker(argv: list[str] | None = None) -> None:
     try:
         result = extract_bytes(sys.stdin.buffer.read(), kind, timeout=float(seconds))
         payload = {"segments": [[s.page, s.text] for s in result.segments],
-                   "page_count": result.page_count, "limits": limits}
+                   "page_count": result.page_count, "limits": [*limits, *result.limits]}
     except ExtractionError as exc:
         payload = {"error": exc.code, "page_count": exc.page_count}
     except MemoryError:
