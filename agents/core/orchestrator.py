@@ -5157,6 +5157,7 @@ class Orchestrator:
                 baseline_len, baseline_tokens = len(turns), pressure
                 last_accepted = None
                 accepted_on_original = True
+                result_on_original = True
                 stalled = False
                 while True:
                     candidate = [*result.get("kept_first", ())]
@@ -5174,6 +5175,7 @@ class Orchestrator:
                             result = last_accepted
                         break
                     last_accepted = result
+                    accepted_on_original = result_on_original
                     if after < threshold or result.get("summary_deferred"):
                         break
                     if not turn_state.attempts.take():
@@ -5182,7 +5184,7 @@ class Orchestrator:
                     baseline_len, baseline_tokens = after_len, after
                     result = await bounded_compact(
                         candidate, retry=True, force_target_tokens=retry_target)
-                    accepted_on_original = False
+                    result_on_original = False
                 after = int(result.get("tokens") or pressure)
                 after_len = (len(result.get("kept", ())) + len(result.get("kept_first", ()))
                              + bool(result.get("summary")))
