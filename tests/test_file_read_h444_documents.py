@@ -359,7 +359,7 @@ async def test_a_real_scanned_pdf_is_flagged_through_the_real_parser(root):
 
 @pytest.mark.asyncio
 async def test_a_line_window_returns_whole_lines_and_names_the_next(root):
-    (root / "notes.txt").write_text("one\ntwo\nthree\nfour\nfive\n", encoding="utf-8")
+    (root / "notes.txt").write_text("one\ntwo\nthree\nfour\nfive\n", encoding="utf-8", newline="")
     tools = reader(root)
     page = await tools.read_file({"path": "notes.txt", "line_offset": 2, "line_limit": 2})
     assert page["ok"] is True and page["content"] == "two\nthree\n"
@@ -389,7 +389,7 @@ async def test_a_final_line_without_newline_counts(root):
 
 @pytest.mark.asyncio
 async def test_the_byte_cap_ends_a_line_page_before_a_line_that_does_not_fit(root):
-    (root / "rows.txt").write_text("aaaa\nbbbb\ncccc\n", encoding="utf-8")
+    (root / "rows.txt").write_text("aaaa\nbbbb\ncccc\n", encoding="utf-8", newline="")
     page = await reader(root, max_bytes=12).read_file(
         {"path": "rows.txt", "line_offset": 1, "line_limit": 3})
     assert page["content"] == "aaaa\nbbbb\n" and page["lines"] == 2
@@ -399,7 +399,7 @@ async def test_the_byte_cap_ends_a_line_page_before_a_line_that_does_not_fit(roo
 @pytest.mark.asyncio
 async def test_a_line_longer_than_the_page_is_cut_and_its_byte_offset_named(root):
     long_line = "é" * 40 + "\n"
-    (root / "wide.txt").write_text("head\n" + long_line + "tail\n", encoding="utf-8")
+    (root / "wide.txt").write_text("head\n" + long_line + "tail\n", encoding="utf-8", newline="")
     tools = reader(root, max_bytes=9)
     page = await tools.read_file({"path": "wide.txt", "line_offset": 2})
     assert page["line_truncated"] is True and page["lines"] == 1
