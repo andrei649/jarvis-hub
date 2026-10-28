@@ -191,16 +191,16 @@ async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_p
     clock = {"now": 1000.0}
     monkeypatch.setattr(human_wait, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
     orch, cap, _answers, stream = await stream_host(tmp_path, monkeypatch, choices=["Local", "Remote"])
-    # This credit test measures one stream/answer pair; pin the router's
-    # orchestrator lookup to the same fixture instance as its SSE producer.
-    monkeypatch.setattr(chat_pending, "get_orch", lambda: orch)
     try:
         await event(stream)
         question = await event(stream)
         clock["now"] += 5
         assert cap["credit"].seconds() == 0
         assert not orch._pending_input_service()._delivered
-        following = asyncio.create_task(event(stream))
+        # The human answer may take longer than event()'s two-second SSE read
+        # timeout under a loaded suite. Hold the next frame without timing out
+        # while the human wait is intentional, then bound its consumption below.
+        following = asyncio.create_task(anext(stream))
         for _ in range(20):
             if orch._pending_input_service()._delivered:
                 break
@@ -214,8 +214,34 @@ async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_p
                 app=web.app, client=("127.0.0.1", 123)), base_url="http://localhost") as client:
             reply = await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"})
             assert reply.status_code == 200, reply.text
-        await following
+        frame = await asyncio.wait_for(following, 2)
+        if isinstance(frame, bytes):
+            frame = frame.decode()
+        assert json.loads(frame.removeprefix("data: ").strip())["type"] == "token"
         await event(stream)
+    finally:
+        await stream.aclose()
+        orch._pending_input_service().close()
+
+
+@pytest.mark.asyncio
+async def test_next_sse_wait_timeout_retires_prompt_before_late_answer(tmp_path, monkeypatch):
+    """A timed-out read cancels the stream, so a later answer is correctly 404."""
+    orch, _cap, _answers, stream = await stream_host(
+        tmp_path, monkeypatch, choices=["Local", "Remote"])
+    try:
+        await event(stream)
+        question = await event(stream)
+        following = asyncio.create_task(event(stream))
+        with pytest.raises(asyncio.TimeoutError):
+            await following
+        assert question["id"] not in orch._pending_input_service().inputs._active
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(
+                app=web.app, client=("127.0.0.1", 123)), base_url="http://localhost") as client:
+            reply = await client.post(f"/chat/pending/{question['id']}/answer",
+                                      json={"answer": "1"})
+            assert reply.status_code == 404
+            assert reply.json()["status"] == "unavailable"
     finally:
         await stream.aclose()
         orch._pending_input_service().close()
