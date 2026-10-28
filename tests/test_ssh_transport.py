@@ -162,14 +162,15 @@ def test_roots_are_required_and_absolute(roots):
         _host(roots=roots)
 
 
-def test_parse_hosts_builds_the_inventory_and_refuses_unknown_keys():
+def test_parse_hosts_builds_the_inventory_and_refuses_unknown_keys(tmp_path):
+    identity = str(tmp_path / "id_pi")
     hosts = parse_hosts({"pi-house": {
         "user": "pi", "hostname": "10.0.0.4", "port": 2222,
-        "identity_file": "/keys/id_pi", "roots": ["/home/pi/work", "/srv"],
+        "identity_file": identity, "roots": ["/home/pi/work", "/srv"],
     }})
     assert hosts["pi-house"] == SshHost(
         target="pi-house", user="pi", hostname="10.0.0.4", port=2222,
-        identity_file="/keys/id_pi", roots=("/home/pi/work", "/srv"),
+        identity_file=identity, roots=("/home/pi/work", "/srv"),
     )
     with pytest.raises(ValueError):
         parse_hosts({"x": {"user": "a", "hostname": "h", "roots": ["/r"], "shell": "/bin/sh"}})
@@ -179,22 +180,23 @@ def test_parse_hosts_builds_the_inventory_and_refuses_unknown_keys():
         parse_hosts(["pi-house=pi@10.0.0.4"])
 
 
-def test_a_transport_without_a_pinned_known_hosts_file_cannot_be_built():
+def test_a_transport_without_a_pinned_known_hosts_file_cannot_be_built(known_hosts):
     with pytest.raises(ValueError):
         SshTransport({"pi-house": _host()}, known_hosts="")
     with pytest.raises(ValueError):
         SshTransport({"pi-house": _host()}, known_hosts="relative/known_hosts")
     with pytest.raises(ValueError):
-        SshTransport({}, known_hosts="/etc/known_hosts")
+        SshTransport({}, known_hosts=known_hosts)
     with pytest.raises(ValueError):
-        SshTransport({"other": _host()}, known_hosts="/etc/known_hosts")
+        SshTransport({"other": _host()}, known_hosts=known_hosts)
 
 
 # ── the OpenSSH invocation, option by option ────────────────────────────────
 
 
-def test_the_ssh_argv_ignores_local_config_first_and_pins_the_host_key(known_hosts):
-    argv = _transport(known_hosts).ssh_argv(_host(identity_file="/keys/id_pi"), "exec true")
+def test_the_ssh_argv_ignores_local_config_first_and_pins_the_host_key(known_hosts, tmp_path):
+    identity = str(tmp_path / "id_pi")
+    argv = _transport(known_hosts).ssh_argv(_host(identity_file=identity), "exec true")
     # -F /dev/null must come before anything else, or ~/.ssh/config wins.
     assert argv[1:3] == ["-F", "/dev/null"]
     options = {argv[i + 1] for i, item in enumerate(argv) if item == "-o"}
@@ -213,7 +215,7 @@ def test_the_ssh_argv_ignores_local_config_first_and_pins_the_host_key(known_hos
         "RequestTTY=no",
         "ControlPath=none",
         "ProxyCommand=none",
-        "IdentityFile=/keys/id_pi",
+        f"IdentityFile={identity}",
         "User=pi",
         "Port=22",
     ):
@@ -326,7 +328,7 @@ async def test_a_missing_known_hosts_file_or_key_refuses_at_call_time(tmp_path):
 
     known = tmp_path / "known_hosts"
     known.write_text("x\n", encoding="utf-8")
-    t2 = SshTransport({"pi-house": _host(identity_file="/keys/absent")},
+    t2 = SshTransport({"pi-house": _host(identity_file=str(tmp_path / "absent_key"))},
                       known_hosts=str(known), spawn=spawn)
     assert (await t2.run(["true"], target="pi-house"))["reason"] == "identity_file_missing"
     assert spawn.calls == []
@@ -473,7 +475,7 @@ async def test_the_contract_caps_an_argv_parse_argv_would_accept(tmp_path, monke
     assert transport.calls == []
 
 
-def test_the_transport_adds_no_python_ssh_library():
+def test_the_transport_adds_no_python_ssh_library(known_hosts):
     """Half of the old honesty claim survives this change and should stay sayable.
 
     ``NERVA_VISION.md`` and ``test_vision_execution_claim_honesty`` pin two
@@ -489,7 +491,7 @@ def test_the_transport_adds_no_python_ssh_library():
     source = pathlib.Path(mod.__file__).read_text(encoding="utf-8")
     for library in ("paramiko", "asyncssh", "fabric", "libssh"):
         assert library not in source, library
-    assert SshTransport({"pi-house": _host()}, known_hosts="/x/known_hosts").ssh_path == "ssh"
+    assert SshTransport({"pi-house": _host()}, known_hosts=known_hosts).ssh_path == "ssh"
 
 
 # ── the policy inventory ────────────────────────────────────────────────────

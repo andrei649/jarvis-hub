@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "a1146bb24ee725123a34ecb2f67cda431ce4fcbc",
-  "assessed_at": "2026-10-28T03:57:39Z",
+  "base_sha": "213e742e0f5c11606c35e00a8286d5c8fe012d9e",
+  "assessed_at": "2026-10-28T05:03:59Z",
   "reviews": [
     {
       "id": "H001",
@@ -6990,7 +6990,7 @@
         },
         {
           "path": "tests/test_ssh_transport.py",
-          "sha256": "1a0f3dd1b6e8da0cc2046106bc4d5b1ae98b598dc7688f1f3199786c3ca00924"
+          "sha256": "8cd26e4af0c37bdee9eda499840595eefd95e14a6fa22471da1eb46c33054602"
         },
         {
           "path": "agents/core/environments/owner_once_dispatch.py",
@@ -6998,7 +6998,7 @@
         },
         {
           "path": "tests/test_h485_owner_once_transport.py",
-          "sha256": "e5c048c7e8a23318faa2812a0d33d4f271d8035383fc7c058dc23292867e3f6a"
+          "sha256": "5476c0736544852307179e59ec559a9657216329d1548515ad69ec53b2a3c132"
         },
         {
           "path": "tests/test_h277_legacy_docker_kernel.py",
@@ -11405,7 +11405,7 @@
         },
         {
           "path": "tests/test_h485_owner_once_transport.py",
-          "sha256": "e5c048c7e8a23318faa2812a0d33d4f271d8035383fc7c058dc23292867e3f6a"
+          "sha256": "5476c0736544852307179e59ec559a9657216329d1548515ad69ec53b2a3c132"
         },
         {
           "path": "tests/test_h485_owner_once_worker.py",
@@ -21208,7 +21208,7 @@
         },
         {
           "path": "tests/test_h485_owner_once_transport.py",
-          "sha256": "e5c048c7e8a23318faa2812a0d33d4f271d8035383fc7c058dc23292867e3f6a"
+          "sha256": "5476c0736544852307179e59ec559a9657216329d1548515ad69ec53b2a3c132"
         },
         {
           "path": "tests/test_h485_owner_once_worker.py",
@@ -27275,7 +27275,7 @@
         },
         {
           "path": "tests/test_h485_owner_once_transport.py",
-          "sha256": "e5c048c7e8a23318faa2812a0d33d4f271d8035383fc7c058dc23292867e3f6a"
+          "sha256": "5476c0736544852307179e59ec559a9657216329d1548515ad69ec53b2a3c132"
         },
         {
           "path": "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
@@ -29849,7 +29849,7 @@
         },
         {
           "path": "tests/test_h485_owner_once_transport.py",
-          "sha256": "e5c048c7e8a23318faa2812a0d33d4f271d8035383fc7c058dc23292867e3f6a"
+          "sha256": "5476c0736544852307179e59ec559a9657216329d1548515ad69ec53b2a3c132"
         },
         {
           "path": "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",

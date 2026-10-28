@@ -110,7 +110,7 @@ async def test_kernel_revalidation_change_while_transport_paused_blocks_spawn(
     elif backend == "ssh":
         pinned = tmp_path / "known_hosts"
         pinned.write_text("fixture", encoding="utf-8")
-        host = SshHost("host", "alice", "example.test", roots=(str(tmp_path),))
+        host = SshHost("host", "alice", "example.test", roots=(f"/work/{tmp_path.name}",))
         transport = SshTransport({"host": host}, known_hosts=pinned, spawn=spawn)
         sandbox = None
     else:
@@ -212,7 +212,7 @@ async def test_builtin_transport_consumes_once_immediately_before_physical_spawn
     else:
         pinned = tmp_path / "known_hosts"
         pinned.write_text("fixture", encoding="utf-8")
-        host = SshHost("host", "alice", "example.test", roots=(str(tmp_path),))
+        host = SshHost("host", "alice", "example.test", roots=(f"/work/{tmp_path.name}",))
         transport = SshTransport({"host": host}, known_hosts=pinned, spawn=spawn)
     def revalidate(action, capability=None, *, approval_check=None):
         order.append(("kernel", action.kind))
@@ -254,7 +254,7 @@ async def test_revocation_during_transport_pause_blocks_dispatch_and_spawn(
     else:
         pinned = tmp_path / "known_hosts"
         pinned.write_text("fixture", encoding="utf-8")
-        host = SshHost("host", "alice", "example.test", roots=(str(tmp_path),))
+        host = SshHost("host", "alice", "example.test", roots=(f"/work/{tmp_path.name}",))
         transport = SshTransport({"host": host}, known_hosts=pinned, spawn=spawn)
     original = transport.run
 
@@ -319,7 +319,7 @@ async def test_policy_change_while_builtin_transport_paused_refuses_physical_dis
     elif backend == "ssh":
         pinned = tmp_path / "known_hosts"
         pinned.write_text("fixture", encoding="utf-8")
-        host = SshHost("host", "alice", "example.test", roots=(str(tmp_path),))
+        host = SshHost("host", "alice", "example.test", roots=(f"/work/{tmp_path.name}",))
         transport = SshTransport({"host": host}, known_hosts=pinned, spawn=spawn)
         sandbox = None
     else:
@@ -433,7 +433,7 @@ async def test_cancel_swallowed_by_spawn_after_dispatch_still_kills_child(
     else:
         pinned = tmp_path / "known_hosts"
         pinned.write_text("fixture", encoding="utf-8")
-        host = SshHost("host", "alice", "example.test", roots=(str(tmp_path),))
+        host = SshHost("host", "alice", "example.test", roots=(f"/work/{tmp_path.name}",))
         transport = SshTransport({"host": host}, known_hosts=pinned, spawn=spawn)
     runner = _runner(monkeypatch, backend, transport)
     monkeypatch.setattr(gate, "_owner_current", lambda _task_id: True)
