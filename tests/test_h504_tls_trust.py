@@ -16,6 +16,7 @@ Three halves, each against the real thing where it can be:
 from __future__ import annotations
 
 import asyncio
+import base64
 import inspect
 import logging
 import os
@@ -133,6 +134,20 @@ def _crl_only(tmp_path):
     return path
 
 
+def _trusted_pem(tmp_path, cert, *, reject_server=False, duplicate=False):
+    """X509_CERT_AUX with serverAuth trust/reject, generated entirely in the test."""
+    _x509, _hashes, serialization, _ec, _NameOID = _crypto()
+    server_auth_oid = bytes.fromhex("06082b06010505070301")
+    purpose = (b"\xa0\x0a" if reject_server else b"\x30\x0a") + server_auth_oid
+    aux = b"\x30" + bytes([len(purpose)]) + purpose
+    encoded = base64.encodebytes(cert.public_bytes(serialization.Encoding.DER) + aux)
+    block = (b"-----BEGIN TRUSTED CERTIFICATE-----\n" + encoded
+             + b"-----END TRUSTED CERTIFICATE-----\n")
+    path = tmp_path / ("rejected-trusted.pem" if reject_server else "server-trusted.pem")
+    path.write_bytes(block * (2 if duplicate else 1))
+    return path
+
+
 def _subjects(context: ssl.SSLContext) -> set[str]:
     return {value for cert in context.get_ca_certs() for rdn in cert.get("subject", ()) for _k, value in rdn}
 
@@ -168,6 +183,43 @@ def test_duplicate_valid_anchor_in_one_bundle_is_accepted(tmp_path):
     ca, _key, _cert = _make_ca(tmp_path)
     ca.write_bytes(ca.read_bytes() * 2)
     assert tls_trust._check_file(str(ca)) is None
+
+
+def test_trusted_pem_certificate_is_accepted_with_preloaded_root_and_duplicate(tmp_path):
+    _ca, _key, cert = _make_ca(tmp_path)
+    trusted = _trusted_pem(tmp_path, cert, duplicate=True)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    baseline = context.cert_store_stats()["x509"]
+    context.load_verify_locations(cafile=str(trusted))
+    assert context.cert_store_stats()["x509"] >= baseline
+    assert "nerva-h504-ca" in _subjects(context)
+    assert tls_trust._check_file(str(trusted)) is None
+    assert tls_trust.validate_ca_environment({"JARVIS_CA_BUNDLE": str(trusted)}) == []
+
+
+def test_malformed_trusted_pem_and_crl_only_file_are_refused(tmp_path):
+    malformed = tmp_path / "malformed-trusted.pem"
+    malformed.write_bytes(b"-----BEGIN TRUSTED CERTIFICATE-----\n!!!\n"
+                          b"-----END TRUSTED CERTIFICATE-----\n")
+    assert tls_trust._check_file(str(malformed)) is not None
+    assert tls_trust._check_file(str(_crl_only(tmp_path))) == "holds no certificate"
+
+
+def test_trusted_pem_server_auth_and_reject_purposes_survive_validation(
+    monkeypatch, tmp_path, https_server,
+):
+    url, ca = https_server
+    x509, _hashes, _serialization, _ec, _NameOID = _crypto()
+    cert = x509.load_pem_x509_certificate(ca.read_bytes())
+    trusted = _trusted_pem(tmp_path, cert)
+    rejected = _trusted_pem(tmp_path, cert, reject_server=True)
+    assert tls_trust._check_file(str(trusted)) is None
+    monkeypatch.setenv("JARVIS_CA_BUNDLE", str(trusted))
+    assert asyncio.run(_get("lm-studio", url)) == 200
+    assert tls_trust._check_file(str(rejected)) is None
+    monkeypatch.setenv("JARVIS_CA_BUNDLE", str(rejected))
+    with pytest.raises(httpx.ConnectError, match="CERTIFICATE_VERIFY_FAILED|certificate verify failed"):
+        asyncio.run(_get("lm-studio", url))
 
 
 @pytest.mark.parametrize("variable", tls_trust.CA_FILE_VARIABLES)
