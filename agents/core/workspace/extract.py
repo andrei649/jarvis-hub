@@ -24,7 +24,8 @@ By default extraction runs on a small thread pool of its own, bounded at
 :data:`EXTRACT_TIMEOUT_SECONDS`, and the worker also checks that deadline between pages,
 rows and sheets. A parser stuck within one page cannot be stopped in that mode.
 With ``NERVA_WORKSPACE_KILLABLE_EXTRACTION=1`` (default off), PDF/DOCX instead use
-killable children with a POSIX address-space cap; see :mod:`.extract_process`.
+killable children with a POSIX address-space cap where supported; see
+:mod:`.extract_process`. Optional OCR is available only in that child.
 Every failure is an
 :class:`ExtractionError` carrying one stable ``code`` from :data:`ERROR_CODES`; the
 document row stores it and the UI translates it.
@@ -45,7 +46,11 @@ import logging
 import math
 import posixpath
 import re
+import shutil
+import signal
+import sys
 import tempfile
+import threading
 import time
 import unicodedata
 from collections.abc import Callable, Iterator, Sequence
@@ -61,7 +66,7 @@ from defusedxml.ElementTree import ParseError, iterparse
 from pypdf import PasswordType, PdfReader
 
 from agents.core.archive_safe import ArchiveLimits, ArchiveRejected, extract_zip_bytes
-from agents.core.env_config import env_flag, truthy
+from agents.core.env_config import env_flag, env_str, truthy
 
 logger = logging.getLogger("nerva.workspace.extract")
 
@@ -77,6 +82,9 @@ MIME_TYPES: dict[str, str] = {
 ALLOWED_EXTENSIONS: tuple[str, ...] = tuple(f".{kind}" for kind in MIME_TYPES)
 
 MAX_PDF_PAGES = 500
+MAX_OCR_PAGES = 50
+OCR_PAGE_TIMEOUT_SECONDS = 20.0
+OCR_RENDER_SCALE = 2.0
 EXTRACT_TIMEOUT_SECONDS = 60.0
 #: Upper bound on the extracted text of one document (about 4 000 dense pages). Beyond
 #: it the index and every prompt built from it would be dominated by one file.
@@ -164,7 +172,7 @@ class Extracted:
 
     segments: tuple[Segment, ...]
     page_count: int | None
-    #: Enforced isolation limits; empty for the legacy pool. Windows has no RLIMIT_AS.
+    #: Enforced isolation limits; empty for the legacy pool. Platform gaps are explicit.
     limits: tuple[str, ...] = ()
 
     @property
@@ -198,6 +206,10 @@ class _Guard:
         """``timeout`` once the deadline has passed (called between pages, rows, sheets)."""
         if self._deadline is not None and time.monotonic() > self._deadline:
             raise ExtractionError("timeout", "extraction ran past its deadline")
+
+    def remaining(self) -> float | None:
+        """Seconds until the document deadline, if one exists."""
+        return None if self._deadline is None else max(0.0, self._deadline - time.monotonic())
 
     def spend(self, chars: int) -> None:
         """``too_much_text`` once the document's text exceeds :data:`MAX_TEXT_CHARS`."""
@@ -324,7 +336,8 @@ def _page_text(reader: PdfReader, index: int) -> str:
         return ""
 
 
-def _pdf(data: bytes, guard: _Guard) -> Extracted:
+def _pdf(data: bytes, guard: _Guard, *, allow_ocr: bool = False,
+         progress: Callable[[str, int, float, int], None] | None = None) -> Extracted:
     try:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted and _needs_password(reader):
@@ -343,7 +356,124 @@ def _pdf(data: bytes, guard: _Guard) -> Extracted:
         guard.spend(len(text))
         if text:
             segments.append(Segment(index + 1, text))
-    return Extracted(tuple(segments), page_count=count)
+    extracted = Extracted(tuple(segments), page_count=count)
+    if allow_ocr and not any(_HAS_WORD.search(segment.text) for segment in segments):
+        return _ocr_pdf(data, count, guard, progress=progress) or extracted
+    return extracted
+
+
+@contextmanager
+def _ocr_render_limit(seconds: float) -> Iterator[None]:
+    """Interrupt a POSIX render at its page deadline; the child owns this timer."""
+    if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_remaining, previous_interval = signal.getitimer(signal.ITIMER_REAL)
+    started = time.monotonic()
+
+    def expired(signum: int, frame: object) -> None:
+        raise TimeoutError("OCR render exhausted the page budget")
+
+    signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_remaining > 0:
+            left = max(1e-6, previous_remaining - (time.monotonic() - started))
+            signal.setitimer(signal.ITIMER_REAL, left, previous_interval)
+
+
+def _ocr_engine() -> Callable[[bytes, int, float], str] | None:
+    """Load the optional local renderer and engine only inside the extraction child."""
+    try:
+        import pypdfium2
+        import pytesseract
+    except ImportError:
+        return None
+    command = getattr(getattr(pytesseract, "pytesseract", None), "tesseract_cmd", "tesseract")
+    if shutil.which(command) is None:
+        return None
+    lang = env_str("NERVA_WORKSPACE_OCR_LANG").strip() or "eng"
+
+    def read(data: bytes, index: int, seconds: float) -> str:
+        started = time.monotonic()
+        document = None
+        try:
+            with _ocr_render_limit(seconds):
+                document = pypdfium2.PdfDocument(data)
+                image = document[index].render(scale=OCR_RENDER_SCALE).to_pil()
+            remaining = seconds - (time.monotonic() - started)
+            if remaining <= 0:
+                raise TimeoutError("OCR render exhausted the page budget")
+            # pytesseract passes this float to subprocess timeout. Never round a
+            # tiny remaining deadline up to a whole second.
+            return pytesseract.image_to_string(image, lang=lang, timeout=remaining)
+        finally:
+            if document is not None:
+                document.close()
+
+    return read
+
+
+def _ocr_pdf(data: bytes, count: int, guard: _Guard, *,
+             progress: Callable[[str, int, float, int], None] | None = None) -> Extracted | None:
+    """OCR all pages or fail; no successful result may silently omit a page."""
+    # taskkill /T cannot reliably reclaim a native descendant after its leader
+    # exits. Until a Windows Job Object owns the tree, native OCR is unsupported.
+    if sys.platform == "win32":
+        return None
+    if not (env_flag("NERVA_WORKSPACE_OCR", False)
+            and env_flag("NERVA_WORKSPACE_KILLABLE_EXTRACTION", False)):
+        return None
+    # A native renderer requires a deadline enforced outside this process.
+    if progress is None:
+        return None
+    engine = _ocr_engine()
+    if engine is None:
+        logger.info("OCR requested but no local engine is installed")
+        return None
+    if count > MAX_OCR_PAGES:
+        raise ExtractionError("too_many_pages", f"{count} pages exceed the OCR cap",
+                              page_count=count)
+    segments: list[Segment] = []
+    for index in range(count):
+        guard.tick()
+        left = guard.remaining()
+        seconds = OCR_PAGE_TIMEOUT_SECONDS if left is None else min(OCR_PAGE_TIMEOUT_SECONDS, left)
+        if seconds <= 0:
+            raise ExtractionError("timeout", "OCR document deadline", page_count=count)
+        started = time.monotonic()
+        progress("page_start", index + 1, started + seconds, count)
+        try:
+            raw = engine(data, index, seconds)
+        except MemoryError:
+            raise
+        except TimeoutError as exc:
+            raise ExtractionError("timeout", "OCR page deadline", page_count=count) from exc
+        except Exception as exc:
+            raise ExtractionError("invalid_file", f"OCR page failed ({type(exc).__name__})",
+                                  page_count=count) from exc
+        if time.monotonic() - started > seconds:
+            raise ExtractionError("timeout", "OCR page deadline", page_count=count)
+        progress("page_done", index + 1, started + seconds, count)
+        guard.tick()
+        text = clean_text(raw or "")
+        guard.spend(len(text))
+        if not _HAS_WORD.search(text):
+            if segments:
+                raise ExtractionError("no_text", "OCR did not cover every page",
+                                      page_count=count)
+            # If a later page has text, still fail the whole document below.
+            segments.append(Segment(index + 1, ""))
+        else:
+            segments.append(Segment(index + 1, text))
+    if any(not _HAS_WORD.search(segment.text) for segment in segments):
+        raise ExtractionError("no_text", "OCR did not cover every page", page_count=count)
+    return Extracted(tuple(segments), page_count=count, limits=("ocr",))
 
 
 # ── Office Open XML packages ─────────────────────────────────────────────────────────
@@ -927,7 +1057,9 @@ _HANDLERS: dict[str, Callable[[bytes, _Guard], Extracted]] = {
 
 # ── entry points ─────────────────────────────────────────────────────────────────────
 
-def extract_bytes(data: bytes, kind: str, *, timeout: float | None = None) -> Extracted:
+def _extract_bytes_impl(data: bytes, kind: str, *, timeout: float | None,
+                        allow_ocr: bool,
+                        progress: Callable[[str, int, float, int], None] | None = None) -> Extracted:
     """Extract the text of *data* as a *kind* file (synchronous; see :func:`extract_document`).
 
     Raises :class:`ExtractionError` — ``no_text`` when nothing readable came out (a
@@ -938,7 +1070,8 @@ def extract_bytes(data: bytes, kind: str, *, timeout: float | None = None) -> Ex
         raise ExtractionError("invalid_file", f"unsupported kind {kind!r}")
     guard = _Guard(timeout, MAX_TEXT_CHARS)
     try:
-        extracted = handler(data, guard)
+        extracted = (_pdf(data, guard, allow_ocr=allow_ocr, progress=progress)
+                     if kind == "pdf" else handler(data, guard))
     except ExtractionError:
         raise
     except (ParseError, DefusedXmlException, csv.Error, ValueError, KeyError, IndexError,
@@ -948,6 +1081,17 @@ def extract_bytes(data: bytes, kind: str, *, timeout: float | None = None) -> Ex
     if not any(_HAS_WORD.search(segment.text) for segment in extracted.segments):
         raise ExtractionError("no_text", "no readable text", page_count=extracted.page_count)
     return extracted
+
+
+def extract_bytes(data: bytes, kind: str, *, timeout: float | None = None) -> Extracted:
+    """Synchronous extraction. Native OCR is never invoked through this entry point."""
+    return _extract_bytes_impl(data, kind, timeout=timeout, allow_ocr=False)
+
+
+def _extract_bytes_in_child(data: bytes, kind: str, *, timeout: float,
+                            progress: Callable[[str, int, float, int], None] | None = None) -> Extracted:
+    """Extraction-child-only entry point for opt-in native OCR."""
+    return _extract_bytes_impl(data, kind, timeout=timeout, allow_ocr=True, progress=progress)
 
 
 async def extract_document(data: bytes, kind: str, *,
