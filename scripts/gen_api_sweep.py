@@ -98,6 +98,15 @@ EXPECT_OVERRIDES = {
     ),
 }
 
+PROBE_OVERRIDES = {
+    "GET /api/llm/provider-packages/{artifact_id}": (
+        "`GET $B/api/llm/provider-packages/{artifact_id}` with the artifact_id "
+        "from a successful owner stage receipt (§02)",
+        "**200** for that signed staged artifact · **409** `provider_install_refused` "
+        "for an unknown id — no package list route exists",
+    ),
+}
+
 
 def group_of(path: str) -> str:
     parts = [p for p in path.split("/") if p]
@@ -108,6 +117,9 @@ def group_of(path: str) -> str:
 
 def probe(method: str, path: str, tier: str) -> tuple[str, str]:
     """Return (how to hit it, what proves it healthy)."""
+    override = PROBE_OVERRIDES.get(f"{method} {path}")
+    if override is not None:
+        return override
     templated = "{" in path
     if method in READ_METHODS and not templated:
         cmd = f'`curl -sS {HEADER[tier]}-o /dev/null -w "%{{http_code}}\\n" $B{path}`'

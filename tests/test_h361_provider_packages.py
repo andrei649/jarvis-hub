@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -147,6 +149,37 @@ def test_active_inventory_requires_exact_signed_scope(tmp_path: Path):
     assert [item.package_hash for item in store.list_active(home="synthetic-home")] == [record.package_hash]
     store.revoke("example")
     assert store.list_active(home="synthetic-home") == ()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_revoke_waits_for_durable_worker(tmp_path: Path, monkeypatch):
+    store = _store(tmp_path, authorizer=lambda action: Decision(Verdict.GRANT, tier=3))
+    record = _stage(store, _package(tmp_path))
+    proposal = store.propose(record.artifact_id)
+    store.decide(proposal, approved=True, actor="owner", permanent=True)
+    store.promote(proposal)
+    entered, release = threading.Event(), threading.Event()
+    original = store.revoke
+
+    def paused_revoke(provider_id):
+        entered.set()
+        assert release.wait(timeout=5)
+        original(provider_id)
+
+    monkeypatch.setattr(store, "revoke", paused_revoke)
+    task = asyncio.create_task(store.revoke_async("example"))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0.05)
+        assert not task.done()
+        assert len(store.list_active(home="synthetic-home")) == 1
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=5)
+        assert store.list_active(home="synthetic-home") == ()
+    finally:
+        release.set()
 
 
 def test_kernel_denial_blocks_promotion_and_execution(tmp_path: Path):

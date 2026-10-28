@@ -1,5 +1,9 @@
 """Production HTTP owner boundary, private synthetic packages only."""
 import asyncio
+import fcntl
+import os
+import threading
+import time
 from types import SimpleNamespace
 
 import httpx
@@ -127,3 +131,81 @@ async def test_http_revoke_awaits_inflight_lease_and_committed_revocation(client
         release.set()
         if not task.done():
             task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_stage_lock_wait_does_not_block_unrelated_status(client, service):
+    svc, _, _, _ = service
+    lock_path = svc._store()._lock_path
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    released = threading.Event()
+    release_guard = threading.Lock()
+
+    def release_lock():
+        with release_guard:
+            if not released.is_set():
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
+                released.set()
+
+    timer = threading.Timer(0.7, release_lock)
+    timer.start()
+    try:
+        from agents import web
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app),
+                                     base_url='http://testserver') as http:
+            start = time.monotonic()
+            stage_task = asyncio.create_task(
+                http.post(PATH+'/stage', headers=HEADERS, json=stage_body(service)))
+
+            async def status_request():
+                response = await http.get(PATH+'/status', headers=HEADERS)
+                return response, time.monotonic() - start
+
+            status_task = asyncio.create_task(status_request())
+            status, elapsed = await asyncio.wait_for(status_task, timeout=5)
+            assert status.status_code == 200 and elapsed < 0.4
+            assert (await asyncio.wait_for(stage_task, timeout=5)).status_code == 200
+    finally:
+        if not released.is_set():
+            release_lock()
+        timer.cancel()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_revoke_request_waits_for_worker_commit(client, service, monkeypatch):
+    from agents.core.llm.providers.packages import ProviderPackageStore
+
+    svc, _, _, _ = service
+    preview = staged(service)
+    offer = svc.propose(preview['artifact_id'], actor=owner())
+    svc.decide(offer['proposal_id'], artifact_id=preview['artifact_id'],
+               package_hash=preview['package_hash'], approved=True,
+               permanent=True, actor=owner())
+    svc.promote(offer['proposal_id'], actor=owner())
+    entered, release = threading.Event(), threading.Event()
+    original = ProviderPackageStore.revoke
+
+    def paused_revoke(self, provider_id):
+        entered.set()
+        assert release.wait(timeout=5)
+        return original(self, provider_id)
+
+    monkeypatch.setattr(ProviderPackageStore, 'revoke', paused_revoke)
+    from agents import web
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app),
+                                 base_url='http://testserver') as http:
+        request = asyncio.create_task(http.post(PATH+'/synthetic-addon/revoke', headers=HEADERS))
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            request.cancel()
+            await asyncio.sleep(0.05)
+            assert not request.done()
+            assert len(svc._store().list_active(home=svc.home)) == 1
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(request, timeout=5)
+            assert svc._store().list_active(home=svc.home) == ()
+        finally:
+            release.set()

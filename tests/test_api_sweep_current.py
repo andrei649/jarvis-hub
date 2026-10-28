@@ -116,3 +116,10 @@ def test_pass_c_does_not_claim_the_tasks_payload_leak_is_live():
     assert "absent" in pass_c, (
         "Pass C should ask the tester to confirm payload/result are ABSENT at user tier"
     )
+
+
+def test_provider_inspect_probe_uses_stage_receipt_and_actual_unknown_status():
+    command, expectation = gen.probe(
+        'GET', '/api/llm/provider-packages/{artifact_id}', 'admin')
+    assert 'stage' in command and 'list route' not in command
+    assert '409' in expectation and '404' not in expectation

@@ -582,12 +582,38 @@ def _provider_install_context(request: Request):
     return service, actor
 
 
-def _provider_install_call(request: Request, method: str, *args, **kwargs):
+def _provider_install_sync(request: Request, method: str, args: tuple, kwargs: dict):
+    # The owner predicate is evaluated by the service inside this worker, at
+    # the actual file-lock/signature/decision boundary.
+    service, actor = _provider_install_context(request)
+    return getattr(service, method)(*args, actor=actor, **kwargs)
+
+
+async def _provider_install_worker(fn, *args):
+    """Drain a started install operation even if its HTTP caller disconnects."""
+    worker = asyncio.create_task(asyncio.to_thread(fn, *args))
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(worker)
+            break
+        except asyncio.CancelledError:
+            cancelled = True
+            if worker.done():
+                result = worker.result()
+                break
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+async def _provider_install_call(request: Request, method: str, *args, **kwargs):
     from agents.core.llm.providers.packages import ProviderPackageError
 
     try:
-        service, actor = _provider_install_context(request)
-        return nocache_json(getattr(service, method)(*args, actor=actor, **kwargs))
+        result = await _provider_install_worker(_provider_install_sync,
+                                                request, method, args, kwargs)
+        return nocache_json(result)
     except HTTPException:
         raise
     except (ProviderPackageError, ValueError, TypeError, KeyError, OSError):
@@ -609,34 +635,35 @@ async def provider_packages_stage(body: ProviderPackageStage, request: Request):
         profile = ProviderProfile(**body.profile)
     except (TypeError, ValueError, KeyError):
         raise HTTPException(status_code=422, detail="invalid_provider_profile") from None
-    return _provider_install_call(request, "stage", body.candidate, profile=profile,
-                                  hooks=body.hooks, source=body.source,
-                                  replacement_target=body.replacement_target)
+    return await _provider_install_call(request, "stage", body.candidate, profile=profile,
+                                        hooks=body.hooks, source=body.source,
+                                        replacement_target=body.replacement_target)
 
 
 @router.get("/api/llm/provider-packages/{artifact_id}", dependencies=[Depends(admin_guard)])
 async def provider_packages_inspect(artifact_id: str, request: Request):
-    return _provider_install_call(request, "inspect", artifact_id)
+    return await _provider_install_call(request, "inspect", artifact_id)
 
 
 @router.post("/api/llm/provider-packages/{artifact_id}/propose", dependencies=[Depends(admin_guard)])
 async def provider_packages_propose(artifact_id: str, request: Request):
-    return _provider_install_call(request, "propose", artifact_id)
+    return await _provider_install_call(request, "propose", artifact_id)
 
 
 @router.post("/api/llm/provider-packages/proposals/{proposal_id}/decision",
              dependencies=[Depends(admin_guard)])
 async def provider_packages_decision(proposal_id: str, body: ProviderPackageDecision,
                                      request: Request):
-    return _provider_install_call(request, "decide", proposal_id,
-                                  artifact_id=body.artifact_id, package_hash=body.package_hash,
-                                  approved=body.approved, permanent=body.permanent)
+    return await _provider_install_call(request, "decide", proposal_id,
+                                        artifact_id=body.artifact_id,
+                                        package_hash=body.package_hash,
+                                        approved=body.approved, permanent=body.permanent)
 
 
 @router.post("/api/llm/provider-packages/proposals/{proposal_id}/promote",
              dependencies=[Depends(admin_guard)])
 async def provider_packages_promote(proposal_id: str, request: Request):
-    return _provider_install_call(request, "promote", proposal_id)
+    return await _provider_install_call(request, "promote", proposal_id)
 
 
 @router.post("/api/llm/provider-packages/{provider_id}/revoke",
@@ -645,7 +672,7 @@ async def provider_packages_revoke(provider_id: str, request: Request):
     from agents.core.llm.providers.packages import ProviderPackageError
 
     try:
-        service, actor = _provider_install_context(request)
+        service, actor = await _provider_install_worker(_provider_install_context, request)
         result = await service.revoke_async(provider_id, actor=actor)
         return nocache_json(result)
     except HTTPException:

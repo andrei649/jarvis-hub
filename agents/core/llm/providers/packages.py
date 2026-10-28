@@ -671,7 +671,19 @@ class ProviderPackageStore:
             active = tuple(_DISPATCH_TASKS.get(self._root_identity, {}).get(provider_id, ()))
         for loop, task in active:
             loop.call_soon_threadsafe(task.cancel)
-        await asyncio.to_thread(self.revoke, provider_id)
+        worker = asyncio.create_task(asyncio.to_thread(self.revoke, provider_id))
+        cancelled = False
+        while True:
+            try:
+                await asyncio.shield(worker)
+                break
+            except asyncio.CancelledError:
+                cancelled = True
+                if worker.done():
+                    worker.result()  # Surface an unsuccessful revoke, never imply success.
+                    break
+        if cancelled:
+            raise asyncio.CancelledError
 
     def _require_runnable_locked(self, provider_id: str, expected_hash: str | None,
                                  home: str | None) -> ProviderRecord:

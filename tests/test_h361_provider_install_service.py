@@ -175,7 +175,7 @@ def test_owner_preview_exposes_signed_trust_fields_without_header_values(service
     assert summary['endpoint'] == {'scheme': 'https', 'host': 'synthetic.invalid',
                                    'port': None}
     assert summary['data_policy']['policy'] == 'no-training'
-    assert summary['fallback_models'] == ['synthetic-model']
+    assert 'fallback_models' not in summary
     assert summary['capabilities'] == ['chat', 'cloud']
     assert 'default_header_names' not in summary
     assert 'private-marker-value' not in json.dumps(preview)
@@ -185,6 +185,30 @@ def test_owner_preview_exposes_signed_trust_fields_without_header_values(service
     assert 'home' not in preview and str(svc.root) not in json.dumps(preview)
     assert preview['member_count'] == 2
     assert preview['sandbox']['image'] == IMAGE
+
+
+def test_preview_omits_untrusted_free_text_and_header_like_hostname(service):
+    svc, profile, hooks, _ = service
+    profile = replace(profile, description='/private/example/secret-file',
+                      hostname='Authorization: Bearer synthetic-token',
+                      data_policy_note='private owner policy note',
+                      fallback_models=('private-model-secret',))
+    preview = svc.stage('addon', profile=profile, hooks=hooks, source='user', actor=owner())
+    rendered = json.dumps(preview)
+    assert '/private/example/secret-file' not in rendered
+    assert 'synthetic-token' not in rendered
+    assert 'private owner policy note' not in rendered
+    assert 'private-model-secret' not in rendered
+    assert 'description' not in preview['profile_summary']
+    assert 'hostname' not in preview['profile_summary']
+
+
+def test_invalid_endpoint_preview_refuses_before_registry_commit(service):
+    svc, profile, hooks, _ = service
+    profile = replace(profile, default_base_url='https://synthetic.invalid:bad/v1')
+    with pytest.raises(ProviderPackageError):
+        svc.stage('addon', profile=profile, hooks=hooks, source='user', actor=owner())
+    assert not (svc.root / 'packages' / 'registry.enc').exists()
 
 
 @pytest.mark.asyncio

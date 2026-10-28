@@ -24,6 +24,15 @@ from .packages import ProviderPackageError, ProviderPackageStore, _secure_root
 
 _NAME = re.compile(r'[a-z0-9][a-z0-9._-]{0,63}\Z')
 _SOURCES = {'user', 'legacy', 'bundled'}
+_PREVIEW_KINDS = {'openai-compatible', 'deepinfra-chat',
+                  'openai-compatible-local', 'ollama',
+                  'gemini', 'anthropic', 'openai-responses', 'xai-responses'}
+_PREVIEW_MODES = {'chat_completions', 'gemini_generate_content',
+                  'anthropic_messages', 'responses'}
+_PREVIEW_AUTH = {'none', 'bearer', 'api-key'}
+_PREVIEW_CAPABILITIES = {'chat', 'cloud', 'local', 'vision', 'streaming',
+                         'reasoning', 'reasoning-effort', 'prompt-cache-key',
+                         'model-catalog', 'long-context'}
 
 
 def _owner_current(actor):
@@ -75,24 +84,47 @@ class ProviderInstallService:
             authorizer=authorize, enabled=self.enabled, owner_authorizer=owner_authorizer)
 
     @staticmethod
+    def _preview_profile(profile):
+        """Validate and expose only typed trust attributes before any commit."""
+        address = profile.default_base_url
+        if (type(address) is not str or not address or len(address) > 2048
+                or any(ord(char) < 33 or ord(char) > 126 for char in address)):
+            raise ProviderPackageError('provider endpoint is invalid')
+        try:
+            endpoint = urlsplit(address)
+            host, port = endpoint.hostname, endpoint.port
+        except ValueError as exc:
+            raise ProviderPackageError('provider endpoint is invalid') from exc
+        if (endpoint.scheme not in {'https', 'http'} or not host
+                or len(host) > 253 or re.fullmatch(r'[A-Za-z0-9.:-]+', host) is None
+                or endpoint.username is not None or endpoint.password is not None
+                or endpoint.query or endpoint.fragment):
+            raise ProviderPackageError('provider endpoint is invalid')
+        if (profile.backend_kind not in _PREVIEW_KINDS
+                or profile.api_mode not in _PREVIEW_MODES
+                or profile.auth_type not in _PREVIEW_AUTH
+                or any(type(value) is not str or value not in _PREVIEW_CAPABILITIES
+                       for value in profile.capabilities)):
+            raise ProviderPackageError('provider trust attributes are unsupported')
+        # Free-text package metadata, model names, notes, paths, and header names
+        # never enter this response. The URL path is likewise omitted.
+        return {'id': profile.id,
+                'endpoint': {'scheme': endpoint.scheme, 'host': host, 'port': port},
+                'backend_kind': profile.backend_kind, 'api_mode': profile.api_mode,
+                'auth': {'type': profile.auth_type,
+                         'configured': profile.auth_type == 'none'},
+                'capabilities': sorted(profile.capabilities),
+                'data_policy': {'policy': profile.data_policy},
+                'supports_health_check': profile.supports_health_check,
+                'supports_model_listing': profile.supports_model_listing}
+
+    @staticmethod
     def preview(record):
-        profile = record.profile.status(environ={})
-        # Keep signed trust attributes reviewable without code, file paths,
-        # endpoint paths, or package-controlled header names and values.
-        endpoint = urlsplit(record.profile.default_base_url or '')
-        profile.pop('base_url', None)
-        profile.pop('default_header_names', None)
-        profile.pop('env_vars', None)
-        profile.pop('base_url_env', None)
-        profile.get('auth', {}).pop('env', None)
-        for name in ('models_url', 'signup_url'):
-            profile.pop(name, None)
-        profile['endpoint'] = {'scheme': endpoint.scheme, 'host': endpoint.hostname or '',
-                               'port': endpoint.port}
+        profile = ProviderInstallService._preview_profile(record.profile)
         return {'artifact_id': record.artifact_id, 'provider_id': record.provider_id,
                 'package_hash': record.package_hash, 'source': record.source,
                 'replacement_target': record.replacement_target, 'hooks': list(record.hooks),
-                'endpoint_host': urlsplit(record.profile.default_base_url or '').hostname or '',
+                'endpoint_host': profile['endpoint']['host'],
                 'auth_type': record.profile.auth_type, 'backend_kind': record.profile.backend_kind,
                 'profile_summary': profile,
                 'sandbox_image': record.manifest['runtime_image'],
@@ -109,6 +141,7 @@ class ProviderInstallService:
             raise ProviderPackageError('provider credential binding must be host owned')
         from agents.core.llm.provider_request import profile_headers
         profile_headers(profile)
+        self._preview_profile(profile)
         record = self._store().stage(self.incoming(source) / name, profile=profile,
             hooks=hooks, source=source, home=self.home if source == 'user' else None,
             replacement_target=replacement_target, sandbox_profile=self.profile)
