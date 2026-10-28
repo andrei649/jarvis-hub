@@ -56,9 +56,9 @@
 
 ## Task 3: Integrate verified wave and maintain full-scope continuation
 
-- [ ] Review the complete diff, update only genuinely completed NWS-12/NWS-23 backlog entries and queue rows, and document any acceptance gaps.
-- [ ] Reassess affected Hermes source citations (especially H503), regenerate status and run parity/route/status guards applicable to the actual changes.
-- [ ] Commit one coherent local checkpoint after checks; no GitHub publication.
+- [x] Review the complete diff, update only genuinely completed NWS-12/NWS-23 backlog entries and queue rows, and document any acceptance gaps.
+- [x] Reassess affected Hermes source citations (especially H503), regenerate status and run parity/route/status guards applicable to the actual changes.
+- [x] Commit one coherent local checkpoint after checks; no GitHub publication.
 - [ ] Continue remaining backlog and Hermes subsystem reconciliation. The 181-conflict merge preview is evidence of integration work required, not a reason to discard local code or reduce accepted scope.
 
 ## Task 4: Reconcile the signed-provider admission foundation
@@ -69,11 +69,35 @@
 
 **Interfaces:** Preserve current ProviderProfile/ProviderRegistry metadata/catalog/duplicate handling, backend factory and built-in backend behavior, Kernel action types/current owner actors, and the native HTTPX egress path. Signed package admission must be additive and bind the exact package hash to host authorization; unadmitted/untrusted packages never execute hooks.
 
-- [ ] Use an isolated native managed worktree based on local `b2b5a4ee`; retain canonical checkout and other branches.
-- [ ] Port/review existing focused regressions before source; observe missing admission behavior, then reconcile source rather than blindly cherry-picking old shared files.
-- [ ] Implement the full admission foundation: signature/hash/manifest validation, capability/kernel authorization, constrained async native hooks, profile/registry projection, exact backend binding.
-- [ ] Run new provider suites plus current built-in provider/factory/action-authority regressions and Ruff/diff checks. No paid/native provider calls, credentials, provider activation or process-wide client defaults.
-- [ ] Independent review and source integration by coordinator; do not update shared ledgers or claim H361/H367 complete from this dependency alone.
+- [x] Use an isolated linked worktree based on local `b2b5a4ee`; native tooling rejected the nested sourceRoot, so the documented manual fallback preserves canonical and other branches.
+- [x] Port/review existing focused regressions before source; observe missing admission behavior, then reconcile source rather than blindly cherry-picking old shared files.
+- [x] Implement the full admission foundation: signature/hash/manifest validation, capability/kernel authorization, constrained async native hooks, profile/registry projection, exact backend binding.
+- [x] Run new provider suites plus current built-in provider/factory/action-authority regressions and Ruff/diff checks. No paid/native provider calls, credentials, provider activation or process-wide client defaults.
+- [x] Independent review and source integration by coordinator; do not update shared ledgers or claim H361/H367 complete from this dependency alone.
+
+## Task 5: Complete Workspace SQLite work off the event loop (NWS-13)
+
+**Files:** `agents/core/routers/workspace_{admin,approvals,auth,chat,reports}.py`, `agents/core/workspace/{approvals,documents,http,reports}.py`, `tests/test_workspace_sqlite_off_loop.py`, relevant existing Workspace regression files, and the specific concurrency/cancellation section of `docs/business/WORKSPACE_PILOT_SPEC.md`.
+
+**Interfaces:** All synchronous SQLite transactions and FTS work reachable from async Workspace handlers/background coroutines must execute off the event loop as complete synchronous units. Preserve the five-second SQLite busy timeout, BEGIN IMMEDIATE/audit chain, per-user/department checks, error semantics, request-owned connection lifetime, cancellation and no transaction held across a model/SMTP await.
+
+- [x] Reuse/review the source dependency slice on `origin/lean/nws-13-sqlite-off-loop` against current main plus the completed NWS-23 storage fixes; do not transplant stale ledgers/artifacts.
+- [x] Audit all async Workspace SQLite call paths; choose one coherent offload helper and preserve synchronous caller compatibility.
+- [x] Prove a real held SQLite write lock does not stall an unrelated async request/event-loop heartbeat, then implement; cover cancellation without closing a connection still used by a worker, transaction completion/rollback, exceptions and FTS.
+- [x] Run relevant Workspace auth/upload/chat/report/approval/scheduler/storage suites and independent review; update the concurrency spec alongside source.
+- [x] Coordinator integrates, updates BACKLOG/queue and generated evidence only after current-state proof. No live accounts, providers, mail delivery or production service changes.
+
+## Task 6: Owner installation lifecycle
+
+Use the reviewed provider worktree at c540114f and reconcile the installation dependency from 0c67599d: signed inspection/inventory, exact one-use owner decisions, current Kernel authority, redacted default-off service/routes, durable async revocation. Preserve native dispatch allowlist and all reviewed transport guards. Verify owner/action/route/provider compatibility and independent review before integration. Scope and tests: ignored SDD task-6-brief.md/task-6-inventory.md. The native dialect bridges remain required in Task8; selected credentials/physical runtime follow them.
+
+## Task 7: Optional bounded local OCR (NWS-10)
+
+Use the isolated workspace-ocr worktree at c6a30304. Reconcile origin/lean/nws-10-ocr-scanned-pdf source with actual child-only execution, page/document/resource bounds, descendant cleanup, missing-engine/default-off behavior, truthful OCR/partial limits and extraction regressions. Preserve originals and current SQLite/storage behavior; no mandatory engine install or private input. Scope and tests: ignored SDD task-7-brief.md. Coordinator closes NWS-10 only after source/integration/review acceptance; no cloud or native engine success inferred from fakes.
+
+## Task 8: Complete guarded native dialect bridges
+
+After Task6, reconcile every admitted native cloud dialect (Anthropic/Gemini/DeepInfra/Responses/xAI) from 0c67599d with a per-dispatch physical lease, exact host/credential/protocol/data binding and honest ambiguous-egress accounting. Cover text/tool/stream/retry paths before widening the factory allowlist. Then reconcile selected host-managed credentials/runtime from42eeda3e. These are full-scope remaining requirements, not completed by the admission foundation.
 
 ## Continuation order after this wave
 
@@ -91,3 +115,7 @@ Revert the local wave commit to undo product changes; original local/remote bran
 - Frontend source and focused 38-case tests/typechecks pass. Required report-table/badge/lazy-chunk browser checks passed, but the serial journey found an existing admin-usage 320px overflow. Fix/browser continuation remains in progress, so NWS-12/NWS-23 are not yet closed.
 
 Final Workspace acceptance supersedes preliminary results: 2,675 native JSON frontend tests pass,31 post-review browser journey cases and one targeted read-only table case pass; all three P2s addressed. NWS-12/NWS-23 now close locally, leaving40 backlog entries. Task4 foundation is isolated at d2ad83eb,357 focused/current compatibility cases pass, independent critical review pending. No provider or H361 completion claimed.
+
+Reviewed integration checkpoint c6a30304: Task4 source foundation passes its three fix rounds and465 covering tests; Task5 passes scoped/extended suites and independent10cancellation+4SMTP checks. NWS-13 closes locally, leaving39 backlog entries. Global Ruff passes (one pre-existing invalid-noqa warning). Canonical broad backend integration and affected-provider review pins are the next milestone; H361/H367 remain incomplete. Task6 owner lifecycle and Task7 OCR are isolated implementations; Task8 remains required.
+
+Full canonical backend milestone at c6a30304 plus recorded metadata diff: 29,781 collected, 29,687 passed,21failed,73skipped in1068.349s; this is not a green full suite. Failures group into5provider integration cases,7existingMac extraction cases and9TLS/uninstall/log cases. Scope/status metadata checks pass after three precise citation corrections. Follow-up integration repairs remain required; no remote publication.

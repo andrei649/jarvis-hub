@@ -11,8 +11,8 @@ Din acestea, **130** au fost reevaluate pe cod în această livrare; **0** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 130 | 18.7% |
-| Parțial | 446 | 64.0% |
-| Lipsă | 121 | 17.4% |
+| Parțial | 447 | 64.1% |
+| Lipsă | 120 | 17.2% |
 | Exclus intenționat | 0 | 0.0% |
 | De reverificat | 0 | 0.0% |
 
@@ -36,7 +36,7 @@ Din acestea, **130** au fost reevaluate pe cod în această livrare; **0** păst
 | env | 28 | 5 | 21 | 2 | 0 | 0 |
 | tools — the agent-callable surface | 32 | 9 | 20 | 3 | 0 | 0 |
 | skills | 33 | 11 | 17 | 5 | 0 | 0 |
-| providers | 27 | 5 | 16 | 6 | 0 | 0 |
+| providers | 27 | 5 | 17 | 5 | 0 | 0 |
 | agent-core | 36 | 7 | 22 | 7 | 0 | 0 |
 | memory | 27 | 5 | 19 | 3 | 0 | 0 |
 | automation | 32 | 6 | 24 | 2 | 0 | 0 |

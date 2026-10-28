@@ -261,10 +261,16 @@
   frontend passes; 31 isolated browser journey passes plus a targeted read-only table probe.
   The browser journey also exposed/fixed transient usage-chart resize overflow. A real macOS
   coordinator-yield regression exposed/fixed native zombie-state detection, without timeout changes.
-- [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
-  `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
-  contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.
-  Remaining (recounted 2026-10-26): partly done — `documents.py` already offloads its store/hash/read steps with `asyncio.to_thread` (L900-1039) and password hashing is offloaded in `workspace_auth.py`; every `db.tx` (`auth.py`, `approvals.py`, `audit.py`, `documents.py:402/808`) and the FTS queries in the handlers still run on the event loop. Decision still open: thread offload workspace-wide vs one executor.
+- [x] ✅ **NWS-13 — synchronous SQLite work off the event loop.** Delivered locally 2026-10-28
+  (`4c6ce595`, `c6a30304`): async Workspace handlers and report coroutines offload complete synchronous
+  transactions, reads and FTS units through `http.offload`; the five-second busy timeout and
+  `BEGIN IMMEDIATE`/audit chain remain. Request-owned connections stay sequential and workers drain
+  before cancellation can close them. Accepted manual report queue/spawn and approval commit/effect
+  sequences finish on disconnect; cancelled chat preparation settles/releases its exact turn.
+  Spec concurrency section updated. Real held-lock/heartbeat, rollback, FTS and ten cancellation
+  regressions pass; scoped and extended Workspace suites pass without exclusions. Four refused-SMTP
+  fixtures now use a deterministic connect refusal, retaining delivery/privacy assertions and real
+  positive SMTP sink tests; production timeout classification is unchanged. Independent review passes.
 
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
