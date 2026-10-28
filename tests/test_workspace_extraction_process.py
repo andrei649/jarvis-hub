@@ -283,3 +283,34 @@ def test_ocr_page_timeout_is_bounded_by_the_document_deadline(monkeypatch):
     assert 0 < seen[0] <= 5.0
     extract.extract_bytes(samples.build_blank_pdf(1), "pdf")
     assert seen[1] == extract.OCR_PAGE_TIMEOUT_SECONDS
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups (killpg) are POSIX-only")
+async def test_timeout_also_kills_a_native_engine_started_by_the_worker(monkeypatch, tmp_path):
+    from agents.core.workspace import extract_process
+
+    pid_file = tmp_path / "grandchild.pid"
+    script = (
+        "import subprocess,sys,time\n"
+        "c=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'])\n"
+        f"open({str(pid_file)!r},'w').write(str(c.pid))\n"
+        "time.sleep(60)\n")
+    real_spawn = asyncio.create_subprocess_exec
+
+    async def spawn(*args, **kwargs):
+        return await real_spawn(sys.executable, "-c", script, *args[-2:], **kwargs)
+
+    monkeypatch.setattr(extract_process.asyncio, "create_subprocess_exec", spawn)
+    with pytest.raises(extract.ExtractionError) as caught:
+        await extract.extract_document(samples.build_pdf(), "pdf", timeout=2.0)
+    assert caught.value.code == "timeout"
+    grandchild = int(pid_file.read_text())
+    for _ in range(50):
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.1)
+    else:
+        os.kill(grandchild, 9)
+        pytest.fail("the engine process outlived its extraction worker")

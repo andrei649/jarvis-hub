@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import sys
 import tempfile
 import threading
@@ -55,6 +56,16 @@ def _worker(argv: list[str] | None = None) -> None:
 
 async def _reap(process: asyncio.subprocess.Process) -> None:
     if process.returncode is None:
+        # The worker may have spawned a native OCR engine; take the whole tree down.
+        if sys.platform == "win32":
+            with suppress(OSError):
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill", "/F", "/T", "/PID", str(process.pid),
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                await killer.wait()
+        else:
+            with suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, signal.SIGKILL)  # the worker leads its own group
         with suppress(ProcessLookupError):
             process.kill()  # SIGKILL on POSIX, TerminateProcess on Windows
     await process.communicate()  # drain pipes as well as reaping; wait() alone can block
@@ -82,7 +93,8 @@ async def extract_in_child(data: bytes, kind: str, *, timeout: float) -> Extract
                         *command,
                         kind, str(max(0.0, deadline - loop.time())), cwd=_REPO, env=env,
                         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.DEVNULL))
+                        stderr=asyncio.subprocess.DEVNULL,
+                        start_new_session=sys.platform != "win32"))
                     # Cancellation during launch must still obtain and reap the child.
                     process = await asyncio.shield(launch)
                     output, _ = await process.communicate(data)
