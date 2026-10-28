@@ -3,11 +3,14 @@ anthropic.py — Anthropic Claude API backend with streaming support.
 Uses Anthropic Messages API directly via httpx (no SDK dependency).
 """
 
+import base64
+import binascii
 import json
 from typing import Any, Callable
 
 import httpx
 
+from ..tool_rpc import MAX_IMAGE_B64_CHARS, image_signature_ok
 from .auth_rotation import is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
@@ -52,6 +55,45 @@ ANTHROPIC_VERSION = "2023-06-01"
 #: (``invalid_request_error``, ``request_too_large``): the only failures the tool loop
 #: answers by resending without the images the request carried.
 _REJECTED_REQUEST_STATUSES = frozenset({400, 413})
+_TOOL_HISTORY_TEXT_BYTES = 256 * 1024
+_BUILTIN_REQUEST_IMAGE_B64_CHARS = 20_000_000  # AgentToolRuntime's request image ceiling.
+_BUILTIN_REQUEST_IMAGES = 8
+_BUILTIN_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+
+
+def _builtin_tool_history_limit(messages: list[dict]) -> int:
+    """Count only bounded tool-result image bytes above the normal text limit.
+
+    Signed profiles still use their isolated worker/request bounds. The ordinary
+    built-in image path can carry up to 20 MB of base64, and the JSON ownership
+    copy must accommodate those bytes without granting extra text history.
+    """
+    count = total = 0
+    for row in messages:
+        if type(row) is not dict or row.get("role") != "tool":
+            continue
+        images = row.get("images")
+        if type(images) is not list:
+            continue
+        for image in images:
+            if (type(image) is not dict or set(image) != {"media_type", "data"}
+                    or image.get("media_type") not in _BUILTIN_IMAGE_TYPES
+                    or type(image.get("data")) is not str):
+                continue
+            size = len(image["data"])
+            if size > MAX_IMAGE_B64_CHARS:
+                continue
+            try:
+                raw = base64.b64decode(image["data"].encode("ascii"), validate=True)
+            except (binascii.Error, UnicodeError, ValueError):
+                continue
+            if not image_signature_ok(raw, image["media_type"]):
+                continue
+            count += 1
+            total += size
+            if count > _BUILTIN_REQUEST_IMAGES or total > _BUILTIN_REQUEST_IMAGE_B64_CHARS:
+                return _TOOL_HISTORY_TEXT_BYTES
+    return _TOOL_HISTORY_TEXT_BYTES + total
 
 
 class ClaudeBackend(AdmittedClientMixin, LLMBackend):
@@ -191,7 +233,10 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
 
     async def _tool_payload(self, model, messages, tools, max_tokens, temperature):
         profile = await self._request_profile(model, messages)
-        system, converted = anthropic_messages(prepare_profile_messages(profile, messages))
+        maximum = (512 * 1024 if isinstance(self.profile, AdmittedProviderProfile)
+                   else _builtin_tool_history_limit(messages))
+        system, converted = anthropic_messages(
+            prepare_profile_messages(profile, messages, maximum=maximum))
         payload: dict[str, Any] = {
             "model": model,
             "max_tokens": cloud_cap(max_tokens),

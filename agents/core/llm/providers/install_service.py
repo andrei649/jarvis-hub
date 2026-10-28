@@ -16,6 +16,7 @@ from copy import deepcopy
 from urllib.parse import urlsplit
 
 from agents.core.autonomy.consent_types import OwnerConsentActor
+from agents.core.env_config import env_flag, env_str
 from agents.core.kernel import Action, Decision, Verdict
 
 from .admitted_registry import AdmittedProviderRegistry
@@ -342,9 +343,8 @@ class ProviderInstallService:
 
 def get_install_service(orch):
     """Lazy production composition; disabled status creates no state or runtime."""
-    import os
     def enabled():
-        return os.environ.get('JARVIS_PROVIDER_PLUGINS', '').strip().lower() in {'1','true','yes','on'}
+        return env_flag('JARVIS_PROVIDER_PLUGINS')
     if orch is None or not enabled():
         return None
     existing = getattr(orch, 'provider_install_service', None)
@@ -357,7 +357,7 @@ def get_install_service(orch):
     root = data_path('provider-plugins')
     service = ProviderInstallService(root=root,
         signing=ManagedSigningKeyStore(data_path('acquisition') / 'signing'),
-        profile=AcquisitionSandboxProfile(image=os.environ.get('JARVIS_ACQUISITION_SANDBOX_IMAGE','')),
+        profile=AcquisitionSandboxProfile(image=env_str('JARVIS_ACQUISITION_SANDBOX_IMAGE')),
         kernel=lambda: make_action_kernel(orch), enabled=enabled, home=str(root),
         audit=getattr(orch, 'audit', None))
     orch.provider_install_service = service

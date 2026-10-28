@@ -21,7 +21,6 @@ it in this module's namespace. The LM Studio lifecycle helpers `_lmstudio_or_503
 """
 
 import asyncio
-import os
 import sys
 from typing import Literal
 
@@ -32,6 +31,7 @@ from pydantic import BaseModel, Field
 from core.settings_db import get_value, put_category
 
 from agents.core.app_state import get_orch
+from agents.core.env_config import env_flag, env_str
 from agents.core.llm.local_model_inventory import invalidate_local_model_inventory_cache
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import logger, nocache_json
@@ -86,7 +86,7 @@ async def llm_openrouter_swap(body: ModelSwapBody):
     if parsed is None:
         return nocache_json({"ok": False, "reason": "not_a_model_command"}, status_code=422)
     return nocache_json({"ok": True, "parsed": parsed, "base": OPENROUTER_BASE,
-                         "configured": bool(os.environ.get("OPENROUTER_API_KEY", ""))})
+                         "configured": bool(env_str("OPENROUTER_API_KEY"))})
 
 
 class MoERouteBody(BaseModel):
@@ -622,7 +622,7 @@ async def _provider_install_call(request: Request, method: str, *args, **kwargs)
 
 @router.get("/api/llm/provider-packages/status", dependencies=[Depends(admin_guard)])
 async def provider_packages_status():
-    enabled = os.environ.get("JARVIS_PROVIDER_PLUGINS", "").strip().lower() in {"1", "true", "yes", "on"}
+    enabled = env_flag("JARVIS_PROVIDER_PLUGINS")
     return nocache_json({"enabled": enabled, "runtime_present": get_orch() is not None,
                          "selects_model": False})
 

@@ -603,6 +603,7 @@ class Orchestrator:
         self.permission_ledger = None
         self.work_runs = None
         self.company_runtime = None
+        self.provider_install_service = None
         # K3 — the session-kernel manager the coordinator composes. Declared here
         # like the rest of the external slots so the protocol holds before wiring.
         self.session_kernels = None

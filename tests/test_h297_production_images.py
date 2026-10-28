@@ -36,6 +36,7 @@ from agents.core.file_tools import (
 )
 from agents.core.llm import job_selection
 from agents.core.llm.anthropic import ClaudeBackend
+from agents.core.llm.provider_request import ProfileRequestRefused
 from agents.core.llm.tool_protocol import PROVIDER_REJECTED_FINISH, ToolSpec, ToolTurn
 from agents.core.security import bind_guardrails
 from agents.core.security.guardrails import GuardrailsEngine, RedactionMode
@@ -384,6 +385,26 @@ def _noise_png(target: int) -> bytes:
         if out.tell() >= target:
             return out.getvalue()
         side += 32
+
+
+@pytest.mark.asyncio
+async def test_builtin_tool_image_history_is_owned_without_widening_text_only_history():
+    image = base64.b64encode(_noise_png(300_000)).decode("ascii")
+    rows = [{"role": "user", "content": "inspect"},
+            {"role": "tool", "tool_call_id": "toolu_1", "content": "shot.png",
+             "images": [{"media_type": "image/png", "data": image}]}]
+    original = json.loads(json.dumps(rows))
+    backend = ClaudeBackend("synthetic-key", model=MODEL)
+    payload, _ = await backend._tool_payload(MODEL, rows, [], 64, 0.0)
+    assert rows == original
+    assert image in json.dumps(payload)
+    with pytest.raises(ProfileRequestRefused, match="declaration too large"):
+        await backend._tool_payload(MODEL, [{"role": "user", "content": "x" * 300_000}],
+                                    [], 64, 0.0)
+    malformed = [{"role": "tool", "content": "shot.png",
+                  "images": [{"media_type": "image/png", "data": "not-base64" * 40_000}]}]
+    with pytest.raises(ProfileRequestRefused, match="declaration too large"):
+        await backend._tool_payload(MODEL, malformed, [], 64, 0.0)
 
 
 @pytest.mark.asyncio

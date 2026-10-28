@@ -597,6 +597,16 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # H361: installation and credential routes have working owner APIs, but no
+    # HUD controls. Task 10B selection and physical credential use remain open.
+    "/api/admin/llm/provider-credentials",
+    "/api/llm/provider-packages/status",
+    "/api/llm/provider-packages/stage",
+    "/api/llm/provider-packages/{artifact_id}",
+    "/api/llm/provider-packages/{artifact_id}/propose",
+    "/api/llm/provider-packages/proposals/{proposal_id}/decision",
+    "/api/llm/provider-packages/proposals/{proposal_id}/promote",
+    "/api/llm/provider-packages/{provider_id}/revoke",
     # H015: the owner CLI/API is live; dedicated web/mobile controls remain in
     # HUD_V2_REMAINING.md and mobile/PARITY.md, not a completed UI claim.
     "/api/jobs/incidents/{incident_id}/ack",

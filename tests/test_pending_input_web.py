@@ -186,10 +186,14 @@ async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_p
     from types import SimpleNamespace
 
     import agents.core.native_human_wait as human_wait
+    from agents.core.routers import chat_pending
 
     clock = {"now": 1000.0}
     monkeypatch.setattr(human_wait, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
     orch, cap, _answers, stream = await stream_host(tmp_path, monkeypatch, choices=["Local", "Remote"])
+    # This credit test measures one stream/answer pair; pin the router's
+    # orchestrator lookup to the same fixture instance as its SSE producer.
+    monkeypatch.setattr(chat_pending, "get_orch", lambda: orch)
     try:
         await event(stream)
         question = await event(stream)
@@ -203,8 +207,13 @@ async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_p
             await asyncio.sleep(0)
         clock["now"] += 5
         assert cap["credit"].seconds() == 5
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://localhost") as client:
-            assert (await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"})).status_code == 200
+        assert question["id"] in orch._pending_input_service()._delivered
+        assert (orch._pending_input_service()._delivered[question["id"]].source.sender
+                == chat_pending.http_actor(request()))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(
+                app=web.app, client=("127.0.0.1", 123)), base_url="http://localhost") as client:
+            reply = await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"})
+            assert reply.status_code == 200, reply.text
         await following
         await event(stream)
     finally:
