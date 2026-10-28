@@ -31,18 +31,12 @@ import pytest
 
 from agents.core import exec_cache
 from agents.core.sandbox import Sandbox
+from tests.support.fixture_time import age_tree as _age
 
 HOUR = 3600
 P = exec_cache.PREFIX
 posix = pytest.mark.skipif(os.name != "posix", reason="POSIX flock, modes and /proc")
 
-
-def _age(path: Path, hours: float) -> None:
-    then = time.time() - hours * HOUR
-    for dirpath, dirnames, filenames in os.walk(path):
-        for name in dirnames + filenames:
-            os.utime(os.path.join(dirpath, name), (then, then), follow_symlinks=False)
-    os.utime(path, (then, then))
 
 
 @pytest.fixture
