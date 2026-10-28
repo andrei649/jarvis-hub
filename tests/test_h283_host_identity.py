@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
@@ -27,6 +28,19 @@ from agents.core import host_identity as hi  # noqa: E402
 from agents.core import host_posture as hp  # noqa: E402
 
 MACHINE_ID = "0d0af1c2b3a4958677a8b9c0d1e2f3a4"
+
+
+@pytest.fixture(autouse=True)
+def simulated_unix_socket_capability(monkeypatch):
+    """The fake Linux host also owns its socket capability; no socket is opened here.
+
+    Patch only the detector modules, leaving the runner's real socket module alone.
+    """
+    from agents.core import sd_notify
+
+    sockets = SimpleNamespace(AF_UNIX=object())
+    monkeypatch.setattr(hi, "socket", sockets)
+    monkeypatch.setattr(sd_notify, "socket", sockets)
 
 
 def _files(present=(), texts=None):
@@ -197,6 +211,20 @@ def test_the_watchdog_agrees_with_the_heartbeat_and_never_rounds_down_to_nothing
     monkeypatch.setenv("WATCHDOG_USEC", usec)
     monkeypatch.delenv("WATCHDOG_PID", raising=False)
     assert sd_notify.watchdog_seconds() is not None
+
+
+@pytest.mark.parametrize("value", ["/run/systemd/notify", " /run/x ", "@abstract"])
+def test_a_host_without_unix_sockets_cannot_claim_notify_supervision(value, monkeypatch):
+    from agents.core import sd_notify
+
+    monkeypatch.delattr(hi.socket, "AF_UNIX")
+    got = _detect({"NOTIFY_SOCKET": value, "WATCHDOG_USEC": "60000000"})
+    assert got.supervisor == "none" and not got.supervisor_confirmed
+    assert got.notify_socket is False and got.watchdog_s == 0
+    assert got.prompt_line() == ""
+    monkeypatch.setenv("NOTIFY_SOCKET", value)
+    assert sd_notify.enabled() is False
+    assert sd_notify.notify("READY=1") is False
 
 
 def test_the_journal_is_only_this_stderr_and_the_watchdog_only_this_pid():
