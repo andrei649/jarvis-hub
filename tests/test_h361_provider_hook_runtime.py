@@ -14,6 +14,7 @@ from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile, S
 from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.providers.admission_contract import provider_sandbox_profile
 from agents.core.llm.providers.hook_runtime import ProviderHookRuntime, ProviderHookRuntimeError
+from agents.core.llm.providers.packages import ProviderPackageStore
 
 IMAGE = "python@sha256:" + "a" * 64
 HOOKS = (
@@ -187,6 +188,73 @@ async def test_actual_worker_imports_all_signed_members_and_keeps_hook_inputs_in
         "reasoning_config": {"enabled": True, "effort": "low"},
         "session_id": "s",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["before_worker", "after_worker"])
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_hook_admission_read_does_not_block_dispatch_lease_or_heartbeat(tmp_path, phase, cancel):
+    runtime, packages, runner = fixture(tmp_path)
+    store = object.__new__(ProviderPackageStore)
+    store._lock_path = tmp_path / "registry.lock"
+    store._root_identity = (tmp_path.stat().st_dev, tmp_path.stat().st_ino)
+    store._require_runnable_locked = lambda provider_id, expected_hash, home: packages.record
+    runtime.packages = store
+
+    worker_done = asyncio.Event()
+    worker_continue = asyncio.Event()
+    original_run = runner.run
+
+    async def paused_run(command, *, container_name):
+        result = await original_run(command, container_name=container_name)
+        worker_done.set()
+        await worker_continue.wait()
+        return result
+
+    runner.run = paused_run
+    lease_entered = asyncio.Event()
+    release_lease = asyncio.Event()
+
+    async def holder():
+        async with store.dispatch_lease("fixture", expected_hash="f" * 64):
+            lease_entered.set()
+            await release_lease.wait()
+
+    if phase == "before_worker":
+        holder_task = asyncio.create_task(holder())
+        await lease_entered.wait()
+        evaluation = asyncio.create_task(runtime.evaluate(
+            "fixture", package_hash="f" * 64, model="m", messages=[{"role": "user", "content": "hello"}],
+            reasoning_config={"enabled": True, "effort": "low"},
+        ))
+    else:
+        evaluation = asyncio.create_task(runtime.evaluate(
+            "fixture", package_hash="f" * 64, model="m", messages=[{"role": "user", "content": "hello"}],
+            reasoning_config={"enabled": True, "effort": "low"},
+        ))
+        await asyncio.wait_for(worker_done.wait(), 2)
+        holder_task = asyncio.create_task(holder())
+        await lease_entered.wait()
+        worker_continue.set()
+
+    heartbeat = asyncio.Event()
+    asyncio.get_running_loop().call_soon(heartbeat.set)
+    await asyncio.wait_for(heartbeat.wait(), 0.5)
+    assert not evaluation.done()
+    if cancel:
+        evaluation.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await evaluation
+    release_lease.set()
+    await asyncio.wait_for(holder_task, 1)
+    worker_continue.set()
+    if cancel:
+        if phase == "before_worker":
+            assert runner.commands == []
+        return
+    assert (await asyncio.wait_for(evaluation, 3))["prepared_messages"] == [
+        {"role": "user", "content": "hello!"}
+    ]
 
 
 @pytest.mark.asyncio

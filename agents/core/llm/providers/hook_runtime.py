@@ -484,7 +484,7 @@ class ProviderHookRuntime:
         }
         _validate_tree(request)
         payload = _safe_json(request, max_bytes=_MAX_INPUT_BYTES, reason="invalid_input")
-        record = self._require_record(provider_id, package_hash, home)
+        record = await asyncio.to_thread(self._require_record, provider_id, package_hash, home)
         try:
             _private_runtime_root(self.runtime_root)
             with tempfile.TemporaryDirectory(
@@ -518,7 +518,7 @@ class ProviderHookRuntime:
         except Exception as exc:
             raise ProviderHookRuntimeError("sandbox_failed") from exc
         # A permanent approval may be revoked while the worker is running.
-        refreshed = self._require_record(provider_id, package_hash, home)
+        refreshed = await asyncio.to_thread(self._require_record, provider_id, package_hash, home)
         if refreshed.signature != record.signature:
             raise ProviderHookRuntimeError("not_runnable")
         if result.timed_out:
