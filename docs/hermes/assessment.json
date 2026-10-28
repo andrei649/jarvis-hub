@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "d7e9a5bb8bd2d4b665cfb5ee10a011adde8411d5",
-  "assessed_at": "2026-10-28T06:55:45Z",
+  "base_sha": "da13670f8e75d7714717c1e1e1cc6504bdd38801",
+  "assessed_at": "2026-10-28T07:53:14Z",
   "reviews": [
     {
       "id": "H001",
@@ -26614,7 +26614,7 @@
         },
         {
           "path": "tests/test_h586b_image_review.py",
-          "sha256": "17d9914381dd62f2cd1880b0ff23eaab2fba52695991af42743a5e7f8ec73131"
+          "sha256": "73b5e9d88f3923b8564bc84e1a2b52ef1fc236e580311fcf562fad796009b19f"
         },
         {
           "path": "tests/test_h586c_image_review.py",
@@ -30268,7 +30268,7 @@
         },
         {
           "path": "tests/test_exec_cache.py",
-          "sha256": "37e16e71038186de4a24fd9852b2b8e1a2e8054b27caab4a097dc4e2621adc01"
+          "sha256": "8789e0c1fc479d4fa095dfc57cf6d4579eec6cf3c83eadeedf4e222da8d44dd6"
         },
         {
           "path": "tests/test_h667c_exec_cache_review.py",
