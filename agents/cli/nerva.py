@@ -1505,6 +1505,7 @@ def _config_edit(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
     values that differ afterwards are written, each through ``config set``'s checks, and
     every line that cannot be written is named. A failed editor writes nothing."""
     import contextlib
+    import errno
     import tempfile
 
     document, editable = _edit_document(settings)
@@ -1515,8 +1516,17 @@ def _config_edit(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
             handle.write(document)
         try:
             status = _run_editor(argv, temporary)
-        except (FileNotFoundError, PermissionError) as exc:
-            why = "not found" if isinstance(exc, FileNotFoundError) else "not executable"
+        except OSError as exc:
+            if isinstance(exc, FileNotFoundError):
+                why = "not found"
+            elif (
+                isinstance(exc, PermissionError)
+                or exc.errno == errno.ENOEXEC
+                or getattr(exc, "winerror", None) == 193
+            ):
+                why = "not executable"
+            else:
+                why = "could not start"
             ctx.err.write(f"editor {_plain(argv[0], 80)} {why} — set $VISUAL or $EDITOR to one; "
                           "nothing changed\n")
             return EXIT_FAILED
