@@ -39,6 +39,13 @@ posix = pytest.mark.skipif(os.name != "posix", reason="POSIX flock, modes and /p
 
 
 
+@pytest.fixture(autouse=True)
+def managed_cache_environment(monkeypatch):
+    """These cache tests select their roots independently of runner temp paths."""
+    for key in exec_cache.TEMP_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture
 def root(tmp_path, monkeypatch):
     monkeypatch.setattr(exec_cache, "_date", lambda info: info.st_mtime)
