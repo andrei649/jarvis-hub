@@ -294,6 +294,7 @@ def test_the_file_is_read_no_further_than_the_bound(tmp_path, monkeypatch):
 
 def test_gif87a_and_a_home_path(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     (tmp_path / "old.gif").write_bytes(b"GIF87a" + b"\x00" * 16)
     hub = Fake()
     assert _run(["-z", "--image", "~/old.gif", "x"], hub)[0] == nerva.EXIT_OK

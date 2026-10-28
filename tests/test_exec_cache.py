@@ -90,6 +90,7 @@ def test_the_environment_wins_then_the_owner_setting(tmp_path):
 
 def test_a_home_path_is_expanded(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     assert exec_cache.resolve_root({exec_cache.ENV_KEY: "~/exec"}, _settings({})) == (tmp_path / "exec", False)
 
 
