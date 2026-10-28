@@ -1541,8 +1541,23 @@ inspect its redacted signed summary, propose and decide on an exact artifact
 and hash, promote, or revoke it. `JARVIS_ACTION_KERNEL=1` and a current tier-3
 Action Kernel grant are also required for promotion and execution.
 
-Installation does not select a model, supply a credential, or call a provider.
-The admitted native send bridge currently covers only explicitly bound
-OpenAI-compatible cloud packages; other native dialects remain refused pending
-their separate transport review. Unset the flag to refuse new lifecycle work;
-existing signed state is retained for explicit owner review.
+Package installation does not select a model or call a provider. The package-status
+field `selects_model: false` describes that installation operation. Explicit selection
+is a separate owner API: GET/PUT/DELETE `/api/admin/llm/provider-selection`.
+The owner supplies the exact signed provider/hash/model and expected revision,
+acknowledges unknown pricing and any required data policy, and receives metadata
+only. Credentials are managed separately at `/api/admin/llm/provider-credentials`.
+
+Selected OpenAI-compatible, Anthropic, Gemini, DeepInfra, Responses and xAI requests
+share the signed preparation/Kernel guard. The host reads the exact credential
+generation only into the verified public-IP/Host/SNI wire request; the backend and
+worker retain nonsecret markers. Selection and lifecycle leases cover response
+bodies. Rotation, revoke and clear drain known readers and refuse busy or stale
+mutations without reporting completion. Local-only roles and model/job pins remain
+in force; a failed signed selection does not silently choose another cloud provider.
+
+Unset the flag to refuse new lifecycle work and selected physical attempts; retained
+signed state remains available for explicit owner review. Local synthetic Kernel,
+Vault, DNS and TLS tests establish this source behavior. Live provider availability,
+billing, Docker worker, native platform and HUD/mobile controls remain separate
+acceptance requirements; the production flag remains off by default.

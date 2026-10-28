@@ -179,7 +179,7 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-48 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
+49 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
 `tests/test_doc_reference_integrity.py` keeps this number honest). The owner-jobs routes under
 `/api/jobs` added 2026-09-07 (Hermes absorption, wave 2) were on this list for one commit — the
@@ -197,7 +197,7 @@ The local Kanban CLI/chat/backend integration adds 37 explicitly tracked graphic
 board and task views, attachments, reviews, runs, diagnostics, configuration and other donor
 surfaces still need their HUD/native consumers. Signed-provider installation and credential
 routes also remain on this list. These additions and later wired callers are tracked in the
-current punch list of 48 routes; backend routes and CLI access do not establish graphical parity.
+current punch list of 49 routes; backend routes and CLI access do not establish graphical parity.
 A shrinking number is only good news when it shrinks for the right reason — an earlier pass of this
 sprint moved six routes into `MACHINE_FACING` to get the gate green, and an adversarial review
 caught that four of those reasons were false; they are back on the list. DRA-15 and DRA-36 both stay
