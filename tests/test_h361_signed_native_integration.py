@@ -1,4 +1,5 @@
 """Real signed-package/worker/native wire chain; Docker and HTTP are simulated."""
+import asyncio
 import json
 import os
 
@@ -14,7 +15,7 @@ from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.providers.admitted_registry import AdmittedProviderRegistry
 from agents.core.llm.providers.candidates import discover_candidates
 from agents.core.llm.providers.hook_runtime import ProviderHookRuntime, ProviderHookRuntimeError
-from agents.core.llm.providers.packages import ProviderPackageStore
+from agents.core.llm.providers.packages import ProviderPackageError, ProviderPackageStore
 from tests.test_h361_provider_hook_runtime import IMAGE, SimulatedSealedRunner
 
 
@@ -181,5 +182,79 @@ async def test_default_signed_worker_accepts_long_and_unicode_prompts(tmp_path, 
     try:
         assert await backend.generate('synthetic-model', prompt) == 'answer'
         assert len(runner.commands) == 1 and seen[0]['messages'][1]['content'] == prompt
+    finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_revoke_while_transport_waits_prevents_later_physical_send(tmp_path, monkeypatch):
+    backend, packages, _runner, *_ = setup(tmp_path, monkeypatch)
+    revoker = ProviderPackageStore(
+        packages.root, signing=packages.signing, authorizer=packages.authorizer,
+        enabled=packages.enabled, owner_authorizer=packages.owner_authorizer)
+    entered, release = asyncio.Event(), asyncio.Event()
+    seen = []
+
+    class PausedTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            entered.set()
+            await release.wait()
+            seen.append(request)
+            return httpx.Response(200, json={'choices': [{'message': {'content': 'answer'}}]})
+
+    await backend.client.aclose()
+    backend.client = llm_async_client('signed-addon',
+                                      base_url='https://synthetic.invalid/v1',
+                                      transport=PausedTransport())
+    task = asyncio.create_task(backend.generate('synthetic-model', 'hello'))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        with pytest.raises(ProviderPackageError, match='revoke_async'):
+            revoker.revoke('signed-addon')
+        await asyncio.wait_for(revoker.revoke_async('signed-addon'), timeout=5)
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert seen == []
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+        await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('revoke', [False, True], ids=['healthy', 'revoked-before-send'])
+async def test_admission_egress_accounting_matches_transport(tmp_path, monkeypatch, revoke):
+    from agents.core import turn_usage
+    from agents.core.llm import egress
+
+    backend, packages, _runner, *_ = setup(tmp_path, monkeypatch)
+    events, dispatches, seen = [], [], []
+    monkeypatch.setattr(egress, '_record', lambda _backend, _request, *, allowed, reason='':
+                        events.append((allowed, reason)))
+    monkeypatch.setattr(turn_usage, 'record_dispatch', lambda *args: dispatches.append(args))
+
+    async def maybe_revoke(_request):
+        if revoke:
+            packages.revoke('signed-addon')
+
+    await backend.client.aclose()
+    backend.client = llm_async_client(
+        'signed-addon', base_url='https://synthetic.invalid/v1',
+        event_hooks={'request': [maybe_revoke]},
+        transport=httpx.MockTransport(lambda request: (
+            seen.append(request), httpx.Response(200, json={'choices': [{'message': {'content': 'answer'}}]})
+        )[1]),
+    )
+    try:
+        if revoke:
+            with pytest.raises(ProviderHookRuntimeError, match='not_runnable'):
+                await backend.generate('synthetic-model', 'hello')
+            assert seen == [] and not any(allowed for allowed, _ in events) and dispatches == []
+        else:
+            assert await backend.generate('synthetic-model', 'hello') == 'answer'
+            assert len(seen) == 1 and sum(allowed for allowed, _ in events) == 1
+            assert len(dispatches) == 1
     finally:
         await backend.client.aclose()

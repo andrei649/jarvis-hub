@@ -55,6 +55,42 @@ from .usage_context import report_text_usage
 
 logger = logging.getLogger("jarvis.llm.openrouter")
 
+
+class _AdmittedTransport(httpx.AsyncBaseTransport):
+    """Hold an exact signed grant through connection, write and response headers."""
+
+    def __init__(self, backend, inner):
+        self.backend, self.inner = backend, inner
+
+    async def handle_async_request(self, request):
+        from agents.core.turn_usage import record_dispatch
+
+        from .egress import _record, is_admitted_request
+
+        backend = self.backend
+        profile = backend.profile
+        expected = httpx.URL(str(profile.default_base_url).rstrip('/') + '/chat/completions')
+        if (not is_admitted_request(request) or request.method != 'POST'
+                or request.url != expected
+                or (profile.auth_type != 'none'
+                    and request.headers.get('authorization') != 'Bearer ' + backend.api_key)
+                or (profile.auth_type == 'none' and 'authorization' in request.headers)):
+            _record(profile.id, request, allowed=False, reason='admitted request binding refused')
+            raise ProviderHookRuntimeError('native_egress_unavailable')
+        try:
+            async with profile._hook_runtime.dispatch_lease(
+                    profile.id, package_hash=profile._package_hash, home=profile._home):
+                response = await self.inner.handle_async_request(request)
+                _record(profile.id, request, allowed=True)
+                record_dispatch(profile.id, request)
+                return response
+        except BaseException:
+            _record(profile.id, request, allowed=False, reason='admitted physical request refused')
+            raise
+
+    async def aclose(self):
+        await self.inner.aclose()
+
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 _ERROR = "[OpenRouter error]"
 # OpenRouter answers "no upstream provider satisfies this request" with a 404 (data
@@ -115,14 +151,26 @@ class OpenRouterBackend(LLMBackend):
         self._current_block()  # raises ProviderRoutingInvalid on a bad knob
         self.api_key = api_key
         self.base_url = base_url
-        self.client = client or llm_async_client(self.profile.id, base_url=base_url, timeout=120.0)
         self._admission_guard = None
         from .providers.admitted_profiles import AdmittedProviderProfile
-        if isinstance(self.profile, AdmittedProviderProfile):
-            async def guard(_request):
-                await self.profile._hook_runtime.assert_runnable(
-                    self.profile.id, package_hash=self.profile._package_hash,
-                    home=self.profile._home)
+        admitted = isinstance(self.profile, AdmittedProviderProfile)
+        self.client = client or llm_async_client(
+            self.profile.id, base_url=base_url, timeout=120.0,
+            **({'trust_env': False, 'follow_redirects': False} if admitted else {}))
+        if admitted:
+            async def guard(request):
+                from .egress import _record, mark_admitted_request
+                try:
+                    if self.client._transport_for_url(request.url) is not self.client._transport:
+                        raise ProviderHookRuntimeError('native_egress_unavailable')
+                    await self.profile._hook_runtime.assert_runnable(
+                        self.profile.id, package_hash=self.profile._package_hash,
+                        home=self.profile._home)
+                except Exception:
+                    _record(self.profile.id, request, allowed=False,
+                            reason='admitted package check refused')
+                    raise
+                mark_admitted_request(request)
             self._admission_guard = guard
 
     def _send_client(self):
@@ -131,13 +179,24 @@ class OpenRouterBackend(LLMBackend):
             return self.client
         if not isinstance(self.client, httpx.AsyncClient):
             raise ProviderHookRuntimeError("native_egress_unavailable")
+        if self.client.follow_redirects:
+            raise ProviderHookRuntimeError("native_egress_unavailable")
         hooks = self.client.event_hooks.get('request', [])
         recorders = [hook for hook in hooks if getattr(hook, '_nerva_egress_recorder', False)]
         if len(recorders) != 1:
             raise ProviderHookRuntimeError("native_egress_unavailable")
+        transport = self.client._transport
+        if isinstance(transport, _AdmittedTransport):
+            if transport.backend is not self:
+                raise ProviderHookRuntimeError("native_egress_unavailable")
+        else:
+            transport = _AdmittedTransport(self, transport)
+            self.client._transport = transport
+        if self.client._transport_for_url(httpx.URL(self.base_url)) is not transport:
+            raise ProviderHookRuntimeError("native_egress_unavailable")
         self.client.event_hooks['request'] = [
-            hook for hook in hooks if hook is not self._admission_guard
-        ] + [self._admission_guard]
+            hook for hook in hooks if hook is not self._admission_guard and hook is not recorders[0]
+        ] + [self._admission_guard, recorders[0]]
         return self.client
 
     @staticmethod

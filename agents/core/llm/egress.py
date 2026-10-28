@@ -39,6 +39,16 @@ from agents.core.observability.egress_monitor import EGRESS_MONITOR
 
 from .host_protocol import HostProtocolRefused, protocol_refusal
 
+_ADMITTED_REQUEST = object()
+
+
+def mark_admitted_request(request: httpx.Request) -> None:
+    request.extensions["nerva.admitted"] = _ADMITTED_REQUEST
+
+
+def is_admitted_request(request: httpx.Request) -> bool:
+    return request.extensions.get("nerva.admitted") is _ADMITTED_REQUEST
+
 
 def _record(backend: str, request: httpx.Request, *, allowed: bool, reason: str = "") -> None:
     # Observability must never break generation — mirrors `_record_egress`.
@@ -77,9 +87,12 @@ def _recorder(backend: str):
         if reason:
             _record(backend, request, allowed=False, reason=reason)
             raise HostProtocolRefused(reason)
-        _record(backend, request, allowed=True)
-        from agents.core.turn_usage import record_dispatch
-        record_dispatch(backend, request)
+        # Admitted sends account at their leased transport, after the actual
+        # request completes. The hook still enforces data and host protocol.
+        if not is_admitted_request(request):
+            _record(backend, request, allowed=True)
+            from agents.core.turn_usage import record_dispatch
+            record_dispatch(backend, request)
 
     _hook._nerva_egress_recorder = True
     return _hook

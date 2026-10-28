@@ -15,6 +15,7 @@ import re
 import stat
 import tempfile
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 
 from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile, DockerSandboxRunner
@@ -267,6 +268,9 @@ class ProviderHookRuntime:
             )
         except Exception as exc:
             raise ProviderHookRuntimeError("not_runnable") from exc
+        return self._check_record(record, provider_id, package_hash)
+
+    def _check_record(self, record, provider_id: str, package_hash: str):
         if record.provider_id != provider_id or record.package_hash != package_hash:
             raise ProviderHookRuntimeError("not_runnable")
         if (
@@ -283,6 +287,25 @@ class ProviderHookRuntime:
         ):
             raise ProviderHookRuntimeError("unsupported_hooks")
         return record
+
+    @asynccontextmanager
+    async def dispatch_lease(self, provider_id: str, *, package_hash: str, home=None):
+        """Serialize revocation with the entire awaited native transport send."""
+        try:
+            active = self.enabled() is True
+        except Exception:
+            active = False
+        if not active:
+            raise ProviderHookRuntimeError("disabled")
+        try:
+            async with self.packages.dispatch_lease(
+                    provider_id, expected_hash=package_hash, home=home) as record:
+                self._check_record(record, provider_id, package_hash)
+                yield
+        except ProviderHookRuntimeError:
+            raise
+        except Exception as exc:
+            raise ProviderHookRuntimeError("not_runnable") from exc
 
     async def assert_runnable(self, provider_id: str, *, package_hash: str, home=None) -> None:
         """Recheck the current signed grant at each native HTTPX send."""

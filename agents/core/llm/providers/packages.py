@@ -7,6 +7,7 @@ returned by :meth:`require_runnable` after a live kernel decision.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -15,8 +16,9 @@ import re
 import secrets
 import stat
 import tempfile
+import threading
 from collections.abc import Callable
-from contextlib import contextmanager, suppress
+from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -54,6 +56,8 @@ _BUILTIN_BY_ID = {profile.id: profile for profile in BUILTIN_PROFILES}
 _BUILTIN_IDENTITIES = frozenset(
     identity for profile in BUILTIN_PROFILES for identity in (profile.id, *profile.aliases)
 )
+_DISPATCH_GUARD = threading.Lock()
+_DISPATCH_TASKS: dict[Path, dict[str, set[tuple[asyncio.AbstractEventLoop, asyncio.Task]]]] = {}
 
 
 class ProviderPackageError(RuntimeError):
@@ -624,6 +628,16 @@ class ProviderPackageStore:
             return record
 
     def revoke(self, provider_id: str) -> None:
+        with _DISPATCH_GUARD:
+            active = tuple(_DISPATCH_TASKS.get(self.root, {}).get(provider_id, ()))
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        if active and any(loop is current_loop for loop, _ in active):
+            raise ProviderPackageError("in-flight provider revocation requires revoke_async")
+        for loop, task in active:
+            loop.call_soon_threadsafe(task.cancel)
         with self._locked():
             state = self._load()
             records = self._active_records(state, provider_id)
@@ -643,23 +657,72 @@ class ProviderPackageStore:
                     proposal["status"] = "revoked"
             self._commit(state)
 
+    async def revoke_async(self, provider_id: str) -> None:
+        """Cancel in-flight sends, then persist revocation behind their leases."""
+        with _DISPATCH_GUARD:
+            active = tuple(_DISPATCH_TASKS.get(self.root, {}).get(provider_id, ()))
+        for loop, task in active:
+            loop.call_soon_threadsafe(task.cancel)
+        await asyncio.to_thread(self.revoke, provider_id)
+
+    def _require_runnable_locked(self, provider_id: str, expected_hash: str | None,
+                                 home: str | None) -> ProviderRecord:
+        state = self._load()
+        if provider_id in state["revoked"]:
+            raise ProviderPackageError("provider is not admitted")
+        records = [record for record in self._active_records(state, provider_id)
+                   if record.source != "user" or home is not None and record.home == home]
+        if expected_hash is not None:
+            records = [record for record in records if record.package_hash == expected_hash]
+        if not records:
+            raise ProviderPackageError("provider package or home scope is not admitted")
+        record = max(records, key=lambda item: _RANK[item.source])
+        if record.artifact_id in self._journal()["revoked_artifacts"]:
+            raise ProviderPackageError("provider artifact was revoked")
+        self._authorize(record, phase="execute")
+        return record
+
+    @asynccontextmanager
+    async def dispatch_lease(self, provider_id: str, *, expected_hash: str, home=None):
+        """Keep revocation serialized through async transport completion."""
+        if fcntl is None or not hasattr(fcntl, "flock"):
+            raise ProviderPackageError("safe provider registry locking is unavailable")
+        fd = os.open(self._lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        locked = False
+        task = asyncio.current_task()
+        loop = asyncio.get_running_loop()
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ProviderPackageError("provider registry lock is not regular")
+            while not locked:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = True
+                except BlockingIOError:
+                    await asyncio.sleep(0.01)
+            record = self._require_runnable_locked(provider_id, expected_hash, home)
+            with _DISPATCH_GUARD:
+                _DISPATCH_TASKS.setdefault(self.root, {}).setdefault(provider_id, set()).add((loop, task))
+            try:
+                yield record
+            finally:
+                with _DISPATCH_GUARD:
+                    by_provider = _DISPATCH_TASKS[self.root]
+                    current = by_provider[provider_id]
+                    current.discard((loop, task))
+                    if not current:
+                        by_provider.pop(provider_id, None)
+                    if not by_provider:
+                        _DISPATCH_TASKS.pop(self.root, None)
+        finally:
+            if locked:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
     def require_runnable(self, provider_id: str, *, expected_hash: str | None = None,
                          home: str | None = None) -> ProviderRecord:
         with self._locked():
-            state = self._load()
-            if provider_id in state["revoked"]:
-                raise ProviderPackageError("provider is not admitted")
-            records = [record for record in self._active_records(state, provider_id)
-                       if record.source != "user" or home is not None and record.home == home]
-            if expected_hash is not None:
-                records = [record for record in records if record.package_hash == expected_hash]
-            if not records:
-                raise ProviderPackageError("provider package or home scope is not admitted")
-            record = max(records, key=lambda item: _RANK[item.source])
-            if record.artifact_id in self._journal()["revoked_artifacts"]:
-                raise ProviderPackageError("provider artifact was revoked")
-            self._authorize(record, phase="execute")
-            return record
+            return self._require_runnable_locked(provider_id, expected_hash, home)
 
 
 __all__ = ["KIND", "ProviderPackageError", "ProviderPackageStore", "ProviderRecord"]

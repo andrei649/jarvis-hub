@@ -1,5 +1,6 @@
 """Admission-to-native wire seam; provider HTTP is mocked, never live."""
 import json
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import httpx
@@ -19,6 +20,10 @@ class Runtime:
 
     async def assert_runnable(self, provider_id, **kwargs):
         self.send_checks += 1
+
+    @asynccontextmanager
+    async def dispatch_lease(self, provider_id, **kwargs):
+        yield
 
     async def evaluate(self, provider_id, **kwargs):
         self.calls.append((provider_id, kwargs))
