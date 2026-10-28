@@ -623,6 +623,10 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     # Every manifest kind has an entry (an empty one when its handler never returns a
     # refusal as ``failed``), and nothing else does.
     assert set(REFUSAL_REASONS_BY_KIND) == set(ACTION_CAPABILITY_MANIFESTS)
+    # Provider installation is driven by the signed store and Action Kernel, not
+    # by this autonomy worker's handler-returned `failed` classification.
+    assert REFUSAL_REASONS_BY_KIND['plugin.load'] == frozenset()
+    assert not is_refusal('plugin.load', {'status': 'failed', 'reason': 'kernel_denied'})
     assert set(REFUSAL_REASON_PREFIXES_BY_KIND) <= set(ACTION_CAPABILITY_MANIFESTS)
     assert set(WITHHELD_REASONS_BY_KIND) <= set(ACTION_CAPABILITY_MANIFESTS)
     # No reason is shared by accident: every reason more than one kind lists is listed

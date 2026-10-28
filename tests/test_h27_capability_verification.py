@@ -146,8 +146,10 @@ async def test_all_executable_capability_cases_pass_hermetically_without_flag_le
             "action:research"}.issubset(
         {case.capability_id for case in ACTION_CAPABILITY_CASES}
     )
-    assert result["total"] == 36
-    assert result["passed"] == 36
+    assert {case.capability_id for case in ACTION_CAPABILITY_CASES if
+            case.capability_id == "action:plugin.load"} == {"action:plugin.load"}
+    assert result["total"] == 37
+    assert result["passed"] == 37
     assert result["skipped"] == 0
     assert result["promoted"] == []
     assert all(item["passed"] for item in result["results"])
@@ -207,7 +209,8 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     verification_pairs = [
         (manifest.verification, manifest.id) for manifest in ACTION_CAPABILITY_MANIFESTS.values()
     ] + [(record.verification, record.id) for record in [*tool_records, *records]]
-    assert len(verification_pairs) == 120
+    assert ("reality-v1:action-plugin-load-kernel-halt", "action:plugin.load") in verification_pairs
+    assert len(verification_pairs) == 121
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1

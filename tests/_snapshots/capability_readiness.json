@@ -24,6 +24,7 @@
   "action:payment": "wired",
   "action:permission.grant": "wired",
   "action:plugin.egress": "wired",
+  "action:plugin.load": "wired",
   "action:repo.sync": "wired",
   "action:report.export": "wired",
   "action:research": "wired",

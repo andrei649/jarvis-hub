@@ -230,6 +230,9 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # autonomy executor cannot run this kind and therefore has no handler-returned
     # `failed` reason to classify as an unattempted refusal here.
     "hermes.runtime": (),
+    # Signed provider admission runs in ProviderPackageStore.promote through the
+    # Action Kernel. This worker has no plugin.load executor returning `failed`.
+    "plugin.load": (),
     # node.dispatch — NodeMesh.execute re-authorises at action time: NodeMesh._authorize
     # and security.capability.authorize (``kill-switch engaged for scope '<scope>'``
     # matches by prefix, below). ``capability_broker_unavailable`` is not one: the
