@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "b9eaef543c92ca0d72a80baa266bb48717b29ab9",
-  "assessed_at": "2026-10-28T10:10:58Z",
+  "base_sha": "a5509823fb1a5b0add9dd7fa02ae858b00ccf5c7",
+  "assessed_at": "2026-10-28T11:02:31Z",
   "reviews": [
     {
       "id": "H001",
@@ -30268,15 +30268,15 @@
         },
         {
           "path": "tests/test_exec_cache.py",
-          "sha256": "8f3736ec2c77b356523bd117becded96748467fefc77518aee264279d0e0beaa"
+          "sha256": "a93e2f2728318cbaa10f23425731a6643ad76bf2104819627cd820afc1a005f1"
         },
         {
           "path": "tests/test_h667c_exec_cache_review.py",
-          "sha256": "4e6e2234ee3e5a582bdca2523ec77b9a9b23ae414f252ec4e785d3d2bc625fd4"
+          "sha256": "8745e7507477675081d6b15d578fa75d0df1064a9f2c893c4aedd3ee7eea0a89"
         },
         {
           "path": "tests/test_h667d_exec_cache_review.py",
-          "sha256": "7879b147853438be3e671f6aeed622f2453dba2b9af7749be75e2ce1027bba66"
+          "sha256": "7c7bd41129808ba0e55631839c466e9da363e2861f4590e5f3c25f91ae0b063e"
         },
         {
           "path": "tests/test_sandbox_child_env.py",
