@@ -841,3 +841,11 @@ connected through a separate immutable source approval, 4K pixel/proof-bound
 download/gallery/export and GET-only job continuation; original preview cleanup
 and ambiguous submission are covered locally. Other donor
 catalogs, FAL upload/Clarity, managed OAuth and native/mobile acceptance remain open.
+
+## Signed model-provider installation (H361 source candidate)
+
+The default-off owner API can stage a server-managed candidate, show a redacted
+signed summary, record an exact permanent owner decision, promote and revoke it.
+No dedicated HUD install/review flow is present yet. Package installation alone
+does not change the active model or make another native dialect available; owner
+selection, credential controls and live runtime/provider acceptance remain open.

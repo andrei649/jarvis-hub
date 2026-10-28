@@ -110,6 +110,45 @@ def test_full_snapshot_owner_approval_and_fresh_restart(tmp_path: Path):
         store.require_runnable("example", home="synthetic-home")
 
 
+def test_scoped_decision_checks_artifact_and_hash_for_denial_too(tmp_path: Path):
+    store = _store(tmp_path, authorizer=lambda action: Decision(Verdict.GRANT, tier=3))
+    package = _package(tmp_path)
+    first = _stage(store, package)
+    second = _stage(store, package)
+    proposal = store.propose(first.artifact_id)
+    with pytest.raises(ProviderPackageError):
+        store.decide(proposal, approved=False, actor="operator", permanent=True,
+                     expected_artifact_id=first.artifact_id,
+                     expected_package_hash=first.package_hash)
+    with pytest.raises(ProviderPackageError):
+        store.decide(proposal, approved=False, actor="owner", permanent=True,
+                     expected_artifact_id=second.artifact_id,
+                     expected_package_hash=second.package_hash)
+    assert store.inspect(first.artifact_id).package_hash == first.package_hash
+    store.decide(proposal, approved=False, actor="owner", permanent=True,
+                 expected_artifact_id=first.artifact_id,
+                 expected_package_hash=first.package_hash)
+    with pytest.raises(ProviderPackageError):
+        store.decide(proposal, approved=True, actor="owner", permanent=True,
+                     expected_artifact_id=first.artifact_id,
+                     expected_package_hash=first.package_hash)
+    assert store.list_active(home="synthetic-home") == ()
+
+
+def test_active_inventory_requires_exact_signed_scope(tmp_path: Path):
+    store = _store(tmp_path, authorizer=lambda action: Decision(Verdict.GRANT, tier=3))
+    record = _stage(store, _package(tmp_path))
+    proposal = store.propose(record.artifact_id)
+    store.decide(proposal, approved=True, actor="owner", permanent=True,
+                 expected_artifact_id=record.artifact_id,
+                 expected_package_hash=record.package_hash)
+    store.promote(proposal)
+    assert store.list_active(home="wrong-home") == ()
+    assert [item.package_hash for item in store.list_active(home="synthetic-home")] == [record.package_hash]
+    store.revoke("example")
+    assert store.list_active(home="synthetic-home") == ()
+
+
 def test_kernel_denial_blocks_promotion_and_execution(tmp_path: Path):
     package = _package(tmp_path)
     decision = Verdict.DENY

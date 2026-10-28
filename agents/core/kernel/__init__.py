@@ -223,7 +223,8 @@ def authorize(action: Action,
         decision = Decision(Verdict.GRANT, reason=pdec.reason, tier=tier)
     else:  # ASK (or anything unexpected) → queue for approval
         # Only a trusted, action-bound receipt can satisfy the ordinary tier-3
-        # policy ASK for terminal, checkpoint or a private Hermes continuation. The payload's
+        # policy ASK for terminal, checkpoint, a private Hermes continuation,
+        # or exact signed provider admission. The payload's
         # ID alone carries no authority.
         approved_task_id = (
             action.payload.get("approved_task_id")
@@ -233,13 +234,21 @@ def authorize(action: Action,
         sealed_terminal = action.kind == "terminal.exec"
         sealed_checkpoint = action.kind in {"checkpoint.restore", "checkpoint.maintenance"}
         sealed_hermes = action.kind == "hermes.runtime"
-        if (
+        sealed_provider = False
+        if action.kind == "plugin.load":
+            from ..llm.providers.admission_contract import PROVIDER_LOAD_CONTRACT
+            with contextlib.suppress(Exception):
+                sealed_provider = PROVIDER_LOAD_CONTRACT.evaluate(action.payload).admissible
+        task_receipt = (
             (sealed_terminal or sealed_checkpoint or sealed_hermes)
-            and pdec.outcome == ASK
-            and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
             and isinstance(approved_task_id, int)
             and not isinstance(approved_task_id, bool)
             and approved_task_id > 0
+        )
+        if (
+            (task_receipt or sealed_provider)
+            and pdec.outcome == ASK
+            and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
             and callable(approval_check)
         ):
             # A missing/broken mode hook or receipt checker fails closed. The
@@ -250,9 +259,10 @@ def authorize(action: Action,
         if trusted_receipt:
             seal_reason = ("sealed_terminal_approval" if sealed_terminal else
                            "sealed_checkpoint_approval" if sealed_checkpoint else
+                           "sealed_provider_approval" if sealed_provider else
                            "sealed_hermes_approval")
             decision = Decision(Verdict.GRANT, reason=f"{seal_reason}; {pdec.reason}", tier=tier,
-                                task_id=approved_task_id)
+                                task_id=approved_task_id if task_receipt else None)
         else:
             card = preview_task({"kind": action.kind, "title": action.title,
                                  "payload": action.payload, "risk_tier": tier})

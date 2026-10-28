@@ -1502,3 +1502,18 @@ spawn tool, and the only callers of `spawn`/`spawn_batch` are the
 turn and are limited by `autonomy.max_subagent_spawns_per_boot` and the
 concurrency/depth caps instead. The guard starts to matter if a model-facing spawn
 tool is ever added.
+
+## `JARVIS_PROVIDER_PLUGINS` — signed model-provider installation
+
+**Default: OFF.** The admin `GET /api/llm/provider-packages/status` reports the
+flag without creating an install store. With it off, lifecycle writes refuse.
+With it on, a live authenticated owner may stage a server-managed candidate,
+inspect its redacted signed summary, propose and decide on an exact artifact
+and hash, promote, or revoke it. `JARVIS_ACTION_KERNEL=1` and a current tier-3
+Action Kernel grant are also required for promotion and execution.
+
+Installation does not select a model, supply a credential, or call a provider.
+The admitted native send bridge currently covers only explicitly bound
+OpenAI-compatible cloud packages; other native dialects remain refused pending
+their separate transport review. Unset the flag to refuse new lifecycle work;
+existing signed state is retained for explicit owner review.

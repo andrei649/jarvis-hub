@@ -25,7 +25,7 @@ import os
 import sys
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -549,3 +549,106 @@ async def llm_unload(body: LMUnload):
                     status_code=500,
                 )
         return nocache_json(result, status_code=_llm_status_code(result))
+
+
+# Owner package installation is inert: none of these routes selects a model.
+class ProviderPackageStage(BaseModel):
+    model_config = {"extra": "forbid"}
+    candidate: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    source: Literal["user", "legacy", "bundled"] = "user"
+    profile: dict = Field(max_length=64)
+    hooks: list[str] = Field(min_length=1, max_length=16)
+    replacement_target: str | None = Field(default=None, max_length=128)
+
+
+class ProviderPackageDecision(BaseModel):
+    model_config = {"extra": "forbid", "strict": True}
+    artifact_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    package_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    approved: bool
+    permanent: Literal[True]
+
+
+def _provider_install_context(request: Request):
+    from agents.core.autonomy.consent_types import OwnerConsentActor
+    from agents.core.llm.providers.install_service import get_install_service
+    from agents.core.routers.autonomy import _consent_admin_current
+
+    orch = get_orch()
+    service = get_install_service(orch)
+    if service is None:
+        raise HTTPException(status_code=409, detail="provider_install_unavailable")
+    actor = OwnerConsentActor("owner", "admin", lambda: _consent_admin_current(request, orch))
+    return service, actor
+
+
+def _provider_install_call(request: Request, method: str, *args, **kwargs):
+    from agents.core.llm.providers.packages import ProviderPackageError
+
+    try:
+        service, actor = _provider_install_context(request)
+        return nocache_json(getattr(service, method)(*args, actor=actor, **kwargs))
+    except HTTPException:
+        raise
+    except (ProviderPackageError, ValueError, TypeError, KeyError, OSError):
+        raise HTTPException(status_code=409, detail="provider_install_refused") from None
+
+
+@router.get("/api/llm/provider-packages/status", dependencies=[Depends(admin_guard)])
+async def provider_packages_status():
+    enabled = os.environ.get("JARVIS_PROVIDER_PLUGINS", "").strip().lower() in {"1", "true", "yes", "on"}
+    return nocache_json({"enabled": enabled, "runtime_present": get_orch() is not None,
+                         "selects_model": False})
+
+
+@router.post("/api/llm/provider-packages/stage", dependencies=[Depends(admin_guard)])
+async def provider_packages_stage(body: ProviderPackageStage, request: Request):
+    from agents.core.llm.providers import ProviderProfile
+
+    try:
+        profile = ProviderProfile(**body.profile)
+    except (TypeError, ValueError, KeyError):
+        raise HTTPException(status_code=422, detail="invalid_provider_profile") from None
+    return _provider_install_call(request, "stage", body.candidate, profile=profile,
+                                  hooks=body.hooks, source=body.source,
+                                  replacement_target=body.replacement_target)
+
+
+@router.get("/api/llm/provider-packages/{artifact_id}", dependencies=[Depends(admin_guard)])
+async def provider_packages_inspect(artifact_id: str, request: Request):
+    return _provider_install_call(request, "inspect", artifact_id)
+
+
+@router.post("/api/llm/provider-packages/{artifact_id}/propose", dependencies=[Depends(admin_guard)])
+async def provider_packages_propose(artifact_id: str, request: Request):
+    return _provider_install_call(request, "propose", artifact_id)
+
+
+@router.post("/api/llm/provider-packages/proposals/{proposal_id}/decision",
+             dependencies=[Depends(admin_guard)])
+async def provider_packages_decision(proposal_id: str, body: ProviderPackageDecision,
+                                     request: Request):
+    return _provider_install_call(request, "decide", proposal_id,
+                                  artifact_id=body.artifact_id, package_hash=body.package_hash,
+                                  approved=body.approved, permanent=body.permanent)
+
+
+@router.post("/api/llm/provider-packages/proposals/{proposal_id}/promote",
+             dependencies=[Depends(admin_guard)])
+async def provider_packages_promote(proposal_id: str, request: Request):
+    return _provider_install_call(request, "promote", proposal_id)
+
+
+@router.post("/api/llm/provider-packages/{provider_id}/revoke",
+             dependencies=[Depends(admin_guard)])
+async def provider_packages_revoke(provider_id: str, request: Request):
+    from agents.core.llm.providers.packages import ProviderPackageError
+
+    try:
+        service, actor = _provider_install_context(request)
+        result = await service.revoke_async(provider_id, actor=actor)
+        return nocache_json(result)
+    except HTTPException:
+        raise
+    except (ProviderPackageError, ValueError, TypeError, KeyError, OSError):
+        raise HTTPException(status_code=409, detail="provider_install_refused") from None

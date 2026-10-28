@@ -554,7 +554,8 @@ class ProviderPackageStore:
             return proposal_id
 
     def decide(self, proposal_id: str, *, approved: bool, actor: str,
-               permanent: bool) -> str:
+               permanent: bool, expected_artifact_id: str | None = None,
+               expected_package_hash: str | None = None) -> str:
         if type(approved) is not bool or type(permanent) is not bool:
             raise ProviderPackageError("literal approval and permanence required")
         if approved and (actor != "owner" or permanent is not True):
@@ -565,7 +566,13 @@ class ProviderPackageStore:
             if not proposal or proposal["status"] != "pending":
                 raise ProviderPackageError("provider proposal is stale")
             record = self._record(state["artifacts"][proposal["artifact_id"]])
-            if approved:
+            scoped = expected_artifact_id is not None or expected_package_hash is not None
+            if scoped and (actor != "owner" or permanent is not True):
+                raise ProviderPackageError("permanent literal owner decision required")
+            if scoped and (record.artifact_id != expected_artifact_id
+                           or record.package_hash != expected_package_hash):
+                raise ProviderPackageError("provider decision scope changed")
+            if approved or scoped:
                 if not callable(self.owner_authorizer):
                     raise ProviderPackageError("authenticated owner authority unavailable")
                 try:
@@ -724,6 +731,40 @@ class ProviderPackageStore:
                          home: str | None = None) -> ProviderRecord:
         with self._locked():
             return self._require_runnable_locked(provider_id, expected_hash, home)
+
+    def inspect(self, artifact_id: str) -> ProviderRecord:
+        """Verify a quarantined artifact without granting execution authority."""
+        with self._locked():
+            artifact = self._load()["artifacts"].get(artifact_id)
+            if artifact is None:
+                raise ProviderPackageError("provider artifact is unknown")
+            return self._record(artifact)
+
+    def list_active(self, *, home: str | None = None) -> tuple[ProviderRecord, ...]:
+        """Return signed, owner-promoted records in the requested home scope."""
+        with self._locked():
+            state = self._load()
+            revoked = set(self._journal()["revoked_artifacts"])
+            records = []
+            for key, artifact_id in state["active"].items():
+                try:
+                    record = self._record(state["artifacts"][artifact_id])
+                except (KeyError, TypeError) as exc:
+                    raise ProviderPackageError("provider active index is invalid") from exc
+                if key != self._active_key(record):
+                    raise ProviderPackageError("provider active scope binding changed")
+                approved = any(
+                    proposal.get("artifact_id") == artifact_id
+                    and proposal.get("status") == "promoted"
+                    and proposal.get("actor") == "owner"
+                    and proposal.get("permanent") is True
+                    for proposal in state["proposals"].values()
+                )
+                if (approved and artifact_id not in revoked
+                        and record.provider_id not in state["revoked"]
+                        and (record.source != "user" or record.home == home)):
+                    records.append(record)
+            return tuple(records)
 
 
 __all__ = ["KIND", "ProviderPackageError", "ProviderPackageStore", "ProviderRecord"]

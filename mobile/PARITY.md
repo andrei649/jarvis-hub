@@ -138,6 +138,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|
 | Managed Hermes runtime and exact action approvals | Admin `/api/hermes/{status,catalog,start,stop,rpc,ws,approvals}` and approval decision API | ✅ private runtime, sessions, methods, events, approve/deny controls | ➖ intentionally owner desktop administration; no native acceptance claimed | PR #1233 |
+| Signed model-provider installation | Admin `/api/llm/provider-packages/{status,stage,...}`; default off, exact owner decision and revocation | ⬜ owner API only; dedicated HUD review/selection controls remain open | ➖ owner desktop administration; no native install controls or device acceptance | H361 partial; selection, credentials and native dialects remain open |
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
 | Current-turn duration (H686 first slice) | optional `outcome.latency_ms` on `/chat` and SSE end; owner `display.status_bar_fields` | ✅ local cockpit and focus-chat readout; normal returned turns only, ephemeral | 🟡 local current-turn readout from validated explicit SSE end; clears on work/context changes and never persists; physical-device/live-Hub acceptance open | H18.33 / H686; [evidence](docs/h1833-turn-duration.md) |
 
