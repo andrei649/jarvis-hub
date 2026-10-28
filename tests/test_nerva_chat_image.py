@@ -176,6 +176,37 @@ def test_files_that_are_not_images_are_refused(tmp_path):
         assert code == nerva.EXIT_USAGE and said in err and hub.calls == []
 
 
+
+@pytest.mark.parametrize("kind", ["directory", "file", "unstatable"])
+def test_image_open_permission_error_keeps_an_honest_no_request_refusal(tmp_path, monkeypatch, kind):
+    import os
+    from pathlib import Path
+
+    target = tmp_path / "blocked.png"
+    if kind == "directory":
+        target.mkdir()
+    else:
+        target.write_bytes(PNG_BYTES)
+    original_open, original_is_dir = os.open, Path.is_dir
+
+    def denied(path, *args, **kwargs):
+        if Path(path) == target:
+            raise PermissionError(13, "Access denied")
+        return original_open(path, *args, **kwargs)
+
+    def is_dir(path):
+        if path == target and kind == "unstatable":
+            raise PermissionError(13, "Stat denied")
+        return original_is_dir(path)
+
+    monkeypatch.setattr(os, "open", denied)
+    monkeypatch.setattr(Path, "is_dir", is_dir)
+    hub = Fake()
+    code, out, err = _run(["-z", "--image", str(target), "what?"], hub)
+    reason = "not a file" if kind == "directory" else "cannot be read"
+    assert code == nerva.EXIT_USAGE and reason in err and out == "" and hub.calls == []
+
+
 def test_at_most_eight_images(png):
     hub = Fake()
     code, _out, err = _run(["-z", *(["--image", str(png)] * 9), "what?"], hub)
