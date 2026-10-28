@@ -39,15 +39,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from typing import Any, Optional
 
 from ..log_safe import log_safe
-from .base import LLMBackend, cloud_cap
+from .base import LLMBackend, ThinkingStreamFilter, _emit, cloud_cap
 from .egress import llm_async_client
 from .provider_errors import note_provider_failure
 from .provider_routing import SETTINGS_KEYS, build_provider_block
 from .providers.admitted_profiles import AdmittedProviderProfile
 from .providers.hook_runtime import ProviderHookRuntimeError
+from .repetition_guard import RepetitionStreamGuard
 from .tool_dialects import compatible_usage
 from .tool_protocol import TokenUsage, ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
@@ -252,6 +254,7 @@ class OpenRouterBackend(LLMBackend):
             block = await self._provider_block_now()
         except _RoutingUnavailable:
             return _ERROR
+
         prepared = await self._shape_async(payload, block)
         try:
             if isinstance(self.profile, AdmittedProviderProfile):
@@ -274,6 +277,114 @@ class OpenRouterBackend(LLMBackend):
         except Exception as e:
             logger.warning("OpenRouter generate failed: %s", e)
             note_provider_failure(self.profile.id, model, e)
+            return _ERROR
+
+    async def generate_stream(
+        self, model: str, prompt: str, system: str = "",
+        max_tokens: int = 1024, temperature: float = 0.7,
+        on_token: Callable[[str], None] | None = None,
+        on_activity: Callable[[], None] | None = None,
+    ) -> str:
+        # The ordinary OpenRouter path retains its established buffered behavior.
+        if not isinstance(self.profile, AdmittedProviderProfile):
+            return await super().generate_stream(
+                model, prompt, system, max_tokens, temperature, on_token, on_activity)
+
+        from .providers.native_transport import native_stream
+
+        payload = {
+            "model": model,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": prompt}],
+            "max_tokens": cloud_cap(max_tokens), "temperature": temperature,
+            "stream": True,
+        }
+        try:
+            block = await self._provider_block_now()
+        except _RoutingUnavailable:
+            return _ERROR
+        prepared = await self._shape_async(payload, block)
+        filter_ = ThinkingStreamFilter()
+        repeat = RepetitionStreamGuard()
+        emitted = ""
+        finish = None
+        completed = False
+        usage = None
+        try:
+            async with asyncio.timeout(120):
+                async with native_stream(
+                    self.profile, prepared, self._send_client(), "POST",
+                    "/chat/completions", headers=self._headers(), json=payload,
+                ) as response:
+                    response.raise_for_status()
+                    if "text/event-stream" not in response.headers.get("content-type", ""):
+                        raise ValueError("invalid compatible stream type")
+                    pending = b""
+                    total = 0
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if total > 512_000:
+                            raise ValueError("compatible stream too large")
+                        pending += chunk
+                        if len(pending) > 65_536 and b"\n" not in pending:
+                            raise ValueError("compatible stream frame too large")
+                        while b"\n" in pending:
+                            raw, pending = pending.split(b"\n", 1)
+                            if len(raw) > 65_536:
+                                raise ValueError("compatible stream frame too large")
+                            line = raw.rstrip(b"\r")
+                            if not line.startswith(b"data:"):
+                                continue
+                            if on_activity is not None:
+                                on_activity()
+                            content = line[5:].strip()
+                            if content == b"[DONE]":
+                                completed = True
+                                break
+                            frame = json.loads(content)
+                            if not isinstance(frame, dict) or frame.get("error") or frame.get("refusal"):
+                                raise ValueError("invalid compatible stream event")
+                            if "usage" in frame:
+                                usage = compatible_usage(frame)
+                            choices = frame.get("choices") or []
+                            if not choices:
+                                continue
+                            choice = choices[0]
+                            if not isinstance(choice, dict) or choice.get("refusal"):
+                                raise ValueError("invalid compatible stream choice")
+                            if choice.get("finish_reason"):
+                                finish = choice["finish_reason"]
+                            delta = choice.get("delta") or {}
+                            if not isinstance(delta, dict) or delta.get("refusal"):
+                                raise ValueError("invalid compatible stream delta")
+                            part = delta.get("content") or ""
+                            if not isinstance(part, str):
+                                raise ValueError("invalid compatible stream content")
+                            safe = filter_.feed(part)
+                            if safe:
+                                emitted += safe
+                                if on_token is not None:
+                                    await _emit(on_token, repeat.feed(safe))
+                        if completed:
+                            break
+                    if not completed or finish not in {"stop", "length"}:
+                        raise ValueError("incomplete compatible stream")
+            remainder = filter_.flush()
+            if remainder:
+                emitted += remainder
+                if on_token is not None:
+                    await _emit(on_token, repeat.feed(remainder))
+            if usage is not None:
+                report_text_usage(usage)
+            answer = self._finalize_cloud(emitted, finish, model)
+            if on_token is not None:
+                await _emit(on_token, repeat.release(answer))
+            return answer
+        except ProviderHookRuntimeError:
+            raise
+        except Exception as exc:
+            logger.warning("OpenRouter stream failed: %s", log_safe(exc, 200))
+            note_provider_failure(self.profile.id, model, exc)
             return _ERROR
 
     async def generate_tool_turn(

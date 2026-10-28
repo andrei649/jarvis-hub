@@ -583,6 +583,52 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         with suppress(ProviderPackageError):
             svc.put_credential("synthetic-addon", artifact["package_hash"],
                                "synthetic-matrix-key", actor=owner())
+    elif kind == "provider.selection":
+        # The real owner service must reach its sealed selection Action with a
+        # current signed record, Vault generation, and exact model. The spy
+        # observes that Action only; preparation uses a synthetic local owner.
+        from dataclasses import replace
+        from types import SimpleNamespace
+
+        from agents.core import settings_db
+        from agents.core.kernel import kernel_enabled
+        from agents.core.llm import provider_selection
+        from agents.core.llm.providers.packages import ProviderPackageError
+        from tests.test_h361_provider_install_service import owner, service
+
+        enabled = kernel_enabled()
+        selection_root = tmp_path / "selection-exercise"
+        selection_root.mkdir(exist_ok=True)
+        monkeypatch.setattr(settings_db, "DB_PATH", selection_root / "selection-settings.db")
+        monkeypatch.setattr(settings_db, "_initialized", False)
+        settings_db.init_db(force=True)
+        monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+        svc, profile, hooks, _ = service.__wrapped__(selection_root, monkeypatch)
+        svc.audit = SimpleNamespace(log=lambda _event: None)
+        svc.kernel = lambda: lambda _action, **_kwargs: Decision(Verdict.GRANT, tier=3)
+        artifact = svc.stage("addon", profile=replace(
+            profile, auth_type="bearer", fallback_models=("synthetic-model",)),
+            hooks=hooks, source="user", actor=owner())
+        offer = svc.propose(artifact["artifact_id"], actor=owner())
+        svc.decide(offer["proposal_id"], artifact_id=artifact["artifact_id"],
+                   package_hash=artifact["package_hash"], approved=True,
+                   permanent=True, actor=owner())
+        svc.promote(offer["proposal_id"], actor=owner())
+        svc.put_credential("synthetic-addon", artifact["package_hash"],
+                           "synthetic-matrix-key", actor=owner())
+        def selected_kernel(action, *, approval_check):
+            assert approval_check(action) is True
+            return spy(action)
+
+        svc.kernel = lambda: selected_kernel
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        with suppress(ProviderPackageError):
+            svc.select_provider("synthetic-addon", artifact["package_hash"],
+                                "synthetic-model",
+                                expected_revision=provider_selection.current_revision(),
+                                acknowledge_unknown_price=True,
+                                acknowledge_data_policy=True, actor=owner())
     elif kind == "desktop.step":
         # The optional real host seam must cross CapabilityActionAPI immediately
         # before driver execution. The unified facade stays default-off; the outer
@@ -933,7 +979,7 @@ def test_kernel_kinds_actually_invoke_kernel(kind, monkeypatch, tmp_path):
     assert spy.calls, f"{kind} is classified KERNEL but request() did not invoke the kernel"
     if kind.endswith(".*"):
         assert spy.calls[-1].kind.startswith(kind[:-1])
-    elif kind == "provider.credential":
+    elif kind in {"provider.credential", "provider.selection"}:
         # The service rechecks the signed record through plugin.load after
         # credential authorization and before writing the envelope.
         assert any(action.kind == kind for action in spy.calls)

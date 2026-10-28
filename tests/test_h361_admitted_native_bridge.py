@@ -16,6 +16,7 @@ from agents.core.llm.providers.admitted_profiles import AdmittedProviderProfile
 from agents.core.llm.providers.hook_runtime import ProviderHookRuntimeError
 from agents.core.llm.providers.native_transport import native_admitted_client
 from agents.core.llm.providers.packages import ProviderPackageStore
+from agents.core.turn_usage import turn_usage_scope
 from tests.test_openai_responses import completed as openai_completed
 from tests.test_xai_responses import completed as xai_completed
 
@@ -26,10 +27,16 @@ CASES = (
     ('deepinfra', 'deepinfra-chat', 'chat_completions', 'https://api.deepinfra.com/v1/openai', 'm'),
     ('openai-responses', 'openai-responses', 'responses', 'https://api.openai.com/v1', 'gpt-4.1'),
     ('xai', 'xai-responses', 'responses', 'https://api.x.ai/v1', 'grok-4.6'),
+    ('openrouter', 'openai-compatible', 'chat_completions', 'https://synthetic.invalid/v1', 'synthetic-model'),
 )
 
 
 def response(kind, path):
+    if kind == 'openrouter':
+        return (httpx.Response(200, headers={'content-type': 'text/event-stream'}, text=(
+            'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n'
+            'data: [DONE]\n\n')) if path == 'stream' else httpx.Response(200, json={
+                'choices': [{'message': {'content': 'ok'}, 'finish_reason': 'stop'}]}))
     if kind == 'anthropic':
         if path == 'stream':
             return httpx.Response(200, text=(
@@ -181,6 +188,115 @@ async def test_admitted_native_text_tool_stream_use_signed_hook_and_physical_lea
             await backend.close()
 
 
+class HeldCompatibleSSE(httpx.AsyncByteStream):
+    def __init__(self):
+        self.first = asyncio.Event()
+        self.release = asyncio.Event()
+        self.closed = False
+
+    async def __aiter__(self):
+        self.first.set()
+        yield b'data: {"choices":[{"delta":{"content":"hello world"}}]}\n\n'
+        await self.release.wait()
+        yield b'data: {"choices":[{"delta":{"content":"!"},"finish_reason":"stop"}]}\n\n'
+        yield b'data: [DONE]\n\n'
+
+    async def aclose(self):
+        self.closed = True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cancel', [False, True])
+async def test_selected_compatible_stream_delta_precedes_eof_and_holds_lease(tmp_path, monkeypatch, cancel):
+    from agents.core.llm.providers.selection_gates import SelectionBusy
+    from tests.test_h361_provider_install_service import owner
+
+    backend, model, calls, wire, actions = setup_backend(tmp_path, monkeypatch, CASES[-1], 'stream')
+    body = HeldCompatibleSSE()
+    backend.client._transport.inner = httpx.MockTransport(
+        lambda request: wire.append(request) or httpx.Response(
+            200, headers={'content-type': 'text/event-stream'}, stream=body))
+    tokens = []
+    first_token = asyncio.Event()
+
+    def on_token(token):
+        tokens.append(token)
+        first_token.set()
+
+    try:
+        with turn_usage_scope() as usage:
+            task = asyncio.create_task(backend.generate_stream(model, 'hello', on_token=on_token))
+            await asyncio.wait_for(first_token.wait(), 2)
+            assert body.first.is_set() and not task.done() and not body.closed
+            assert ''.join(tokens) and len(wire) == len(calls) == len(actions) == 1
+            with pytest.raises(SelectionBusy):
+                backend._selected_test_service.clear_selection(
+                    expected_revision=backend._selected_provider_runtime.selection.revision,
+                    actor=owner())
+            if cancel:
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 2)
+            else:
+                body.release.set()
+                assert await asyncio.wait_for(task, 2) == 'hello world!'
+            assert usage.snapshot()['api_calls'] == 1
+        await asyncio.wait_for(asyncio.gather(*(
+            stream.close_task for stream in backend.client._transport._streams
+            if stream.close_task is not None)), 2)
+        assert body.closed and len(wire) == len(actions) == 1
+    finally:
+        body.release.set()
+        await backend.aclose()
+
+
+@pytest.mark.asyncio
+async def test_selected_compatible_stream_retry_gets_fresh_preparation_and_one_count_each(tmp_path, monkeypatch):
+    backend, model, calls, wire, actions = setup_backend(tmp_path, monkeypatch, CASES[-1], 'stream')
+    try:
+        with turn_usage_scope() as usage:
+            assert await backend.generate_stream(model, 'first') == 'ok'
+            assert await backend.generate_stream(model, 'retry') == 'ok'
+            assert usage.snapshot()['api_calls'] == 2
+        assert len(calls) == len(wire) == len(actions) == 2
+        assert all(json.loads(req.content)['stream'] is True for req in wire)
+    finally:
+        await backend.aclose()
+
+
+@pytest.mark.asyncio
+async def test_selected_compatible_owner_quiesce_drains_active_stream_before_clear(tmp_path, monkeypatch):
+    from agents.core.llm.providers import lifecycle_gates
+    from tests.test_h361_provider_install_service import owner
+
+    backend, model, calls, wire, actions = setup_backend(tmp_path, monkeypatch, CASES[-1], 'stream')
+    body = HeldCompatibleSSE()
+    backend.client._transport.inner = httpx.MockTransport(
+        lambda request: wire.append(request) or httpx.Response(
+            200, headers={'content-type': 'text/event-stream'}, stream=body))
+    first_token = asyncio.Event()
+    try:
+        with turn_usage_scope() as usage:
+            task = asyncio.create_task(backend.generate_stream(
+                model, 'hello', on_token=lambda _: first_token.set()))
+            await asyncio.wait_for(first_token.wait(), 2)
+            service = backend._selected_test_service
+            store = backend.profile._hook_runtime.packages
+            await asyncio.wait_for(lifecycle_gates.quiesce(service.root, backend.profile.id, store), 2)
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            service.clear_selection(
+                expected_revision=backend._selected_provider_runtime.selection.revision,
+                actor=owner())
+            with pytest.raises(ProviderHookRuntimeError):
+                await backend.generate_stream(model, 'retry')
+            assert usage.snapshot()['api_calls'] == 1
+        assert body.closed and len(wire) == len(actions) == 1 and len(calls) == 2
+    finally:
+        body.release.set()
+        await backend.aclose()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('case', CASES)
 async def test_trusted_signed_registry_constructs_native_guarded_backend(tmp_path, monkeypatch, case):
@@ -256,7 +372,7 @@ async def test_signed_owner_approval_and_real_kernel_authorize_native_egress(tmp
     'transport', 'mount', 'redirect', 'selector', 'inner', 'request_hook', 'response_hook'])
 async def test_native_adapter_refuses_changed_client_route(tmp_path, monkeypatch, case, mutation):
     backend, _, _, seen, _ = setup_backend(tmp_path, monkeypatch, case, 'text')
-    client = backend._client
+    client = getattr(backend, '_client', None) or backend.client
     if mutation == 'transport':
         client._transport = httpx.MockTransport(lambda req: seen.append(req) or httpx.Response(200))
     elif mutation == 'mount':
@@ -273,7 +389,7 @@ async def test_native_adapter_refuses_changed_client_route(tmp_path, monkeypatch
     else:
         client._transport.inner = object()
     with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
-        _ = backend.client
+        _ = backend._send_client() if case[0] == 'openrouter' else backend.client
     assert seen == []
 
 
