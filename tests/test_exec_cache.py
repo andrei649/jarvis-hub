@@ -48,6 +48,13 @@ def _run_dir(root: Path, name="old", hours=100.0, files=("script.py",)) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def managed_cache_environment(monkeypatch):
+    """These cache tests select their roots independently of runner temp paths."""
+    for key in exec_cache.TEMP_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture
 def root(tmp_path, monkeypatch):
     _ctime_old(monkeypatch)
