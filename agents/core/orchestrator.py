@@ -4469,7 +4469,8 @@ class Orchestrator:
         except Exception:
             logger.debug("LivingMemory turn record skipped", exc_info=True)
 
-    async def _maybe_micro_compact(self, reply: str, *, responder_id: str | None = None) -> bool:
+    async def _maybe_micro_compact(self, reply: str, *, responder_id: str | None = None,
+                                   append_receipt=None) -> bool:
         """Advance an opt-in rolling prompt view after the assistant turn is durable."""
         if (self.get_setting("memory.context_compression", False) is not True
                 or self.get_setting("memory.compression_micro_compact", False) is not True
@@ -4484,6 +4485,11 @@ class Orchestrator:
         cadence = self.get_setting("memory.compression_micro_every_n_turns", 1)
         cadence = cadence if type(cadence) is int and cadence >= 1 else 1
         sid = self.session_id
+        from .memory.conversation import DurableAppendReceipt
+
+        if (not isinstance(append_receipt, DurableAppendReceipt)
+                or append_receipt.session_id != sid):
+            return False
         from .turn_compaction import TurnLifetime, active_compaction
 
         active = active_compaction()
@@ -4495,6 +4501,15 @@ class Orchestrator:
 
             document, digest = await asyncio.to_thread(persistence.read_snapshot_for_rewind, sid)
             turns = document["turns"]
+            from .memory.compaction_state import _digest
+
+            if (document.get("instance_id") != append_receipt.instance_id
+                    or document.get("revision") != append_receipt.revision
+                    or len(turns) != append_receipt.history_count or not turns
+                    or turns[-1].get("role") != "assistant"
+                    or turns[-1].get("content") != reply
+                    or _digest(turns[-1]) != append_receipt.tail_digest):
+                return False
             if (document.get("rewound") is True or document.get("foreign_history")
                     or len(turns) < 4 or len(turns) % 2
                     or (len(turns) // 2) % cadence):
@@ -4544,6 +4559,7 @@ class Orchestrator:
                 cp.commit_micro_view, clock, history_revision=document["revision"],
                 history_digest=digest, covered_count=covered, summary=summary,
                 protected_count=protected, lifetime=lifetime, tier=summary_tier,
+                append_revision=append_receipt.revision,
             ))
             try:
                 committed = await asyncio.shield(worker)
@@ -4592,18 +4608,22 @@ class Orchestrator:
         """Single post-LLM seam: memory, checkpoint, logs, learning and trace."""
         called = turn_tools.collected()
         if media is not None:
-            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
-                                       tools=called or None, media=media)
+            append_receipt = await self.memory.add_turn(
+                self.session_id, "assistant", synthesized, agent_id=responder_id,
+                tools=called or None, media=media)
         elif called:
-            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
-                                       tools=called, **({"media": media} if media is not None else {}))
+            append_receipt = await self.memory.add_turn(
+                self.session_id, "assistant", synthesized, agent_id=responder_id,
+                tools=called, **({"media": media} if media is not None else {}))
         else:
-            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
-                                       **({"media": media} if media is not None else {}))
+            append_receipt = await self.memory.add_turn(
+                self.session_id, "assistant", synthesized, agent_id=responder_id,
+                **({"media": media} if media is not None else {}))
         state = _TURN_CHAT_OUTCOMES.get()
         if state is not None and not is_failed_turn_reply(responder_id, synthesized):
             state["persisted"] = True
-        await self._maybe_micro_compact(synthesized, responder_id=responder_id)
+        await self._maybe_micro_compact(
+            synthesized, responder_id=responder_id, append_receipt=append_receipt)
         await self._maybe_checkpoint()
         await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
         await asyncio.to_thread(
@@ -5098,10 +5118,11 @@ class Orchestrator:
                          protect_last=policy.protect_last_n,
                      ) and pressure >= threshold)
         attempt_needed = bool(preflight or idle)
-        async def bounded_compact(**kwargs):
+        async def bounded_compact(rows, *, retry=False, **kwargs):
             value = self.get_setting("memory.compression_preflight_timeout_seconds", 120)
             timeout = float(value) if type(value) in (int, float) and 0 < value <= 600 else 120.0
-            task = asyncio.create_task(compressor.compact(turns, **compact_args, **kwargs))
+            args = ({**compact_args, "prior": None, "anchor": None} if retry else compact_args)
+            task = asyncio.create_task(compressor.compact(rows, **args, **kwargs))
             def consume_late_result(future):
                 with suppress(asyncio.CancelledError, Exception):
                     future.result()
@@ -5129,27 +5150,44 @@ class Orchestrator:
             compact_args = {"model": model, "policy": policy, "session_id": sid,
                             "prior": prior, "anchor": anchor}
             force_target = max(1, threshold // 2) if idle and not preflight else None
-            result = await bounded_compact(
+            result = await bounded_compact(turns,
                 **({"force_target_tokens": force_target} if force_target else {}),
             )
             if turn_state is not None and attempt_needed:
-                for _ in range(turn_state.max_attempts - turn_state.attempts.used):
-                    after = int(result.get("tokens") or pressure)
-                    after_len = (len(result.get("kept", ())) + len(result.get("kept_first", ()))
-                                 + bool(result.get("summary")))
+                baseline_len, baseline_tokens = len(turns), pressure
+                last_accepted = None
+                accepted_on_original = True
+                stalled = False
+                while True:
+                    candidate = [*result.get("kept_first", ())]
+                    if result.get("summary"):
+                        candidate.append({"role": "assistant", "content": result["summary"],
+                                          "synthetic_summary": True})
+                    candidate.extend(result.get("kept", ()))
+                    after = int(result.get("tokens") or compressor._used(candidate))
+                    after_len = len(candidate)
                     progress = result.get("compressed") and material_progress(
-                        len(turns), after_len, pressure, after)
-                    if not progress or after < threshold or result.get("summary_deferred"):
+                        baseline_len, after_len, baseline_tokens, after)
+                    if not progress:
+                        stalled = True
+                        if last_accepted is not None:
+                            result = last_accepted
+                        break
+                    last_accepted = result
+                    if after < threshold or result.get("summary_deferred"):
                         break
                     if not turn_state.attempts.take():
                         break
                     retry_target = max(1, int(after * 0.75))
-                    result = await bounded_compact(force_target_tokens=retry_target)
+                    baseline_len, baseline_tokens = after_len, after
+                    result = await bounded_compact(
+                        candidate, retry=True, force_target_tokens=retry_target)
+                    accepted_on_original = False
                 after = int(result.get("tokens") or pressure)
                 after_len = (len(result.get("kept", ())) + len(result.get("kept_first", ()))
                              + bool(result.get("summary")))
-                if not (result.get("compressed") and material_progress(
-                        len(turns), after_len, pressure, after)) and pressure >= threshold:
+                if (stalled or not (result.get("compressed") and material_progress(
+                        len(turns), after_len, pressure, after))) and pressure >= threshold:
                     turn_state.warn_blocked("no_progress", tokens=pressure, threshold=threshold)
                 elif after < threshold:
                     turn_state.pressure_below_threshold()
@@ -5201,9 +5239,12 @@ class Orchestrator:
                 record_turn_notice(NOTICE_CODE, DEFERRED_NOTICE)
             elif summarizer is not None and result["compressed"]:
                 # Iterative merge state (bounded: one entry per live session key).
-                cache[sid] = {"summary": result["summary"],
-                                          "covered": result["covered"],
-                                          "summary_tainted": tainted_history}
+                if not attempt_needed or accepted_on_original:
+                    cache[sid] = {"summary": result["summary"],
+                                  "covered": result["covered"],
+                                  "summary_tainted": tainted_history}
+                else:
+                    cache.pop(sid, None)  # Retry coverage is relative to its candidate.
             if result["compressed"]:
                 # H672 — the commit is the boundary: the persona the next prompt is
                 # built from is re-read here, after the CAS above, never before it.

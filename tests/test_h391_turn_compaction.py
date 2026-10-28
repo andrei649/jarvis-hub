@@ -103,6 +103,103 @@ def test_blocked_warning_without_turn_notice_collector_reaches_status_log(caplog
     assert "x" * 100 not in caplog.text
 
 
+def test_changed_threshold_reopens_warning_for_same_session_and_route():
+    from agents.core.turn_notices import open_turn_notices, reset_turn_notices
+
+    state = TurnCompaction(session_id="s", enabled=True, max_attempts=2)
+    state.bind_route("instance", "model", 4096, 2000)
+    notices, token = open_turn_notices()
+    try:
+        assert state.warn_blocked("attempt_limit", tokens=3000, threshold=2000)
+        assert len(notices) == 1
+    finally:
+        reset_turn_notices(token)
+    next_turn = TurnCompaction(session_id="s", enabled=True, max_attempts=2,
+                               previous=state)
+    next_turn.bind_route("instance", "model", 4096, 1000)
+    notices, token = open_turn_notices()
+    try:
+        assert next_turn.warn_blocked("attempt_limit", tokens=3000, threshold=1000)
+        assert len(notices) == 1
+        assert "1,000" in notices[0]["text"]
+    finally:
+        reset_turn_notices(token)
+
+
+async def test_final_steering_and_system_expansion_refuse_before_plain_or_stream_send(monkeypatch):
+    import pytest
+
+    from agents.core.conversation_clock import CompactionClockRefused
+    from agents.core.steering import steering_scope
+    from agents.core.subagents import SteerChannel, SteerMessage
+
+    for streaming in (False, True):
+        agent = Agent("jarvis", {})
+        monkeypatch.setattr(agent, "model_system_prompt",
+                            lambda backend, model, system: system + "z" * 2000)
+        channel = SteerChannel("s")
+        for index in range(5):
+            channel.push(SteerMessage("s", f"correction {index} " + "x" * 3900))
+        sent = []
+
+        class Backend:
+            async def generate(self, _sent=sent, **kwargs):
+                _sent.append(kwargs)
+                return "unexpected"
+
+            async def generate_stream(self, _sent=sent, **kwargs):
+                _sent.append(kwargs)
+                return "unexpected"
+
+        with (compaction_scope(TurnCompaction(session_id="s", enabled=True, max_attempts=2)),
+              steering_scope(channel, agent_id="jarvis"), pytest.raises(CompactionClockRefused)):
+            await agent.generate_response(Backend(), "local", "short", "system", 512, 0,
+                                          on_token=(lambda piece: None) if streaming else None,
+                                          session_id="s", effective_window=EffectiveWindow(4096))
+        assert sent == []
+        assert channel.pending == 5
+
+
+async def test_prepared_route_rechecks_expanded_system_before_plain_or_stream_send(monkeypatch):
+    from types import SimpleNamespace
+
+    import pytest
+
+    from agents.core.route_compaction import RouteRefused, planning_scope, prepare_route
+
+    for streaming in (False, True):
+        sent = []
+
+        class Backend:
+            def context_window(self, model):
+                return 4096
+
+            async def generate(self, _sent=sent, **kwargs):
+                _sent.append(kwargs)
+                return "unexpected"
+
+            async def generate_stream(self, _sent=sent, **kwargs):
+                _sent.append(kwargs)
+                return "unexpected"
+
+        backend = Backend()
+        router = SimpleNamespace(select_backend=lambda *args, _backend=backend: (_backend, "local", "local"))
+        agent = Agent("jarvis", {})
+        expansion = " ".join(f"word{i}" for i in range(8000))
+        monkeypatch.setattr(agent, "model_system_prompt",
+                            lambda backend, model, system, _expansion=expansion: system + _expansion)
+        with planning_scope("s"):
+            prepared = await prepare_route(router, "jarvis", "short", 512, 0, "s")
+            with pytest.raises(RouteRefused):
+                await agent.generate_response(
+                    backend, "local", "short", "system", 512, 0,
+                    on_token=(lambda piece: None) if streaming else None,
+                    session_id="s", effective_window=prepared.window,
+                    prepared_route=prepared,
+                )
+        assert sent == []
+
+
 def test_current_user_reanchors_after_fold_and_handoff_cannot_drive_model():
     current = {"role": "user", "content": "actual ask", "turn_id": "u-2"}
     rows = [{"role": "system", "content": "s"},
@@ -165,6 +262,41 @@ async def test_history_preflight_attempts_even_with_only_two_huge_rows():
         await orch._history_for_prompt(6)
     assert state.attempts.used == 1
     assert state.threshold_tokens == 2000
+
+
+async def test_preflight_stops_after_second_pass_stalls(monkeypatch):
+    from agents.core.context_compressor import ContextCompressor
+    from agents.core.orchestrator import Orchestrator
+
+    calls = []
+
+    async def identical_after_first(self, turns, **kwargs):
+        calls.append((sum(len(row.get("content", "")) for row in turns),
+                      kwargs.get("force_target_tokens")))
+        return {"compressed": True, "kept_first": [],
+                "kept": [{"role": "user", "content": "current ask"}],
+                "summary": "summary", "tokens": 1500, "covered": 1}
+
+    monkeypatch.setattr(ContextCompressor, "compact", identical_after_first)
+
+    class Memory:
+        async def get_history(self, sid, last_n=None):
+            return [{"role": "assistant", "content": "x" * 12000},
+                    {"role": "user", "content": "current ask"}]
+
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.session_id = "s"
+    orch.memory = Memory()
+    orch.get_setting = lambda key, default=None: {
+        "memory.context_compression": True,
+        "memory.compression_max_tokens": 1000,
+    }.get(key, default)
+    state = TurnCompaction(session_id="s", enabled=True, max_attempts=3)
+    with compaction_scope(state):
+        await orch._history_for_prompt(6)
+    assert len(calls) == 2
+    assert calls[1][0] < calls[0][0]
+    assert state.attempts.used == 2
 
 
 async def test_preflight_timeout_refuses_without_clock_commit_or_model_send(monkeypatch):

@@ -710,13 +710,14 @@ class CheckpointManager:
     def commit_micro_view(self, snapshot, *, history_revision: int,
                           history_digest: str, covered_count: int, summary: str,
                           protected_count: int = 0, lifetime=None,
-                          tier: str = "local-digest") -> bool:
+                          tier: str = "local-digest",
+                          append_revision: int | None = None) -> bool:
         from .memory.compaction_state import commit
 
         return commit(self, snapshot, history_revision=history_revision,
                       history_digest=history_digest, covered_count=covered_count,
                       summary=summary, protected_count=protected_count,
-                      lifetime=lifetime, tier=tier)
+                      lifetime=lifetime, tier=tier, append_revision=append_revision)
 
     def load_micro_view(self, session_id: str) -> dict | None:
         from .memory.compaction_state import load

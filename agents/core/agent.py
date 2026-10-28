@@ -990,6 +990,9 @@ class Agent:
                 on_token=on_token, wall_seconds=wall_seconds,
                 usage_sink=observer if sink is not None else None,
                 effective_window=effective_window,
+                prepared_route=prepared_route,
+                cached_input_tokens=cached_input_tokens,
+                compaction=compaction if compaction is not None and compaction.session_id == sid else None,
             )
             from .llm.base import (
                 THINKING_EXHAUSTED_REPLY,
@@ -1053,6 +1056,9 @@ class Agent:
         wall_seconds: float | None = None,
         usage_sink=None,
         effective_window=None,
+        prepared_route=None,
+        cached_input_tokens=0,
+        compaction=None,
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path.
 
@@ -1077,8 +1083,28 @@ class Agent:
             max_tokens = min(max_tokens, cap) if max_tokens > 0 else cap
             from .llm.request_context import note_sent
             note_sent("max_tokens", max_tokens)
+        def check_final_request(final_prompt):
+            if prepared_route is not None:
+                router = getattr(self, "llm_router", None)
+                if router is not None:
+                    from .llm.request_context import current_session
+
+                    prepared_route.check(
+                        router, self.id, prepared_route.prompt, current_session())
+                self._check_prepared_budget(
+                    prepared_route, final_prompt, system,
+                    cached_input_tokens=cached_input_tokens,
+                )
+            if compaction is not None:
+                compaction.guard_request(
+                    prompt=final_prompt, system=system, model=model,
+                    window_tokens=effective_window.tokens if effective_window is not None else None,
+                    max_tokens=max_tokens,
+                )
+
         runtime = self.tool_runtime
         if runtime is not None and runtime.can_run(backend, agent_id=self.id):
+            check_final_request(prompt)
             # Forwarded only when a ceiling was given, so a caller without one keeps
             # the loop's constructor default and the pre-5c call shape byte-identical.
             budget = {} if wall_seconds is None else {"wall_seconds": wall_seconds}
@@ -1113,6 +1139,8 @@ class Agent:
         steering = prepare_steering_rows(getattr(self, "id", ""))
         if steering.rows:
             prompt = "\n\n".join([prompt, *(row["content"] for row in steering.rows)])
+        check_final_request(prompt)
+        if steering.rows:
             trajectory.note_prompt(prompt)  # H652: the saved human turn is what was sent
 
         check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)

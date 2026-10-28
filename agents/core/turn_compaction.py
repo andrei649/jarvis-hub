@@ -53,6 +53,8 @@ class TurnCompaction:
         if self._route_key is not None and self._route_key != key:
             self.attempts = CompressionAttempts(self.max_attempts)
             self._warned = False
+        elif self.threshold_tokens > 0 and self.threshold_tokens != threshold:
+            self._warned = False
         self._route_key = key
         self.threshold_tokens = threshold
 

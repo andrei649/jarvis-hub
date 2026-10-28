@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -12,6 +13,17 @@ from agents.core.paths import data_root
 from .persistence import RewindPersistenceError, list_sessions, load_memory_snapshot, save_memory
 
 logger = logging.getLogger("jarvis.memory.conversation")
+
+
+@dataclass(frozen=True, slots=True)
+class DurableAppendReceipt:
+    """Identity of one assistant row after its full source snapshot was saved."""
+
+    session_id: str
+    instance_id: str | None
+    revision: int
+    history_count: int
+    tail_digest: str
 
 
 class UnverifiedRewind(RuntimeError):
@@ -263,15 +275,24 @@ class ConversationMemory:
                 turn_dict = turn.to_dict()
                 turns_data = [t.to_dict() for t in self.sessions[session_id]]
                 try:
-                    await asyncio.to_thread(self._persist_turn, session_id, turn_dict, turns_data,
-                                            self.instances.get(session_id), self.revisions[session_id],
-                                            session_id in self.rewound_sessions)
+                    saved = await asyncio.to_thread(
+                        self._persist_turn, session_id, turn_dict, turns_data,
+                        self.instances.get(session_id), self.revisions[session_id],
+                        session_id in self.rewound_sessions)
                 except Exception:
                     self.sessions[session_id] = prior_turns
                     self.revisions[session_id] = prior_revision
                     if not was_dirty:
                         self._dirty.discard(session_id)
                     raise
+                if saved and role == "assistant":
+                    from .compaction_state import _digest
+
+                    return DurableAppendReceipt(
+                        session_id, self.instances.get(session_id),
+                        self.revisions[session_id], len(turns_data), _digest(turn_dict),
+                    )
+            return None
 
     def _persist_turn(self, session_id: str, turn_dict: dict, turns_data: list[dict],
                       instance_id: str | None = None, revision: int | None = None,
@@ -297,6 +318,8 @@ class ConversationMemory:
             if session_id in self.foreign_origins:
                 raise RewindPersistenceError("foreign conversation append not persisted") from e
             logger.warning(f"Snapshot save failed: {e}")
+            return False
+        return True
 
     def _save_snapshot(self, session_id: str):
         """Full JSON save of the session (kept for direct/synchronous callers)."""

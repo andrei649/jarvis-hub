@@ -33,7 +33,8 @@ def _snapshot(session_id: str):
 
 def commit(manager, clock, *, history_revision: int, history_digest: str,
            covered_count: int, summary: str, protected_count: int = 0,
-           lifetime=None, tier: str = "local-digest") -> bool:
+           lifetime=None, tier: str = "local-digest",
+           append_revision: int | None = None) -> bool:
     """CAS the source and clock, publishing the view in the same SQLite transaction."""
     from ..conversation_clock import ClockSnapshot
 
@@ -44,6 +45,10 @@ def commit(manager, clock, *, history_revision: int, history_digest: str,
             or not isinstance(summary, str) or not summary.strip()
             or len(summary.encode("utf-8")) > _MAX_SUMMARY_BYTES
             or type(history_digest) is not str or len(history_digest) != 64):
+        return False
+    if append_revision is None:
+        append_revision = history_revision
+    if type(append_revision) is not int or append_revision != history_revision:
         return False
     if tier not in {"local-digest", "local-auxiliary"}:
         return False
@@ -67,6 +72,7 @@ def commit(manager, clock, *, history_revision: int, history_digest: str,
                 "covered_count": covered_count,
                 "protected_count": protected_count,
                 "history_revision": history_revision,
+                "append_revision": append_revision,
                 "history_digest": history_digest,
                 "history_count": len(turns),
                 "history_turns_digest": _digest(turns),
@@ -86,6 +92,18 @@ def commit(manager, clock, *, history_revision: int, history_digest: str,
                 if not active:
                     return False
                 with conn:
+                    previous = conn.execute(
+                        "SELECT payload FROM session_micro_views WHERE session_id=?",
+                        (clock.session_id,),
+                    ).fetchone()
+                    if previous is not None:
+                        previous_payload = json.loads(previous[0])
+                        if type(previous_payload) is not dict:
+                            return False
+                        previous_revision = previous_payload.get("append_revision")
+                        if (type(previous_revision) is not int
+                                or previous_revision >= append_revision):
+                            return False
                     row = conn.execute(
                         "SELECT revision,rebuilt_at,instance_id FROM session_clock WHERE session_id=?",
                         (clock.session_id,),
