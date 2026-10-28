@@ -774,8 +774,12 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   containment, not a filesystem or network sandbox. Text/CSV/XLSX retain the cooperative pool.
   A child that crashes or cannot start gives `invalid_file`; a deadline gives `timeout`.
   **Optional local OCR (NWS-10):** `NERVA_WORKSPACE_OCR=1` (default off) works only with
-  `NERVA_WORKSPACE_KILLABLE_EXTRACTION=1` on POSIX. Native OCR fails closed on Windows
-  until Job Object containment is available; scanned PDFs there retain `no_text`.
+  `NERVA_WORKSPACE_KILLABLE_EXTRACTION=1` on POSIX. A Windows-only Job-owned OCR
+  implementation is present behind an internal source gate, but native Windows
+  Job/IOCP, descendant, commit-limit, frozen-launch and local-engine acceptance
+  has not run. The gate remains closed: scanned PDFs on Windows retain `no_text`
+  even with both opt-in flags. Ordinary Windows PDF/DOCX extraction remains
+  time-only with truthful `memory_unavailable`; it does not claim Job containment.
   The synchronous extractor and legacy pool never
   invoke a native OCR engine. When a PDF has no readable text layer, the child lazily loads
   locally installed `pypdfium2`, `pytesseract` and Tesseract; missing engine components retain

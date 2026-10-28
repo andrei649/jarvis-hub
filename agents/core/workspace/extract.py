@@ -422,10 +422,13 @@ def _ocr_engine() -> Callable[[bytes, int, float], str] | None:
 def _ocr_pdf(data: bytes, count: int, guard: _Guard, *,
              progress: Callable[[str, int, float, int], None] | None = None) -> Extracted | None:
     """OCR all pages or fail; no successful result may silently omit a page."""
-    # taskkill /T cannot reliably reclaim a native descendant after its leader
-    # exits. Until a Windows Job Object owns the tree, native OCR is unsupported.
     if sys.platform == "win32":
-        return None
+        # Ordinary/synchronous Windows extraction cannot claim ownership from
+        # a flag. Only the verified Job child enters this private scope.
+        from agents.core.workspace.win_job_process import in_owned_child
+
+        if not in_owned_child():
+            return None
     if not (env_flag("NERVA_WORKSPACE_OCR", False)
             and env_flag("NERVA_WORKSPACE_KILLABLE_EXTRACTION", False)):
         return None

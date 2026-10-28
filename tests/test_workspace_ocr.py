@@ -77,6 +77,35 @@ def test_windows_native_ocr_fails_closed_without_job_containment(monkeypatch):
     assert extract._ocr_pdf(b"ignored", 1, extract._Guard(1, 100)) is None
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX owned OCR deadline probe")
+@pytest.mark.parametrize(("deadline_expr", "expected_code"), [
+    ("time.monotonic()+1", "timeout"), ("float('nan')", "invalid_file"),
+    ("float('inf')", "invalid_file"), ("'bad'", "invalid_file"),
+])
+async def test_posix_parent_page_bound_rejects_delayed_or_nonfinite_child_frame(
+        monkeypatch, deadline_expr, expected_code):
+    from agents.core.workspace import extract_process
+
+    monkeypatch.setattr(extract, "OCR_PAGE_TIMEOUT_SECONDS", 0.03)
+    script = (
+        "import json,time; "
+        "print(json.dumps({'event':'page_start','page':1,'page_count':1,"
+        f"'deadline':{deadline_expr}}}),flush=True); "
+        "time.sleep(1)"
+    )
+    _owned_script(monkeypatch, script)
+
+    async def idle_watch(sid, stop, fault, signaled):
+        await stop.wait()
+
+    monkeypatch.setattr(extract_process, "_watch_owned_memory", idle_watch)
+    with pytest.raises(extract.ExtractionError) as caught:
+        await extract_process._extract_owned_ocr(b'pdf', 'pdf', timeout=0.3)
+    assert caught.value.code == expected_code
+    if expected_code == "timeout":
+        assert "OCR page deadline" in str(caught.value)
+
+
 @pytest.mark.parametrize("flag", ["NERVA_WORKSPACE_OCR", "NERVA_WORKSPACE_KILLABLE_EXTRACTION"])
 async def test_ocr_needs_both_flags(monkeypatch, flag):
     monkeypatch.delenv(flag)

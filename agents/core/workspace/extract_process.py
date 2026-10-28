@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +32,24 @@ _REPO = Path(__file__).resolve().parents[3]
 # 10 million permitted Unicode codepoints can expand to 120 MiB of ASCII JSON
 # when every codepoint needs a surrogate-pair escape.
 _MAX_FRAME_BYTES = 128 * 1024 * 1024
+# Native Windows acceptance (Job atomicity, IOCP pipes and real OCR) has not
+# run. This is an internal source gate, deliberately not an environment flag.
+_WINDOWS_OCR_NATIVE_ACCEPTED = False
+
+
+def _bounded_ocr_page_deadline(raw: object, *, now: float, document_deadline: float) -> float:
+    """The parent owns the page cap; a child frame may only shorten it."""
+    from agents.core.workspace.extract import OCR_PAGE_TIMEOUT_SECONDS
+
+    if type(raw) not in (int, float):
+        raise ValueError('invalid OCR page deadline')
+    try:
+        child_deadline = float(raw)
+    except OverflowError as exc:
+        raise ValueError('invalid OCR page deadline') from exc
+    if not math.isfinite(child_deadline):
+        raise ValueError('invalid OCR page deadline')
+    return min(document_deadline, now + OCR_PAGE_TIMEOUT_SECONDS, child_deadline)
 
 
 def _apply_memory_limit() -> tuple[str, ...]:
@@ -175,7 +195,20 @@ def _worker(argv: list[str] | None = None) -> None:
 
     args = sys.argv[1:] if argv is None else argv
     kind, seconds = args[:2]
-    owned = len(args) > 2 and args[2] == "--owned-ocr"
+    posix_owned = len(args) > 2 and args[2] == "--owned-ocr"
+    windows_owned = len(args) > 3 and args[2] == "--owned-win-job-ocr"
+    owned = posix_owned or windows_owned
+    proof = None
+    if windows_owned:
+        from agents.core.workspace.win_job_process import claim_child
+
+        proof = claim_child(args[3])
+        if proof is None:
+            sys.stdout.write(json.dumps({"event": "result", "payload": {
+                "error": "invalid_file", "page_count": None}}) + "\n")
+            sys.stdout.flush()
+            return
+        limits = ("wall_time", "job_commit")
 
     def progress(event: str, page: int, page_deadline: float, count: int) -> None:
         frame = {"event": event, "page": page, "page_count": count}
@@ -185,9 +218,16 @@ def _worker(argv: list[str] | None = None) -> None:
         sys.stdout.flush()
 
     try:
-        result = _extract_bytes_in_child(
-            sys.stdin.buffer.read(), kind, timeout=float(seconds),
-            progress=progress if owned else None)
+        if windows_owned:
+            from agents.core.workspace.win_job_process import child_scope
+
+            scope = child_scope(proof)
+        else:
+            scope = nullcontext()
+        with scope:
+            result = _extract_bytes_in_child(
+                sys.stdin.buffer.read(), kind, timeout=float(seconds),
+                progress=progress if owned else None)
         payload = {"segments": [[s.page, s.text] for s in result.segments],
                    "page_count": result.page_count, "limits": limits + result.limits}
     except ExtractionError as exc:
@@ -408,7 +448,8 @@ async def _extract_owned_ocr(data: bytes, kind: str, *, timeout: float) -> Extra
                             if event == "page_start" and active_page is None:
                                 active_page = int(frame["page"])
                                 page_count = int(frame["page_count"])
-                                page_deadline = min(deadline, float(frame["deadline"]))
+                                page_deadline = _bounded_ocr_page_deadline(
+                                    frame["deadline"], now=loop.time(), document_deadline=deadline)
                                 if loop.time() >= page_deadline:
                                     raise ExtractionError("timeout", "OCR page deadline",
                                                           page_count=page_count)
@@ -469,12 +510,142 @@ async def _extract_owned_ocr(data: bytes, kind: str, *, timeout: float) -> Extra
             _SLOTS.release()
 
 
+def _spawn_windows_owned(kind: str, seconds: float, env: dict[str, str], *, api=None):
+    from agents.core.workspace.win_job_process import OwnedJobProcess, new_child_nonce
+
+    nonce = new_child_nonce()
+    child_env = dict(env, NERVA_WORKSPACE_JOB_NONCE=nonce)
+    return OwnedJobProcess.spawn(
+        [*_owned_command(), kind, str(seconds), "--owned-win-job-ocr", nonce],
+        cwd=str(_REPO), env=child_env, memory_limit=MEMORY_LIMIT_BYTES, api=api)
+
+
+async def _extract_windows_ocr(data: bytes, kind: str, *, timeout: float, api=None) -> Extracted:
+    """Gated Job-owned OCR controller; tests inject a fake API on non-Windows."""
+    from agents.core.workspace.extract import ERROR_CODES, Extracted, ExtractionError, Segment
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    acquired = False
+    scratch = None
+    owner = launch = writer = None
+    verified = False
+    try:
+        async with asyncio.timeout_at(deadline):
+            while not (acquired := _SLOTS.acquire(blocking=False)):
+                await asyncio.sleep(0.01)
+            scratch = tempfile.mkdtemp(prefix="nerva-ws-extract-")
+            try:
+                env = dict(os.environ, TMPDIR=scratch, TEMP=scratch, TMP=scratch)
+                launch = asyncio.create_task(asyncio.to_thread(
+                    _spawn_windows_owned, kind, max(0.0, deadline - loop.time()), env,
+                    api=api))
+                owner = await asyncio.shield(launch)
+                await owner.start_io()
+                writer = asyncio.create_task(owner.send(data))
+                buffer = bytearray()
+                active_page = page_deadline = page_count = None
+                while True:
+                    try:
+                        if page_deadline is None:
+                            line = await owner.read_line(buffer)
+                        else:
+                            async with asyncio.timeout_at(page_deadline):
+                                line = await owner.read_line(buffer)
+                    except TimeoutError as exc:
+                        raise ExtractionError("timeout", "OCR page deadline",
+                                              page_count=page_count) from exc
+                    if page_deadline is not None and loop.time() >= page_deadline:
+                        raise ExtractionError("timeout", "OCR page deadline",
+                                              page_count=page_count)
+                    if line is None:
+                        raise ExtractionError("invalid_file", "Windows OCR child ended")
+                    try:
+                        frame = json.loads(line)
+                        event = frame["event"]
+                        if event == "page_start" and active_page is None:
+                            active_page = int(frame["page"])
+                            page_count = int(frame["page_count"])
+                            page_deadline = _bounded_ocr_page_deadline(
+                                frame["deadline"], now=loop.time(), document_deadline=deadline)
+                            if loop.time() >= page_deadline:
+                                raise ExtractionError("timeout", "OCR page deadline",
+                                                      page_count=page_count)
+                        elif event == "page_done" and active_page == frame.get("page"):
+                            if loop.time() > page_deadline:
+                                raise ExtractionError("timeout", "OCR page deadline",
+                                                      page_count=page_count)
+                            active_page = page_deadline = None
+                        elif event == "result":
+                            payload = frame["payload"]
+                            if active_page is not None and "error" not in payload:
+                                raise ValueError("OCR page lacked completion frame")
+                            if "error" in payload:
+                                code = payload["error"]
+                                raise ExtractionError(
+                                    code if code in ERROR_CODES else "invalid_file",
+                                    "child refused extraction", page_count=payload.get("page_count"))
+                            limits = tuple(payload["limits"])
+                            if "job_commit" not in limits:
+                                raise ValueError("Windows Job commit proof missing")
+                            return Extracted(tuple(Segment(*s) for s in payload["segments"]),
+                                             payload["page_count"], limits)
+                        else:
+                            raise ValueError("invalid Windows OCR progress frame")
+                    except (ValueError, KeyError, TypeError) as exc:
+                        raise ExtractionError("invalid_file", "invalid Windows OCR frame") from exc
+            finally:
+                async def cleanup():
+                    from agents.core.workspace.win_job_process import JobCleanupUnverified
+
+                    try:
+                        child = owner if owner is not None else await launch if launch else None
+                    except JobCleanupUnverified:
+                        raise
+                    except OSError:
+                        # Spawn finished and cleaned every handle before raising.
+                        return
+                    if writer is not None:
+                        writer.cancel()
+                        await asyncio.gather(writer, return_exceptions=True)
+                    if child is not None:
+                        await child.terminate_and_drain()
+
+                cleanup_task = asyncio.create_task(cleanup())
+                cancelled = False
+                while not cleanup_task.done():
+                    try:
+                        await asyncio.shield(cleanup_task)
+                    except asyncio.CancelledError:
+                        cancelled = True
+                cleanup_task.result()
+                verified = True
+                if cancelled:
+                    raise asyncio.CancelledError
+    except TimeoutError as exc:
+        raise ExtractionError("timeout", "Windows OCR document deadline") from exc
+    except OSError as exc:
+        raise ExtractionError("invalid_file", "Windows OCR Job unavailable") from exc
+    finally:
+        # If cleanup cannot prove ActiveProcesses=0, preserve the scratch and
+        # occupied slot instead of admitting another native OCR attempt.
+        if verified or launch is None:
+            try:
+                if scratch is not None:
+                    shutil.rmtree(scratch)
+            finally:
+                if acquired:
+                    _SLOTS.release()
+
+
 async def extract_in_child(data: bytes, kind: str, *, timeout: float) -> Extracted:
     from agents.core.workspace.extract import ERROR_CODES, Extracted, ExtractionError, Segment
 
-    if (sys.platform != "win32" and kind == "pdf"
-            and env_flag("NERVA_WORKSPACE_OCR", False)):
-        return await _extract_owned_ocr(data, kind, timeout=timeout)
+    if kind == "pdf" and env_flag("NERVA_WORKSPACE_OCR", False):
+        if sys.platform != "win32":
+            return await _extract_owned_ocr(data, kind, timeout=timeout)
+        if _WINDOWS_OCR_NATIVE_ACCEPTED:
+            return await _extract_windows_ocr(data, kind, timeout=timeout)
 
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
