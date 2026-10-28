@@ -25,8 +25,9 @@ host that accepts one protocol only (``api.anthropic.com``, the ``api.openai.com
 family, ``bedrock-runtime.<region>.amazonaws.com``) is never sent another one. That check
 runs in the same hook, before the transport, and a refusal is recorded as a row with
 ``allowed=False`` and the reason — the request, and the credential in its auth header,
-never left. Every other row is ``allowed=True``, which is honest: it records what
-actually left. `EgressMonitor._local_only_violations` looks each row up in
+never left. Every other row is ``allowed=True`` for an outbound attempt; an
+admitted transport failure after entry carries a ``possibly sent`` reason
+because a response timeout cannot prove zero bytes left. `EgressMonitor._local_only_violations` looks each row up in
 ``BUILTIN_PLUGINS``, misses on the ``llm:`` prefix, and therefore cannot turn a
 legitimate cloud call into a fabricated plugin violation.
 """
@@ -87,8 +88,9 @@ def _recorder(backend: str):
         if reason:
             _record(backend, request, allowed=False, reason=reason)
             raise HostProtocolRefused(reason)
-        # Admitted sends account at their leased transport, after the actual
-        # request completes. The hook still enforces data and host protocol.
+        # Admitted sends account at their leased transport. Ambiguous failures
+        # after transport entry count as possible egress; this hook still
+        # enforces data and host protocol before transport entry.
         if not is_admitted_request(request):
             _record(backend, request, allowed=True)
             from agents.core.turn_usage import record_dispatch

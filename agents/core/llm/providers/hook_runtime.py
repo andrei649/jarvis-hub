@@ -297,14 +297,18 @@ class ProviderHookRuntime:
             active = False
         if not active:
             raise ProviderHookRuntimeError("disabled")
+        admitted = False
         try:
             async with self.packages.dispatch_lease(
                     provider_id, expected_hash=package_hash, home=home) as record:
                 self._check_record(record, provider_id, package_hash)
+                admitted = True
                 yield
         except ProviderHookRuntimeError:
             raise
         except Exception as exc:
+            if admitted:
+                raise
             raise ProviderHookRuntimeError("not_runnable") from exc
 
     async def assert_runnable(self, provider_id: str, *, package_hash: str, home=None) -> None:

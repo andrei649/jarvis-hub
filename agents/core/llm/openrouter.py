@@ -77,15 +77,28 @@ class _AdmittedTransport(httpx.AsyncBaseTransport):
                 or (profile.auth_type == 'none' and 'authorization' in request.headers)):
             _record(profile.id, request, allowed=False, reason='admitted request binding refused')
             raise ProviderHookRuntimeError('native_egress_unavailable')
+        entered_transport = False
+        accounted = False
         try:
             async with profile._hook_runtime.dispatch_lease(
                     profile.id, package_hash=profile._package_hash, home=profile._home):
+                entered_transport = True
                 response = await self.inner.handle_async_request(request)
+                accounted = True
                 _record(profile.id, request, allowed=True)
                 record_dispatch(profile.id, request)
                 return response
-        except BaseException:
-            _record(profile.id, request, allowed=False, reason='admitted physical request refused')
+        except BaseException as exc:
+            if not accounted:
+                if entered_transport:
+                    # An arbitrary transport may have written bytes before it failed.
+                    # Count the attempt without claiming response or delivery.
+                    _record(profile.id, request, allowed=True,
+                            reason=f'admitted transport entered; request possibly sent; {type(exc).__name__}')
+                    record_dispatch(profile.id, request)
+                else:
+                    _record(profile.id, request, allowed=False,
+                            reason='admitted physical request refused before transport')
             raise
 
     async def aclose(self):

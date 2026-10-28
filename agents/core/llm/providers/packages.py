@@ -57,7 +57,7 @@ _BUILTIN_IDENTITIES = frozenset(
     identity for profile in BUILTIN_PROFILES for identity in (profile.id, *profile.aliases)
 )
 _DISPATCH_GUARD = threading.Lock()
-_DISPATCH_TASKS: dict[Path, dict[str, set[tuple[asyncio.AbstractEventLoop, asyncio.Task]]]] = {}
+_DISPATCH_TASKS: dict[tuple[int, int], dict[str, set[tuple[asyncio.AbstractEventLoop, asyncio.Task]]]] = {}
 
 
 class ProviderPackageError(RuntimeError):
@@ -186,7 +186,7 @@ def _snapshot(directory: Path) -> tuple[tuple[tuple[str, bytes], ...], tuple[str
     return tuple(sorted(files)), tuple(sorted(directories))
 
 
-def _secure_root(path: Path) -> Path:
+def _secure_root(path: Path) -> tuple[Path, tuple[int, int]]:
     """Open every ancestor without links; make only an owned final root private.
 
     Another process with the same filesystem owner's rights remains outside this
@@ -226,6 +226,7 @@ def _secure_root(path: Path) -> Path:
                     raise ProviderPackageError("provider store root or ancestor is unsafe")
                 if final:
                     os.fchmod(child_fd, 0o700)
+                    identity = (info.st_dev, info.st_ino)
                 os.close(current_fd)
                 current_fd = child_fd
         finally:
@@ -234,7 +235,7 @@ def _secure_root(path: Path) -> Path:
         raise
     except OSError as exc:
         raise ProviderPackageError("provider store root cannot be opened safely") from exc
-    return path
+    return path, identity
 
 
 class ProviderPackageStore:
@@ -244,7 +245,7 @@ class ProviderPackageStore:
         enabled: Callable[[], bool] = lambda: False,
         owner_authorizer: Callable[[str, ProviderRecord, str], bool] | None = None,
     ) -> None:
-        self.root = _secure_root(Path(root))
+        self.root, self._root_identity = _secure_root(Path(root))
         if not isinstance(signing, ManagedSigningKeyStore):
             raise ProviderPackageError("managed signing store required")
         self.signing = signing
@@ -629,7 +630,7 @@ class ProviderPackageStore:
 
     def revoke(self, provider_id: str) -> None:
         with _DISPATCH_GUARD:
-            active = tuple(_DISPATCH_TASKS.get(self.root, {}).get(provider_id, ()))
+            active = tuple(_DISPATCH_TASKS.get(self._root_identity, {}).get(provider_id, ()))
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -660,7 +661,7 @@ class ProviderPackageStore:
     async def revoke_async(self, provider_id: str) -> None:
         """Cancel in-flight sends, then persist revocation behind their leases."""
         with _DISPATCH_GUARD:
-            active = tuple(_DISPATCH_TASKS.get(self.root, {}).get(provider_id, ()))
+            active = tuple(_DISPATCH_TASKS.get(self._root_identity, {}).get(provider_id, ()))
         for loop, task in active:
             loop.call_soon_threadsafe(task.cancel)
         await asyncio.to_thread(self.revoke, provider_id)
@@ -702,18 +703,18 @@ class ProviderPackageStore:
                     await asyncio.sleep(0.01)
             record = self._require_runnable_locked(provider_id, expected_hash, home)
             with _DISPATCH_GUARD:
-                _DISPATCH_TASKS.setdefault(self.root, {}).setdefault(provider_id, set()).add((loop, task))
+                _DISPATCH_TASKS.setdefault(self._root_identity, {}).setdefault(provider_id, set()).add((loop, task))
             try:
                 yield record
             finally:
                 with _DISPATCH_GUARD:
-                    by_provider = _DISPATCH_TASKS[self.root]
+                    by_provider = _DISPATCH_TASKS[self._root_identity]
                     current = by_provider[provider_id]
                     current.discard((loop, task))
                     if not current:
                         by_provider.pop(provider_id, None)
                     if not by_provider:
-                        _DISPATCH_TASKS.pop(self.root, None)
+                        _DISPATCH_TASKS.pop(self._root_identity, None)
         finally:
             if locked:
                 fcntl.flock(fd, fcntl.LOCK_UN)

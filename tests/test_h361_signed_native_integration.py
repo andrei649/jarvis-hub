@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+from pathlib import Path
 
 import httpx
 import pytest
@@ -257,4 +258,97 @@ async def test_admission_egress_accounting_matches_transport(tmp_path, monkeypat
             assert len(seen) == 1 and sum(allowed for allowed, _ in events) == 1
             assert len(dispatches) == 1
     finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_write_then_timeout_is_accounted_as_possible_egress(tmp_path, monkeypatch):
+    from agents.core import turn_usage
+    from agents.core.llm import egress
+    from agents.core.observability.egress_monitor import EgressMonitor
+
+    backend, _packages, _runner, *_ = setup(tmp_path, monkeypatch)
+    dispatches, sent = [], []
+    monitor = EgressMonitor()
+    monkeypatch.setattr(egress, 'EGRESS_MONITOR', monitor)
+    monkeypatch.setattr(turn_usage, 'record_dispatch', lambda *args: dispatches.append(args))
+
+    class WriteThenTimeout(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            sent.append(request)
+            raise httpx.ReadTimeout('no response headers', request=request)
+
+    await backend.client.aclose()
+    backend.client = llm_async_client('signed-addon', base_url='https://synthetic.invalid/v1',
+                                      transport=WriteThenTimeout())
+    try:
+        assert await backend.generate('synthetic-model', 'secret prompt') == '[OpenRouter error]'
+        assert len(sent) == 1
+        snapshot = monitor.snapshot('llm:signed-addon')
+        assert snapshot['external_egress_total'] == 1
+        assert snapshot['plugins']['llm:signed-addon']['allowed'] == 1
+        assert snapshot['plugins']['llm:signed-addon']['blocked'] == 0
+        assert 'possibly' in snapshot['recent'][0]['reason'].lower()
+        assert len(dispatches) == 1
+    finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_transport_timeout_keeps_native_failure_type(tmp_path, monkeypatch):
+    backend, packages, _runner, *_ = setup(tmp_path, monkeypatch)
+
+    class TimeoutTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            raise httpx.ReadTimeout('header timeout', request=request)
+
+    await backend.client.aclose()
+    backend.client = llm_async_client('signed-addon', base_url='https://synthetic.invalid/v1',
+                                      transport=TimeoutTransport())
+    try:
+        with pytest.raises(httpx.ReadTimeout, match='header timeout'):
+            await backend._send_client().post('/chat/completions', json={'model': 'synthetic-model'},
+                                              headers=backend._headers())
+        assert packages.require_runnable('signed-addon', home='synthetic-home')
+    finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_alias_root_revocation_cancels_inflight_transport(tmp_path, monkeypatch):
+    backend, packages, _runner, *_ = setup(tmp_path, monkeypatch)
+    root = str(packages.root)
+    aliases = [Path(root.replace(f'/{part}/', f'/{part.upper()}/', 1))
+               for part in ('private', 'Users') if f'/{part}/' in root]
+    alias = next((path for path in aliases if path.exists() and path != packages.root
+                  and os.path.samefile(path, packages.root)), None)
+    if alias is None:
+        pytest.skip('filesystem has no alternate-case spelling for this root')
+    revoker = ProviderPackageStore(alias, signing=packages.signing,
+                                   authorizer=packages.authorizer, enabled=packages.enabled,
+                                   owner_authorizer=packages.owner_authorizer)
+    entered, release, seen = asyncio.Event(), asyncio.Event(), []
+
+    class PausedTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            entered.set()
+            await release.wait()
+            seen.append(request)
+            return httpx.Response(200, json={'choices': [{'message': {'content': 'answer'}}]})
+
+    await backend.client.aclose()
+    backend.client = llm_async_client('signed-addon', base_url='https://synthetic.invalid/v1',
+                                      transport=PausedTransport())
+    task = asyncio.create_task(backend.generate('synthetic-model', 'hello'))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        await asyncio.wait_for(revoker.revoke_async('signed-addon'), timeout=0.5)
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert seen == []
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
         await backend.client.aclose()
