@@ -39,39 +39,52 @@ def _compatible(profile, key, base, model, settings, pool):
 
 def _deepinfra(profile, key, base, model, settings, pool):
     from .deepinfra import DeepInfraBackend, validated_main_base
+    from .providers.admitted_profiles import AdmittedProviderProfile
     return DeepInfraBackend(key, base_url=validated_main_base(base),
                            reasoning_effort=_setting(settings, "reasoning_effort", ""),
-                           effort_declarations=_setting(settings, "compatible_effort_declarations", ""))
+                           effort_declarations=_setting(settings, "compatible_effort_declarations", ""),
+                           **({'profile': profile, 'model': model}
+                              if isinstance(profile, AdmittedProviderProfile) else {}))
 
 
 def _responses(profile, key, base, model, settings, pool):
+    from .providers.admitted_profiles import AdmittedProviderProfile
     from .responses import ResponsesBackend
     if base.rstrip("/") != "https://api.openai.com/v1":
         raise BackendUnavailable("Responses requires its fixed OpenAI authority")
     return ResponsesBackend(key,
-                            retention=_setting(settings, "responses_cache_retention", "in_memory"))
+                            retention=_setting(settings, "responses_cache_retention", "in_memory"),
+                            **({'profile': profile, 'model': model}
+                               if isinstance(profile, AdmittedProviderProfile) else {}))
 
 
 def _xai(profile, key, base, model, settings, pool):
+    from .providers.admitted_profiles import AdmittedProviderProfile
     from .xai import XAIBackend
     if base.rstrip("/") != "https://api.x.ai/v1":
         raise BackendUnavailable("xAI requires its fixed authority")
     return XAIBackend(key, reasoning_effort=_setting(settings, "reasoning_effort", ""),
-                      effort_declarations=_setting(settings, "compatible_effort_declarations", ""))
+                      effort_declarations=_setting(settings, "compatible_effort_declarations", ""),
+                      **({'profile': profile, 'model': model}
+                         if isinstance(profile, AdmittedProviderProfile) else {}))
 
 
 def _gemini(profile, key, base, model, settings, pool):
     from .gemini import GeminiBackend
+    from .providers.admitted_profiles import AdmittedProviderProfile
     return GeminiBackend(key, model=model or profile.fallback_models[0], auth_pool=pool,
                          reasoning_effort=_setting(settings, "reasoning_effort", ""),
-                         effort_declarations=_setting(settings, "gemini_effort_declarations", ""))
+                         effort_declarations=_setting(settings, "gemini_effort_declarations", ""),
+                         **({'profile': profile} if isinstance(profile, AdmittedProviderProfile) else {}))
 
 
 def _anthropic(profile, key, base, model, settings, pool):
     from .anthropic import ClaudeBackend
+    from .providers.admitted_profiles import AdmittedProviderProfile
     return ClaudeBackend(key, model=model or profile.fallback_models[0], auth_pool=pool,
                          reasoning_effort=_setting(settings, "reasoning_effort", ""),
-                         effort_overrides=_setting(settings, "reasoning_effort_overrides", ""))
+                         effort_overrides=_setting(settings, "reasoning_effort_overrides", ""),
+                         **({'profile': profile} if isinstance(profile, AdmittedProviderProfile) else {}))
 
 
 def _local_chat(profile, key, base, model, settings, pool):
@@ -94,6 +107,10 @@ _KINDS = {
     "openai-compatible-local": ("chat_completions", _local_chat),
     "ollama": ("chat_completions", _ollama),
 }
+ADMITTED_BACKEND_KINDS = frozenset({
+    "openai-compatible", "deepinfra-chat", "openai-responses", "xai-responses",
+    "gemini", "anthropic",
+})
 
 
 def supports_chat_profile(profile):
@@ -114,10 +131,14 @@ def construct_backend(provider_id, *, model="", api_key=None, base_url=None, set
     except KeyError as exc:
         raise BackendUnavailable("provider declaration is unknown") from exc
     from .providers.admitted_profiles import AdmittedProviderProfile
-    if isinstance(profile, AdmittedProviderProfile) and (
-            profile.backend_kind != 'openai-compatible' or 'cloud' not in profile.capabilities
-            or 'local' in profile.capabilities):
-        raise BackendUnavailable('admitted native dialect has no async hook bridge')
+    if isinstance(profile, AdmittedProviderProfile):
+        from .providers.admitted_registry import AdmittedProviderRegistry
+        if ((profile.backend_kind != 'openai-compatible'
+                and type(registry) is not AdmittedProviderRegistry)
+                or profile.backend_kind not in ADMITTED_BACKEND_KINDS
+                or 'cloud' not in profile.capabilities
+                or 'local' in profile.capabilities):
+            raise BackendUnavailable('admitted native dialect has no async hook bridge')
     kind = _KINDS.get(profile.backend_kind)
     if not supports_chat_profile(profile):
         raise BackendUnavailable("provider has no compatible chat implementation")
@@ -139,7 +160,12 @@ def construct_backend(provider_id, *, model="", api_key=None, base_url=None, set
                 raise BackendUnavailable("admitted provider requires a fixed HTTPS authority")
         except ValueError as exc:
             raise BackendUnavailable("admitted provider destination is invalid") from exc
-    refusal = protocol_refusal(profile.id, base) if base else ""
+    if isinstance(profile, AdmittedProviderProfile):
+        from .providers.native_transport import native_protocol_backend
+        protocol_backend = native_protocol_backend(profile)
+    else:
+        protocol_backend = profile.id
+    refusal = protocol_refusal(protocol_backend, base) if base else ""
     if refusal:
         raise BackendUnavailable(refusal)
     if isinstance(profile, AdmittedProviderProfile):
@@ -147,6 +173,10 @@ def construct_backend(provider_id, *, model="", api_key=None, base_url=None, set
         # never grants a package the right to select a host credential.
         if auth_pool is not None:
             raise BackendUnavailable("admitted provider requires an explicit host credential")
+        if profile.backend_kind != 'openai-compatible':
+            if not profile.fallback_models or (model and model not in profile.fallback_models):
+                raise BackendUnavailable("admitted provider model is not signed")
+            model = model or profile.fallback_models[0]
         if profile.auth_type == "none":
             if api_key not in (None, ""):
                 raise BackendUnavailable("credential supplied to a no-auth provider")

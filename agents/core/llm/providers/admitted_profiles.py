@@ -5,8 +5,11 @@ to one exact model/message/context batch; ordinary synchronous use refuses.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import weakref
+from contextvars import ContextVar
 from dataclasses import dataclass, field, fields
 
 from ..provider_request import (
@@ -16,6 +19,16 @@ from ..provider_request import (
     profile_request_defaults,
 )
 from . import ProviderProfile
+
+_CURRENT_PREPARED: ContextVar[tuple | None] = ContextVar('native_signed_preparation', default=None)
+
+
+def current_signed_preparation(profile, prepared, model):
+    """Only this task's latest validated worker result may mint a physical attempt."""
+    state = _CURRENT_PREPARED.get()
+    return (state is not None and state[0]() is asyncio.current_task()
+            and state[1]() is profile and state[2]() is prepared
+            and state[3] == profile._package_hash and state[4] == model)
 
 
 def _metadata(profile):
@@ -123,4 +136,6 @@ async def prepare_admitted_profile(profile, *, model, messages, reasoning_config
     prepare_profile_messages(prepared, sanitized, maximum=512 * 1024)
     profile_request_defaults(prepared, model, session_id=session_id,
                              context={'reasoning_config': reasoning_config})
+    _CURRENT_PREPARED.set((weakref.ref(asyncio.current_task()), weakref.ref(profile),
+                           weakref.ref(prepared), profile._package_hash, model))
     return prepared

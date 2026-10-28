@@ -20,7 +20,7 @@ from agents.core.llm.providers.packages import ProviderPackageError, ProviderPac
 from tests.test_h361_provider_hook_runtime import IMAGE, SimulatedSealedRunner
 
 
-def setup(tmp_path, monkeypatch):
+def setup(tmp_path, monkeypatch, *, profile_override=None, model=""):
     monkeypatch.setenv('JARVIS_ACTION_KERNEL', '1')
     root = tmp_path / 'candidates'
     source = root / 'signed-addon'
@@ -54,7 +54,7 @@ def setup(tmp_path, monkeypatch):
     packages = ProviderPackageStore(tmp_path / 'packages', signing=signing,
                                     authorizer=kernel, enabled=lambda: True,
                                     owner_authorizer=authenticated_test_owner)
-    host_profile = ProviderProfile('signed-addon', 'Synthetic addon', 'openai-compatible',
+    host_profile = profile_override or ProviderProfile('signed-addon', 'Synthetic addon', 'openai-compatible',
                                    aliases=('signed-alias',), is_user_defined=True, auth_type='bearer',
                                    capabilities=frozenset({'cloud', 'chat'}),
                                    default_base_url='https://synthetic.invalid/v1')
@@ -69,7 +69,8 @@ def setup(tmp_path, monkeypatch):
     candidates = discover_candidates(user_root=root, home='synthetic-home')
     registry = AdmittedProviderRegistry((), candidates, packages=packages, runtime=runtime,
                                        home='synthetic-home', bindings={'signed-addon': record.package_hash})
-    backend = construct_backend('signed-alias', registry=registry, api_key='synthetic-host-key')
+    backend = construct_backend('signed-alias', registry=registry,
+                                model=model, api_key='synthetic-host-key')
     return backend, packages, runner, actions, owner_calls, source
 
 

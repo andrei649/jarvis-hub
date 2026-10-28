@@ -235,10 +235,15 @@ def authorize(action: Action,
         sealed_checkpoint = action.kind in {"checkpoint.restore", "checkpoint.maintenance"}
         sealed_hermes = action.kind == "hermes.runtime"
         sealed_provider = False
+        sealed_provider_egress = False
         if action.kind == "plugin.load":
             from ..llm.providers.admission_contract import PROVIDER_LOAD_CONTRACT
             with contextlib.suppress(Exception):
                 sealed_provider = PROVIDER_LOAD_CONTRACT.evaluate(action.payload).admissible
+        elif action.kind == "plugin.egress":
+            from ..llm.providers.admission_contract import PROVIDER_EGRESS_CONTRACT
+            with contextlib.suppress(Exception):
+                sealed_provider_egress = PROVIDER_EGRESS_CONTRACT.evaluate(action.payload).admissible
         task_receipt = (
             (sealed_terminal or sealed_checkpoint or sealed_hermes)
             and isinstance(approved_task_id, int)
@@ -246,7 +251,7 @@ def authorize(action: Action,
             and approved_task_id > 0
         )
         if (
-            (task_receipt or sealed_provider)
+            (task_receipt or sealed_provider or sealed_provider_egress)
             and pdec.outcome == ASK
             and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
             and callable(approval_check)
@@ -260,6 +265,7 @@ def authorize(action: Action,
             seal_reason = ("sealed_terminal_approval" if sealed_terminal else
                            "sealed_checkpoint_approval" if sealed_checkpoint else
                            "sealed_provider_approval" if sealed_provider else
+                           "sealed_provider_egress_approval" if sealed_provider_egress else
                            "sealed_hermes_approval")
             decision = Decision(Verdict.GRANT, reason=f"{seal_reason}; {pdec.reason}", tier=tier,
                                 task_id=approved_task_id if task_receipt else None)

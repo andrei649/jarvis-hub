@@ -68,10 +68,14 @@ class ProviderInstallService:
 
     def _store(self, *, owner_authorizer=None, actor=None):
         self._ready()
+        store = None
         def authorize(action):
             if (self.enabled() is not True
                     or action.payload.get('phase') == 'promote' and not _owner_current(actor)):
                 return Decision(Verdict.DENY, reason='provider owner or runtime unavailable')
+            if (action.kind == 'plugin.egress'
+                    and (store is None or not store._native_egress_receipt_matches(action))):
+                return Decision(Verdict.DENY, reason='signed provider egress receipt unavailable')
             gate = self.kernel()
             if not callable(gate):
                 return Decision(Verdict.DENY, reason='bound action kernel unavailable')
@@ -80,8 +84,9 @@ class ProviderInstallService:
             # a wider or changed action cannot borrow it.
             snapshot = deepcopy(action)
             return gate(action, approval_check=lambda candidate: candidate == snapshot)
-        return ProviderPackageStore(self.root / 'packages', signing=self.signing,
+        store = ProviderPackageStore(self.root / 'packages', signing=self.signing,
             authorizer=authorize, enabled=self.enabled, owner_authorizer=owner_authorizer)
+        return store
 
     @staticmethod
     def _preview_profile(profile):

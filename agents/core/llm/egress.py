@@ -68,7 +68,7 @@ def _record(backend: str, request: httpx.Request, *, allowed: bool, reason: str 
         pass
 
 
-def _recorder(backend: str):
+def _recorder(backend: str, protocol_backend: str | None = None):
     """Build the async httpx request hook: refuse a protocol/host mismatch, then record.
 
     httpx runs request hooks before each dispatch — including every hop of a followed
@@ -84,7 +84,7 @@ def _recorder(backend: str):
         except Exception:
             _record(backend, request, allowed=False, reason="routed data-handling gate refused")
             raise
-        reason = protocol_refusal(backend, request.url)
+        reason = protocol_refusal(protocol_backend or backend, request.url)
         if reason:
             _record(backend, request, allowed=False, reason=reason)
             raise HostProtocolRefused(reason)

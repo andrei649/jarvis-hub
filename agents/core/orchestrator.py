@@ -26,6 +26,7 @@ from .config import JarvisConfig
 from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, is_degraded_reply
 from .llm.auth_rotation import AuthLease
 from .llm.gemini import GeminiBackend
+from .llm.providers.admitted_profiles import AdmittedProviderProfile
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.data_handling import DataHandlingRefused
 from .llm.gemini_cache import ContextCache
@@ -2990,6 +2991,7 @@ class Orchestrator:
                             self.context_cache is not None
                             and history_parts
                             and self.security is not None
+                            and not isinstance(getattr(backend, 'profile', None), AdmittedProviderProfile)
                         ):
                             cache_material = self.security.prepare_cache_material(
                                 system_prompt,

@@ -19,8 +19,11 @@ import tempfile
 import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+
+import httpx
 
 try:  # Windows must still import the inert provider catalog and kernel action metadata.
     import fcntl
@@ -58,10 +61,116 @@ _BUILTIN_IDENTITIES = frozenset(
 )
 _DISPATCH_GUARD = threading.Lock()
 _DISPATCH_TASKS: dict[tuple[int, int], dict[str, set[tuple[asyncio.AbstractEventLoop, asyncio.Task]]]] = {}
+_DISPATCH_READERS: dict[tuple[int, int], dict[str, set[_TrackedProviderStream]]] = {}
+_SIGNED_EGRESS_LEASE: ContextVar[tuple | None] = ContextVar('signed_provider_egress_lease', default=None)
+_SIGNED_EGRESS_RECEIPT: ContextVar[tuple | None] = ContextVar('signed_provider_egress_receipt', default=None)
 
 
 class ProviderPackageError(RuntimeError):
     """Provider bytes or admission authority cannot be trusted."""
+
+
+async def _join_reader_tasks(readers, *, exclude=None):
+    current_loop = asyncio.get_running_loop()
+    current_task = asyncio.current_task()
+    joins = []
+    for loop, task in readers:
+        if task is current_task or task is exclude:
+            continue
+        if loop is current_loop:
+            joins.append(task)
+        else:
+            async def join_remote(reader_task):
+                with suppress(BaseException):
+                    await reader_task
+            joins.append(asyncio.wrap_future(
+                asyncio.run_coroutine_threadsafe(join_remote(task), loop)))
+    if joins:
+        await asyncio.gather(*joins, return_exceptions=True)
+
+
+class _TrackedProviderStream(httpx.AsyncByteStream):
+    """Keep a response body cancellable after its header-time file lease ends."""
+
+    def __init__(self, store, provider_id, inner):
+        self.store, self.provider_id, self.inner = store, provider_id, inner
+        self.loop = asyncio.get_running_loop()
+        self.tasks = set()
+        self.revoked = False
+        self.closed = False
+        self.close_future = None
+
+    async def __aiter__(self):
+        task = asyncio.current_task()
+        with _DISPATCH_GUARD:
+            if self.revoked or self.closed:
+                raise ProviderPackageError('provider stream was revoked or closed')
+            self.tasks.add((asyncio.get_running_loop(), task))
+        try:
+            async for chunk in self.inner:
+                if self.revoked:
+                    raise ProviderPackageError('provider stream was revoked')
+                yield chunk
+        finally:
+            try:
+                await self.aclose(_reader=True)
+            finally:
+                with _DISPATCH_GUARD:
+                    self.tasks.discard((asyncio.get_running_loop(), task))
+                self._unregister_if_finished()
+
+    def _unregister_if_finished(self):
+        with _DISPATCH_GUARD:
+            future = self.close_future
+            if future is None or not future.done() or self.tasks:
+                return
+            try:
+                future.result()
+            except BaseException:
+                # Failed close stays discoverable by a later revoke.
+                return
+            by_provider = _DISPATCH_READERS.get(self.store._root_identity, {})
+            current = by_provider.get(self.provider_id)
+            if current is not None:
+                current.discard(self)
+                if not current:
+                    by_provider.pop(self.provider_id, None)
+                if not by_provider:
+                    _DISPATCH_READERS.pop(self.store._root_identity, None)
+
+    def _start_close(self):
+        with _DISPATCH_GUARD:
+            self.closed = True
+            readers = tuple(self.tasks)
+            future = self.close_future
+            first_close = future is None
+            if first_close:
+                if self.loop.is_closed() or not self.loop.is_running():
+                    raise ProviderPackageError('provider stream origin loop unavailable')
+                # The HTTPX body belongs to the loop that received the headers,
+                # even when a consumer later reads it from another loop.
+                future = asyncio.run_coroutine_threadsafe(self.inner.aclose(), self.loop)
+                self.close_future = future
+        if first_close:
+            future.add_done_callback(lambda _done: self._unregister_if_finished())
+        return future, readers
+
+    async def aclose(self, *, _reader=False):
+        future, readers = self._start_close()
+        for loop, task in readers:
+            if task is not asyncio.current_task():
+                loop.call_soon_threadsafe(task.cancel)
+        await asyncio.shield(asyncio.wrap_future(future))
+        if not _reader:
+            await _join_reader_tasks(readers)
+
+    def abort(self):
+        with _DISPATCH_GUARD:
+            self.revoked = True
+        _, readers = self._start_close()
+        for loop, task in readers:
+            loop.call_soon_threadsafe(task.cancel)
+        return readers
 
 
 @dataclass(frozen=True, slots=True)
@@ -638,14 +747,18 @@ class ProviderPackageStore:
     def revoke(self, provider_id: str) -> None:
         with _DISPATCH_GUARD:
             active = tuple(_DISPATCH_TASKS.get(self._root_identity, {}).get(provider_id, ()))
+            readers = tuple(_DISPATCH_READERS.get(self._root_identity, {}).get(provider_id, ()))
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
             current_loop = None
-        if active and any(loop is current_loop for loop, _ in active):
+        if ((active and any(loop is current_loop for loop, _ in active))
+                or any(reader.loop is current_loop and not reader.closed for reader in readers)):
             raise ProviderPackageError("in-flight provider revocation requires revoke_async")
         for loop, task in active:
             loop.call_soon_threadsafe(task.cancel)
+        for reader in readers:
+            reader.abort()
         with self._locked():
             state = self._load()
             records = self._active_records(state, provider_id)
@@ -666,12 +779,49 @@ class ProviderPackageStore:
             self._commit(state)
 
     async def revoke_async(self, provider_id: str) -> None:
-        """Cancel in-flight sends, then persist revocation behind their leases."""
+        """Persist revocation behind send leases, then drain every response body."""
         with _DISPATCH_GUARD:
             active = tuple(_DISPATCH_TASKS.get(self._root_identity, {}).get(provider_id, ()))
+            readers = tuple(_DISPATCH_READERS.get(self._root_identity, {}).get(provider_id, ()))
         for loop, task in active:
             loop.call_soon_threadsafe(task.cancel)
-        worker = asyncio.create_task(asyncio.to_thread(self.revoke, provider_id))
+        errors = []
+        for reader in readers:
+            try:
+                reader.abort()
+            except BaseException as exc:
+                errors.append(exc)
+        caller = asyncio.current_task()
+
+        async def finish():
+            try:
+                await asyncio.to_thread(self.revoke, provider_id)
+            except BaseException as exc:
+                errors.append(exc)
+            # The registry flock is the barrier: no pre-revocation physical
+            # request can register a new response after this snapshot when the
+            # persistent revoke succeeded. On failure, still drain all known
+            # streams before surfacing the persistence error.
+            with _DISPATCH_GUARD:
+                current = tuple(_DISPATCH_READERS.get(self._root_identity, {}).get(provider_id, ()))
+            all_readers = set(readers) | set(current)
+            all_tasks = set()
+            for reader in all_readers:
+                try:
+                    all_tasks.update(reader.abort())
+                except BaseException as exc:
+                    errors.append(exc)
+            results = await asyncio.gather(
+                *(reader.aclose(_reader=True) for reader in all_readers),
+                return_exceptions=True)
+            await _join_reader_tasks(all_tasks, exclude=caller)
+            if errors:
+                raise errors[0]
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+
+        worker = asyncio.create_task(finish())
         cancelled = False
         while True:
             try:
@@ -680,7 +830,7 @@ class ProviderPackageStore:
             except asyncio.CancelledError:
                 cancelled = True
                 if worker.done():
-                    worker.result()  # Surface an unsuccessful revoke, never imply success.
+                    worker.result()  # Surface failed persistence/close, never imply success.
                     break
         if cancelled:
             raise asyncio.CancelledError
@@ -723,9 +873,11 @@ class ProviderPackageStore:
             record = self._require_runnable_locked(provider_id, expected_hash, home)
             with _DISPATCH_GUARD:
                 _DISPATCH_TASKS.setdefault(self._root_identity, {}).setdefault(provider_id, set()).add((loop, task))
+            token = _SIGNED_EGRESS_LEASE.set((self, record, task))
             try:
                 yield record
             finally:
+                _SIGNED_EGRESS_LEASE.reset(token)
                 with _DISPATCH_GUARD:
                     by_provider = _DISPATCH_TASKS[self._root_identity]
                     current = by_provider[provider_id]
@@ -738,6 +890,77 @@ class ProviderPackageStore:
             if locked:
                 fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
+
+    def _native_egress_receipt_matches(self, action: Action) -> bool:
+        """Service-only approval callback may accept just the live full Action."""
+        lease = _SIGNED_EGRESS_LEASE.get()
+        receipt = _SIGNED_EGRESS_RECEIPT.get()
+        try:
+            task = asyncio.current_task()
+        except RuntimeError:
+            return False
+        return (lease is not None and receipt is not None
+                and lease[0] is self and receipt[0] is self
+                and lease[1] is receipt[2]
+                and lease[2] is task is receipt[3]
+                and receipt[1] is action)
+
+    def authorize_native_egress(self, request, transport) -> Decision:
+        """Issue one task-bound receipt from the verified record already under lease."""
+        from agents.core.action_origin import current_action_origin
+
+        from .admitted_profiles import AdmittedProviderProfile
+        from .native_transport import AdmittedNativeTransport
+
+        lease = _SIGNED_EGRESS_LEASE.get()
+        if (lease is None or lease[0] is not self or lease[2] is not asyncio.current_task()
+                or type(transport) is not AdmittedNativeTransport
+                or not callable(self.authorizer)):
+            raise ProviderPackageError('native egress has no current signed dispatch lease')
+        record = lease[1]
+        profile = transport.profile
+        if (type(profile) is not AdmittedProviderProfile
+                or profile._hook_runtime.packages is not self
+                or profile.id != record.provider_id
+                or profile._package_hash != record.package_hash
+                or profile._home != record.home
+                or ProviderProfile(**{field.name: getattr(profile, field.name)
+                                      for field in fields(ProviderProfile)}) != record.profile
+                or transport.model not in record.profile.fallback_models):
+            raise ProviderPackageError('native egress signed profile binding changed')
+        transport._check(request)
+        url = request.url
+        action = Action(
+            kind='plugin.egress', agent='jarvis', title='Admitted native provider request',
+            origin=current_action_origin(), scope='provider:' + record.provider_id,
+            payload={'schema': 'signed-provider-egress-v1',
+                     'plugin': record.provider_id, 'provider_id': record.provider_id,
+                     'artifact_id': record.artifact_id, 'package_hash': record.package_hash,
+                     'source': record.source, 'home': record.home,
+                     'url': str(url), 'authority': url.netloc.decode('ascii'),
+                     'host': url.host, 'method': request.method,
+                     'path': url.path, 'query': url.query.decode('ascii'),
+                     'model': transport.model,
+                     'request_sha256': hashlib.sha256(request.content).hexdigest(),
+                     'receipt_id': secrets.token_hex(16),
+                     'risk_tier': 3, 'irreversible': True, 'permanent': True})
+        token = _SIGNED_EGRESS_RECEIPT.set((self, action, record, asyncio.current_task()))
+        try:
+            return self.authorizer(action)
+        finally:
+            _SIGNED_EGRESS_RECEIPT.reset(token)
+
+    def track_native_response(self, provider_id: str, response: httpx.Response) -> _TrackedProviderStream:
+        """Register the body before releasing the header-time dispatch lease."""
+        lease = _SIGNED_EGRESS_LEASE.get()
+        if (lease is None or lease[0] is not self or lease[2] is not asyncio.current_task()
+                or lease[1].provider_id != provider_id or type(response) is not httpx.Response):
+            raise ProviderPackageError('native response has no current signed dispatch lease')
+        stream = _TrackedProviderStream(self, provider_id, response.stream)
+        with _DISPATCH_GUARD:
+            _DISPATCH_READERS.setdefault(self._root_identity, {}).setdefault(provider_id, set()).add(stream)
+        response.stream = stream
+        return stream
 
     def require_runnable(self, provider_id: str, *, expected_hash: str | None = None,
                          home: str | None = None) -> ProviderRecord:
