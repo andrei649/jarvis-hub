@@ -223,13 +223,21 @@
 - [ ] ⬜ **NWS-9 — MCP-first business connectors.** Knowledge comes only from uploaded documents. ERP, CRM,
   accounting and e-Factura through MCP servers are the next slice (spec §0, D4); gated on the owner's answers
   to D1–D4.
-- [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** A PDF without a text layer fails with `no_text`; the original is
-  kept, so a re-index works once text exists. Needs a local OCR engine with its own time and memory bounds.
-  Remaining (recounted 2026-10-26): all of it — `extract.py` still ends in `no_text` for a PDF without a text layer and no OCR engine is wired; blocked behind NWS-11's child process for the time/memory bounds.
+- [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** Delivered locally 2026-10-28: default-off
+  `NERVA_WORKSPACE_OCR=1`, together with killable extraction, lazily uses local PDFium/Tesseract
+  for a PDF with no readable text layer. The POSIX parent owns the process group, enforces a
+  20 s page deadline and the 60 s document deadline, and kills the group before reaping/releasing
+  resources even if process enumeration fails. Every page must yield text; originals and re-index
+  remain available after refusal. Synthetic real-subprocess upload/retrieval/cancellation tests pass.
+  Remaining: real-engine text/quality acceptance, Windows Job Object containment and native-platform
+  acceptance. macOS aggregate memory is sampled RSS, not a hard kernel ceiling; Linux's per-process
+  `RLIMIT_AS` plus aggregate sampling still needs native proof. The separate `file_read` reader and
+  mixed text/scanned PDF coverage are not extended by this slice.
 - [x] ✅ **NWS-11 — a killable extraction subprocess.** PR #1296: opt-in
   `NERVA_WORKSPACE_KILLABLE_EXTRACTION=1` (default off) runs PDF/DOCX in at most two killable children;
   the existing 60 s bound includes queue/startup time, and timeout/cancellation kills and reaps the child.
-  POSIX applies a 512 MiB `RLIMIT_AS`; Windows reports `memory_unavailable` and enforces time only.
+  Linux applies a 512 MiB `RLIMIT_AS`; macOS uses sampled aggregate RSS when `RLIMIT_AS` is refused.
+  Windows reports `memory_unavailable` and enforces time only; native OCR stays disabled there.
   Real-format, pathological-page, cancellation, queue and persisted-timeout regressions prove the path.
 - [x] ✅ **NWS-12 — route-level code splitting of the web app.** Admin and report routes now load
   through `React.lazy`/`Suspense`, with unchanged admin guards, deep-link/focus behavior and an

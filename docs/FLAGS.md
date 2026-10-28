@@ -1339,6 +1339,33 @@ copy — up to twice the file while it is received), at most 3 uploads in flight
 process-wide cap, so size RAM for `2 × cap × concurrent uploads`. A reverse proxy in front must allow
 a slightly larger body, or users see the proxy's error instead of the translated one.
 
+### `NERVA_WORKSPACE_KILLABLE_EXTRACTION`
+
+**Default: OFF.** Runs Workspace PDF/DOCX extraction in at most two owned child processes.
+The 60 s document deadline includes waiting for a slot and process startup. Timeout and
+cancellation drain child cleanup before scratch space and the slot are released. Linux
+applies a 512 MiB per-process `RLIMIT_AS`; macOS monitors aggregate RSS when the kernel
+refuses that limit. Sampled RSS is not a hard memory ceiling. Windows ordinary PDF/DOCX
+extraction enforces time only and reports `memory_unavailable`. **Revert:** unset and
+restart; new requests use the ordinary extractor. Originals and indexed documents remain.
+
+### `NERVA_WORKSPACE_OCR` · `NERVA_WORKSPACE_OCR_LANG`
+
+**Defaults: OFF · `eng`.** With killable extraction enabled, OCR may read a PDF that has
+no readable text layer using optional local `pypdfium2`, `pytesseract` and a Tesseract binary.
+These dependencies are loaded only inside the extraction child; they are not installed or
+downloaded automatically. `NERVA_WORKSPACE_OCR_LANG` selects installed Tesseract languages.
+Missing engines retain the `no_text` refusal. No cloud fallback exists.
+
+The POSIX parent enforces a 20 s page deadline and the whole-document deadline outside
+native OCR, owns the process group until cleanup, and samples aggregate memory. OCR is
+capped at 50 pages and the existing extracted-text budget; every page must yield readable
+text or the whole document fails. The synchronous extractor, mixed text/scanned PDFs and
+the owner's separate `file_read` path are unchanged. Windows native OCR remains disabled
+pending Job Object containment. Synthetic subprocess verification does not establish
+real-engine quality or Windows/Linux runtime acceptance. **Revert:** unset OCR and restart;
+scanned uploads return `no_text`, while originals remain available for re-indexing.
+
 ### `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS`
 
 **Defaults: 12 (1..168; above 168 → 168, below 1 → 12) · 7 (1..90; above 90 → 90, below 1 → 7).** Idle and absolute lifetime of a
@@ -1440,6 +1467,8 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `NERVA_WORKSPACE_COOKIE_SECURE` | `auto` (Secure on https) | `1` forces `Secure` on `nerva_ws_session`; `0` never | `0` behind TLS sends the session cookie over plain http if anything ever serves it | Unset: `auto`; junk values log one warning and act as `auto` |
 | `NERVA_WORKSPACE_SSO_HEADER` + `NERVA_WORKSPACE_SSO_SECRET` | unset · unset | Both set: `POST /api/workspace/login/sso` signs in the active user named by the trusted proxy's email header + matching `X-Nerva-Proxy-Secret` | Anyone reaching the hub from a trusted peer with the secret can be any active user — loopback proxy, strip client copies of both headers | Unset either + restart: `sso_disabled`, password sign-in unchanged |
 | `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 (MiB, capped 200) | Larger documents accepted (streamed, early `413 file_too_large`) | Each in-flight upload is held in memory (≤ 3 per user); the proxy body limit must follow | Unset: 25 MiB |
+| `NERVA_WORKSPACE_KILLABLE_EXTRACTION` | off | PDF/DOCX extraction in at most two child processes; 60 s includes queue/startup | macOS RSS is sampled; Windows ordinary extraction has no memory ceiling | Unset + restart: ordinary extractor for new requests; originals stay |
+| `NERVA_WORKSPACE_OCR` + `NERVA_WORKSPACE_OCR_LANG` | off · `eng` | Optional local OCR for all-scanned PDFs, only with killable extraction; 50 pages, 20 s/page, whole-document bound | Requires separately installed local engine/language data; Windows native OCR is disabled; real-engine quality still unverified | Unset OCR + restart: scanned uploads refuse as `no_text`; originals remain re-indexable |
 | `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS` | 12 (1..168) · 7 (1..90) | Longer idle / absolute session lifetime | A stolen cookie stays useful longer | Unset + restart: 12 h idle on the next request; 7 days for sessions issued afterwards |
 | `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` | 2 (1..16) | More simultaneous model calls (chat + reports + model test share it) | Overcommits a model server that cannot run them in parallel → timeouts instead of `model_busy` | Unset + restart: 2 for new callers |
 | `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run, interrupted-delivery, pending-answer and interrupted-extraction sweeps, retention deletes every 30 s (the audited steps pause, with one warning, while the audit key is not the trail's) | Off: scheduled reports never run, pending approvals never expire, interrupted documents stay `processing`, a delivery a crash left `pending` stays so, old rows are never deleted | Unset + restart: on again |
