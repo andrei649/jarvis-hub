@@ -124,3 +124,19 @@ def test_provider_inspect_probe_uses_stage_receipt_and_actual_unknown_status():
     assert 'stage' in command and 'list route' not in command
     assert '§02' not in command
     assert '409' in expectation and '404' not in expectation
+
+
+def test_provider_credential_read_probe_names_required_target_and_honest_outcomes():
+    command, expectation = gen.probe(
+        'GET', '/api/admin/llm/provider-credentials', 'admin')
+    assert 'X-Admin-Token' in command
+    assert 'provider=' in command and 'package_hash=' in command
+    assert 'installed' in command and 'approved' in command
+    assert not any(value in command for value in ('PUT', 'DELETE', 'api_key=', 'value='))
+    assert '200' in expectation and 'metadata' in expectation
+    assert '409' in expectation and 'provider_credential_refused' in expectation
+    assert '422' in expectation and 'invalid_provider_credential_request' in expectation
+    assert 'bare' in expectation.lower() and 'secret' in expectation.lower()
+    rows = [line for line in gen.build().splitlines()
+            if '| `GET` | `/api/admin/llm/provider-credentials` |' in line]
+    assert len(rows) == 1 and command in rows[0] and expectation in rows[0]

@@ -99,6 +99,17 @@ EXPECT_OVERRIDES = {
 }
 
 PROBE_OVERRIDES = {
+    "GET /api/admin/llm/provider-credentials": (
+        '`curl -sS -G -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" '
+        '--data-urlencode "provider=$INSTALLED_SIGNED_PROVIDER" '
+        '--data-urlencode "package_hash=$APPROVED_PROVIDER_PACKAGE_HASH" '
+        '"$B/api/admin/llm/provider-credentials"` — set both query values from an '
+        'explicitly installed provider and its exact approved package hash',
+        "**200** metadata only for that runnable signed target (never the secret value) · "
+        "**409** `provider_credential_refused` for a synthetic, unknown or unapproved target · "
+        "**422** `invalid_provider_credential_request` for a bare GET without both required "
+        "query fields or malformed input",
+    ),
     "GET /api/llm/provider-packages/{artifact_id}": (
         "`GET $B/api/llm/provider-packages/{artifact_id}` with the artifact_id "
         "from a successful owner stage receipt",
