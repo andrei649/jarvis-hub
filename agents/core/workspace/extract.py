@@ -25,6 +25,11 @@ By default extraction runs on a small thread pool of its own, bounded at
 rows and sheets. A parser stuck within one page cannot be stopped in that mode.
 With ``NERVA_WORKSPACE_KILLABLE_EXTRACTION=1`` (default off), PDF/DOCX instead use
 killable children with a POSIX address-space cap; see :mod:`.extract_process`.
+A PDF without a text layer is OCR-read only when ``NERVA_WORKSPACE_OCR=1`` **and** killable
+extraction is on (default off): a local engine (``pypdfium2`` + ``pytesseract``) is imported
+lazily inside the child, at most :data:`MAX_OCR_PAGES` pages, each bounded by the document
+deadline and :data:`OCR_PAGE_TIMEOUT_SECONDS`. The result carries ``"ocr"`` in
+``Extracted.limits``. Without the engine (or the flags) the answer stays ``no_text``.
 Every failure is an
 :class:`ExtractionError` carrying one stable ``code`` from :data:`ERROR_CODES`; the
 document row stores it and the UI translates it.
@@ -43,6 +48,7 @@ import functools
 import io
 import logging
 import math
+import os
 import posixpath
 import re
 import tempfile
@@ -78,6 +84,10 @@ ALLOWED_EXTENSIONS: tuple[str, ...] = tuple(f".{kind}" for kind in MIME_TYPES)
 
 MAX_PDF_PAGES = 500
 EXTRACT_TIMEOUT_SECONDS = 60.0
+#: Optional OCR of a PDF without a text layer (see the module docstring).
+MAX_OCR_PAGES = 50
+OCR_PAGE_TIMEOUT_SECONDS = 20.0
+OCR_RENDER_SCALE = 2.0  # PDF points -> pixels (about 144 dpi)
 #: Upper bound on the extracted text of one document (about 4 000 dense pages). Beyond
 #: it the index and every prompt built from it would be dominated by one file.
 MAX_TEXT_CHARS = 10_000_000
@@ -198,6 +208,10 @@ class _Guard:
         """``timeout`` once the deadline has passed (called between pages, rows, sheets)."""
         if self._deadline is not None and time.monotonic() > self._deadline:
             raise ExtractionError("timeout", "extraction ran past its deadline")
+
+    def remaining(self) -> float | None:
+        """Seconds left before the deadline (``None`` without one)."""
+        return None if self._deadline is None else max(0.0, self._deadline - time.monotonic())
 
     def spend(self, chars: int) -> None:
         """``too_much_text`` once the document's text exceeds :data:`MAX_TEXT_CHARS`."""
@@ -343,7 +357,67 @@ def _pdf(data: bytes, guard: _Guard) -> Extracted:
         guard.spend(len(text))
         if text:
             segments.append(Segment(index + 1, text))
-    return Extracted(tuple(segments), page_count=count)
+    extracted = Extracted(tuple(segments), page_count=count)
+    if not any(_HAS_WORD.search(segment.text) for segment in segments):
+        return _ocr_pdf(data, count, guard) or extracted
+    return extracted
+
+
+def _ocr_enabled() -> bool:
+    # OCR shells out to a native engine, so it only runs inside the killable child.
+    return (env_flag("NERVA_WORKSPACE_OCR", False)
+            and env_flag("NERVA_WORKSPACE_KILLABLE_EXTRACTION", False))
+
+
+def _ocr_engine() -> Callable[[bytes, int, float], str] | None:
+    """A ``(pdf bytes, 0-based page, seconds) -> text`` reader, or ``None`` when absent."""
+    try:
+        import pypdfium2
+        import pytesseract
+    except ImportError:
+        return None
+    lang = os.environ.get("NERVA_WORKSPACE_OCR_LANG", "").strip() or "eng"
+
+    def read(data: bytes, index: int, seconds: float) -> str:
+        document = pypdfium2.PdfDocument(data)
+        try:
+            image = document[index].render(scale=OCR_RENDER_SCALE).to_pil()
+            return pytesseract.image_to_string(image, lang=lang, timeout=max(1, int(seconds)))
+        finally:
+            document.close()
+
+    return read
+
+
+def _ocr_pdf(data: bytes, count: int, guard: _Guard) -> Extracted | None:
+    """OCR text of a PDF without a text layer, or ``None`` (the caller answers ``no_text``)."""
+    if not _ocr_enabled():
+        return None
+    engine = _ocr_engine()
+    if engine is None:
+        logger.info("OCR requested but no local engine is installed")
+        return None
+    if count > MAX_OCR_PAGES:
+        raise ExtractionError("too_many_pages", f"{count} pages exceed the OCR cap",
+                              page_count=count)
+    segments: list[Segment] = []
+    for index in range(count):
+        guard.tick()
+        left = guard.remaining()
+        seconds = OCR_PAGE_TIMEOUT_SECONDS if left is None else min(OCR_PAGE_TIMEOUT_SECONDS, left)
+        try:
+            raw = engine(data, index, seconds)
+        except MemoryError:
+            raise
+        except Exception as exc:  # engine crash or per-page timeout: the page is skipped
+            logger.warning("OCR of page %d failed (%s); it is skipped", index + 1,
+                           type(exc).__name__)
+            continue
+        text = clean_text(raw or "")
+        guard.spend(len(text))
+        if text:
+            segments.append(Segment(index + 1, text))
+    return Extracted(tuple(segments), page_count=count, limits=("ocr",))
 
 
 # ── Office Open XML packages ─────────────────────────────────────────────────────────

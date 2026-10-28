@@ -747,6 +747,13 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   internal `Extracted.limits` result (`wall_time`, `address_space` on POSIX). This is resource
   containment, not a filesystem or network sandbox. Text/CSV/XLSX retain the cooperative pool.
   A child that crashes or cannot start gives `invalid_file`; a deadline gives `timeout`.
+  **Optional OCR (NWS-10):** with `NERVA_WORKSPACE_OCR=1` (default off) *and* killable extraction on,
+  a PDF with no text layer is OCR-read inside the same child, through a lazily imported local engine
+  (`pypdfium2` + `pytesseract`; language `NERVA_WORKSPACE_OCR_LANG`, default `eng`). At most 50 pages
+  (more → `too_many_pages`), each bounded by the remaining document deadline and 20 s; a page the
+  engine fails on is skipped. The result carries `ocr` in `Extracted.limits`. No new mandatory
+  dependency: without the flags or the engine the answer stays `no_text`, and the stored original
+  lets a re-index run once the engine is installed.
   Any extraction problem → document `failed` with a stable `error` code
   (`invalid_file`, `encrypted_pdf`, `too_many_pages`, `no_text`, `timeout`, `too_much_text` — over
   10 000 000 extracted characters; v3.2 `interrupted`, set by the scheduler's sweep, §9, for an

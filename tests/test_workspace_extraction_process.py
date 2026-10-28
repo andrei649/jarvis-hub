@@ -213,3 +213,73 @@ async def test_child_sets_an_actual_address_space_ceiling(monkeypatch):
 
     monkeypatch.setattr(extract_process.asyncio, "create_subprocess_exec", spawn)
     assert (await extract.extract_document(samples.build_docx(), "docx")).char_count > 0
+
+
+def _fake_engine(pages):
+    return lambda data, index, seconds: pages[index]
+
+
+def test_scanned_pdf_stays_no_text_when_ocr_is_off_or_engine_absent(monkeypatch):
+    blank = samples.build_blank_pdf(2)
+    with pytest.raises(extract.ExtractionError) as off:
+        extract.extract_bytes(blank, "pdf")
+    assert off.value.code == "no_text"
+    monkeypatch.setenv("NERVA_WORKSPACE_OCR", "1")
+    monkeypatch.setattr(extract, "_ocr_engine", lambda: None)
+    with pytest.raises(extract.ExtractionError) as absent:
+        extract.extract_bytes(blank, "pdf")
+    assert absent.value.code == "no_text"
+
+
+def test_ocr_needs_killable_extraction_too(monkeypatch):
+    monkeypatch.setenv("NERVA_WORKSPACE_OCR", "1")
+    monkeypatch.delenv("NERVA_WORKSPACE_KILLABLE_EXTRACTION")
+    monkeypatch.setattr(extract, "_ocr_engine", lambda: _fake_engine(["Factura 42", "Total"]))
+    with pytest.raises(extract.ExtractionError) as caught:
+        extract.extract_bytes(samples.build_blank_pdf(2), "pdf")
+    assert caught.value.code == "no_text"
+
+
+def test_ocr_reads_pages_and_marks_the_result(monkeypatch):
+    monkeypatch.setenv("NERVA_WORKSPACE_OCR", "1")
+    monkeypatch.setattr(extract, "_ocr_engine",
+                        lambda: _fake_engine(["Factura 42", "", "Total 100 lei"]))
+    result = extract.extract_bytes(samples.build_blank_pdf(3), "pdf")
+    assert [(s.page, s.text) for s in result.segments] == [(1, "Factura 42"), (3, "Total 100 lei")]
+    assert result.page_count == 3
+    assert "ocr" in result.limits
+
+
+def test_ocr_page_failure_skips_the_page_and_all_blank_is_no_text(monkeypatch):
+    def engine(data, index, seconds):
+        raise RuntimeError("tesseract crashed")
+
+    monkeypatch.setenv("NERVA_WORKSPACE_OCR", "1")
+    monkeypatch.setattr(extract, "_ocr_engine", lambda: engine)
+    with pytest.raises(extract.ExtractionError) as caught:
+        extract.extract_bytes(samples.build_blank_pdf(2), "pdf")
+    assert caught.value.code == "no_text"
+
+
+def test_ocr_refuses_documents_over_its_page_cap(monkeypatch):
+    monkeypatch.setenv("NERVA_WORKSPACE_OCR", "1")
+    monkeypatch.setattr(extract, "MAX_OCR_PAGES", 2)
+    monkeypatch.setattr(extract, "_ocr_engine", lambda: _fake_engine(["x"] * 3))
+    with pytest.raises(extract.ExtractionError) as caught:
+        extract.extract_bytes(samples.build_blank_pdf(3), "pdf")
+    assert (caught.value.code, caught.value.page_count) == ("too_many_pages", 3)
+
+
+def test_ocr_page_timeout_is_bounded_by_the_document_deadline(monkeypatch):
+    seen = []
+
+    def engine(data, index, seconds):
+        seen.append(seconds)
+        return "text"
+
+    monkeypatch.setenv("NERVA_WORKSPACE_OCR", "1")
+    monkeypatch.setattr(extract, "_ocr_engine", lambda: engine)
+    extract.extract_bytes(samples.build_blank_pdf(1), "pdf", timeout=5.0)
+    assert 0 < seen[0] <= 5.0
+    extract.extract_bytes(samples.build_blank_pdf(1), "pdf")
+    assert seen[1] == extract.OCR_PAGE_TIMEOUT_SECONDS
