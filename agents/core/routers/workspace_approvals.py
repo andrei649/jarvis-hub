@@ -130,7 +130,7 @@ async def put_smtp(request: Request, admin: WsAdmin, conn: Db) -> JSONResponse:
                                   "allowed_domains": settings["allowed_domains"]})
 
     await offload(_sync_1)
-    return ws_json(await asyncio.to_thread(mailer.smtp_settings, conn))
+    return ws_json(await offload(mailer.smtp_settings, conn))
 
 
 @router.post("/admin/smtp/test")

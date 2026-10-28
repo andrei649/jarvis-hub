@@ -23,7 +23,14 @@ from fastapi.responses import JSONResponse
 from agents.core.workspace import auth, reports
 from agents.core.workspace.auth import WsUser
 from agents.core.workspace.db import Db
-from agents.core.workspace.http import MAX_ID, offload, read_json, ws_json, ws_no_content
+from agents.core.workspace.http import (
+    MAX_ID,
+    drain_on_cancel,
+    offload,
+    read_json,
+    ws_json,
+    ws_no_content,
+)
 
 logger = logging.getLogger("nerva.workspace.routers.reports")
 
@@ -89,8 +96,12 @@ async def run_report(report_id: ReportId, request: Request, user: WsUser,
     def queue() -> int:
         return reports.start_manual_run(conn, user, report_id, ip=ip)
 
-    run_id = await offload(queue)
-    reports.spawn_run(run_id)
+    async def queue_and_spawn() -> int:
+        run_id = await offload(queue)
+        reports.spawn_run(run_id)
+        return run_id
+
+    run_id = await drain_on_cancel(queue_and_spawn())
     return ws_json({"run": await offload(reports.get_run, conn, user, run_id)}, 202)
 
 

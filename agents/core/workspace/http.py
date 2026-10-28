@@ -18,7 +18,7 @@ import asyncio
 import json
 import math
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import Any
 
 from fastapi import Request, Response
@@ -29,15 +29,15 @@ from starlette.types import Receive, Scope, Send
 from agents.core.workspace.errors import WorkspaceError
 
 
-async def offload[T](fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
-    """Run synchronous SQLite work (``BEGIN IMMEDIATE``, FTS) off the event loop.
+async def drain_on_cancel[T](work: Awaitable[T]) -> T:
+    """Finish accepted work before propagating request cancellation.
 
-    A write transaction waits up to the 5 s busy timeout for the lock; run inline in an
-    ``async def`` handler that wait would freeze every other request. The request's one
-    connection is opened ``check_same_thread=False`` and used by one thread at a time
-    (the caller awaits this), and the context variables (action origin) are copied.
+    A cancelled HTTP task may own a SQLite connection or have committed a state that
+    still needs a runner/effect. Shield the child and await its completion before the
+    request dependency can close that connection. The child's exception is retrieved
+    when the caller is already cancelled.
     """
-    worker = asyncio.ensure_future(asyncio.to_thread(fn, *args, **kwargs))
+    worker = asyncio.ensure_future(work)
     try:
         return await asyncio.shield(worker)
     except asyncio.CancelledError:
@@ -51,6 +51,15 @@ async def offload[T](fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
         if not worker.cancelled():
             worker.exception()  # retrieved: nothing may log "never retrieved"
         raise
+
+
+async def offload[T](fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+    """Run a complete synchronous SQLite unit in a worker, with a safe connection lifetime.
+
+    A write transaction can wait for the unchanged 5 s busy timeout. The request's
+    connection is used sequentially, and asyncio.to_thread copies context variables.
+    """
+    return await drain_on_cancel(asyncio.to_thread(fn, *args, **kwargs))
 
 
 NO_STORE = {"Cache-Control": "no-store"}

@@ -44,7 +44,7 @@ from typing import Any
 from agents.core.workspace import audit, db, effects_api, identity, notifications
 from agents.core.workspace.effects_api import EffectSpec, ValidatedRequest
 from agents.core.workspace.errors import WorkspaceError
-from agents.core.workspace.http import invalid, offload
+from agents.core.workspace.http import drain_on_cancel, invalid, offload
 from agents.core.workspace.identity import WorkspaceUser
 
 logger = logging.getLogger("nerva.workspace.approvals")
@@ -411,10 +411,15 @@ def create_request(conn: sqlite3.Connection, requester: WorkspaceUser, kind: str
 async def request(conn: sqlite3.Connection, requester: WorkspaceUser, kind: str, payload: object,
                   *, ip: str = "") -> dict:
     """``POST /approvals``: store the request (and carry it out at once when immediate)."""
-    approval_id, immediate = await offload(create_request, conn, requester, kind, payload, ip=ip)
-    if immediate:
-        await _carry_out(conn, approval_id, decider=requester, ip=ip)
-    return await offload(_item, conn, requester, approval_id)
+    async def complete() -> dict:
+        approval_id, immediate = await offload(create_request, conn, requester, kind, payload, ip=ip)
+        if immediate:
+            await _carry_out(conn, approval_id, decider=requester, ip=ip)
+        return await offload(_item, conn, requester, approval_id)
+
+    # An immediate request has already committed `executing` before its effect runs.
+    # Draining the whole sequence on disconnect avoids a stranded effect or a retry.
+    return await drain_on_cancel(complete())
 
 
 # ── deciding ─────────────────────────────────────────────────────────────────────────
@@ -465,10 +470,15 @@ async def decide(conn: sqlite3.Connection, user: WorkspaceUser, approval_id: int
                 notify_localized(conn, [row["requester_id"]], kind="approval.rejected",
                                  titles=_TITLES["rejected"], body=body, link=_link(approval_id))
 
-    await offload(settle)
-    if approve:
-        await _carry_out(conn, approval_id, decider=user, ip=ip)
-    return await offload(_item, conn, user, approval_id)
+    async def complete() -> dict:
+        await offload(settle)
+        if approve:
+            await _carry_out(conn, approval_id, decider=user, ip=ip)
+        return await offload(_item, conn, user, approval_id)
+
+    # Approval is durable before execution; keep the same request connection alive
+    # until the effect outcome is recorded even when the HTTP caller disconnects.
+    return await drain_on_cancel(complete())
 
 
 async def _carry_out(conn: sqlite3.Connection, approval_id: int, *, decider: WorkspaceUser,

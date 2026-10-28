@@ -542,7 +542,10 @@ async def produce_answer(turn: Turn, plan: AnswerPlan, policy: str,
                 on_token=on_token, timeout_seconds=ANSWER_TIMEOUT_SECONDS,
             )
         except asyncio.CancelledError:
-            _stored(turn, None, status="error", error_code="cancelled")
+            try:
+                await offload(_stored, turn, None, status="error", error_code="cancelled")
+            finally:
+                _release(turn)
             raise
         except WorkspaceError as error:
             logger.info("workspace answer failed: %s", error.code)
@@ -693,6 +696,7 @@ async def post_message(conversation_id: ConversationId, request: Request, user: 
     body = await read_json(request, max_bytes=MAX_MESSAGE_BODY_BYTES)
     content = require_str(body, "content", max_len=MAX_CONTENT, min_len=1, multiline=True)
     ip = auth.client_ip(request)
+    opened: list[Turn] = []
 
     def prepare() -> tuple[str, Turn, AnswerPlan]:
         conversation = _own_conversation(conn, user, conversation_id)
@@ -700,9 +704,20 @@ async def post_message(conversation_id: ConversationId, request: Request, user: 
             raise WorkspaceError("department_archived", "this department is archived", 409)
         policy = _org_policy(conn)
         turn = open_turn(conn, user, conversation, content, ip=ip)
+        opened.append(turn)
         return policy, turn, _plan(conn, turn, content)
 
-    policy, turn, plan = await offload(prepare)
+    try:
+        policy, turn, plan = await offload(prepare)
+    except asyncio.CancelledError:
+        # The worker has drained, so a committed turn is available for exact-key
+        # settlement even when cancellation prevented its return to this coroutine.
+        if opened:
+            try:
+                await offload(_stored, opened[0], None, status="error", error_code="cancelled")
+            finally:
+                _release(opened[0])
+        raise
     if _wants_stream(request):
         return stream_answer(turn, plan, policy)
     return await answer_json(turn, plan, policy)

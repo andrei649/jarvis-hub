@@ -166,7 +166,7 @@ async def _email_link(conn: sqlite3.Connection, request: Request, admin: Workspa
     try:
         # Reading the settings can fail too (an unreadable secret store): the user and
         # the link already exist, so any failure is reported, never raised.
-        if not mailer.smtp_configured(conn):
+        if not await offload(mailer.smtp_configured, conn):
             return "smtp_not_configured"
         await mailer.send_mail(to=[user.email], subject=subject, text=text)
     except WorkspaceError as exc:

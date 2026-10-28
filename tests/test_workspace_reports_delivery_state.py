@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from agents.core.workspace import db, mailer, reports, scheduler
-from tests.support.ports import closed_port
+from tests.support.ports import closed_port, refused_smtp_connection
 from tests.support.smtp_sink import SmtpSink
 from tests.support.workspace_fixtures import freeze_clock, ws  # noqa: F401  (ws is a fixture)
 from tests.test_workspace_reports_support import (  # noqa: F401  (fixtures)
@@ -235,10 +235,12 @@ def test_no_commit_ever_shows_the_run_succeeded_without_its_pending_delivery(con
 
 # ── failed ───────────────────────────────────────────────────────────────────────────
 
-def test_a_mail_server_that_cannot_be_reached_ends_the_delivery_failed(conn, cast):
-    configure_smtp(conn, closed_port())
+def test_a_mail_server_that_cannot_be_reached_ends_the_delivery_failed(conn, cast, monkeypatch):
+    port = closed_port()
+    configure_smtp(conn, port)
     run_id = reports.start_manual_run(conn, cast.member_a, _report(conn, cast, emails=RECIPIENTS))
-    run_now(run_id)
+    with refused_smtp_connection(monkeypatch, port):
+        run_now(run_id)
     run = reports.get_run(conn, cast.member_a, run_id)
     assert (run["status"], run["delivery_state"], run["delivered_to"]) == (
         "succeeded", "failed", [])
@@ -248,7 +250,7 @@ def test_a_mail_server_that_cannot_be_reached_ends_the_delivery_failed(conn, cas
 
 
 def test_a_viewer_outside_the_department_learns_nothing_of_a_shared_runs_delivery(
-        conn, cast, sink):
+        conn, cast, sink, monkeypatch):
     """Review R4-02: the delivery is the report's configuration, hidden outside its department.
 
     ``delivered_to`` and ``delivery_state`` already read ``[]`` / ``null`` there, but a failed
@@ -261,9 +263,11 @@ def test_a_viewer_outside_the_department_learns_nothing_of_a_shared_runs_deliver
     configure_smtp(conn, sink.port)
     sent = reports.start_manual_run(conn, cast.member_a, report_id)
     run_now(sent)
-    configure_smtp(conn, closed_port())
+    port = closed_port()
+    configure_smtp(conn, port)
     failed = reports.start_manual_run(conn, cast.member_a, report_id)
-    run_now(failed)
+    with refused_smtp_connection(monkeypatch, port):
+        run_now(failed)
     conn.execute("UPDATE report_runs SET shared_company = 1 WHERE id IN (?, ?)", (sent, failed))
     delivery = ("delivery_state", "delivered_to", "error", "error_code", "error_reason")
 

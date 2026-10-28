@@ -377,21 +377,25 @@ async def invite_accept(request: Request, conn: Db, _on: Enabled) -> JSONRespons
         identity.validate_password(password, email=invite["email"])
         password_hash = await asyncio.to_thread(identity.hash_password, password)
         holder = Response()
-        with tx(conn):
-            _consume_invite(conn, invite, password_hash=password_hash, name=name)
-            auth.record_attempt(conn, ip=ip, email=email, ok=True, kind="invite_lookup")
-            user_id = int(invite["user_id"])
-            csrf = auth.issue_session(conn, holder, request, user_id, via="invite")
-            user = _loaded_user(conn, user_id)
-            if invite["purpose"] == "invite":
-                audit.record(conn, actor=user, action="auth.invite_accepted", target_type="user",
-                             target_id=user_id, ip=ip, details={"purpose": "invite"})
-            else:
-                audit.record(conn, actor=user, action="auth.password_changed", target_type="user",
-                             target_id=user_id, ip=ip, details={"via": "reset_link"})
-            payload = _signed_in_payload(conn, user, csrf)
+        def accept() -> dict:
+            with tx(conn):
+                _consume_invite(conn, invite, password_hash=password_hash, name=name)
+                auth.record_attempt(conn, ip=ip, email=email, ok=True, kind="invite_lookup")
+                user_id = int(invite["user_id"])
+                csrf = auth.issue_session(conn, holder, request, user_id, via="invite")
+                user = _loaded_user(conn, user_id)
+                if invite["purpose"] == "invite":
+                    audit.record(conn, actor=user, action="auth.invite_accepted", target_type="user",
+                                 target_id=user_id, ip=ip, details={"purpose": "invite"})
+                else:
+                    audit.record(conn, actor=user, action="auth.password_changed", target_type="user",
+                                 target_id=user_id, ip=ip, details={"via": "reset_link"})
+                return _signed_in_payload(conn, user, csrf)
+
+        payload = await offload(accept)
     except WorkspaceError:
-        auth.record_attempt(conn, ip=ip, email=email, ok=False, kind="invite_lookup")
+        await offload(auth.record_attempt, conn, ip=ip, email=email, ok=False,
+                      kind="invite_lookup")
         raise
     return ws_json(payload, cookies_from=holder)
 
