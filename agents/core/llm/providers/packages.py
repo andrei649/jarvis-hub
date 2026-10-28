@@ -35,7 +35,7 @@ from agents.core.kernel import Action, Decision, Verdict, kernel_enabled
 from agents.core.secrets import SecretStore, SecretStoreError
 
 from . import BUILTIN_PROFILES, ProviderProfile
-from .admission_contract import PROVIDER_LOAD_CONTRACT
+from .admission_contract import PROVIDER_LOAD_CONTRACT, provider_sandbox_profile
 from .candidates import MAX_MANIFEST_BYTES, _manifest_fields, _open_directory
 
 KIND = "plugin.load"
@@ -464,6 +464,7 @@ class ProviderPackageStore:
             raise ProviderPackageError("explicit managed signing key required") from exc
         if not isinstance(profile, ProviderProfile) or not isinstance(sandbox_profile, AcquisitionSandboxProfile):
             raise ProviderPackageError("host profile and pinned sandbox profile required")
+        sandbox_profile = provider_sandbox_profile(sandbox_profile)
         if (source not in _SOURCES or (source == "user") != (home is not None)
                 or home is not None and (type(home) is not str or not home or len(home) > 256)):
             raise ProviderPackageError("invalid provider source or home")

@@ -81,3 +81,7 @@ class AdmittedProviderRegistry:
             except KeyError:
                 continue
         return result
+
+    def catalog(self, environ=None):
+        """Public metadata for entries that are still runnable now."""
+        return [profile.status(environ=environ) for profile in self.list()]

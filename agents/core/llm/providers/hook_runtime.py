@@ -19,6 +19,8 @@ from pathlib import Path, PurePosixPath
 
 from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile, DockerSandboxRunner
 
+from .admission_contract import provider_sandbox_profile
+
 _RESULT_PREFIX = "NERVA_PROVIDER_HOOK_RESULT:"
 _REQUIRED_HOOKS = frozenset({"prepare_messages", "build_extra_body", "build_api_kwargs_extras"})
 _OPTIONAL_HOOKS = frozenset({"get_max_tokens", "supported_reasoning_efforts"})
@@ -250,11 +252,11 @@ class ProviderHookRuntime:
         enabled=lambda: False,
     ) -> None:
         self.packages = packages
-        self.profile = profile
+        self.profile = provider_sandbox_profile(profile)
         self.runtime_root = Path(runtime_root)
         self.runner = runner or DockerSandboxRunner(
-            timeout_seconds=profile.timeout_seconds,
-            max_output_bytes=profile.max_output_bytes,
+            timeout_seconds=self.profile.timeout_seconds,
+            max_output_bytes=self.profile.max_output_bytes,
         )
         self.enabled = enabled
 
@@ -281,6 +283,16 @@ class ProviderHookRuntime:
         ):
             raise ProviderHookRuntimeError("unsupported_hooks")
         return record
+
+    async def assert_runnable(self, provider_id: str, *, package_hash: str, home=None) -> None:
+        """Recheck the current signed grant at each native HTTPX send."""
+        try:
+            active = self.enabled() is True
+        except Exception:
+            active = False
+        if not active:
+            raise ProviderHookRuntimeError("disabled")
+        await asyncio.to_thread(self._require_record, provider_id, package_hash, home)
 
     @staticmethod
     def _member_path(name: str) -> PurePosixPath:

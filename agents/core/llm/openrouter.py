@@ -41,11 +41,14 @@ import json
 import logging
 from typing import Any, Optional
 
+import httpx
+
 from ..log_safe import log_safe
 from .base import LLMBackend, cloud_cap
 from .egress import llm_async_client
 from .provider_errors import note_provider_failure
 from .provider_routing import SETTINGS_KEYS, build_provider_block
+from .providers.hook_runtime import ProviderHookRuntimeError
 from .tool_dialects import compatible_usage
 from .tool_protocol import TokenUsage, ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
@@ -113,6 +116,29 @@ class OpenRouterBackend(LLMBackend):
         self.api_key = api_key
         self.base_url = base_url
         self.client = client or llm_async_client(self.profile.id, base_url=base_url, timeout=120.0)
+        self._admission_guard = None
+        from .providers.admitted_profiles import AdmittedProviderProfile
+        if isinstance(self.profile, AdmittedProviderProfile):
+            async def guard(_request):
+                await self.profile._hook_runtime.assert_runnable(
+                    self.profile.id, package_hash=self.profile._package_hash,
+                    home=self.profile._home)
+            self._admission_guard = guard
+
+    def _send_client(self):
+        """Place the live admission recheck last, directly before HTTPX transport."""
+        if self._admission_guard is None:
+            return self.client
+        if not isinstance(self.client, httpx.AsyncClient):
+            raise ProviderHookRuntimeError("native_egress_unavailable")
+        hooks = self.client.event_hooks.get('request', [])
+        recorders = [hook for hook in hooks if getattr(hook, '_nerva_egress_recorder', False)]
+        if len(recorders) != 1:
+            raise ProviderHookRuntimeError("native_egress_unavailable")
+        self.client.event_hooks['request'] = [
+            hook for hook in hooks if hook is not self._admission_guard
+        ] + [self._admission_guard]
+        return self.client
 
     @staticmethod
     def _block_from(knobs) -> dict | None:
@@ -168,7 +194,9 @@ class OpenRouterBackend(LLMBackend):
         )
         from .request_context import merge_extra_body, reconcile_payload
         profile = self.profile if profile is None else profile
-        payload["messages"] = prepare_profile_messages(profile, payload["messages"])
+        from .providers.admitted_profiles import AdmittedProviderProfile
+        maximum = 512 * 1024 if isinstance(self.profile, AdmittedProviderProfile) else 256 * 1024
+        payload["messages"] = prepare_profile_messages(profile, payload["messages"], maximum=maximum)
         reasoning_config = profile_reasoning_config(
             profile, payload["model"], self.reasoning_effort,
             supports_wire="reasoning-effort" in profile.capabilities)
@@ -238,7 +266,7 @@ class OpenRouterBackend(LLMBackend):
             return _ERROR
         await self._shape_async(payload, block)
         try:
-            resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
+            resp = await self._send_client().post("/chat/completions", json=payload, headers=self._headers())
             self._explain_routing_refusal(resp, block)
             resp.raise_for_status()
             data = resp.json()
@@ -248,6 +276,8 @@ class OpenRouterBackend(LLMBackend):
             if self.profile.backend_kind == "openai-compatible":
                 report_text_usage(compatible_usage(data))
             return answer
+        except ProviderHookRuntimeError:
+            raise
         except Exception as e:
             logger.warning("OpenRouter generate failed: %s", e)
             note_provider_failure(self.profile.id, model, e)
@@ -278,7 +308,7 @@ class OpenRouterBackend(LLMBackend):
             return ToolTurn(content=_ERROR)
         await self._shape_async(payload, block)
         try:
-            resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
+            resp = await self._send_client().post("/chat/completions", json=payload, headers=self._headers())
             self._explain_routing_refusal(resp, block)
             resp.raise_for_status()
             data = resp.json()
@@ -293,6 +323,8 @@ class OpenRouterBackend(LLMBackend):
                 usage=(compatible_usage(data) if self.profile.backend_kind == "openai-compatible"
                        else TokenUsage()),
             )
+        except ProviderHookRuntimeError:
+            raise
         except Exception as e:
             logger.warning("OpenRouter tool turn failed: %s", e)
             note_provider_failure(self.profile.id, model, e)

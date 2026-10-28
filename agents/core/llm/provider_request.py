@@ -107,7 +107,7 @@ def profile_headers(profile, original=None):
     return result
 
 
-def prepare_profile_messages(profile, messages, *, preserve_replay=False):
+def prepare_profile_messages(profile, messages, *, preserve_replay=False, maximum=256 * 1024):
     """Sanitize donor chat sidecars, call the hook, then guard owned history.
 
     Codex's opaque replay is carried outside the hook and reattached unchanged.
@@ -143,11 +143,11 @@ def prepare_profile_messages(profile, messages, *, preserve_replay=False):
         sanitized.append(clean)
     if preserve_replay:
         replay = _owned_json(replay, maximum=256 * 1024)
-    original = _owned_json(sanitized, maximum=256 * 1024)
+    original = _owned_json(sanitized, maximum=maximum)
     if type(original) is not list or len(original) > 256 or any(type(row) is not dict for row in original):
         raise ProfileRequestRefused("invalid profile messages")
-    prepared = _owned_json(profile.prepare_messages(_owned_json(original, maximum=256 * 1024)),
-                           maximum=256 * 1024)
+    prepared = _owned_json(profile.prepare_messages(_owned_json(original, maximum=maximum)),
+                           maximum=maximum)
     if type(prepared) is not list or len(prepared) != len(original):
         raise ProfileRequestRefused("profile changed message count")
     for before, after, sidecar in zip(original, prepared, replay, strict=True):

@@ -12,6 +12,7 @@ import pytest
 
 from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile, SandboxExecution
 from agents.core.llm.providers import ProviderProfile
+from agents.core.llm.providers.admission_contract import provider_sandbox_profile
 from agents.core.llm.providers.hook_runtime import ProviderHookRuntime, ProviderHookRuntimeError
 
 IMAGE = "python@sha256:" + "a" * 64
@@ -116,7 +117,8 @@ class SimulatedSealedRunner:
 
 
 def fixture(tmp_path, *, source=None, hooks=HOOKS):
-    profile = AcquisitionSandboxProfile(image=IMAGE, uid=os.getuid(), gid=os.getgid())
+    profile = provider_sandbox_profile(AcquisitionSandboxProfile(
+        image=IMAGE, uid=os.getuid(), gid=os.getgid()))
     host = ProviderProfile(
         "fixture",
         "Fixture",

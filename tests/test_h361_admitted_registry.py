@@ -70,3 +70,16 @@ def test_existing_builtin_choice_survives_inert_discovery(tmp_path):
     registry = AdmittedProviderRegistry((builtin,), (candidate,), packages=packages, runtime=object(),
                                        home='home')
     assert registry.get('builtin') is builtin
+
+
+def test_catalog_matches_registry_shape_and_excludes_revoked_entries(tmp_path):
+    candidate, record, packages = rig(tmp_path)
+    builtin = ProviderProfile(id='builtin', display_name='Builtin', backend_kind='openai-compatible')
+    registry = AdmittedProviderRegistry((builtin,), (candidate,), packages=packages,
+                                       runtime=object(), home='home',
+                                       bindings={'addon': record.package_hash})
+    catalog = registry.catalog(environ={'UNRELATED_SECRET': 'value'})
+    assert catalog == [builtin.status(environ={'UNRELATED_SECRET': 'value'}),
+                       registry.get('addon').status(environ={'UNRELATED_SECRET': 'value'})]
+    packages.revoked = True
+    assert registry.catalog() == [builtin.status()]

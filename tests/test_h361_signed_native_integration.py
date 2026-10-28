@@ -9,6 +9,7 @@ from agents.core.acquisition.managed_signing import ManagedSigningKeyStore
 from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
 from agents.core.kernel import Decision, Verdict
 from agents.core.llm.backend_factory import construct_backend
+from agents.core.llm.egress import llm_async_client
 from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.providers.admitted_registry import AdmittedProviderRegistry
 from agents.core.llm.providers.candidates import discover_candidates
@@ -52,7 +53,7 @@ def setup(tmp_path, monkeypatch):
                                     authorizer=kernel, enabled=lambda: True,
                                     owner_authorizer=authenticated_test_owner)
     host_profile = ProviderProfile('signed-addon', 'Synthetic addon', 'openai-compatible',
-                                   aliases=('signed-alias',), is_user_defined=True,
+                                   aliases=('signed-alias',), is_user_defined=True, auth_type='bearer',
                                    capabilities=frozenset({'cloud', 'chat'}),
                                    default_base_url='https://synthetic.invalid/v1')
     record = packages.stage(source, profile=host_profile, hooks=hooks, source='user',
@@ -83,7 +84,7 @@ async def test_signed_snapshot_runs_through_real_worker_and_native_adapter(tmp_p
         return httpx.Response(200, json={'choices': [{'message': {'content': 'answer'}}]})
 
     await backend.client.aclose()
-    backend.client = httpx.AsyncClient(transport=httpx.MockTransport(response),
+    backend.client = llm_async_client('signed-addon', transport=httpx.MockTransport(response),
                                       base_url='https://synthetic.invalid/v1')
     try:
         assert await backend.generate('synthetic-model', 'hello') == 'answer'
@@ -107,11 +108,78 @@ async def test_revoke_during_worker_discards_result_before_provider_http(tmp_pat
     runner.before_return = lambda: packages.revoke('signed-addon')
     seen = []
     await backend.client.aclose()
-    backend.client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: seen.append(r)),
+    backend.client = llm_async_client('signed-addon',
+                                      transport=httpx.MockTransport(lambda r: seen.append(r)),
                                       base_url='https://synthetic.invalid/v1')
     try:
         with pytest.raises(ProviderHookRuntimeError, match='not_runnable'):
             await backend.generate('synthetic-model', 'hello')
         assert len(runner.commands) == 1 and seen == []
+    finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_revoke_in_request_hook_refuses_before_physical_transport(tmp_path, monkeypatch):
+    backend, packages, runner, *_ = setup(tmp_path, monkeypatch)
+    seen = []
+
+    async def revoke_before_egress(_request):
+        packages.revoke('signed-addon')
+
+    await backend.client.aclose()
+    backend.client = llm_async_client(
+        'signed-addon', base_url='https://synthetic.invalid/v1',
+        event_hooks={'request': [revoke_before_egress]},
+        transport=httpx.MockTransport(lambda request: (
+            seen.append(request), httpx.Response(200, json={'choices': [{'message': {'content': 'answer'}}]})
+        )[1]),
+    )
+    try:
+        with pytest.raises(ProviderHookRuntimeError, match='not_runnable'):
+            await backend.generate('synthetic-model', 'hello')
+        assert len(runner.commands) == 1 and seen == []
+    finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_each_native_dispatch_rechecks_live_admission(tmp_path, monkeypatch):
+    backend, packages, _runner, *_ = setup(tmp_path, monkeypatch)
+    seen = []
+    await backend.client.aclose()
+    backend.client = llm_async_client(
+        'signed-addon', base_url='https://synthetic.invalid/v1',
+        transport=httpx.MockTransport(lambda request: (
+            seen.append(request), httpx.Response(200, json={'choices': [{'message': {'content': 'answer'}}]})
+        )[1]),
+    )
+    try:
+        assert await backend.generate('synthetic-model', 'first') == 'answer'
+        packages.revoke('signed-addon')
+        with pytest.raises(ProviderHookRuntimeError, match='not_runnable'):
+            await backend.client.post('/chat/completions', json={'model': 'synthetic-model'})
+        assert len(seen) == 1
+    finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('prompt', ['x' * 40_000, '🦉' * 40_000, 'y' * 300_000],
+                         ids=['ascii', 'unicode', 'within-512k-input'])
+async def test_default_signed_worker_accepts_long_and_unicode_prompts(tmp_path, monkeypatch, prompt):
+    backend, _packages, runner, *_ = setup(tmp_path, monkeypatch)
+    seen = []
+    await backend.client.aclose()
+    backend.client = llm_async_client(
+        'signed-addon', base_url='https://synthetic.invalid/v1',
+        transport=httpx.MockTransport(lambda request: (
+            seen.append(json.loads(request.content)),
+            httpx.Response(200, json={'choices': [{'message': {'content': 'answer'}}]})
+        )[1]),
+    )
+    try:
+        assert await backend.generate('synthetic-model', prompt) == 'answer'
+        assert len(runner.commands) == 1 and seen[0]['messages'][1]['content'] == prompt
     finally:
         await backend.client.aclose()

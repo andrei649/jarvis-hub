@@ -1,10 +1,20 @@
 """Permanent owner floor for signed model-provider code admission."""
 import re
+from dataclasses import replace
 
 from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
 from agents.core.automation_contracts import ContractTemplate, field_present, predicate
 
 from . import ProviderProfile
+
+# Provider hooks echo validated message history to the host. Keep their pinned
+# sandbox output bound above the 512 KiB request allowance plus JSON framing;
+# other acquisition sandboxes retain their own 32 KiB default.
+PROVIDER_OUTPUT_BYTES = 896 * 1024
+
+
+def provider_sandbox_profile(profile: AcquisitionSandboxProfile) -> AcquisitionSandboxProfile:
+    return replace(profile, max_output_bytes=max(profile.max_output_bytes, PROVIDER_OUTPUT_BYTES))
 
 
 def _bounded_admission(view, _now):

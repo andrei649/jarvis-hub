@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from agents.core.llm.backend_factory import BackendUnavailable, construct_backend
+from agents.core.llm.egress import llm_async_client
 from agents.core.llm.providers import ProviderProfile, ProviderRegistry
 from agents.core.llm.providers.admitted_profiles import AdmittedProviderProfile
 
@@ -14,6 +15,10 @@ class Runtime:
     def __init__(self, *, mutate=None):
         self.calls = []
         self.mutate = mutate
+        self.send_checks = 0
+
+    async def assert_runnable(self, provider_id, **kwargs):
+        self.send_checks += 1
 
     async def evaluate(self, provider_id, **kwargs):
         self.calls.append((provider_id, kwargs))
@@ -28,7 +33,7 @@ class Runtime:
 
 def profile(runtime, *, kind='openai-compatible', mode='chat_completions'):
     native = ProviderProfile(id='synthetic-addon', display_name='Synthetic',
-                             backend_kind=kind, api_mode=mode,
+                             backend_kind=kind, api_mode=mode, auth_type='bearer',
                              default_base_url='https://synthetic.invalid/v1',
                              capabilities=frozenset({'chat', 'cloud'}))
     record = SimpleNamespace(profile=native, package_hash='a' * 64, home='synthetic-home')
@@ -49,11 +54,12 @@ async def test_native_generation_awaits_hook_batch_and_keeps_credentials_on_host
         return httpx.Response(200, json={'choices': [{'message': {'content': 'answer'}}]})
 
     await backend.client.aclose()
-    backend.client = httpx.AsyncClient(transport=httpx.MockTransport(response),
+    backend.client = llm_async_client('synthetic-addon', transport=httpx.MockTransport(response),
                                       base_url='https://synthetic.invalid/v1')
     try:
         assert await backend.generate('test-model', 'hello') == 'answer'
         assert len(runtime.calls) == 1
+        assert runtime.send_checks == 1
         sent = json.loads(seen[0].content)
         assert sent['plugin_marker'] == 'applied' and sent['max_tokens'] == 7
         assert seen[0].headers['Authorization'] == 'Bearer synthetic-host-key'
@@ -74,10 +80,12 @@ async def test_native_generation_awaits_hook_batch_and_keeps_credentials_on_host
 ])
 async def test_untrusted_worker_cannot_change_owned_wire_or_reasoning(mutate):
     runtime = Runtime(mutate=mutate)
-    backend = construct_backend('synthetic-addon', registry=ProviderRegistry((profile(runtime),)))
+    backend = construct_backend('synthetic-addon', registry=ProviderRegistry((profile(runtime),)),
+                                api_key='synthetic-host-key')
     seen = []
     await backend.client.aclose()
-    backend.client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: seen.append(r)),
+    backend.client = llm_async_client('synthetic-addon',
+                                      transport=httpx.MockTransport(lambda r: seen.append(r)),
                                       base_url='https://synthetic.invalid/v1')
     try:
         with pytest.raises(ValueError):
@@ -127,6 +135,38 @@ def test_existing_positional_profile_fields_keep_their_order():
                               ('low',), None, 'unknown', '', ())
     assert profile.fallback_models == ('m',)
     assert profile.reasoning_efforts == ('low',)
+
+
+def test_admitted_profile_cannot_select_ambient_host_secret(monkeypatch):
+    monkeypatch.setenv('SYNTHETIC_UNRELATED_SECRET', 'unrelated-host-secret')
+    native = ProviderProfile(id='synthetic-addon', display_name='Synthetic',
+                             backend_kind='openai-compatible', auth_type='bearer',
+                             auth_env='SYNTHETIC_UNRELATED_SECRET',
+                             default_base_url='https://synthetic.invalid/v1',
+                             capabilities=frozenset({'chat', 'cloud'}))
+    record = SimpleNamespace(profile=native, package_hash='a' * 64, home='synthetic-home')
+    admitted = AdmittedProviderProfile.from_record(record, Runtime())
+    with pytest.raises(BackendUnavailable):
+        construct_backend('synthetic-addon', registry=ProviderRegistry((admitted,)))
+    assert admitted.status(environ={'SYNTHETIC_UNRELATED_SECRET': 'unrelated-host-secret'})['configured'] is False
+
+
+@pytest.mark.asyncio
+async def test_no_auth_admitted_profile_does_not_read_or_send_ambient_secret(monkeypatch):
+    monkeypatch.setenv('SYNTHETIC_UNRELATED_SECRET', 'unrelated-host-secret')
+    native = ProviderProfile(id='synthetic-addon', display_name='Synthetic',
+                             backend_kind='openai-compatible', auth_type='none',
+                             auth_env='SYNTHETIC_UNRELATED_SECRET',
+                             default_base_url='https://synthetic.invalid/v1',
+                             capabilities=frozenset({'chat', 'cloud'}))
+    record = SimpleNamespace(profile=native, package_hash='a' * 64, home='synthetic-home')
+    admitted = AdmittedProviderProfile.from_record(record, Runtime())
+    backend = construct_backend('synthetic-addon', registry=ProviderRegistry((admitted,)))
+    try:
+        assert backend.api_key == ''
+        assert admitted.status(environ={'SYNTHETIC_UNRELATED_SECRET': 'unrelated-host-secret'})['configured'] is True
+    finally:
+        await backend.aclose()
 
 
 @pytest.mark.asyncio

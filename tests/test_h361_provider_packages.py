@@ -14,6 +14,7 @@ from agents.core.acquisition.managed_signing import ManagedSigningKeyStore
 from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
 from agents.core.kernel import Decision, Verdict
 from agents.core.llm.providers import ProviderProfile
+from agents.core.llm.providers.admission_contract import provider_sandbox_profile
 from agents.core.llm.providers.packages import ProviderPackageError, ProviderPackageStore
 
 
@@ -81,9 +82,11 @@ def test_full_snapshot_owner_approval_and_fresh_restart(tmp_path: Path):
     staged = _stage(store, package)
     assert staged.provider_id == "example"
     assert staged.manifest["runtime_image"] == "python@sha256:" + "a" * 64
-    assert staged.manifest["runtime_config_hash"] == AcquisitionSandboxProfile(
-        image="python@sha256:" + "a" * 64,
+    assert staged.manifest["runtime_config_hash"] == provider_sandbox_profile(
+        AcquisitionSandboxProfile(image="python@sha256:" + "a" * 64)
     ).config_hash
+    assert staged.manifest["sandbox"]["max_output_bytes"] == 896 * 1024
+    assert AcquisitionSandboxProfile(image="python@sha256:" + "a" * 64).max_output_bytes == 32 * 1024
     assert {name for name, _ in staged.members} == {
         "provider.json", "main.py", "assets/prompt.txt", "requirements.lock",
     }

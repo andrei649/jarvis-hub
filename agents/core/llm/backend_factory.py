@@ -142,7 +142,21 @@ def construct_backend(provider_id, *, model="", api_key=None, base_url=None, set
     refusal = protocol_refusal(profile.id, base) if base else ""
     if refusal:
         raise BackendUnavailable(refusal)
-    key = profile.auth_key() if api_key is None else api_key
+    if isinstance(profile, AdmittedProviderProfile):
+        # Signed metadata may name arbitrary environment variables. Admission
+        # never grants a package the right to select a host credential.
+        if auth_pool is not None:
+            raise BackendUnavailable("admitted provider requires an explicit host credential")
+        if profile.auth_type == "none":
+            if api_key not in (None, ""):
+                raise BackendUnavailable("credential supplied to a no-auth provider")
+            key = ""
+        elif type(api_key) is str and api_key.strip():
+            key = api_key
+        else:
+            raise BackendUnavailable("admitted provider requires an explicit host credential")
+    else:
+        key = profile.auth_key() if api_key is None else api_key
     if profile.auth_type not in {"none", "subscription"} and not key and not getattr(auth_pool, "size", 0):
         raise BackendUnavailable("provider credential is not configured")
     try:

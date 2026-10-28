@@ -22,7 +22,7 @@ def _metadata(profile):
     return {item.name: getattr(profile, item.name) for item in fields(ProviderProfile)}
 
 
-def _json(value, maximum=256 * 1024):
+def _json(value, maximum=512 * 1024):
     return json.dumps(_owned_json(value, maximum=maximum), ensure_ascii=False,
                       allow_nan=False, sort_keys=True, separators=(',', ':'))
 
@@ -50,6 +50,15 @@ class AdmittedProviderProfile(ProviderProfile):
 
     def build_api_kwargs_extras(self, **context):
         raise ProfileRequestRefused('admitted hooks require async preparation')
+
+    def status(self, environ=None):
+        # Inventory does not select a credential. In particular, signed
+        # auth_env/env_vars names must not claim an ambient host secret.
+        result = super().status(environ={})
+        configured = self.auth_type == 'none'
+        result['configured'] = configured
+        result['auth']['configured'] = configured
+        return result
 
 
 @dataclass(frozen=True)
@@ -89,7 +98,7 @@ async def prepare_admitted_profile(profile, *, model, messages, reasoning_config
     if not isinstance(profile, AdmittedProviderProfile):
         return profile
     static = ProviderProfile(**_metadata(profile))
-    sanitized = prepare_profile_messages(static, messages)
+    sanitized = prepare_profile_messages(static, messages, maximum=512 * 1024)
     original = _json(sanitized)
     context = {'model': model, 'session_id': session_id,
                'reasoning_config': _owned_json(reasoning_config)}
@@ -98,7 +107,7 @@ async def prepare_admitted_profile(profile, *, model, messages, reasoning_config
         profile.id, package_hash=profile._package_hash, home=profile._home,
         model=model, messages=json.loads(original), reasoning_config=_owned_json(reasoning_config),
         session_id=session_id)
-    result = _owned_json(result, maximum=512 * 1024)
+    result = _owned_json(result, maximum=768 * 1024)
     expected = {'prepared_messages', 'extra_body', 'api_kwargs', 'max_tokens',
                 'reasoning_vocabulary'}
     if (type(result) is not dict or set(result) != expected
@@ -110,8 +119,8 @@ async def prepare_admitted_profile(profile, *, model, messages, reasoning_config
         raise ProfileRequestRefused('isolated profile reasoning declaration changed')
     prepared = _PreparedProfile(**_metadata(static), _model=model,
                                 _messages_json=original, _context_json=frozen_context,
-                                _result_json=_json(result, maximum=512 * 1024))
-    prepare_profile_messages(prepared, sanitized)
+                                _result_json=_json(result, maximum=768 * 1024))
+    prepare_profile_messages(prepared, sanitized, maximum=512 * 1024)
     profile_request_defaults(prepared, model, session_id=session_id,
                              context={'reasoning_config': reasoning_config})
     return prepared
