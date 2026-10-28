@@ -181,8 +181,7 @@ async def test_expired_hud_question_unblocks_without_answer_or_new_model_turn(tm
         orch._pending_input_service().close()
 
 
-@pytest.mark.asyncio
-async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_path, monkeypatch):
+async def _exercise_human_credit(tmp_path, monkeypatch, *, fail_after_reader=False, probe=None):
     from types import SimpleNamespace
 
     import agents.core.native_human_wait as human_wait
@@ -191,6 +190,8 @@ async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_p
     clock = {"now": 1000.0}
     monkeypatch.setattr(human_wait, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
     orch, cap, _answers, stream = await stream_host(tmp_path, monkeypatch, choices=["Local", "Remote"])
+    runtime = orch._pending_input_service()
+    following = None
     try:
         await event(stream)
         question = await event(stream)
@@ -201,10 +202,14 @@ async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_p
         # timeout under a loaded suite. Hold the next frame without timing out
         # while the human wait is intentional, then bound its consumption below.
         following = asyncio.create_task(anext(stream))
+        if probe is not None:
+            probe.update(reader=following, runtime=runtime)
         for _ in range(20):
-            if orch._pending_input_service()._delivered:
+            if runtime._delivered:
                 break
             await asyncio.sleep(0)
+        if fail_after_reader:
+            raise AssertionError("forced early credit failure")
         clock["now"] += 5
         assert cap["credit"].seconds() == 5
         assert question["id"] in orch._pending_input_service()._delivered
@@ -220,8 +225,28 @@ async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_p
         assert json.loads(frame.removeprefix("data: ").strip())["type"] == "token"
         await event(stream)
     finally:
-        await stream.aclose()
-        orch._pending_input_service().close()
+        if following is not None:
+            if not following.done():
+                following.cancel()
+            await asyncio.gather(following, return_exceptions=True)
+        try:
+            await stream.aclose()
+        finally:
+            runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_path, monkeypatch):
+    await _exercise_human_credit(tmp_path, monkeypatch)
+
+
+@pytest.mark.asyncio
+async def test_human_credit_early_failure_drains_reader_and_retires_prompt(tmp_path, monkeypatch):
+    probe = {}
+    with pytest.raises(AssertionError, match="forced early credit failure"):
+        await _exercise_human_credit(tmp_path, monkeypatch, fail_after_reader=True, probe=probe)
+    assert probe["reader"].done()
+    assert not probe["runtime"].inputs._active
 
 
 @pytest.mark.asyncio

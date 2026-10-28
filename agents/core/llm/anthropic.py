@@ -17,6 +17,7 @@ from .egress import llm_async_client
 from .model_config import DEFAULT_CLAUDE_MODEL
 from .provider_errors import note_provider_failure
 from .provider_request import (
+    ProfileRequestRefused,
     apply_profile_request,
     prepare_profile_messages,
     profile_headers,
@@ -62,7 +63,7 @@ _BUILTIN_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image
 
 
 def _builtin_tool_history_limit(messages: list[dict]) -> int:
-    """Count only bounded tool-result image bytes above the normal text limit.
+    """Validate tool-result images and count their bytes above the text limit.
 
     Signed profiles still use their isolated worker/request bounds. The ordinary
     built-in image path can carry up to 20 MB of base64, and the JSON ownership
@@ -72,27 +73,32 @@ def _builtin_tool_history_limit(messages: list[dict]) -> int:
     for row in messages:
         if type(row) is not dict or row.get("role") != "tool":
             continue
-        images = row.get("images")
-        if type(images) is not list:
+        if "images" not in row:
             continue
+        images = row["images"]
+        if type(images) is not list:
+            raise ProfileRequestRefused("invalid tool image")
         for image in images:
             if (type(image) is not dict or set(image) != {"media_type", "data"}
-                    or image.get("media_type") not in _BUILTIN_IMAGE_TYPES
+                    or type(image.get("media_type")) is not str
+                    or image["media_type"] not in _BUILTIN_IMAGE_TYPES
                     or type(image.get("data")) is not str):
-                continue
+                raise ProfileRequestRefused("invalid tool image")
+            count += 1
+            if count > _BUILTIN_REQUEST_IMAGES:
+                raise ProfileRequestRefused("too many tool images")
             size = len(image["data"])
             if size > MAX_IMAGE_B64_CHARS:
-                continue
+                raise ProfileRequestRefused("tool image too large")
             try:
                 raw = base64.b64decode(image["data"].encode("ascii"), validate=True)
             except (binascii.Error, UnicodeError, ValueError):
-                continue
+                raise ProfileRequestRefused("invalid tool image") from None
             if not image_signature_ok(raw, image["media_type"]):
-                continue
-            count += 1
+                raise ProfileRequestRefused("invalid tool image")
             total += size
-            if count > _BUILTIN_REQUEST_IMAGES or total > _BUILTIN_REQUEST_IMAGE_B64_CHARS:
-                return _TOOL_HISTORY_TEXT_BYTES
+            if total > _BUILTIN_REQUEST_IMAGE_B64_CHARS:
+                raise ProfileRequestRefused("tool images too large")
     return _TOOL_HISTORY_TEXT_BYTES + total
 
 

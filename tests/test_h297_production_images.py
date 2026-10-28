@@ -403,8 +403,31 @@ async def test_builtin_tool_image_history_is_owned_without_widening_text_only_hi
                                     [], 64, 0.0)
     malformed = [{"role": "tool", "content": "shot.png",
                   "images": [{"media_type": "image/png", "data": "not-base64" * 40_000}]}]
-    with pytest.raises(ProfileRequestRefused, match="declaration too large"):
+    with pytest.raises(ProfileRequestRefused, match="invalid tool image"):
         await backend._tool_payload(MODEL, malformed, [], 64, 0.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("image_data", [
+    "not-base64",
+    base64.b64encode(b"not a PNG image").decode("ascii"),
+])
+async def test_builtin_tool_payload_refuses_short_invalid_images(image_data):
+    rows = [{"role": "tool", "content": "shot.png", "images": [
+        {"media_type": "image/png", "data": image_data}]}]
+    backend = ClaudeBackend("synthetic-key", model=MODEL)
+    with pytest.raises(ProfileRequestRefused, match="invalid tool image"):
+        await backend._tool_payload(MODEL, rows, [], 64, 0.0)
+
+
+@pytest.mark.asyncio
+async def test_builtin_tool_payload_refuses_ninth_small_image():
+    tiny_png = base64.b64encode(_png(1, 1)).decode("ascii")
+    rows = [{"role": "tool", "content": "nine shots", "images": [
+        {"media_type": "image/png", "data": tiny_png} for _ in range(9)]}]
+    backend = ClaudeBackend("synthetic-key", model=MODEL)
+    with pytest.raises(ProfileRequestRefused, match="too many tool images"):
+        await backend._tool_payload(MODEL, rows, [], 64, 0.0)
 
 
 @pytest.mark.asyncio
