@@ -23,7 +23,7 @@ def root(tmp_path, monkeypatch):
     base = tmp_path / "work"
     base.mkdir()
     (base / "app.py").write_text("".join(f"line {i}\n" for i in range(1, 11)), encoding="utf-8")
-    (base / "notes.md").write_text("# Notes\nremember the milk\n", encoding="utf-8")
+    (base / "notes.md").write_text("# Notes\nremember the milk\n", encoding="utf-8", newline="")
     (base / "src").mkdir()
     (base / "src" / "main.py").write_text("print('hi')\n", encoding="utf-8")
     (base / "src" / "setup.cfg").write_text("[x]\n", encoding="utf-8")

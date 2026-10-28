@@ -43,9 +43,9 @@ class _Audit:
 def workspace(tmp_path):
     root = tmp_path / "workspace"
     root.mkdir()
-    (root / "notes.txt").write_text("Alpha budget\nthe Budget line\nbudgetary\n", encoding="utf-8")
+    (root / "notes.txt").write_text("Alpha budget\nthe Budget line\nbudgetary\n", encoding="utf-8", newline="")
     (root / "sub").mkdir()
-    (root / "sub" / "plan.md").write_text("# Plan\nbudget: 10\n", encoding="utf-8")
+    (root / "sub" / "plan.md").write_text("# Plan\nbudget: 10\n", encoding="utf-8", newline="")
     (root / ".env").write_text("BUDGET=secret\n", encoding="utf-8")
     (root / "api_key.txt").write_text("budget key\n", encoding="utf-8")
     (root / "blob.bin").write_bytes(b"budget\x00\x01\x02")
