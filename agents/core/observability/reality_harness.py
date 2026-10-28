@@ -640,7 +640,35 @@ ACTION_CAPABILITY_CASES: list[RealityCase] = [
         _make_action_kernel_probe(manifest),
     )
     for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items())
+    if kind != "provider.credential"
 ]
+
+
+async def _probe_provider_credential_unbound_queues() -> bool:
+    """The owner service owns this action; a payload has no usable receipt."""
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import Action, Verdict, authorize
+
+    action = Action(kind="provider.credential", agent="jarvis", scope="provider:synthetic",
+                    payload={
+                        "schema": "provider-credential-v1", "authority": "local-owner-v1",
+                        "home": "synthetic-home", "provider_id": "synthetic",
+                        "source": "user", "artifact_id": "a" * 32,
+                        "package_hash": "b" * 64, "endpoint": "https://synthetic.invalid/v1",
+                        "auth_type": "bearer", "operation": "write",
+                        "current_generation": 0, "risk_tier": 3, "irreversible": True,
+                    })
+    decision = authorize(action, policy=AutonomyPolicy(mode="auto"),
+                         approval_check=lambda _: True)
+    return decision.verdict is Verdict.QUEUE and decision.tier == 3
+
+
+CREDENTIAL_ACTION_CASES: list[RealityCase] = [RealityCase(
+    "action:provider.credential", action_case_name("provider.credential"),
+    "a fabricated credential Action without the live owner-service receipt remains queued",
+    _probe_provider_credential_unbound_queues,
+    metadata={"promotable": False},
+)]
 
 MEDIA_CAPABILITY_CASES: list[RealityCase] = [
     RealityCase(
@@ -833,6 +861,7 @@ CASES: list[RealityCase] = [
         _probe_capability_token_gates_kernel,
     ),
     *ACTION_CAPABILITY_CASES,
+    *CREDENTIAL_ACTION_CASES,
     *MEDIA_CAPABILITY_CASES,
     *H30_HOUSE_REALITY_CASES,
     *H30_HOUSE_LIVE_CASES,

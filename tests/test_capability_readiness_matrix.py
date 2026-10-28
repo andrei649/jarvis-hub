@@ -71,7 +71,7 @@ INTENTIONALLY_SEAM: set[str] = {
 }
 # WIRED capabilities with no matching executable reality case. H27.5 reconciled the
 # complete boot snapshot, so this escape set is intentionally empty. Kept honest below.
-PENDING_VERIFY: set[str] = set()
+PENDING_VERIFY: set[str] = {"action:provider.credential"}
 
 
 @lru_cache(maxsize=1)
