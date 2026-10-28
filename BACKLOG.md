@@ -257,7 +257,7 @@
   - In a shared `business/` target, a foreign file whose name starts with `workspace.db-` or
     `secrets.enc.` matches `db.own_entry` and is tightened to 0600 (narrow the sibling patterns to
     the exact `-wal`/`-shm`/`-journal` and the secret store's own temp names).
-  Remaining (recounted 2026-10-26): all five bullets stand — `ws-run-meta__wide` is not applied to the visibility badge, `backup.py:875/1785` still prints `is not empty` for a dangling symlink, and `db.own_entry` (`db.py:381-383`) still matches by prefix `workspace.db-` / `secrets.enc.`.
+  Remaining (2026-10-28, lean/nws-23-residual-minors): the first three (frontend) bullets are fixed — icon-only run button + tighter cells for 768–1180 px (needs a real-browser look), `ws-run-meta__wide` on the visibility badge, and the outcome of a run already failed on arrival is announced when reached from "Rulează acum"/"Rulează din nou". Still open: the `backup.py` dangling-symlink wording and the `db.own_entry` sibling patterns. Earlier recount (2026-10-26): all five bullets stand — `ws-run-meta__wide` is not applied to the visibility badge, `backup.py:875/1785` still prints `is not empty` for a dangling symlink, and `db.own_entry` (`db.py:381-383`) still matches by prefix `workspace.db-` / `secrets.enc.`.
 - [ ] ⬜ **NWS-13 — synchronous SQLite work off the event loop.** Uploads, chat and report routes run short
   `BEGIN IMMEDIATE` transactions (5 s busy timeout) and FTS queries inside async handlers, so heavy write
   contention can stall the loop for up to 5 s. Decide it workspace-wide: a thread offload or an async driver.

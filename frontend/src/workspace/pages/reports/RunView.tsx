@@ -35,7 +35,7 @@ import { RUN_STATUS } from '../shared/labels';
 import { SourceDrawer } from '../shared/SourceDrawer';
 import { useApprovalReadiness } from '../shared/useApprovalReadiness';
 import { isDeliveryPending, isRunActive, runDurationMs } from './schedule';
-import { startRun } from './startRun';
+import { consumeStartedRun, startRun } from './startRun';
 
 export const RUN_POLL_MS = 2000;
 
@@ -59,7 +59,7 @@ function RunMeta({ run }: { run: ReportRunDetail }) {
       {run.locality && <><dt className="ws-run-meta__wide">{t('run.field.where')}</dt><dd className="ws-run-meta__wide"><LocalityChip locality={run.locality} /></dd></>}
       {isAdmin && run.model && <><dt>{t('run.field.model')}</dt><dd className="ws-mono">{run.model}</dd></>}
       {run.delivered_to && run.delivered_to.length > 0 && <><dt>{t('run.field.deliveredTo')}</dt><dd>{run.delivered_to.join(', ')}</dd></>}
-      {run.shared_company ? <><dt>{t('run.field.visibility')}</dt><dd><Badge tone="accent">{t('run.shared')}</Badge></dd></> : null}
+      {run.shared_company ? <><dt className="ws-run-meta__wide">{t('run.field.visibility')}</dt><dd className="ws-run-meta__wide"><Badge tone="accent">{t('run.shared')}</Badge></dd></> : null}
     </dl>
   );
 }
@@ -141,6 +141,8 @@ export function RunView({ runId, shared = false }: { runId: number; shared?: boo
     const previous = lastPhase.current;
     lastPhase.current = phase;
     if (previous === phase) return;
+    // The mark is spent on the first state this page sees, whatever it is, so it never outlives it.
+    const fromStart = previous === null && consumeStartedRun(data.id);
     if (phase === 'active') {
       if (previous === null) setAnnouncement(t(data.status === 'queued' ? 'run.live.queued' : 'run.live.running'));
       return;
@@ -149,11 +151,13 @@ export function RunView({ runId, shared = false }: { runId: number; shared?: boo
       setAnnouncement(t('run.live.sending'));
       return;
     }
-    // Opened on a finished run: the page itself says everything, nothing changed to announce.
-    if (previous === null) return;
+    // Opened on a finished run: the page itself says everything, nothing changed to announce,
+    // unless the person has just pressed "Run now" / "Run again": a run that fails in
+    // milliseconds is already over when the page opens, so its outcome is spoken (NWS-23).
+    if (previous === null && !fromStart) return;
     const said: string[] = [];
     if (data.status === 'failed') said.push(t('run.live.failed', { reason: failureText }));
-    else if (previous === 'active') said.push(t('run.live.done'));
+    else if (previous === 'active' || fromStart) said.push(t('run.live.done'));
     if (deliveryFailed) said.push(t(deliveryUnknown ? 'run.live.deliveryUnknown' : 'run.live.deliveryFailed', { reason: deliveryText }));
     else if (data.status === 'succeeded' && data.delivered_to.length > 0) said.push(t('run.live.sent', { recipients: data.delivered_to.join(', ') }));
     if (said.length > 0) setAnnouncement(said.join(' '));
