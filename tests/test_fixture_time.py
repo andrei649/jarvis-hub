@@ -29,12 +29,12 @@ def test_owned_tree_ages_when_no_follow_utime_is_unavailable(tmp_path, monkeypat
     fixture_time.age_tree(tmp_path, 2)
 
     assert set(stamped) == {tmp_path, nested, leaf}
-    assert all(p.stat().st_mtime == pytest.approx(1_700_000_000 - 7200) for p in stamped)
+    assert all(p.stat().st_mtime == pytest.approx(1_700_000_000 - 7200, rel=0, abs=1e-6) for p in stamped)
     assert leaf.read_bytes() == b"fixture"
 
 
 @pytest.mark.parametrize("at_root,reparse", [(True, False), (True, True), (False, False), (False, True)])
-def test_link_or_reparse_fixture_entries_are_never_stamped_or_traversed(tmp_path, monkeypatch, at_root, reparse):
+def test_link_or_reparse_targets_are_never_stamped_or_traversed(tmp_path, monkeypatch, at_root, reparse):
     (tmp_path / "owned").write_bytes(b"owned")
     blocked = tmp_path / "blocked"
     blocked.mkdir()
