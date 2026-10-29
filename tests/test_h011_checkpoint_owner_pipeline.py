@@ -172,11 +172,11 @@ async def test_revocation_between_approval_and_tick_never_restores_or_rewinds(pi
 
 
 @pytest.mark.asyncio
-async def test_maintenance_requires_real_human_task_and_preserves_files_chat_and_shared_blobs(pipeline):
+async def test_maintenance_requires_real_human_task_and_preserves_files_chat_while_collecting_owned_blobs(pipeline):
     orch, root, snapshots, sid = pipeline
     note, identifier = await checkpoint(root, snapshots, group=True)
-    # Index-only maintenance continues to retain payloads until its approved GC
-    # lane is implemented. A terminal group now writes in the owned namespace.
+    # A terminal group writes in the owned namespace; only approved clear may
+    # collect its now-unreferenced payloads.
     blob_dir = snapshots.directory / "checkpoint_payloads-v1" / "blobs"
     blobs = {p.name: p.read_bytes() for p in blob_dir.iterdir()}
     before = await orch.memory.get_history(sid)
@@ -188,7 +188,46 @@ async def test_maintenance_requires_real_human_task_and_preserves_files_chat_and
     assert result["status"] == "ok", result
     assert result["filesystem"]["removed"] == [identifier]
     assert note.read_text() == "after" and await orch.memory.get_history(sid) == before
-    assert {p.name: p.read_bytes() for p in blob_dir.iterdir()} == blobs
+    assert set(result["filesystem"]["removed_assets"]["blobs"]) == set(blobs)
+    assert list(blob_dir.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_retention_policy_is_bound_through_real_owner_approval(pipeline):
+    orch, root, snapshots, _sid = pipeline
+    _first_note, first_id = await checkpoint(root, snapshots, name="first.txt")
+    _second_note, second_id = await checkpoint(root, snapshots, name="second.txt")
+    task_id = await request(orch, "/checkpoints prune --keep-last 1 --execute")
+    task = orch.autonomy_queue.get(task_id)
+    assert task.payload["preview"]["keep_last"] == 1
+    assert task.payload["preview"]["candidates"] == [first_id]
+    await orch.autonomy.apply_decision(task_id, "accept", "user")
+    await orch.autonomy.tick()
+    result = orch.autonomy_queue.get(task_id).result
+    assert result["status"] == "ok" and result["filesystem"]["removed"] == [first_id]
+    remaining = FileCheckpointHistory(snapshots, FileScope([root])).list_entries()
+    assert ["file:" + str(row["id"]) for row in remaining] == [second_id]
+
+
+@pytest.mark.asyncio
+async def test_approved_post_row_gc_failure_keeps_outer_operation_uncertain(pipeline, monkeypatch):
+    from agents.core.checkpoint_operations import CheckpointOperationStore
+    from agents.core.checkpoint_payloads import CheckpointPayloadStore, PayloadRefusal
+
+    orch, root, snapshots, _sid = pipeline
+    _note, _identifier = await checkpoint(root, snapshots)
+    task_id = await request(orch, "/checkpoints clear --execute")
+    request_id = orch.autonomy_queue.get(task_id).payload["request_id"]
+
+    def fail_owned_gc(self, expected, *, records, blobs, current_check):
+        raise PayloadRefusal("synthetic_gc_failure")
+
+    monkeypatch.setattr(CheckpointPayloadStore, "collect_unreferenced", fail_owned_gc)
+    await orch.autonomy.apply_decision(task_id, "accept", "user")
+    await orch.autonomy.tick()
+    result = orch.autonomy_queue.get(task_id).result
+    assert result["status"] == "partial" and result["filesystem"]["journal_state"] == "uncertain"
+    assert CheckpointOperationStore(snapshots).get(request_id)["state"] == "uncertain"
 
 
 @pytest.mark.asyncio

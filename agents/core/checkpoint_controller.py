@@ -87,6 +87,8 @@ class CheckpointController:
             return _refused("invalid_action")
         if type(query.get("force")) is not bool:
             return _refused("invalid_force")
+        if query["action"] != "restore" and query["force"]:
+            return _refused("invalid_force")
         sid = getattr(self.orch, "session_id", None)
         if type(sid) is not str or not sid or len(sid) > 512:
             return _refused("session_unavailable")
@@ -127,17 +129,23 @@ class CheckpointController:
                     plan = await asyncio.to_thread(
                         CheckpointInventory(snapshots, scope).maintenance_preview, principal,
                         query["action"], project=query.get("project"), limit=500,
-                        keep_orphans=not query["force"])
+                        include_orphans=query.get("include_orphans", False),
+                        keep_last=query.get("keep_last"), max_bytes=query.get("max_bytes"))
                     if (plan.get("ok") is not True or plan.get("complete") is not True
                             or plan.get("truncated") is not False):
                         return _refused("maintenance_preview_incomplete")
                     intent.update(generation=plan["generation"],
                                   candidates=[row["id"] for row in plan["candidates"]],
-                                  keep_orphans=not query["force"])
+                                  include_orphans=query.get("include_orphans", False),
+                                  keep_last=query.get("keep_last"), max_bytes=query.get("max_bytes"))
                     tier, kind = 3, "checkpoint.maintenance"
                     preview = {"action": query["action"], "generation": intent["generation"],
                                "candidates": intent["candidates"],
-                               "keep_orphans": intent["keep_orphans"], "retained_shared_data": True}
+                               "include_orphans": intent["include_orphans"],
+                               "keep_last": intent["keep_last"], "max_bytes": intent["max_bytes"],
+                               "owned_gc": plan["owned_gc"],
+                               "protected_rows": plan["protected_rows"],
+                               "retained_shared_data": True}
                 if self._runtime() != (worker, queue):
                     return _refused("approval_executor_changed")
                 intent.update(kind=kind, risk_tier=tier, preview=preview)
@@ -331,10 +339,16 @@ class CheckpointController:
                         CheckpointMaintenance(snapshots, scope).apply, _OWNER, action=intent["action"],
                         project=intent["project"], generation=intent["generation"],
                         candidates=intent["candidates"], operation_key=operation_key,
-                        keep_orphans=intent["keep_orphans"], authority_check=effect_current)
+                        include_orphans=intent["include_orphans"],
+                        keep_last=intent["keep_last"], max_bytes=intent["max_bytes"],
+                        authority_check=effect_current)
                     result = {"ok": filesystem.get("ok") is True,
                               "status": "ok" if filesystem.get("ok") is True else "partial",
                               "filesystem": filesystem}
+                    if filesystem.get("ok") is not True:
+                        await asyncio.to_thread(journal.mark_uncertain, record["request_id"],
+                                                task_id=task.id, intent_sha=record["intent_sha"])
+                        return result
                 finished = await asyncio.to_thread(journal.finish, record["request_id"],
                                                     task_id=task.id, intent_sha=record["intent_sha"],
                                                     result=result)

@@ -14,7 +14,7 @@ import os
 import secrets
 import stat
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from .file_checkpoint_history import HISTORY_SUPPORTED, MAX_CAPTURE_BYTES, _locked
@@ -512,3 +512,76 @@ class CheckpointPayloadStore:
                                  "records": _fingerprint(os.fstat(records_dir)),
                                  "blobs": _fingerprint(os.fstat(blobs_dir)),
                                  "marker": _fingerprint(marker[1])}}
+
+    def collect_unreferenced(self, expected: dict, *, records: list[str],
+                             blobs: list[str], current_check: Callable[[], bool]) -> dict:
+        """Effect primitive: remove only previewed, verified owned assets under the caller's history lock.
+
+        The caller must already have committed exact index-row removal. An
+        exception after that point is uncertain and must never be replayed.
+        """
+        if (type(expected) is not dict or expected.get("complete") is not True
+                or type(records) is not list or type(blobs) is not list
+                or len(records) + len(blobs) > MAX_INVENTORY_ASSETS
+                or any(not _ref(item) for item in [*records, *blobs])
+                or len(set(records)) != len(records) or len(set(blobs)) != len(blobs)
+                or not callable(current_check)):
+            raise PayloadRefusal("invalid_collection_plan")
+        current = self.inventory()
+        # The claimed history/operation journal can update the generic root's
+        # directory timestamp without changing the opened root identity.
+        generic_now = current.get("identity", {}).get("generic")
+        generic_expected = expected.get("identity", {}).get("generic")
+        if generic_expected is not None:
+            if (generic_now is None or
+                    (generic_now.get("dev"), generic_now.get("ino")) !=
+                    (generic_expected.get("dev"), generic_expected.get("ino"))):
+                raise PayloadRefusal("directory_changed")
+            current["identity"]["generic"] = generic_expected
+        if current != expected:
+            raise PayloadRefusal("inventory_changed")
+        if (any(ref not in expected["records"] for ref in records)
+                or any(sha not in expected["blobs"] for sha in blobs)):
+            raise PayloadRefusal("asset_not_previewed")
+        removed = {"records": [], "blobs": [], "bytes": 0}
+        if not records and not blobs:
+            return removed
+        with self._read() as handles:
+            if handles is None:
+                raise PayloadRefusal("inventory_changed")
+            _generic, _namespace, record_dir, blob_dir = handles
+            pending_records = set(expected["records"])
+            pending_blobs = set(expected["blobs"])
+            for kind, names, parent, pending, rows in (
+                ("records", records, record_dir, pending_records, expected["records"]),
+                ("blobs", blobs, blob_dir, pending_blobs, expected["blobs"]),
+            ):
+                for ref in names:
+                    if not current_check():
+                        raise PayloadRefusal("authority_changed")
+                    self._check_paths()
+                    present = set(os.listdir(parent))
+                    expected_names = {item + (".json" if kind == "records" else "")
+                                      for item in pending}
+                    if present != expected_names:
+                        raise PayloadRefusal("inventory_changed")
+                    name = ref + (".json" if kind == "records" else "")
+                    found = _read_file(parent, name, cap=MAX_METADATA_BYTES if kind == "records"
+                                       else MAX_CAPTURE_BYTES)
+                    if found is None or _fingerprint(found[1]) != rows[ref]["fingerprint"]:
+                        raise PayloadRefusal("asset_changed")
+                    if kind == "records":
+                        self._record(found[0], ref)
+                    elif _sha(found[0]) != ref:
+                        raise PayloadRefusal("blob_invalid")
+                    if not current_check():
+                        raise PayloadRefusal("authority_changed")
+                    named = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                    if _fingerprint(named) != rows[ref]["fingerprint"]:
+                        raise PayloadRefusal("asset_changed")
+                    os.unlink(name, dir_fd=parent)
+                    os.fsync(parent)
+                    pending.remove(ref)
+                    removed[kind].append(ref)
+                    removed["bytes"] += rows[ref]["physical_size"]
+        return removed
