@@ -1,11 +1,13 @@
 """Native dialog supervision keeps frame evidence separate from page text."""
 from __future__ import annotations
 
+import asyncio
+import contextvars
 from types import SimpleNamespace
 
 import pytest
 
-from agents.core.browser_dialogs import DialogFrameObserver
+from agents.core.browser_dialogs import DialogFrameObserver, run_with_dialog_supervisor
 from agents.core.browser_playwright import PlaywrightBrowserDriver
 
 
@@ -94,3 +96,43 @@ async def test_driver_installs_internal_cdp_and_playwright_observers_before_oper
     await driver.stop_dialog_observer()
     assert cdp.detached is True
     assert 'dialog' not in page.handlers
+
+
+@pytest.mark.asyncio
+async def test_opening_stays_in_parent_task_and_empty_context_child_unblocks_it():
+    step_permit = contextvars.ContextVar('step_permit', default=None)
+    token = step_permit.set('parent-only')
+    parent = asyncio.current_task()
+    opening_started = asyncio.Event()
+    release = asyncio.Event()
+    page = object()
+    observer = DialogFrameObserver(page=page)
+    observer.arm(root_frame_id='main', loader_id='load',
+                 frame_url='http://fixture.browser.test/page', document_epoch=0)
+
+    async def opening():
+        assert asyncio.current_task() is parent
+        assert step_permit.get() == 'parent-only'
+        opening_started.set()
+        await release.wait()
+        return 'opened'
+
+    async def respond(pending):
+        assert asyncio.current_task() is not parent
+        assert step_permit.get() is None
+        assert pending.kind == 'alert'
+        release.set()
+
+    try:
+        call = asyncio.create_task(run_with_dialog_supervisor(opening, observer, respond),
+                                   context=contextvars.copy_context())
+        # The created call is the true opener task; never hand its receipt to a child.
+        parent = call
+        await asyncio.wait_for(opening_started.wait(), 1)
+        dialog = SimpleNamespace(page=page, type='alert', message='hi', default_value='')
+        observer.on_cdp_open({'frameId': 'main', 'url': 'http://fixture.browser.test/page',
+                              'type': 'alert', 'message': 'hi'})
+        observer.on_playwright_dialog(dialog)
+        assert await asyncio.wait_for(call, 1) == 'opened'
+    finally:
+        step_permit.reset(token)

@@ -1,11 +1,18 @@
 """Ephemeral native-dialog evidence; it confers no actuation authority."""
 from __future__ import annotations
 
+import asyncio
+import contextvars
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from urllib.parse import urldefrag
 
 _TYPES = frozenset({'alert', 'confirm', 'prompt', 'beforeunload'})
 _TEXT_LIMIT = 1024
+
+
+class DialogObservationRefused(ValueError):
+    """A bounded native dialog could not be attributed to the armed main frame."""
 
 
 @dataclass(frozen=True)
@@ -37,6 +44,7 @@ class DialogFrameObserver:
         self._cdp: tuple[str, str, str] | None = None
         self._playwright: object | None = None
         self._paired: ObservedDialog | None = None
+        self.ready = asyncio.Event()
 
     def arm(self, *, root_frame_id: str, loader_id: str,
             frame_url: str, document_epoch: int) -> None:
@@ -53,6 +61,7 @@ class DialogFrameObserver:
         self._playwright = None
         self._paired = None
         self._armed = True
+        self.ready.clear()
 
     def refuse(self, reason: str = 'dialog_frame_unknown') -> None:
         self.refused_reason = reason
@@ -60,6 +69,7 @@ class DialogFrameObserver:
         self._cdp = None
         self._playwright = None
         self._paired = None
+        self.ready.set()
 
     def invalidate(self) -> None:
         self.refuse('dialog_document_changed')
@@ -113,6 +123,42 @@ class DialogFrameObserver:
             dialog, self.root_frame_id, self.loader_id, self.document_epoch,
             dialog.type, dialog.message, dialog.default_value,
         )
+        self.ready.set()
 
     def pending(self) -> ObservedDialog | None:
         return self._paired if self._armed and not self.refused_reason else None
+
+
+async def run_with_dialog_supervisor[T](
+    opening: Callable[[], Awaitable[T]], observer: DialogFrameObserver,
+    respond: Callable[[ObservedDialog], Awaitable[None]],
+) -> T:
+    """Await the opening call in its original task and join an inert child.
+
+    Parent completion is signalled inside the TaskGroup body, before joining
+    its child; the child never waits for ``parent_task.done()``.
+    """
+    opening_complete = asyncio.Event()
+
+    async def supervise() -> None:
+        dialog_wait = asyncio.create_task(observer.ready.wait())
+        done_wait = asyncio.create_task(opening_complete.wait())
+        try:
+            await asyncio.wait({dialog_wait, done_wait}, return_when=asyncio.FIRST_COMPLETED)
+            pending = observer.pending()
+            if pending is not None:
+                await respond(pending)
+            elif observer.refused_reason:
+                raise DialogObservationRefused(observer.refused_reason)
+        finally:
+            dialog_wait.cancel()
+            done_wait.cancel()
+            await asyncio.gather(dialog_wait, done_wait, return_exceptions=True)
+
+    async with asyncio.TaskGroup() as group:
+        group.create_task(supervise(), context=contextvars.Context())
+        try:
+            result = await opening()
+        finally:
+            opening_complete.set()
+    return result
