@@ -123,6 +123,14 @@ Prereq: working LLM backend.
   optional field. Check a long model/title at 390×600, 390×900 and 1280×900: text wraps,
   the status area scrolls to its final row, and the composer remains usable. Local synthetic
   compiled checks cover those six layouts; this unchecked row remains the live-Hub/device check.
+- [ ] **Checkpoint retention and owned storage (H011)** — On a disposable project, use
+  `python -m agents.cli.nerva checkpoints status`, then `checkpoints prune --project ROOT
+  --keep-last 2 --max-bytes BYTES --dry-run`. Check the disclosed logical-byte basis,
+  protected/incomplete rows, shared owned assets and unknown totals. `--include-orphans`
+  is explicit; legacy maintenance `--force` changes no selection or authority. Execute
+  only the exact owner-approved preview; each further clear batch needs fresh approval.
+  Verify generic snapshots survive and repeated uncertain operations cannot replay.
+  `clear-legacy` reports no recognized format; native Windows H011 remains unsupported.
 
 ---
 

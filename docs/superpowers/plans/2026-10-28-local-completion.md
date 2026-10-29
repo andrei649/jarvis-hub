@@ -334,3 +334,16 @@ Task37 native-dialog design now preserves exact opening-task authority and uses 
 separate response-task/Kernel scope, with actual Chrome frame-ID probes; implementation
 must retain the frozen model-facing dialog tool requirement. H011 Windows remains a
 separate native-adapter plan with unresolved native proof boundaries.
+
+Task42 through a8d50d0d is integrated after the security/spec reviews and three scoped
+repair rounds; all13 source/test files match the reviewed candidate exactly. Canonical
+H011/CLI/binding/client coverage passes683 cases. Task47's five-file repair3ca8f3cb is
+independently approved and integrated with exact byte identity: one immutable raw
+backend window snapshot feeds H686 without another metadata read, while accepted
+clock accounting tolerates optional synthetic IDs without widening CAS publication.
+The combined47-module regression passes1266 cases with no failures/errors/skips;
+all4 exact4436075e failures and all14 ae618ee8 failures pass in this union. This does
+not replace the failed complete4436075e result. No frontend source or HTTP route was
+changed in this batch; frontend2703 and mobile359 remain the prior verified/reused
+counts respectively. Root owns fresh backend collection,200 semantic/citation claim
+updates, publication to the same draft and the next clean serial complete milestone.
