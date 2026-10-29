@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "kind": "h011-windows-read-primitives-native-ci",
+  "head": "b5134e9a3ce925699a3b3351caca85737f137744",
+  "job_url": "https://github.com/andrei649/jarvis-hub/actions/runs/40856875302/job/123389933746",
+  "run_id": 40856875302,
+  "job_id": 123389933746,
+  "platform": "Windows-2025Server-10.0.26100-SP0",
+  "python": "3.12.10 x64",
+  "filesystem": "NTFS",
+  "volume_flags": 65482495,
+  "command": "python -m pytest tests/test_h011_windows_native_fs.py -v --tb=short -s --junitxml=h011-native-junit.xml",
+  "counts": {
+    "tests": 40,
+    "passed": 40,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 6.38,
+    "native_cases": 6,
+    "fake_or_typed_cases": 34
+  },
+  "zero_skip_junit_gate": "passed",
+  "ruff": "passed",
+  "finished_at": "2026-10-29T10:22:08.3149783Z",
+  "source_sha256": {
+    "agents/core/checkpoint_windows_fs.py": "67459801a2b8992d316c2f518658b3589a6c17234d6fca941ef887e9116995b9",
+    "tests/test_h011_windows_native_fs.py": "db2bfcf1ae00945e752a8b04ce150fe24a223e6ca87b1ba0b832f6fcb6eb318e",
+    ".github/workflows/h011-windows-native.yml": "489257211232037ef73c77ffdfce86e71728c313aae17976bc8ca8cb3d463f11"
+  },
+  "scope": "Isolated native read/identity/reparse/ACL primitives only, using disposable synthetic NTFS trees; no production history/FileTools/GC wiring or Windows support-gate enablement.",
+  "warning": "One pytest-socket warning records a blocked outbound connection attempt; this receipt does not assert zero attempted egress.",
+  "remaining": [
+    "Windows private-store creation/locking/SQLite native parity",
+    "owned payload capture and schema integration",
+    "single-file effects and restore/rollback",
+    "groups/retention/maintenance/GC native acceptance",
+    "production wiring and final support gate"
+  ]
+}

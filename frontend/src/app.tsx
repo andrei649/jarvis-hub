@@ -444,6 +444,8 @@ function App({ floating = false, shortcuts, onWorld }: {
         // No-op unless a voice turn opened a session (typed turns stay silent).
         try { if(source==='voice')voiceRef.current?.pushSpeakDelta(evt.text || ''); } catch { /* never break the stream over TTS */ }
         updateBubble(message=>({...message,text:streamed}));
+      } else if (evt.type === 'outcome_progress') {
+        if (id === latestTextTurn.current) setCurrentOutcome(turnOutcome(evt.outcome));
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
         const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
@@ -649,7 +651,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     {questionPanel}
     <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
-    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
+    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
   </div></RouteBoundary>;
 
@@ -707,7 +709,7 @@ function App({ floating = false, shortcuts, onWorld }: {
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -723,7 +725,7 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
+                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

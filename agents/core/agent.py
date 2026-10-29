@@ -960,7 +960,25 @@ class Agent:
             self._check_prepared_budget(
                 prepared_route, prompt, system, cached_input_tokens=cached_input_tokens,
             )
+        from .turn_compaction import active_compaction
+        compaction = active_compaction()
+        if compaction is not None and compaction.session_id == sid:
+            compaction.guard_request(
+                prompt=prompt, system=system, model=model,
+                window_tokens=effective_window.tokens if effective_window is not None else None,
+                max_tokens=max_tokens,
+            )
         sink = usage_sink if usage_sink is not None else current_observer()
+        reported_prompt_usage = []
+        if compaction is not None and compaction.session_id == sid and compaction.enabled:
+            upstream_sink = sink
+
+            def capture_h391_usage(usage):
+                reported_prompt_usage.append(usage)
+                if upstream_sink is not None:
+                    upstream_sink(usage)
+
+            sink = capture_h391_usage
         from . import trajectory  # H652: the whole turn, kept for training export (opt-in)
 
         with (clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer,
@@ -972,12 +990,23 @@ class Agent:
                 on_token=on_token, wall_seconds=wall_seconds,
                 usage_sink=observer if sink is not None else None,
                 effective_window=effective_window,
+                prepared_route=prepared_route,
+                cached_input_tokens=cached_input_tokens,
+                compaction=compaction if compaction is not None and compaction.session_id == sid else None,
             )
             from .llm.base import (
                 THINKING_EXHAUSTED_REPLY,
                 is_backend_failure_reply,
                 is_degraded_reply,
             )
+            if (compaction is not None and len(reported_prompt_usage) == 1
+                    and response != THINKING_EXHAUSTED_REPLY):
+                compaction.observe_usage(
+                    reported_prompt_usage[0],
+                    provider_succeeded=(not is_degraded_reply(response)
+                                        and not is_backend_failure_reply(
+                                            response.lstrip() if isinstance(response, str) else response)),
+                )
             if response == THINKING_EXHAUSTED_REPLY:
                 from .turn_stops import record_runtime_stop
                 record_runtime_stop("thinking_exhausted")
@@ -1027,6 +1056,9 @@ class Agent:
         wall_seconds: float | None = None,
         usage_sink=None,
         effective_window=None,
+        prepared_route=None,
+        cached_input_tokens=0,
+        compaction=None,
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path.
 
@@ -1051,8 +1083,40 @@ class Agent:
             max_tokens = min(max_tokens, cap) if max_tokens > 0 else cap
             from .llm.request_context import note_sent
             note_sent("max_tokens", max_tokens)
+        def check_final_request(final_prompt):
+            if prepared_route is not None:
+                router = getattr(self, "llm_router", None)
+                if router is not None:
+                    from .llm.request_context import current_session
+
+                    prepared_route.check(
+                        router, self.id, prepared_route.prompt, current_session())
+                self._check_prepared_budget(
+                    prepared_route, final_prompt, system,
+                    cached_input_tokens=cached_input_tokens,
+                )
+            if compaction is not None:
+                compaction.guard_request(
+                    prompt=final_prompt, system=system, model=model,
+                    window_tokens=effective_window.tokens if effective_window is not None else None,
+                    max_tokens=max_tokens,
+                )
+
+        def note_plain_response(response):
+            from .llm.base import is_backend_failure_reply
+            from .turn_outcome import record_agent_observation, record_model_completion
+
+            agent_id = getattr(self, "id", None)
+            if type(agent_id) is not str or not agent_id:
+                return  # A minimal adapter has no source-backed identity for outcome telemetry.
+            if isinstance(response, str) and response.strip() and not is_backend_failure_reply(response.lstrip()):
+                record_model_completion(agent_id)
+            else:
+                record_agent_observation(agent_id, 'failed')
+
         runtime = self.tool_runtime
         if runtime is not None and runtime.can_run(backend, agent_id=self.id):
+            check_final_request(prompt)
             # Forwarded only when a ceiling was given, so a caller without one keeps
             # the loop's constructor default and the pre-5c call shape byte-identical.
             budget = {} if wall_seconds is None else {"wall_seconds": wall_seconds}
@@ -1087,6 +1151,8 @@ class Agent:
         steering = prepare_steering_rows(getattr(self, "id", ""))
         if steering.rows:
             prompt = "\n\n".join([prompt, *(row["content"] for row in steering.rows)])
+        check_final_request(prompt)
+        if steering.rows:
             trajectory.note_prompt(prompt)  # H652: the saved human turn is what was sent
 
         check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
@@ -1104,6 +1170,7 @@ class Agent:
                     on_token=on_token,
                 )
                 steering.acknowledge()
+                note_plain_response(response)
                 return response
 
             response = await backend.generate(
@@ -1118,6 +1185,7 @@ class Agent:
                 emitted = on_token(response)
                 if inspect.isawaitable(emitted):
                     await emitted
+            note_plain_response(response)
             return response
 
     async def process(self, text: str, context: dict, *, prepared=None) -> str:
@@ -1125,6 +1193,8 @@ class Agent:
         model = self.default_model()
 
         if not self.llm_router:
+            from .turn_outcome import record_agent_observation
+            record_agent_observation(self.id, 'unavailable')
             return f"[{self.name} no LLM backend]"
 
         if prepared is not None and getattr(prepared, "input_text", None) is not None:
@@ -1145,6 +1215,8 @@ class Agent:
             else:
                 res = self.llm_router.select_backend(self.id, prompt)
         except LocalBackendUnavailableError:
+            from .turn_outcome import record_agent_observation
+            record_agent_observation(self.id, 'unavailable')
             return LOCAL_SELECTION_UNAVAILABLE_REPLY
         route_name = ""
         if isinstance(res, tuple) and len(res) == 3:
@@ -1155,6 +1227,7 @@ class Agent:
             backend, _ = res
         from .llm.effective_window import resolve_effective_window
         effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
+        status_window = effective_window.authoritative_tokens() if effective_window is not None else None
         backend = bind_guardrails(self.guardrails, backend)
 
         clock_snapshot = context.get("_clock_snapshot", CLOCK_UNSET)
@@ -1203,7 +1276,8 @@ class Agent:
                     if self._checkpoint_manager:
                         self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
                 from .turn_usage import model_usage_scope
-                with model_usage_scope(model=model, route=route_name):
+                with model_usage_scope(model=model, route=route_name, agent_id=self.id,
+                                       context_window=status_window):
                     response = await self.generate_response(
                         backend=backend,
                         model=model,
@@ -1383,7 +1457,8 @@ class Agent:
                 from .llm.data_handling import physical_request_scope
                 guard = (lambda: check(backend, model, route_name)) if callable(check) else None
                 from .turn_usage import model_usage_scope
-                with model_usage_scope(model=model, route=route_name), physical_request_scope(guard):
+                with model_usage_scope(model=model, route=route_name, primary=False,
+                                       agent_id=self.id), physical_request_scope(guard):
                     response = await backend.generate(
                         model=model,
                         prompt=prompt,

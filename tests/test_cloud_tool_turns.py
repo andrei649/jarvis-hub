@@ -27,6 +27,7 @@ from agents.core.llm.base import THINKING_EXHAUSTED_REPLY, OllamaBackend, is_deg
 from agents.core.llm.gemini import GeminiBackend
 from agents.core.llm.openrouter import OpenRouterBackend
 from agents.core.llm.provider_errors import GEMINI_DEGRADED_REPLY
+from agents.core.llm.providers import DEFAULT_REGISTRY
 from agents.core.llm.tool_dialects import (
     SYNTHETIC_ID_PREFIX,
     anthropic_messages,
@@ -143,6 +144,8 @@ def _claude(*responses: Any, auth_pool=None) -> tuple[ClaudeBackend, _Client]:
     backend = ClaudeBackend.__new__(ClaudeBackend)
     backend.api_key = "sk-ant-test"
     backend.model = "claude-test"
+    backend.profile = DEFAULT_REGISTRY.get("anthropic")
+    backend._signed_base = ANTHROPIC_API_BASE
     backend.auth_pool = auth_pool
     # H364 — the fixture bypasses __init__, so it has to mirror it: no effort
     # asked for, no overrides. "claude-test" is not a known family either, so

@@ -10,6 +10,8 @@ import pytest
 
 from agents.core.llm.gemini import GeminiBackend
 from agents.core.llm.gemini_context import GeminiRequestBinding
+from agents.core.llm.providers import DEFAULT_REGISTRY
+from agents.core.llm.providers.admitted_profiles import AdmittedProviderProfile
 from agents.core.llm.tokenizer import estimate_tokens
 from agents.core.orchestrator import Orchestrator
 from agents.core.security.guardrails import GuardrailsEngine, SecurityBlockError
@@ -26,6 +28,7 @@ class _RecordingGemini(GeminiBackend):
         self.api_key = "test-gemini-key"
         self.model = "gemini-test"
         self.auth_pool = None
+        self.profile = DEFAULT_REGISTRY.get('gemini')
         self._request_binding = ContextVar(
             f"test_gemini_request_binding_{id(self)}",
             default=None,
@@ -197,6 +200,7 @@ def _orchestrator(
     bind_native(orchestrator, monkeypatch, session_ids=(
         "cache-hit", "changed-prefix", "cache-miss", "cache-block", "cache-redact",
         "policy-restart", "cache-hit-cost", "cache-miss-cost", "synthetic-cache",
+        "admitted-cache",
     ))
     orchestrator.security = GuardrailsEngine(backend=None, mode=mode)
     orchestrator.context_cache = cache
@@ -211,6 +215,25 @@ async def _drain_cache_tasks(orchestrator: Orchestrator) -> None:
     if tasks:
         await asyncio.gather(*tasks)
     await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_admitted_gemini_never_starts_separate_cache_client(monkeypatch):
+    cache = _FakeCache()
+    orchestrator, backend, _memory, _router = _orchestrator(
+        ('[user]: previous question', '[jarvis]: previous answer'),
+        cache=cache, monkeypatch=monkeypatch)
+    backend.profile = AdmittedProviderProfile(
+        id='signed-gemini', display_name='Signed Gemini', backend_kind='gemini',
+        api_mode='gemini_generate_content', auth_type='api-key',
+        default_base_url='https://generativelanguage.googleapis.com/v1beta',
+        capabilities=frozenset({'chat', 'cloud'}))
+    await orchestrator._handle_input_stream(
+        'current question', channel='web', session_id='admitted-cache')
+    await _drain_cache_tasks(orchestrator)
+    assert len(backend.calls) == 1
+    assert backend.calls[0]['binding'].cache_name is None
+    assert cache.acquire_calls == cache.create_calls == []
 
 
 @pytest.mark.asyncio

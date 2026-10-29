@@ -25,8 +25,9 @@ host that accepts one protocol only (``api.anthropic.com``, the ``api.openai.com
 family, ``bedrock-runtime.<region>.amazonaws.com``) is never sent another one. That check
 runs in the same hook, before the transport, and a refusal is recorded as a row with
 ``allowed=False`` and the reason — the request, and the credential in its auth header,
-never left. Every other row is ``allowed=True``, which is honest: it records what
-actually left. `EgressMonitor._local_only_violations` looks each row up in
+never left. Every other row is ``allowed=True`` for an outbound attempt; an
+admitted transport failure after entry carries a ``possibly sent`` reason
+because a response timeout cannot prove zero bytes left. `EgressMonitor._local_only_violations` looks each row up in
 ``BUILTIN_PLUGINS``, misses on the ``llm:`` prefix, and therefore cannot turn a
 legitimate cloud call into a fabricated plugin violation.
 """
@@ -38,6 +39,25 @@ import httpx
 from agents.core.observability.egress_monitor import EGRESS_MONITOR
 
 from .host_protocol import HostProtocolRefused, protocol_refusal
+
+_ADMITTED_REQUEST = object()
+_CUSTOM_REQUEST = object()
+
+
+def mark_admitted_request(request: httpx.Request) -> None:
+    request.extensions["nerva.admitted"] = _ADMITTED_REQUEST
+
+
+def is_admitted_request(request: httpx.Request) -> bool:
+    return request.extensions.get("nerva.admitted") is _ADMITTED_REQUEST
+
+
+def mark_custom_request(request: httpx.Request) -> None:
+    request.extensions["nerva.custom"] = _CUSTOM_REQUEST
+
+
+def is_custom_request(request: httpx.Request) -> bool:
+    return request.extensions.get("nerva.custom") is _CUSTOM_REQUEST
 
 
 def _record(backend: str, request: httpx.Request, *, allowed: bool, reason: str = "") -> None:
@@ -57,7 +77,7 @@ def _record(backend: str, request: httpx.Request, *, allowed: bool, reason: str 
         pass
 
 
-def _recorder(backend: str):
+def _recorder(backend: str, protocol_backend: str | None = None):
     """Build the async httpx request hook: refuse a protocol/host mismatch, then record.
 
     httpx runs request hooks before each dispatch — including every hop of a followed
@@ -73,13 +93,17 @@ def _recorder(backend: str):
         except Exception:
             _record(backend, request, allowed=False, reason="routed data-handling gate refused")
             raise
-        reason = protocol_refusal(backend, request.url)
+        reason = protocol_refusal(protocol_backend or backend, request.url)
         if reason:
             _record(backend, request, allowed=False, reason=reason)
             raise HostProtocolRefused(reason)
-        _record(backend, request, allowed=True)
-        from agents.core.turn_usage import record_dispatch
-        record_dispatch(backend, request)
+        # Admitted sends account at their leased transport. Ambiguous failures
+        # after transport entry count as possible egress; this hook still
+        # enforces data and host protocol before transport entry.
+        if not is_admitted_request(request) and not is_custom_request(request):
+            _record(backend, request, allowed=True)
+            from agents.core.turn_usage import record_dispatch
+            record_dispatch(backend, request)
 
     _hook._nerva_egress_recorder = True
     return _hook

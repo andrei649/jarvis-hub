@@ -114,6 +114,23 @@ Prereq: working LLM backend.
 - [ ] **Multi-agent synthesis** 🤖 — A prompt that fans out to several agents
   returns a single coherent synthesized answer.
 - [ ] **Conversation history** ✅ — Reload the HUD; prior turns persist for the session.
+- [ ] **Turn outcome and selected status fields (H396/H686)** 👁🤖 — In Settings → Display,
+  set `status_bar_fields` (default `latency`; `total_tokens` is opt-in). In full and floating
+  chat, verify completion explanation, tool counts and attempted file effects remain visible
+  independently of the selected metrics. Unknown execution/output/file attribution must stay
+  explicit. Context requires attributable complete counters and the actual model window;
+  TPS requires a correlated physical inference interval. Missing sources must hide their
+  optional field. Check a long model/title at 390×600, 390×900 and 1280×900: text wraps,
+  the status area scrolls to its final row, and the composer remains usable. Local synthetic
+  compiled checks cover those six layouts; this unchecked row remains the live-Hub/device check.
+- [ ] **Checkpoint retention and owned storage (H011)** — On a disposable project, use
+  `python -m agents.cli.nerva checkpoints status`, then `checkpoints prune --project ROOT
+  --keep-last 2 --max-bytes BYTES --dry-run`. Check the disclosed logical-byte basis,
+  protected/incomplete rows, shared owned assets and unknown totals. `--include-orphans`
+  is explicit; legacy maintenance `--force` changes no selection or authority. Execute
+  only the exact owner-approved preview; each further clear batch needs fresh approval.
+  Verify generic snapshots survive and repeated uncertain operations cannot replay.
+  `clear-legacy` reports no recognized format; native Windows H011 remains unsupported.
 
 ---
 
@@ -531,6 +548,10 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 - [ ] **Governed browser on installed Chromium (H28)** — with an explicit allowlist, perform a real
   navigation/action through `GovernedBrowser`; prove redirects/subresources outside policy block,
   the audit links the approved plan to execution, and no ambient profile/session is reused.
+  For an approved bounded session, inspect console messages, uncaught page errors and image
+  inventory through Operator. A page error has bounded text and an unknown frame/origin label;
+  navigation invalidates old observations. Read observations do not grant JavaScript execution,
+  dialog response, CDP, profile access or screenshot-to-vision authority.
 - [ ] **Accessibility-first Windows desktop actuation (H28)** — approve and execute bounded
   launch/type/click steps through Console → Build → Operator on the isolated host. Prove Windows UIA
   is selected before any visual fallback, execution-time kernel mediation occurs, the result is

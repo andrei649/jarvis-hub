@@ -20,17 +20,17 @@ function NotConnected({ what }: { what?: string }){
 }
 
 /* ============ CHAT · distraction-free ============ */
-function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t, agent, sessionId, selectedTurn, outcome }: any){
+function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t, agent, sessionId, selectedTurn, outcome, power }: any){
   return (
-    <div className="chat-wrap">
-      <div className="chat-col">
+    <div className="chat-wrap" style={{ height:'100%', maxHeight:'100%', minHeight:0 }}>
+      <div className="chat-col" style={{ height:'100%', maxHeight:'100%', minHeight:0 }}>
         <div className="chat-head">
           <span className="chat-glyph"><Gl3 id="jarvis" size={20}/></span>
           <div><div className="chat-title">{t.directLine} · NERVA</div><div className="chat-sub">{t.focusHintChat}</div></div>
           <span className="chat-live"><span className="sdot active"></span>local</span>
         </div>
         <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} lang={lang} t={t}/>
-        <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t} agent={agent} sessionId={sessionId} selectedTurn={selectedTurn} outcome={outcome}/>
+        <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t} agent={agent} sessionId={sessionId} selectedTurn={selectedTurn} outcome={outcome} power={power}/>
       </div>
     </div>
   );

@@ -9,6 +9,11 @@ def reality_ref(case_name: str) -> str:
 
 def action_case_name(kind: str) -> str:
     slug = kind.replace(".*", "-wildcard").replace(".", "-")
+    if kind == "provider.custom_endpoint":
+        # Its owner-service receipt cannot be exercised by the generic
+        # Kernel-halt probe. The dedicated negative is intentionally
+        # non-promotable until the owner path has live acceptance evidence.
+        return f"action-{slug}-owner-receipt-unavailable"
     return f"action-{slug}-kernel-halt"
 
 

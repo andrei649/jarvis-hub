@@ -20,7 +20,6 @@ import base64
 import contextlib
 import json
 import logging
-import os
 import re
 import shutil
 import tempfile
@@ -37,8 +36,13 @@ from agents.core.browser_transport import (
     PinnedResolver,
     is_private_host_literal,
 )
+from agents.core.env_config import env_str
 
 logger = logging.getLogger("jarvis.browser.playwright")
+
+MAX_CONSOLE_RECORDS = 32
+MAX_CONSOLE_BYTES = 8_000
+MAX_CONSOLE_TEXT = 512
 
 SUPPORTED_BROWSERS = frozenset({"chromium", "firefox", "webkit"})
 PROFILE_PREFIX = "nerva-browser-"
@@ -83,6 +87,8 @@ class PlaywrightBrowserDriver:
     owner explicitly enables ``JARVIS_PLAYWRIGHT_HOST=1``.
     """
 
+    requires_kernel = True
+
     def __init__(
         self,
         *,
@@ -97,6 +103,7 @@ class PlaywrightBrowserDriver:
         download_dir: str | Path | None = None,
         playwright_factory: Callable[[], Any] | None = None,
         allow_private_urls: bool = False,
+        channel: str | None = None,
     ) -> None:
         if browser not in SUPPORTED_BROWSERS:
             raise ValueError(f"unsupported Playwright browser: {browser}")
@@ -120,8 +127,12 @@ class PlaywrightBrowserDriver:
         self.max_screenshot_bytes = int(max_screenshot_bytes)
         self.download_dir = Path(download_dir).expanduser() if download_dir else None
         self.allow_private_urls = bool(allow_private_urls)
+        self.channel = channel
         self._factory = playwright_factory
         self._url_guard: Callable[[str], tuple[bool, str] | bool] | None = None
+        self._execution_guard: Callable[[], bool] | None = None
+        self._ref_resolver = None
+        self._ownership_observer = None
         self._transport: PinnedResolver | None = None
         self._launched_hosts: frozenset[str] = frozenset()
         self._profile_dir: Path | None = None
@@ -131,6 +142,93 @@ class PlaywrightBrowserDriver:
         self._browser = None
         self._context = None
         self._page = None
+        self._owned_child = None
+        self._owned_browser_identity: tuple[int, float] | None = None
+        self._console_records: deque[dict] = deque()
+        self._console_bytes = 0
+        self._console_dropped = 0
+        self._console_truncated = 0
+        self._console_epoch = 0
+        self._console_page = None
+
+    def _clear_console(self) -> None:
+        self._console_records.clear()
+        self._console_bytes = 0
+        self._console_dropped = 0
+        self._console_truncated = 0
+        self._console_epoch += 1
+
+    def _record_console(self, level: str, raw_text: str, origin: str,
+                        *, shortened: bool = False) -> None:
+        text = raw_text[:MAX_CONSOLE_TEXT]
+        if shortened or len(raw_text) > MAX_CONSOLE_TEXT:
+            self._console_truncated += 1
+        # Console location is a source URL, not a frame identity. Page errors
+        # have no trustworthy source location at all.
+        record = {'level': level, 'text': text, 'source_origin': origin,
+                  'document_epoch': self._console_epoch, '_frame_id': None}
+        size = len(json.dumps(record, ensure_ascii=False).encode('utf-8'))
+        while self._console_records and (len(self._console_records) >= MAX_CONSOLE_RECORDS
+                                         or self._console_bytes + size > MAX_CONSOLE_BYTES):
+            old = self._console_records.popleft()
+            self._console_bytes -= len(json.dumps(old, ensure_ascii=False).encode('utf-8'))
+            self._console_dropped += 1
+        if size <= MAX_CONSOLE_BYTES:
+            self._console_records.append(record)
+            self._console_bytes += size
+        else:
+            self._console_dropped += 1
+
+    def _on_console(self, message) -> None:
+        """Playwright's fixed event fields only; never hold JSHandles or arguments."""
+        try:
+            raw_level = message.type
+            level = raw_level if raw_level in {'log', 'info', 'warning', 'error', 'debug'} else 'other'
+            raw_text = str(message.text)
+            raw_url = message.location.get('url', '')
+            parsed = urlparse(raw_url)
+            origin = (f'{parsed.scheme}://{parsed.netloc}'
+                      if parsed.scheme in {'http', 'https'} and parsed.hostname
+                      and parsed.username is None and parsed.password is None
+                      and (parsed.port is None or 1 <= parsed.port <= 65_535)
+                      and len(parsed.netloc) <= 253 else '')
+            self._record_console(level, raw_text, origin)
+        except Exception:
+            self._console_dropped += 1
+
+    def _on_page_error(self, error) -> None:
+        """Keep only a bounded first message line, never the Error/stack object."""
+        try:
+            raw = error.message
+            if type(raw) is not str or not raw:
+                self._console_dropped += 1
+                return
+            first_line = raw[:MAX_CONSOLE_TEXT + 1].splitlines()[0]
+            self._record_console('error', first_line, '', shortened=first_line != raw)
+        except Exception:
+            self._console_dropped += 1
+
+    def _on_console_navigation(self, frame) -> None:
+        # Console locations cannot identify an execution frame. Any frame
+        # navigation discards unknown-origin records; main navigation clears all.
+        if self._page is None or frame is self._page.main_frame:
+            self._clear_console()
+            return
+        self._console_epoch += 1
+        self._console_records = deque(record for record in self._console_records
+                                      if record['_frame_id'] not in {None, id(frame)})
+        self._console_bytes = sum(len(json.dumps(item, ensure_ascii=False).encode('utf-8'))
+                                  for item in self._console_records)
+
+    async def console(self) -> dict:
+        await self._ensure_started()
+        self._assert_execution_current()
+        return {'observation': 'console',
+                'records': [{key: value for key, value in record.items() if key != '_frame_id'}
+                            for record in self._console_records],
+                'dropped': self._console_dropped,
+                'truncated': self._console_truncated,
+                'document_epoch': self._console_epoch, 'untrusted': True}
 
     @classmethod
     def from_env(cls, **kwargs) -> PlaywrightBrowserDriver:
@@ -143,10 +241,10 @@ class PlaywrightBrowserDriver:
             )
         transport = kwargs.pop("transport", None)
         kwargs.setdefault("host_enabled", True)
-        kwargs.setdefault("browser", os.getenv("JARVIS_PLAYWRIGHT_BROWSER", "chromium"))
+        kwargs.setdefault("browser", env_str("JARVIS_PLAYWRIGHT_BROWSER", "chromium"))
         kwargs.setdefault("headless", env_flag("JARVIS_PLAYWRIGHT_HEADLESS", True))
         kwargs.setdefault("allow_private_urls", env_flag("JARVIS_BROWSER_ALLOW_PRIVATE_URLS"))
-        configured_downloads = os.getenv("JARVIS_PLAYWRIGHT_DOWNLOAD_DIR", "").strip()
+        configured_downloads = env_str("JARVIS_PLAYWRIGHT_DOWNLOAD_DIR", "").strip()
         if configured_downloads:
             kwargs.setdefault("download_dir", configured_downloads)
         driver = cls(**kwargs)
@@ -170,6 +268,32 @@ class PlaywrightBrowserDriver:
         if self._page is not None:
             raise PlaywrightDriverError("url guard must be configured before browser startup")
         self._url_guard = guard
+
+    def set_execution_guard(self, guard: Callable[[], bool]) -> None:
+        if not callable(guard) or self._page is not None:
+            raise ValueError('execution guard must be callable before browser startup')
+        self._execution_guard = guard
+
+    def set_ref_resolver(self, resolver) -> None:
+        if not callable(resolver) or self._page is not None:
+            raise ValueError('ref resolver must be callable before browser startup')
+        self._ref_resolver = resolver
+
+    def set_ownership_observer(self, observer) -> None:
+        if not callable(observer) or self._page is not None:
+            raise ValueError('ownership observer must be callable before browser startup')
+        self._ownership_observer = observer
+
+    def _assert_execution_current(self) -> None:
+        if self._execution_guard is None and self._factory is not None:
+            return  # isolated component fake; production requires a bound durable guard
+        try:
+            if self._execution_guard is not None and self._execution_guard() is True:
+                return
+        except Exception:
+            # Guard failures are refusals; never log the exception's page data.
+            logger.warning('browser execution guard raised; refusing')
+        raise PlaywrightHostDisabled('approved browser task unavailable')
 
     def set_transport(self, resolver: PinnedResolver) -> None:
         """Bind the IP-pinning transport; navigation is refused until one is bound."""
@@ -198,6 +322,78 @@ class PlaywrightBrowserDriver:
         return self._profile_dir
 
     @property
+    def owned_browser_identity(self) -> tuple[int, float] | None:
+        """PID and creation time of the native Chrome root for this fresh profile."""
+        return self._owned_browser_identity
+
+    def _profile_processes(self):
+        """Find processes with this exact random profile, even after reparenting."""
+        import psutil
+
+        if self._profile_dir is None:
+            return []
+        marker = f'--user-data-dir={self._profile_dir}'
+        found = []
+        for process in psutil.process_iter(['pid', 'create_time', 'cmdline']):
+            try:
+                if marker in (process.info.get('cmdline') or []):
+                    found.append(process)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return found
+
+    async def _capture_owned_browser(self):
+        import psutil
+
+        if self._owned_child is None or self._profile_dir is None:
+            raise PlaywrightUnavailable('native browser ownership unavailable')
+        marker = f'--user-data-dir={self._profile_dir}'
+        deadline = asyncio.get_running_loop().time() + 2
+        while True:
+            try:
+                descendants = psutil.Process(self._owned_child.pid).children(recursive=True)
+            except psutil.Error:
+                descendants = []
+            for process in descendants:
+                try:
+                    command = process.cmdline()
+                    binary = Path(process.exe()).name.lower()
+                    if (marker in command and not any(arg.startswith('--type=') for arg in command)
+                            and ('chrome' in binary or 'chromium' in binary)):
+                        self._owned_browser_identity = (process.pid, process.create_time())
+                        return
+                except psutil.Error:
+                    continue
+            if asyncio.get_running_loop().time() >= deadline:
+                raise PlaywrightUnavailable('native browser ownership unavailable')
+            await asyncio.sleep(0.05)
+
+    async def _wait_owned_browser_exit(self):
+        import psutil
+
+        if self._factory is not None or self._profile_dir is None:
+            return
+        deadline = asyncio.get_running_loop().time() + 5
+        while True:
+            try:
+                alive = bool(await asyncio.to_thread(self._profile_processes))
+                if self._owned_browser_identity is not None:
+                    pid, started = self._owned_browser_identity
+                    try:
+                        root = psutil.Process(pid)
+                        alive = alive or (root.create_time() == started and root.is_running()
+                                          and root.status() not in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD})
+                    except psutil.NoSuchProcess:
+                        pass
+            except psutil.Error:
+                raise PlaywrightDriverError('browser_lifetime_unverified') from None
+            if not alive:
+                return
+            if asyncio.get_running_loop().time() >= deadline:
+                raise PlaywrightDriverError('browser_lifetime_unverified')
+            await asyncio.sleep(0.05)
+
+    @property
     def launched_hosts(self) -> frozenset[str]:
         """Hosts the running browser can resolve (empty without a transport)."""
         return self._launched_hosts
@@ -217,6 +413,7 @@ class PlaywrightBrowserDriver:
     async def _ensure_started(self):
         if self._page is not None:
             return self._page
+        self._assert_execution_current()
         if not self.host_enabled:
             raise PlaywrightHostDisabled(
                 "Playwright host actuation requires explicit host_enabled=True"
@@ -232,6 +429,13 @@ class PlaywrightBrowserDriver:
             try:
                 manager = self._runtime_factory()()
                 self._playwright = await manager.start()
+                if self._factory is None:
+                    transport = getattr(getattr(self._playwright, '_impl_obj', None),
+                                        '_connection', None)
+                    child = getattr(getattr(transport, '_transport', None), '_proc', None)
+                    if child is None or not callable(getattr(child, 'wait', None)):
+                        raise PlaywrightUnavailable('browser child ownership unavailable')
+                    self._owned_child = child
                 browser_type = getattr(self._playwright, self.browser_name)
                 launch_args: list[str] = []
                 if self._transport is not None:
@@ -240,18 +444,48 @@ class PlaywrightBrowserDriver:
                 # A fresh, dedicated profile per run: cookies, storage, and history
                 # never touch (or leak from) the owner's own browser profile.
                 self._profile_dir = Path(tempfile.mkdtemp(prefix=PROFILE_PREFIX))
+                if self._ownership_observer is not None:
+                    await self._ownership_observer('profile', self._profile_dir, self._owned_child)
                 self._context = await browser_type.launch_persistent_context(
                     str(self._profile_dir),
                     headless=self.headless,
-                    args=launch_args,
+                    args=[*launch_args, '--no-proxy-server', '--disable-background-networking',
+                          '--disable-features=WebRTC'],
+                    **({'channel': self.channel} if self.channel else {}),
                     accept_downloads=True,
                     service_workers="block",
                 )
+                if self._factory is None:
+                    await self._capture_owned_browser()
+                    if self._ownership_observer is not None:
+                        await self._ownership_observer('native', self._profile_dir,
+                                                       self._owned_browser_identity)
                 self._browser = getattr(self._context, "browser", None)
                 if self._url_guard is not None:
                     await self._context.route("**/*", self._route_request)
+                web_socket_route = getattr(self._context, 'route_web_socket', None)
+                if callable(web_socket_route):
+                    await web_socket_route('**/*', self._block_web_socket)
+                elif self._factory is None:
+                    raise PlaywrightUnavailable('browser websocket guard unavailable')
+                init_script = getattr(self._context, 'add_init_script', None)
+                if callable(init_script):
+                    await init_script(
+                        "Object.defineProperty(window, 'RTCPeerConnection', {value: undefined, configurable: false});"
+                        "Object.defineProperty(window, 'webkitRTCPeerConnection', {value: undefined, configurable: false});"
+                    )
+                elif self._factory is None:
+                    raise PlaywrightUnavailable('browser WebRTC guard unavailable')
                 self._page = await self._context.new_page()
                 self._page.set_default_timeout(self.timeout_ms)
+                if callable(getattr(self._page, 'on', None)):
+                    self._console_page = self._page
+                    self._page.on('console', self._on_console)
+                    self._page.on('pageerror', self._on_page_error)
+                    self._page.on('framenavigated', self._on_console_navigation)
+                    self._page.on('framedetached', self._on_console_navigation)
+                elif self._factory is None:
+                    raise PlaywrightUnavailable('browser console event boundary unavailable')
                 return self._page
             except (PlaywrightHostDisabled, PlaywrightUnavailable, BrowserTransportRefused):
                 await self._close_resources()
@@ -272,10 +506,19 @@ class PlaywrightBrowserDriver:
         except Exception:
             allowed, reason = False, "guard_error"
         if allowed:
+            try:
+                self._assert_execution_current()
+            except PlaywrightHostDisabled:
+                allowed, reason = False, 'approved_task_revoked'
+        if allowed:
             await route.continue_()
             return
         self._record_block(url, reason)
         await route.abort("blockedbyclient")
+
+    async def _block_web_socket(self, route) -> None:
+        """The first governed slice admits HTTP(S) only; no WebSocket dial."""
+        await route.close(code=1008, reason='browser_network_policy')
 
     def _egress_verdict(self, url: str, *, require_pinned: bool = True) -> tuple[bool, str]:
         """Scheme allowlist → private-range denial → policy guard → pinned-host check.
@@ -324,27 +567,71 @@ class PlaywrightBrowserDriver:
             await self._close_resources()
 
     async def _close_resources(self) -> None:
-        context, browser, playwright = self._context, self._browser, self._playwright
-        profile_dir = self._profile_dir
+        if self._console_page is not None:
+            remove = getattr(self._console_page, 'remove_listener', None)
+            if callable(remove):
+                for event, handler in (('console', self._on_console),
+                                       ('pageerror', self._on_page_error),
+                                       ('framenavigated', self._on_console_navigation),
+                                       ('framedetached', self._on_console_navigation)):
+                    with contextlib.suppress(Exception):
+                        remove(event, handler)
+            self._console_page = None
+        self._clear_console()
         self._page = None
-        self._context = None
-        self._browser = None
-        self._playwright = None
-        self._profile_dir = None
-        self._launched_hosts = frozenset()
-        for resource, method_name in (
-            (context, "close"),
-            (browser, "close"),
-            (playwright, "stop"),
-        ):
+        failures = []
+        for attr, method_name in (('_context', 'close'), ('_browser', 'close'),
+                                  ('_playwright', 'stop')):
+            resource = getattr(self, attr)
             if resource is None:
                 continue
-            with contextlib.suppress(Exception):
+            if attr == '_browser' and callable(getattr(resource, 'is_connected', None)):
+                try:
+                    if not resource.is_connected():
+                        setattr(self, attr, None)
+                        continue
+                except Exception:
+                    failures.append('browser_state_unverified')
+                    continue
+            try:
                 await getattr(resource, method_name)()
-        if profile_dir is not None and profile_dir.name.startswith(PROFILE_PREFIX):
-            await asyncio.to_thread(shutil.rmtree, profile_dir, True)
+            except Exception:
+                failures.append(f'{attr[1:]}_close_unverified')
+            else:
+                setattr(self, attr, None)
+        if self._owned_child is not None:
+            try:
+                await asyncio.wait_for(self._owned_child.wait(), timeout=5)
+                if self._owned_child.returncode is None:
+                    raise RuntimeError('child exit unverified')
+            except Exception:
+                failures.append('child_exit_unverified')
+            else:
+                self._owned_child = None
+        if not failures and self._profile_dir is not None:
+            try:
+                await self._wait_owned_browser_exit()
+            except Exception:
+                failures.append('browser_lifetime_unverified')
+        if not failures and self._profile_dir is not None:
+            directory = self._profile_dir
+            if not directory.name.startswith(PROFILE_PREFIX):
+                failures.append('profile_owner_unverified')
+            else:
+                try:
+                    await asyncio.to_thread(shutil.rmtree, directory)
+                except FileNotFoundError:
+                    self._profile_dir = None
+                except Exception:
+                    failures.append('profile_remove_unverified')
+                else:
+                    self._profile_dir = None
+        if failures:
+            raise PlaywrightDriverError('browser_cleanup_unverified:' + ','.join(failures))
+        self._launched_hosts = frozenset()
 
     async def navigate(self, *, url: str, wait_until: str = "domcontentloaded") -> dict:
+        self._assert_execution_current()
         if not self.host_enabled:
             raise PlaywrightHostDisabled(
                 "Playwright host actuation requires explicit host_enabled=True"
@@ -362,6 +649,7 @@ class PlaywrightBrowserDriver:
         allowed, reason = await asyncio.to_thread(
             self._egress_verdict, url, require_pinned=False
         )
+        self._assert_execution_current()
         if not allowed:
             self._record_block(url, reason)
             raise PlaywrightEgressBlocked(reason)
@@ -370,20 +658,25 @@ class PlaywrightBrowserDriver:
         except BrowserTransportRefused as exc:
             self._record_block(url, exc.reason)
             raise PlaywrightEgressBlocked(exc.reason, exc.detail) from None
+        self._assert_execution_current()
         if self._page is not None and target.host not in self._launched_hosts:
             # Chromium's resolver table is fixed at launch: a new host means a fresh
             # browser (and a fresh profile) launched with the enlarged pin table.
             await self.close()
         page = await self._ensure_started()
+        self._assert_execution_current()
         response = await page.goto(url, wait_until=wait_until)
+        self._assert_execution_current()
         final_url = str(page.url)
         allowed, reason = await asyncio.to_thread(self._egress_verdict, final_url)
+        self._assert_execution_current()
         if not allowed:
             self._record_block(final_url, reason)
             with contextlib.suppress(Exception):
                 await page.goto("about:blank")
             raise PlaywrightEgressBlocked("final_url_rejected", reason)
         title = await page.title()
+        self._assert_execution_current()
         return {
             "url": self._bounded_text(final_url, 2_048),
             "title": self._bounded_text(str(title), 512),
@@ -404,11 +697,13 @@ class PlaywrightBrowserDriver:
         if limit <= 0:
             raise ValueError("max_chars must be positive")
         page = await self._ensure_started()
+        self._assert_execution_current()
         locator = page.locator(selector)
         try:
             raw = await locator.aria_snapshot(boxes=True)
         except TypeError:
             raw = await locator.aria_snapshot()
+        self._assert_execution_current()
         text = str(raw or "")
         truncated = len(text) > limit
         elements, elements_truncated = parse_aria_snapshot(text[:limit])
@@ -423,7 +718,9 @@ class PlaywrightBrowserDriver:
 
     async def extract(self, *, selector: str = "body") -> dict:
         page = await self._ensure_started()
+        self._assert_execution_current()
         text = str(await page.locator(selector).first.inner_text())
+        self._assert_execution_current()
         return {
             "text": text[:self.max_extract_chars],
             "truncated": len(text) > self.max_extract_chars,
@@ -447,42 +744,111 @@ class PlaywrightBrowserDriver:
         if timeout_ms < 0 or timeout_ms > self.max_wait_ms:
             raise ValueError(f"wait exceeds configured maximum of {self.max_wait_ms}ms")
         page = await self._ensure_started()
+        self._assert_execution_current()
         if selector:
             # Playwright treats timeout=0 as "disable timeout" (wait forever),
             # which would bypass max_wait_ms and hang a governed run — fall back
             # to the driver default so a bounded timeout always applies.
             effective = timeout_ms or self.timeout_ms
             await page.locator(selector).first.wait_for(timeout=effective)
+            self._assert_execution_current()
             return {"waited": "selector", "selector": selector, "timeout_ms": effective}
         await page.wait_for_timeout(timeout_ms)
+        self._assert_execution_current()
         return {"waited": "timer", "timeout_ms": timeout_ms}
 
-    async def click(self, *, selector: str) -> dict:
+    async def click(self, *, selector: str | None = None, ref: str | None = None) -> dict:
+        args = {'ref': ref} if ref is not None and selector is None else {'selector': selector}
+        self._require_approved_mutation('click', args)
         page = await self._ensure_started()
+        self._assert_execution_current()
+        if ref is not None and selector is None and self._ref_resolver is not None:
+            handle = await self._ref_resolver(ref, 'click')
+            self._assert_execution_current()
+            await handle.click()
+            return {'clicked': ref}
+        if selector is None or ref is not None:
+            raise PlaywrightHostDisabled('approved browser step required')
         await page.locator(selector).first.click()
         return {"clicked": selector}
 
-    async def type(self, *, selector: str, text: str, clear: bool = True) -> dict:
+    async def type(self, *, selector: str | None = None, ref: str | None = None,
+                   text: str, clear: bool = True) -> dict:
+        if clear is not True:
+            raise PlaywrightHostDisabled('approved browser step required')
+        args = {'ref': ref, 'text': text} if ref is not None and selector is None else {'selector': selector, 'text': text}
+        self._require_approved_mutation('type', args)
         page = await self._ensure_started()
-        locator = page.locator(selector).first
+        self._assert_execution_current()
+        if ref is not None and selector is None and self._ref_resolver is not None:
+            locator = await self._ref_resolver(ref, 'type')
+        elif selector is not None and ref is None:
+            locator = page.locator(selector).first
+        else:
+            raise PlaywrightHostDisabled('approved browser step required')
+        self._assert_execution_current()
         if clear:
             await locator.fill(text)
         else:
             await locator.type(text)
-        return {"typed": selector}
+        return {"typed": ref or selector}
 
-    async def submit(self, *, selector: str) -> dict:
+    async def submit(self, *, selector: str | None = None, ref: str | None = None) -> dict:
+        args = {'ref': ref} if ref is not None and selector is None else {'selector': selector}
+        self._require_approved_mutation('submit', args)
         page = await self._ensure_started()
-        await page.locator(selector).first.press("Enter")
-        return {"submitted": selector}
+        self._assert_execution_current()
+        if ref is not None and selector is None and self._ref_resolver is not None:
+            locator = await self._ref_resolver(ref, 'submit')
+        elif selector is not None and ref is None:
+            locator = page.locator(selector).first
+        else:
+            raise PlaywrightHostDisabled('approved browser step required')
+        self._assert_execution_current()
+        await locator.press("Enter")
+        return {"submitted": ref or selector}
+
+    async def scroll(self, *, ref: str, direction: str, pixels: int) -> dict:
+        args = {'ref': ref, 'direction': direction, 'pixels': pixels}
+        self._require_approved_mutation('scroll', args)
+        if self._ref_resolver is None:
+            raise PlaywrightHostDisabled('approved browser step required')
+        handle = await self._ref_resolver(ref, 'scroll')
+        self._assert_execution_current()
+        await handle.evaluate('(e, d) => e.scrollBy(0, d)', pixels if direction == 'down' else -pixels)
+        self._assert_execution_current()
+        return {'scrolled': ref, 'pixels': pixels, 'direction': direction}
+
+    async def press(self, *, ref: str, key: str) -> dict:
+        self._require_approved_mutation('press', {'ref': ref, 'key': key})
+        if self._ref_resolver is None:
+            raise PlaywrightHostDisabled('approved browser step required')
+        handle = await self._ref_resolver(ref, 'press')
+        self._assert_execution_current()
+        await handle.press(key)
+        self._assert_execution_current()
+        return {'pressed': ref, 'key': key}
+
+    async def back(self) -> dict:
+        self._require_approved_mutation('back', {})
+        page = await self._ensure_started()
+        self._assert_execution_current()
+        response = await page.go_back(wait_until='domcontentloaded', timeout=self.timeout_ms)
+        self._assert_execution_current()
+        allowed, reason = await asyncio.to_thread(self._egress_verdict, page.url)
+        if not allowed:
+            raise PlaywrightEgressBlocked(reason)
+        return {'url': self._bounded_text(page.url, 2048), 'status': getattr(response, 'status', None)}
 
     async def execute_js(self, *, script: str, arg: Any = None) -> dict:
+        self._require_approved_mutation('execute_js', {'script': script, 'arg': arg})
         page = await self._ensure_started()
         value = await page.evaluate(script, arg)
         self._assert_result_budget(value)
         return {"value": value}
 
     async def upload(self, *, selector: str, paths: list[str] | str) -> dict:
+        self._require_approved_mutation('upload', {'selector': selector, 'paths': paths})
         values = [paths] if isinstance(paths, str) else list(paths or [])
         resolved = []
         for raw_path in values:
@@ -497,6 +863,7 @@ class PlaywrightBrowserDriver:
         return {"uploaded": len(resolved), "selector": selector}
 
     async def download(self, *, selector: str) -> dict:
+        self._require_approved_mutation('download', {'selector': selector})
         if self.download_dir is None:
             raise ValueError("download_dir must be configured before downloading")
         page = await self._ensure_started()
@@ -509,6 +876,13 @@ class PlaywrightBrowserDriver:
         destination = self._unique_destination(root, filename)
         await download.save_as(destination)
         return {"saved_to": str(destination), "filename": destination.name}
+
+    @staticmethod
+    def _require_approved_mutation(action: str, args: dict) -> None:
+        from .browser_kernel import physical_browser_step_allowed
+
+        if not physical_browser_step_allowed(action, args):
+            raise PlaywrightHostDisabled('approved browser step required')
 
     @staticmethod
     def _bounded_text(value: str, limit: int) -> str:

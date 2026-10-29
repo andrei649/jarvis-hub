@@ -14,12 +14,25 @@ from typing import Any, Awaitable, Callable, Iterator
 
 import httpx
 
-from .reasoning_effort import ReasoningEffortRefused
+from .reasoning_effort import ReasoningEffortRefused, clamp_vocabulary
 from .auth_rotation import AuthLease, is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
 from .gemini_context import CachedContentRejected, GeminiRequestBinding
 from .provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
+
+from .provider_request import (
+    ProfileRequestRefused,
+    prepare_profile_messages,
+    profile_headers,
+    profile_request_defaults,
+    profile_reasoning_config,
+    require_profile_base,
+    require_profile_kind,
+)
+from .providers.admitted_profiles import AdmittedProviderProfile, prepare_admitted_profile
+from .providers.native_transport import AdmittedClientMixin, native_admitted_client, native_post, native_stream
+
 from .quota import ProviderRateLimited
 from .repetition_guard import RepetitionStreamGuard
 from .tool_dialects import (
@@ -71,22 +84,35 @@ def _stream_terminal_usage(data: Any) -> TokenUsage | None:
     return gemini_usage(data)
 
 
-class GeminiBackend(LLMBackend):
+class GeminiBackend(AdmittedClientMixin, LLMBackend):
     # Tool calls travel as functionCall / functionResponse parts; the translation lives
     # in tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", auth_pool=None, reasoning_effort="", effort_declarations=None):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", auth_pool=None,
+                 reasoning_effort="", effort_declarations=None, *, profile=None):
         from .providers import DEFAULT_REGISTRY
         from .provider_request import GEMINI_LEVELS, profile_with_declarations
-        self.profile = profile_with_declarations(
-            DEFAULT_REGISTRY.get("gemini"), effort_declarations, defaults=GEMINI_LEVELS,
-        )
+        self.profile = (profile if isinstance(profile, AdmittedProviderProfile) else
+                        profile_with_declarations(
+                            profile or DEFAULT_REGISTRY.get("gemini"),
+                            effort_declarations, defaults=GEMINI_LEVELS))
+        if isinstance(self.profile, AdmittedProviderProfile):
+            require_profile_kind(self.profile, "gemini", "gemini_generate_content")
+            from .providers.selected_runtime import current_construction
+            if current_construction() is None:
+                require_profile_base(self.profile, GEMINI_API_BASE)
+            if auth_pool is not None:
+                raise ValueError("admitted Gemini auth pool is unavailable")
         self.reasoning_effort = reasoning_effort
+        self._signed_base = (str(self.profile.default_base_url).rstrip('/')
+                             if isinstance(self.profile, AdmittedProviderProfile) else GEMINI_API_BASE)
         self.api_key = api_key
         self.model = model
         self.auth_pool = auth_pool
-        self.client = llm_async_client("gemini", timeout=120.0)
+        self.client = (native_admitted_client(self.profile, api_key, model)
+                       if isinstance(self.profile, AdmittedProviderProfile)
+                       else llm_async_client("gemini", timeout=120.0))
         self._request_binding: ContextVar[GeminiRequestBinding | None] = ContextVar(
             f"gemini_request_binding_{id(self)}",
             default=None,
@@ -111,6 +137,8 @@ class GeminiBackend(LLMBackend):
         self,
         binding: GeminiRequestBinding,
     ) -> Iterator[GeminiRequestBinding]:
+        if isinstance(getattr(self, 'profile', None), AdmittedProviderProfile) and binding.cache_name:
+            raise ProfileRequestRefused("admitted Gemini cache client is unavailable")
         token = self._request_binding.set(binding)
         try:
             yield binding
@@ -129,11 +157,34 @@ class GeminiBackend(LLMBackend):
     def _build_url(self, model: str, *, streaming: bool = False) -> str:
         action = "streamGenerateContent" if streaming else "generateContent"
         suffix = "?alt=sse" if streaming else ""
-        return f"{GEMINI_API_BASE}/models/{model}:{action}{suffix}"
+        return f"{self._signed_base}/models/{model}:{action}{suffix}"
 
-    def _fit_effort(self, payload, model):
+
+    async def _request_profile(self, model, messages):
+        profile = self.profile
+        if not isinstance(profile, AdmittedProviderProfile):
+            return profile
+        reasoning = profile_reasoning_config(profile, model, self.reasoning_effort)
+        return await prepare_admitted_profile(
+            profile, model=model, messages=messages, reasoning_config=reasoning)
+
+    def _fit_effort(self, payload, model, *, profile=None):
         from .request_context import selected_reasoning
-        level, reason = self.profile.clamp_reasoning_effort(model, selected_reasoning(self.reasoning_effort))
+        profile = profile or self.profile
+        defaults = profile_request_defaults(profile, model, context={
+            "reasoning_config": profile_reasoning_config(
+                profile, model, self.reasoning_effort)})
+        config = payload["generationConfig"]
+        if defaults["max_tokens"] is not None:
+            config["maxOutputTokens"] = min(config["maxOutputTokens"], defaults["max_tokens"])
+        if defaults["omit_temperature"]:
+            config.pop("temperature", None)
+        elif defaults["fixed_temperature"] is not None:
+            config["temperature"] = defaults["fixed_temperature"]
+        level, reason = clamp_vocabulary(
+            profile.supported_reasoning_efforts(model),
+            selected_reasoning(self.reasoning_effort))
+
         if reason == "below-minimum":
             raise ReasoningEffortRefused()
         if level is not None:
@@ -158,7 +209,20 @@ class GeminiBackend(LLMBackend):
         max_tokens: int = 1024,
         temperature: float = 0.7,
         model: str | None = None,
+        profile=None,
     ) -> dict:
+
+        profile = profile or self.profile
+        original = ([{"role": "system", "content": system}] if system else []) + [
+            {"role": "user", "content": prompt}]
+        prepared = prepare_profile_messages(profile, original)
+        if system:
+            system, prompt = prepared[0]["content"], prepared[1]["content"]
+        else:
+            prompt = prepared[0]["content"]
+        if type(prompt) is not str or type(system) is not str:
+            raise ProfileRequestRefused("Gemini text message preparation is invalid")
+
         contents = [{"role": "user", "parts": [{"text": prompt}]}]
         payload = {
             "contents": contents,
@@ -172,7 +236,7 @@ class GeminiBackend(LLMBackend):
             payload["cachedContent"] = binding.cache_name
         elif system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
-        return self._fit_effort(payload, model or self.model)
+        return self._fit_effort(payload, model or self.model, profile=profile)
 
     def _extract_text(self, data: dict) -> str:
         candidates = data.get("candidates", [])
@@ -234,10 +298,16 @@ class GeminiBackend(LLMBackend):
         temperature: float,
     ) -> str:
         with self.request_scope(binding):
-            payload = self._build_payload(prompt, system, max_tokens, temperature, model=model)
-            response = await self.client.post(
+            rows = ([{"role": "system", "content": system}] if system else []) + [
+                {"role": "user", "content": prompt}]
+            profile = await self._request_profile(model, rows)
+            payload = self._build_payload(
+                prompt, system, max_tokens, temperature, model=model, profile=profile)
+            response = await native_post(self.profile, profile, self.client,
                 self._build_url(model),
-                headers={"x-goog-api-key": binding.lease.api_key},
+
+                headers=profile_headers(profile, {"x-goog-api-key": binding.lease.api_key}),
+
                 json=payload,
             )
             try:
@@ -349,8 +419,14 @@ class GeminiBackend(LLMBackend):
         max_tokens: int,
         temperature: float,
         model: str | None = None,
+        profile=None,
     ) -> dict[str, Any]:
-        system, contents = gemini_contents(messages, thought_signatures=self._thought_signatures)
+
+        profile = profile or self.profile
+        system, contents = gemini_contents(
+            prepare_profile_messages(profile, messages),
+            thought_signatures=self._thought_signatures)
+
         payload: dict[str, Any] = {
             "contents": contents,
             "generationConfig": {
@@ -364,7 +440,7 @@ class GeminiBackend(LLMBackend):
         if declarations:
             payload["tools"] = [{"functionDeclarations": declarations}]
             payload["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO"}}
-        return self._fit_effort(payload, model or self.model)
+        return self._fit_effort(payload, model or self.model, profile=profile)
 
     def _tool_turn_from_response(self, data: Any, model: str = "") -> ToolTurn:
         usage = gemini_usage(data)
@@ -407,16 +483,27 @@ class GeminiBackend(LLMBackend):
         except Exception as exc:
             log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc, model=actual_model)
             return ToolTurn(content=GEMINI_DEGRADED_REPLY)
-        payload = self._build_tool_payload(messages, tools, max_tokens, temperature, model=actual_model)
+        payload = None
+        if not isinstance(self.profile, AdmittedProviderProfile):
+            payload = self._build_tool_payload(
+                messages, tools, max_tokens, temperature, model=actual_model)
 
         attempts = max(1, self.auth_pool.size if self.auth_pool is not None else 1)
         for attempt in range(attempts):
+            profile = self.profile
+            if isinstance(profile, AdmittedProviderProfile):
+                profile = await self._request_profile(actual_model, messages)
+                payload = self._build_tool_payload(
+                    messages, tools, max_tokens, temperature,
+                    model=actual_model, profile=profile)
             try:
                 from .request_context import ensure_reasoning_active
                 ensure_reasoning_active()
-                response = await self.client.post(
+                response = await native_post(self.profile, profile, self.client,
                     self._build_url(actual_model),
-                    headers={"x-goog-api-key": binding.lease.api_key},
+
+                    headers=profile_headers(profile, {"x-goog-api-key": binding.lease.api_key}),
+
                     json=payload,
                 )
                 response.raise_for_status()
@@ -460,11 +547,17 @@ class GeminiBackend(LLMBackend):
         exhausted = False
         response_id = None
         with self.request_scope(binding):
-            payload = self._build_payload(prompt, system, max_tokens, temperature, model=model)
-            async with self.client.stream(
+            rows = ([{"role": "system", "content": system}] if system else []) + [
+                {"role": "user", "content": prompt}]
+            profile = await self._request_profile(model, rows)
+            payload = self._build_payload(
+                prompt, system, max_tokens, temperature, model=model, profile=profile)
+            async with native_stream(self.profile, profile, self.client,
                 "POST",
                 self._build_url(model, streaming=True),
-                headers={"x-goog-api-key": binding.lease.api_key},
+
+                headers=profile_headers(profile, {"x-goog-api-key": binding.lease.api_key}),
+
                 json=payload,
             ) as response:
                 try:

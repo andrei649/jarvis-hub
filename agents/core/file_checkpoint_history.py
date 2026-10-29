@@ -1205,7 +1205,9 @@ class FileCheckpointHistory:
 
     def apply_mutation(self, target: Path, root: Path, snap: Snapshot,
                        op: str, data: bytes, *, expected_root: tuple[int, int],
-                       tool_turn: str | None = None) -> int:
+                       tool_turn: str | None = None,
+                       verification: list[bool] | None = None,
+                       observed: Callable[[str], object] | None = None) -> int:
         """Prepare durably, compare exact preimage, then perform one physical effect."""
         with _locked(self.snapshots.directory), self._connection() as db:
             root_info = os.stat(root, follow_symlinks=False)
@@ -1263,6 +1265,21 @@ class FileCheckpointHistory:
                         os.fsync(parent)
                     else:
                         _replace(parent, name, data, snap.mode if snap.existed else 0o644)
+                    # Read back through the same validated no-follow parent fd,
+                    # before leaving the effect boundary or scrubbing a result.
+                    verified = False
+                    try:
+                        after_exists, after_sha, after_size, after_mode, _ = _state(
+                            parent, name, max_bytes=len(data) if op == 'write' else 0,
+                            expected_dev=identity[0], single_link=True)
+                        verified = (not after_exists if op == 'delete' else
+                                    (after_exists and after_sha == _sha(data)
+                                     and after_size == len(data)
+                                     and after_mode == (snap.mode if snap.existed else 0o644)))
+                    except (OSError, CheckpointRefusal):
+                        pass
+                    if verification is not None:
+                        verification.append(verified)
                     db.execute("""UPDATE entries SET status='applied', post_existed=?,
                         post_sha=?, post_size=?, post_mode=? WHERE id=?""",
                         (int(op == "write"), post_sha,
@@ -1270,9 +1287,13 @@ class FileCheckpointHistory:
                          (snap.mode if snap.existed else 0o644) if op == "write" else 0,
                          entry_id))
                     db.commit()
+                    if observed is not None:
+                        observed('verified' if verified else 'applied_unverified')
             except BaseException as exc:
                 # A crash or uncertain effect leaves the durable prepared row visible.
                 if effect_started:
+                    if observed is not None:
+                        observed('unknown')
                     raise CheckpointRefusal("effect_state_incomplete") from exc
                 raise
             return entry_id

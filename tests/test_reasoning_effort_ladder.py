@@ -399,7 +399,8 @@ def test_the_streaming_path_is_fitted_too():
     sent: list[dict] = []
 
     class _StreamClient:
-        def stream(self, method, url, headers=None, json=None):
+        def stream(self, method, url, headers=None, json=None, content=None):
+            assert content is None
             sent.append(json)
             return _Stream(json)
 
@@ -439,7 +440,8 @@ def test_a_reasoning_delta_never_lands_in_the_answer():
                 yield line
 
     class _StreamClient:
-        def stream(self, method, url, headers=None, json=None):
+        def stream(self, method, url, headers=None, json=None, content=None):
+            assert content is None
             return _Stream()
 
         async def aclose(self):

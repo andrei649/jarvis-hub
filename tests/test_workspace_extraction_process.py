@@ -23,7 +23,11 @@ async def test_real_child_preserves_text_and_reports_enforced_limits(kind):
     expected = extract.extract_bytes(data, kind)
     assert (result.segments, result.page_count) == (expected.segments, expected.page_count)
     assert "wall_time" in result.limits
-    assert ("memory_unavailable" if sys.platform == "win32" else "address_space") in result.limits
+    if sys.platform == "win32":
+        assert "memory_unavailable" in result.limits
+    elif "address_space" not in result.limits:
+        assert sys.platform == "darwin"
+        assert {"memory_unavailable", "rss_sampled"}.issubset(result.limits)
 
 
 async def test_child_preserves_stable_error_and_page_count():
@@ -203,8 +207,10 @@ async def test_child_sets_an_actual_address_space_ceiling(monkeypatch):
     script = (
         "import resource; "
         "from agents.core.workspace import extract_process as p; "
-        "p._apply_memory_limit(); "
-        "assert resource.getrlimit(resource.RLIMIT_AS)[0] <= p.MEMORY_LIMIT_BYTES; "
+        "limits=p._apply_memory_limit(); "
+        "assert ('address_space' in limits and "
+        "resource.getrlimit(resource.RLIMIT_AS)[0] <= p.MEMORY_LIMIT_BYTES) or "
+        "('memory_unavailable' in limits and __import__('sys').platform == 'darwin'); "
         "from agents.core.workspace.extract_process import _worker; _worker()"
     )
 

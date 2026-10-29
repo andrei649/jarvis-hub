@@ -122,81 +122,81 @@ raw bytes never reach disk/logs/APIs at all, so any frame in your evidence is it
 
 ## 12.1 Proof 1 — Governed browser on installed Chromium (H28)
 
-Host setup per `docs/PLAYWRIGHT_OPERATOR.md`: `python -m pip install playwright`,
-`python -m playwright install chromium`, then `JARVIS_PLAYWRIGHT_HOST=1`. Optional:
-`JARVIS_PLAYWRIGHT_BROWSER` (default `chromium`), `JARVIS_PLAYWRIGHT_HEADLESS` (default `1` — set
-`0` for this proof so you can *see* it), `JARVIS_PLAYWRIGHT_DOWNLOAD_DIR`.
+Use the isolated environment and current prerequisites in `docs/PLAYWRIGHT_OPERATOR.md`.
+The host flag stays off until the owner activates it. Current execution needs the
+Action Kernel, unified action API, task mediation in enforce mode, an installed
+Chrome/Chromium engine, optional Python dependencies and the server's public domain
+allowlist. `GET /api/browser/status` is a user-guarded availability check, not a launch.
 
-**There is no HTTP route that executes a browser plan.** The surface is `POST /api/browser/check`
-and `POST /api/browser/plan/preview` (both tier **user**, `agents/core/routers/browser.py:119,127`)
-— preview and policy only. Real execution goes through `GovernedBrowser.run()` in Python. So this
-proof is a **scripted** proof; write it once as `a8_browser.py` on the host and keep it as evidence.
+Operator **Run with approval** submits a bounded `browser_run` plan through the
+authenticated ToolRPC route, displays its durable task id and links the Decision
+Inbox. The owner accepts that exact task before execution. The check/preview routes
+remain simulations: their editable allowlist cannot widen the server's policy.
+Do not use an unbound driver script as proof of the governed execution path.
 
-#### AIO-004 — Allowlist policy agrees between API and driver  🖥
-- **Surface:** `POST /api/browser/check` · **Tier:** user · **Auto:** ✅tests/test_h15_1_browser_agent.py
-- **Why it matters:** the HUD's dry-run and the real driver must apply the *same* guard; if they diverge, the preview is theatre.
-- **Steps:** 1) `curl -s -X POST "$B/api/browser/check" -H 'content-type: application/json' -d '{"url":"https://example.com/","allowlist":["example.com"]}'`. 2) Repeat with `"url":"https://evil.example.net/"`. 3) Repeat with `"url":"http://192.168.1.10/"` and the same allowlist. 4) Repeat with `"allowlist":[]`.
-- **Expected:** (1) `{"allowed":true,"reason":""}`. (2) `{"allowed":false,"reason":"evil.example.net not in egress allowlist"}` (suffix match, `browser_agent.py:53`). (3) `allowed:false` with an SSRF reason from `check_ssrf` (`browser_agent.py:56-61`). (4) `allowed:false` — empty allowlist is fail-closed.
-- **FAIL if:** any private-IP or off-list host returns `allowed:true` → **BLOCKER**.
-- **Evidence:** four curl outputs.
+Local Mac evidence is separate: the current Chrome module has 30 cases for real
+owner-approved calls, cross-call refs/frame/focus/form targets, unchanged/changed
+registration, owner HTTP tiers, public network guards and native/journal cleanup.
+These pass with isolated optional dependencies and fresh loopback fixtures. Missing
+dependencies yield a skip, not native acceptance. External-site/headed and other
+platform journeys remain separate owner acceptance records.
 
-#### AIO-005 — A real Chromium navigation runs only inside the policy  🖥👁
-- **Surface:** `GovernedBrowser` + `PlaywrightBrowserDriver` (script) · **Auto:** ⚠️tests/test_h28_playwright_driver.py (the live case at line 418-431 is skipped unless `JARVIS_PLAYWRIGHT_LIVE=1`, and it navigates a `data:` URL, not a real site)
-- **Why it matters:** this is the H28 gate itself — a real browser binary, driven under the real policy object.
-- **Prereq:** the host setup above; `JARVIS_PLAYWRIGHT_HEADLESS=0` so the window is visible.
-- **Steps:** 1) Run the owner-gated smoke first: `$env:JARVIS_PLAYWRIGHT_LIVE="1"; python -m pytest tests/test_h28_playwright_driver.py -q`. 2) Then run a real navigation, wiring the *same* policy object into both the guard and the governor, exactly as `docs/PLAYWRIGHT_OPERATOR.md` prescribes:
-  ```python
-  from agents.core.browser_agent import BrowserPolicy, GovernedBrowser
-  from agents.core.browser_playwright import PlaywrightBrowserDriver
-  policy = BrowserPolicy(["example.com"])
-  driver = PlaywrightBrowserDriver.from_env()
-  driver.set_url_guard(policy.domain_allowed)
-  gb = GovernedBrowser(driver=driver, policy=policy, approvals=None)
-  print(await gb.run([{"action":"navigate","url":"https://example.com/"},
-                      {"action":"extract","selector":"h1"}]))
-  ```
-  3) Watch the visible Chromium window.
-- **Expected:** the run returns `{"steps":2,"trace":[{"action":"navigate","status":"done","result":{"url":...,"title":...,"status":200}}, {"action":"extract","status":"done","result":{"text":"Example Domain","truncated":false,...}}],"ok":true}`. The driver refuses to start at all if no URL guard was bound (`PlaywrightHostDisabled: … requires a per-request URL guard`, `browser_playwright.py:141-144`) — prove that too by commenting out `set_url_guard`.
-- **Also acceptable (honest degradation):** with `JARVIS_PLAYWRIGHT_HOST` unset, `from_env()` raises `PlaywrightHostDisabled("Playwright host actuation is disabled; set JARVIS_PLAYWRIGHT_HOST=1")` (`browser_playwright.py:95-98`) — an honest refusal, and a **SKIP**, not a pass.
-- **FAIL if:** navigation succeeds with no guard bound → **BLOCKER**.
-- **Evidence:** script output, a photo/screenshot of the visible browser window, the pytest line.
+#### AIO-004 — Preview cannot widen server execution policy  🖥
 
-#### AIO-006 — Off-policy redirect is blocked mid-flight  🖥👁
-- **Surface:** `PlaywrightBrowserDriver._route_request` (`browser_playwright.py:172-186`) · **Auto:** ⚠️tests/test_h28_playwright_driver.py (fake-driver route interception only)
-- **Why it matters:** an allowlist that only checks the *first* URL is defeated by one 302. This is the difference between a policy and a decoration.
-- **Steps:** 1) Serve a tiny local page (or use a known redirector) whose only job is to `302` from an allowlisted host to an off-list host. 2) Put ONLY the first host in `BrowserPolicy`. 3) Navigate to it.
-- **Expected:** the request to the off-list target is aborted with `blockedbyclient`; `page.goto` raises → `GovernedBrowser.run_step` catches it and returns `{"action":"navigate","status":"error","reason":"step failed"}` (`browser_agent.py:141-143`). The visible window never renders the off-list page.
-- **FAIL if:** the off-list page renders → **BLOCKER** (the redirect escaped policy).
-- **Evidence:** the trace dict + a screenshot of the blocked/blank page.
+- **Surface:** `/api/browser/check`, `/api/browser/plan/preview`, `/api/browser/status` and Operator.
+- **Auto:** `tests/test_browser_runtime.py`, `tests/test_browser_transport.py`, `tests/test_h15_1_browser_agent.py`.
+- **Steps:** Check and preview an allowed public URL, an off-list URL and a private literal. Change only the editable preview allowlist, then attempt execution through Run with approval.
+- **Expected:** preview describes its supplied policy; actual intake still uses only the server's domain list and public DNS/IP pins. The request cannot supply a different execution allowlist, browser/profile or approval mode. Missing prerequisites report unavailable without a launch or DNS lookup.
+- **FAIL if:** a preview edit grants off-list/private execution or request fields replace server authority.
+- **Evidence:** preview responses, status and the exact execution request/outcome with secrets omitted.
 
-#### AIO-007 — Off-policy subresource is blocked  🖥
-- **Steps:** Point the driver at an allowlisted page that loads an image/script from a *different* host. Navigate, then `extract`.
-- **Expected:** the page loads; the off-list subresource never fetches (`route("**/*")` is installed on the *context*, `browser_playwright.py:159`, so it fires per subresource). Confirm in the visible window: the foreign image is broken.
-- **FAIL if:** the foreign subresource loads → **MAJOR** (policy applies to top-level only).
-- **Evidence:** screenshot showing the broken foreign asset.
+#### AIO-005 — A real approved Chromium navigation runs  🖥👁
 
-#### AIO-008 — A mutating step blocks on the approval queue, and the audit links plan → execution  🖥
-- **Surface:** `GovernedBrowser.run_step` risky path (`browser_agent.py:127-137`) · `GET /api/admin/audit` (admin) · `GET /autonomy/tasks` (admin)
-- **Why it matters:** the whole product claim is that capability is *governed*. A `click` must not happen because a script asked nicely.
-- **Steps:** 1) Run a plan containing `{"action":"click","selector":"a"}` with `approvals=None`. 2) Then re-run with the live approval queue injected (`orch.autonomy_queue`) and **approve** the request from the Decision Inbox (§07). 3) Then re-run and **reject** it.
-- **Expected:** (1) `{"action":"click","status":"denied","reason":"approval required, no queue"}`. (2) the step blocks until the decision, then `status:"done"`; the request carries `tool:"browser.click"`, `risk_tier:2` and a `summary` truncated to 120 chars (`browser_agent.py:130-134`). (3) `status:"denied"` with `reason` = the decision status and an `approval_id`. In all three, `GET /api/admin/audit` must contain an entry for the decision and `GET /api/metrics/kernel` `by_kind` must have moved.
-- **FAIL if:** the click executes without a decision → **BLOCKER**. If the audit has no row linking the approved request id to the execution → **MAJOR** (the "audit links approved plan → execution" clause of §N is unmet).
-- **Evidence:** the three traces, the Decision Inbox rows, the matching audit entries (redacted).
+- **Surface:** Operator Run with approval → authenticated `/api/toolrpc/call` → durable owner task → governed worker.
+- **Auto:** `tests/test_browser_chromium_runtime.py`, using real installed Chrome and a local synthetic page.
+- **Steps:** With a separately owner-authorized public test domain configured, create a navigate→snapshot/extract plan. Submit it, record the returned task id, approve that exact item in Decision Inbox and inspect its settled result. For the later visible-host proof, use the supported host headed configuration and record the actual window.
+- **Expected:** no navigation before acceptance; the current worker executes the exact approved plan, returns bounded page observations and verifies Chrome/profile cleanup. A bare driver call, fabricated receipt or stale task/config/registration cannot substitute for acceptance.
+- **FAIL if:** navigation occurs without current task/Kernel authority, reaches an unpinned destination, or success is reported while owned Chrome cleanup is unverified.
+- **Evidence:** task/decision/result linkage, observed page and native-process/profile cleanup. Local fixture proof alone does not close the external-site/headed journey.
 
-#### AIO-009 — No ambient profile or cookie jar is reused  🖥👁
-- **Surface:** `PlaywrightBrowserDriver._ensure_started` → `browser.new_context(...)` (`browser_playwright.py:154-157`)
-- **Why it matters:** "governed browser" is meaningless if it inherits the owner's logged-in Chrome session.
-- **Prereq:** the owner's normal Chrome/Chromium profile is logged into at least one site (do this by hand; **do not** log in from the governed browser).
-- **Steps:** 1) Navigate the governed browser to an allowlisted site where the owner is logged in normally. 2) `extract` a selector that only renders when authenticated. 3) In the same process, run a second `navigate` and `execute_js` returning `document.cookie` (approve it once). 4) Close and re-open the driver; repeat.
-- **Expected:** the authenticated element is **absent** — the page renders logged-out. `document.cookie` is empty (or contains only cookies this very session set). Each driver instance builds a **fresh context** with `service_workers="block"`, so no persisted profile, cache or service worker can bridge sessions. Nothing you do in the governed browser should ever appear in the owner's normal browser and vice-versa.
-- **FAIL if:** the governed browser is logged in as the owner → **BLOCKER** (ambient authority).
-- **Evidence:** screenshot of the logged-out render + the `document.cookie` value.
+#### AIO-006 — Off-policy redirect is blocked  🖥👁
 
-#### AIO-010 — Downloads are sandboxed to the configured directory  🖥
-- **Steps:** With `JARVIS_PLAYWRIGHT_DOWNLOAD_DIR` unset, run a `download` step. Then set it and repeat against a link whose `suggested_filename` is `../../report.txt`.
-- **Expected:** unset → `ValueError("download_dir must be configured before downloading")` (`browser_playwright.py:296`). Set → the file lands **inside** the directory, named `report.txt` (traversal stripped by `_safe_filename`, `:320-325`), and a second download of the same name becomes `report-1.txt` (`:327-339`).
-- **FAIL if:** a file appears outside the configured root → **BLOCKER**.
-- **Evidence:** `ls` of the download dir before/after.
+- **Auto:** the real Chrome subresource/redirect case in `tests/test_browser_chromium_runtime.py`.
+- **Steps:** Through the same approved runtime, use an authorized controlled page that redirects to an off-list host. The automated version uses the private test-only loopback seam; production requests cannot enable that seam.
+- **Expected:** the off-list target is blocked and never rendered; the task reports a bounded failure and releases only verified owned resources.
+- **FAIL if:** a redirect escapes the domain/IP pin or cleanup is falsely reported complete.
+- **Evidence:** request observations, task result and native-process/profile cleanup.
+
+#### AIO-007 — Off-policy subresources and WebSockets are blocked  🖥
+
+- **Auto:** `tests/test_browser_transport.py` and the real Chrome fixture.
+- **Steps:** Visit an authorized page with an off-list image/script and attempt a WebSocket. Inspect the controlled target's request log.
+- **Expected:** no unapproved subresource or WebSocket connects; service workers cannot bypass the context policy. A broken image alone is not sufficient proof without the request observation.
+- **FAIL if:** a destination outside the accepted pin set is contacted.
+- **Evidence:** target request observations and the bounded task result.
+
+#### AIO-008 — Exact owner and per-step Kernel approval  🖥
+
+- **Surface:** `browser_run`, Decision Inbox, task records and audit.
+- **Auto:** browser Kernel/runtime/ToolRPC suites and the real approved-click fixture.
+- **Steps:** Submit a navigate→click plan without acceptance, reject it, then submit a new plan and accept its exact task. Exercise kill/Kernel denial and changed registration/configuration after acceptance in the synthetic tests.
+- **Expected:** the accepted current plan clicks once; rejected, killed or changed plans do not actuate. Each mutation has a task-bound exact `browser.step` receipt. Read/navigation steps also revalidate live Kernel policy. Generic GRANT and a manually supplied receipt are insufficient.
+- **FAIL if:** a click precedes acceptance or loses its exact plan/step/worker linkage.
+- **Evidence:** task/decision/audit linkage and the controlled page's mutation counter.
+
+#### AIO-009 — Fresh profile and verified native lifetime  🖥👁
+
+- **Auto:** real Chrome success/timeout/cancellation/redirect refusal and hanging-close controls.
+- **Steps:** Record the unique temporary profile and native Chrome PID/create-time for the controlled run. Repeat with timeout and cancellation. Trigger the synthetic hanging-close case and inspect readiness until recovery.
+- **Expected:** no owner profile is read; Chrome/profile resources are gone before cleanup success. Repeated cancellation retains the close task and driver; uncertain cleanup blocks new runs and reports unavailable until resolved. Merely deleting a profile directory or observing Playwright's transport child exit is insufficient.
+- **FAIL if:** ambient owner identity is reused, a native owned browser survives reported success, or uncertain cleanup loses its owner.
+- **Evidence:** process identity/lifetime, profile absence, task result and readiness changes. Consented owner-profile attachment is a separate still-open contract.
+
+#### AIO-010 — Advanced downloads remain gated  🖥
+
+- **Current boundary:** the registered strict plan does not expose `download`, `upload` or `execute_js`. An extra action is rejected before execution; low-level library methods do not make it a supported owner tool.
+- **Remaining acceptance:** when governed downloads are exposed, verify exact destination/approval, required directory, traversal-safe filename, collision handling and absence of writes outside the owned root. Keep this item pending; a current schema refusal does not prove a future download implementation.
+- **Evidence:** present refusal and a separate future accepted download trace. No real owner data is downloaded by the local fixture.
 
 ---
 
@@ -765,3 +765,17 @@ Observations only — **no code was changed**. Each is a pointer for the owner, 
 10. **File:line citations.** Every `file:line` in this section was read at commit `4ce901e`. Line
     numbers move; the symbol names, route paths, JSON keys, env vars, settings keys and label strings
     are the stable part — search for those first if a line number no longer matches.
+
+## Browser session supplement — current local source
+
+These procedures are source-backed checks, not a recorded owner-host live run.
+Use a separately authorized synthetic/local fixture and the prerequisites above.
+
+| ID | Check | Expected | Automated source coverage |
+| --- | --- | --- | --- |
+| AIO-073 | Start, snapshot, then approve a separate act call | Same fresh session survives two reaper ticks; exact grounded ref acts once; session ID alone gives no authority | tests/test_browser_chromium_runtime.py |
+| AIO-074 | Mutate an observed node/form target or transfer focus, then reuse ref | Exact stale_browser_ref before physical action; no selector/text fallback; new snapshot is required | tests/test_browser_session.py; tests/test_browser_chromium_runtime.py |
+| AIO-075 | Change trusted registration key/epoch, source/configuration or kill control | Native Chrome/profile/journal settle within bounded close; uncertain cleanup is retained and readiness false | tests/test_browser_chromium_runtime.py |
+| AIO-076 | Try session/task/close HTTP with user-only and admin credentials | User availability remains readable; owner IDs/results/close refuse user-only and accept the configured owner admin | tests/test_browser_chromium_runtime.py; frontend/src/test/operator-panel.test.tsx |
+| AIO-077 | Approve separate console and get_images session reads | Only completed owner-task projection appears as untrusted text; no handles, headers, storage or image fetch | tests/test_browser_chromium_runtime.py; frontend/src/test/operator-panel.test.tsx |
+| AIO-078 | Duplicate frame URLs, navigate a frame, mutate image source and exceed image limits | Unknown-frame console clears conservatively; stale image ref refuses physical use; truncation/known omissions are explicit | tests/test_browser_session.py; tests/test_browser_chromium_runtime.py |

@@ -15,7 +15,7 @@ import importlib
 import re
 import time
 import uuid
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager, nullcontext, suppress
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, Optional
@@ -23,9 +23,10 @@ from typing import Callable, Optional
 from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
-from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, is_degraded_reply
+from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, is_backend_failure_reply, is_degraded_reply
 from .llm.auth_rotation import AuthLease
 from .llm.gemini import GeminiBackend
+from .llm.providers.admitted_profiles import AdmittedProviderProfile
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.data_handling import DataHandlingRefused
 from .llm.gemini_cache import ContextCache
@@ -49,7 +50,9 @@ from .action_origin import (
     reset_action_origin,
 )
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
-from .turn_outcome import measure_turn_latency
+from .turn_outcome import (measure_turn_latency, record_turn_completion,
+                           record_agent_observation, record_synthesis_observation,
+                           settle_agent_turn, record_accepted_compression)
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import (
     ADMIN,
@@ -602,6 +605,8 @@ class Orchestrator:
         self.permission_ledger = None
         self.work_runs = None
         self.company_runtime = None
+        self.provider_install_service = None
+        self.custom_endpoint_service = None
         # K3 — the session-kernel manager the coordinator composes. Declared here
         # like the rest of the external slots so the protocol holds before wiring.
         self.session_kernels = None
@@ -2492,21 +2497,46 @@ class Orchestrator:
         project_token = project_context.bind()   # H594: begun once the session is known
         awake = power.hold_for_turn(self)        # H182: off unless JARVIS_KEEP_AWAKE=1
         try:
-            reply = await self._handle_input(text, channel, agent_override, session_id)
+            from .turn_compaction import TurnCompaction, compaction_scope
+
+            settings = getattr(self, "get_setting", None)
+            settings = settings if callable(settings) else lambda _key, default: default
+            attempts = settings("memory.compression_max_attempts", 3)
+            attempts = attempts if type(attempts) is int and 1 <= attempts <= 10 else 3
+            from collections import OrderedDict
+
+            sid = str(session_id or getattr(self, "session_id", ""))
+            cache = getattr(self, "_h391_pressure", None)
+            if not isinstance(cache, OrderedDict):
+                cache = self._h391_pressure = OrderedDict()
+            state = TurnCompaction(sid,
+                                   settings("memory.context_compression", False) is True,
+                                   attempts, previous=cache.get(sid))
+            cache[sid] = state
+            cache.move_to_end(sid)
+            if len(cache) > 128:
+                cache.popitem(last=False)
+            with compaction_scope(state):
+                reply = await self._handle_input(text, channel, agent_override, session_id)
+            settle_agent_turn()
             if _TURN_CHAT_OUTCOMES.get() is not None:
                 self._ack_chat_outcomes(reply)
             return reply
         except DataHandlingRefused as exc:
             record_runtime_stop("generation_refused")
+            record_turn_completion("refused")
             return exc.reply()
         except CompactionClockRefused:
             record_runtime_stop("context_refused")
+            record_turn_completion("refused")
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             record_runtime_stop("continuation_refused")
+            record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         except ForeignHistoryRefused:
             record_runtime_stop("continuation_refused")
+            record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
@@ -2541,11 +2571,13 @@ class Orchestrator:
         await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
+            record_turn_completion("command")
             return session_reply
 
         outcome = await self._dispatch_preappend_command(text)
         if outcome is not None:
             self.last_cognition = self._command_cognition(outcome)
+            record_turn_completion("command")
             return outcome.reply
         from .session_continuation import prepare_continuation_turn
 
@@ -2561,6 +2593,7 @@ class Orchestrator:
         if outcome is not None:
             await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
             self.last_cognition = self._command_cognition(outcome)
+            record_turn_completion("command")
             return outcome.reply
 
         skill_cmd = self.skills.parse_command(text)
@@ -2582,6 +2615,7 @@ class Orchestrator:
                         },
                         "trace": [{"step": "skill_execution", "duration_ms": 10, "result": skill_name}]
                     }
+                    record_turn_completion("command")
                     return result
 
         # Natural-language LLM-backend control (start / load / unload / status).
@@ -2592,6 +2626,7 @@ class Orchestrator:
                 if reply:
                     await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
                     self.last_cognition = self._control_cognition(llm_ctl[0])
+                    record_turn_completion("command")
                     return reply
 
         t_c0 = time.perf_counter()
@@ -2648,6 +2683,7 @@ class Orchestrator:
             )
         else:
             responses = {"jarvis": "I don't have a specialist for that yet."}
+            record_agent_observation("jarvis", "unavailable")
 
         handoff_target = self._detect_handoff(responses)
         if handoff_target:
@@ -2665,15 +2701,22 @@ class Orchestrator:
         try:
             if was_synthesized:
                 synthesized = await self._synthesize(responses, intent)
+                synthesis_ok = (isinstance(synthesized, str) and bool(synthesized.strip())
+                                and not is_backend_failure_reply(synthesized.lstrip()))
+                record_synthesis_observation(success=synthesis_ok)
+                if not synthesis_ok:
+                    record_runtime_stop("generation_failed")
             else:
                 responder_id = next(iter(responses))
                 synthesized = responses[responder_id]
         except RuntimeError:
             record_runtime_stop("generation_failed")
+            record_synthesis_observation(success=False)
             synthesized = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
             log_error(logger, E_LLM_BACKEND_MISSING, backend="synthesize")
         except Exception as e:
             record_runtime_stop("generation_failed")
+            record_synthesis_observation(success=False)
             synthesized = f"I hit an issue processing that: {e}"
             log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
@@ -2717,21 +2760,46 @@ class Orchestrator:
         project_token = project_context.bind()   # H594: begun once the session is known
         awake = power.hold_for_turn(self)        # H182: see handle_input
         try:
-            reply = await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
+            from .turn_compaction import TurnCompaction, compaction_scope
+
+            settings = getattr(self, "get_setting", None)
+            settings = settings if callable(settings) else lambda _key, default: default
+            attempts = settings("memory.compression_max_attempts", 3)
+            attempts = attempts if type(attempts) is int and 1 <= attempts <= 10 else 3
+            from collections import OrderedDict
+
+            sid = str(session_id or getattr(self, "session_id", ""))
+            cache = getattr(self, "_h391_pressure", None)
+            if not isinstance(cache, OrderedDict):
+                cache = self._h391_pressure = OrderedDict()
+            state = TurnCompaction(sid,
+                                   settings("memory.context_compression", False) is True,
+                                   attempts, previous=cache.get(sid))
+            cache[sid] = state
+            cache.move_to_end(sid)
+            if len(cache) > 128:
+                cache.popitem(last=False)
+            with compaction_scope(state):
+                reply = await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
+            settle_agent_turn()
             if _TURN_CHAT_OUTCOMES.get() is not None:
                 self._ack_chat_outcomes(reply)
             return reply
         except DataHandlingRefused as exc:
             record_runtime_stop("generation_refused")
+            record_turn_completion("refused")
             return exc.reply()
         except CompactionClockRefused:
             record_runtime_stop("context_refused")
+            record_turn_completion("refused")
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             record_runtime_stop("continuation_refused")
+            record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         except ForeignHistoryRefused:
             record_runtime_stop("continuation_refused")
+            record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
@@ -2765,6 +2833,7 @@ class Orchestrator:
         await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
+            record_turn_completion("command")
             if on_token:
                 emitted = on_token(session_reply)
                 if inspect.isawaitable(emitted):
@@ -2773,6 +2842,7 @@ class Orchestrator:
 
         outcome = await self._dispatch_preappend_command(text)
         if outcome is not None:
+            record_turn_completion("command")
             if on_token:
                 emitted = on_token(outcome.reply)
                 if inspect.isawaitable(emitted):
@@ -2791,6 +2861,7 @@ class Orchestrator:
 
         outcome = await self._dispatch_command(text)
         if outcome is not None:
+            record_turn_completion("command")
             await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
             if on_token:
                 emitted = on_token(outcome.reply)
@@ -2806,6 +2877,7 @@ class Orchestrator:
             if skill:
                 result = await skill.execute(command, args, {"channel": channel})
                 if result:
+                    record_turn_completion("command")
                     await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
                     if on_token:
                         emitted = on_token(result)
@@ -2830,6 +2902,7 @@ class Orchestrator:
             if llm_ctl:
                 reply = await self._run_llm_control(*llm_ctl, channel=channel)
                 if reply:
+                    record_turn_completion("command")
                     await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
                     if on_token:
                         emitted = on_token(reply)
@@ -2990,6 +3063,7 @@ class Orchestrator:
                             self.context_cache is not None
                             and history_parts
                             and self.security is not None
+                            and not isinstance(getattr(backend, 'profile', None), AdmittedProviderProfile)
                         ):
                             cache_material = self.security.prepare_cache_material(
                                 system_prompt,
@@ -3074,6 +3148,7 @@ class Orchestrator:
                         request_scope = backend.request_scope(request_binding)
                 except LocalBackendUnavailableError:
                     record_runtime_stop("generation_failed")
+                    record_agent_observation(agent_id, "unavailable")
                     msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
                     if on_token:
@@ -3083,6 +3158,7 @@ class Orchestrator:
                     return msg
                 except DataHandlingRefused as exc:
                     record_runtime_stop("generation_refused")
+                    record_agent_observation(agent_id, "refused")
                     msg = exc.reply()
                     if on_token:
                         emitted = on_token(msg)
@@ -3093,6 +3169,7 @@ class Orchestrator:
                     raise
                 except RuntimeError:
                     record_runtime_stop("generation_failed")
+                    record_agent_observation(agent_id, "unavailable")
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
                     if on_token:
@@ -3143,6 +3220,9 @@ class Orchestrator:
                                if prepared is not None else {}),
                         )
                 synthesized = response
+                record_agent_observation(
+                    agent_id, 'answered' if isinstance(response, str) and response.strip()
+                    and not is_backend_failure_reply(response.lstrip()) else 'failed')
                 self._last_routes[agent_id] = route_name or ""
                 # `model` is the id handed to generate_response a few lines up, so this
                 # is the thing that ran — not the agent's configured model, which no
@@ -3203,7 +3283,16 @@ class Orchestrator:
             self._last_cached_tokens[agent_id] = primary_cached
             self._last_prompt_tokens[agent_id] = primary_prompt
             responses = {agent_id: synthesized, **secondary_responses}
-            synthesized = await self._synthesize(responses, intent)
+            try:
+                synthesized = await self._synthesize(responses, intent)
+                synthesis_ok = (isinstance(synthesized, str) and bool(synthesized.strip())
+                                and not is_backend_failure_reply(synthesized.lstrip()))
+                record_synthesis_observation(success=synthesis_ok)
+                if not synthesis_ok:
+                    record_runtime_stop("generation_failed")
+            except Exception:
+                record_synthesis_observation(success=False)
+                raise
             _stream_responses = responses
             responder_id = "jarvis"
         else:
@@ -3213,6 +3302,7 @@ class Orchestrator:
         # as a blank bubble. The backend already refuses to leak raw reasoning,
         # so an empty string here means "no answer was produced".
         if not (synthesized or "").strip():
+            record_agent_observation(agent_id or "jarvis", "failed")
             synthesized = "My reply was cut short before I finished, sir — the model ran out of context while thinking. Try again, simplify the request, or load a larger-context model in LM Studio."
             if on_token:
                 emitted = on_token(synthesized)
@@ -3523,11 +3613,13 @@ class Orchestrator:
         if tasks is None:
             tasks = self._title_tasks = set()
         for manager, session, text, generate in pending:
+            upgrade = self._upgrade_session_title(manager, session, text, generate)
             try:
                 from .turn_usage import detached_turn_usage
                 with detached_turn_usage():
-                    task = asyncio.create_task(self._upgrade_session_title(manager, session, text, generate))
+                    task = asyncio.create_task(upgrade)
             except RuntimeError:            # no running loop: no upgrade, the instant title stays
+                upgrade.close()
                 return
             tasks.add(task)
             task.add_done_callback(tasks.discard)
@@ -3919,6 +4011,8 @@ class Orchestrator:
                 return
             observations = queue.chat_outcome_snapshot(context)
             bind_approval_turn(context)
+            from .turn_outcome import bind_approval_origin
+            bind_approval_origin(context.turn_id)
             _TURN_CHAT_OUTCOMES.set({"queue": queue, "context": context, "observations": observations,
                                      "included": [], "persisted": False})
         except Exception:
@@ -4426,6 +4520,128 @@ class Orchestrator:
         except Exception:
             logger.debug("LivingMemory turn record skipped", exc_info=True)
 
+    async def _maybe_micro_compact(self, reply: str, *, responder_id: str | None = None,
+                                   append_receipt=None) -> bool:
+        """Advance an opt-in rolling prompt view after the assistant turn is durable."""
+        if (self.get_setting("memory.context_compression", False) is not True
+                or self.get_setting("memory.compression_micro_compact", False) is not True
+                or self.get_setting("memory.compression_checkpoint_required", False) is True
+                or not getattr(getattr(self.memory, "conversation", None), "persist", False)
+                or not isinstance(reply, str) or not reply.strip()
+                or (responder_id is not None and is_failed_turn_reply(responder_id, reply))):
+            return False
+        cp = getattr(self, "checkpoints", None)
+        if cp is None or not callable(getattr(cp, "commit_micro_view", None)):
+            return False
+        cadence = self.get_setting("memory.compression_micro_every_n_turns", 1)
+        cadence = cadence if type(cadence) is int and cadence >= 1 else 1
+        sid = self.session_id
+        from .memory.conversation import DurableAppendReceipt
+
+        if (not isinstance(append_receipt, DurableAppendReceipt)
+                or append_receipt.session_id != sid):
+            return False
+        from .turn_compaction import TurnLifetime, active_compaction
+
+        active = active_compaction()
+        lifetime = active.lifetime if active is not None and active.session_id == sid else TurnLifetime()
+        owned_lifetime = active is None or active.session_id != sid
+        try:
+            from .memory import persistence
+            from .context_compressor import ContextCompressor
+
+            document, digest = await asyncio.to_thread(persistence.read_snapshot_for_rewind, sid)
+            turns = document["turns"]
+            from .memory.compaction_state import _digest
+
+            if (document.get("instance_id") != append_receipt.instance_id
+                    or document.get("revision") != append_receipt.revision
+                    or len(turns) != append_receipt.history_count or not turns
+                    or turns[-1].get("role") != "assistant"
+                    or turns[-1].get("content") != reply
+                    or _digest(turns[-1]) != append_receipt.tail_digest):
+                return False
+            if (document.get("rewound") is True or document.get("foreign_history")
+                    or len(turns) < 4 or len(turns) % 2
+                    or (len(turns) // 2) % cadence):
+                return False
+            if any(type(turn) is not dict or turn.get("media") for turn in turns):
+                return False
+            if any(turns[i].get("role") != "user" or turns[i + 1].get("role") != "assistant"
+                   for i in range(0, len(turns), 2)):
+                return False
+            previous = await asyncio.to_thread(cp.load_micro_view, sid)
+            protected = self.get_setting("memory.compression_keep_first", 0)
+            protected = protected if type(protected) is int and protected >= 0 else 0
+            protected += protected % 2
+            covered = (previous["covered_count"] + 2 if previous else protected + 2)
+            if covered > len(turns) - 2:
+                return False
+            threshold = self.get_setting("memory.compression_micro_defrag_threshold_tokens", 2000)
+            summary = ContextCompressor().micro_summary(
+                turns[protected:covered], prior=previous["summary"] if previous else "",
+                new_turns=turns[covered - 2:covered],
+                defrag_threshold_tokens=threshold,
+            )
+            summary_tier = "local-digest"
+            if self.get_setting("memory.compression_summarizer", False) is True:
+                local = self._compression_summarizer()
+                if local is not None:
+                    from .compaction_hold import HOLD_SETTING, hold_seconds
+
+                    source = ContextCompressor(structured=True)
+                    prompt = source._summarizer_input(
+                        turns[covered - 2:covered], previous["summary"] if previous else "")
+                    try:
+                        candidate = await asyncio.wait_for(
+                            local(prompt), timeout=hold_seconds(self.get_setting(HOLD_SETTING, 10)))
+                        if (isinstance(candidate, str) and candidate.strip()
+                                and len(candidate.encode("utf-8")) <= 8192):
+                            summary = candidate
+                            summary_tier = "local-auxiliary"
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.warning("micro summary used local digest after auxiliary failure")
+            clock = await asyncio.to_thread(cp.clock_snapshot, sid)
+            if clock is None or clock.instance_id != document.get("instance_id"):
+                return False
+            worker = asyncio.create_task(asyncio.to_thread(
+                cp.commit_micro_view, clock, history_revision=document["revision"],
+                history_digest=digest, covered_count=covered, summary=summary,
+                protected_count=protected, lifetime=lifetime, tier=summary_tier,
+                append_revision=append_receipt.revision,
+            ))
+            try:
+                committed = await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                # Cancellation cannot strand a to_thread publication that is waiting
+                # for the store lock. Close the lifetime first, then learn its durable
+                # outcome before letting the turn unwind.
+                closing = asyncio.create_task(asyncio.to_thread(lifetime.close))
+                for task in (closing, worker):
+                    while not task.done():
+                        try:
+                            await asyncio.shield(task)
+                        except asyncio.CancelledError:
+                            continue
+                if worker.result():
+                    record_accepted_compression(clock.session_id, clock.instance_id)
+                raise
+            if committed and hasattr(self, "agents"):
+                _refresh_souls_at_boundary(self)
+            if committed:
+                record_accepted_compression(clock.session_id, clock.instance_id)
+            return bool(committed)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("post-turn micro-compaction deferred", exc_info=True)
+            return False
+        finally:
+            if owned_lifetime:
+                lifetime.close()
+
     async def _complete_llm_turn(
         self,
         *,
@@ -4447,17 +4663,22 @@ class Orchestrator:
         """Single post-LLM seam: memory, checkpoint, logs, learning and trace."""
         called = turn_tools.collected()
         if media is not None:
-            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
-                                       tools=called or None, media=media)
+            append_receipt = await self.memory.add_turn(
+                self.session_id, "assistant", synthesized, agent_id=responder_id,
+                tools=called or None, media=media)
         elif called:
-            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
-                                       tools=called, **({"media": media} if media is not None else {}))
+            append_receipt = await self.memory.add_turn(
+                self.session_id, "assistant", synthesized, agent_id=responder_id,
+                tools=called, **({"media": media} if media is not None else {}))
         else:
-            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
-                                       **({"media": media} if media is not None else {}))
+            append_receipt = await self.memory.add_turn(
+                self.session_id, "assistant", synthesized, agent_id=responder_id,
+                **({"media": media} if media is not None else {}))
         state = _TURN_CHAT_OUTCOMES.get()
         if state is not None and not is_failed_turn_reply(responder_id, synthesized):
             state["persisted"] = True
+        await self._maybe_micro_compact(
+            synthesized, responder_id=responder_id, append_receipt=append_receipt)
         await self._maybe_checkpoint()
         await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
         await asyncio.to_thread(
@@ -4817,7 +5038,38 @@ class Orchestrator:
         prompt_clock.set(snapshot)
         if raw or not self.get_setting("memory.context_compression", False):
             return await self.memory.get_context(sid, last_n=last_n)
-        turns = await self.memory.get_history(sid, last_n)
+        micro_enabled = self.get_setting("memory.compression_micro_compact", False) is True
+        micro = None
+        if micro_enabled and manager is not None and callable(getattr(manager, "load_micro_view", None)):
+            micro = await asyncio.to_thread(manager.load_micro_view, sid)
+        # A durable rolling view needs its original prefix to prove coverage. The
+        # ordinary last-N prompt stays byte-identical when micro is off.
+        turns = await self.memory.get_history(sid, None if micro is not None else last_n)
+        if micro is not None:
+            from .memory.compaction_state import _digest
+
+            count = micro["history_count"]
+            if len(turns) < count or _digest(turns[:count]) != micro["history_turns_digest"]:
+                micro = None
+                turns = await self.memory.get_history(sid, last_n)
+        source_turns = turns
+        current_user = None
+        if (source_turns and source_turns[-1].get("role") == "user"
+                and not source_turns[-1].get("synthetic_handoff")
+                and not source_turns[-1].get("foreign_origin")):
+            import hashlib
+
+            current_user = dict(source_turns[-1])
+            current_user["turn_id"] = hashlib.sha256(
+                f"{sid}:{len(source_turns)}:{current_user.get('timestamp', '')}:"
+                f"{current_user.get('content', '')}".encode()).hexdigest()
+            source_turns[-1] = current_user
+        if micro is not None:
+            protected, covered = micro["protected_count"], micro["covered_count"]
+            turns = [*turns[:protected],
+                     {"role": "assistant", "agent_id": "summary",
+                      "content": micro["summary"], "synthetic_summary": True},
+                     *turns[covered:]]
         # H673 — where measurement stops and estimation resumes on the next turn.
         self._ctx_turns_at_build = len(turns)
         if not turns:
@@ -4832,7 +5084,7 @@ class Orchestrator:
         cache = getattr(self, "_ctx_summary_cache", None)
         if cache is None:
             cache = self._ctx_summary_cache = {}
-        prior = cache.get(sid) if summarizer is not None else None
+        prior = cache.get(sid) if summarizer is not None and micro is None else None
         if tainted_history and prior is not None and prior.get("summary_tainted") is not True:
             prior = None
         compressor = ContextCompressor(
@@ -4877,16 +5129,148 @@ class Orchestrator:
                 policy = replace(policy, output_reserve=cloud_cap(
                     self.get_setting("llm.max_tokens", 0)
                 ))
-        result = await compressor.compact(
-            turns,
-            model=model,
-            policy=policy,
-            session_id=sid,
-            prior=prior,
-            anchor=shared_anchor if shared_budget is not None else (None if pinned_window is not None else self._usage_anchor(len(turns))),
+        if micro is not None:
+            policy = replace(policy, protect_head=max(policy.protect_head,
+                                                      micro["protected_count"] + 1))
+        anchor = (None if micro is not None else shared_anchor) if shared_budget is not None else (
+            None if micro is not None or pinned_window is not None else self._usage_anchor(len(turns)))
+        from .turn_compaction import (active_compaction, idle_should_compact,
+                                      material_progress, preflight_worth_estimating)
+
+        turn_state = active_compaction()
+        if turn_state is not None and turn_state.session_id != sid:
+            turn_state = None
+        threshold = min(
+            compressor.max_tokens if compressor.max_tokens > 0 else policy.window(model),
+            max(1, int(policy.soft * policy.window(model))),
         )
+        pressure = compressor._used(turns, anchor)
+        idle = False
+        if turn_state is not None:
+            turn_state.bind_route(snapshot.instance_id if snapshot is not None else "",
+                                  model, policy.window(model), threshold)
+            idle_after = self.get_setting("memory.compression_idle_after_seconds", 0)
+            if type(idle_after) is int and idle_after > 0 and len(source_turns) >= 2:
+                from datetime import datetime
+
+                previous, current = source_turns[-2:]
+                if previous.get("role") == "assistant" and current.get("role") == "user":
+                    try:
+                        gap = (datetime.fromisoformat(current["timestamp"])
+                               - datetime.fromisoformat(previous["timestamp"])).total_seconds()
+                    except (KeyError, TypeError, ValueError):
+                        gap = -1
+                    idle = idle_should_compact(
+                        enabled=turn_state.enabled, after_seconds=idle_after,
+                        gap_seconds=gap, tokens=pressure,
+                        floor_tokens=max(1, threshold // 2),
+                        cooldown=turn_state.attempts.completed_pending,
+                    )
+        preflight = (turn_state is not None and turn_state.enabled
+                     and preflight_worth_estimating(
+                         turns, threshold_tokens=threshold,
+                         protect_first=policy.protect_head,
+                         protect_last=policy.protect_last_n,
+                     ) and pressure >= threshold)
+        attempt_needed = bool(preflight or idle)
+        async def bounded_compact(rows, *, retry=False, **kwargs):
+            value = self.get_setting("memory.compression_preflight_timeout_seconds", 120)
+            timeout = float(value) if type(value) in (int, float) and 0 < value <= 600 else 120.0
+            args = ({**compact_args, "prior": None, "anchor": None} if retry else compact_args)
+            task = asyncio.create_task(compressor.compact(rows, **args, **kwargs))
+            def consume_late_result(future):
+                with suppress(asyncio.CancelledError, Exception):
+                    future.result()
+            try:
+                done, _ = await asyncio.wait({task}, timeout=timeout)
+            except asyncio.CancelledError:
+                task.cancel()
+                task.add_done_callback(consume_late_result)
+                raise
+            if task not in done:
+                task.cancel()
+                # The compute task has no publication authority. Do not wait for a
+                # cancellation-resistant summarizer while a hard window is pending.
+                task.add_done_callback(consume_late_result)
+                if turn_state is not None:
+                    turn_state.warn_blocked("timeout", tokens=pressure, threshold=threshold)
+                raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
+            return task.result()
+        if attempt_needed and not turn_state.attempts.take():
+            reason = "cooldown" if turn_state.attempts.completed_pending else "attempt_limit"
+            turn_state.warn_blocked(reason, tokens=pressure, threshold=threshold)
+            result = {"compressed": False, "kept": turns, "kept_first": [],
+                      "summary": "", "tokens": pressure}
+        else:
+            compact_args = {"model": model, "policy": policy, "session_id": sid,
+                            "prior": prior, "anchor": anchor}
+            force_target = max(1, threshold // 2) if idle and not preflight else None
+            result = await bounded_compact(turns,
+                **({"force_target_tokens": force_target} if force_target else {}),
+            )
+            if turn_state is not None and attempt_needed:
+                baseline_len, baseline_tokens = len(turns), pressure
+                last_accepted = None
+                accepted_on_original = True
+                result_on_original = True
+                stalled = False
+                while True:
+                    candidate = [*result.get("kept_first", ())]
+                    if result.get("summary"):
+                        candidate.append({"role": "assistant", "content": result["summary"],
+                                          "synthetic_summary": True})
+                    candidate.extend(result.get("kept", ()))
+                    after = int(result.get("tokens") or compressor._used(candidate))
+                    after_len = len(candidate)
+                    progress = result.get("compressed") and material_progress(
+                        baseline_len, after_len, baseline_tokens, after)
+                    if not progress:
+                        stalled = True
+                        if last_accepted is not None:
+                            result = last_accepted
+                        break
+                    last_accepted = result
+                    accepted_on_original = result_on_original
+                    if after < threshold or result.get("summary_deferred"):
+                        break
+                    if not turn_state.attempts.take():
+                        break
+                    retry_target = max(1, int(after * 0.75))
+                    baseline_len, baseline_tokens = after_len, after
+                    result = await bounded_compact(
+                        candidate, retry=True, force_target_tokens=retry_target)
+                    result_on_original = False
+                after = int(result.get("tokens") or pressure)
+                after_len = (len(result.get("kept", ())) + len(result.get("kept_first", ()))
+                             + bool(result.get("summary")))
+                if (stalled or not (result.get("compressed") and material_progress(
+                        len(turns), after_len, pressure, after))) and pressure >= threshold:
+                    turn_state.warn_blocked("no_progress", tokens=pressure, threshold=threshold)
+                elif after < threshold:
+                    turn_state.pressure_below_threshold()
         if tainted_history:
             result["summary_tainted"] = True
+        if turn_state is not None:
+            from .turn_compaction import reanchor_current_user, restore_actionable_user
+
+            view = [*result.get("kept_first", [])]
+            if result.get("summary"):
+                view.append({"role": "assistant", "content": result["summary"],
+                             "synthetic_summary": True})
+            view.extend(result.get("kept", []))
+            if current_user is not None:
+                index = reanchor_current_user(view, turn_id=current_user["turn_id"])
+                if index != len(view) - 1:
+                    restored = restore_actionable_user(view, current_user)
+                    if restored is None:
+                        raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
+                    result["kept"] = [*result.get("kept", []), current_user]
+                    view = restored
+                    index = len(view) - 1
+                turn_state.current_user_index = index
+            elif view and view[-1].get("synthetic_handoff"):
+                turn_state.warn_blocked("handoff", tokens=pressure, threshold=threshold)
+                raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
         if result.get("checkpoint_aborted") and int(result.get("tokens") or 0) >= int(result.get("window") or 0):
             # H427 — a required checkpoint did not land, so no turn was evicted (old images
             # may be); a prompt that cannot fit unsummarised is refused rather than sent over
@@ -4900,6 +5284,10 @@ class Orchestrator:
                 if committed is None:
                     raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
                 prompt_clock.set(committed)
+                # Count the accepted publication even when a synthetic clock lacks
+                # durable identity; only attributable IDs invalidate other viewers.
+                record_accepted_compression(getattr(committed, "session_id", None),
+                                            getattr(committed, "instance_id", None))
             if result.get("summary_deferred"):
                 # H674 — the turn went on without its summary: say so, and leave the
                 # merge prior to the summary still being written (a digest here would
@@ -4912,13 +5300,18 @@ class Orchestrator:
                 record_turn_notice(NOTICE_CODE, DEFERRED_NOTICE)
             elif summarizer is not None and result["compressed"]:
                 # Iterative merge state (bounded: one entry per live session key).
-                cache[sid] = {"summary": result["summary"],
-                                          "covered": result["covered"],
-                                          "summary_tainted": tainted_history}
+                if not attempt_needed or accepted_on_original:
+                    cache[sid] = {"summary": result["summary"],
+                                  "covered": result["covered"],
+                                  "summary_tainted": tainted_history}
+                else:
+                    cache.pop(sid, None)  # Retry coverage is relative to its candidate.
             if result["compressed"]:
                 # H672 — the commit is the boundary: the persona the next prompt is
                 # built from is re-read here, after the CAS above, never before it.
                 _refresh_souls_at_boundary(self)
+                if turn_state is not None and attempt_needed:
+                    turn_state.attempts.mark_completed()
         def _fmt(ts):
             return [render_turn(t, tainted=tainted_history) for t in ts]
 
@@ -5141,12 +5534,23 @@ class Orchestrator:
                         **({"prepared": prepared} if prepared is not None else {})),
                         timeout=seconds,
                     )
+                if isinstance(resp, str) and resp.strip():
+                    if (resp == LOCAL_SELECTION_UNAVAILABLE_REPLY
+                            or resp.startswith(f"[{agent_id} no LLM backend]")):
+                        record_agent_observation(agent_id, "unavailable")
+                    elif is_backend_failure_reply(resp.lstrip()):
+                        record_agent_observation(agent_id, "failed")
+                    else:
+                        record_agent_observation(agent_id, "answered")
+                else:
+                    record_agent_observation(agent_id, "failed")
                 # The origin as this task saw it once the agent returned: the tool loop
                 # carries a recall taint into the context that awaits it, which is this
                 # task, not the turn's (Hermes absorption 5a).
                 return agent_id, resp, self.agents[agent_id].last_latency, current_action_origin()
             except asyncio.TimeoutError:
                 record_runtime_stop("deadline")
+                record_agent_observation(agent_id, "timeout")
                 self.agents[agent_id]._record_failure("timeout")
                 log_error(logger, E_LLM_TIMEOUT, timeout=int(seconds), floor=floor)
                 if floor == TIMEOUT_FLOOR_REASONING:
@@ -5156,9 +5560,11 @@ class Orchestrator:
                 return agent_id, reply, 0.0, current_action_origin()
             except CompactionClockRefused:
                 record_runtime_stop("context_refused")
+                record_agent_observation(agent_id, "refused")
                 return agent_id, CONTEXT_REFUSED_REPLY, 0.0, current_action_origin()
             except Exception as e:
                 record_runtime_stop("generation_failed")
+                record_agent_observation(agent_id, "failed")
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
                 # First-run UX: "no model loaded" is the single most common failure,

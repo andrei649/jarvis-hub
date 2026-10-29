@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import ssl
+from base64 import b64decode
+from binascii import Error as Base64Error
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -38,6 +41,38 @@ INSECURE_TARGETS_ENV = "JARVIS_TLS_INSECURE_TARGETS"
 CA_FILE_VARIABLES = ("JARVIS_CA_BUNDLE", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")
 CA_DIR_VARIABLE = "SSL_CERT_DIR"
 CERTIFI_MIN_BYTES = 1024
+_PEM_CERTIFICATE = re.compile(
+    rb"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", re.DOTALL)
+_TRUSTED_CERTIFICATE = re.compile(
+    rb"-----BEGIN TRUSTED CERTIFICATE-----\s*(.*?)\s*-----END TRUSTED CERTIFICATE-----",
+    re.DOTALL)
+
+
+def _trusted_certificate_der(body: bytes) -> bytes:
+    """Extract only the first DER certificate from an OpenSSL X509_CERT_AUX.
+
+    This is for input validation alone. The original trusted PEM, including its
+    trust and reject purposes, remains the material loaded by OpenSSL.
+    """
+    encoded = b"".join(body.split())
+    data = b64decode(encoded, validate=True)
+    if len(data) < 2 or data[0] != 0x30:
+        raise ValueError("trusted certificate has no DER sequence")
+    first_length = data[1]
+    if first_length < 0x80:
+        header, length = 2, first_length
+    else:
+        width = first_length & 0x7F
+        if not 1 <= width <= 4 or len(data) < 2 + width:
+            raise ValueError("trusted certificate has invalid DER length")
+        header = 2 + width
+        length = int.from_bytes(data[2:header], "big")
+        if length < 0x80 or data[2] == 0:
+            raise ValueError("trusted certificate has noncanonical DER length")
+    end = header + length
+    if length == 0 or end > len(data):
+        raise ValueError("trusted certificate is truncated")
+    return data[:end]
 
 
 def _env(name: str) -> str:
@@ -134,14 +169,6 @@ def _set_in(variable: str) -> str:
     return ""
 
 
-def _count_certs(load: Callable[[ssl.SSLContext], None]) -> int:
-    """How many certificates *load* put in a fresh store — any certificate, not only a
-    CA-flagged one: a pinned self-signed server certificate is a valid anchor too."""
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    load(context)
-    return int(context.cert_store_stats().get("x509", 0))
-
-
 def _check_file(value: str, *, min_bytes: int = 1) -> str | None:
     path = Path(value)
     if not path.exists():
@@ -152,10 +179,38 @@ def _check_file(value: str, *, min_bytes: int = 1) -> str | None:
         size = path.stat().st_size
         if size < min_bytes:
             return f"is too small to be a CA bundle ({size} bytes)"
-        count = _count_certs(lambda ctx: ctx.load_verify_locations(cafile=str(path)))
-    except (OSError, ValueError) as exc:   # unreadable, vanished, or not PEM/DER (ssl.SSLError is an OSError)
+        # OpenSSL must accept the file as trust material, but its store count is
+        # not input evidence: the bundled SSL runtime preloads a rejected root.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations(cafile=str(path))
+        from cryptography import x509
+
+        supplied = path.read_bytes()
+        has_certificate = False
+        for block in _PEM_CERTIFICATE.finditer(supplied):
+            try:
+                x509.load_pem_x509_certificate(block.group())
+            except ValueError:
+                continue
+            has_certificate = True
+            break
+        if not has_certificate:
+            for block in _TRUSTED_CERTIFICATE.finditer(supplied):
+                try:
+                    x509.load_der_x509_certificate(_trusted_certificate_der(block.group(1)))
+                except (ValueError, Base64Error):
+                    continue
+                has_certificate = True
+                break
+        if not has_certificate:
+            try:
+                x509.load_der_x509_certificate(supplied)
+                has_certificate = True
+            except ValueError:
+                pass
+    except (OSError, ValueError) as exc:   # unreadable, vanished, or invalid OpenSSL CA file
         return f"does not load as a CA bundle ({type(exc).__name__})"
-    if count < 1:
+    if not has_certificate:
         return "holds no certificate"
     return None
 

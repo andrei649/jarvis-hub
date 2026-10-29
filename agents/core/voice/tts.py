@@ -115,10 +115,7 @@ def voice_persona_consent_granted(consent_getter: Optional[Callable[[], bool]] =
     if consent_getter is not None:
         return bool(consent_getter())
     try:
-        try:
-            from core.settings_db import get_value
-        except Exception:
-            from agents.core.settings_db import get_value
+        from agents.core.settings_db import get_value
         return bool(get_value(PERSONA_VOICE_CONSENT_CATEGORY, PERSONA_VOICE_CONSENT_KEY, False))
     except Exception:
         logger.warning("Could not read voice persona consent; defaulting to off", exc_info=True)

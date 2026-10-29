@@ -61,6 +61,19 @@ async def event(stream):
     return json.loads(frame.removeprefix("data: ").strip())
 
 
+async def visible_progress_then_end(stream):
+    progress = await event(stream)
+    assert set(progress) == {"type", "outcome"}
+    assert progress["type"] == "outcome_progress"
+    assert progress["outcome"]["output"] == {"tokens": 2, "basis": "visible_estimate"}
+    finished = await event(stream)
+    assert finished["type"] == "end"
+    assert finished["text"] == "Finished"
+    with pytest.raises(StopAsyncIteration):
+        await event(stream)
+    return finished
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("value,other,multi,choices", [
     ("2", False, False, ["Local", "Remote"]),
@@ -89,7 +102,7 @@ async def test_hud_question_answers_same_actual_model_turn(tmp_path, monkeypatch
             assert reply.status_code == 200, reply.text
             assert reply.headers["cache-control"] == "no-store"
         assert (await following)["type"] == "token"
-        assert (await event(stream))["type"] == "end"
+        await visible_progress_then_end(stream)
         assert cap["calls"] == 1
         assert answers[0]["user_response"] == ("Remote" if value == "2" else value)
         assert not orch._pending_input_service().inputs._active
@@ -125,7 +138,7 @@ async def test_actual_managed_tokens_cannot_answer_another_actors_question(tmp_p
                 assert not answers
             assert (await client.post(path, json={"cancel": True}, headers={"x-user-token": owner})).status_code == 200
             assert (await following)["type"] == "token"
-            assert (await event(stream))["type"] == "end"
+            await visible_progress_then_end(stream)
             assert (await client.post(path, json={"answer": "1"}, headers={"x-user-token": owner})).status_code == 404
         assert cap["calls"] == 1
         assert answers[0]["reason"] == "clarify_cancelled_or_timed_out"
@@ -155,7 +168,7 @@ async def test_revocation_stops_wait_credit_and_retires_the_owned_wait(tmp_path,
         cap["credit"].seconds()  # Real runtime budget sampling observes auth revocation.
         assert (await following)["type"] == "token"
         assert answers[0]["reason"] == "prompt_binding_lost"
-        assert (await event(stream))["type"] == "end"
+        await visible_progress_then_end(stream)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://localhost") as client:
             assert (await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"},
                                       headers={"x-user-token": token})).status_code == 401
@@ -172,7 +185,7 @@ async def test_expired_hud_question_unblocks_without_answer_or_new_model_turn(tm
         await event(stream)
         question = await event(stream)
         assert (await event(stream))["type"] == "token"
-        assert (await event(stream))["type"] == "end"
+        await visible_progress_then_end(stream)
         assert answers[0]["reason"] == "clarify_cancelled_or_timed_out" and cap["calls"] == 1
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://localhost") as client:
             assert (await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"})).status_code == 404
@@ -181,32 +194,92 @@ async def test_expired_hud_question_unblocks_without_answer_or_new_model_turn(tm
         orch._pending_input_service().close()
 
 
-@pytest.mark.asyncio
-async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_path, monkeypatch):
+async def _exercise_human_credit(tmp_path, monkeypatch, *, fail_after_reader=False, probe=None):
     from types import SimpleNamespace
 
     import agents.core.native_human_wait as human_wait
+    from agents.core.routers import chat_pending
 
     clock = {"now": 1000.0}
     monkeypatch.setattr(human_wait, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
     orch, cap, _answers, stream = await stream_host(tmp_path, monkeypatch, choices=["Local", "Remote"])
+    runtime = orch._pending_input_service()
+    following = None
     try:
         await event(stream)
         question = await event(stream)
         clock["now"] += 5
         assert cap["credit"].seconds() == 0
         assert not orch._pending_input_service()._delivered
-        following = asyncio.create_task(event(stream))
+        # The human answer may take longer than event()'s two-second SSE read
+        # timeout under a loaded suite. Hold the next frame without timing out
+        # while the human wait is intentional, then bound its consumption below.
+        following = asyncio.create_task(anext(stream))
+        if probe is not None:
+            probe.update(reader=following, runtime=runtime)
         for _ in range(20):
-            if orch._pending_input_service()._delivered:
+            if runtime._delivered:
                 break
             await asyncio.sleep(0)
+        if fail_after_reader:
+            raise AssertionError("forced early credit failure")
         clock["now"] += 5
         assert cap["credit"].seconds() == 5
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://localhost") as client:
-            assert (await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"})).status_code == 200
-        await following
+        assert question["id"] in orch._pending_input_service()._delivered
+        assert (orch._pending_input_service()._delivered[question["id"]].source.sender
+                == chat_pending.http_actor(request()))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(
+                app=web.app, client=("127.0.0.1", 123)), base_url="http://localhost") as client:
+            reply = await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"})
+            assert reply.status_code == 200, reply.text
+        frame = await asyncio.wait_for(following, 2)
+        if isinstance(frame, bytes):
+            frame = frame.decode()
+        assert json.loads(frame.removeprefix("data: ").strip())["type"] == "token"
         await event(stream)
+    finally:
+        if following is not None:
+            if not following.done():
+                following.cancel()
+            await asyncio.gather(following, return_exceptions=True)
+        try:
+            await stream.aclose()
+        finally:
+            runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_human_credit_starts_only_after_stream_yield_is_acknowledged(tmp_path, monkeypatch):
+    await _exercise_human_credit(tmp_path, monkeypatch)
+
+
+@pytest.mark.asyncio
+async def test_human_credit_early_failure_drains_reader_and_retires_prompt(tmp_path, monkeypatch):
+    probe = {}
+    with pytest.raises(AssertionError, match="forced early credit failure"):
+        await _exercise_human_credit(tmp_path, monkeypatch, fail_after_reader=True, probe=probe)
+    assert probe["reader"].done()
+    assert not probe["runtime"].inputs._active
+
+
+@pytest.mark.asyncio
+async def test_next_sse_wait_timeout_retires_prompt_before_late_answer(tmp_path, monkeypatch):
+    """A timed-out read cancels the stream, so a later answer is correctly 404."""
+    orch, _cap, _answers, stream = await stream_host(
+        tmp_path, monkeypatch, choices=["Local", "Remote"])
+    try:
+        await event(stream)
+        question = await event(stream)
+        following = asyncio.create_task(event(stream))
+        with pytest.raises(asyncio.TimeoutError):
+            await following
+        assert question["id"] not in orch._pending_input_service().inputs._active
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(
+                app=web.app, client=("127.0.0.1", 123)), base_url="http://localhost") as client:
+            reply = await client.post(f"/chat/pending/{question['id']}/answer",
+                                      json={"answer": "1"})
+            assert reply.status_code == 404
+            assert reply.json()["status"] == "unavailable"
     finally:
         await stream.aclose()
         orch._pending_input_service().close()

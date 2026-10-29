@@ -32,7 +32,8 @@ def _parse(args: str, *, rollback: bool) -> dict:
     if action not in {"status", "list", "diff", "restore", *_MAINTENANCE}:
         raise ValueError("invalid action")
     result = {"action": action, "project": None, "limit": 20, "execute": False,
-              "identifier": None, "paths": None, "force": False}
+              "identifier": None, "paths": None, "force": False,
+              "keep_last": None, "max_bytes": None, "include_orphans": False}
     if action in {"diff", "restore"}:
         if not tokens:
             raise ValueError("missing checkpoint")
@@ -63,6 +64,25 @@ def _parse(args: str, *, rollback: bool) -> dict:
             if not value or len(value) > 4096 or value in paths or len(paths) >= 500:
                 raise ValueError("invalid path")
             result["paths"] = [*paths, value]
+        elif flag in {"--keep-last", "--max-bytes"}:
+            if action != "prune" or not tokens:
+                raise ValueError("invalid retention option")
+            value = tokens.pop(0)
+            if not value.isascii() or not value.isdecimal():
+                raise ValueError("invalid retention value")
+            amount = int(value)
+            if flag == "--keep-last":
+                if not 1 <= amount <= 5_000:
+                    raise ValueError("invalid keep-last")
+                result["keep_last"] = amount
+            else:
+                if not 1 <= amount <= 1 << 40:
+                    raise ValueError("invalid max-bytes")
+                result["max_bytes"] = amount
+        elif flag == "--include-orphans":
+            if action != "prune":
+                raise ValueError("invalid orphan option")
+            result["include_orphans"] = True
         elif flag in {"--dry-run", "--execute", "--force"}:
             if action not in {*_MAINTENANCE, "restore"}:
                 raise ValueError("invalid maintenance option")
@@ -70,8 +90,7 @@ def _parse(args: str, *, rollback: bool) -> dict:
             result["force"] = "--force" in seen
         else:
             raise ValueError("unknown option")
-    if (("--dry-run" in seen and "--execute" in seen)
-            or (action in _MAINTENANCE and "--force" in seen and "--execute" not in seen)):
+    if "--dry-run" in seen and "--execute" in seen:
         raise ValueError("conflicting maintenance options")
     CheckpointInventory._arguments(result["project"], result["limit"])
     return result
@@ -97,7 +116,10 @@ def _query(principal: Principal, query: dict) -> dict:
     )
     kwargs = {"project": query["project"], "limit": query["limit"]}
     if query["action"] in _MAINTENANCE:
-        return inventory.maintenance_preview(principal, query["action"], **kwargs)
+        return inventory.maintenance_preview(
+            principal, query["action"], **kwargs,
+            include_orphans=query["include_orphans"],
+            keep_last=query["keep_last"], max_bytes=query["max_bytes"])
     return getattr(inventory, query["action"])(principal, **kwargs)
 
 
@@ -117,7 +139,9 @@ async def checkpoint_command(ctx: CommandContext) -> str:
         return _notice("checkpoint.refused", "Invalid checkpoint command. Use /checkpoints "
                        "status|list [--project ROOT] [--limit 1..500], or "
                        "diff ID, restore ID [--path REL] [--force] [--dry-run|--execute], "
-                       "or prune|clear|clear-legacy --dry-run|--execute.")
+                       "or prune [--keep-last 1..5000] [--max-bytes 1..1099511627776] "
+                       "[--include-orphans] [--force] --dry-run|--execute, "
+                       "clear|clear-legacy [--force] --dry-run|--execute.")
     if query["execute"]:
         from .checkpoint_controller import CheckpointController
         result = await CheckpointController(ctx.orch).request(ctx.principal, query)

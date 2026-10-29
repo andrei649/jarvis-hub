@@ -151,17 +151,26 @@ class PinnedResolver:
         return resolve_and_validate(host, mode=mode)
 
     def _validated_ip(self, host: str) -> str:
-        ips, error = self._resolve(host, "public")
+        resolved_mode = "public"
+        try:
+            ips, error = self._resolve(host, "public")
+        except Exception:
+            raise BrowserTransportRefused("resolver_refused", "DNS check failed") from None
         if (error or not ips) and self.mode == "lan":
-            ips, error = self._resolve(host, "lan")
+            resolved_mode = "lan"
+            try:
+                ips, error = self._resolve(host, "lan")
+            except Exception:
+                raise BrowserTransportRefused("resolver_refused", "DNS check failed") from None
         if error or not ips:
             raise BrowserTransportRefused("resolver_refused", error or "empty DNS answer")
-        literal = str(ips[0]).split("%")[0]
-        try:
-            ipaddress.ip_address(literal)
-        except ValueError:
-            raise BrowserTransportRefused("resolver_refused", "resolver returned a non-IP") from None
-        return literal
+        from agents.core.security.ssrf import _safe_for_mode
+
+        for raw in ips:
+            literal = str(raw).split("%")[0]
+            if not _safe_for_mode(literal, resolved_mode):
+                raise BrowserTransportRefused("resolver_refused", "unsafe DNS answer")
+        return str(ips[0]).split("%")[0]
 
     def pin(self, url: str) -> PinnedTarget:
         """Validate ``url``'s host and remember the IP it must resolve to.

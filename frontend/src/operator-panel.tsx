@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-import { apiPost } from './api/client';
+import { apiGet, apiPost } from './api/client';
+import { appUrl } from './base-path';
 import {
   canonicalizeDesktopSteps,
   desktopPlanSignature,
@@ -29,6 +30,85 @@ interface BrowserPreviewRow {
   kind: string;
   decision: string;
   reason: string;
+}
+
+interface BrowserSessionView {
+  id: string;
+  origin: string;
+  generation: number;
+  refs: { ref: string; role: string; name: string }[];
+  active: boolean;
+  expires_in: number;
+}
+
+interface BrowserTaskOutcome {
+  status: string;
+  ok?: boolean;
+  steps?: number;
+  reason?: string;
+  observations?: BrowserObservation[];
+  observations_truncated?: boolean;
+}
+
+type BrowserObservation =
+  | { action: 'console'; records: { level: string; text: string; source_origin: string }[];
+      dropped?: number; truncated?: boolean }
+  | { action: 'get_images'; images: { source_url: string; alt: string; width: number;
+      height: number; fetchable: boolean; frame_origin: string; ref?: string }[];
+      dropped?: number; truncated?: boolean };
+
+function safeBrowserOrigin(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 253 || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  try {
+    const parsed = new URL(value);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+      && !parsed.username && !parsed.password && parsed.pathname === '/' && !parsed.search && !parsed.hash;
+  } catch { return false; }
+}
+
+function safeBrowserImageUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 512 || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  if (!value) return true;
+  try {
+    const parsed = new URL(value);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+      && !parsed.username && !parsed.password && !parsed.hash;
+  } catch { return false; }
+}
+
+function safeBrowserObservations(value: unknown): BrowserObservation[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).flatMap((raw): BrowserObservation[] => {
+    if (!isRecord(raw)) return [];
+    const dropped = Number.isSafeInteger(raw.dropped) && Number(raw.dropped) >= 0
+      ? { dropped: Math.min(Number(raw.dropped), 1_000_000) } : {};
+    const truncated = typeof raw.truncated === 'boolean' ? { truncated: raw.truncated } : {};
+    if (raw.action === 'console' && Array.isArray(raw.records)) {
+      const records = raw.records.slice(0, 32).filter((item) => isRecord(item)
+        && ['log', 'info', 'warning', 'error', 'debug', 'other'].includes(String(item.level))
+        && typeof item.text === 'string' && item.text.length <= 512
+        && (item.source_origin === '' || safeBrowserOrigin(item.source_origin)))
+        .map((item) => ({ level: String(item.level), text: String(item.text),
+          source_origin: String(item.source_origin) }));
+      return [{ action: 'console', records, ...dropped, ...truncated }];
+    }
+    if (raw.action === 'get_images' && Array.isArray(raw.images)) {
+      const images = raw.images.slice(0, 24).filter((item) => isRecord(item)
+        && typeof item.alt === 'string' && item.alt.length <= 128
+        && safeBrowserImageUrl(item.source_url)
+        && safeBrowserOrigin(item.frame_origin)
+        && typeof item.fetchable === 'boolean'
+        && Number.isSafeInteger(item.width) && Number(item.width) >= 0 && Number(item.width) <= 100_000
+        && Number.isSafeInteger(item.height) && Number(item.height) >= 0 && Number(item.height) <= 100_000)
+        .map((item) => ({ alt: String(item.alt), source_url: String(item.source_url),
+          frame_origin: String(item.frame_origin), fetchable: item.fetchable === true,
+          width: Number(item.width), height: Number(item.height),
+          ...(typeof item.ref === 'string' && /^@e[1-9][0-9]{0,5}$/.test(item.ref)
+            ? { ref: item.ref } : {}) }));
+      return [{ action: 'get_images', images, ...dropped, ...truncated }];
+    }
+    return [];
+  });
 }
 
 interface DesktopPreviewRow {
@@ -286,10 +366,65 @@ export function OperatorPanel() {
   const browserPreviewRevisionRef = useRef(0);
   const browserCheckRequestRef = useRef(0);
   const browserPreviewRequestRef = useRef(0);
-  const [browserBusy, setBrowserBusy] = useState<'check' | 'preview' | null>(null);
+  const [browserBusy, setBrowserBusy] = useState<'check' | 'preview' | 'run' | 'session' | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
+  const [browserAvailable, setBrowserAvailable] = useState(false);
+  const [browserOwnerAvailable, setBrowserOwnerAvailable] = useState(false);
+  const [browserRunTaskId, setBrowserRunTaskId] = useState<number | null>(null);
+  const [browserTaskOutcome, setBrowserTaskOutcome] = useState<BrowserTaskOutcome | null>(null);
   const [browserCheck, setBrowserCheck] = useState<BrowserCheckResult | null>(null);
   const [browserPreview, setBrowserPreview] = useState<BrowserPreviewRow[] | null>(null);
+  const [browserSessions, setBrowserSessions] = useState<BrowserSessionView[]>([]);
+  const [browserSessionId, setBrowserSessionId] = useState('');
+  const [browserSessionAction, setBrowserSessionAction] = useState<'snapshot' | 'console' | 'get_images' | 'click' | 'scroll' | 'back' | 'press'>('snapshot');
+  const [browserSessionRef, setBrowserSessionRef] = useState('');
+  const [browserSessionKey, setBrowserSessionKey] = useState('Enter');
+  const [browserSessionDirection, setBrowserSessionDirection] = useState<'up' | 'down'>('down');
+
+  useEffect(() => {
+    let live = true;
+    const refresh = () => apiGet('/api/browser/status').then((value) => {
+      if (live) setBrowserAvailable(isRecord(value) && value.available === true);
+    }).catch(() => { if (live) setBrowserAvailable(false); });
+    const refreshSessions = () => apiGet('/api/browser/sessions', { admin: true }).then((value) => {
+      if (!live) return;
+      if (!isRecord(value) || !Array.isArray(value.sessions)) {
+        setBrowserOwnerAvailable(false);
+        return;
+      }
+      setBrowserOwnerAvailable(true);
+      const safe = value.sessions.filter((item): item is BrowserSessionView =>
+        isRecord(item) && typeof item.id === 'string' && /^[0-9a-f]{32}$/.test(item.id)
+        && typeof item.origin === 'string' && typeof item.generation === 'number'
+        && Array.isArray(item.refs) && typeof item.active === 'boolean'
+        && typeof item.expires_in === 'number').slice(0, 4);
+      setBrowserSessions(safe);
+      setBrowserSessionId((old) => safe.some((item) => item.id === old) ? old : (safe[0]?.id || ''));
+    }).catch(() => { if (live) { setBrowserSessions([]); setBrowserOwnerAvailable(false); } });
+    void refresh();
+    void refreshSessions();
+    const timer = window.setInterval(() => { void refresh(); void refreshSessions(); }, 5_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    if (browserRunTaskId === null) return;
+    let live = true;
+    const refresh = () => apiGet(`/api/browser/tasks/${browserRunTaskId}`, { admin: true }).then((value) => {
+      if (!live || !isRecord(value) || value.found !== true || typeof value.status !== 'string') return;
+      setBrowserTaskOutcome({ status: value.status.slice(0, 32),
+        ...(typeof value.ok === 'boolean' ? { ok: value.ok } : {}),
+        ...(Number.isSafeInteger(value.steps) && Number(value.steps) >= 0 ? { steps: Number(value.steps) } : {}),
+        ...(typeof value.reason === 'string' ? { reason: value.reason.slice(0, MAX_REASON) } : {}),
+        ...(Array.isArray(value.observations) ? { observations: safeBrowserObservations(value.observations) } : {}),
+        ...(typeof value.observations_truncated === 'boolean'
+          ? { observations_truncated: value.observations_truncated } : {}),
+      });
+    }).catch(() => { /* A missing task never becomes a success claim. */ });
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 5_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [browserRunTaskId]);
 
   const [desktopAction, setDesktopAction] = useState<CanonicalDesktopAction>('read');
   const [desktopPrimary, setDesktopPrimary] = useState('');
@@ -328,6 +463,7 @@ export function OperatorPanel() {
     browserPlanRef.current = snapshot;
     browserPreviewRevisionRef.current += 1;
     setBrowserPlan(snapshot);
+    setBrowserRunTaskId(null);
     setBrowserPreview(null);
     setBrowserError(null);
   };
@@ -441,6 +577,110 @@ export function OperatorPanel() {
       if (isCurrent()) setBrowserError(boundedError(error));
     } finally {
       if (requestId === browserPreviewRequestRef.current) setBrowserBusy(null);
+    }
+  };
+
+  const runBrowserPlan = async () => {
+    setBrowserError(null);
+    setBrowserRunTaskId(null);
+    setBrowserTaskOutcome(null);
+    if (!browserAvailable) return setBrowserError('Browser execution is unavailable on this server');
+    const stored = cloneBrowserPlan(browserPlanRef.current);
+    if (!stored.length || stored[0].action !== 'navigate') {
+      return setBrowserError('Start with a browser navigation step');
+    }
+    const revision = browserPreviewRevisionRef.current;
+    setBrowserBusy('run');
+    try {
+      const readiness = await apiGet('/api/browser/status');
+      if (!isRecord(readiness) || readiness.available !== true) {
+        setBrowserAvailable(false);
+        throw new Error('Browser execution is unavailable on this server');
+      }
+      // Execution policy and pinned hosts are resolved by the server. The editable
+      // dry-run allowlist is intentionally absent from this request.
+      const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args: { steps: stored } });
+      if (revision !== browserPreviewRevisionRef.current) return;
+      if (!isRecord(raw) || raw.reason !== 'approval_required'
+          || !Number.isSafeInteger(raw.task_id) || Number(raw.task_id) <= 0) {
+        throw new Error('Browser approval task was not confirmed');
+      }
+      setBrowserRunTaskId(Number(raw.task_id));
+    } catch (error) {
+      if (revision !== browserPreviewRevisionRef.current) return;
+      const body = isRecord(error) ? error.body : null;
+      if (isRecord(body) && body.reason === 'approval_required'
+          && Number.isSafeInteger(body.task_id) && Number(body.task_id) > 0) {
+        setBrowserRunTaskId(Number(body.task_id));
+      } else {
+        setBrowserError(isRecord(body) && typeof body.reason === 'string'
+          ? body.reason.slice(0, MAX_REASON) : boundedError(error));
+      }
+    } finally {
+      setBrowserBusy(null);
+    }
+  };
+
+  const queueBrowserSession = async (args: Record<string, unknown>) => {
+    setBrowserError(null);
+    setBrowserRunTaskId(null);
+    setBrowserTaskOutcome(null);
+    setBrowserBusy('session');
+    try {
+      const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args });
+      if (!isRecord(raw) || raw.reason !== 'approval_required'
+          || !Number.isSafeInteger(raw.task_id) || Number(raw.task_id) <= 0) {
+        throw new Error('Browser approval task was not confirmed');
+      }
+      setBrowserRunTaskId(Number(raw.task_id));
+    } catch (error) {
+      const body = isRecord(error) ? error.body : null;
+      if (isRecord(body) && body.reason === 'approval_required'
+          && Number.isSafeInteger(body.task_id) && Number(body.task_id) > 0) {
+        setBrowserRunTaskId(Number(body.task_id));
+      } else {
+        setBrowserError(isRecord(body) && typeof body.reason === 'string'
+          ? body.reason.slice(0, MAX_REASON) : boundedError(error));
+      }
+    } finally {
+      setBrowserBusy(null);
+    }
+  };
+
+  const startBrowserSession = () => {
+    const first = browserPlanRef.current[0];
+    if (!first || first.action !== 'navigate' || !browserAvailable || !browserOwnerAvailable) {
+      setBrowserError('Start with a browser navigation step');
+      return;
+    }
+    void queueBrowserSession({ mode: 'start', steps: [first, { action: 'snapshot' }] });
+  };
+
+  const actBrowserSession = () => {
+    if (!browserSessionId) return setBrowserError('Select a live browser session');
+    const action = browserSessionAction;
+    if (!['snapshot', 'console', 'get_images', 'back'].includes(action)
+        && !/^@e[1-9][0-9]{0,5}$/.test(browserSessionRef)) {
+      return setBrowserError('Select a live element reference');
+    }
+    const step = ['snapshot', 'console', 'get_images', 'back'].includes(action) ? { action }
+      : action === 'press' ? { action, ref: browserSessionRef, key: browserSessionKey }
+      : action === 'scroll' ? { action, ref: browserSessionRef, direction: browserSessionDirection, pixels: 300 }
+      : { action, ref: browserSessionRef };
+    void queueBrowserSession({ mode: 'act', session_id: browserSessionId, steps: [step] });
+  };
+
+  const closeBrowserSession = async () => {
+    if (!browserSessionId) return;
+    setBrowserBusy('session');
+    try {
+      await apiPost(`/api/browser/sessions/${browserSessionId}/close`, {}, { admin: true });
+      setBrowserSessions((old) => old.filter((item) => item.id !== browserSessionId));
+      setBrowserSessionId('');
+    } catch (error) {
+      setBrowserError(boundedError(error));
+    } finally {
+      setBrowserBusy(null);
     }
   };
 
@@ -645,7 +885,74 @@ export function OperatorPanel() {
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="tool-btn" type="button" disabled={browserBusy !== null} onClick={checkPolicy}>check policy</button>
             <button className="tool-btn" type="button" disabled={browserBusy !== null} onClick={previewBrowserPlan}>preview browser plan</button>
+            <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable}
+              onClick={runBrowserPlan}>Run with approval</button>
+            <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable || !browserOwnerAvailable}
+              onClick={startBrowserSession}>Start fresh session with approval</button>
           </div>
+          <p style={mono}>{browserAvailable ? 'Browser execution available for server-approved domains' : 'Browser execution unavailable'}</p>
+          {browserRunTaskId && <p role="status">Browser task {browserRunTaskId} {browserTaskOutcome?.status || 'queued'} · <a href={appUrl('/v2/console#decision-inbox')}>Decision Inbox</a></p>}
+          {browserRunTaskId && browserTaskOutcome && <p aria-label="browser task outcome" style={mono}>
+            Browser task {browserRunTaskId}: {browserTaskOutcome.status}
+            {browserTaskOutcome.ok === true ? ` · ${browserTaskOutcome.steps ?? 0} steps completed` : ''}
+            {browserTaskOutcome.ok === false ? ` · ${browserTaskOutcome.reason || 'browser_failed'}` : ''}
+          </p>}
+          {browserTaskOutcome?.observations && browserTaskOutcome.observations.length > 0 &&
+            <section aria-label="browser observations" style={mono}>
+              <strong>Untrusted browser observations</strong>
+              {browserTaskOutcome.observations.map((observation, index) =>
+                <div key={`${index}:${observation.action}`}>
+                  <div>{observation.action === 'console' ? 'Console' : 'Visible images'}
+                    {observation.dropped ? ` · ${observation.dropped} dropped` : ''}
+                    {observation.truncated ? ' · truncated' : ''}</div>
+                  {observation.action === 'console' ?
+                    <ol>{observation.records.map((record, row) =>
+                      <li key={row}>{record.level} · {record.source_origin || 'unknown origin'} · {record.text}</li>)}</ol>
+                    : <ol>{observation.images.map((item, row) =>
+                      <li key={row}>{item.alt} · {item.frame_origin} · {item.width}×{item.height}
+                        {item.ref ? ` · ${item.ref}` : ''}
+                        {item.fetchable ? ` · ${item.source_url}` : ' · source not fetchable'}</li>)}</ol>}
+                </div>)}
+              {browserTaskOutcome.observations_truncated && <div>Observation projection truncated</div>}
+            </section>}
+          {browserSessions.length > 0 && <div style={{ ...mono, marginTop: 8 }}>
+            <label htmlFor="operator-browser-session">Live fresh-profile session</label>
+            <select id="operator-browser-session" value={browserSessionId}
+              onChange={(event) => { setBrowserSessionId(event.target.value); setBrowserSessionRef(''); }}>
+              {browserSessions.map((session) => <option key={session.id} value={session.id}>
+                {session.origin} · {session.expires_in}s remaining
+              </option>)}
+            </select>
+            <label htmlFor="operator-browser-session-action">Session action</label>
+            <select id="operator-browser-session-action" value={browserSessionAction}
+              onChange={(event) => setBrowserSessionAction(event.target.value as typeof browserSessionAction)}>
+              {(['snapshot', 'console', 'get_images', 'click', 'scroll', 'back', 'press'] as const).map((action) =>
+                <option key={action} value={action}>{action}</option>)}
+            </select>
+            {!['snapshot', 'console', 'get_images', 'back'].includes(browserSessionAction) && <>
+              <label htmlFor="operator-browser-session-ref">Observed element</label>
+              <select id="operator-browser-session-ref" value={browserSessionRef}
+                onChange={(event) => setBrowserSessionRef(event.target.value)}>
+                <option value="">Choose a current ref</option>
+                {(browserSessions.find((item) => item.id === browserSessionId)?.refs || []).map((item) =>
+                  <option key={item.ref} value={item.ref}>{item.ref} · {item.role} · {item.name.slice(0, 80)}</option>)}
+              </select>
+            </>}
+            {browserSessionAction === 'press' && <select aria-label="Browser key" value={browserSessionKey}
+              onChange={(event) => setBrowserSessionKey(event.target.value)}>
+              {['Enter', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'Space'].map((key) =>
+                <option key={key}>{key}</option>)}
+            </select>}
+            {browserSessionAction === 'scroll' && <select aria-label="Browser scroll direction"
+              value={browserSessionDirection}
+              onChange={(event) => setBrowserSessionDirection(event.target.value as 'up' | 'down')}>
+              <option value="down">down</option><option value="up">up</option>
+            </select>}
+            <button className="tool-btn" type="button" disabled={browserBusy !== null}
+              onClick={actBrowserSession}>Queue session action</button>
+            <button className="tool-btn" type="button" disabled={browserBusy !== null}
+              onClick={() => { void closeBrowserSession(); }}>Close fresh session</button>
+          </div>}
           <Alert value={browserError} />
           <BrowserResult check={browserCheck} preview={browserPreview} />
         </fieldset>

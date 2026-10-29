@@ -1,0 +1,54 @@
+{
+  "counts": {
+    "tests": 30457,
+    "failures": 4,
+    "errors": 0,
+    "skipped": 111,
+    "seconds": 1134.383,
+    "passed": 30342
+  },
+  "exit_code": 1,
+  "source_unchanged": true,
+  "prior_failure_checks": {
+    "all8_prior_failed_nodes_pass": {
+      "expected": 8,
+      "passed": 7,
+      "all_pass": false
+    },
+    "all27_e186_failed_nodes_pass": {
+      "expected": 27,
+      "passed": 27,
+      "all_pass": true
+    },
+    "all14_ae618_failed_nodes_pass": {
+      "expected": 14,
+      "passed": 14,
+      "all_pass": true
+    }
+  },
+  "finished_at": "2026-10-29T08:12:58.355970+00:00",
+  "source_head": "4436075e70195b62107c888d77b1db5935d4383a",
+  "scope": "Complete collected backend on unchanged committed source; no added deselections. Local macOS/Python3.12, two xdist loadfile workers, per-test90s bound. Skips and platform/provider acceptance remain explicit.",
+  "failures": [
+    {
+      "classname": "tests.test_h674_compaction_hold",
+      "name": "test_the_deferral_never_publishes_through_the_compaction_clock",
+      "message": "AttributeError: 'object' object has no attribute 'session_id'"
+    },
+    {
+      "classname": "tests.test_orchestrator_bindings",
+      "name": "test_external_binding_writer_inventory_exactly_matches_production_calls",
+      "message": "assert [\"custom_endp...y', 551, 4)]\"] == []\n  \n  Left contains one more item: \"custom_endpoint_service: expected=[('agents/core/llm/custom_endpoint_service.py', 547, 4)] observed=[('agents/core/llm/custom_endpoint_service.py', 551, 4)]\"\n  Use -v to get more diff"
+    },
+    {
+      "classname": "tests.test_effective_tool_window",
+      "name": "test_actual_agent_process_keeps_guard_and_raw_metadata",
+      "message": "AssertionError: assert ['llama3.1:8b', 'llama3.1:8b'] == ['llama3.1:8b']\n  \n  Left contains one more item: 'llama3.1:8b'\n  Use -v to get more diff"
+    },
+    {
+      "classname": "tests.test_effective_tool_window",
+      "name": "test_auto_reserve_and_snapshot_survive_metadata_change",
+      "message": "assert 2 == 1\n +  where 2 = len([1, 1])"
+    }
+  ]
+}

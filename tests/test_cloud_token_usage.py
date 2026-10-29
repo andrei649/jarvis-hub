@@ -118,15 +118,27 @@ async def test_backend_preserves_usage_content_and_tools(provider, calls):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('kind,expected', [('openai-compatible', 123), ('unknown', 0)])
-async def test_explicit_wire_profile_controls_usage(kind, expected):
+async def test_explicit_wire_profile_controls_usage():
     backend = await backend_for('compatible', lambda req: httpx.Response(200, json=response('compatible')),
-        ProviderProfile(id='custom', display_name='Custom', backend_kind=kind))
+        ProviderProfile(id='custom', display_name='Custom', backend_kind='openai-compatible'))
     try:
         turn = await backend.generate_tool_turn('model', [], [])
-        assert turn.content == 'answer' and turn.usage.input_tokens == expected
+        assert turn.content == 'answer' and turn.usage.input_tokens == 123
     finally:
         await backend.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_unknown_wire_profile_is_refused_before_usage_or_send():
+    from agents.core.llm.provider_request import ProfileRequestRefused
+
+    seen = []
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda req: seen.append(req))) as client:
+        with pytest.raises(ProfileRequestRefused, match='profile wire schema differs'):
+            OpenRouterBackend(client=client, profile=ProviderProfile(
+                id='custom', display_name='Custom', backend_kind='unknown'))
+    assert seen == []
 
 
 @pytest.mark.asyncio

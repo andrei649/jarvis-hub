@@ -1,0 +1,37 @@
+{
+  "scope": "H391 reviewed source integration milestone; full collected backend with no added deselections",
+  "source_head": "09d05071b4fa0f73bf3293a73b04477ed7b1a647",
+  "source_unchanged": true,
+  "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "worker_count": 2,
+  "python": "3.12.14",
+  "platform": "macOS native",
+  "command": ".venv/bin/python -m pytest -n 2 --dist loadfile --timeout=90 -q --junitxml=<local-artifact>",
+  "counts": {
+    "tests": 30207,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 85,
+    "seconds": 1162.259,
+    "passed": 30122
+  },
+  "prior_failure_checks": {
+    "all8_prior_failed_nodes_pass": {
+      "expected": 8,
+      "passed": 8,
+      "all_pass": true
+    },
+    "all27_e186_failed_nodes_pass": {
+      "expected": 27,
+      "passed": 27,
+      "all_pass": true
+    }
+  },
+  "finished_at": "2026-10-29T02:33:30.378147+00:00",
+  "source_review": "Task15 independent implementation review and two scoped repair rounds closed all reported lifecycle findings; integrated compaction source remained unchanged through this milestone.",
+  "limits": [
+    "85 tests were skipped by existing environment/platform/optional conditions.",
+    "This is local source integration proof, not live provider, physical device, Windows/Docker, deployment or later Task23/24/28 acceptance.",
+    "Raw local logs and JUnit remain private execution artifacts; this summary records their verified result."
+  ]
+}

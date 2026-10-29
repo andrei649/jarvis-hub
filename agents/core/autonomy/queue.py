@@ -195,6 +195,7 @@ def _canonical_mediation_classification(kind: str) -> bool | None:
             "toolrpc.terminal_run": "terminal.exec",
             "toolrpc.file_write": "file.write",
             "toolrpc.file_delete": "file.write",
+            "toolrpc.browser_run": "browser.step",
         }.get(kind, kind)
         mediation = classify(registry_kind)
         if mediation is Mediation.KERNEL:
@@ -467,6 +468,18 @@ class TaskQueue:
             acknowledged_revision TEXT, acknowledged_at TEXT
         )""")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_approval_origin ON chat_approval_tasks(origin_id)")
+        # Observational H396 lineage. This table cannot authorize a task or
+        # substitute for its approval, mediation, execution or Kernel checks.
+        self._conn.execute('''CREATE TABLE IF NOT EXISTS file_mutation_outcomes (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL, origin_id TEXT NOT NULL,
+            attempt_id TEXT NOT NULL UNIQUE, target_sha256 TEXT NOT NULL,
+            operation TEXT NOT NULL, outcome TEXT NOT NULL, recorded_at TEXT NOT NULL,
+            signature TEXT
+        )''')
+        file_columns = {row['name'] for row in self._conn.execute('PRAGMA table_info(file_mutation_outcomes)')}
+        if 'signature' not in file_columns:
+            self._conn.execute('ALTER TABLE file_mutation_outcomes ADD COLUMN signature TEXT')
         # H485 is observational metadata only. An event is bound to the exact
         # committed denial snapshot; the separate per-consumer tally has a new
         # epoch after every owner approval, so old events cannot revive warnings.
@@ -476,6 +489,7 @@ class TaskQueue:
             ('denial_count', 'INTEGER'),
             ('denial_epoch', 'TEXT'),
             ('denial_sequence', 'INTEGER'),
+            ('h396_signature', 'TEXT'),
         ):
             if name not in chat_columns:
                 self._conn.execute(f'ALTER TABLE chat_approval_tasks ADD COLUMN {name} {sql_type}')
@@ -2535,6 +2549,95 @@ class TaskQueue:
         encoded = json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
         return hashlib.sha256(encoded.encode()).hexdigest()
 
+    @staticmethod
+    def _file_origin_message(task: Task, origin_id: str, intent: str) -> bytes:
+        return canonical_json({'purpose': 'h396-file-origin', 'task_id': task.id,
+                               'birth': task.created_at, 'kind': task.kind,
+                               'origin_id': origin_id, 'intent_sha256': intent})
+
+    @staticmethod
+    def _file_outcome_message(row: Mapping) -> bytes:
+        return canonical_json({'purpose': 'h396-file-effect',
+            **{key: row[key] for key in ('sequence', 'task_id', 'origin_id', 'attempt_id',
+                                          'target_sha256', 'operation', 'outcome', 'recorded_at')}})
+
+    def _file_execution_origin_locked(self, task: Task) -> str | None:
+        if not isinstance(task, Task) or task.kind not in {'toolrpc.file_write', 'toolrpc.file_delete'}:
+            return None
+        try:
+            row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task.id,)).fetchone()
+            current = _row_to_task(row) if row else None
+            if (current is None or current.status != 'running'
+                    or current.created_at != task.created_at or current.kind != task.kind
+                    or task.status != 'running'
+                    or self.execution_fingerprint(current) is None
+                    or self.execution_fingerprint(current) != self.execution_fingerprint(task)):
+                return None
+            association = self._conn.execute('''SELECT t.origin_id,t.intent_sha256,t.tool,t.h396_signature
+                FROM chat_approval_tasks t JOIN chat_approval_origins o ON o.origin_id=t.origin_id
+                WHERE t.task_id=? AND t.task_birth=? AND t.ready=1''',
+                (task.id, task.created_at)).fetchone()
+            intent = self._chat_intent_locked(current)
+            if (association is None or association['tool'] != task.kind.removeprefix('toolrpc.')
+                    or association['intent_sha256'] != intent
+                    or not self._mediation_signer.verify(
+                        self._file_origin_message(current, association['origin_id'], intent),
+                        association['h396_signature'])):
+                return None
+            return association['origin_id']
+        except (sqlite3.Error, TypeError, ValueError, KeyError):
+            return None
+
+    def file_execution_origin(self, task: Task) -> str | None:
+        """Resolve only an exact, signed, already running file-task association."""
+        with self._lock:
+            return self._file_execution_origin_locked(task)
+
+    def record_file_mutation_outcome(self, task: Task, origin_id: str, attempt_id: str,
+                                     target_sha256: str, operation: str, outcome: str) -> bool:
+        """Append one exact physical attempt; duplicate/forged lineage is inert."""
+        if (type(origin_id) is not str or type(attempt_id) is not str
+                or not re.fullmatch(r'[0-9a-f]{32}', attempt_id)
+                or type(target_sha256) is not str or _SHA256_HEX.fullmatch(target_sha256) is None
+                or operation not in {'write', 'delete'}
+                or outcome not in {'refused', 'unknown', 'applied_unverified', 'verified'}
+                or not isinstance(task, Task) or task.kind != f'toolrpc.file_{operation}'):
+            return False
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                if self._file_execution_origin_locked(task) != origin_id:
+                    self._conn.rollback()
+                    return False
+                count = self._conn.execute('''SELECT COUNT(*) FROM file_mutation_outcomes
+                    WHERE origin_id=?''', (origin_id,)).fetchone()[0]
+                if count >= MAX_PER_CONSUMER:
+                    self._conn.rollback()
+                    return False
+                recorded_at = _now()
+                cursor = self._conn.execute('''INSERT OR IGNORE INTO file_mutation_outcomes
+                    (task_id,origin_id,attempt_id,target_sha256,operation,outcome,recorded_at)
+                    VALUES(?,?,?,?,?,?,?)''',
+                    (task.id, origin_id, attempt_id, target_sha256, operation, outcome, recorded_at))
+                if cursor.rowcount != 1:
+                    self._conn.rollback()
+                    return False
+                event = {'sequence': int(cursor.lastrowid), 'task_id': task.id,
+                    'origin_id': origin_id, 'attempt_id': attempt_id,
+                    'target_sha256': target_sha256, 'operation': operation,
+                    'outcome': outcome, 'recorded_at': recorded_at}
+                signature = self._mediation_signer.sign(self._file_outcome_message(event))
+                if signature is None:
+                    self._conn.rollback()
+                    return False
+                self._conn.execute('UPDATE file_mutation_outcomes SET signature=? WHERE sequence=?',
+                                   (signature, event['sequence']))
+                self._conn.commit()
+                return True
+            except sqlite3.Error:
+                self._conn.rollback()
+                return False
+
     def _finalize_chat_approval_locked(self, task: Task) -> None:
         producer = current_tool_approval()
         if producer is None:
@@ -2544,9 +2647,12 @@ class TaskQueue:
         except (TypeError, ValueError):
             logger.warning('chat approval intent unavailable; task retained')
             return
-        self._conn.execute('''UPDATE chat_approval_tasks SET ready=1,intent_sha256=?
+        signature = (self._mediation_signer.sign(
+            self._file_origin_message(task, producer.turn.turn_id, digest))
+            if task.kind in {'toolrpc.file_write', 'toolrpc.file_delete'} else None)
+        self._conn.execute('''UPDATE chat_approval_tasks SET ready=1,intent_sha256=?,h396_signature=?
             WHERE task_id=? AND origin_id=? AND task_birth=? AND ready=0''',
-            (digest, task.id, producer.turn.turn_id, task.created_at))
+            (digest, signature, task.id, producer.turn.turn_id, task.created_at))
 
     @staticmethod
     def _chat_context(context) -> bool:
@@ -2903,6 +3009,22 @@ class TaskQueue:
                     ORDER BY last_sequence DESC LIMIT ?''',
                     (session_id, session_instance, _GUARDIAN_CONSUMER_LIMIT)).fetchall()
             backup = {'origins': [dict(row) for row in origins], 'tasks': [dict(row) for row in tasks]}
+            events = self._conn.execute(f'''SELECT f.* FROM file_mutation_outcomes f
+                JOIN chat_approval_origins o ON o.origin_id=f.origin_id
+                WHERE {clause} ORDER BY f.sequence LIMIT ?''', (*params, MAX_PER_CONSUMER)).fetchall()  # nosec B608
+            verified = []
+            for row in events:
+                try:
+                    message = self._file_outcome_message(row)
+                except ValueError:
+                    # A damaged observational row must not hide the rest of a
+                    # session archive. Keep it in storage for later inspection;
+                    # only canonical, signed rows may leave in the backup.
+                    continue
+                if self._mediation_signer.verify(message, row['signature']):
+                    verified.append(dict(row))
+            if verified:
+                backup['file_mutations'] = verified
             if tallies:
                 backup['guardian_denials'] = [dict(row) for row in tallies]
             return backup
@@ -2927,6 +3049,8 @@ class TaskQueue:
                     (session_id, session_instance, session_instance))
                 count = self._conn.execute(f'''DELETE FROM chat_approval_tasks WHERE origin_id IN
                     (SELECT origin_id FROM chat_approval_origins WHERE {clause})''', params).rowcount  # nosec B608
+                self._conn.execute(f'''DELETE FROM file_mutation_outcomes WHERE origin_id IN
+                    (SELECT origin_id FROM chat_approval_origins WHERE {clause})''', params)  # nosec B608
                 self._conn.execute(f'DELETE FROM chat_approval_origins WHERE {clause}', params)  # nosec B608
                 if session_instance is None:
                     self._conn.execute('''DELETE FROM chat_guardian_denial_tallies
@@ -2966,6 +3090,7 @@ class TaskQueue:
                         continue
                     if item['revision'] == row['acknowledged_revision']:
                         self._conn.execute('DELETE FROM task_consent_sources WHERE task_id=?', (row['task_id'],))
+                        self._conn.execute('DELETE FROM file_mutation_outcomes WHERE task_id=?', (row['task_id'],))
                         self._conn.execute('DELETE FROM chat_approval_tasks WHERE task_id=?', (row['task_id'],))
                         count += 1
                 next_cursor = rows[-1]['task_id'] if rows and len(rows) == batch else 0

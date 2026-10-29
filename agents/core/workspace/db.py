@@ -378,9 +378,16 @@ def own_entry(name: str) -> bool:
     ``setup-code.txt`` with the ``.setup-code.txt.<random>`` file it is written through
     (``config.create_private_file``) — the names the modules that write them use.
     """
-    return (name in (DB_FILE, config.FILES_DIRNAME, config.SECRETS_FILE, config.SETUP_CODE_FILE)
-            or name.startswith((f"{DB_FILE}-", f"{config.SECRETS_FILE}.",
-                                f".{config.SETUP_CODE_FILE}.")))
+    fixed = (DB_FILE, config.FILES_DIRNAME, config.SECRETS_FILE, config.SETUP_CODE_FILE,
+             *(f"{DB_FILE}{suffix}" for suffix in ("-wal", "-shm", "-journal")),
+             f"{config.SECRETS_FILE}.salt", f"{config.SECRETS_FILE}.key")
+    if name in fixed:
+        return True
+    # tempfile.mkstemp uses an eight-character [a-z0-9_] random component. Match
+    # the writers' complete names, never every sibling sharing their prefix.
+    return re.fullmatch(
+        rf"(?:{re.escape(config.SECRETS_FILE)}\.[a-z0-9_]{{8}}\.tmp"
+        rf"|\.{re.escape(config.SETUP_CODE_FILE)}\.[a-z0-9_]{{8}})", name) is not None
 
 
 def _own_stored_file(name: str) -> bool:
@@ -464,10 +471,9 @@ def secure_storage(directory: Path) -> list[Path]:
         path, reason = refused[0]
         fix = ("make the service's user their owner and remove the access of others — "
                "chown -R jarvis:jarvis and chmod -R go-rwx" if not foreign else
-               "make the service's user the owner of the workspace's own entries there "
-               "(workspace.db*, files/, secrets.enc*, setup-code.txt) and remove the access of "
-               "others with chown jarvis:jarvis and chmod go-rwx on those entries only, not on "
-               "the whole folder")
+               "make the service's user the owner of the refused workspace entries and "
+               "remove the access of others with chown jarvis:jarvis and chmod go-rwx "
+               "on each refused entry only, not on the whole folder")
         logger.warning(
             "Nerva Workspace: %d file(s) or folder(s) under %s can be read by other users and "
             "this process may not change that (%s on %s): %s (PILOT_GUIDE §14, §19)",

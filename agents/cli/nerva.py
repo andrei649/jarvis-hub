@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from .client import HubClient, HubError, HubUnavailable, hub_url
+from .custom_endpoints import run as cmd_custom_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -190,6 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
     configure_nous_auth(verbs)
     from .secrets import register_parser as configure_secrets
     configure_secrets(verbs)
+    from .custom_endpoints import register_parser as configure_custom_endpoints
+    configure_custom_endpoints(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -318,11 +321,14 @@ def build_parser() -> argparse.ArgumentParser:
         change = checkpoint_verbs.add_parser(action, help="preview or request owner approval")
         if action == "prune":
             change.add_argument("--project", metavar="ROOT")
+            change.add_argument("--keep-last", type=int, metavar="N")
+            change.add_argument("--max-bytes", type=int, metavar="BYTES")
+            change.add_argument("--include-orphans", action="store_true")
         mode = change.add_mutually_exclusive_group()
         mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
         mode.add_argument("--execute", action="store_true", help="request governed approval")
         change.add_argument("--force", action="store_true",
-                            help="forward force intent; never bypass owner approval")
+                            help="bind the legacy owner intent; does not change selection or approval")
 
     backup = verbs.add_parser("backup", help="back up and restore the whole install (H010)")
     backup_verbs = backup.add_subparsers(dest="action", required=True, metavar="action")
@@ -1374,8 +1380,24 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
                 "change it in the HUD, Settings → Retention, which asks for approval"]
     # H378 — a model choice passes the selection guards here as on the hub's routes.
     from agents.core.llm import selection_guards as guards
+    from agents.core.llm.provider_selection import SelectionConflict
+    from agents.core.llm.providers.selection_gates import SelectionBusy, SelectionUnavailable
 
-    choices = guards.choices_from_settings(category, {key: value}, lambda k: settings.get_value(category, k))
+    try:
+        pair_state = (settings.compatible_pair_state()
+                      if category == 'llm' and key in {'compatible_provider', 'compatible_model'}
+                      else None)
+    except (SelectionBusy, SelectionUnavailable) as exc:
+        return [f'{name}: {exc} — not changed, retry']
+
+    def current(other_key):
+        if pair_state is not None and other_key == 'compatible_provider':
+            return pair_state[1]
+        if pair_state is not None and other_key == 'compatible_model':
+            return pair_state[2]
+        return settings.get_value(category, other_key)
+
+    choices = guards.choices_from_settings(category, {key: value}, current)
     if choices:
         try:
             findings = guards.enforce(choices, confirm_expensive=getattr(ns, "confirm_expensive", False),
@@ -1390,7 +1412,13 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
         except guards.ConsentNotRecorded as exc:
             return [f"{name}: {exc}"]
     try:
-        settings.put_category(category, {key: value})
+        if pair_state is not None:
+            settings.put_category(category, {key: value},
+                                  expected_pair_revision=pair_state[0])
+        else:
+            settings.put_category(category, {key: value})
+    except (SelectionConflict, SelectionBusy, SelectionUnavailable):
+        return [f'{name}: compatible provider/model changed or busy — not changed, retry']
     except sqlite3.OperationalError as exc:
         return [f"{name}: {_busy(exc)}"]
     if f"{category}.{key}" in retention.RETENTION_KEYS:
@@ -2152,9 +2180,15 @@ def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_USAGE
     execute = bool(getattr(ns, "execute", False))
     force = bool(getattr(ns, "force", False))
-    if force and not execute and action != "restore":
-        ctx.err.write("--force requires --execute and does not bypass approval\n")
+    keep_last = getattr(ns, "keep_last", None)
+    max_bytes = getattr(ns, "max_bytes", None)
+    if keep_last is not None and not 1 <= keep_last <= 5_000:
+        ctx.err.write("keep-last must be between 1 and 5000\n")
         return EXIT_USAGE
+    if max_bytes is not None and not 1 <= max_bytes <= 1 << 40:
+        ctx.err.write("max-bytes must be between 1 and 1099511627776\n")
+        return EXIT_USAGE
+    include_orphans = bool(getattr(ns, "include_orphans", False))
 
     tokens = ["/checkpoints", action]
     if identifier is not None:
@@ -2163,6 +2197,12 @@ def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
         tokens.extend(("--project", project))
     if limit is not None:
         tokens.extend(("--limit", str(limit)))
+    if keep_last is not None:
+        tokens.extend(("--keep-last", str(keep_last)))
+    if max_bytes is not None:
+        tokens.extend(("--max-bytes", str(max_bytes)))
+    if include_orphans:
+        tokens.append("--include-orphans")
     for path in paths:
         tokens.extend(("--path", path))
     if action in {"prune", "clear", "clear-legacy", "restore"}:
@@ -4936,6 +4976,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "estop": cmd_estop,
     "company": cmd_company,
     "pairing": cmd_pairing,
+    "provider": cmd_custom_provider,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,

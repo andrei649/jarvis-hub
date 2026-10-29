@@ -56,6 +56,7 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     "code_execution": ("execute_code",),
     "coding": ("file_write", "terminal_run", "execute_code"),
     "computer_use": ("desktop_run",),
+    "browser": ("browser_run",),
     "image_gen": ("image_generate",),
     "memory": ("memory", "search_memory"),
     "todo": ("todo",),

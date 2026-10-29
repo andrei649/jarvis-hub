@@ -171,6 +171,18 @@ def plan(path=None, table: tuple[RetiredModel, ...] | None = None) -> list[Chang
 
 
 def apply(changes: list[Change]) -> list[Change]:
+    from contextlib import nullcontext
+
+    from agents.core import settings_db
+    from agents.core.llm.providers.selection_gates import exclusive
+
+    touches_pair = any(c.setting == 'llm.compatible_model' and c.kind != 'kept'
+                       for c in changes)
+    with exclusive(settings_db.DB_PATH) if touches_pair else nullcontext():
+        return _apply_fenced(changes)
+
+
+def _apply_fenced(changes: list[Change]) -> list[Change]:
     """Write *changes* (a :func:`plan`) into the active store in one transaction, each
     guarded by the same ``WHERE`` a boot uses, so a value the owner changed between
     the plan and now is left alone. Returns the changes written (``kept`` rows are not)."""

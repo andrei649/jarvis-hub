@@ -2,15 +2,18 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { apiPost } from '../api/client';
+import { apiGet, apiPost } from '../api/client';
 import { OperatorPanel } from '../operator-panel';
 
-vi.mock('../api/client', () => ({ apiPost: vi.fn() }));
+vi.mock('../api/client', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 const post = vi.mocked(apiPost);
+const get = vi.mocked(apiGet);
 
 beforeEach(() => {
   post.mockReset();
+  get.mockReset();
+  get.mockResolvedValue({ available: false });
 });
 
 function deferred<T>() {
@@ -69,12 +72,167 @@ async function previewDesktop(steps = 1) {
 }
 
 describe('OperatorPanel browser policy dry run', () => {
-  it('makes zero API calls on mount and explains the fail-closed boundary', () => {
+  it('does not offer owner sessions when the owner-only projection rejects', async () => {
+    get.mockImplementation(async (path) => {
+      if (path === '/api/browser/sessions') throw new Error('admin token required');
+      return { available: true };
+    });
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    expect((screen.getByRole('button', { name: 'Start fresh session with approval' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a stale ready button when the server reports uncertain cleanup', async () => {
+    get.mockResolvedValueOnce({ available: true }).mockResolvedValueOnce({ available: false });
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/path');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Run with approval' }));
+    await waitFor(() => expect(screen.getByText('Browser execution unavailable')).toBeTruthy());
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('queues an exact plan through ToolRPC and links its durable approval task', async () => {
+    get.mockResolvedValue({ available: true });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      status: 422, body: { ok: false, reason: 'approval_required', tool: 'browser_run', task_id: 87 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/path');
+    addBrowserStep('click', '#go');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Run with approval' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 87 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      steps: [{ action: 'navigate', url: 'https://example.com/path' },
+        { action: 'click', selector: '#go' }],
+    } });
+    expect((screen.getByRole('link', { name: 'Decision Inbox' }) as HTMLAnchorElement).getAttribute('href'))
+      .toContain('#decision-inbox');
+  });
+
+  it('queues a fresh session and a later grounded press as distinct approvals', async () => {
+    const sid = 'a'.repeat(32);
+    get.mockImplementation(async (path) => path === '/api/browser/sessions'
+      ? { available: true, sessions: [{ id: sid, origin: 'https://example.com',
+        generation: 1, refs: [{ ref: '@e1', role: 'button', name: 'Continue' }],
+        active: false, expires_in: 60 }] }
+      : { available: true });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 90 },
+    })).mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 91 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect(screen.getByLabelText('Live fresh-profile session')).toBeTruthy());
+    expect(get).toHaveBeenCalledWith('/api/browser/sessions', { admin: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh session with approval' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 90 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      mode: 'start', steps: [{ action: 'navigate', url: 'https://example.com/start' },
+        { action: 'snapshot' }],
+    } });
+    fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'press' } });
+    fireEvent.change(screen.getByLabelText('Observed element'), { target: { value: '@e1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 91 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      mode: 'act', session_id: sid, steps: [{ action: 'press', ref: '@e1', key: 'Enter' }],
+    } });
+    fireEvent.click(screen.getByRole('button', { name: 'Close fresh session' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      `/api/browser/sessions/${sid}/close`, {}, { admin: true }));
+  });
+
+  it('queues console and image inventory as separate owner approved session reads', async () => {
+    const sid = 'b'.repeat(32);
+    get.mockImplementation(async (path) => path === '/api/browser/sessions'
+      ? { available: true, sessions: [{ id: sid, origin: 'https://example.com',
+        generation: 1, refs: [], active: false, expires_in: 60 }] }
+      : { available: true });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 93 },
+    })).mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 94 },
+    }));
+    render(<OperatorPanel />);
+    await waitFor(() => expect(screen.getByLabelText('Live fresh-profile session')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'console' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 93 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      mode: 'act', session_id: sid, steps: [{ action: 'console' }],
+    } });
+    fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'get_images' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 94 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      mode: 'act', session_id: sid, steps: [{ action: 'get_images' }],
+    } });
+  });
+
+  it('renders only typed owner observations as escaped page text', async () => {
+    get.mockImplementation(async (path) => path === '/api/browser/tasks/95'
+      ? { found: true, status: 'done', ok: true, steps: 1,
+        observations: [
+          { action: 'console', records: [
+            { level: 'log', text: '<script>alert(1)</script>', source_origin: 'https://example.com' },
+            { level: 'error', text: 'Uncaught page failure', source_origin: '', stack: '/private/stack' },
+          ], dropped: 2 },
+          { action: 'get_images', images: [
+            { alt: 'Owner image', source_url: 'https://example.com/a.png',
+              frame_origin: 'https://example.com', width: 12, height: 14,
+              fetchable: true, ref: '@e2' },
+          ] },
+          { action: 'console', records: [{ level: 'error', text: 'private',
+            source_origin: 'file:///private' }], cookie: 'private-cookie' },
+        ], trace: [{ result: { text: 'raw dump' } }] }
+      : { available: true, sessions: [] });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 95 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Start fresh session with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh session with approval' }));
+    await waitFor(() => expect(screen.getByLabelText('browser observations')).toBeTruthy());
+    const area = screen.getByLabelText('browser observations');
+    expect(area.textContent).toContain('<script>alert(1)</script>');
+    expect(area.querySelector('script')).toBeNull();
+    expect(area.textContent).toContain('unknown origin · Uncaught page failure');
+    expect(area.textContent).toContain('Owner image');
+    expect(area.textContent).not.toContain('/private/stack');
+    expect(area.textContent).not.toContain('private-cookie');
+    expect(area.textContent).not.toContain('raw dump');
+  });
+
+  it('shows a later bounded task outcome without rendering page content', async () => {
+    get.mockImplementation(async (path) => path === '/api/browser/tasks/92'
+      ? { found: true, status: 'completed', ok: true, steps: 2,
+        trace: [{ result: { text: 'untrusted page instructions' } }] }
+      : { available: true, sessions: [] });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 92 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Start fresh session with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh session with approval' }));
+    await waitFor(() => expect(screen.getByLabelText('browser task outcome').textContent)
+      .toContain('completed · 2 steps completed'));
+    expect(get).toHaveBeenCalledWith('/api/browser/tasks/92', { admin: true });
+    expect(screen.queryByText('untrusted page instructions')).toBeNull();
+  });
+
+  it('makes zero actuation calls on mount and explains the fail-closed boundary', () => {
     render(<OperatorPanel />);
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByText(/empty allowlist is fail-closed/i)).toBeTruthy();
     expect(screen.getByText(/policy dry run/i)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /browser run/i })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('offers only the structured safe browser actions', () => {

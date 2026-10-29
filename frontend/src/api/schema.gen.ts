@@ -1685,6 +1685,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/browser/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browser Status
+         * @description Read-only server execution readiness; the preview allowlist is unrelated.
+         */
+        get: operations["browser_status_api_browser_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browser Sessions
+         * @description Authenticated owner projection; no profile paths or page text authority.
+         */
+        get: operations["browser_sessions_api_browser_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browser Task Status
+         * @description Show the owner's browser outcome without exposing page text or raw task data.
+         */
+        get: operations["browser_task_status_api_browser_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/sessions/{session_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Browser Session Close
+         * @description An authenticated owner may always stop a fresh-profile browser.
+         */
+        post: operations["browser_session_close_api_browser_sessions__session_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/browser/check": {
         parameters: {
             query?: never;
@@ -6276,6 +6356,269 @@ export interface paths {
         /** Llm Unload */
         post: operations["llm_unload_api_llm_unload_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/provider-packages/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Provider Packages Status */
+        get: operations["provider_packages_status_api_llm_provider_packages_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/provider-packages/stage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provider Packages Stage */
+        post: operations["provider_packages_stage_api_llm_provider_packages_stage_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/provider-packages/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Provider Packages Inspect */
+        get: operations["provider_packages_inspect_api_llm_provider_packages__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/provider-packages/{artifact_id}/propose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provider Packages Propose */
+        post: operations["provider_packages_propose_api_llm_provider_packages__artifact_id__propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/provider-packages/proposals/{proposal_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provider Packages Decision */
+        post: operations["provider_packages_decision_api_llm_provider_packages_proposals__proposal_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/provider-packages/proposals/{proposal_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provider Packages Promote */
+        post: operations["provider_packages_promote_api_llm_provider_packages_proposals__proposal_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/provider-packages/{provider_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provider Packages Revoke */
+        post: operations["provider_packages_revoke_api_llm_provider_packages__provider_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/provider-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credential Status */
+        get: operations["credential_status_api_admin_llm_provider_credentials_get"];
+        /** Put Credential */
+        put: operations["put_credential_api_admin_llm_provider_credentials_put"];
+        post?: never;
+        /** Delete Credential */
+        delete: operations["delete_credential_api_admin_llm_provider_credentials_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/provider-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Selection Status */
+        get: operations["selection_status_api_admin_llm_provider_selection_get"];
+        /** Select Provider */
+        put: operations["select_provider_api_admin_llm_provider_selection_put"];
+        post?: never;
+        /** Clear Selection */
+        delete: operations["clear_selection_api_admin_llm_provider_selection_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Custom */
+        get: operations["list_custom_api_admin_llm_custom_endpoints_get"];
+        put?: never;
+        /** Create Custom */
+        post: operations["create_custom_api_admin_llm_custom_endpoints_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Rename Custom */
+        put: operations["rename_custom_api_admin_llm_custom_endpoints__key__put"];
+        post?: never;
+        /** Delete Custom */
+        delete: operations["delete_custom_api_admin_llm_custom_endpoints__key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/{key}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Activate Custom */
+        put: operations["activate_custom_api_admin_llm_custom_endpoints__key__activate_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Clear Custom */
+        delete: operations["clear_custom_api_admin_llm_custom_endpoints_active_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/{key}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Custom */
+        post: operations["validate_custom_api_admin_llm_custom_endpoints__key__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/{key}/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credential Status */
+        get: operations["credential_status_api_admin_llm_custom_endpoints__key__credential_get"];
+        /** Credential Put */
+        put: operations["credential_put_api_admin_llm_custom_endpoints__key__credential_put"];
+        post?: never;
+        /** Credential Delete */
+        delete: operations["credential_delete_api_admin_llm_custom_endpoints__key__credential_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -12955,6 +13298,28 @@ export interface components {
             /** Confirm */
             confirm: string;
         };
+        /** ActivateBody */
+        ActivateBody: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Expected Choice Epoch */
+            expected_choice_epoch: number;
+            /**
+             * Acknowledge Unknown Price
+             * @default false
+             */
+            acknowledge_unknown_price: boolean;
+            /**
+             * Acknowledge Data Policy
+             * @default false
+             */
+            acknowledge_data_policy: boolean;
+            /**
+             * Grant Destination
+             * @default false
+             */
+            grant_destination: boolean;
+        };
         /** AdminPutBody */
         AdminPutBody: {
             /** Values */
@@ -13545,6 +13910,26 @@ export interface components {
              */
             switch: boolean;
         };
+        /** CreateBody */
+        CreateBody: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Base Url */
+            base_url: string;
+            /** Model */
+            model: string;
+            /** Auth Type */
+            auth_type: string;
+            /** Data Policy */
+            data_policy: string;
+            /**
+             * Grant Destination
+             * @default false
+             */
+            grant_destination: boolean;
+        };
         /** CreateMandateBody */
         CreateMandateBody: {
             /** Payees */
@@ -13609,6 +13994,30 @@ export interface components {
             /** Project Id */
             project_id?: string | null;
         };
+        /** CredentialBody */
+        CredentialBody: {
+            /** Secret */
+            secret: string;
+        };
+        /** CredentialPut */
+        CredentialPut: {
+            /** Provider */
+            provider: string;
+            /** Package Hash */
+            package_hash: string;
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
+        };
+        /** CredentialTarget */
+        CredentialTarget: {
+            /** Provider */
+            provider: string;
+            /** Package Hash */
+            package_hash: string;
+        };
         /** CurriculumBody */
         CurriculumBody: {
             /** Topics */
@@ -13650,6 +14059,11 @@ export interface components {
             name: string;
             /** Sources */
             sources?: string[];
+        };
+        /** DeleteBody */
+        DeleteBody: {
+            /** Expected Revision */
+            expected_revision: number;
         };
         /** DescribeAutoBody */
         DescribeAutoBody: {
@@ -14555,6 +14969,39 @@ export interface components {
             /** Bench Agent */
             bench_agent: string;
         };
+        /** ProviderPackageDecision */
+        ProviderPackageDecision: {
+            /** Artifact Id */
+            artifact_id: string;
+            /** Package Hash */
+            package_hash: string;
+            /** Approved */
+            approved: boolean;
+            /**
+             * Permanent
+             * @constant
+             */
+            permanent: true;
+        };
+        /** ProviderPackageStage */
+        ProviderPackageStage: {
+            /** Candidate */
+            candidate: string;
+            /**
+             * Source
+             * @default user
+             * @enum {string}
+             */
+            source: "user" | "legacy" | "bundled";
+            /** Profile */
+            profile: {
+                [key: string]: unknown;
+            };
+            /** Hooks */
+            hooks: string[];
+            /** Replacement Target */
+            replacement_target?: string | null;
+        };
         /** ProviderProbeRequest */
         ProviderProbeRequest: {
             /** Provider */
@@ -14633,6 +15080,13 @@ export interface components {
             default_workdir?: string | null;
             /** Project Id */
             project_id?: string | null;
+        };
+        /** RenameBody */
+        RenameBody: {
+            /** Name */
+            name: string;
+            /** Expected Revision */
+            expected_revision: number;
         };
         /** RequestPaymentBody */
         RequestPaymentBody: {
@@ -14784,6 +15238,27 @@ export interface components {
              * @enum {string}
              */
             action: "lock" | "unlock" | "arm_home" | "arm_away" | "disarm" | "open" | "close";
+        };
+        /** SelectBody */
+        SelectBody: {
+            /** Provider */
+            provider: string;
+            /** Package Hash */
+            package_hash: string;
+            /** Model */
+            model: string;
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Acknowledge Unknown Price
+             * @default false
+             */
+            acknowledge_unknown_price: boolean;
+            /**
+             * Acknowledge Data Policy
+             * @default false
+             */
+            acknowledge_data_policy: boolean;
         };
         /** SelectedImagePrepare */
         SelectedImagePrepare: {
@@ -15059,6 +15534,35 @@ export interface components {
             /** Target */
             target?: string | null;
         };
+        /** TurnCompletion */
+        TurnCompletion: {
+            /** Kind */
+            kind: string;
+            /** Explanation */
+            explanation: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "warning";
+            /** Unanswered Tool Results */
+            unanswered_tool_results: number;
+        };
+        /** TurnFileMutation */
+        TurnFileMutation: {
+            /** Attempt */
+            attempt: number;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "write" | "delete";
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "refused" | "unknown" | "applied_unverified";
+        };
         /** TurnNotice */
         TurnNotice: {
             /** Code */
@@ -15069,7 +15573,67 @@ export interface components {
         /** TurnOutcome */
         TurnOutcome: {
             /** Latency Ms */
-            latency_ms: number;
+            latency_ms?: number;
+            /** Duration Ms */
+            duration_ms?: number;
+            /** Prompt Elapsed Ms */
+            prompt_elapsed_ms?: number;
+            /** Model */
+            model?: string;
+            /** Context Detail */
+            context_detail?: {
+                [key: string]: number;
+            };
+            /** Context Pct */
+            context_pct?: number;
+            /** Cache Hit */
+            cache_hit?: number;
+            /** Tps */
+            tps?: number;
+            /** Compressions */
+            compressions?: number;
+            /** Total Tokens */
+            total_tokens?: number;
+            /** Title */
+            title?: string;
+            /** Battery */
+            battery?: boolean;
+            completion?: components["schemas"]["TurnCompletion"];
+            tools?: components["schemas"]["TurnToolAccounting"];
+            output?: components["schemas"]["TurnOutputFlow"];
+            /** File Mutations */
+            file_mutations?: components["schemas"]["TurnFileMutation"][];
+            /**
+             * File Mutation Attribution
+             * @constant
+             */
+            file_mutation_attribution?: "unknown";
+        };
+        /** TurnOutputFlow */
+        TurnOutputFlow: {
+            /** Tokens */
+            tokens: number | null;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "provider_complete" | "visible_estimate" | "unknown";
+        };
+        /** TurnToolAccounting */
+        TurnToolAccounting: {
+            /** Proposed */
+            proposed: number;
+            /** Queued */
+            queued: number;
+            /** Executed */
+            executed: number | null;
+            /** Failures */
+            failures: number | null;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "observed" | "unknown";
         };
         /** UninstallSkillBody */
         UninstallSkillBody: {
@@ -15446,6 +16010,11 @@ export interface components {
             /** Inputs */
             inputs?: string[];
         };
+        /** ClearBody */
+        agents__core__routers__custom_endpoints__ClearBody: {
+            /** Expected Choice Epoch */
+            expected_choice_epoch: number;
+        };
         /** BriefBody */
         agents__core__routers__market__BriefBody: {
             /** Watches */
@@ -15461,6 +16030,11 @@ export interface components {
             live: boolean;
             /** Positions */
             positions?: components["schemas"]["Position"][];
+        };
+        /** ClearBody */
+        agents__core__routers__provider_selection__ClearBody: {
+            /** Expected Revision */
+            expected_revision: number;
         };
     };
     responses: never;
@@ -18180,6 +18754,108 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browser_status_api_browser_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    browser_sessions_api_browser_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    browser_task_status_api_browser_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browser_session_close_api_browser_sessions__session_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -25512,6 +26188,721 @@ export interface operations {
                 "application/json": components["schemas"]["LMUnload"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provider_packages_status_api_llm_provider_packages_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    provider_packages_stage_api_llm_provider_packages_stage_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderPackageStage"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provider_packages_inspect_api_llm_provider_packages__artifact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provider_packages_propose_api_llm_provider_packages__artifact_id__propose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provider_packages_decision_api_llm_provider_packages_proposals__proposal_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderPackageDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provider_packages_promote_api_llm_provider_packages_proposals__proposal_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provider_packages_revoke_api_llm_provider_packages__provider_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_status_api_admin_llm_provider_credentials_get: {
+        parameters: {
+            query: {
+                provider: string;
+                package_hash: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_credential_api_admin_llm_provider_credentials_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_credential_api_admin_llm_provider_credentials_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    selection_status_api_admin_llm_provider_selection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    select_provider_api_admin_llm_provider_selection_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_selection_api_admin_llm_provider_selection_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["agents__core__routers__provider_selection__ClearBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_custom_api_admin_llm_custom_endpoints_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_custom_api_admin_llm_custom_endpoints_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_custom_api_admin_llm_custom_endpoints__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_custom_api_admin_llm_custom_endpoints__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_custom_api_admin_llm_custom_endpoints__key__activate_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_custom_api_admin_llm_custom_endpoints_active_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["agents__core__routers__custom_endpoints__ClearBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_custom_api_admin_llm_custom_endpoints__key__validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_status_api_admin_llm_custom_endpoints__key__credential_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_put_api_admin_llm_custom_endpoints__key__credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_delete_api_admin_llm_custom_endpoints__key__credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

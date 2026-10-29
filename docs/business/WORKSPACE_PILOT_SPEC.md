@@ -357,6 +357,21 @@ def connect() -> sqlite3.Connection
     # sqlite3.connect(path, check_same_thread=False, isolation_level=None)  ← autocommit
     # PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000; row_factory=sqlite3.Row
     # schema ensured on every connect (one cheap PRAGMA user_version read; migrations by user_version)
+    # NWS-13: FastAPI runs sync `def` routes/dependencies in its thread pool. Every synchronous
+    # SQLite read, FTS query, and complete BEGIN IMMEDIATE transaction reachable from an async
+    # Workspace route runs through `await http.offload(fn, *args)`; the scheduler's whole sweep
+    # and other existing background units likewise run in worker threads.
+    # That helper copies contextvars with asyncio.to_thread and shields/drains the worker before
+    # propagating cancellation, so a request-owned connection is never closed while its worker
+    # still uses it. One request uses its connection in one awaited unit at a time. The 5 s busy
+    # timeout and audit/authorization semantics remain; no transaction spans a model or SMTP await.
+    # `http.drain_on_cancel` also completes an accepted multi-await handoff before a cancelled
+    # request closes its connection: manual report queue -> spawn, approval executing -> outcome.
+    # A cancelled chat preparation settles and releases its exact pending turn; model cancellation
+    # settles the answer from a worker. Once-only effect and audit records remain authoritative.
+    # A held writer delays only contending database work, not other async requests or heartbeats.
+    # Regressions: tests/test_workspace_sqlite_off_loop.py and
+    # tests/test_workspace_sqlite_cancellation.py.
 def connect_read_only(path: Path) -> sqlite3.Connection   # no migration, no write, no new file, no chmod
 MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3)]   # v3.4: v2, v3 (§4)
 def schema_version() -> int                # MIGRATIONS[-1][0] = 3
@@ -743,10 +758,46 @@ headers; `FakeEngine(reply=..., *, stream=True, fail=None, delay=0, …)` (keywo
   interpreters, at most two per hub process across request loops. The same 60 s deadline includes
   queue and startup time; timeout or cancellation kills and reaps the child before releasing its
   slot, and removes its parent-owned temporary directory. POSIX children set `RLIMIT_AS` to at most
-  512 MiB before loading the parser; Windows enforces time only, with `memory_unavailable` in the
-  internal `Extracted.limits` result (`wall_time`, `address_space` on POSIX). This is resource
+  512 MiB before loading the parser where the OS permits it. On macOS, if the kernel refuses
+  `RLIMIT_AS`, the parent samples RSS for every process in the isolated extraction session,
+  including native OCR descendants, at 100 ms intervals and kills the owned OCR group
+  above 512 MiB. That sampled ceiling can miss a short
+  spike; the internal limits report `memory_unavailable` and `rss_sampled`, never
+  `address_space`. Windows enforces time only, with `memory_unavailable` in the internal
+  `Extracted.limits` result (`wall_time`, `address_space` where POSIX RLIMIT_AS succeeds).
+  On other POSIX hosts, OCR also samples aggregate session RSS so the document child and
+  its native subprocesses cannot each consume the full per-process address-space allowance;
+  those results report both `address_space` and `rss_sampled`.
+  On Windows, tree termination uses `taskkill /T` as a best effort; a native descendant
+  left by an already exited leader cannot be guaranteed reaped without a Job Object.
+  This is resource
   containment, not a filesystem or network sandbox. Text/CSV/XLSX retain the cooperative pool.
   A child that crashes or cannot start gives `invalid_file`; a deadline gives `timeout`.
+  **Optional local OCR (NWS-10):** `NERVA_WORKSPACE_OCR=1` (default off) works only with
+  `NERVA_WORKSPACE_KILLABLE_EXTRACTION=1` on POSIX. A Windows-only Job-owned OCR
+  implementation is present behind an internal source gate, but native Windows
+  Job/IOCP, descendant, commit-limit, frozen-launch and local-engine acceptance
+  has not run. The gate remains closed: scanned PDFs on Windows retain `no_text`
+  even with both opt-in flags. Ordinary Windows PDF/DOCX extraction remains
+  time-only with truthful `memory_unavailable`; it does not claim Job containment.
+  The synchronous extractor and legacy pool never
+  invoke a native OCR engine. When a PDF has no readable text layer, the child lazily loads
+  locally installed `pypdfium2`, `pytesseract` and Tesseract; missing engine components retain
+  `no_text`. No document bytes are sent to a provider. OCR reads at most 50 PDF pages; exceeding
+  that cap gives `too_many_pages`. The document child emits a start and completion frame
+  around each page's render and recognition work. The hub enforces the 20 s page deadline
+  from the start frame and kills the one owned process group when a native C renderer
+  does not return. This page budget sits within the document's 60 s queue-to-result deadline;
+  the engine receives only the remaining fractional time, without rounding up. The document
+  leader remains an unreaped direct child until the hub signals its group, including native
+  descendants, then drains it before releasing the slot and scratch directory. Termination
+  does not depend on discovering descendant PIDs. This covers native subprocesses that
+  inherit the owned group; it is not a sandbox for a process that deliberately escapes it.
+  A failed, timed-out or unreadable page fails the whole document
+  with a stable code instead of publishing an incomplete result. The internal child result
+  includes `ocr` in `Extracted.limits` only for a complete OCR result. Text-layer PDFs and
+  DOCX/CSV/XLSX follow their existing paths. The original upload remains available for
+  re-indexing when optional OCR is later enabled or an engine becomes available.
   Any extraction problem → document `failed` with a stable `error` code
   (`invalid_file`, `encrypted_pdf`, `too_many_pages`, `no_text`, `timeout`, `too_much_text` — over
   10 000 000 extracted characters; v3.2 `interrupted`, set by the scheduler's sweep, §9, for an

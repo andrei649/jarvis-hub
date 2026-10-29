@@ -15,6 +15,7 @@ import logging
 import os
 import shutil
 import stat
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -129,7 +130,7 @@ def test_every_name_the_workspace_writes_is_one_of_its_own_entries(ws, monkeypat
     stored = sorted(path.name for path in documents.files_dir().iterdir())
     assert stored and [n for n in stored if not workspace_db._own_stored_file(n)] == [], stored
     for name in ("workspace.db-wal", "workspace.db-journal", "secrets.enc.salt", "secrets.enc.key",
-                 "secrets.enc.a1b2.tmp", ".setup-code.txt.x9"):
+                 "secrets.enc.a1b2c3d4.tmp", ".setup-code.txt.x9y8z7w6"):
         assert workspace_db.own_entry(name), name
     for name in ("photos", "notes.txt", "files.zip", "workspace.dbx", "secrets.encrypted",
                  "lost+found", ".DS_Store", "setup-code.txt.bak"):
@@ -289,6 +290,50 @@ def _modes_of(root: Path, names) -> dict[str, int]:
     return {name: _mode(root / name) for name in names}
 
 
+@pytest.mark.parametrize("foreign", [
+    "workspace.db-backup", "workspace.db-wal.old", "secrets.enc.backup",
+    "secrets.enc.salt.backup", "secrets.enc.a1b2.tmp", ".setup-code.txt.notes",
+])
+def test_shared_store_keeps_foreign_prefix_siblings_unchanged(tmp_path, foreign):
+    shared = tmp_path / "shared"
+    shared.mkdir(mode=0o755)
+    shared.chmod(0o755)
+    other = shared / foreign
+    other.write_bytes(b"other application's data")
+    other.chmod(0o664)
+    own = shared / "workspace.db-wal"
+    own.write_bytes(b"workspace sidecar")
+    own.chmod(0o644)
+    business = tmp_path / "business"
+    business.symlink_to(shared, target_is_directory=True)
+
+    workspace_db.secure_storage(business)
+
+    assert _mode(shared) == 0o755
+    assert _mode(other) == 0o664
+    assert other.read_bytes() == b"other application's data"
+    assert _mode(own) == 0o600
+
+
+def test_shared_store_tightens_real_secret_and_setup_temporary_names(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "foreign.txt").write_bytes(b"foreign")
+    temporary = []
+    for prefix, suffix in (("secrets.enc.", ".tmp"), (".setup-code.txt.", "")):
+        fd, name = tempfile.mkstemp(dir=shared, prefix=prefix, suffix=suffix)
+        os.close(fd)
+        path = Path(name)
+        path.chmod(0o644)
+        temporary.append(path)
+    business = tmp_path / "business"
+    business.symlink_to(shared, target_is_directory=True)
+
+    workspace_db.secure_storage(business)
+
+    assert [_mode(path) for path in temporary] == [0o600, 0o600]
+
+
 def test_a_business_link_to_a_shared_folder_changes_only_the_workspaces_own_entries(
         ws, tmp_path, monkeypatch, caplog):
     """``business`` → ``/mnt/disc2`` (review SEC-EDGE-1): only the workspace's entries there.
@@ -409,7 +454,8 @@ def test_a_refused_chmod_in_a_shared_folder_names_only_the_workspaces_entries(
         workspace_db.connect().close()
     [advice] = [r.getMessage() for r in _db_warnings(caplog) if "may not change" in r.getMessage()]
     assert "chmod -R" not in advice and "chown -R" not in advice
-    assert "workspace.db*, files/, secrets.enc*, setup-code.txt" in advice
+    assert "workspace.db*" not in advice and "secrets.enc*" not in advice
+    assert "on each refused entry only" in advice
     assert "not on the whole folder" in advice
 
 

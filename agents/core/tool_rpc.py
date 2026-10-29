@@ -449,7 +449,8 @@ class ToolRPCServer:
 
     def __init__(self, secret_broker=None, enqueue: Optional[Callable] = None,
                  audit=None, agent: str = "jarvis", kernel=None,
-                 execution_context_check: Optional[Callable] = None) -> None:
+                 execution_context_check: Optional[Callable] = None,
+                 file_origin_lookup: Optional[Callable] = None) -> None:
         self._tools: dict[str, dict] = {}
         # H399 — the registrar's word on whether calls to a tool may overlap other
         # calls of the same model step. Kept beside the spec, not in it: the spec is
@@ -462,6 +463,7 @@ class ToolRPCServer:
         self.agent = agent
         self._kernel = kernel   # ORIZONT-24 K1 wave-3: bound kernel.authorize (default-off)
         self._execution_context_check = execution_context_check
+        self._file_origin_lookup = file_origin_lookup
         # H297: sync handlers run on this server's own bounded pool (created on the
         # first sync call); `_sync_slots` counts threads still running, including a
         # call whose caller timed out or was cancelled, and `_sync_threads` keeps each
@@ -726,17 +728,23 @@ class ToolRPCServer:
         effective_actor = actor or self.agent
         name = str((request or {}).get("tool", ""))
         args = (request or {}).get("args") or {}
+        def refused(reason: str, **extra) -> dict:
+            from .turn_outcome import record_tool_refused
+
+            record_tool_refused()
+            return {"ok": False, "reason": reason, "tool": name, **extra}
+
         if not isinstance(args, dict):
-            return {"ok": False, "reason": "bad_args", "tool": name}
+            return refused("bad_args")
 
         from .job_toolsets import allows
         if not allows(name):
-            return {"ok": False, "reason": "job_toolset_not_allowed", "tool": name}
+            return refused("job_toolset_not_allowed")
 
         spec = self._tools.get(name)
         if spec is None:
             # Not on the allowlist — the sandbox cannot reach it.
-            return {"ok": False, "reason": "tool_not_allowed", "tool": name}
+            return refused("tool_not_allowed")
 
         if spec.get("gated_review") is not None:
             # Preflight may rewrite nested values; it must not mutate a caller's
@@ -744,7 +752,7 @@ class ToolRPCServer:
             try:
                 args = deepcopy(args)
             except Exception:
-                return {"ok": False, "reason": "validation_failed", "tool": name}
+                return refused("validation_failed")
 
         # The agent loop alone supplies this private callback out of band. It
         # rechecks the current profile synchronously, after the independent job
@@ -755,9 +763,11 @@ class ToolRPCServer:
             except Exception:
                 allowed = False
             if allowed is not True:
-                return {"ok": False, "reason": "tool_not_allowed", "tool": name}
+                return refused("tool_not_allowed")
         args, denial = self._run_preflight(spec, args, name)
         if denial is not None:
+            from .turn_outcome import record_tool_refused
+            record_tool_refused()
             return denial
 
         if spec["gated"]:
@@ -777,7 +787,7 @@ class ToolRPCServer:
                     contract_payload, now=time.time())
             except Exception:
                 logger.warning("tool-rpc contract evaluation failed", exc_info=True)
-                return {"ok": False, "reason": "contract_error", "tool": name}
+                return refused("contract_error")
             if not decision.admissible:
                 reason = decision.reason or "contract_denied"
                 self._record(
@@ -785,7 +795,7 @@ class ToolRPCServer:
                     f"{name}: {reason}",
                     agent=effective_actor,
                 )
-                return {"ok": False, "reason": reason, "tool": name}
+                return refused(reason)
 
             # A server-owned intake can bind one finalized action/task tuple
             # through the production mediation bridge. It owns BOTH the kernel
@@ -796,14 +806,14 @@ class ToolRPCServer:
                 if denial is not None:
                     self._record(
                         "toolrpc.classify_failed", f"{name}: {denial}", agent=effective_actor)
-                    return {"ok": False, "reason": denial, "tool": name}
+                    return refused(denial)
                 review = spec.get("gated_review")
                 if review is not None:
                     try:
                         finalized_args = deepcopy(args)
                         intake_args = deepcopy(finalized_args)
                     except Exception:
-                        return {"ok": False, "reason": "validation_failed", "tool": name}
+                        return refused("validation_failed")
                 else:
                     intake_args = args
                 try:
@@ -812,10 +822,10 @@ class ToolRPCServer:
                     with tool_approval_scope(None):
                         task_id = intake(effective_actor, intake_args)
                 except ToolRPCValidationError as exc:
-                    return {"ok": False, "reason": exc.reason, "tool": name}
+                    return refused(exc.reason)
                 except Exception:
                     logger.warning("tool-rpc bound intake failed", exc_info=True)
-                    return {"ok": False, "reason": "enqueue_failed", "tool": name}
+                    return refused("enqueue_failed")
                 self._record("toolrpc.gated", name, agent=effective_actor)
                 if review is not None:
                     if self._tools.get(name) is not spec:
@@ -838,6 +848,10 @@ class ToolRPCServer:
                 # the id is noted here too — where it is known — for the collector the
                 # turn holds. Reporting only: the row stays proposed either way.
                 record_pending_approval(task_id)
+                from .turn_outcome import record_tool_queued
+
+                if type(task_id) is int and task_id > 0:
+                    record_tool_queued()
                 answer = {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
                 answer.update({key: labels[key] for key in _ANSWER_LABEL_KEYS if key in labels})
                 return answer
@@ -852,7 +866,7 @@ class ToolRPCServer:
                     f"{name}: {denied}",
                     agent=effective_actor,
                 )
-                return {"ok": False, "reason": "kernel_denied", "tool": name, "detail": denied}
+                return refused("kernel_denied", detail=denied)
             if self._enqueue is None:
                 return {"ok": False, "reason": "approval_required", "tool": name}
             # H506 — the card the owner reads must say what class of thing this is.
@@ -863,7 +877,7 @@ class ToolRPCServer:
             if denial is not None:
                 self._record(
                     "toolrpc.classify_failed", f"{name}: {denial}", agent=effective_actor)
-                return {"ok": False, "reason": denial, "tool": name}
+                return refused(denial)
             payload = {"tool": name, "args": args, "target": name}
             payload.update(labels)
             title = f"Tool '{name}' via RPC"
@@ -887,9 +901,13 @@ class ToolRPCServer:
                         risk_tier=_RISK_TIER, autonomy_level="ask", origin="generated")
             except Exception:
                 logger.warning("tool-rpc gated enqueue failed", exc_info=True)
-                return {"ok": False, "reason": "enqueue_failed", "tool": name}
+                return refused("enqueue_failed")
             self._record("toolrpc.gated", name, agent=effective_actor)
             record_pending_approval(task_id)
+            from .turn_outcome import record_tool_queued
+
+            if type(task_id) is int and task_id > 0:
+                record_tool_queued()
             # H594: once approved it runs outside any turn; what it touches counts for this session.
             project_context.note_task(task_id)
             answer = {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
@@ -901,7 +919,7 @@ class ToolRPCServer:
         try:
             result = await self._invoke_handler(spec, args, effective_actor, name=name)
         except SyncHandlerBusy:
-            return {"ok": False, "reason": "tool_busy", "tool": name}
+            return refused("tool_busy")
         except Exception as exc:
             logger.warning("tool-rpc handler failed: %s", name, exc_info=True)
             # H297: the model is told what went wrong, in one bounded, secret-free line.
@@ -923,22 +941,29 @@ class ToolRPCServer:
 
     async def execute(self, task, *, execution_context=None) -> dict:
         """Executor handler: run a gated tool AFTER its approval task is approved."""
+        from .turn_outcome import record_tool_refused
+
         effective_actor = getattr(task, "agent", None) or self.agent
         payload = getattr(task, "payload", None)
         if not isinstance(payload, Mapping):
+            record_tool_refused()
             return {"status": "failed", "reason": "bad_args", "tool": ""}
         name = payload.get("tool")
         if not isinstance(name, str):
+            record_tool_refused()
             return {"status": "failed", "reason": "bad_args", "tool": ""}
         raw_args = payload.get("args", {})
         if not isinstance(raw_args, Mapping):
+            record_tool_refused()
             return {"status": "failed", "reason": "bad_args", "tool": name}
         args = dict(raw_args)
         spec = self._tools.get(name)
         if spec is None:
+            record_tool_refused()
             return {"status": "failed", "reason": "tool_not_allowed", "tool": name}
         args, denial = self._run_preflight(spec, args, name)
         if denial is not None:
+            record_tool_refused()
             return {
                 "status": "failed",
                 "reason": denial["reason"],
@@ -951,11 +976,13 @@ class ToolRPCServer:
         # never reached — and it holds with the kernel off, which is the default.
         labels, classify_denial = self._classify(spec, args)
         if classify_denial is not None:
+            record_tool_refused()
             self._record(
                 "toolrpc.classify_failed", f"{name}: {classify_denial}",
                 agent=effective_actor)
             return {"status": "failed", "reason": classify_denial, "tool": name}
         if labels.get("class") != payload.get("class"):
+            record_tool_refused()
             self._record(
                 "toolrpc.approval_class_mismatch",
                 f"{name}: {payload.get('class')!r} approved, {labels.get('class')!r} now",
@@ -974,6 +1001,7 @@ class ToolRPCServer:
             except Exception:
                 trusted = False
             if not trusted:
+                record_tool_refused()
                 return {
                     "status": "failed",
                     "reason": "trusted_execution_required",
@@ -982,6 +1010,7 @@ class ToolRPCServer:
         if spec["gated"]:
             denied = self._kernel_denial(name, args, effective_actor)
             if denied is not None:
+                record_tool_refused()
                 self._record(
                     "toolrpc.kernel_denied",
                     f"{name}: {denied}",
@@ -994,8 +1023,18 @@ class ToolRPCServer:
                     "detail": denied,
                 }
         try:
-            result = await self._invoke_handler(spec, args, effective_actor, name=name)
+            from .turn_outcome import file_execution_scope
+
+            origin = None
+            if name in {'file_write', 'file_delete'} and callable(self._file_origin_lookup):
+                try:
+                    origin = self._file_origin_lookup(task)
+                except Exception:
+                    logger.warning('file origin lookup unavailable', exc_info=True)
+            with file_execution_scope(origin):
+                result = await self._invoke_handler(spec, args, effective_actor, name=name)
         except SyncHandlerBusy:
+            record_tool_refused()
             return {"status": "failed", "reason": "tool_busy", "tool": name}
         except Exception as exc:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
@@ -1041,13 +1080,44 @@ class ToolRPCServer:
         try:
             handler = spec["handler"]
             if _is_async_callable(handler):
-                return await handler(args)
-            result = await self._run_sync_handler(name, handler, args)
-            # A sync callable that hands back an awaitable (a lambda over a
-            # coroutine) is awaited here, on the loop.
-            if inspect.isawaitable(result):
-                result = await result
+                result = await handler(args)
+            else:
+                result = await self._run_sync_handler(name, handler, args)
+                # A sync callable that hands back an awaitable (a lambda over a
+                # coroutine) is awaited here, on the loop.
+                if inspect.isawaitable(result):
+                    result = await result
+            from .turn_outcome import record_tool_executed
+
+            # A returned handler was invoked, but its structured disposition
+            # may still refuse the effect. Unknown status is not proof of a
+            # successful execution or an attributable failure.
+            success: bool | None = None
+            disposition = result.structured if isinstance(result, ToolContent) else result
+            if isinstance(disposition, Mapping):
+                status = disposition.get('status')
+                known_status = status if isinstance(status, str) else None
+                if disposition.get('ok') is False or known_status in {
+                        'failed', 'refused', 'error', 'blocked', 'denied',
+                        'rejected', 'cancelled', 'canceled'}:
+                    success = False
+                elif (disposition.get('ok') is True
+                      or known_status in {'ok', 'completed', 'success', 'succeeded', 'done'}):
+                    success = True
+            record_tool_executed(success=success)
             return result
+        except SyncHandlerBusy:
+            raise
+        except asyncio.CancelledError:
+            from .turn_outcome import record_tool_executed
+
+            record_tool_executed(success=None, known_invocation=False)
+            raise
+        except BaseException:
+            from .turn_outcome import record_tool_executed
+
+            record_tool_executed(success=False)
+            raise
         finally:
             _tool_actor.reset(token)
             if task is not None:

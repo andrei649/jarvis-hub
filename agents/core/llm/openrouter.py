@@ -39,18 +39,23 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from typing import Any, Optional
 
 from ..log_safe import log_safe
-from .base import LLMBackend, cloud_cap
+from .base import LLMBackend, ThinkingStreamFilter, _emit, cloud_cap
 from .egress import llm_async_client
 from .provider_errors import note_provider_failure
 from .provider_routing import SETTINGS_KEYS, build_provider_block
+from .providers.admitted_profiles import AdmittedProviderProfile
+from .providers.hook_runtime import ProviderHookRuntimeError
+from .repetition_guard import RepetitionStreamGuard
 from .tool_dialects import compatible_usage
 from .tool_protocol import TokenUsage, ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
 
 logger = logging.getLogger("jarvis.llm.openrouter")
+
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 _ERROR = "[OpenRouter error]"
@@ -91,12 +96,17 @@ class OpenRouterBackend(LLMBackend):
     # OpenRouter speaks the runtime's dialect natively (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE, client=None, *, profile=None, reasoning_effort="", effort_declarations=None, provider_routing=None) -> None:
-        from .provider_request import profile_with_declarations
+    def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE, client=None, *, profile=None, reasoning_effort="", effort_declarations=None, provider_routing=None, model=None) -> None:
+        from .provider_request import profile_with_declarations, require_profile_kind
         from .providers import DEFAULT_REGISTRY
-        self.profile = profile_with_declarations(
-            profile or DEFAULT_REGISTRY.get("openrouter"), effort_declarations,
-        )
+        from .providers.admitted_profiles import AdmittedProviderProfile
+        self.profile = (profile if isinstance(profile, AdmittedProviderProfile)
+                        or profile is not None and profile.id.startswith('custom:') else
+                        profile_with_declarations(
+                            profile or DEFAULT_REGISTRY.get("openrouter"), effort_declarations))
+        require_profile_kind(self.profile, "openai-compatible", "chat_completions")
+        if profile is not None and base_url == OPENROUTER_BASE:
+            base_url = self.profile.default_base_url or base_url
         self.reasoning_effort = reasoning_effort
         # H583 — OpenRouter's `provider` object (sort/only/ignore/order/
         # require_parameters/data_collection). `provider_routing` is the knob dict,
@@ -109,12 +119,39 @@ class OpenRouterBackend(LLMBackend):
         self._current_block()  # raises ProviderRoutingInvalid on a bad knob
         self.api_key = api_key
         self.base_url = base_url
-        self.client = client or llm_async_client("openrouter", base_url=base_url, timeout=120.0)
+        admitted = isinstance(self.profile, AdmittedProviderProfile)
+        custom = self.profile.id.startswith('custom:')
+        if custom:
+            from .providers.custom_runtime import CustomEndpointRuntime
+
+            runtime = getattr(getattr(client, '_transport', None), 'runtime', None)
+            if (type(runtime) is not CustomEndpointRuntime or runtime.profile is not self.profile
+                    or api_key or client is None):
+                raise ProviderHookRuntimeError('custom_egress_unavailable')
+        if admitted and client is not None:
+            raise ProviderHookRuntimeError('native_egress_unavailable')
+        if admitted:
+            from .providers.native_transport import native_admitted_client
+            self.client = native_admitted_client(self.profile, api_key,
+                                                 model or self.profile.fallback_models[0])
+        else:
+            self.client = client or llm_async_client(self.profile.id, base_url=base_url,
+                                                     timeout=120.0)
+
+    def _send_client(self):
+        custom = getattr(self, '_custom_endpoint_runtime', None)
+        if custom is not None:
+            from .providers.custom_runtime import require_custom_client
+            return require_custom_client(self.client, custom)
+        if self.profile.id.startswith('custom:'):
+            raise ProviderHookRuntimeError('custom_egress_unavailable')
+        if isinstance(self.profile, AdmittedProviderProfile):
+            from .providers.native_transport import require_native_client
+            return require_native_client(self.client, self.profile)
+        return self.client
 
     @staticmethod
     def _block_from(knobs) -> dict | None:
-        # A new dict (and new lists) per call, so a transport or test double that
-        # keeps or mutates one request's payload cannot reach the next one's.
         return build_provider_block(**knobs) if knobs else None
 
     def _current_block(self) -> dict | None:
@@ -123,10 +160,6 @@ class OpenRouterBackend(LLMBackend):
 
     @property
     def provider_block(self) -> dict | None:
-        """The ``provider`` object the next request would carry; ``None`` = none sent.
-
-        Raises ``ProviderRoutingInvalid`` when a knob is invalid.
-        """
         return self._current_block()
 
     async def _provider_block_now(self) -> dict | None:
@@ -154,12 +187,26 @@ class OpenRouterBackend(LLMBackend):
         except Exception:  # pragma: no cover - best-effort
             pass
 
-    def _shape(self, payload: dict, block: dict | None) -> dict:
+    def _shape(self, payload: dict, block: dict | None, *, profile=None) -> dict:
         """Add the per-request extras: reasoning / cache parameters, a delegated child's
         ``extra_body`` (H681, never over a key the hub owns), then routing."""
-        from .provider_request import compatible_parameters
+        from .provider_request import (
+            apply_profile_request,
+            compatible_parameters,
+            prepare_profile_messages,
+            profile_reasoning_config,
+        )
         from .request_context import merge_extra_body, reconcile_payload
-        payload.update(compatible_parameters(self.profile, payload["model"], self.reasoning_effort))
+        profile = self.profile if profile is None else profile
+        from .providers.admitted_profiles import AdmittedProviderProfile
+        maximum = 512 * 1024 if isinstance(self.profile, AdmittedProviderProfile) else 256 * 1024
+        payload["messages"] = prepare_profile_messages(profile, payload["messages"], maximum=maximum)
+        reasoning_config = profile_reasoning_config(
+            profile, payload["model"], self.reasoning_effort,
+            supports_wire="reasoning-effort" in profile.capabilities)
+        apply_profile_request(profile, payload,
+                              context={"reasoning_config": reasoning_config})
+        payload.update(compatible_parameters(profile, payload["model"], self.reasoning_effort))
         merge_extra_body(payload)
         reconcile_payload(payload)
         if self.profile.id == "openrouter":
@@ -167,6 +214,19 @@ class OpenRouterBackend(LLMBackend):
         if block:
             payload["provider"] = block
         return payload
+
+    async def _shape_async(self, payload: dict, block: dict | None):
+        from .provider_request import profile_reasoning_config
+        from .providers.admitted_profiles import prepare_admitted_profile
+
+        configuration = profile_reasoning_config(
+            self.profile, payload['model'], self.reasoning_effort,
+            supports_wire='reasoning-effort' in self.profile.capabilities)
+        profile = await prepare_admitted_profile(
+            self.profile, model=payload['model'], messages=payload['messages'],
+            reasoning_config=configuration)
+        self._shape(payload, block, profile=profile)
+        return profile
 
     @staticmethod
     def _explain_routing_refusal(resp, block: dict | None) -> None:
@@ -190,10 +250,12 @@ class OpenRouterBackend(LLMBackend):
             log_safe(json.dumps(block, sort_keys=True), 300), _ROUTING_SETTINGS)
 
     def _headers(self) -> dict:
+        from .provider_request import profile_headers
+
         h = {"Content-Type": "application/json"}
         if self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
-        return h
+        return profile_headers(self.profile, h)
 
     async def generate(self, model: str, prompt: str, system: str = "",
                        max_tokens: int = 1024, temperature: float = 0.7) -> str:
@@ -207,22 +269,137 @@ class OpenRouterBackend(LLMBackend):
             block = await self._provider_block_now()
         except _RoutingUnavailable:
             return _ERROR
-        self._shape(payload, block)
+
+        prepared = await self._shape_async(payload, block)
         try:
-            resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
+            if isinstance(self.profile, AdmittedProviderProfile):
+                from .providers.native_transport import native_post
+                resp = await native_post(self.profile, prepared, self._send_client(),
+                                         '/chat/completions', headers=self._headers(), json=payload)
+            else:
+                resp = await self._send_client().post("/chat/completions", json=payload, headers=self._headers())
             self._explain_routing_refusal(resp, block)
             resp.raise_for_status()
             data = resp.json()
             choice = data["choices"][0]
             content = (choice["message"].get("content", "") or "")
-            # H393: a reply cut at the output cap that is a repetition loop is dropped.
             answer = self._finalize_cloud(content, choice.get("finish_reason"), model)
             if self.profile.backend_kind == "openai-compatible":
                 report_text_usage(compatible_usage(data))
             return answer
+        except ProviderHookRuntimeError:
+            raise
         except Exception as e:
             logger.warning("OpenRouter generate failed: %s", e)
             note_provider_failure(self.profile.id, model, e)
+            return _ERROR
+
+    async def generate_stream(
+        self, model: str, prompt: str, system: str = "",
+        max_tokens: int = 1024, temperature: float = 0.7,
+        on_token: Callable[[str], None] | None = None,
+        on_activity: Callable[[], None] | None = None,
+    ) -> str:
+        # The ordinary OpenRouter path retains its established buffered behavior.
+        if not isinstance(self.profile, AdmittedProviderProfile):
+            return await super().generate_stream(
+                model, prompt, system, max_tokens, temperature, on_token, on_activity)
+
+        from .providers.native_transport import native_stream
+
+        payload = {
+            "model": model,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": prompt}],
+            "max_tokens": cloud_cap(max_tokens), "temperature": temperature,
+            "stream": True,
+        }
+        try:
+            block = await self._provider_block_now()
+        except _RoutingUnavailable:
+            return _ERROR
+        prepared = await self._shape_async(payload, block)
+        filter_ = ThinkingStreamFilter()
+        repeat = RepetitionStreamGuard()
+        emitted = ""
+        finish = None
+        completed = False
+        usage = None
+        try:
+            async with asyncio.timeout(120):
+                async with native_stream(
+                    self.profile, prepared, self._send_client(), "POST",
+                    "/chat/completions", headers=self._headers(), json=payload,
+                ) as response:
+                    response.raise_for_status()
+                    if "text/event-stream" not in response.headers.get("content-type", ""):
+                        raise ValueError("invalid compatible stream type")
+                    pending = b""
+                    total = 0
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if total > 512_000:
+                            raise ValueError("compatible stream too large")
+                        pending += chunk
+                        if len(pending) > 65_536 and b"\n" not in pending:
+                            raise ValueError("compatible stream frame too large")
+                        while b"\n" in pending:
+                            raw, pending = pending.split(b"\n", 1)
+                            if len(raw) > 65_536:
+                                raise ValueError("compatible stream frame too large")
+                            line = raw.rstrip(b"\r")
+                            if not line.startswith(b"data:"):
+                                continue
+                            if on_activity is not None:
+                                on_activity()
+                            content = line[5:].strip()
+                            if content == b"[DONE]":
+                                completed = True
+                                break
+                            frame = json.loads(content)
+                            if not isinstance(frame, dict) or frame.get("error") or frame.get("refusal"):
+                                raise ValueError("invalid compatible stream event")
+                            if "usage" in frame:
+                                usage = compatible_usage(frame)
+                            choices = frame.get("choices") or []
+                            if not choices:
+                                continue
+                            choice = choices[0]
+                            if not isinstance(choice, dict) or choice.get("refusal"):
+                                raise ValueError("invalid compatible stream choice")
+                            if choice.get("finish_reason"):
+                                finish = choice["finish_reason"]
+                            delta = choice.get("delta") or {}
+                            if not isinstance(delta, dict) or delta.get("refusal"):
+                                raise ValueError("invalid compatible stream delta")
+                            part = delta.get("content") or ""
+                            if not isinstance(part, str):
+                                raise ValueError("invalid compatible stream content")
+                            safe = filter_.feed(part)
+                            if safe:
+                                emitted += safe
+                                if on_token is not None:
+                                    await _emit(on_token, repeat.feed(safe))
+                        if completed:
+                            break
+                    if not completed or finish not in {"stop", "length"}:
+                        raise ValueError("incomplete compatible stream")
+            remainder = filter_.flush()
+            if remainder:
+                emitted += remainder
+                if on_token is not None:
+                    await _emit(on_token, repeat.feed(remainder))
+            if usage is not None:
+                report_text_usage(usage)
+            answer = self._finalize_cloud(emitted, finish, model)
+            if on_token is not None:
+                await _emit(on_token, repeat.release(answer))
+            return answer
+        except ProviderHookRuntimeError:
+            raise
+        except Exception as exc:
+            logger.warning("OpenRouter stream failed: %s", log_safe(exc, 200))
+            note_provider_failure(self.profile.id, model, exc)
             return _ERROR
 
     async def generate_tool_turn(
@@ -248,9 +425,14 @@ class OpenRouterBackend(LLMBackend):
             block = await self._provider_block_now()
         except _RoutingUnavailable:
             return ToolTurn(content=_ERROR)
-        self._shape(payload, block)
+        prepared = await self._shape_async(payload, block)
         try:
-            resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
+            if isinstance(self.profile, AdmittedProviderProfile):
+                from .providers.native_transport import native_post
+                resp = await native_post(self.profile, prepared, self._send_client(),
+                                         '/chat/completions', headers=self._headers(), json=payload)
+            else:
+                resp = await self._send_client().post("/chat/completions", json=payload, headers=self._headers())
             self._explain_routing_refusal(resp, block)
             resp.raise_for_status()
             data = resp.json()
@@ -265,6 +447,8 @@ class OpenRouterBackend(LLMBackend):
                 usage=(compatible_usage(data) if self.profile.backend_kind == "openai-compatible"
                        else TokenUsage()),
             )
+        except ProviderHookRuntimeError:
+            raise
         except Exception as e:
             logger.warning("OpenRouter tool turn failed: %s", e)
             note_provider_failure(self.profile.id, model, e)

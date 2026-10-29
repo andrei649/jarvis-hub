@@ -12,6 +12,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable
+from contextlib import contextmanager, nullcontext
 from typing import Any
 
 from agents.core.config_read_errors import report_unreadable
@@ -24,6 +25,10 @@ from agents.core.llm.reasoning_effort import LADDER as REASONING_EFFORT_LADDER
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.settings")
+@contextmanager
+def defer_model_epoch_invalidation():
+    """Keep local-adoption callers compatible; row writes never reset epochs."""
+    yield
 
 
 def _logsafe(value: object) -> str:
@@ -125,6 +130,84 @@ CREATE TABLE IF NOT EXISTS settings_resets (
     after     TEXT NOT NULL,
     undone_at REAL
 );
+CREATE TABLE IF NOT EXISTS signed_provider_selection (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    revision INTEGER NOT NULL CHECK(revision>=0),
+    record_json TEXT,
+    record_hash TEXT
+);
+INSERT OR IGNORE INTO signed_provider_selection (singleton, revision) VALUES (1, 0);
+CREATE TABLE IF NOT EXISTS provider_choice_epoch (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    epoch INTEGER NOT NULL CHECK(epoch>=0)
+);
+INSERT OR IGNORE INTO provider_choice_epoch (singleton, epoch) VALUES (1, 0);
+CREATE TABLE IF NOT EXISTS custom_endpoints (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    auth_type TEXT NOT NULL,
+    data_policy TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK(revision>0),
+    config_revision INTEGER NOT NULL CHECK(config_revision>0),
+    admission_proof TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS custom_endpoint_aliases (
+    alias_key TEXT PRIMARY KEY,
+    alias TEXT NOT NULL,
+    endpoint_key TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS custom_endpoint_choice (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    revision INTEGER NOT NULL CHECK(revision>=0),
+    active_key TEXT,
+    config_revision INTEGER,
+    credential_generation INTEGER,
+    consent_proof TEXT,
+    unknown_price_ack INTEGER NOT NULL DEFAULT 0 CHECK(unknown_price_ack IN (0,1)),
+    data_policy_ack INTEGER NOT NULL DEFAULT 0 CHECK(data_policy_ack IN (0,1))
+);
+INSERT OR IGNORE INTO custom_endpoint_choice (singleton,revision) VALUES (1,0);
+DROP TRIGGER IF EXISTS signed_selection_pair_insert;
+DROP TRIGGER IF EXISTS signed_selection_pair_update;
+DROP TRIGGER IF EXISTS signed_selection_pair_delete;
+CREATE TRIGGER IF NOT EXISTS signed_selection_pair_insert
+AFTER INSERT ON settings
+WHEN NEW.category='llm' AND NEW.key IN ('compatible_provider','compatible_model')
+BEGIN
+    UPDATE signed_provider_selection SET revision=revision+1, record_json=NULL, record_hash=NULL
+    WHERE singleton=1;
+    UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,
+        config_revision=NULL,credential_generation=NULL,consent_proof=NULL,
+        unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1;
+    UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1;
+END;
+CREATE TRIGGER IF NOT EXISTS signed_selection_pair_update
+AFTER UPDATE OF value ON settings
+WHEN NEW.category='llm' AND NEW.key IN ('compatible_provider','compatible_model')
+    AND NOT (NEW.key='compatible_provider' AND NEW.value IN
+        ('"custom"', '"custom:' || (SELECT active_key FROM custom_endpoint_choice WHERE singleton=1) || '"')
+        AND (SELECT active_key FROM custom_endpoint_choice WHERE singleton=1) IS NOT NULL)
+BEGIN
+    UPDATE signed_provider_selection SET revision=revision+1, record_json=NULL, record_hash=NULL
+    WHERE singleton=1;
+    UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,
+        config_revision=NULL,credential_generation=NULL,consent_proof=NULL,
+        unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1;
+    UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1;
+END;
+CREATE TRIGGER IF NOT EXISTS signed_selection_pair_delete
+AFTER DELETE ON settings
+WHEN OLD.category='llm' AND OLD.key IN ('compatible_provider','compatible_model')
+BEGIN
+    UPDATE signed_provider_selection SET revision=revision+1, record_json=NULL, record_hash=NULL
+    WHERE singleton=1;
+    UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,
+        config_revision=NULL,credential_generation=NULL,consent_proof=NULL,
+        unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1;
+    UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1;
+END;
 """
 
 #: Shipped defaults a later build changed: (name, category, key, the old shipped value,
@@ -138,7 +221,12 @@ _CHANGED_DEFAULTS: tuple[tuple[str, str, str, Any, Any], ...] = (
 )
 
 # ── default settings — seed values ────────────────────────────────
-_STATUS_FIELDS = ("model", "context_pct", "cache_hit", "latency", "tps", "compressions", "bg_tasks", "duration")
+_STATUS_FIELDS = (
+    "model", "context_detail", "context_pct", "cache_hit", "latency", "tps",
+    "compressions", "bg_tasks", "bg_processes", "bg_subagents", "goal",
+    "duration", "prompt_elapsed", "idle_since", "focus", "yolo", "stash",
+    "battery", "title", "total_tokens",
+)
 
 DEFAULTS: list[dict[str, Any]] = [
     # H135: only explicit owner choices; empty preserves device motion defaults.
@@ -290,6 +378,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="context_window",   value=6,                     label="Context window (turns)",kind="number"),
     dict(category="memory",  key="context_compression", value=False,              label="Compress long context (hot path)", kind="toggle"),
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
+    dict(category="memory",  key="compression_max_attempts", value=3,             label="Maximum compaction attempts before provider evidence (1-10)", kind="number"),
+    dict(category="memory",  key="compression_preflight_timeout_seconds", value=120, label="Maximum seconds for one context compaction pass", kind="number"),
+    dict(category="memory",  key="compression_idle_after_seconds", value=0,        label="Compact on session resume after idle seconds (0 = off)", kind="number"),
+    dict(category="memory",  key="compression_micro_compact", value=False,         label="Roll older exchanges into a durable prompt summary after a turn", kind="toggle"),
+    dict(category="memory",  key="compression_micro_every_n_turns", value=1,       label="Post-turn micro-compaction cadence", kind="number"),
+    dict(category="memory",  key="compression_micro_defrag_threshold_tokens", value=2000, label="Rolling summary defragmentation threshold (tokens)", kind="number"),
     # H427: fail closed when the pre-compression checkpoint did not land (Hermes compression.checkpoint_required).
     dict(category="memory",  key="compression_checkpoint_required", value=False, label="Keep the transcript uncompressed unless its evicted turns were archived", kind="toggle"),
     dict(category="memory",  key="compression_summarizer", value=False,           label="LLM summarizer for evicted context (strict-local only)", kind="toggle"),
@@ -634,9 +728,19 @@ def _migrate_retired_claude_default(conn: sqlite3.Connection) -> bool:
 
 
 def init_db(force: bool = False):
+    from agents.core.llm.providers.selection_gates import exclusive
+
+    with exclusive(DB_PATH):
+        return _init_db_fenced(force)
+
+
+def _init_db_fenced(force: bool = False):
     _require_readable_store()
     conn = get_conn()
-    conn.executescript(SCHEMA)
+    # Replacing the old pair triggers and creating the shared choice epoch is a
+    # single schema migration. A crash must never expose a store without the
+    # invalidation triggers that fence later generic writes.
+    conn.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nCOMMIT;")
     if force:
         conn.execute("DELETE FROM settings")
     # Once H329 has observed a store, missing switch rows are damage. An
@@ -940,7 +1044,7 @@ _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for
 
 def selected_status_fields(raw: Any) -> frozenset[str] | None:
     """Validate a stored display selection, including rows predating write bounds."""
-    if (not isinstance(raw, list) or len(raw) > 8
+    if (not isinstance(raw, list) or len(raw) > 20
             or any(type(item) is not str or item not in _STATUS_FIELDS for item in raw)
             or len(set(raw)) != len(raw)):
         return None
@@ -1000,7 +1104,7 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
             or (value != "" and (value != value.strip() or not os.path.isabs(value)))):
         return f"{key}: expected an absolute project folder path or empty"
     if key == "status_bar_fields" and selected_status_fields(value) is None:
-        return f"{key}: expected up to eight distinct declared status fields"
+        return f"{key}: expected up to twenty distinct declared status fields"
     if key == "execute_code_env_passthrough":
         from .code_env import _passable_name
 
@@ -1223,15 +1327,70 @@ def _template_vars_problem(value: Any) -> str | None:
     return None
 
 
-def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
+def _touches_selection(changes: dict[str, dict[str, Any]]) -> bool:
+    return bool({'compatible_provider', 'compatible_model'} & set(changes.get('llm', {})))
+
+
+def _selection_write_gate(changes: dict[str, dict[str, Any]]):
+    from agents.core.llm.providers.selection_gates import exclusive
+
+    return exclusive(DB_PATH) if _touches_selection(changes) else nullcontext()
+
+
+def _check_pair_revision(conn: sqlite3.Connection, expected: int | None) -> None:
+    if expected is None:
+        return
+    from agents.core.llm.provider_selection import SelectionConflict
+
+    row = conn.execute('SELECT revision FROM signed_provider_selection WHERE singleton=1').fetchone()
+    if row is None or row[0] != expected:
+        raise SelectionConflict('compatible provider/model changed since guard')
+
+
+def compatible_pair_state() -> tuple[int, str, str]:
+    """One revisioned provider/model snapshot for H378's other-half guard."""
+    from agents.core.llm.providers.selection_gates import shared_builtin
+
+    _ensure_init()
+    with shared_builtin(DB_PATH):
+        conn = get_conn()
+        try:
+            with conn:
+                revision = conn.execute(
+                    'SELECT revision FROM signed_provider_selection WHERE singleton=1').fetchone()
+                rows = conn.execute(
+                    "SELECT key,value FROM settings WHERE category='llm' "
+                    "AND key IN ('compatible_provider','compatible_model')").fetchall()
+            if revision is None or type(revision[0]) is not int:
+                raise SettingsUnreadable('compatible pair revision unavailable')
+            values = {row['key']: json.loads(row['value']) for row in rows}
+            return revision[0], values.get('compatible_provider', ''), values.get('compatible_model', '')
+        finally:
+            conn.close()
+
+
+def put_category(cat: str, data: dict[str, Any], *,
+                 expected_pair_revision: int | None = None) -> tuple[int, list[str]]:
+    with _selection_write_gate({cat: data}):
+        return _put_category_fenced(cat, data, expected_pair_revision=expected_pair_revision)
+
+
+def _put_category_fenced(cat: str, data: dict[str, Any], *,
+                         expected_pair_revision: int | None = None) -> tuple[int, list[str]]:
     _ensure_init()
     _require_readable_store()
     conn = get_conn()
+    try:
+        _check_pair_revision(conn, expected_pair_revision)
+    except BaseException:
+        conn.close()
+        raise
     updated = 0
     skipped = []
     for key, value in data.items():
-        cur = conn.execute("SELECT key FROM settings WHERE category=? AND key=?", (cat, key))
-        if cur.fetchone():
+        cur = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", (cat, key))
+        previous = cur.fetchone()
+        if previous:
             stored = _encrypt_if_secret(key, value)
             conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(stored), cat, key))
             updated += 1
@@ -1453,7 +1612,14 @@ def describe_changes(changes: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
     return out
 
 
-def apply_import(changes: dict[str, dict[str, Any]]) -> int:
+def apply_import(changes: dict[str, dict[str, Any]], *,
+                 expected_pair_revision: int | None = None) -> int:
+    with _selection_write_gate(changes):
+        return _apply_import_fenced(changes, expected_pair_revision=expected_pair_revision)
+
+
+def _apply_import_fenced(changes: dict[str, dict[str, Any]], *,
+                         expected_pair_revision: int | None = None) -> int:
     """Write *changes* (already planned) in one transaction: all of it or none of it.
     Returns how many settings were written."""
     _ensure_init()
@@ -1461,6 +1627,7 @@ def apply_import(changes: dict[str, dict[str, Any]]) -> int:
     conn = get_conn()
     try:
         with conn:
+            _check_pair_revision(conn, expected_pair_revision)
             written = _write_values(conn, changes)
     finally:
         conn.close()
@@ -1549,6 +1716,14 @@ def _write_values(conn: sqlite3.Connection, changes: dict[str, dict[str, Any]]) 
 
 def reset_settings(cat: str | None,
                    extra_kept: frozenset[str] = frozenset()) -> tuple[dict[str, dict[str, Any]], int | None] | None:
+    from agents.core.llm.providers.selection_gates import exclusive
+
+    with exclusive(DB_PATH) if cat in (None, 'llm') else nullcontext():
+        return _reset_settings_fenced(cat, extra_kept)
+
+
+def _reset_settings_fenced(cat: str | None,
+                           extra_kept: frozenset[str] = frozenset()) -> tuple[dict[str, dict[str, Any]], int | None] | None:
     """H259 — reset *cat* (every category when None) to its declared values, secrets
     (and *extra_kept*) kept. The values it replaces are recorded in the same transaction,
     so :func:`undo_last_reset` can put them back. Returns ``(what moved, the record's id)``
@@ -1605,6 +1780,13 @@ def list_resets() -> list[dict[str, Any]]:
 
 
 def undo_last_reset(gate: Callable[[dict[str, dict[str, Any]]], list[str]] | None = None) -> dict[str, Any] | None:
+    from agents.core.llm.providers.selection_gates import exclusive
+
+    with exclusive(DB_PATH):
+        return _undo_last_reset_fenced(gate)
+
+
+def _undo_last_reset_fenced(gate: Callable[[dict[str, dict[str, Any]]], list[str]] | None = None) -> dict[str, Any] | None:
     """H259 — put back what the latest reset not yet undone replaced. A setting changed
     since that reset is left as it is, and so is a value its declaration no longer
     accepts; both are named in ``skipped``. None when there is nothing to undo.

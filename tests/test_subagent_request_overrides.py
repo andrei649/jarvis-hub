@@ -659,6 +659,8 @@ async def test_a_temperature_the_model_family_refuses_is_recorded_as_ignored():
     async def runner(task, session_id, agent):
         rc.apply_generation_overrides(1024, 0.7)                 # what _gen_params does
         backend = ClaudeBackend.__new__(ClaudeBackend)
+        from agents.core.llm.providers import DEFAULT_REGISTRY
+        backend.profile = DEFAULT_REGISTRY.get("anthropic")
         backend.model, backend.reasoning_effort, backend.effort_overrides = "claude-x", "", {}
         payload = {"model": "claude-x", "max_tokens": 64, "temperature": 0.1}
         # A family that takes no sampling: the wire fit drops temperature.
@@ -714,6 +716,7 @@ def test_a_google_prefixed_pin_on_gemini_asks_gemini_for_that_model():
 
 async def test_a_pinned_window_that_clamps_the_childs_budget_says_so():
     from agents.core import agent as agent_mod
+    from agents.core import turn_outcome
     from agents.core.llm.job_selection import selection_scope
 
     sent = []
@@ -726,11 +729,17 @@ async def test_a_pinned_window_that_clamps_the_childs_budget_says_so():
     a = agent_mod.Agent.__new__(agent_mod.Agent)
     a.tool_runtime = None
     backend = _Backend()
-    with selection_scope({"model": "m"}) as sel, \
-            rc.request_overrides_scope(rc.validate_overrides({"max_tokens": 5000})) as frame:
-        sel.lifetime.resolved = (backend, "m", 4000)          # a 4000-token window: a 1000 cap
-        max_tokens, temperature = rc.apply_generation_overrides(10, 0.7)
-        await a._generate_response(backend, "m", "p", "", max_tokens, temperature)
+    sink, outcome_token = turn_outcome.open_turn_outcome()
+    try:
+        with selection_scope({"model": "m"}) as sel, \
+                rc.request_overrides_scope(rc.validate_overrides({"max_tokens": 5000})) as frame:
+            sel.lifetime.resolved = (backend, "m", 4000)          # a 4000-token window: a 1000 cap
+            max_tokens, temperature = rc.apply_generation_overrides(10, 0.7)
+            response = await a._generate_response(backend, "m", "p", "", max_tokens, temperature)
+        assert sink.progress() is None  # No declared agent identity to attribute this completion to.
+    finally:
+        turn_outcome.reset_turn_outcome(outcome_token)
+    assert response == "ok"  # A minimal adapter without identity still returns its model result.
     assert sent == [1000] and frame.dropped == {"max_tokens"} and frame.taken() == set()
 
 

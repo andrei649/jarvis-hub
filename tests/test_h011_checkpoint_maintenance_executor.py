@@ -11,6 +11,7 @@ import pytest
 
 from agents.core.checkpoint_inventory import CheckpointInventory
 from agents.core.checkpoint_maintenance import CheckpointMaintenance
+from agents.core.checkpoint_payloads import CheckpointPayloadStore
 from agents.core.commands import Principal
 from agents.core.file_checkpoint_history import FileCheckpointHistory, _locked
 from agents.core.file_tools import FileScope, SnapshotStore
@@ -35,6 +36,7 @@ def environment(tmp_path):
 
 def add_file(root, note, store, history, *, status="applied", ident=None):
     generic = store.take(note)
+    post_sha = CheckpointPayloadStore(store).put_blob(b"after")
     info = root.stat()
     with _locked(store.directory), history._connection() as db:
         if ident is None:
@@ -43,7 +45,7 @@ def add_file(root, note, store, history, *, status="applied", ident=None):
                  post_sha,post_size,post_mode,source_kind,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (str(note), str(root), info.st_dev, info.st_ino, "write",
-                 generic.ref, status, 1, key("after"), 5, 0o644, "filetools", 1.0))
+                 generic.ref, status, 1, post_sha, 5, 0o644, "filetools", 1.0))
             ident = cursor.lastrowid
         else:
             db.execute("""INSERT INTO entries
@@ -51,7 +53,7 @@ def add_file(root, note, store, history, *, status="applied", ident=None):
                  post_sha,post_size,post_mode,source_kind,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (ident, str(note), str(root), info.st_dev, info.st_ino, "write",
-                 generic.ref, status, 1, key("after"), 5, 0o644, "filetools", float(ident)))
+                 generic.ref, status, 1, post_sha, 5, 0o644, "filetools", float(ident)))
         db.commit()
     return f"file:{ident}", generic.ref
 
@@ -206,7 +208,7 @@ def test_prior_running_claim_refuses_after_restart(tmp_path):
     plan = preview(store, scope)
     executor = CheckpointMaintenance(store, scope)
     ids = [row["id"] for row in plan["candidates"]]
-    intent = executor._intent("clear", None, plan["generation"], ids, True)
+    intent = executor._intent("clear", None, plan["generation"], ids, False, None, None)
     with _locked(store.directory), sqlite3.connect(store.directory / "history.sqlite3") as db:
         from agents.core.checkpoint_maintenance import _JOURNAL
         db.execute(_JOURNAL)
@@ -308,14 +310,15 @@ def test_final_authority_checker_cannot_mutate_index_inside_write_transaction(tm
     assert count(store.directory / "history.sqlite3", "entries") == 1
 
 
-def test_prepared_file_and_active_group_block_clear(tmp_path):
+def test_prepared_file_and_active_group_remain_protected_by_clear(tmp_path):
     root, note, store, scope, history = environment(tmp_path)
     add_file(root, note, store, history, status="prepared")
     capture = history.begin_scope(root, source_kind="terminal_invocation", source_key="active")
     assert capture["status"] == "ready"
     plan = preview(store, scope)
+    assert plan["candidates"] == [] and plan["protected_rows"] == 2
     result = apply(CheckpointMaintenance(store, scope), plan)
-    assert result["status"] == "refused" and result["reason"] == "incomplete_history"
+    assert result["status"] == "ok" and result["removed"] == []
     assert count(store.directory / "history.sqlite3", "entries") == 1
     assert count(store.directory / "history.sqlite3", "groups") == 1
 
@@ -332,14 +335,14 @@ def test_unreachable_orphan_needs_explicit_keep_orphans_false(tmp_path):
     assert count(store.directory / "history.sqlite3", "entries") == 0
 
 
-def test_fresh_changed_and_unconfigured_roots_refuse(tmp_path):
+def test_clear_removes_complete_rows_across_changed_and_unconfigured_roots(tmp_path):
     root, note, store, scope, history = environment(tmp_path)
     add_file(root, note, store, history)
     root.rename(tmp_path / "moved")
     root.mkdir()
     changed_plan = preview(store, scope)
     changed = apply(CheckpointMaintenance(store, scope), changed_plan, op="changed")
-    assert changed["status"] == "refused" and changed["reason"] == "root_untrusted"
+    assert changed["status"] == "ok" and changed["removed"] == ["file:1"]
 
     other = tmp_path / "other"
     other.mkdir()
@@ -349,8 +352,8 @@ def test_fresh_changed_and_unconfigured_roots_refuse(tmp_path):
     unconfigured_plan = preview(store, scope)
     unconfigured = apply(CheckpointMaintenance(store, scope), unconfigured_plan,
                          op="unconfigured")
-    assert unconfigured["status"] == "refused" and unconfigured["reason"] == "root_untrusted"
-    assert count(store.directory / "history.sqlite3", "entries") == 2
+    assert unconfigured["status"] == "ok" and unconfigured["removed"] == ["file:1"]
+    assert count(store.directory / "history.sqlite3", "entries") == 0
 
 
 def test_malformed_storage_refuses_and_retains_history(tmp_path):

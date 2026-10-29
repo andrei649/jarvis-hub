@@ -29,6 +29,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 from agents.core.context_compressor import ContextCompressor  # noqa: E402
 from agents.core.llm.providers import get_profile  # noqa: E402
 from agents.core.orchestrator import Orchestrator  # noqa: E402
+from agents.core.turn_compaction import TurnCompaction, compaction_scope  # noqa: E402
 
 
 def _turn(role, content, agent_id=None):
@@ -250,6 +251,62 @@ async def test_iterative_cache_second_turn_reuses_prior_summary():
     second_prompt = backend.calls[1]["prompt"]
     assert "Historical context: local summary." in second_prompt   # prior merged
     assert "Old topic 0" not in second_prompt                      # not re-read
+
+
+async def test_stalled_retry_keeps_original_history_summary_for_next_turn(monkeypatch):
+    backend = _LocalBackend()
+    o = _orch(_over_budget_turns(),
+              {"memory.context_compression": True,
+               "memory.compression_summarizer": True,
+               "memory.compression_max_tokens": 1000},
+              router=_FakeRouter(local=backend))
+    real_compact = ContextCompressor.compact
+    inputs = []
+
+    async def first_fold_then_stall(self, turns, **kwargs):
+        inputs.append((len(turns), kwargs.get("prior")))
+        if len(inputs) > 2:
+            return await real_compact(self, turns, **kwargs)
+        return {"compressed": True, "kept_first": [],
+                "kept": [dict(turn) for turn in turns[-4:]],
+                "summary": "FIRST FOLD", "tokens": 1500, "covered": 1}
+
+    monkeypatch.setattr(ContextCompressor, "compact", first_fold_then_stall)
+    with compaction_scope(TurnCompaction(session_id="s", enabled=True, max_attempts=3)):
+        await o._history_for_prompt(10)
+    assert len(inputs) == 2
+    assert inputs[1][0] < inputs[0][0]
+    o.memory.turns.append(_turn("user", "Newest question? " + "q" * 1200))
+    with compaction_scope(TurnCompaction(session_id="s", enabled=True, max_attempts=3)):
+        await o._history_for_prompt(11)
+    assert len(inputs) >= 3
+    assert inputs[2][1]["summary"] == "FIRST FOLD"
+    assert backend.calls and "FIRST FOLD" in backend.calls[0]["prompt"]
+
+
+async def test_successful_candidate_retry_invalidates_original_summary_cache(monkeypatch):
+    backend = _LocalBackend()
+    o = _orch(_over_budget_turns(),
+              {"memory.context_compression": True,
+               "memory.compression_summarizer": True,
+               "memory.compression_max_tokens": 1000},
+              router=_FakeRouter(local=backend))
+    calls = 0
+
+    async def candidate_relative_fold(self, turns, **kwargs):
+        nonlocal calls
+        calls += 1
+        return {"compressed": True, "kept_first": [],
+                "kept": [dict(turn) for turn in turns[-4:]],
+                "summary": f"FOLD {calls}",
+                "tokens": 1500 if calls == 1 else 750,
+                "covered": 1}
+
+    monkeypatch.setattr(ContextCompressor, "compact", candidate_relative_fold)
+    with compaction_scope(TurnCompaction(session_id="s", enabled=True, max_attempts=3)):
+        await o._history_for_prompt(10)
+    assert calls == 2
+    assert o._ctx_summary_cache == {}
 
 
 async def test_history_parts_follow_rendered_turn_boundaries_and_drop_current_user():

@@ -311,6 +311,7 @@ def test_the_post_llm_seam_stores_the_turns_tools():
             calls.append((args, kwargs))
 
     orch = Orchestrator.__new__(Orchestrator)
+    orch._runtime_settings = {}
     orch.memory = Mem()
     orch.session_id = "s-1"
 

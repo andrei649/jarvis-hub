@@ -7,16 +7,12 @@ three gates that compose:
 * **Egress allowlist.** Navigation is restricted to an explicit domain allowlist
   (suffix match) and run through the SSRF filter (no private-IP / rebinding
   targets). Off-allowlist navigation is **hard-blocked** — not even approvable.
-* **Approval queue.** Read-only steps on allowlisted pages (navigate / extract /
-  screenshot / wait) run automatically; **mutating** steps (click / type / submit
-  / download / execute_js) require out-of-band approval (H10.18 queue), exactly
-  like the rest of H6 autonomy. Nothing irreversible happens unsupervised.
-* **The Action Kernel.** A driver that declares ``requires_kernel`` — every real
-  one does — cannot take a mutating step without an ``action_executor`` binding
-  the ``browser.step`` kind. The kernel is asked *before* the approval card is
-  created, so a DENY never becomes a decision the owner is asked to make; and a
-  GRANT does not replace the approval, because a blanket "yes, browsers may click"
-  is not the same statement as "yes, click this".
+* **Approval queue.** The selected ToolRPC runtime requires one exact durable
+  owner approval for its entire bounded plan. The older injectable offline path
+  keeps its per-step queue behavior for non-real drivers.
+* **The Action Kernel.** Every real driver declares ``requires_kernel``. Its
+  mutating calls need both a live approved-plan receipt and a Kernel GRANT for
+  that exact step; a bare GRANT never supplies owner approval.
 * **Injectable driver.** The actual browser is injected, so the governance layer
   is fully offline-testable. A real Playwright driver is a host-gated add-on; the
   default ``NullBrowserDriver`` only records calls.
@@ -28,19 +24,20 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("jarvis.browser")
 
 # Step taxonomy. Read-only steps are auto on allowlisted pages; risky steps gate.
-READ_ONLY = frozenset({"navigate", "extract", "screenshot", "wait"})
+READ_ONLY = frozenset({"navigate", "extract", "snapshot", "screenshot", "wait"})
 
 # Two facts that used to share one sentence, and should not: NOT CONFIGURED means
 # the owner never enabled the IP-pinned transport (a config fix), while
 # browser_playwright's "unavailable" means a configured one could not bind (a bug
 # report). Naming them apart is the difference between the two answers.
 TRANSPORT_NOT_CONFIGURED = "browser transport not configured"
-RISKY = frozenset({"click", "type", "submit", "download", "execute_js", "upload"})
+RISKY = frozenset({"click", "type", "submit", "scroll", "back", "press",
+                   "download", "execute_js", "upload"})
 
 
 def classify_step(action: str) -> str:
@@ -59,7 +56,20 @@ class BrowserPolicy:
         self.allowlist = [d.lower().strip().lstrip(".") for d in (allowlist or []) if d.strip()]
 
     def domain_allowed(self, url: str) -> tuple[bool, str]:
-        host = (urlparse(url or "").hostname or "").lower()
+        try:
+            if type(url) is not str or not 0 < len(url) <= 2000:
+                return False, "invalid URL"
+            if any(ord(char) <= 32 or ord(char) == 127 for char in url):
+                return False, "invalid URL"
+            parsed = urlsplit(url)
+            host = (parsed.hostname or "").lower().rstrip(".")
+            port = parsed.port
+            if (parsed.scheme not in {'http', 'https'} or parsed.username is not None
+                    or parsed.password is not None or parsed.fragment
+                    or port is not None and not 1 <= port <= 65535):
+                return False, "invalid URL"
+        except ValueError:
+            return False, "invalid URL"
         if not host:
             return False, "no hostname in URL"
         if not any(host == d or host.endswith("." + d) for d in self.allowlist):
@@ -68,10 +78,38 @@ class BrowserPolicy:
             from .security.ssrf import check_ssrf
             reason = check_ssrf(url)
         except Exception:
-            reason = None
+            return False, "browser SSRF check unavailable"
         if reason:
             return False, reason
         return True, ""
+
+
+class FixtureBrowserPolicy(BrowserPolicy):
+    """Injected test seam: two exact synthetic hosts on one ephemeral port."""
+
+    def __init__(self, origin: str) -> None:
+        parsed = urlsplit(origin)
+        if (parsed.scheme != 'http' or parsed.hostname != 'fixture.browser.test'
+                or not parsed.port or parsed.path not in {'', '/'} or parsed.query
+                or parsed.fragment or parsed.username is not None):
+            raise ValueError('invalid browser fixture origin')
+        self.origin = f'http://fixture.browser.test:{parsed.port}'
+        self.port = parsed.port
+        super().__init__(['fixture.browser.test', 'frame.other.test'])
+
+    def domain_allowed(self, url: str) -> tuple[bool, str]:
+        try:
+            if type(url) is not str or any(ord(char) <= 32 or ord(char) == 127 for char in url):
+                return False, 'fixture_only'
+            parsed = urlsplit(url)
+            if (parsed.scheme == 'http' and parsed.hostname in {'fixture.browser.test', 'frame.other.test'}
+                    and parsed.port == self.port
+                    and parsed.username is None and parsed.password is None
+                    and not parsed.fragment and len(url) <= 2000):
+                return True, ''
+        except ValueError:
+            pass
+        return False, 'fixture_only'
 
 
 class NullBrowserDriver:
@@ -242,7 +280,7 @@ class GovernedBrowser:
             result = await getattr(self.driver, action)(**{k: v for k, v in step.items() if k != "action"})
             return {"action": action, "status": "done", "result": result, **human}
         except Exception:
-            logger.warning("browser step %s failed", action, exc_info=True)
+            logger.warning("browser step %s failed", action)
             return {"action": action, "status": "error", "reason": "step failed", **human}
 
     async def run(self, plan: list[dict], stop_on_block: bool = True) -> dict:

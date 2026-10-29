@@ -18,7 +18,8 @@ from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 
-from .checkpoint_inventory import _INCOMPLETE, MAX_INDEX_ROWS, CheckpointInventory
+from .checkpoint_inventory import MAX_INDEX_ROWS, CheckpointInventory
+from .checkpoint_payloads import CheckpointPayloadStore
 from .commands import Principal
 from .file_checkpoint_history import HISTORY_SUPPORTED, _locked
 from .file_tools import FileScope, SnapshotStore
@@ -44,9 +45,15 @@ def _refused(reason: str) -> dict:
     return {"ok": False, "status": "refused", "reason": reason, "removed": []}
 
 
-def _uncertain(reason: str, *, journal_state: str = "uncertain") -> dict:
-    return {"ok": False, "status": "partial", "reason": reason,
-            "journal_state": journal_state, "removed": [], "retained_shared_data": True}
+def _uncertain(reason: str, *, journal_state: str = "uncertain",
+               removed: list[str] | None = None, removed_counts: dict | None = None,
+               removed_assets: dict | None = None) -> dict:
+    result = {"ok": False, "status": "partial", "reason": reason,
+              "journal_state": journal_state, "removed": removed or [],
+              "removed_assets": removed_assets, "retained_shared_data": True}
+    if removed_counts is not None:
+        result["removed_counts"] = removed_counts
+    return result
 
 
 class CheckpointMaintenance:
@@ -58,21 +65,30 @@ class CheckpointMaintenance:
 
     @staticmethod
     def _intent(action: str, project: str | None, generation: str,
-                candidates: list[str], keep_orphans: bool) -> str:
+                candidates: list[str], include_orphans: bool,
+                keep_last: int | None, max_bytes: int | None) -> str:
         material = {"action": action, "project": project, "generation": generation,
-                    "candidates": candidates, "keep_orphans": keep_orphans}
+                    "candidates": candidates, "include_orphans": include_orphans,
+                    "keep_last": keep_last, "max_bytes": max_bytes}
         return hashlib.sha256(json.dumps(
             material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     @staticmethod
     def _validate(action: str, project: str | None, generation: str,
                   candidates: list[str], operation_key: str,
-                  keep_orphans: bool) -> None:
+                  include_orphans: bool, keep_last: int | None,
+                  max_bytes: int | None) -> None:
         CheckpointInventory._arguments(project, 500)
         if type(action) is not str or action not in {"prune", "clear", "clear-legacy"}:
             raise ValueError("invalid_action")
-        if type(keep_orphans) is not bool:
-            raise ValueError("invalid_keep_orphans")
+        if type(include_orphans) is not bool:
+            raise ValueError("invalid_include_orphans")
+        if keep_last is not None and (type(keep_last) is not int or not 1 <= keep_last <= 5_000):
+            raise ValueError("invalid_keep_last")
+        if max_bytes is not None and (type(max_bytes) is not int or not 1 <= max_bytes <= 1 << 40):
+            raise ValueError("invalid_max_bytes")
+        if action != "prune" and (include_orphans or keep_last is not None or max_bytes is not None):
+            raise ValueError("invalid_retention_action")
         if type(generation) is not str or _SHA256.fullmatch(generation) is None:
             raise ValueError("invalid_generation")
         if type(operation_key) is not str or _SHA256.fullmatch(operation_key) is None:
@@ -94,10 +110,30 @@ class CheckpointMaintenance:
             return False
 
     @staticmethod
-    def _row_signature(rows: list[dict]) -> str:
-        material = [(row["id"], row["root_state"], row["_generation"]) for row in rows]
+    def _row_signature(rows: list[dict], raw_group_files: list[dict] | None = None) -> str:
+        material = {"rows": [(row["id"], row["root_state"], row["_generation"])
+                             for row in rows],
+                    "raw_group_files": raw_group_files or []}
         return hashlib.sha256(json.dumps(
             material, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+    @staticmethod
+    def _owned_current(expected: dict | None, current: dict | None) -> bool:
+        if expected is None or current is None:
+            return expected is current
+
+        def normalized(value):
+            identity = dict(value["identity"])
+            if "generic" in identity:
+                identity["generic"] = {key: identity["generic"][key] for key in ("dev", "ino")}
+            return {**value, "identity": identity}
+
+        return normalized(expected) == normalized(current)
+
+    @staticmethod
+    def _stable_storage_names(view: dict) -> list[tuple]:
+        return [item for item in view["storage_names"] if not item[0].startswith((
+            "history.sqlite3", "checkpoint_operations.sqlite3", "checkpoint_payloads-v1/"))]
 
     @classmethod
     def _transaction_row_signature(cls, db: sqlite3.Connection,
@@ -119,6 +155,9 @@ class CheckpointMaintenance:
         tables = {item[0] for item in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name IN ('groups','group_files')")}
+        if "group_files" in tables and "groups" not in tables:
+            raise RuntimeError("group_schema_incomplete")
+        raw_group_files = []
         if "groups" in tables:
             if "group_files" not in tables:
                 raise RuntimeError("group_schema_incomplete")
@@ -129,8 +168,12 @@ class CheckpointMaintenance:
             if len(groups) > MAX_INDEX_ROWS or len(members) > MAX_INDEX_ROWS:
                 raise RuntimeError("index_truncated")
             group_files: dict[str, list[dict]] = {}
+            group_ids = {source["id"] for source in groups}
             for member in members:
+                if member["group_id"] not in group_ids:
+                    raise RuntimeError("orphan_group_file")
                 group_files.setdefault(member["group_id"], []).append(dict(member))
+                raw_group_files.append(dict(member))
             for source in groups:
                 raw = dict(source)
                 rows.append({"id": "group:" + str(raw["id"]), "root": raw["root"],
@@ -142,7 +185,7 @@ class CheckpointMaintenance:
         if project is not None:
             rows = [row for row in rows if row["root"] == project]
         rows.sort(key=lambda row: (-float(row["created_at"]), row["id"]))
-        return cls._row_signature(rows)
+        return cls._row_signature(rows, raw_group_files)
 
     @staticmethod
     def _inspect_existing(db_path: Path, operation_key: str, intent_sha: str) -> dict | None:
@@ -205,12 +248,18 @@ class CheckpointMaintenance:
 
     def apply(self, principal: Principal, *, action: str, project: str | None,
               generation: str, candidates: list[str], operation_key: str,
-              keep_orphans: bool = True,
+              keep_orphans: bool | None = None, include_orphans: bool = False,
+              keep_last: int | None = None, max_bytes: int | None = None,
               authority_check: Callable[[], bool] | None = None) -> dict:
         CheckpointInventory._authorize(principal)
         if not self._authority(authority_check):
             return _refused("authority_required")
-        self._validate(action, project, generation, candidates, operation_key, keep_orphans)
+        if keep_orphans is not None:
+            if type(keep_orphans) is not bool or include_orphans:
+                raise ValueError("invalid_keep_orphans")
+            include_orphans = not keep_orphans
+        self._validate(action, project, generation, candidates, operation_key,
+                       include_orphans, keep_last, max_bytes)
         if not HISTORY_SUPPORTED:
             return _refused("unsupported_platform")
         inventory = CheckpointInventory(self.snapshots, self.scope)
@@ -220,7 +269,8 @@ class CheckpointMaintenance:
         except FileNotFoundError:
             # The read-only preview is authoritative for this no-effect case.
             plan = inventory.maintenance_preview(
-                principal, action, project=project, limit=500, keep_orphans=keep_orphans)
+                principal, action, project=project, limit=500,
+                include_orphans=include_orphans, keep_last=keep_last, max_bytes=max_bytes)
             if (plan["complete"] is True and plan["generation"] == generation
                     and not plan["candidates"] and not candidates):
                 return {"ok": True, "status": "ok", "removed": [],
@@ -237,7 +287,8 @@ class CheckpointMaintenance:
             return _refused("index_unavailable")
         if not stat.S_ISREG(db_info.st_mode):
             return _refused("index_invalid")
-        intent_sha = self._intent(action, project, generation, candidates, keep_orphans)
+        intent_sha = self._intent(action, project, generation, candidates,
+                                  include_orphans, keep_last, max_bytes)
         try:
             with _locked(directory):
                 try:
@@ -248,33 +299,33 @@ class CheckpointMaintenance:
                     return prior
                 plan = inventory.maintenance_preview(
                     principal, action, project=project, limit=500,
-                    keep_orphans=keep_orphans)
+                    include_orphans=include_orphans, keep_last=keep_last, max_bytes=max_bytes)
                 actual_ids = [row["id"] for row in plan["candidates"]]
                 if not plan["ok"] or not plan["complete"] or plan["truncated"]:
                     return _refused("inventory_incomplete")
                 if plan["generation"] != generation or actual_ids != candidates:
                     return _refused("stale_preview")
-                if not candidates:
+                gc_plan = plan["owned_gc"]
+                if not candidates and not gc_plan["records"] and not gc_plan["blobs"]:
                     return {"ok": True, "status": "ok", "removed": [],
                             "retained_shared_data": True, "no_op": True}
-                view = inventory._inventory(project)
+                view = inventory._inventory(None)
                 if not view["complete"]:
                     return _refused("inventory_incomplete")
                 rows = view["rows"]
-                if any(str(row["status"]) in _INCOMPLETE or
-                       "incomplete" in str(row["status"]) for row in rows):
-                    return _refused("incomplete_history")
-                if any(row["root_state"] in {"changed", "unconfigured"} for row in rows):
-                    return _refused("root_untrusted")
-                if keep_orphans and any(row["root_state"] == "unreachable" for row in rows):
-                    return _refused("orphan_not_selected")
                 selected = {row["id"]: row for row in rows if row["id"] in candidates}
                 if len(selected) != len(candidates):
                     return _refused("stale_preview")
-                if any(row["root_state"] == "unreachable" and keep_orphans
-                       for row in selected.values()):
-                    return _refused("orphan_not_selected")
-                row_signature = self._row_signature(rows)
+                if action == "prune" and any(row["root_state"] == "changed" for row in selected.values()):
+                    return _refused("root_untrusted")
+                row_signature = self._row_signature(rows, view["raw_group_files"])
+                selected_groups = {ident[6:] for ident in selected if ident.startswith("group:")}
+                remaining_signature = self._row_signature(
+                    [row for row in rows if row["id"] not in selected],
+                    [child for child in view["raw_group_files"]
+                     if child["group_id"] not in selected_groups])
+                owned_before = view["owned"]
+                generic_names = self._stable_storage_names(view)
                 # Durable claim is committed independently of physical deletion.
                 try:
                     with closing(sqlite3.connect(db_path, timeout=0)) as db, db:
@@ -286,40 +337,78 @@ class CheckpointMaintenance:
                                    (operation_key, intent_sha, time.time()))
                 except sqlite3.Error:
                     return _refused("journal_claim_failed")
+                committed_rows: list[str] = []
+                committed_counts: dict | None = None
+                committed_assets: dict | None = None
                 try:
-                    current = inventory._inventory(project)
-                    if not current["complete"] or self._row_signature(current["rows"]) != row_signature:
+                    current = inventory._inventory(None)
+                    if (not current["complete"] or self._row_signature(
+                            current["rows"], current["raw_group_files"]) != row_signature
+                            or not self._owned_current(owned_before, current["owned"])
+                            or self._stable_storage_names(current) != generic_names):
                         raise RuntimeError("state_changed_after_claim")
                     if not self._authority(authority_check):
                         state = self._mark_uncertain(db_path, operation_key)
                         return _uncertain("authority_revoked", journal_state=state)
                     # The callback can itself observe or change local state;
                     # bind the exact rows/root identities again after it ran.
-                    current = inventory._inventory(project)
-                    if not current["complete"] or self._row_signature(current["rows"]) != row_signature:
+                    current = inventory._inventory(None)
+                    if (not current["complete"] or self._row_signature(
+                            current["rows"], current["raw_group_files"]) != row_signature
+                            or not self._owned_current(owned_before, current["owned"])
+                            or self._stable_storage_names(current) != generic_names):
                         raise RuntimeError("state_changed_after_authority")
                     with closing(sqlite3.connect(db_path, timeout=0)) as db, db:
                         db.execute("BEGIN IMMEDIATE")
-                        if self._transaction_row_signature(db, inventory, project) != row_signature:
+                        if self._transaction_row_signature(db, inventory, None) != row_signature:
                             raise RuntimeError("state_changed_in_transaction")
                         # No I/O or hook follows this literal live check before
                         # the first selected-row deletion.
                         if not self._authority(authority_check):
                             raise _AuthorityRevoked
                         removed, counts = self._delete_rows(db, candidates)
+                    committed_rows, committed_counts = removed, counts
+                    # The row transaction is durable before unlinking any owned
+                    # asset. A new immediate transaction blocks non-cooperating
+                    # index writers until the payload effects and journal settle.
+                    # A later failure is a non-replayable partial effect.
+                    with closing(sqlite3.connect(db_path, timeout=0)) as guard, guard:
+                        guard.execute("BEGIN IMMEDIATE")
+                        remaining = inventory._inventory(None)
+                        if (not remaining["complete"] or
+                                self._row_signature(remaining["rows"], remaining["raw_group_files"])
+                                != remaining_signature or
+                                self._stable_storage_names(remaining) != generic_names):
+                            raise RuntimeError("state_changed_before_payload")
+
+                        def payload_current() -> bool:
+                            return (self._authority(authority_check) and
+                                    self._transaction_row_signature(guard, inventory, None)
+                                    == remaining_signature)
+
+                        if not payload_current():
+                            raise RuntimeError("authority_changed_before_payload")
+                        removed_assets = CheckpointPayloadStore(self.snapshots).collect_unreferenced(
+                            owned_before, records=gc_plan["records"], blobs=gc_plan["blobs"],
+                            current_check=payload_current)
+                        committed_assets = removed_assets
                         result = {"ok": True, "status": "ok", "removed": removed,
-                                  "removed_counts": counts,
-                                  "retained_shared_data": True, "retained_blobs": "all"}
-                        db.execute("UPDATE checkpoint_maintenance_ops SET "
+                                  "removed_counts": counts, "removed_assets": removed_assets,
+                                  "retained_shared_data": True}
+                        guard.execute("UPDATE checkpoint_maintenance_ops SET "
                                    "state='completed', result_json=?, finished_at=? "
                                    "WHERE operation_key=? AND state='running'",
                                    (json.dumps(result, sort_keys=True), time.time(), operation_key))
                     return result
                 except _AuthorityRevoked:
                     state = self._mark_uncertain(db_path, operation_key)
-                    return _uncertain("authority_revoked", journal_state=state)
+                    return _uncertain("authority_revoked", journal_state=state,
+                                      removed=committed_rows, removed_counts=committed_counts,
+                                      removed_assets=committed_assets)
                 except Exception:
                     state = self._mark_uncertain(db_path, operation_key)
-                    return _uncertain("effect_uncertain", journal_state=state)
+                    return _uncertain("effect_uncertain", journal_state=state,
+                                      removed=committed_rows, removed_counts=committed_counts,
+                                      removed_assets=committed_assets)
         except (OSError, sqlite3.Error):
             return _refused("store_unavailable")

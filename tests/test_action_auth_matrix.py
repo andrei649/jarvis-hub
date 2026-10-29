@@ -528,6 +528,150 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         )
         proposal = broker.propose(package.artifact_id, contract=contract)
         assert proposal.status == "pending"  # the owner floor holds even on GRANT
+    elif kind == "plugin.load":
+        from agents.core.acquisition.managed_signing import ManagedSigningKeyStore
+        from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
+        from agents.core.llm.providers import ProviderProfile
+        from agents.core.llm.providers.packages import ProviderPackageError, ProviderPackageStore
+
+        signing = ManagedSigningKeyStore(tmp_path / "provider-signing")
+        signing.provision(key_id="synthetic-matrix", version=1, key=b"x" * 32)
+        source = tmp_path / "provider-source"
+        source.mkdir()
+        (source / "provider.json").write_text(json.dumps(
+            {"schema_version": 1, "id": "matrix-provider", "aliases": []}))
+        (source / "main.py").write_text("def register_provider():\n    return {}\n")
+        packages = ProviderPackageStore(tmp_path / "provider-packages", signing=signing,
+                                        authorizer=spy, enabled=lambda: True,
+                                        owner_authorizer=lambda *_: True)
+        record = packages.stage(
+            source, profile=ProviderProfile(id="matrix-provider", display_name="Synthetic",
+                                            backend_kind="openai-compatible",
+                                            is_user_defined=True),
+            hooks=("prepare_messages",), source="user", home="synthetic",
+            sandbox_profile=AcquisitionSandboxProfile(image="synthetic.invalid/worker@sha256:" + "a" * 64))
+        proposal = packages.propose(record.artifact_id)
+        packages.decide(proposal, approved=True, actor="owner", permanent=True)
+        import contextlib
+
+        with contextlib.suppress(ProviderPackageError):
+            packages.promote(proposal)
+    elif kind == "provider.credential":
+        # Drive the real signed owner service through its credential mutation.
+        from dataclasses import replace
+        from types import SimpleNamespace
+
+        from agents.core.kernel import kernel_enabled
+        from agents.core.llm.providers.packages import ProviderPackageError
+        from tests.test_h361_provider_install_service import owner, service
+
+        enabled = kernel_enabled()
+        monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+        svc, profile, hooks, _ = service.__wrapped__(tmp_path, monkeypatch)
+        svc.kernel = lambda: lambda _action, **_kwargs: Decision(Verdict.GRANT, tier=3)
+        artifact = svc.stage("addon", profile=replace(profile, auth_type="bearer"),
+                             hooks=hooks, source="user", actor=owner())
+        offer = svc.propose(artifact["artifact_id"], actor=owner())
+        svc.decide(offer["proposal_id"], artifact_id=artifact["artifact_id"],
+                   package_hash=artifact["package_hash"], approved=True,
+                   permanent=True, actor=owner())
+        svc.promote(offer["proposal_id"], actor=owner())
+        svc.audit = SimpleNamespace(log=lambda _event: None)
+        svc.kernel = lambda: lambda action, **_kwargs: spy(action)
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        with suppress(ProviderPackageError):
+            svc.put_credential("synthetic-addon", artifact["package_hash"],
+                               "synthetic-matrix-key", actor=owner())
+    elif kind == "provider.selection":
+        # The real owner service must reach its sealed selection Action with a
+        # current signed record, Vault generation, and exact model. The spy
+        # observes that Action only; preparation uses a synthetic local owner.
+        from dataclasses import replace
+        from types import SimpleNamespace
+
+        from agents.core import settings_db
+        from agents.core.kernel import kernel_enabled
+        from agents.core.llm import provider_selection
+        from agents.core.llm.providers.packages import ProviderPackageError
+        from tests.test_h361_provider_install_service import owner, service
+
+        enabled = kernel_enabled()
+        selection_root = tmp_path / "selection-exercise"
+        selection_root.mkdir(exist_ok=True)
+        monkeypatch.setattr(settings_db, "DB_PATH", selection_root / "selection-settings.db")
+        monkeypatch.setattr(settings_db, "_initialized", False)
+        settings_db.init_db(force=True)
+        monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+        svc, profile, hooks, _ = service.__wrapped__(selection_root, monkeypatch)
+        svc.audit = SimpleNamespace(log=lambda _event: None)
+        svc.kernel = lambda: lambda _action, **_kwargs: Decision(Verdict.GRANT, tier=3)
+        artifact = svc.stage("addon", profile=replace(
+            profile, auth_type="bearer", fallback_models=("synthetic-model",)),
+            hooks=hooks, source="user", actor=owner())
+        offer = svc.propose(artifact["artifact_id"], actor=owner())
+        svc.decide(offer["proposal_id"], artifact_id=artifact["artifact_id"],
+                   package_hash=artifact["package_hash"], approved=True,
+                   permanent=True, actor=owner())
+        svc.promote(offer["proposal_id"], actor=owner())
+        svc.put_credential("synthetic-addon", artifact["package_hash"],
+                           "synthetic-matrix-key", actor=owner())
+        def selected_kernel(action, *, approval_check):
+            assert approval_check(action) is True
+            return spy(action)
+
+        svc.kernel = lambda: selected_kernel
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        with suppress(ProviderPackageError):
+            svc.select_provider("synthetic-addon", artifact["package_hash"],
+                                "synthetic-model",
+                                expected_revision=provider_selection.current_revision(),
+                                acknowledge_unknown_price=True,
+                                acknowledge_data_policy=True, actor=owner())
+    elif kind == "provider.custom_endpoint":
+        # Exercise the owner service through a real sealed Action Kernel. The
+        # spy observes the post-receipt decision, including a DENY, without
+        # replacing the receipt and schema checks or contacting a provider.
+        from types import SimpleNamespace
+
+        from agents.core import settings_db
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.kernel import kernel_enabled
+        from agents.core.kernel.binding import make_action_kernel
+        from agents.core.llm.custom_endpoint_service import CustomEndpointService
+        from agents.core.llm.custom_endpoints import read_endpoint
+        from agents.core.llm.providers.packages import ProviderPackageError
+        from agents.core.security.capability import KillSwitch
+        from tests.test_h361_provider_install_service import owner
+
+        enabled = kernel_enabled()
+        root = tmp_path / 'custom-endpoint-matrix'
+        root.mkdir(exist_ok=True)
+        monkeypatch.setattr(settings_db, 'DB_PATH', root / 'settings.db')
+        monkeypatch.setattr(settings_db, '_initialized', False)
+        settings_db.init_db(force=True)
+        orch = SimpleNamespace(autonomy=SimpleNamespace(policy=AutonomyPolicy()),
+                               kill_switch=KillSwitch(root / 'kill.json'),
+                               capabilities=None, intent_log=None)
+        bound = make_action_kernel(orch)
+        events = []
+
+        def gate(action, *, approval_check):
+            decision = bound(action, approval_check=approval_check)
+            assert decision.verdict is Verdict.GRANT
+            return spy(action)
+
+        svc = CustomEndpointService(root=root / 'custom', home='matrix-owner',
+                                    kernel=lambda: gate,
+                                    audit=SimpleNamespace(log=lambda event: events.append(event)))
+        if not enabled:
+            monkeypatch.delenv('JARVIS_ACTION_KERNEL', raising=False)
+        with suppress(ProviderPackageError):
+            svc.create('matrix', 'Synthetic', 'http://127.0.0.1:1234/v1',
+                       'model', 'none', 'local', actor=owner())
+        assert (read_endpoint('matrix') is not None) == (enabled and spy._verdict is Verdict.GRANT)
+        assert bool(events) == (enabled and spy._verdict is Verdict.GRANT)
     elif kind == "desktop.step":
         # The optional real host seam must cross CapabilityActionAPI immediately
         # before driver execution. The unified facade stays default-off; the outer
@@ -565,56 +709,138 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             assert driver.calls == []
             assert result["ran"][0]["status"] == "blocked"
     elif kind == "browser.step":
-        # A mutating browser step is the surface that used to reach a driver with
-        # only its own approval object behind it. The kernel is consulted BEFORE
-        # the approval card exists, so a DENY never becomes a decision the owner is
-        # asked to make — which is why the deny leg asserts the driver was untouched.
+        # The step Kernel is reached only from the owner-accepted, mediated
+        # browser_run task. Direct run_step has no approved-plan receipt.
         import asyncio
+        import importlib.util
+        from types import SimpleNamespace
 
-        from agents.core.browser_agent import BrowserPolicy, GovernedBrowser
-        from agents.core.browser_kernel import BrowserActionExecutor
+        from agents.core import browser_runtime
+        from agents.core.autonomy.executor import TaskExecutor
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.autonomy.queue import TaskQueue
+        from agents.core.autonomy.worker import AutonomyWorker
+        from agents.core.autonomy_coordinator import AutonomyCoordinator
+        from agents.core.browser_kernel import physical_browser_step_allowed
+        from agents.core.kernel.binding import make_action_kernel
+        from agents.core.security.capability import KillSwitch
+        from tests.test_task_mediation_evidence import _head_anchor, _signer
 
         class _BrowserDriver:
             requires_kernel = True
+            profile_dir = None
+            owned_browser_identity = None
 
             def __init__(self):
                 self.calls = []
+                self.closed = False
+
+            def set_transport(self, transport):
+                self.transport = transport
+
+            def set_url_guard(self, guard):
+                self.url_guard = guard
+
+            def set_execution_guard(self, guard):
+                self.execution_guard = guard
+
+            async def navigate(self, *, url):
+                assert self.execution_guard() and self.url_guard(url)[0]
+                self.calls.append(("navigate", url))
+                return {"url": url}
 
             async def click(self, **kw):
+                assert self.execution_guard()
+                assert physical_browser_step_allowed("click", kw)
                 self.calls.append(("click", kw))
                 return {"ok": True}
 
-        class _Approvals:
-            """Present, and required to stay unused: the kernel answers first."""
-
-            def __init__(self):
-                self.requested = []
-
-            def request(self, payload):
-                self.requested.append(payload)
-                return {"id": 1}
-
-            async def await_decision(self, _id, timeout=0):
-                return "approved"
+            async def close(self):
+                self.closed = True
 
         monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+        monkeypatch.setenv("JARVIS_PLAYWRIGHT_HOST", "1")
+        monkeypatch.setenv("JARVIS_PLAYWRIGHT_BROWSER", "chromium")
+        monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+        # Only the installed-Chrome/Playwright availability probe is synthetic.
+        # Runtime readiness still checks the Kernel, enforce queue and flags.
+        real_find_spec = importlib.util.find_spec
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: (
+            object() if name in {"playwright", "psutil"} else real_find_spec(name)))
+        monkeypatch.setattr(browser_runtime, "_chrome_binary", lambda: "/synthetic/chromium")
+        origin = "http://fixture.browser.test:45678"
+        path = tmp_path / "browser-matrix.db"
+        queue = TaskQueue(str(path), mediation_mode="enforce", mediation_signer=_signer(),
+                          mediation_head_anchor=_head_anchor(path),
+                          mediation_scope="global").initialize()
         driver = _BrowserDriver()
-        approvals = _Approvals()
-        browser = GovernedBrowser(
-            driver=driver,
-            policy=BrowserPolicy(["example.com"]),
-            approvals=approvals,
-            action_executor=BrowserActionExecutor(driver, authorizer=spy),
-        )
-        result = asyncio.run(browser.run_step({"action": "click", "selector": "#buy"}))
-        if spy.calls:
-            assert driver.calls == [("click", {"selector": "#buy"})]
-            assert result["status"] == "done"
-        else:
-            assert driver.calls == []
-            assert result["status"] in {"blocked", "error"}
-        # Either way the owner was never shown a card the kernel had already ruled on.
-        assert approvals.requested == []
+        try:
+            worker = AutonomyWorker(queue, policy=AutonomyPolicy())
+            orch = SimpleNamespace(
+                agents={}, autonomy=worker, autonomy_queue=queue, intent_log=None,
+                kill_switch=KillSwitch(tmp_path / "browser-kill.json"),
+                capabilities=None, budget_ledger=None, loop_detector=None,
+                permission_gate=None,
+            )
+            kernel = make_action_kernel(orch)
+            worker.bind_mediation(kernel, _signer())
+            coordinator = AutonomyCoordinator(orch)
+            coordinator._wire_agent_tool_runtime(
+                action_kernel=worker.kernel_gate, _browser_fixture_origin=origin)
+            runtime = orch.tool_rpc._tools["browser_run"]["handler"].__self__ if (
+                orch.tool_rpc.allows("browser_run")) else None
+            if runtime is None:
+                # With the Kernel off, browser_run is not registered, so no
+                # proposal, owner card, step Kernel or driver call exists.
+                assert not spy.calls and driver.calls == []
+                return
+            runtime.driver_factory = lambda: driver
+            real_authorizer = runtime.authorizer
+
+            def observe_step(action, **kwargs):
+                if action.kind == "browser.step":
+                    assert kwargs["approval_check"](action)
+                    return spy(action)
+                return real_authorizer(action, **kwargs)
+
+            runtime.authorizer = observe_step
+            enqueued = []
+            real_enqueue = runtime.enqueue
+
+            def enqueue(*args, **kwargs):
+                task_id = real_enqueue(*args, **kwargs)
+                enqueued.append(task_id)
+                return task_id
+
+            runtime.enqueue = enqueue
+            executor = TaskExecutor(execution_guard=worker.execution_allowed)
+            executor.register("toolrpc.browser_run", coordinator._approved_desktop_tool_rpc_execute)
+            worker.executor = executor.execute
+
+            async def approved_run():
+                proposal = await orch.tool_rpc.handle({"tool": "browser_run", "args": {
+                    "steps": [{"action": "navigate", "url": origin + "/"},
+                              {"action": "click", "selector": "#buy"}]}})
+                assert proposal["reason"] == "approval_required", proposal
+                task_id = proposal["task_id"]
+                task = queue.get(task_id)
+                assert task.status == "blocked" and task.mediation_receipt is not None
+                await worker.apply_decision(task_id, "accept", decided_by="matrix-owner")
+                await worker.tick(task_id=task_id)
+                return queue.get(task_id)
+
+            task = asyncio.run(approved_run())
+            assert enqueued == [task.id]  # no second owner card for a denied step
+            assert driver.closed is True
+            if spy.calls and spy._verdict is Verdict.GRANT:
+                assert driver.calls == [("navigate", origin + "/"),
+                                        ("click", {"selector": "#buy"})]
+                assert task.result["status"] == "ok"
+            else:
+                assert not any(call[0] == "click" for call in driver.calls)
+                assert task.result["status"] != "ok"
+        finally:
+            queue.close()
     elif kind == "permission.grant":
         # 1.1.0: widening the consent ledger is itself privileged. The ask crosses
         # the kernel before it can reach the decision inbox; the grant row is only
@@ -878,6 +1104,10 @@ def test_kernel_kinds_actually_invoke_kernel(kind, monkeypatch, tmp_path):
     assert spy.calls, f"{kind} is classified KERNEL but request() did not invoke the kernel"
     if kind.endswith(".*"):
         assert spy.calls[-1].kind.startswith(kind[:-1])
+    elif kind in {"provider.credential", "provider.selection"}:
+        # The service rechecks the signed record through plugin.load after
+        # credential authorization and before writing the envelope.
+        assert any(action.kind == kind for action in spy.calls)
     else:
         assert spy.calls[-1].kind == kind
 
@@ -889,6 +1119,22 @@ def test_kernel_off_does_not_invoke_kernel(monkeypatch, tmp_path):
         spy = _SpyKernel()
         _exercise(kind, spy, tmp_path, monkeypatch)
         assert not spy.calls, f"{kind} invoked the kernel with the flag OFF"
+
+
+def test_browser_step_kernel_denial_after_owner_plan_never_actuates_or_adds_card(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    spy = _SpyKernel(Verdict.DENY)
+    _exercise("browser.step", spy, tmp_path, monkeypatch)
+    assert len(spy.calls) == 1 and spy.calls[0].kind == "browser.step"
+
+
+def test_custom_endpoint_kernel_denial_leaves_no_catalog_or_audit(monkeypatch, tmp_path):
+    monkeypatch.setenv('JARVIS_ACTION_KERNEL', '1')
+    spy = _SpyKernel(Verdict.DENY)
+    _exercise('provider.custom_endpoint', spy, tmp_path, monkeypatch)
+    assert len(spy.calls) == 1
+    assert spy.calls[0].kind == 'provider.custom_endpoint'
 
 
 def test_broker_kernel_wiring_matches_classification():
