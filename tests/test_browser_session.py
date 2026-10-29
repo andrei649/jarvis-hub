@@ -110,6 +110,7 @@ async def test_owner_close_cancellation_retains_owned_cleanup_until_settled(tmp_
 async def test_changed_registration_reaps_idle_session_without_waiting_for_expiry(tmp_path, monkeypatch):
     import asyncio
     import contextlib
+    import uuid
     from types import SimpleNamespace
 
     from agents.core.autonomy import consent_registration
@@ -117,8 +118,9 @@ async def test_changed_registration_reaps_idle_session_without_waiting_for_expir
     from agents.core.browser_session import BrowserSession
 
     monkeypatch.setenv('JARVIS_HOME', str(tmp_path))
+    epoch = uuid.uuid4().hex
     spec = {'capability_id': 'tool:browser_run', '_consent_registration_key': 'old',
-            '_grouping_epoch': 3}
+            '_grouping_epoch': epoch}
     monkeypatch.setattr(consent_registration, 'trusted_registration_key',
                         lambda _tool, candidate: candidate['_consent_registration_key'])
     runtime = BrowserRuntime(queue=None, approved_task=lambda: None, authorizer=None,
@@ -137,7 +139,7 @@ async def test_changed_registration_reaps_idle_session_without_waiting_for_expir
 
     sid = 'c' * 32
     session = BrowserSession(sid, Driver(), None, None, 'jarvis', 'owner',
-                             SimpleNamespace(agent='jarvis'), 'same-source', 'old', 3)
+                             SimpleNamespace(agent='jarvis'), 'same-source', 'old', epoch)
     runtime.sessions[sid] = session
     spec['_consent_registration_key'] = 'new'
     runtime._ensure_reaper()

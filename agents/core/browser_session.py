@@ -75,7 +75,7 @@ class BrowserSession:
     owner_task: object
     head: str
     registration_key: str
-    registration_epoch: int | None = None
+    registration_epoch: str | None = None
     created: float = field(default_factory=time.monotonic)
     last_used: float = field(default_factory=time.monotonic)
     generation: int = 0

@@ -609,7 +609,8 @@ class BrowserRuntime:
             spec = self.registration() if callable(self.registration) else None
             return bool(
                 type(session.registration_key) is str and bool(session.registration_key)
-                and type(session.registration_epoch) is int
+                and type(session.registration_epoch) is str
+                and re.fullmatch(r'[0-9a-f]{32}', session.registration_epoch) is not None
                 and type(spec) is dict and spec.get('capability_id') == 'tool:browser_run'
                 and spec.get('_consent_registration_key') == session.registration_key
                 and spec.get('_grouping_epoch') == session.registration_epoch

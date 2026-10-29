@@ -270,6 +270,54 @@ async def test_session_snapshot_ref_survives_separate_owner_approved_call(browse
     assert not journal_path.exists()
 
 
+async def test_unchanged_real_registration_survives_two_reaper_ticks_and_next_action(browser_rig,
+                                                                                      monkeypatch):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    session = rig.runtime.sessions[sid]
+    spec = rig.orch.tool_rpc._tools['browser_run']
+    profile = session.driver.profile_dir
+    identity = session.driver.owned_browser_identity
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['name'] == 'Click')
+    checks = 0
+    two_ticks = asyncio.Event()
+    real_check = rig.runtime._session_registration_current
+
+    def counted_check(candidate):
+        nonlocal checks
+        current = real_check(candidate)
+        if candidate is session:
+            checks += 1
+            if checks >= 2:
+                two_ticks.set()
+        return current
+
+    monkeypatch.setattr(rig.runtime, '_session_registration_current', counted_check)
+    try:
+        assert session.registration_epoch == spec['_grouping_epoch']
+        assert isinstance(session.registration_epoch, str) and len(session.registration_epoch) == 32
+        assert isinstance(session.registration_key, str) and session.registration_key
+        assert real_check(session)
+        await asyncio.wait_for(two_ticks.wait(), 5)
+        assert sid in rig.runtime.sessions and not session.closed
+        assert profile.exists() and browser_identity_alive(identity)
+        assert rig.runtime.journal._file(sid).exists()
+        acted = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+            'steps': [{'action': 'click', 'ref': ref},
+                      {'action': 'wait', 'selector': '#done', 'timeout_ms': 3000}]})
+        assert acted['ok'] is True, acted
+        assert rig.page.state['clicked'] == 1
+    finally:
+        await rig.runtime.close_owner_session(sid)
+    assert not profile.exists() and not browser_identity_alive(identity)
+    assert not rig.runtime.journal._file(sid).exists()
+
+
 async def _approved_session_call(rig, args, *, owner='andrei'):
     proposed = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': args})
     assert proposed['reason'] == 'approval_required', proposed
@@ -455,7 +503,7 @@ async def test_idle_session_blocks_background_page_egress(browser_rig):
     assert await rig.runtime.close_owner_session(sid)
 
 
-@pytest.mark.parametrize('change', ['config', 'kill', 'registration'])
+@pytest.mark.parametrize('change', ['config', 'kill', 'registration', 'registration_epoch'])
 async def test_session_revoked_control_reaps_native_chrome(browser_rig, monkeypatch, change):
     rig = browser_rig
     started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
@@ -463,18 +511,26 @@ async def test_session_revoked_control_reaps_native_chrome(browser_rig, monkeypa
     ]})
     assert started['ok'] is True
     sid = started['session_id']
+    assert rig.runtime._session_registration_current(rig.runtime.sessions[sid])
     identity = rig.runtime.sessions[sid].driver.owned_browser_identity
     profile = rig.runtime.sessions[sid].driver.profile_dir
+    journal_path = rig.runtime.journal._file(sid)
+    driver = rig.runtime.sessions[sid].driver
     if change == 'config':
         monkeypatch.setenv('JARVIS_PLAYWRIGHT_BROWSER', 'firefox')
     elif change == 'kill':
         rig.kill.engage(reason='test session stop')
+    elif change == 'registration_epoch':
+        spec = rig.orch.tool_rpc._tools['browser_run']
+        spec['_grouping_epoch'] = '0' * 32 if spec['_grouping_epoch'] != '0' * 32 else '1' * 32
     else:
         rig.orch.tool_rpc._tools['browser_run']['_consent_registration_key'] = 'changed'
     async with asyncio.timeout(10):
-        while sid in rig.runtime.sessions or profile.exists() or browser_identity_alive(identity):
+        while (sid in rig.runtime.sessions or profile.exists() or browser_identity_alive(identity)
+               or journal_path.exists() or sid in rig.runtime._owner_close_tasks
+               or driver in rig.runtime._uncertain_sessions or rig.runtime._journal_uncertain):
             await asyncio.sleep(0.05)
-    assert not rig.runtime.journal._file(sid).exists()
+    assert not journal_path.exists()
     assert rig.page.state['clicked'] == 0
 
 
