@@ -245,7 +245,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
     </div>
   );
   return (
-    <div style={{position:'relative'}} onPaste={draft.onPaste} onDrop={draft.onDrop} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}>
+    <div style={{position:'relative',display:'flex',flexDirection:'column',minHeight:0,flexShrink:1}} onPaste={draft.onPaste} onDrop={draft.onDrop} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}>
       <ComposerImages draft={draft}/>
       {showPill && (
         <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>

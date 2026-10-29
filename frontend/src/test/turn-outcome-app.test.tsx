@@ -123,6 +123,36 @@ it.each([[false, '/v2/chat'], [true, '/v2/chat?desktop=floating']] as const)(
 );
 
 it.each([[false, '/v2/chat'], [true, '/v2/chat?desktop=floating']] as const)(
+  'allocates remaining chat-pane height to scrollable status while preserving composer floating=%s',
+  async (floating, path) => {
+    powerPayload = { power: { on_battery: true, percent: 75 } };
+    history.replaceState(null, '', path);
+    render(<App floating={floating} />);
+    await screen.findByLabelText('Attach images');
+    await send('all selected metrics');
+    await complete({ latency_ms: 1250, model: longModel,
+      context_detail: { prompt_tokens: 8192, window_tokens: 16384 }, context_pct: 50,
+      cache_hit: 72.5, tps: 47.2, compressions: 3, duration_ms: 1080,
+      prompt_elapsed_ms: 115, total_tokens: 9472, title: longTitle, battery: true });
+    const composer = document.querySelector('[data-composer]') as HTMLInputElement;
+    const composerStatus = composer.closest('.inputbar')?.parentElement as HTMLElement;
+    const chatPane = composer.closest('.chat-col') as HTMLElement;
+    const strip = screen.getByLabelText('Turn outcome');
+    expect(chatPane.style.maxHeight).toBe('100%');
+    expect(composerStatus.style.minHeight).toBe('0px');
+    expect(composerStatus.style.display).toBe('flex');
+    expect(composerStatus.style.flexDirection).toBe('column');
+    expect(strip.style.minHeight).toBe('0px');
+    expect(strip.style.flexShrink).toBe('1');
+    expect(strip.style.overflowY).toBe('auto');
+    expect(screen.getByLabelText('Request model').textContent).toContain(longModel);
+    expect(screen.getByLabelText('Session title').textContent).toContain(longTitle);
+    expect(screen.getByLabelText('Battery').textContent).toContain('75%');
+    expect(composer.disabled).toBe(false);
+  },
+);
+
+it.each([[false, '/v2/chat'], [true, '/v2/chat?desktop=floating']] as const)(
   'forwards local battery into mounted ChatMode floating=%s', async (floating, path) => {
     powerPayload = { power: { on_battery: true, percent: 75 } };
     history.replaceState(null, '', path);

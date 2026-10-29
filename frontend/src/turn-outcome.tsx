@@ -102,7 +102,7 @@ export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; 
   if (!outcome) return null;
   return <section aria-label="Turn outcome" style={{ display: 'block', padding: '4px 8px',
     color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 10,
-    width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box',
+    width: '100%', maxWidth: '100%', minWidth: 0, minHeight: 0, flexShrink: 1, boxSizing: 'border-box',
     maxHeight: '35vh', overflowX: 'auto', overflowY: 'auto', overflowWrap: 'anywhere',
     lineHeight: 1.4 }}>
     {outcome.latency_ms !== undefined && <output aria-label="Turn duration" style={{ display: 'block' }}>
