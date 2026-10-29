@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-import { apiPost } from './api/client';
+import { apiGet, apiPost } from './api/client';
+import { appUrl } from './base-path';
 import {
   canonicalizeDesktopSteps,
   desktopPlanSignature,
@@ -286,10 +287,20 @@ export function OperatorPanel() {
   const browserPreviewRevisionRef = useRef(0);
   const browserCheckRequestRef = useRef(0);
   const browserPreviewRequestRef = useRef(0);
-  const [browserBusy, setBrowserBusy] = useState<'check' | 'preview' | null>(null);
+  const [browserBusy, setBrowserBusy] = useState<'check' | 'preview' | 'run' | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
+  const [browserAvailable, setBrowserAvailable] = useState(false);
+  const [browserRunTaskId, setBrowserRunTaskId] = useState<number | null>(null);
   const [browserCheck, setBrowserCheck] = useState<BrowserCheckResult | null>(null);
   const [browserPreview, setBrowserPreview] = useState<BrowserPreviewRow[] | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    apiGet('/api/browser/status').then((value) => {
+      if (live) setBrowserAvailable(isRecord(value) && value.available === true);
+    }).catch(() => { if (live) setBrowserAvailable(false); });
+    return () => { live = false; };
+  }, []);
 
   const [desktopAction, setDesktopAction] = useState<CanonicalDesktopAction>('read');
   const [desktopPrimary, setDesktopPrimary] = useState('');
@@ -328,6 +339,7 @@ export function OperatorPanel() {
     browserPlanRef.current = snapshot;
     browserPreviewRevisionRef.current += 1;
     setBrowserPlan(snapshot);
+    setBrowserRunTaskId(null);
     setBrowserPreview(null);
     setBrowserError(null);
   };
@@ -441,6 +453,41 @@ export function OperatorPanel() {
       if (isCurrent()) setBrowserError(boundedError(error));
     } finally {
       if (requestId === browserPreviewRequestRef.current) setBrowserBusy(null);
+    }
+  };
+
+  const runBrowserPlan = async () => {
+    setBrowserError(null);
+    setBrowserRunTaskId(null);
+    if (!browserAvailable) return setBrowserError('Browser execution is unavailable on this server');
+    const stored = cloneBrowserPlan(browserPlanRef.current);
+    if (!stored.length || stored[0].action !== 'navigate') {
+      return setBrowserError('Start with a browser navigation step');
+    }
+    const revision = browserPreviewRevisionRef.current;
+    setBrowserBusy('run');
+    try {
+      // Execution policy and pinned hosts are resolved by the server. The editable
+      // dry-run allowlist is intentionally absent from this request.
+      const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args: { steps: stored } });
+      if (revision !== browserPreviewRevisionRef.current) return;
+      if (!isRecord(raw) || raw.reason !== 'approval_required'
+          || !Number.isSafeInteger(raw.task_id) || Number(raw.task_id) <= 0) {
+        throw new Error('Browser approval task was not confirmed');
+      }
+      setBrowserRunTaskId(Number(raw.task_id));
+    } catch (error) {
+      if (revision !== browserPreviewRevisionRef.current) return;
+      const body = isRecord(error) ? error.body : null;
+      if (isRecord(body) && body.reason === 'approval_required'
+          && Number.isSafeInteger(body.task_id) && Number(body.task_id) > 0) {
+        setBrowserRunTaskId(Number(body.task_id));
+      } else {
+        setBrowserError(isRecord(body) && typeof body.reason === 'string'
+          ? body.reason.slice(0, MAX_REASON) : boundedError(error));
+      }
+    } finally {
+      setBrowserBusy(null);
     }
   };
 
@@ -645,7 +692,11 @@ export function OperatorPanel() {
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="tool-btn" type="button" disabled={browserBusy !== null} onClick={checkPolicy}>check policy</button>
             <button className="tool-btn" type="button" disabled={browserBusy !== null} onClick={previewBrowserPlan}>preview browser plan</button>
+            <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable}
+              onClick={runBrowserPlan}>Run with approval</button>
           </div>
+          <p style={mono}>{browserAvailable ? 'Browser execution available for server-approved domains' : 'Browser execution unavailable'}</p>
+          {browserRunTaskId && <p role="status">Browser task {browserRunTaskId} queued · <a href={appUrl('/v2/console#decision-inbox')}>Decision Inbox</a></p>}
           <Alert value={browserError} />
           <BrowserResult check={browserCheck} preview={browserPreview} />
         </fieldset>

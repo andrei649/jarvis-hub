@@ -37,6 +37,15 @@ class _BrowserValidationRoute(APIRoute):
 router = APIRouter(tags=["browser"], route_class=_BrowserValidationRoute)
 
 
+@router.get('/api/browser/status', dependencies=[Depends(user_guard)])
+async def browser_status():
+    """Read-only server execution readiness; the preview allowlist is unrelated."""
+    from agents.core.app_state import get_orch
+    from agents.core.operator_router import _browser_available
+
+    return nocache_json({'available': _browser_available(get_orch())})
+
+
 class _StrictBrowserBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 

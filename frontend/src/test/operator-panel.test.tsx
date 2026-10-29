@@ -2,15 +2,18 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { apiPost } from '../api/client';
+import { apiGet, apiPost } from '../api/client';
 import { OperatorPanel } from '../operator-panel';
 
-vi.mock('../api/client', () => ({ apiPost: vi.fn() }));
+vi.mock('../api/client', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 const post = vi.mocked(apiPost);
+const get = vi.mocked(apiGet);
 
 beforeEach(() => {
   post.mockReset();
+  get.mockReset();
+  get.mockResolvedValue({ available: false });
 });
 
 function deferred<T>() {
@@ -69,12 +72,31 @@ async function previewDesktop(steps = 1) {
 }
 
 describe('OperatorPanel browser policy dry run', () => {
-  it('makes zero API calls on mount and explains the fail-closed boundary', () => {
+  it('queues an exact plan through ToolRPC and links its durable approval task', async () => {
+    get.mockResolvedValue({ available: true });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      status: 422, body: { ok: false, reason: 'approval_required', tool: 'browser_run', task_id: 87 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/path');
+    addBrowserStep('click', '#go');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Run with approval' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 87 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      steps: [{ action: 'navigate', url: 'https://example.com/path' },
+        { action: 'click', selector: '#go' }],
+    } });
+    expect((screen.getByRole('link', { name: 'Decision Inbox' }) as HTMLAnchorElement).getAttribute('href'))
+      .toContain('#decision-inbox');
+  });
+
+  it('makes zero actuation calls on mount and explains the fail-closed boundary', () => {
     render(<OperatorPanel />);
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByText(/empty allowlist is fail-closed/i)).toBeTruthy();
     expect(screen.getByText(/policy dry run/i)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /browser run/i })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('offers only the structured safe browser actions', () => {

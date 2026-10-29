@@ -83,6 +83,8 @@ class PlaywrightBrowserDriver:
     owner explicitly enables ``JARVIS_PLAYWRIGHT_HOST=1``.
     """
 
+    requires_kernel = True
+
     def __init__(
         self,
         *,
@@ -97,6 +99,7 @@ class PlaywrightBrowserDriver:
         download_dir: str | Path | None = None,
         playwright_factory: Callable[[], Any] | None = None,
         allow_private_urls: bool = False,
+        channel: str | None = None,
     ) -> None:
         if browser not in SUPPORTED_BROWSERS:
             raise ValueError(f"unsupported Playwright browser: {browser}")
@@ -120,8 +123,10 @@ class PlaywrightBrowserDriver:
         self.max_screenshot_bytes = int(max_screenshot_bytes)
         self.download_dir = Path(download_dir).expanduser() if download_dir else None
         self.allow_private_urls = bool(allow_private_urls)
+        self.channel = channel
         self._factory = playwright_factory
         self._url_guard: Callable[[str], tuple[bool, str] | bool] | None = None
+        self._execution_guard: Callable[[], bool] | None = None
         self._transport: PinnedResolver | None = None
         self._launched_hosts: frozenset[str] = frozenset()
         self._profile_dir: Path | None = None
@@ -131,6 +136,7 @@ class PlaywrightBrowserDriver:
         self._browser = None
         self._context = None
         self._page = None
+        self._owned_child = None
 
     @classmethod
     def from_env(cls, **kwargs) -> PlaywrightBrowserDriver:
@@ -170,6 +176,21 @@ class PlaywrightBrowserDriver:
         if self._page is not None:
             raise PlaywrightDriverError("url guard must be configured before browser startup")
         self._url_guard = guard
+
+    def set_execution_guard(self, guard: Callable[[], bool]) -> None:
+        if not callable(guard) or self._page is not None:
+            raise ValueError('execution guard must be callable before browser startup')
+        self._execution_guard = guard
+
+    def _assert_execution_current(self) -> None:
+        if self._execution_guard is None and self._factory is not None:
+            return  # isolated component fake; production requires a bound durable guard
+        try:
+            if self._execution_guard is not None and self._execution_guard() is True:
+                return
+        except Exception:
+            pass
+        raise PlaywrightHostDisabled('approved browser task unavailable')
 
     def set_transport(self, resolver: PinnedResolver) -> None:
         """Bind the IP-pinning transport; navigation is refused until one is bound."""
@@ -217,6 +238,7 @@ class PlaywrightBrowserDriver:
     async def _ensure_started(self):
         if self._page is not None:
             return self._page
+        self._assert_execution_current()
         if not self.host_enabled:
             raise PlaywrightHostDisabled(
                 "Playwright host actuation requires explicit host_enabled=True"
@@ -232,6 +254,13 @@ class PlaywrightBrowserDriver:
             try:
                 manager = self._runtime_factory()()
                 self._playwright = await manager.start()
+                if self._factory is None:
+                    transport = getattr(getattr(self._playwright, '_impl_obj', None),
+                                        '_connection', None)
+                    child = getattr(getattr(transport, '_transport', None), '_proc', None)
+                    if child is None or not callable(getattr(child, 'wait', None)):
+                        raise PlaywrightUnavailable('browser child ownership unavailable')
+                    self._owned_child = child
                 browser_type = getattr(self._playwright, self.browser_name)
                 launch_args: list[str] = []
                 if self._transport is not None:
@@ -243,13 +272,28 @@ class PlaywrightBrowserDriver:
                 self._context = await browser_type.launch_persistent_context(
                     str(self._profile_dir),
                     headless=self.headless,
-                    args=launch_args,
+                    args=[*launch_args, '--no-proxy-server', '--disable-background-networking',
+                          '--disable-features=WebRTC'],
+                    **({'channel': self.channel} if self.channel else {}),
                     accept_downloads=True,
                     service_workers="block",
                 )
                 self._browser = getattr(self._context, "browser", None)
                 if self._url_guard is not None:
                     await self._context.route("**/*", self._route_request)
+                web_socket_route = getattr(self._context, 'route_web_socket', None)
+                if callable(web_socket_route):
+                    await web_socket_route('**/*', self._block_web_socket)
+                elif self._factory is None:
+                    raise PlaywrightUnavailable('browser websocket guard unavailable')
+                init_script = getattr(self._context, 'add_init_script', None)
+                if callable(init_script):
+                    await init_script(
+                        "Object.defineProperty(window, 'RTCPeerConnection', {value: undefined, configurable: false});"
+                        "Object.defineProperty(window, 'webkitRTCPeerConnection', {value: undefined, configurable: false});"
+                    )
+                elif self._factory is None:
+                    raise PlaywrightUnavailable('browser WebRTC guard unavailable')
                 self._page = await self._context.new_page()
                 self._page.set_default_timeout(self.timeout_ms)
                 return self._page
@@ -272,10 +316,19 @@ class PlaywrightBrowserDriver:
         except Exception:
             allowed, reason = False, "guard_error"
         if allowed:
+            try:
+                self._assert_execution_current()
+            except PlaywrightHostDisabled:
+                allowed, reason = False, 'approved_task_revoked'
+        if allowed:
             await route.continue_()
             return
         self._record_block(url, reason)
         await route.abort("blockedbyclient")
+
+    async def _block_web_socket(self, route) -> None:
+        """The first governed slice admits HTTP(S) only; no WebSocket dial."""
+        await route.close(code=1008, reason='browser_network_policy')
 
     def _egress_verdict(self, url: str, *, require_pinned: bool = True) -> tuple[bool, str]:
         """Scheme allowlist → private-range denial → policy guard → pinned-host check.
@@ -324,27 +377,55 @@ class PlaywrightBrowserDriver:
             await self._close_resources()
 
     async def _close_resources(self) -> None:
-        context, browser, playwright = self._context, self._browser, self._playwright
-        profile_dir = self._profile_dir
         self._page = None
-        self._context = None
-        self._browser = None
-        self._playwright = None
-        self._profile_dir = None
-        self._launched_hosts = frozenset()
-        for resource, method_name in (
-            (context, "close"),
-            (browser, "close"),
-            (playwright, "stop"),
-        ):
+        failures = []
+        for attr, method_name in (('_context', 'close'), ('_browser', 'close'),
+                                  ('_playwright', 'stop')):
+            resource = getattr(self, attr)
             if resource is None:
                 continue
-            with contextlib.suppress(Exception):
+            if attr == '_browser' and callable(getattr(resource, 'is_connected', None)):
+                try:
+                    if not resource.is_connected():
+                        setattr(self, attr, None)
+                        continue
+                except Exception:
+                    failures.append('browser_state_unverified')
+                    continue
+            try:
                 await getattr(resource, method_name)()
-        if profile_dir is not None and profile_dir.name.startswith(PROFILE_PREFIX):
-            await asyncio.to_thread(shutil.rmtree, profile_dir, True)
+            except Exception:
+                failures.append(f'{attr[1:]}_close_unverified')
+            else:
+                setattr(self, attr, None)
+        if self._owned_child is not None:
+            try:
+                await asyncio.wait_for(self._owned_child.wait(), timeout=5)
+                if self._owned_child.returncode is None:
+                    raise RuntimeError('child exit unverified')
+            except Exception:
+                failures.append('child_exit_unverified')
+            else:
+                self._owned_child = None
+        if not failures and self._profile_dir is not None:
+            directory = self._profile_dir
+            if not directory.name.startswith(PROFILE_PREFIX):
+                failures.append('profile_owner_unverified')
+            else:
+                try:
+                    await asyncio.to_thread(shutil.rmtree, directory)
+                except FileNotFoundError:
+                    self._profile_dir = None
+                except Exception:
+                    failures.append('profile_remove_unverified')
+                else:
+                    self._profile_dir = None
+        if failures:
+            raise PlaywrightDriverError('browser_cleanup_unverified:' + ','.join(failures))
+        self._launched_hosts = frozenset()
 
     async def navigate(self, *, url: str, wait_until: str = "domcontentloaded") -> dict:
+        self._assert_execution_current()
         if not self.host_enabled:
             raise PlaywrightHostDisabled(
                 "Playwright host actuation requires explicit host_enabled=True"
@@ -362,6 +443,7 @@ class PlaywrightBrowserDriver:
         allowed, reason = await asyncio.to_thread(
             self._egress_verdict, url, require_pinned=False
         )
+        self._assert_execution_current()
         if not allowed:
             self._record_block(url, reason)
             raise PlaywrightEgressBlocked(reason)
@@ -370,20 +452,25 @@ class PlaywrightBrowserDriver:
         except BrowserTransportRefused as exc:
             self._record_block(url, exc.reason)
             raise PlaywrightEgressBlocked(exc.reason, exc.detail) from None
+        self._assert_execution_current()
         if self._page is not None and target.host not in self._launched_hosts:
             # Chromium's resolver table is fixed at launch: a new host means a fresh
             # browser (and a fresh profile) launched with the enlarged pin table.
             await self.close()
         page = await self._ensure_started()
+        self._assert_execution_current()
         response = await page.goto(url, wait_until=wait_until)
+        self._assert_execution_current()
         final_url = str(page.url)
         allowed, reason = await asyncio.to_thread(self._egress_verdict, final_url)
+        self._assert_execution_current()
         if not allowed:
             self._record_block(final_url, reason)
             with contextlib.suppress(Exception):
                 await page.goto("about:blank")
             raise PlaywrightEgressBlocked("final_url_rejected", reason)
         title = await page.title()
+        self._assert_execution_current()
         return {
             "url": self._bounded_text(final_url, 2_048),
             "title": self._bounded_text(str(title), 512),
@@ -404,11 +491,13 @@ class PlaywrightBrowserDriver:
         if limit <= 0:
             raise ValueError("max_chars must be positive")
         page = await self._ensure_started()
+        self._assert_execution_current()
         locator = page.locator(selector)
         try:
             raw = await locator.aria_snapshot(boxes=True)
         except TypeError:
             raw = await locator.aria_snapshot()
+        self._assert_execution_current()
         text = str(raw or "")
         truncated = len(text) > limit
         elements, elements_truncated = parse_aria_snapshot(text[:limit])
@@ -423,7 +512,9 @@ class PlaywrightBrowserDriver:
 
     async def extract(self, *, selector: str = "body") -> dict:
         page = await self._ensure_started()
+        self._assert_execution_current()
         text = str(await page.locator(selector).first.inner_text())
+        self._assert_execution_current()
         return {
             "text": text[:self.max_extract_chars],
             "truncated": len(text) > self.max_extract_chars,
@@ -447,23 +538,32 @@ class PlaywrightBrowserDriver:
         if timeout_ms < 0 or timeout_ms > self.max_wait_ms:
             raise ValueError(f"wait exceeds configured maximum of {self.max_wait_ms}ms")
         page = await self._ensure_started()
+        self._assert_execution_current()
         if selector:
             # Playwright treats timeout=0 as "disable timeout" (wait forever),
             # which would bypass max_wait_ms and hang a governed run — fall back
             # to the driver default so a bounded timeout always applies.
             effective = timeout_ms or self.timeout_ms
             await page.locator(selector).first.wait_for(timeout=effective)
+            self._assert_execution_current()
             return {"waited": "selector", "selector": selector, "timeout_ms": effective}
         await page.wait_for_timeout(timeout_ms)
+        self._assert_execution_current()
         return {"waited": "timer", "timeout_ms": timeout_ms}
 
     async def click(self, *, selector: str) -> dict:
+        self._require_approved_mutation('click', {'selector': selector})
         page = await self._ensure_started()
+        self._assert_execution_current()
         await page.locator(selector).first.click()
         return {"clicked": selector}
 
     async def type(self, *, selector: str, text: str, clear: bool = True) -> dict:
+        if clear is not True:
+            raise PlaywrightHostDisabled('approved browser step required')
+        self._require_approved_mutation('type', {'selector': selector, 'text': text})
         page = await self._ensure_started()
+        self._assert_execution_current()
         locator = page.locator(selector).first
         if clear:
             await locator.fill(text)
@@ -472,17 +572,21 @@ class PlaywrightBrowserDriver:
         return {"typed": selector}
 
     async def submit(self, *, selector: str) -> dict:
+        self._require_approved_mutation('submit', {'selector': selector})
         page = await self._ensure_started()
+        self._assert_execution_current()
         await page.locator(selector).first.press("Enter")
         return {"submitted": selector}
 
     async def execute_js(self, *, script: str, arg: Any = None) -> dict:
+        self._require_approved_mutation('execute_js', {'script': script, 'arg': arg})
         page = await self._ensure_started()
         value = await page.evaluate(script, arg)
         self._assert_result_budget(value)
         return {"value": value}
 
     async def upload(self, *, selector: str, paths: list[str] | str) -> dict:
+        self._require_approved_mutation('upload', {'selector': selector, 'paths': paths})
         values = [paths] if isinstance(paths, str) else list(paths or [])
         resolved = []
         for raw_path in values:
@@ -497,6 +601,7 @@ class PlaywrightBrowserDriver:
         return {"uploaded": len(resolved), "selector": selector}
 
     async def download(self, *, selector: str) -> dict:
+        self._require_approved_mutation('download', {'selector': selector})
         if self.download_dir is None:
             raise ValueError("download_dir must be configured before downloading")
         page = await self._ensure_started()
@@ -509,6 +614,13 @@ class PlaywrightBrowserDriver:
         destination = self._unique_destination(root, filename)
         await download.save_as(destination)
         return {"saved_to": str(destination), "filename": destination.name}
+
+    @staticmethod
+    def _require_approved_mutation(action: str, args: dict) -> None:
+        from .browser_kernel import physical_browser_step_allowed
+
+        if not physical_browser_step_allowed(action, args):
+            raise PlaywrightHostDisabled('approved browser step required')
 
     @staticmethod
     def _bounded_text(value: str, limit: int) -> str:

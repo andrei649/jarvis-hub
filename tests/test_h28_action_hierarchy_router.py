@@ -243,12 +243,6 @@ def test_every_registered_capability_id_exists_in_the_live_registry():
     assert not missing, f"registered against capability ids nothing publishes: {missing}"
 
 
-# ``tool:browser_run`` is registered by the op-browser-governed slice's
-# integrator edit to autonomy_coordinator; until that lands the router honestly
-# reports it ``capability_missing`` (the registry, not this test, is the judge).
-_PENDING_TOOL_REGISTRATION = {"tool:browser_run"}
-
-
 def test_tool_backed_ids_match_the_real_toolrpc_registrations():
     """The tool:* legs must name tools autonomy_coordinator actually registers."""
     source = (
@@ -259,11 +253,9 @@ def test_tool_backed_ids_match_the_real_toolrpc_registrations():
     tool_ids = {cap for cap in declared if cap.startswith("tool:")}
     assert "tool:browser_run" in tool_ids
     missing = {cap for cap in tool_ids if f'capability_id="{cap}"' not in source}
-    assert missing <= _PENDING_TOOL_REGISTRATION, (
+    assert not missing, (
         f"registered against tool ids autonomy_coordinator never publishes: {missing}"
     )
-    if missing:
-        pytest.xfail(f"integrator registration pending in autonomy_coordinator: {missing}")
 
 
 def test_visual_implementation_is_opt_in_only():
@@ -378,7 +370,7 @@ def test_desktop_availability_honours_the_driver_factory_verdict(monkeypatch):
     assert impls["desktop_run"].availability() is False
 
 
-def test_browser_run_is_registered_behind_its_playwright_flag(monkeypatch):
+def test_browser_run_requires_registered_runtime_and_local_prerequisites(monkeypatch):
     impls = {impl.id: impl for impl in default_implementations(None)}
     browser = impls["browser_run"]
     assert browser.route is OperatorRoute.STRUCTURED_UI
@@ -388,7 +380,7 @@ def test_browser_run_is_registered_behind_its_playwright_flag(monkeypatch):
     monkeypatch.delenv("JARVIS_PLAYWRIGHT_HOST", raising=False)
     assert browser.availability() is False
     monkeypatch.setenv("JARVIS_PLAYWRIGHT_HOST", "1")
-    assert browser.availability() is True
+    assert browser.availability() is False
 
 
 def test_default_install_reports_gated_surfaces_unavailable(monkeypatch):

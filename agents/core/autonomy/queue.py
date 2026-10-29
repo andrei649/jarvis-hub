@@ -195,6 +195,7 @@ def _canonical_mediation_classification(kind: str) -> bool | None:
             "toolrpc.terminal_run": "terminal.exec",
             "toolrpc.file_write": "file.write",
             "toolrpc.file_delete": "file.write",
+            "toolrpc.browser_run": "browser.step",
         }.get(kind, kind)
         mediation = classify(registry_kind)
         if mediation is Mediation.KERNEL:

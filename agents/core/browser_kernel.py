@@ -1,8 +1,7 @@
 """browser_kernel.py — the Action Kernel gate for a governed browser step.
 
-The browser agent has always had two gates: an egress allowlist that navigation
-cannot escape, and an approval queue that mutating steps must pass. What it never
-had is the third one every other privileged surface crosses — `desktop.step`,
+The browser agent has an egress allowlist and a durable owner approval queue.
+The real runtime also crosses the Action Kernel, as `desktop.step`,
 `terminal.exec`, `file.write` all reach `kernel.authorize` before they touch a
 driver, and a browser click did not. That gap matters more than it looks:
 
@@ -21,14 +20,11 @@ because a gate that authorises a summary authorises the wrong thing.
 
 Two orderings are deliberate and tested:
 
-* **The kernel is asked before the approval card is created.** A DENY refuses the
-  step outright and the owner is never shown a decision they cannot safely make.
-  Asking the queue first would train the owner to approve things the kernel then
-  refuses, which teaches them their approvals do not mean anything.
-* **A kernel GRANT does not replace the approval.** For a mutating step both
-  gates hold: the kernel says the action may be attempted at all, the queue says
-  this particular one is wanted. Collapsing them would make a GRANT a blanket
-  licence to click anything for the rest of the session.
+* The selected runtime proposes one exact plan before opening the browser; the
+  owner approves that durable row. Each mutating step then presents a task-bound
+  receipt and the exact Action to the Kernel immediately before the driver call.
+* A Kernel GRANT alone cannot open the physical mutating method. Its post-Kernel
+  task-bound scope must still be live when the method is entered.
 
 The executor owns no policy of its own. The allowlist, SSRF filter and pinned
 transport stay in `browser_agent` and `browser_transport`, where they already are.
@@ -36,13 +32,19 @@ transport stay in `browser_agent` and `browser_transport`, where they already ar
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from collections.abc import Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any
 
 from agents.core.automation_contracts import ContractTemplate, predicate
 from agents.core.capability_actions import CapabilityActionAPI, PerformContext, PerformResult
+from agents.core.kernel import Action, Decision, Verdict
 
 logger = logging.getLogger("jarvis.browser.kernel")
 
@@ -54,6 +56,94 @@ CAPABILITY = "action:browser.step"
 MAX_ACTION_CHARS = 32
 MAX_ARG_CHARS = 2_000
 MAX_ARGS = 20
+APPROVED_MUTATIONS = frozenset({'click', 'type', 'submit'})
+APPROVED_READS = frozenset({'navigate', 'extract', 'snapshot', 'wait'})
+
+
+@dataclass(frozen=True)
+class _ApprovedStep:
+    task: object
+    plan_sha256: str
+    index: int
+    step: dict
+    current: object
+    owner_task: object
+
+
+_APPROVED_STEP: ContextVar[_ApprovedStep | None] = ContextVar('browser_approved_step', default=None)
+_PHYSICAL_STEP: ContextVar[_ApprovedStep | None] = ContextVar('browser_physical_step', default=None)
+
+
+@contextmanager
+def approved_step_scope(task, plan_sha256, index, step, current):
+    """Private lifetime of one exact step in the durable approved plan."""
+    receipt = _ApprovedStep(task, plan_sha256, index, deepcopy(step), current, asyncio.current_task())
+    token = _APPROVED_STEP.set(receipt)
+    try:
+        yield
+    finally:
+        _APPROVED_STEP.reset(token)
+
+
+def browser_receipt_matches(action: Action) -> bool:
+    receipt = _APPROVED_STEP.get()
+    if receipt is None or asyncio.current_task() is not receipt.owner_task:
+        return False
+    task = receipt.task
+    payload = action.payload
+    expected = {
+        'action': receipt.step['action'],
+        'args': {key: value for key, value in receipt.step.items() if key != 'action'},
+        'risk_tier': 3,
+        'approved_task_id': getattr(task, 'id', None),
+        'plan_sha256': receipt.plan_sha256,
+        'step_index': receipt.index,
+    }
+    try:
+        return (action.kind == KIND and action.agent == getattr(task, 'agent', None)
+                and action.origin == getattr(task, 'origin', None)
+                and payload == expected and receipt.current() is True)
+    except Exception:
+        return False
+
+
+@contextmanager
+def _physical_step_scope(receipt: _ApprovedStep):
+    token = _PHYSICAL_STEP.set(receipt)
+    try:
+        yield
+    finally:
+        _PHYSICAL_STEP.reset(token)
+
+
+def physical_browser_step_allowed(action: str, args: dict) -> bool:
+    """The physical driver accepts one exact post-Kernel mutating call."""
+    receipt = _APPROVED_STEP.get()
+    try:
+        return bool(
+            receipt is not None and _PHYSICAL_STEP.get() is receipt
+            and asyncio.current_task() is receipt.owner_task
+            and action == receipt.step.get('action')
+            and args == {key: value for key, value in receipt.step.items() if key != 'action'}
+            and receipt.current() is True
+        )
+    except Exception:
+        return False
+
+
+def _action_for(receipt: _ApprovedStep) -> Action:
+    step = receipt.step
+    return Action(
+        kind=KIND, agent=receipt.task.agent, title=f"Browser {step['action']}",
+        payload={
+            'action': step['action'],
+            'args': {key: value for key, value in step.items() if key != 'action'},
+            'risk_tier': 3,
+            'approved_task_id': receipt.task.id,
+            'plan_sha256': receipt.plan_sha256,
+            'step_index': receipt.index,
+        }, origin=receipt.task.origin,
+    )
 
 
 def _browser_step_contract_template() -> ContractTemplate:
@@ -128,8 +218,10 @@ class BrowserActionExecutor:
     either.
     """
 
-    def __init__(self, driver, *, authorizer) -> None:
+    def __init__(self, driver, *, authorizer, revalidator=None) -> None:
         self.driver = driver
+        self.authorizer = authorizer
+        self.revalidator = revalidator
         self.api = CapabilityActionAPI(authorizer=authorizer)
         self.api.register(CAPABILITY, self._execute)
 
@@ -140,6 +232,8 @@ class BrowserActionExecutor:
             return {"ok": False, "reason": "invalid_action"}
         if not isinstance(args, Mapping):
             return {"ok": False, "reason": "invalid_args"}
+        if action not in APPROVED_MUTATIONS:
+            return {"ok": False, "reason": "unsupported_action"}
         handler = getattr(self.driver, action, None)
         if not callable(handler):
             # An action the driver does not implement is refused by name rather
@@ -153,7 +247,71 @@ class BrowserActionExecutor:
         step: Mapping[str, Any],
         context: PerformContext | None = None,
     ) -> PerformResult:
-        return await self.api.perform(CAPABILITY, normalize_step(step), context)
+        if getattr(self.driver, 'requires_kernel', False) is not True:
+            return await self.api.perform(CAPABILITY, normalize_step(step), context)
+        receipt = _APPROVED_STEP.get()
+        if receipt is None or asyncio.current_task() is not receipt.owner_task:
+            return PerformResult('refused', CAPABILITY, KIND, 'approved_plan_required')
+        if dict(step) != receipt.step or step.get('action') not in APPROVED_MUTATIONS:
+            return PerformResult('refused', CAPABILITY, KIND, 'approved_step_changed')
+        if not callable(self.authorizer):
+            return PerformResult('refused', CAPABILITY, KIND, 'kernel_unavailable')
+        action = _action_for(receipt)
+        if not browser_receipt_matches(action):
+            return PerformResult('refused', CAPABILITY, KIND, 'approved_plan_stale')
+        try:
+            decision = self.authorizer(action, approval_check=lambda candidate: (
+                candidate == action and browser_receipt_matches(candidate)))
+            if inspect.isawaitable(decision):
+                decision = await decision
+        except Exception:
+            return PerformResult('refused', CAPABILITY, KIND, 'kernel_error')
+        if not isinstance(decision, Decision):
+            return PerformResult('refused', CAPABILITY, KIND, 'kernel_error')
+        if decision.verdict is not Verdict.GRANT:
+            status = 'queued' if decision.verdict is Verdict.QUEUE else 'refused'
+            return PerformResult(status, CAPABILITY, KIND, decision.reason, decision.tier,
+                                 decision.card, stage='decision')
+        if not browser_receipt_matches(action):
+            return PerformResult('refused', CAPABILITY, KIND, 'approved_plan_stale')
+        try:
+            with _physical_step_scope(receipt):
+                output = await self._execute({'action': step['action'],
+                                              'args': action.payload['args']}, PerformContext())
+            return PerformResult('completed', CAPABILITY, KIND, decision.reason,
+                                 decision.tier, output=output, stage='handler')
+        except Exception:
+            return PerformResult('failed', CAPABILITY, KIND, 'browser_step_failed', stage='handler')
+
+    async def check_read(self, step: Mapping[str, Any]) -> PerformResult:
+        """Nonconsuming live Kernel floor for one approved read/navigation step."""
+        receipt = _APPROVED_STEP.get()
+        if (receipt is None or asyncio.current_task() is not receipt.owner_task
+                or dict(step) != receipt.step or step.get('action') not in APPROVED_READS):
+            return PerformResult('refused', CAPABILITY, KIND, 'approved_plan_required')
+        gate = self.revalidator
+        if not callable(gate):
+            return PerformResult('refused', CAPABILITY, KIND, 'kernel_unavailable')
+        action = _action_for(receipt)
+        if not browser_receipt_matches(action):
+            return PerformResult('refused', CAPABILITY, KIND, 'approved_plan_stale')
+        try:
+            decision = gate(action, approval_check=lambda candidate: (
+                candidate == action and browser_receipt_matches(candidate)))
+            if inspect.isawaitable(decision):
+                decision = await decision
+        except Exception:
+            return PerformResult('refused', CAPABILITY, KIND, 'kernel_error')
+        if not isinstance(decision, Decision):
+            return PerformResult('refused', CAPABILITY, KIND, 'kernel_error')
+        if decision.verdict is not Verdict.GRANT:
+            status = 'queued' if decision.verdict is Verdict.QUEUE else 'refused'
+            return PerformResult(status, CAPABILITY, KIND, decision.reason,
+                                 decision.tier, decision.card, stage='decision')
+        if not browser_receipt_matches(action):
+            return PerformResult('refused', CAPABILITY, KIND, 'approved_plan_stale')
+        return PerformResult('completed', CAPABILITY, KIND, decision.reason,
+                             decision.tier, stage='decision')
 
 
 __all__ = [

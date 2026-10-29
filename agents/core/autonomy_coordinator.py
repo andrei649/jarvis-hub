@@ -67,6 +67,7 @@ _TRUSTED_TOOL_RPC_KINDS = frozenset({
     # H313 — speaking into a room presents through the kernel-mediated
     # media.present facade, only from the owner-accepted durable row.
     "toolrpc.speak",
+    "toolrpc.browser_run",
 })
 
 logger = logging.getLogger("jarvis.orchestrator")
@@ -733,7 +734,7 @@ class AutonomyCoordinator:
             raise RuntimeError('governed scheduled-task intake is unavailable')
         return enqueue(**kwargs)
 
-    def _wire_agent_tool_runtime(self, action_kernel=None):
+    def _wire_agent_tool_runtime(self, action_kernel=None, *, _browser_fixture_origin=None):
         """Build the shared, default-off governed tool loop for loaded agents."""
         # Keep imports local: AgentToolRuntime imports ToolRPCServer, while the
         # orchestrator imports this coordinator during boot.
@@ -802,6 +803,31 @@ class AutonomyCoordinator:
             persisted = queue.get(task_id)
             if persisted is None:
                 return False
+            if persisted.kind == 'toolrpc.browser_run':
+                worker = getattr(self._orch, 'autonomy', None)
+                spec = server._tools.get('browser_run')
+                if (queue.mediation_mode != 'enforce' or getattr(worker, 'queue', None) is not queue
+                        or spec is None or spec.get('capability_id') != 'tool:browser_run'
+                        or persisted.status != 'running' or persisted.autonomy_level != 'ask'
+                        or persisted.decision != 'accept'
+                        or not persisted.decided_by
+                        or str(persisted.decided_by).lower() in {'policy', 'smart_approval'}
+                        or persisted.kind != getattr(task, 'kind', None)
+                        or persisted.payload != getattr(task, 'payload', None)
+                        or persisted.payload.get('tool') != 'browser_run'):
+                    return False
+                try:
+                    from .autonomy.consent_registration import trusted_registration_key
+                    permit = worker._execution_context.get()
+                    fingerprint = queue.execution_fingerprint(task)
+                    return bool(
+                        permit is not None and permit.consumed and fingerprint
+                        and getattr(permit, '_fingerprint', None) == fingerprint
+                        and trusted_registration_key('browser_run', spec)
+                            == spec.get('_consent_registration_key')
+                        and queue.validate_mediated_execution(task, fingerprint))
+                except Exception:
+                    return False
             if persisted.kind in {'toolrpc.file_write', 'toolrpc.file_delete'} and queue.mediation_mode != 'off':
                 worker = getattr(self._orch, 'autonomy', None)
                 if queue.mediation_mode != 'enforce' or getattr(worker, 'queue', None) is not queue:
@@ -890,6 +916,45 @@ class AutonomyCoordinator:
             preflight=image_dispatcher.preflight, trusted_execution=True,
             gated_intake=image_dispatcher.intake,
         )
+        from .browser_runtime import (
+            BrowserRuntime, INPUT_SCHEMA as BROWSER_RUN_SCHEMA, local_browser_ready,
+        )
+
+        def _browser_control_current(task):
+            from .kernel import kernel_enabled
+
+            try:
+                worker = getattr(self._orch, 'autonomy', None)
+                policy = getattr(worker, 'policy', None)
+                kill = getattr(self._orch, 'kill_switch', None)
+                return (kernel_enabled() and policy is not None
+                        and policy.effective_mode(task.agent) == 'auto'
+                        and (kill is None or not kill.is_halted('global')))
+            except Exception:
+                return False
+
+        browser_tool = BrowserRuntime(
+            queue=getattr(self._orch, 'autonomy_queue', None),
+            approved_task=_APPROVED_TASK.get,
+            authorizer=action_kernel,
+            enqueue=self._governed_enqueue,
+            execution_check=lambda task: _approved_execution_context(execution_token, task),
+            registration=lambda: server._tools.get('browser_run'),
+            fixture_origin=_browser_fixture_origin,
+            control_current=_browser_control_current,
+            revalidator=getattr(getattr(self._orch, 'autonomy', None),
+                                'kernel_dispatch_current', None),
+        )
+        if local_browser_ready(kernel=action_kernel, queue=browser_tool.queue,
+                               fixture_origin=_browser_fixture_origin):
+            server.register_tool(
+                'browser_run', browser_tool.execute, gated=True,
+                description='Propose one bounded browser plan on server-allowed public domains; owner approval required.',
+                input_schema=BROWSER_RUN_SCHEMA, capability_id="tool:browser_run",
+                preflight=browser_tool.preflight, trusted_execution=True,
+                gated_intake=browser_tool.intake, parallel_safe=False,
+                untrusted_output=True, max_result_bytes=20_000,
+            )
         from .env_config import env_flag
         if env_flag("JARVIS_VIDEO_ANALYSIS"):
             from .video_analysis import INPUT_SCHEMA as VIDEO_INPUT_SCHEMA, VideoAnalysisTool
@@ -2262,6 +2327,7 @@ class AutonomyCoordinator:
             "toolrpc.speak",
             self._approved_desktop_tool_rpc_execute,
         )
+        executor.register('toolrpc.browser_run', self._approved_desktop_tool_rpc_execute)
         executor.register(
             "tool.rpc",
             self._approved_image_tool_rpc_execute,
