@@ -386,6 +386,42 @@ async def test_registered_handler_result_status_is_counted_at_physical_execution
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(('structured', 'failures', 'basis'), [
+    ({'ok': True, 'image': True}, 0, 'observed'),
+    ({'ok': False, 'reason': 'image_unreadable'}, 1, 'observed'),
+    ({'status': 'blocked', 'reason': 'policy_denied'}, 1, 'observed'),
+    ({'status': 'unclassified'}, None, 'unknown'),
+    ('opaque', None, 'unknown'),
+    (None, None, 'unknown'),
+])
+async def test_registered_native_content_structured_disposition_counts_without_image_inspection(
+        structured, failures, basis):
+    from agents.core.tool_rpc import ToolContent, ToolRPCServer
+
+    server = ToolRPCServer()
+    image = b'\x89PNG\r\n\x1a\n' + b'\x00' * 24
+
+    async def native(_args):
+        return ToolContent([ToolContent.image(image, 'image/png')], structured=structured)
+
+    server.register_tool('native', native)
+    sink, token = turn_outcome.open_turn_outcome()
+    try:
+        turn_outcome.record_tool_proposed()
+        response = await server.handle({'tool': 'native', 'args': {}})
+        assert response['ok'] is True
+        assert response['result'] == structured
+        assert response['content'][0]['bytes'] == len(image)
+        turn_outcome.record_turn_completion('answered')
+        turn_outcome.record_turn_latency(1)
+        assert sink.close()['tools'] == {
+            'proposed': 1, 'queued': 0, 'executed': 1,
+            'failures': failures, 'basis': basis}
+    finally:
+        turn_outcome.reset_turn_outcome(token)
+
+
+@pytest.mark.asyncio
 async def test_toolrpc_prehandler_refusal_is_failure_but_not_physical_execution():
     from agents.core.tool_rpc import ToolRPCServer
 

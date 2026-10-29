@@ -24,7 +24,7 @@ import httpx
 import pytest
 from PIL import Image
 
-from agents.core import agent_runtime
+from agents.core import agent_runtime, turn_outcome
 from agents.core.agent import Agent
 from agents.core.agent_runtime import AgentToolRuntime
 from agents.core.file_tools import (
@@ -64,6 +64,26 @@ def _file_server(tmp_path, name: str, data: bytes):
     tools = FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"))
     assert "file_read" in register_file_tools(server, tools, enabled=True)
     return server, root / name
+
+
+@pytest.mark.asyncio
+async def test_registered_image_file_read_records_known_tool_success(tmp_path):
+    server, path = _file_server(tmp_path, 'image.png', _png(2, 2))
+    sink, token = turn_outcome.open_turn_outcome()
+    try:
+        turn_outcome.record_tool_proposed()
+        result = await server.handle({'tool': 'file_read', 'args': {'path': str(path)}})
+        assert result['ok'] is True
+        assert result['result']['ok'] is True
+        assert result['result']['image'] is True
+        assert any(part['type'] == 'image' for part in result['content'])
+        turn_outcome.record_turn_completion('answered')
+        turn_outcome.record_turn_latency(1)
+        assert sink.close()['tools'] == {
+            'proposed': 1, 'queued': 0, 'executed': 1,
+            'failures': 0, 'basis': 'observed'}
+    finally:
+        turn_outcome.reset_turn_outcome(token)
 
 
 def _claude(monkeypatch, replies: list) -> tuple[ClaudeBackend, list[dict]]:

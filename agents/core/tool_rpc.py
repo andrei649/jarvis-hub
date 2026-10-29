@@ -1093,14 +1093,15 @@ class ToolRPCServer:
             # may still refuse the effect. Unknown status is not proof of a
             # successful execution or an attributable failure.
             success: bool | None = None
-            if isinstance(result, Mapping):
-                status = result.get('status')
-                if result.get('ok') is False or status in {
+            disposition = result.structured if isinstance(result, ToolContent) else result
+            if isinstance(disposition, Mapping):
+                status = disposition.get('status')
+                if disposition.get('ok') is False or status in {
                         'failed', 'refused', 'error', 'blocked', 'denied',
                         'rejected', 'cancelled', 'canceled'}:
                     success = False
                 elif (status in {'ok', 'completed', 'success', 'succeeded', 'done'}
-                      or (status is None and result.get('ok') is True)):
+                      or (status is None and disposition.get('ok') is True)):
                     success = True
             record_tool_executed(success=success)
             return result
