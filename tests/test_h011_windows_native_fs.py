@@ -155,6 +155,83 @@ def test_fake_drive_remap_high_id_collision_read_change_and_acl_refuse():
                 fs.verify_private_acl(note)
 
 
+def test_fake_mount_remap_during_rewalk_refuses_at_final_fence():
+    api = FakeApi()
+    fs = WindowsHistoryFs(api)
+    with fs.open_root(r"C:\project") as root:
+        original_open_child = api.open_child
+
+        def remap_during_walk(parent, name, directory):
+            child = original_open_child(parent, name, directory)
+            api.guid = "\\\\?\\Volume{22222222-2222-2222-2222-222222222222}\\"
+            return child
+
+        api.open_child = remap_during_walk
+        with pytest.raises(WindowsFsRefusal, match="mount_changed"):
+            fs.verify_mount(root)
+
+
+def test_fake_parent_close_failure_also_closes_new_child():
+    api = FakeApi()
+    original_close = api.close
+    failures = 0
+
+    def fail_parent_once(handle):
+        nonlocal failures
+        if handle == 1 and failures == 0:
+            failures += 1
+            raise WindowsFsRefusal("close_failed:synthetic")
+        original_close(handle)
+
+    api.close = fail_parent_once
+    with pytest.raises(WindowsFsRefusal, match="close_failed:synthetic"):
+        WindowsHistoryFs(api).open_root(r"C:\project")
+    assert failures == 1
+    assert api.closed.count(1) == 1
+    assert api.closed.count(2) == 1
+
+
+def test_fake_stamp_failure_and_child_close_failure_exposes_unverified_owner():
+    api = FakeApi()
+
+    def fail_child_stamp(handle):
+        if handle == 2:
+            raise WindowsFsRefusal("stamp_failed:synthetic")
+        return api.stamps[handle]
+
+    def fail_child_close(handle):
+        if handle == 2:
+            raise WindowsFsRefusal("close_failed:synthetic")
+        api.closed.append(handle)
+
+    api.stamp = fail_child_stamp
+    api.close = fail_child_close
+    with pytest.raises(WindowsFsRefusal, match="handle_close_uncertain") as caught:
+        WindowsHistoryFs(api).open_root(r"C:\project")
+    assert api.closed.count(1) == 1
+    assert len(caught.value.unverified_handles) == 1
+    assert caught.value.unverified_handles[0].raw == 2
+    api.close = FakeApi.close.__get__(api)
+    caught.value.unverified_handles[0].close()
+    assert api.closed.count(2) == 1
+
+
+def test_fake_parent_and_child_close_failures_keep_both_unverified():
+    api = FakeApi()
+
+    def fail_both_closes(handle):
+        raise WindowsFsRefusal(f"close_failed:{handle}")
+
+    api.close = fail_both_closes
+    with pytest.raises(WindowsFsRefusal, match="handle_close_uncertain") as caught:
+        WindowsHistoryFs(api).open_root(r"C:\project")
+    assert {handle.raw for handle in caught.value.unverified_handles} == {1, 2}
+    api.close = FakeApi.close.__get__(api)
+    for handle in caught.value.unverified_handles:
+        handle.close()
+    assert sorted(api.closed) == [1, 2]
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="native Windows only")
 def test_native_local_ntfs_root_and_child_exact_read(tmp_path):
     note = tmp_path / "note.txt"

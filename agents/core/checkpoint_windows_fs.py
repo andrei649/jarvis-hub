@@ -22,8 +22,9 @@ _FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
 
 class WindowsFsRefusal(OSError):
-    def __init__(self, reason: str):
+    def __init__(self, reason: str, *, unverified_handles: tuple[_RawOwner, ...] = ()):
         self.reason = reason
+        self.unverified_handles = unverified_handles
         super().__init__(reason)
 
 
@@ -62,8 +63,8 @@ class HeldHandle:
 
     def close(self) -> None:
         if self.raw is not None:
-            raw, self.raw = self.raw, None
-            self._api.close(raw)
+            self._api.close(self.raw)
+            self.raw = None
 
     def __enter__(self):
         if self.raw is None:
@@ -72,6 +73,19 @@ class HeldHandle:
 
     def __exit__(self, *_exc):
         self.close()
+
+
+class _RawOwner:
+    """Own an acquired handle until close succeeds or ownership is transferred."""
+
+    def __init__(self, api, raw: int):
+        self._api = api
+        self.raw = raw
+
+    def close(self) -> None:
+        if self.raw is not None:
+            self._api.close(self.raw)
+            self.raw = None
 
 
 def _component(name: str) -> str:
@@ -112,28 +126,39 @@ class WindowsHistoryFs:
         return stamp
 
     def _walk(self, drive: str, guid: str, parts: tuple[str, ...]) -> HeldHandle:
-        raw = self.api.open_volume_root(guid)
+        current = _RawOwner(self.api, self.api.open_volume_root(guid))
+        owned = [current]
         try:
-            fs_name, flags = self.api.volume_info(raw)
+            fs_name, flags = self.api.volume_info(current.raw)
             if fs_name != "NTFS" or flags & 0x8 == 0:
                 raise WindowsFsRefusal("unsupported_volume")
-            root = self._check(raw, directory=True)
+            root = self._check(current.raw, directory=True)
             volume = root.identity.volume_serial
             for part in parts:
-                child = self.api.open_child(raw, part, True)
-                if child is None:
+                raw_child = self.api.open_child(current.raw, part, True)
+                if raw_child is None:
                     raise WindowsFsRefusal("root_missing")
+                child = _RawOwner(self.api, raw_child)
+                owned.append(child)
+                stamp = self._check(child.raw, directory=True, volume=volume)
+                current.close()
+                owned.remove(current)
+                current = child
+            result = HeldHandle(self.api, current.raw, stamp if parts else root,
+                                drive=drive, guid=guid, components=parts)
+            current.raw = None
+            return result
+        except BaseException as error:
+            cleanup_failed = False
+            for handle in reversed(owned):
                 try:
-                    stamp = self._check(child, directory=True, volume=volume)
+                    handle.close()
                 except BaseException:
-                    self.api.close(child)
-                    raise
-                self.api.close(raw)
-                raw = child
-            return HeldHandle(self.api, raw, stamp if parts else root,
-                              drive=drive, guid=guid, components=parts)
-        except BaseException:
-            self.api.close(raw)
+                    cleanup_failed = True
+            if cleanup_failed:
+                unverified = tuple(handle for handle in owned if handle.raw is not None)
+                raise WindowsFsRefusal("handle_close_uncertain",
+                                       unverified_handles=unverified) from error
             raise
 
     def open_root(self, path: str) -> HeldHandle:
@@ -157,6 +182,8 @@ class WindowsHistoryFs:
         with self._walk(root.drive, root.guid, root.components) as current:
             if current.stamp.identity != root.stamp.identity:
                 raise WindowsFsRefusal("mount_changed")
+        if self.api.volume_guid(root.drive) != root.guid:
+            raise WindowsFsRefusal("mount_changed")
 
     def open_child(self, parent: HeldHandle, name: str, *, directory: bool) -> HeldHandle | None:
         _component(name)
