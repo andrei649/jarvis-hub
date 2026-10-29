@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import platform
 import subprocess
@@ -9,6 +10,7 @@ import sys
 
 import pytest
 
+import agents.core.checkpoint_windows_fs as windows_fs
 from agents.core.checkpoint_windows_fs import (
     WindowsFsRefusal,
     WindowsHistoryFs,
@@ -366,6 +368,84 @@ def test_fake_verify_name_and_context_close_failures_retain_owner_and_cause():
         assert caught.value.unverified_handles == (temporary,)
         api.close = original_close
         temporary.close()
+
+
+@pytest.mark.parametrize("name,expected_bytes", [("plain", 10), ("é", 2),
+                                                   ("😀", 4), ("A😀B", 8)])
+def test_fake_counted_unicode_name_uses_full_utf16_bytes(name, expected_bytes):
+    encoded, length, maximum = windows_fs._counted_name(name)
+    assert encoded == name.encode("utf-16-le")
+    assert (length, maximum) == (expected_bytes, expected_bytes + 2)
+    if name == "A😀B":
+        assert encoded[:len(name) * 2].decode("utf-16-le") == "A😀"
+
+
+def test_fake_marshalled_unicode_structure_counts_exact_buffer_bytes():
+    class Unicode(ctypes.Structure):
+        _fields_ = [("Length", ctypes.c_ushort), ("MaximumLength", ctypes.c_ushort),
+                    ("Buffer", ctypes.c_void_p)]
+
+    name_fields = windows_fs._counted_name("A😀B")
+    encoded, length, maximum = name_fields
+    buffer = (ctypes.c_ubyte * maximum).from_buffer_copy(encoded + b"\0\0")
+    counted = windows_fs._marshal_counted_name(name_fields, buffer, Unicode,
+                                               ctypes.addressof(buffer))
+    assert (counted.Length, counted.MaximumLength) == (8, 10)
+    assert ctypes.string_at(counted.Buffer, counted.Length) == encoded
+    assert counted.Length > len("A😀B") * 2
+    wrong = (ctypes.c_ubyte * maximum).from_buffer_copy(b"x" * maximum)
+    with pytest.raises(WindowsFsRefusal, match="name_encoding_unavailable"):
+        windows_fs._marshal_counted_name(name_fields, wrong, Unicode,
+                                         ctypes.addressof(wrong))
+
+
+def test_fake_component_and_path_limits_use_utf16_units_and_refuse_surrogates():
+    assert windows_fs._component("a" * 253 + "😀") == "a" * 253 + "😀"
+    with pytest.raises(WindowsFsRefusal, match="invalid_name"):
+        windows_fs._component("a" * 254 + "😀")
+    with pytest.raises(WindowsFsRefusal, match="invalid_name"):
+        windows_fs._component("😀" * 128)
+    for name in ("\ud800", "\udc00", "x\ud800y"):
+        with pytest.raises(WindowsFsRefusal, match="invalid_name"):
+            windows_fs._component(name)
+    overlong = "C:\\" + "\\".join(["😀" * 100] * 164)
+    assert len(overlong) < 32760
+    assert len(overlong.encode("utf-16-le")) // 2 > 32760
+    with pytest.raises(WindowsFsRefusal, match="invalid_path"):
+        windows_fs._path(overlong)
+    with pytest.raises(WindowsFsRefusal, match="invalid_path"):
+        windows_fs._path("C:\\\ud800")
+
+
+def test_fake_invalid_unicode_refuses_before_any_native_api_call():
+    api = FakeApi()
+    fs = WindowsHistoryFs(api)
+    with pytest.raises(WindowsFsRefusal, match="invalid_path"):
+        fs.open_root("C:\\\ud800")
+    assert api.calls == []
+    with fs.open_root(r"C:\project") as root:
+        before = len(api.calls)
+        with pytest.raises(WindowsFsRefusal, match="invalid_name"):
+            fs.open_child(root, "\ud800", directory=False)
+        assert len(api.calls) == before
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows only")
+def test_native_non_bmp_parent_and_distinct_prefix_siblings(tmp_path):
+    parent = tmp_path / "P😀"
+    parent.mkdir()
+    (parent / "A😀").write_bytes(b"prefix")
+    (parent / "A😀B").write_bytes(b"full")
+    fs = WindowsHistoryFs()
+    with fs.open_root(str(parent)) as root:
+        with fs.open_child(root, "A😀", directory=False) as prefix:
+            prefix_id = prefix.stamp.identity
+            assert fs.read_exact_bounded(prefix, 6) == b"prefix"
+        with fs.open_child(root, "A😀B", directory=False) as full:
+            assert full.stamp.identity != prefix_id
+            assert fs.read_exact_bounded(full, 4) == b"full"
+            assert fs.verify_name(root, "A😀B", full).identity == full.stamp.identity
+        fs.verify_mount(root)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="native Windows only")

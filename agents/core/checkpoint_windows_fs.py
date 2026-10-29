@@ -100,11 +100,20 @@ def _close_owned(owner: HeldHandle | _RawOwner, cause: BaseException | None = No
                                    cause if cause is not None else close_error)
 
 
+def _utf16_bytes(value: str, reason: str) -> bytes:
+    try:
+        return value.encode("utf-16-le", errors="strict")
+    except UnicodeEncodeError:
+        raise WindowsFsRefusal(reason) from None
+
+
 def _component(name: str) -> str:
     if (type(name) is not str or not name or name in {".", ".."}
             or len(name) > 255 or name.endswith((".", " ")) or _BAD_NAME.search(name)
             or "~" in name or name.split(".", 1)[0].upper().translate(
                 str.maketrans("¹²³", "123")) in _RESERVED):
+        raise WindowsFsRefusal("invalid_name")
+    if len(_utf16_bytes(name, "invalid_name")) // 2 > 255:
         raise WindowsFsRefusal("invalid_name")
     return name
 
@@ -112,10 +121,31 @@ def _component(name: str) -> str:
 def _path(path: str) -> tuple[str, tuple[str, ...]]:
     if type(path) is not str or len(path) > 32760 or len(path) < 4:
         raise WindowsFsRefusal("invalid_path")
+    if len(_utf16_bytes(path, "invalid_path")) // 2 > 32760:
+        raise WindowsFsRefusal("invalid_path")
     if not re.match(r"\A[A-Za-z]:\\", path) or "/" in path or path.endswith("\\"):
         raise WindowsFsRefusal("invalid_path")
     parts = tuple(_component(part) for part in path[3:].split("\\"))
     return path[0].upper() + ":\\", parts
+
+
+def _counted_name(name: str) -> tuple[bytes, int, int]:
+    _component(name)
+    encoded = _utf16_bytes(name, "invalid_name")
+    length = len(encoded)
+    maximum = length + 2  # Windows WCHAR NUL; UNICODE_STRING.Length excludes it.
+    if maximum > 0xFFFF:
+        raise WindowsFsRefusal("invalid_name")
+    return encoded, length, maximum
+
+
+def _marshal_counted_name(counted: tuple[bytes, int, int], buffer,
+                          unicode_type, pointer):
+    encoded, length, maximum = counted
+    if (ctypes.sizeof(buffer) != maximum
+            or ctypes.string_at(ctypes.addressof(buffer), length) != encoded):
+        raise WindowsFsRefusal("name_encoding_unavailable")
+    return unicode_type(length, maximum, pointer)
 
 
 class WindowsHistoryFs:
@@ -393,8 +423,9 @@ class _Win32Api:
         return name.value, flags.value
 
     def open_child(self, parent, name, directory):
+        counted = _counted_name(name)
         text = ctypes.create_unicode_buffer(name)
-        unicode = self.Unicode(len(name) * 2, (len(name) + 1) * 2, text)
+        unicode = _marshal_counted_name(counted, text, self.Unicode, text)
         # OBJ_DONT_REPARSE rejects any reparse during a single-component parse.
         attr = self.ObjAttr(ctypes.sizeof(self.ObjAttr), parent, ctypes.pointer(unicode),
                             0x1000 | 0x40, None, None)
