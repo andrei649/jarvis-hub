@@ -16,8 +16,13 @@ is integrated as `df291141`. Actual Windows on `1f9579aa` executed all39 tests:
 explicitly set its intended owner, and the old log lacked the observed ACL tuple.
 Reviewed fixture-only candidate `907e9263`, integrated as `3e86f179`, sets that owner
 and asserts native ABI sizes and descriptor fields; production ACL policy is
-unchanged. Native acceptance awaits its new zero-skip Windows job. Windows
-production history stays disabled while later adapter units remain open.
+unchanged. [The Windows job](https://github.com/andrei649/jarvis-hub/actions/runs/40856875302/job/123389933746)
+on `b5134e9a` passed40 cases, including all6 native cases, with zero skips/errors/
+failures in6.38 seconds. Its explicit JUnit gate passed on Windows2025Server build
+26100, Python3.12.10 x64 and NTFS. The source-bounded
+[receipt](../../hermes/evidence/windows-read-primitives-b5134e9a-2026-10-29.json)
+records the test and warning limits. Windows production history stays disabled
+while later adapter units remain open.
 
 ## Global constraints
 
@@ -45,9 +50,9 @@ production history stays disabled while later adapter units remain open.
 
 **Interfaces:** `WindowsHistoryFs(api=None)`, `open_root(path: str) -> HeldHandle`, `verify_mount(root: HeldHandle) -> None`, `open_child(parent: HeldHandle, name: str, *, directory: bool) -> HeldHandle | None`, `verify_name(parent, name, held) -> WinStamp`, `read_exact_bounded(file, cap) -> bytes`, `verify_private_acl(handle) -> None`; `WinFileId`, `WinStamp`, `WindowsFsRefusal(reason)`.
 
-- [ ] Write a fake API test for canonical drive-absolute path, GUID root acquisition, one-component calls, drive remap, invalid names and missing versus denied.
-- [ ] Run `pytest tests/test_h011_windows_native_fs.py -k fake -q` and observe RED from the missing module/behavior.
-- [ ] Implement only facade validation and RAII handle ownership; run the same test GREEN.
+- [x] Write a fake API test for canonical drive-absolute path, GUID root acquisition, one-component calls, drive remap, invalid names and missing versus denied.
+- [x] Run `pytest tests/test_h011_windows_native_fs.py -k fake -q` and observe RED from the missing module/behavior.
+- [x] Implement only facade validation and RAII handle ownership; run the same test GREEN.
 
 ### Task 2: Native read adapter and private descriptor verification
 
@@ -55,18 +60,18 @@ production history stays disabled while later adapter units remain open.
 
 **Interfaces:** `_Win32Api` is instantiated only on Windows and implements `volume_guid`, `open_volume_root`, `volume_info`, `open_child`, `stamp`, `read`, `acl_info`, `current_user_sid`, `close` for the facade.
 
-- [ ] Write Windows-only synthetic tests for a positive NTFS root/child read, reparse/junction rejection, full ID/name swap, bounds, private and inherited ACLs, unsupported volume, and handle cleanup. Tests must skip on Mac and be enforced as zero skips in Windows CI.
-- [ ] Run the file on Mac and observe fake-test RED; native tests remain unproved until Windows runner.
-- [ ] Implement explicit ctypes structures, prototypes and NTSTATUS/Win32 error translation. `NtCreateFile` opens one component beneath a held parent; `GetFileInformationByHandleEx` provides FileIdInfo, BasicInfo, StandardInfo and AttributeTagInfo. ACL information is handle-based. Fail closed on any unknown flag/API result.
-- [ ] Run fake tests GREEN and keep native assertions for the Windows runner.
+- [x] Write Windows-only synthetic tests for a positive NTFS root/child read, reparse/junction rejection, full ID/name swap, bounds, private and inherited ACLs, unsupported volume, and handle cleanup. Tests must skip on Mac and be enforced as zero skips in Windows CI.
+- [x] Run the file on Mac and observe fake-test RED; native tests remain unproved until Windows runner.
+- [x] Implement explicit ctypes structures, prototypes and NTSTATUS/Win32 error translation. `NtCreateFile` opens one component beneath a held parent; `GetFileInformationByHandleEx` provides FileIdInfo, BasicInfo, StandardInfo and AttributeTagInfo. ACL information is handle-based. Fail closed on any unknown flag/API result.
+- [x] Run fake tests GREEN and keep native assertions for the Windows runner.
 
 ### Task 3: Focused premerge native probe
 
 **Files:** Create `.github/workflows/h011-windows-native.yml`.
 
-- [ ] Add a pull-request and manual-dispatch Windows job with `contents: read`, pinned checkout/setup-python actions, Python 3.12, hash-pinned requirements, Ruff on the new module/tests, and the new test file with JUnit XML.
-- [ ] The job asserts the JUnit suite has zero skips/errors/failures and prints OS build, filesystem/volume flags and Python version from the native test. Give the job a bounded timeout and preserve the existing `ci.yml` policy unchanged.
-- [ ] Run local YAML parse, Ruff, fake tests, adjacent H011 smoke, `git diff --check`; commit source/tests/workflow/plan. Report exact local evidence and that native acceptance awaits root publication and the Windows runner.
+- [x] Add a pull-request and manual-dispatch Windows job with `contents: read`, pinned checkout/setup-python actions, Python 3.12, hash-pinned requirements, Ruff on the new module/tests, and the new test file with JUnit XML.
+- [x] The job asserts the JUnit suite has zero skips/errors/failures and prints OS build, filesystem/volume flags and Python version from the native test. Give the job a bounded timeout and preserve the existing `ci.yml` policy unchanged.
+- [x] Run local YAML parse, Ruff, fake tests, adjacent H011 smoke, `git diff --check`; commit source/tests/workflow/plan. Report exact local evidence and that native acceptance awaits root publication and the Windows runner.
 
 ## Self-review
 

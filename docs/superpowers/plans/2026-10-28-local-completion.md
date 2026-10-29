@@ -397,3 +397,12 @@ a hypothesis until the next Windows job. Production ACL code is unchanged. Canon
 coverage passes162 with6 native skips; fresh backend collection30544. The Windows
 Unit2 plan now matches accepted POSIX SQLite/locking behavior; custom connection-ID
 hooks/VFS and destination-leaf-ID CAS are optional strengthening, not invented gates.
+
+Unit1 actual native acceptance is now established for its isolated read-only scope:
+Windows job123389933746 onb5134e9a passed40 cases (6 native), zero failures/errors/
+skips in6.38 seconds, and passed the explicit JUnit gate. Environment: Windows2025
+Server build26100, Python3.12.10 x64, NTFS flags65482495. The committed source-bounded
+Windows receipt records a blocked outbound pytest-socket warning and does not claim
+zero attempted egress. No production history caller or Windows support gate changed.
+Unit2's private-store/locking/ordinary-SQLite plan is awaiting independent fidelity
+review before source implementation. Task37's three P1 repairs remain isolated.
