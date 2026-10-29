@@ -816,8 +816,7 @@ class AgentToolRuntime:
         # shared between concurrent runs and the model is known only here.
         from .llm.job_selection import selected_window
         known_window = effective_window.tokens if effective_window is not None else selected_window(model)
-        from .llm.effective_window import authoritative_context_window
-        status_window = authoritative_context_window(backend, model, resolved=known_window)
+        status_window = effective_window.authoritative_tokens() if effective_window is not None else None
         # H297: "attachments" holds each call's image parts (by call id) between the
         # call and its tool message.
         spent: dict[str, Any] = {"bytes": 0, "window": known_window or max(0, int(window_for(model) or 0)),

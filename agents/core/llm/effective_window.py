@@ -7,6 +7,17 @@ from dataclasses import dataclass
 class EffectiveWindow:
     tokens: int | None = None
     valid: bool = True
+    # Set only by the raw backend metadata read. Job/configured ceilings and
+    # estimated family budgets may govern dispatch but are not H686 evidence.
+    backend_tokens: int | None = None
+
+    def authoritative_tokens(self) -> int | None:
+        """One immutable, actual backend window suitable for status projection."""
+        value = self.backend_tokens
+        if (self.valid and type(value) is int and 0 < value <= 1_000_000_000_000
+                and type(self.tokens) is int and self.tokens == value):
+            return value
+        return None
 
 
 def resolve_effective_window(backend, model: str) -> EffectiveWindow:
@@ -29,7 +40,7 @@ def resolve_effective_window(backend, model: str) -> EffectiveWindow:
             return EffectiveWindow()
         if type(value) is not int or value <= 0:
             return EffectiveWindow(valid=False)
-        return EffectiveWindow(value)
+        return EffectiveWindow(value, backend_tokens=value)
     except Exception:
         return EffectiveWindow(valid=False)
 

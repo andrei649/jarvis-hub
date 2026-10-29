@@ -1225,10 +1225,9 @@ class Agent:
                 model = routed_model
         else:
             backend, _ = res
-        from .llm.effective_window import authoritative_context_window, resolve_effective_window
+        from .llm.effective_window import resolve_effective_window
         effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
-        status_window = authoritative_context_window(
-            backend, model, resolved=effective_window.tokens if effective_window is not None else None)
+        status_window = effective_window.authoritative_tokens() if effective_window is not None else None
         backend = bind_guardrails(self.guardrails, backend)
 
         clock_snapshot = context.get("_clock_snapshot", CLOCK_UNSET)

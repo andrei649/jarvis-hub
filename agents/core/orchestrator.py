@@ -5282,7 +5282,10 @@ class Orchestrator:
                 if committed is None:
                     raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
                 prompt_clock.set(committed)
-                record_accepted_compression(committed.session_id, committed.instance_id)
+                # Count the accepted publication even when a synthetic clock lacks
+                # durable identity; only attributable IDs invalidate other viewers.
+                record_accepted_compression(getattr(committed, "session_id", None),
+                                            getattr(committed, "instance_id", None))
             if result.get("summary_deferred"):
                 # H674 — the turn went on without its summary: say so, and leave the
                 # merge prior to the summary still being written (a digest here would

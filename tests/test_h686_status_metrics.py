@@ -479,6 +479,29 @@ def test_authoritative_request_window_refuses_guess_and_mismatch():
     assert authoritative_context_window(huge, "actual") is None
 
 
+def test_effective_window_snapshot_preserves_only_raw_backend_status_provenance(monkeypatch):
+    from types import SimpleNamespace
+
+    from agents.core.llm.effective_window import EffectiveWindow, resolve_effective_window
+
+    reads = []
+    backend = SimpleNamespace(context_window=lambda model: reads.append(model) or 4096)
+    snapshot = resolve_effective_window(backend, "actual")
+    assert snapshot.tokens == 4096
+    assert snapshot.authoritative_tokens() == 4096
+    assert reads == ["actual"]  # H686 status never asks mutable metadata again.
+    assert EffectiveWindow(tokens=4096).authoritative_tokens() is None
+    assert EffectiveWindow(tokens=4096, backend_tokens=8192).authoritative_tokens() is None
+    assert EffectiveWindow(tokens=1_000_000_000_001,
+                           backend_tokens=1_000_000_000_001).authoritative_tokens() is None
+    from agents.core.llm import job_selection
+
+    monkeypatch.setattr(job_selection, "selected_window", lambda _model: 4096)
+    pinned = resolve_effective_window(backend, "actual")
+    assert pinned.tokens == 4096 and pinned.authoritative_tokens() is None
+    assert reads == ["actual"]  # A job ceiling is not a raw backend observation.
+
+
 def test_nonfinite_request_rate_hides_tps(monkeypatch):
     from agents.core import turn_usage
 
