@@ -1,74 +1,94 @@
 # Playwright Operator (H28.1)
 
-The browser host stays off by default. The current owner Operator panel can submit
-one governed `browser_run` plan through authenticated `/api/toolrpc/call`, then
-show its durable task id and Decision Inbox link. Execution requires the owner's
-accepted task, current mediation/registration/worker evidence and exact per-step
-Kernel authority. Calling the driver directly is not an execution permission.
+The browser host stays off by default. Operator submits an exact `browser_run`
+proposal through authenticated ToolRPC and shows its durable task and Decision
+Inbox link. Execution requires owner acceptance, current mediation/registration/
+worker evidence and exact per-step Kernel authority. A session ID is only a lookup
+key; neither it nor page text grants permission.
 
 ## Local runtime prerequisites
 
-Install `requirements-browser.txt` into the isolated Python environment used by the
-hub. It pins Playwright and psutil; an already installed Google Chrome supplies the
-engine, so this path does not require a Playwright browser download. The current
-Mac path is `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`; Linux
-also checks the usual Chrome/Chromium executable names on PATH. Native Windows
-browser acceptance remains unverified; the separate desktop seam below is unchanged.
+Use `requirements-browser.txt` in an isolated hub Python environment. It pins
+Playwright and psutil and uses an already installed Chrome/Chromium, without a
+Playwright engine download. On this Mac the installed Chrome is under
+`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`; Linux checks the
+normal Chrome/Chromium executable names. Native Windows browser acceptance remains
+separate from this Mac fixture and the desktop adapter below.
 
-The server needs all of the following before readiness can become true:
+Readiness requires `JARVIS_PLAYWRIGHT_HOST=1`, `JARVIS_UNIFIED_ACTION_API=1`, the
+enabled Action Kernel, mediation in `enforce`, a current governed worker and trusted
+browser registration, `JARVIS_PLAYWRIGHT_BROWSER=chromium`, optional libraries and
+an installed engine. The server-owned `JARVIS_BROWSER_ALLOWED_DOMAINS` must contain
+1–64 declared public domains. Unresolved native or journal cleanup blocks readiness.
+These prerequisites are not activated by source installation.
 
-- `JARVIS_PLAYWRIGHT_HOST=1` and `JARVIS_UNIFIED_ACTION_API=1`.
-- The Action Kernel enabled and task mediation in `enforce` mode
-  (`JARVIS_TASK_MEDIATION=enforce`), with the current governed worker registered.
-- `JARVIS_PLAYWRIGHT_BROWSER=chromium` (the default).
-- A nonempty server-owned `JARVIS_BROWSER_ALLOWED_DOMAINS` list, at most64 entries.
-- The optional Python libraries, installed engine and no unresolved browser cleanup.
+`GET /api/browser/status` is a user-guarded read-only availability check. It does
+not launch Chrome or resolve a site. Session/ref listing, task results and owner
+close are admin-only: `GET /api/browser/sessions`, `GET /api/browser/tasks/{task_id}`
+and `POST /api/browser/sessions/{session_id}/close`. A user-only token cannot read
+those projections or stop a session. The owner projection contains bounded
+origin/ref/status fields, not profile paths, raw task payloads or page dumps.
 
-These are prerequisites for a later owner-controlled activation, not settings this
-implementation enables automatically. `GET /api/browser/status` is a user-guarded,
-read-only availability check; it neither launches Chrome nor resolves a site. A
-missing prerequisite or uncertain cleanup returns `available:false`.
+## One-shot and session use
 
-## Governed use
+The existing one-shot `{steps:[...]}` form starts with navigation and accepts
+1–20 bounded `navigate`, `snapshot`, `extract`, `wait`, `click`, `type` and `submit`
+steps. Operator **Run with approval** queues it for owner acceptance. Its fresh
+temporary profile closes after the result.
 
-In Operator, create a plan starting with navigation and choose **Run with approval**.
-The HUD rechecks server readiness, submits only the steps, and displays the task id
-and Decision Inbox link. Approve that exact task as the owner. The server rechecks
-its durable plan, configuration, registration and worker identity before execution.
-The editable allowlist used by **Check** and **Preview** is not execution authority;
-the server's domain list and pinned resolver govern real requests.
+Session requests use strict `mode` values:
 
-The registered schema accepts1–20 steps: `navigate`, `snapshot`, `extract`, `wait`,
-`click`, `type` and `submit`. It caps the plan and its strings and rejects extra
-fields. Click/type/submit use exact task-bound `browser.step` receipts; reads and
-navigation recheck live Kernel policy after awaits. The runtime owns one fresh
-temporary profile, without the owner's saved cookies or logins.
+- `start` supplies a bounded navigation-first `steps` plan and creates one fresh
+  session after the exact task is approved.
+- `act` supplies its `session_id` and a new separately approved `steps` plan.
+  Snapshot returns grounded `@eN` handles. Session click/type/submit/scroll/press
+  use those handles, never a selector fallback; navigation, extract, snapshot,
+  wait and back use their declared bounded fields.
+- `close` supplies only the session ID through the same approved task protocol.
+  The authenticated owner close control may also stop its owned fresh session.
 
-All DNS answers must pass the public policy. The same allowlist and IP pins apply
-to navigation, redirects and subresources; unpinned destinations and WebSockets are
-blocked. The governed path does not enable LAN browsing through the library's
-private-URL flag. It blocks service workers and WebRTC and verifies actual owned
-Chrome process exit before deleting its profile. Interrupted or uncertain cleanup
-retains its owner and blocks new execution until resolved.
+Each call rechecks owner, agent, task fingerprint, registration key/UUID epoch,
+source/configuration, worker and current Kernel. Mutations, including scroll,
+press and back, require exact task-bound step receipts. The preview/check
+allowlist does not replace the server policy. Ref use rechecks the exact live
+node, visible frame/document/origin, role/name/effective native form target and
+focus for keys; stale targets return `stale_browser_ref` before dispatch.
+Navigation/back/frame replacement invalidate old references.
 
-Stable element references, scroll/back/press, image/vision/console/dialog tools,
-CDP/browser_exec, other engines, real profiles, recording and durable sessions remain
-accepted follow-ups. Low-level driver methods do not make those tools available.
+Sessions allow one operation at a time, one per owner/agent and four globally,
+with 60-second idle and ten-minute absolute limits. Registration/configuration/
+control changes, cancellation and expiry begin bounded native close. An unchanged
+real registration survives reaper ticks and remains usable by a later approved call.
 
-## Local synthetic acceptance
+## Network and cleanup
 
-`tests/test_browser_chromium_runtime.py` exercises the authenticated owner ToolRPC
-proposal and approval path against a private ephemeral loopback fixture. Its9 cases
-include four test functions with five actual installed-Chrome launches and five
-prelaunch/status checks. They verify pins, one mutation, denial, timeout/cancellation,
-readiness and native-process/profile cleanup. The test-only loopback policy cannot
-be supplied in a production request.
+All DNS answers must pass public policy. The same declared authority pins and
+logical Host apply to navigation, frames, redirects and subresources; off-list,
+private, unpinned and WebSocket destinations are blocked. Service workers and
+WebRTC are disabled. LAN routing, owner cookies/logins and saved profiles are not
+provided by the private-URL library flag.
 
-The recorded local run used an isolated `.venv-browser` Playwright installation
-with canonical test dependencies. Running the canonical environment without the
-optional package may skip those cases; a skip is not native acceptance. This Mac
-fixture is separate from the owner-host external-site/headed proof in the manual,
-other platforms, saved-profile consent and advanced browser acceptance.
+A private ownership journal records the fresh profile/controller before launch,
+then exact native PID and creation time. Verified close requires native process
+exit, profile removal and settled journal/close ownership. Ambiguous restart
+records remain quarantined; the server does not adopt an old profile or kill an
+unverified process. Retained uncertainty blocks new execution until resolved.
+
+## Local synthetic acceptance and remaining work
+
+The current `tests/test_browser_chromium_runtime.py` module has 30 cases, run with
+isolated optional dependencies and installed local Chrome. It covers actual owner
+ToolRPC/approval/worker/Kernel calls, cross-call refs, OOPIF/frame/focus/form semantics,
+unchanged and changed registration, public pin/idle/redirect/WebSocket guards,
+owner HTTP tiers, cancellation/native cleanup and exact journaled orphan reaping.
+Fixtures use generated loopback pages and fresh profiles; their private test seam
+cannot be supplied in a production request. Optional dependency skips establish
+no native acceptance. These 30 cases are not a claim of 30 distinct launches.
+
+Console/image/vision/dialog tools, CDP/browser_exec, other engines, LAN sidecar,
+owner-profile consent, recording and snapshot spill remain accepted follow-ups.
+The owner-host external-site/headed journey and other platforms retain separate
+acceptance. Low-level driver methods do not make those tools callable.
 
 ## Windows desktop host (H28.4)
 

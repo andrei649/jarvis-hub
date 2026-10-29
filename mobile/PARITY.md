@@ -545,3 +545,7 @@ Browser accessibility readiness (2026-10-09): the HUD Admin EstopCard exposes it
 ## Named compatible endpoints (H367, 2026-10-29)
 
 The owner desktop HUD has Console → Admin → Custom Endpoints and the CLI has `nerva provider custom`. Ten admin-only routes under `/api/admin/llm/custom-endpoints` manage named entries, activation/clear, validation and endpoint credentials. Native mobile has no corresponding configuration or secret-entry surface; this remains owner desktop administration. The generated desktop route manifest includes the new panel, with floating chat routes unchanged. Local source/frontend tests do not establish a native GUI, physical-device or live endpoint result.
+
+## Governed fresh-profile browser sessions (2026-10-29)
+
+The desktop Operator exposes owner-approved start/act/close and grounded refs with bounded admin-only session/task projections. Native mobile has no equivalent browser session controls and no owner-profile access. The local Mac Chrome fixture verifies source behavior, not physical-device/live-Hub acceptance. Advanced browser/profile/engine requirements remain separate.

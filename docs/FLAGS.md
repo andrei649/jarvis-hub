@@ -289,15 +289,18 @@ Firefox/WebKit pinned transports are not supported by this path.
 durable `browser_run` task through authenticated ToolRPC. The owner must accept it;
 each mutating step then needs its exact Kernel receipt. The server domain list,
 public DNS/IP pins and current task/worker/configuration remain authoritative.
-Check/Preview's editable allowlist cannot widen execution. Each run uses a fresh
-temporary profile and verifies native Chrome exit before releasing it. Uncertain
-cleanup retains its owner and makes readiness false.
+Check/Preview's editable allowlist cannot widen execution. One-shot plans use a fresh temporary profile; separately approved session calls
+may retain one fresh profile within one-owner/agent, four-global, 60-second idle
+and ten-minute absolute bounds. Native process/profile/journal cleanup is verified;
+uncertainty retains its owner and makes readiness false.
 
 **Status:** user-guarded `GET /api/browser/status` returns read-only availability,
 without browser launch or DNS lookup. Missing prerequisites or pending cleanup
-return `available:false`. The strict plan supports navigate/snapshot/extract/wait
-and click/type/submit; advanced tools, other engines, owner profiles and LAN routing
-remain open. Local Mac synthetic Chrome proof is separate from owner-host/live-site
+return `available:false`. Admin-only session/task projections and close controls
+use `/api/browser/sessions`, `/api/browser/tasks/{task_id}` and
+`/api/browser/sessions/{session_id}/close`. Strict session actions add grounded
+refs, scroll/back/press to the existing bounded plan. Advanced observation/vision/
+dialog tools, other engines, owner profiles and LAN routing remain open. Local Mac synthetic Chrome proof is separate from owner-host/live-site
 acceptance; see `docs/PLAYWRIGHT_OPERATOR.md`.
 
 **Revert:** unset the host flag and restart through the normal owner workflow. No

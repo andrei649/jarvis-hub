@@ -134,11 +134,12 @@ Inbox. The owner accepts that exact task before execution. The check/preview rou
 remain simulations: their editable allowlist cannot widen the server's policy.
 Do not use an unbound driver script as proof of the governed execution path.
 
-Local Mac evidence is separate: `tests/test_browser_chromium_runtime.py` has9 cases,
-including four test functions with five actual Chrome launches against an ephemeral
-loopback fixture, plus five prelaunch/status checks. These pass with the optional
-runtime present. Missing dependencies yield a skip, not native acceptance. The
-owner-host external-site/headed journey below remains a separate acceptance record.
+Local Mac evidence is separate: the current Chrome module has 30 cases for real
+owner-approved calls, cross-call refs/frame/focus/form targets, unchanged/changed
+registration, owner HTTP tiers, public network guards and native/journal cleanup.
+These pass with isolated optional dependencies and fresh loopback fixtures. Missing
+dependencies yield a skip, not native acceptance. External-site/headed and other
+platform journeys remain separate owner acceptance records.
 
 #### AIO-004 — Preview cannot widen server execution policy  🖥
 
@@ -764,3 +765,15 @@ Observations only — **no code was changed**. Each is a pointer for the owner, 
 10. **File:line citations.** Every `file:line` in this section was read at commit `4ce901e`. Line
     numbers move; the symbol names, route paths, JSON keys, env vars, settings keys and label strings
     are the stable part — search for those first if a line number no longer matches.
+
+## Browser session supplement — current local source
+
+These procedures are source-backed checks, not a recorded owner-host live run.
+Use a separately authorized synthetic/local fixture and the prerequisites above.
+
+| ID | Check | Expected | Automated source coverage |
+| --- | --- | --- | --- |
+| AIO-073 | Start, snapshot, then approve a separate act call | Same fresh session survives two reaper ticks; exact grounded ref acts once; session ID alone gives no authority | tests/test_browser_chromium_runtime.py |
+| AIO-074 | Mutate an observed node/form target or transfer focus, then reuse ref | Exact stale_browser_ref before physical action; no selector/text fallback; new snapshot is required | tests/test_browser_session.py; tests/test_browser_chromium_runtime.py |
+| AIO-075 | Change trusted registration key/epoch, source/configuration or kill control | Native Chrome/profile/journal settle within bounded close; uncertain cleanup is retained and readiness false | tests/test_browser_chromium_runtime.py |
+| AIO-076 | Try session/task/close HTTP with user-only and admin credentials | User availability remains readable; owner IDs/results/close refuse user-only and accept the configured owner admin | tests/test_browser_chromium_runtime.py; frontend/src/test/operator-panel.test.tsx |

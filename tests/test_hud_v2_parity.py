@@ -427,6 +427,18 @@ def test_operator_routes_have_a_governed_build_caller():
             operator_source,
         ), f"OperatorPanel must call {route} through apiPost"
 
+    # Only the owner browser projections/stop control may request the admin
+    # credential. Preview, ordinary execution intake and desktop remain user paths.
+    owner_calls = (
+        "apiGet('/api/browser/sessions', { admin: true })",
+        "apiGet(`/api/browser/tasks/${browserRunTaskId}`, { admin: true })",
+        "apiPost(`/api/browser/sessions/${browserSessionId}/close`, {}, { admin: true })",
+    )
+    user_path_source = operator_source
+    for call in owner_calls:
+        assert user_path_source.count(call) == 1, "owner-only browser caller changed"
+        user_path_source = user_path_source.replace(call, "", 1)
+
     forbidden = {
         "direct fetch": r"\bfetch\s*\(",
         "admin option": r"\{\s*admin\s*:\s*true\s*\}",
@@ -435,7 +447,8 @@ def test_operator_routes_have_a_governed_build_caller():
         "typecheck bypass": r"@ts-nocheck",
     }
     for label, pattern in forbidden.items():
-        assert not re.search(pattern, operator_source), f"OperatorPanel contains forbidden {label}"
+        source = user_path_source if label == "admin option" else operator_source
+        assert not re.search(pattern, source), f"OperatorPanel contains forbidden {label}"
 
 
 # ── AUDIT: coverage, not classification ───────────────────────────────────────
