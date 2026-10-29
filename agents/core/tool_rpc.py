@@ -1089,16 +1089,27 @@ class ToolRPCServer:
                     result = await result
             from .turn_outcome import record_tool_executed
 
-            record_tool_executed(success=not isinstance(result, Mapping)
-                                 or (result.get('ok') is not False
-                                     and result.get('status') not in {'failed', 'refused', 'error'}))
+            # A returned handler was invoked, but its structured disposition
+            # may still refuse the effect. Unknown status is not proof of a
+            # successful execution or an attributable failure.
+            success: bool | None = None
+            if isinstance(result, Mapping):
+                status = result.get('status')
+                if result.get('ok') is False or status in {
+                        'failed', 'refused', 'error', 'blocked', 'denied',
+                        'rejected', 'cancelled', 'canceled'}:
+                    success = False
+                elif (status in {'ok', 'completed', 'success', 'succeeded', 'done'}
+                      or (status is None and result.get('ok') is True)):
+                    success = True
+            record_tool_executed(success=success)
             return result
         except SyncHandlerBusy:
             raise
         except asyncio.CancelledError:
             from .turn_outcome import record_tool_executed
 
-            record_tool_executed(success=None)
+            record_tool_executed(success=None, known_invocation=False)
             raise
         except BaseException:
             from .turn_outcome import record_tool_executed

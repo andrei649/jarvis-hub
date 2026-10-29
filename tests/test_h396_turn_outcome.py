@@ -150,6 +150,20 @@ def test_accounting_bases_and_visible_output_estimate_reconcile_with_provider_us
         turn_outcome.reset_turn_outcome(token)
 
 
+def test_cancelled_handler_before_confirmed_invocation_keeps_execution_count_unknown():
+    sink, token = turn_outcome.open_turn_outcome()
+    try:
+        turn_outcome.record_tool_proposed()
+        turn_outcome.record_tool_executed(success=None, known_invocation=False)
+        turn_outcome.record_turn_completion('partial')
+        turn_outcome.record_turn_latency(1)
+        assert sink.close()['tools'] == {
+            'proposed': 1, 'queued': 0, 'executed': None, 'failures': None,
+            'basis': 'unknown'}
+    finally:
+        turn_outcome.reset_turn_outcome(token)
+
+
 @pytest.mark.parametrize(('observations', 'synthesis', 'expected'), [
     ({'a': 'answered'}, 'none', 'answered'),
     ({'a': 'timeout'}, 'none', 'timeout'),
@@ -339,6 +353,39 @@ async def test_toolrpc_counts_physical_execution_separately_from_queued_proposal
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(('body', 'failures', 'basis'), [
+    ({'status': 'blocked', 'reason': 'policy_denied'}, 1, 'observed'),
+    ({'status': 'denied', 'reason': 'policy_denied'}, 1, 'observed'),
+    ({'status': 'completed'}, 0, 'observed'),
+    ({'status': 'unclassified'}, None, 'unknown'),
+])
+async def test_registered_handler_result_status_is_counted_at_physical_execution(
+        body, failures, basis):
+    from agents.core.tool_rpc import ToolRPCServer
+
+    server = ToolRPCServer()
+
+    async def result(_args):
+        return body
+
+    server.register_tool('synthetic', result)
+    sink, token = turn_outcome.open_turn_outcome()
+    try:
+        turn_outcome.record_tool_proposed()
+        response = await server.handle({'tool': 'synthetic', 'args': {}})
+        assert response['result'] == body
+        turn_outcome.record_turn_completion('answered')
+        turn_outcome.record_turn_latency(1)
+        tools = sink.close()['tools']
+        assert tools['proposed'] == 1 and tools['queued'] == 0
+        assert tools['basis'] == basis
+        assert tools['failures'] == failures
+        assert tools['executed'] == 1  # the handler returned even if its disposition is unknown
+    finally:
+        turn_outcome.reset_turn_outcome(token)
+
+
+@pytest.mark.asyncio
 async def test_toolrpc_prehandler_refusal_is_failure_but_not_physical_execution():
     from agents.core.tool_rpc import ToolRPCServer
 
@@ -469,6 +516,95 @@ async def test_real_parallel_agent_deadline_maps_partial_without_reply_text_heur
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('stream', [False, True])
+@pytest.mark.parametrize(('synthesis_reply', 'expected'), [
+    ('[OpenRouter error] synthetic provider outage', 'partial'),
+    ('Synthesized answer', 'answered'),
+])
+async def test_real_agent_synthesis_return_is_observed_before_whole_turn_settlement(
+        monkeypatch, synthesis_reply, expected, stream):
+    from types import SimpleNamespace
+
+    from agents.core.agent import Agent
+    from tests.test_agent_runtime_v2 import _streamed_orchestrator_for
+
+    class Backend:
+        async def generate(self, **_kwargs):
+            return synthesis_reply
+
+    async def ready(*_args, **_kwargs):
+        return None
+
+    backend = Backend()
+    jarvis = Agent('jarvis', {'name': 'Jarvis'})
+    jarvis.soul = {'content': 'synthetic policy'}
+    jarvis.guardrails = None
+    jarvis.llm_router = SimpleNamespace(select_backend=lambda *_: (backend, 'local-model', 'local'))
+    jarvis.model_system_prompt = lambda _backend, _model, system, **_kwargs: system
+    jarvis._ensure_resident = ready
+    jarvis._gen_params = lambda _route: (64, 0.2)
+    orch, _, _, _ = _streamed_orchestrator_for(jarvis, monkeypatch=monkeypatch)
+
+    async def classify(*_args):
+        return ready_intent()
+
+    orch.router.classify = classify
+
+    async def specialist(*_args, **_kwargs):
+        name = 'athena' if stream else 'stark'
+        turn_outcome.record_agent_observation(name, 'answered')
+        return {name: 'real answer'}
+
+    def ready_intent():
+        return SimpleNamespace(target_agents=['stark', 'athena'] if stream else ['stark'],
+                               is_general=False,
+                               context={'keywords_found': [], 'scores': {}, 'source': 'test'})
+
+    orch._call_agents_parallel = specialist
+    orch._detect_handoff = lambda _responses: None
+    orch._detect_skill_learning = lambda *_args: None
+    orch._chat_outcome_block = lambda: ''
+    if stream:
+        class Specialist:
+            id = 'stark'
+            name = 'Stark'
+            soul = {'content': 'synthetic specialist policy'}
+            config = {'model': 'local-model'}
+
+            def build_prompt(self, text, _context):
+                return text
+
+            async def generate_response(self, **_kwargs):
+                return 'real answer'
+
+        orch.agents['stark'] = Specialist()
+        orch.agents['athena'] = Specialist()
+
+        async def history_parts(*_args, **_kwargs):
+            return '', ()
+
+        orch._history_for_prompt_parts = history_parts
+    sink, token = turn_outcome.open_turn_outcome()
+    try:
+        if expected == 'partial':
+            turn_outcome.record_accepted_tool_result('stark')
+        if stream:
+            answer = await orch._handle_input_stream_prepared('question', session_id='s',
+                                                               on_token=lambda _text: None)
+        else:
+            answer = await orch._handle_input('question', session_id='s')
+        assert answer == synthesis_reply
+        turn_outcome.settle_agent_turn()
+        turn_outcome.record_turn_latency(1)
+        result = sink.close()
+        assert result['completion']['kind'] == expected
+        assert result['completion']['severity'] == ('warning' if expected == 'partial' else 'info')
+        assert result['completion']['unanswered_tool_results'] == (1 if expected == 'partial' else 0)
+    finally:
+        turn_outcome.reset_turn_outcome(token)
+
+
+@pytest.mark.asyncio
 async def test_nonweb_file_effect_without_authenticated_origin_reports_unknown_attribution(tmp_path):
     from agents.core.file_tools import FileScope, FileTools, SnapshotStore
 
@@ -486,6 +622,57 @@ async def test_nonweb_file_effect_without_authenticated_origin_reports_unknown_a
         assert 'file_mutations' not in outcome
     finally:
         turn_outcome.reset_turn_outcome(token)
+
+
+def test_session_archive_skips_one_malformed_or_tampered_file_event_without_losing_valid_rows(
+        tmp_path, monkeypatch):
+    import hashlib
+    import hmac
+
+    from agents.core import session_archive
+    from agents.core.approval_outcomes import (
+        bind_approval_turn,
+        close_approval_turn,
+        open_approval_turn,
+        tool_approval_scope,
+    )
+    from agents.core.autonomy.mediation import DetachedHMACSigner
+    from agents.core.autonomy.queue import TaskQueue, TaskStatus
+    from agents.core.commands import Principal
+
+    signer = DetachedHMACSigner(lambda data: hmac.new(b'synthetic-backup-key', data,
+                                                     hashlib.sha256).hexdigest())
+    queue = TaskQueue(str(tmp_path / 'tasks.db'), mediation_signer=signer).initialize()
+    owner = open_approval_turn(session_id='s', session_instance='one',
+        principal=Principal(channel='web', admin=True), session_is_live=lambda *_: True)
+    token = bind_approval_turn(owner)
+    try:
+        with tool_approval_scope('file_write'):
+            task_id = queue.enqueue('jarvis', 'toolrpc.file_write', 'synthetic file action',
+                payload={'tool': 'file_write', 'target': 'file_write', 'args': {'content': 'synthetic'}},
+                risk_tier=3, autonomy_level='ask')
+            queue.transition(task_id, TaskStatus.BLOCKED, decided_by='policy', decision='needs-approval')
+        queue.transition(task_id, TaskStatus.APPROVED, decided_by='owner', decision='accept')
+        queue.transition(task_id, TaskStatus.RUNNING)
+        task = queue.get(task_id)
+        assert queue.file_execution_origin(task) == owner.turn_id
+        for attempt in ('1' * 32, '2' * 32, '3' * 32):
+            assert queue.record_file_mutation_outcome(task, owner.turn_id, attempt,
+                'a' * 64, 'write', 'refused')
+        queue._conn.execute('UPDATE file_mutation_outcomes SET outcome=? WHERE attempt_id=?',
+                            ('x' * 20_000, '2' * 32))
+        queue._conn.execute('UPDATE file_mutation_outcomes SET signature=? WHERE attempt_id=?',
+                            ('0' * 64, '3' * 32))
+        queue._conn.commit()
+        monkeypatch.setattr(session_archive, '_files', lambda *_args: {})
+        archive = session_archive.collect('s', checkpoints=None, todos=None,
+            outcomes_queue=queue, session_instance='one')
+        assert [row['attempt_id'] for row in archive['chat_approval_outcomes']['file_mutations']] == [
+            '1' * 32]
+        assert queue._conn.execute('SELECT COUNT(*) FROM file_mutation_outcomes').fetchone()[0] == 3
+    finally:
+        close_approval_turn(owner, token)
+        queue.close()
 
 
 @pytest.mark.asyncio

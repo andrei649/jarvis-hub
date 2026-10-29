@@ -51,7 +51,8 @@ from .action_origin import (
 )
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from .turn_outcome import (measure_turn_latency, record_turn_completion,
-                           record_agent_observation, settle_agent_turn)
+                           record_agent_observation, record_synthesis_observation,
+                           settle_agent_turn)
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import (
     ADMIN,
@@ -2699,17 +2700,22 @@ class Orchestrator:
         try:
             if was_synthesized:
                 synthesized = await self._synthesize(responses, intent)
+                synthesis_ok = (isinstance(synthesized, str) and bool(synthesized.strip())
+                                and not is_backend_failure_reply(synthesized.lstrip()))
+                record_synthesis_observation(success=synthesis_ok)
+                if not synthesis_ok:
+                    record_runtime_stop("generation_failed")
             else:
                 responder_id = next(iter(responses))
                 synthesized = responses[responder_id]
         except RuntimeError:
             record_runtime_stop("generation_failed")
-            settle_agent_turn(synthesis="failed")
+            record_synthesis_observation(success=False)
             synthesized = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
             log_error(logger, E_LLM_BACKEND_MISSING, backend="synthesize")
         except Exception as e:
             record_runtime_stop("generation_failed")
-            settle_agent_turn(synthesis="failed")
+            record_synthesis_observation(success=False)
             synthesized = f"I hit an issue processing that: {e}"
             log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
@@ -3278,8 +3284,13 @@ class Orchestrator:
             responses = {agent_id: synthesized, **secondary_responses}
             try:
                 synthesized = await self._synthesize(responses, intent)
+                synthesis_ok = (isinstance(synthesized, str) and bool(synthesized.strip())
+                                and not is_backend_failure_reply(synthesized.lstrip()))
+                record_synthesis_observation(success=synthesis_ok)
+                if not synthesis_ok:
+                    record_runtime_stop("generation_failed")
             except Exception:
-                settle_agent_turn(synthesis="failed")
+                record_synthesis_observation(success=False)
                 raise
             _stream_responses = responses
             responder_id = "jarvis"

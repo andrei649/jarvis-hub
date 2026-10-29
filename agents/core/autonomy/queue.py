@@ -3012,8 +3012,17 @@ class TaskQueue:
             events = self._conn.execute(f'''SELECT f.* FROM file_mutation_outcomes f
                 JOIN chat_approval_origins o ON o.origin_id=f.origin_id
                 WHERE {clause} ORDER BY f.sequence LIMIT ?''', (*params, MAX_PER_CONSUMER)).fetchall()  # nosec B608
-            verified = [dict(row) for row in events if self._mediation_signer.verify(
-                self._file_outcome_message(row), row['signature'])]
+            verified = []
+            for row in events:
+                try:
+                    message = self._file_outcome_message(row)
+                except ValueError:
+                    # A damaged observational row must not hide the rest of a
+                    # session archive. Keep it in storage for later inspection;
+                    # only canonical, signed rows may leave in the backup.
+                    continue
+                if self._mediation_signer.verify(message, row['signature']):
+                    verified.append(dict(row))
             if verified:
                 backup['file_mutations'] = verified
             if tallies:

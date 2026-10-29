@@ -48,8 +48,10 @@ class TurnOutcomeCollector:
         self._completion: _Completion | None = None
         self._pending_results: dict[str, int] = {}
         self._agent_results: dict[str, str] = {}
+        self._synthesis = 'none'
         self._proposed = self._queued = self._executed = self._failures = 0
         self._tool_attribution_unknown = False
+        self._tool_failure_unknown = False
         self._visible_bytes = 0
         self._file_attempts: list[tuple[str, str, str]] = []
         self._file_attribution_unknown = False
@@ -113,6 +115,8 @@ class TurnOutcomeCollector:
         with self._lock:
             if synthesis not in {'none', 'returned', 'failed'} or not self._agent_results:
                 return False
+            if synthesis == 'none':
+                synthesis = self._synthesis
             results = tuple(self._agent_results.values())
             if synthesis == 'failed':
                 kind = 'partial' if 'answered' in results else 'failed'
@@ -132,6 +136,14 @@ class TurnOutcomeCollector:
                 kind = 'failed'
             return self.settle(kind)
 
+    def synthesis_observation(self, success: bool) -> bool:
+        """Remember the actual merge result until the enclosing turn returns."""
+        with self._lock:
+            if self._closed or self._completion is not None or type(success) is not bool:
+                return False
+            self._synthesis = 'returned' if success else 'failed'
+            return True
+
     def tool_proposed(self, queued: bool = False) -> bool:
         with self._lock:
             if self._closed or self._completion is not None or self._proposed >= _MAX_COUNT:
@@ -148,7 +160,7 @@ class TurnOutcomeCollector:
             self._queued += 1
             return True
 
-    def tool_executed(self, success: bool | None) -> bool:
+    def tool_executed(self, success: bool | None, *, known_invocation: bool = True) -> bool:
         with self._lock:
             if self._closed or self._completion is not None or self._executed >= _MAX_COUNT:
                 return False
@@ -156,7 +168,10 @@ class TurnOutcomeCollector:
             if success is False:
                 self._failures += 1
             elif success is not True:
-                self._tool_attribution_unknown = True
+                if known_invocation:
+                    self._tool_failure_unknown = True
+                else:
+                    self._tool_attribution_unknown = True
             return True
 
     def tool_refused(self) -> bool:
@@ -212,8 +227,10 @@ class TurnOutcomeCollector:
                     'proposed': self._proposed,
                     'queued': self._queued,
                     'executed': None if self._tool_attribution_unknown else self._executed,
-                    'failures': None if self._tool_attribution_unknown else self._failures,
-                    'basis': 'unknown' if self._tool_attribution_unknown else 'observed',
+                    'failures': None if self._tool_attribution_unknown or self._tool_failure_unknown
+                                else self._failures,
+                    'basis': 'unknown' if self._tool_attribution_unknown or self._tool_failure_unknown
+                             else 'observed',
                 }
             if self._completion is not None:
                 resolved: set[str] = set()
@@ -364,6 +381,11 @@ def settle_agent_turn(*, synthesis: str = 'none') -> bool:
     return bool(sink and sink.settle_agents(synthesis))
 
 
+def record_synthesis_observation(*, success: bool) -> bool:
+    sink = _current.get()
+    return bool(sink and sink.synthesis_observation(success))
+
+
 def record_tool_proposed(*, queued: bool = False) -> bool:
     sink = _current.get()
     return bool(sink and sink.tool_proposed(queued))
@@ -374,9 +396,9 @@ def record_tool_queued() -> bool:
     return bool(sink and sink.tool_queued())
 
 
-def record_tool_executed(*, success: bool | None) -> bool:
+def record_tool_executed(*, success: bool | None, known_invocation: bool = True) -> bool:
     sink = _current.get()
-    return bool(sink and sink.tool_executed(success))
+    return bool(sink and sink.tool_executed(success, known_invocation=known_invocation))
 
 
 def record_tool_refused() -> bool:
