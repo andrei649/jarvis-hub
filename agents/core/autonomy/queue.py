@@ -196,6 +196,7 @@ def _canonical_mediation_classification(kind: str) -> bool | None:
             "toolrpc.file_write": "file.write",
             "toolrpc.file_delete": "file.write",
             "toolrpc.browser_run": "browser.step",
+            "toolrpc.browser_dialog": "browser.dialog",
         }.get(kind, kind)
         mediation = classify(registry_kind)
         if mediation is Mediation.KERNEL:
@@ -1743,7 +1744,19 @@ class TaskQueue:
             self._mark_mediation_integrity_broken_locked()
             logger.exception("Could not persist B7 quarantine evidence")
 
-    def claim_mediated(self, task_id: int, *, execution_id: str) -> Optional[Task]:
+    def claim_browser_dialog(self, task_id: int, *, opener_task_id: int,
+                             opener_fingerprint: str, execution_id: str) -> Optional[Task]:
+        """Claim one human-approved response beside its still-signed opener."""
+        if (type(opener_task_id) is not int or opener_task_id <= 0
+                or type(opener_fingerprint) is not str or not opener_fingerprint):
+            return None
+        return self.claim_mediated(
+            task_id, execution_id=execution_id,
+            _dialog_opener=(opener_task_id, opener_fingerprint),
+        )
+
+    def claim_mediated(self, task_id: int, *, execution_id: str,
+                       _dialog_opener: tuple[int, str] | None = None) -> Optional[Task]:
         """CAS an approved mediated row to running after persisted revalidation."""
 
         if self.mediation_mode != "enforce":
@@ -1758,6 +1771,44 @@ class TaskQueue:
                 verified_state = snapshot[0]
                 row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
                 if row is None or row["status"] != TaskStatus.APPROVED.value:
+                    self._conn.rollback()
+                    return None
+                dialog_claim = row['kind'] == 'toolrpc.browser_dialog'
+                if dialog_claim:
+                    if _dialog_opener is None:
+                        self._conn.rollback()
+                        return None
+                    opener_id, opener_fingerprint = _dialog_opener
+                    opener = self._conn.execute(
+                        'SELECT * FROM tasks WHERE id=?', (opener_id,),
+                    ).fetchone()
+                    if (opener is None or opener['kind'] != 'toolrpc.browser_run'
+                            or opener['status'] != 'running'
+                            or not opener['mediation_execution_id']
+                            or opener['agent'] != row['agent']
+                            or opener['decided_by'] != row['decided_by']
+                            or row['decision'] != 'accept'
+                            or not row['decided_by']
+                            or row['decided_by'] in {'policy', 'smart_approval', 'owner_once'}
+                            or self.execution_fingerprint(_row_to_task(opener))
+                            != opener_fingerprint
+                            or self._consent_b7_locked(
+                                opener, execution_id=opener['mediation_execution_id']) is None):
+                        self._conn.rollback()
+                        return None
+                    try:
+                        body = json.loads(row['payload'])
+                        bound = body['args']
+                        if (body['tool'] != 'browser_dialog'
+                                or body['target'] != 'browser_dialog'
+                                or bound['opener_task_id'] != opener_id
+                                or bound['opener_fingerprint'] != opener_fingerprint):
+                            self._conn.rollback()
+                            return None
+                    except (KeyError, TypeError, ValueError):
+                        self._conn.rollback()
+                        return None
+                elif _dialog_opener is not None:
                     self._conn.rollback()
                     return None
                 if self._consent_marked_locked(row):
@@ -1800,13 +1851,21 @@ class TaskQueue:
                     self._quarantine_locked(row, verified_state=verified_state)
                     self._conn.commit()
                     return None
-                changed = self._conn.execute(
-                    """UPDATE tasks
-                          SET status='running', mediation_execution_id=?, updated_at=?
-                        WHERE id=? AND status='approved'
-                          AND mediation_execution_id IS NULL""",
-                    (execution_id, _now(), task_id),
-                )
+                if dialog_claim:
+                    changed = self._conn.execute(
+                        """UPDATE tasks SET status='running', mediation_execution_id=?,
+                           attempts=1, updated_at=? WHERE id=? AND status='approved'
+                           AND mediation_execution_id IS NULL AND attempts=0""",
+                        (execution_id, _now(), task_id),
+                    )
+                else:
+                    changed = self._conn.execute(
+                        """UPDATE tasks
+                              SET status='running', mediation_execution_id=?, updated_at=?
+                            WHERE id=? AND status='approved'
+                              AND mediation_execution_id IS NULL""",
+                        (execution_id, _now(), task_id),
+                    )
                 if changed.rowcount != 1:
                     self._conn.rollback()
                     return None
