@@ -53,8 +53,9 @@ def notice(code, text="checkpoint result"):
     (["list", "--project", "/tmp/a b's", "--limit", "2"],
      "/checkpoints list --project '/tmp/a b'\"'\"'s' --limit 2"),
     (["prune"], "/checkpoints prune --dry-run"),
-    (["prune", "--project", "/tmp/project", "--execute", "--force"],
-     "/checkpoints prune --project /tmp/project --execute --force"),
+    (["prune", "--project", "/tmp/project", "--keep-last", "2", "--max-bytes", "4096",
+      "--include-orphans", "--execute"],
+     "/checkpoints prune --project /tmp/project --keep-last 2 --max-bytes 4096 --include-orphans --execute"),
     (["clear"], "/checkpoints clear --dry-run"),
     (["clear-legacy", "--execute"], "/checkpoints clear-legacy --execute"),
 ])
@@ -139,6 +140,12 @@ def test_non_success_notice_is_nonzero_and_never_prints_prose_as_success(status)
     ["clear-legacy", "--limit", "2"],
     ["status", "--execute"],
     ["prune", "--force"],
+    ["prune", "--execute", "--force"],
+    ["prune", "--keep-last", "0"],
+    ["prune", "--keep-last", "5001"],
+    ["prune", "--max-bytes", "0"],
+    ["prune", "--max-bytes", str((1 << 40) + 1)],
+    ["clear", "--include-orphans"],
     ["clear", "--all"],
 ])
 def test_bad_options_are_usage_without_network_or_store(args, capsys):

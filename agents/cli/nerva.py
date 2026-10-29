@@ -321,11 +321,12 @@ def build_parser() -> argparse.ArgumentParser:
         change = checkpoint_verbs.add_parser(action, help="preview or request owner approval")
         if action == "prune":
             change.add_argument("--project", metavar="ROOT")
+            change.add_argument("--keep-last", type=int, metavar="N")
+            change.add_argument("--max-bytes", type=int, metavar="BYTES")
+            change.add_argument("--include-orphans", action="store_true")
         mode = change.add_mutually_exclusive_group()
         mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
         mode.add_argument("--execute", action="store_true", help="request governed approval")
-        change.add_argument("--force", action="store_true",
-                            help="forward force intent; never bypass owner approval")
 
     backup = verbs.add_parser("backup", help="back up and restore the whole install (H010)")
     backup_verbs = backup.add_subparsers(dest="action", required=True, metavar="action")
@@ -2177,9 +2178,18 @@ def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_USAGE
     execute = bool(getattr(ns, "execute", False))
     force = bool(getattr(ns, "force", False))
-    if force and not execute and action != "restore":
-        ctx.err.write("--force requires --execute and does not bypass approval\n")
+    if force and action != "restore":
+        ctx.err.write("--force applies only to restore; use --include-orphans for prune\n")
         return EXIT_USAGE
+    keep_last = getattr(ns, "keep_last", None)
+    max_bytes = getattr(ns, "max_bytes", None)
+    if keep_last is not None and not 1 <= keep_last <= 5_000:
+        ctx.err.write("keep-last must be between 1 and 5000\n")
+        return EXIT_USAGE
+    if max_bytes is not None and not 1 <= max_bytes <= 1 << 40:
+        ctx.err.write("max-bytes must be between 1 and 1099511627776\n")
+        return EXIT_USAGE
+    include_orphans = bool(getattr(ns, "include_orphans", False))
 
     tokens = ["/checkpoints", action]
     if identifier is not None:
@@ -2188,6 +2198,12 @@ def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
         tokens.extend(("--project", project))
     if limit is not None:
         tokens.extend(("--limit", str(limit)))
+    if keep_last is not None:
+        tokens.extend(("--keep-last", str(keep_last)))
+    if max_bytes is not None:
+        tokens.extend(("--max-bytes", str(max_bytes)))
+    if include_orphans:
+        tokens.append("--include-orphans")
     for path in paths:
         tokens.extend(("--path", path))
     if action in {"prune", "clear", "clear-legacy", "restore"}:

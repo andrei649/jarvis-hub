@@ -96,7 +96,7 @@ async def test_clear_preview_names_exact_group_without_effect(owner_store):
     value = json.loads(outcome.reply)
     assert value["complete"] is True
     assert [r["id"] for r in value["candidates"]] == ["group:" + capture["id"]]
-    assert len(value["generation"]) == 64 and value["reclaimable_bytes"] is None
+    assert len(value["generation"]) == 64 and value["reclaimable_bytes"] > 0
     assert [n["code"] for n in notices] == ["checkpoint.preview"]
     assert note.read_text() == "after"
     assert before == {p.name for p in snapshots.directory.iterdir()}

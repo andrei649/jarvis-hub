@@ -275,7 +275,7 @@ def test_preview_protects_shared_refs_and_has_no_effect(tmp_path):
     preview = inventory.maintenance_preview(ADMIN, "clear")
     after = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
              for p in store.rglob("*") if p.is_file()}
-    assert preview["reclaimable_bytes"] is None
+    assert preview["reclaimable_bytes"] == 0  # Generic SnapshotStore bytes are protected.
     assert preview["protected_shared_refs"] >= 1
     assert [item["id"] for item in preview["candidates"]] == ["file:1"]
     assert before == after
