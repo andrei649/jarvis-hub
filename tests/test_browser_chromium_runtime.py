@@ -832,6 +832,8 @@ os._exit(0)
 
 
 async def test_session_idle_reaper_closes_native_chrome(browser_rig, monkeypatch):
+    import threading
+
     from agents.core import browser_session
 
     rig = browser_rig
@@ -841,15 +843,50 @@ async def test_session_idle_reaper_closes_native_chrome(browser_rig, monkeypatch
     ]})
     assert started['ok'] is True, started
     sid = started['session_id']
-    identity = rig.runtime.sessions[sid].driver.owned_browser_identity
-    profile = rig.runtime.sessions[sid].driver.profile_dir
-    async with asyncio.timeout(10):
-        while (sid in rig.runtime.sessions or profile.exists()
-               or browser_identity_alive(identity)):
-            await asyncio.sleep(0.05)
-    assert not browser_identity_alive(identity)
-    assert not profile.exists()
-    assert not rig.runtime.journal._file(sid).exists()
+    driver = rig.runtime.sessions[sid].driver
+    identity = driver.owned_browser_identity
+    profile = driver.profile_dir
+    journal_path = rig.runtime.journal._file(sid)
+    entered = threading.Event()
+    release = threading.Event()
+    remove = rig.runtime.journal.remove
+
+    def delayed_remove(value):
+        entered.set()
+        if not release.wait(5):
+            raise TimeoutError('test journal release missed')
+        remove(value)
+
+    monkeypatch.setattr(rig.runtime.journal, 'remove', delayed_remove)
+
+    async def release_after_pre_journal_checkpoint():
+        assert await asyncio.to_thread(entered.wait, 8)
+        assert sid not in rig.runtime.sessions
+        assert not profile.exists() and not browser_identity_alive(identity)
+        assert journal_path.exists()
+        await asyncio.sleep(0.2)
+        release.set()
+
+    release_task = asyncio.create_task(release_after_pre_journal_checkpoint())
+    try:
+        async with asyncio.timeout(10):
+            while (sid in rig.runtime.sessions or profile.exists()
+                   or browser_identity_alive(identity) or journal_path.exists()
+                   or sid in rig.runtime._owner_close_tasks
+                   or driver in rig.runtime._uncertain_sessions
+                   or driver in rig.runtime._uncertain_drivers
+                   or rig.runtime._journal_uncertain):
+                await asyncio.sleep(0.05)
+        assert not browser_identity_alive(identity)
+        assert not profile.exists()
+        assert not journal_path.exists()
+        assert sid not in rig.runtime._owner_close_tasks
+        assert driver not in rig.runtime._uncertain_sessions
+        assert driver not in rig.runtime._uncertain_drivers
+        assert not rig.runtime._journal_uncertain
+    finally:
+        release.set()
+        await release_task
 
 
 async def test_owner_close_cancels_active_session_before_ref_dispatch(browser_rig):
