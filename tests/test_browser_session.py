@@ -107,6 +107,55 @@ async def test_owner_close_cancellation_retains_owned_cleanup_until_settled(tmp_
 
 
 @pytest.mark.asyncio
+async def test_changed_registration_reaps_idle_session_without_waiting_for_expiry(tmp_path, monkeypatch):
+    import asyncio
+    import contextlib
+    from types import SimpleNamespace
+
+    from agents.core.autonomy import consent_registration
+    from agents.core.browser_runtime import BrowserRuntime
+    from agents.core.browser_session import BrowserSession
+
+    monkeypatch.setenv('JARVIS_HOME', str(tmp_path))
+    spec = {'capability_id': 'tool:browser_run', '_consent_registration_key': 'old',
+            '_grouping_epoch': 3}
+    monkeypatch.setattr(consent_registration, 'trusted_registration_key',
+                        lambda _tool, candidate: candidate['_consent_registration_key'])
+    runtime = BrowserRuntime(queue=None, approved_task=lambda: None, authorizer=None,
+                             enqueue=None, execution_check=lambda _: False,
+                             registration=lambda: spec,
+                             control_current=lambda _: True)
+    monkeypatch.setattr(runtime, '_head', lambda: 'same-source')
+    closed = asyncio.Event()
+
+    class Driver:
+        profile_dir = None
+        owned_browser_identity = None
+
+        async def close(self):
+            closed.set()
+
+    sid = 'c' * 32
+    session = BrowserSession(sid, Driver(), None, None, 'jarvis', 'owner',
+                             SimpleNamespace(agent='jarvis'), 'same-source', 'old', 3)
+    runtime.sessions[sid] = session
+    spec['_consent_registration_key'] = 'new'
+    runtime._ensure_reaper()
+    try:
+        await asyncio.wait_for(closed.wait(), 2.5)
+        async with asyncio.timeout(2):
+            while (sid in runtime.sessions or runtime._uncertain_drivers
+                   or runtime._journal_uncertain):
+                await asyncio.sleep(0.01)
+    finally:
+        session.closed = True
+        if runtime._reaper_task is not None:
+            runtime._reaper_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await runtime._reaper_task
+
+
+@pytest.mark.asyncio
 async def test_session_mutating_receipt_keeps_exact_kernel_and_taint_floor():
     from types import SimpleNamespace
 
@@ -133,6 +182,33 @@ async def test_session_mutating_receipt_keeps_exact_kernel_and_taint_floor():
         tainted = Action(kind='browser.step', agent='jarvis', origin='external', payload=payload)
         assert authorize(tainted, policy=AutonomyPolicy(),
                          approval_check=browser_receipt_matches).verdict is Verdict.QUEUE
+
+
+@pytest.mark.asyncio
+async def test_only_known_stale_ref_code_survives_kernel_handler_error():
+    from types import SimpleNamespace
+
+    from agents.core.browser_kernel import BrowserActionExecutor, approved_step_scope
+    from agents.core.browser_session import SessionRefused
+    from agents.core.kernel import Decision, Verdict
+
+    class Driver:
+        requires_kernel = True
+        error = 'stale_browser_ref'
+
+        async def click(self, **_kwargs):
+            raise SessionRefused(self.error)
+
+    driver = Driver()
+    executor = BrowserActionExecutor(driver, authorizer=lambda action, *, approval_check: (
+        Decision(Verdict.GRANT if approval_check(action) else Verdict.QUEUE, tier=3)))
+    task = SimpleNamespace(id=11, agent='jarvis', origin='generated')
+    step = {'action': 'click', 'ref': '@e1'}
+    with approved_step_scope(task, 'a' * 64, 0, step, lambda: True,
+                             session_id='a' * 32, session_generation=0):
+        assert (await executor.perform(step)).reason == 'stale_browser_ref'
+        driver.error = 'private page text and path'
+        assert (await executor.perform(step)).reason == 'browser_step_failed'
 
 
 @pytest.mark.asyncio

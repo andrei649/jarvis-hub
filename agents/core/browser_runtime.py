@@ -602,6 +602,22 @@ class BrowserRuntime:
         except Exception:
             return False
 
+    def _session_registration_current(self, session) -> bool:
+        from .autonomy.consent_registration import trusted_registration_key
+
+        try:
+            spec = self.registration() if callable(self.registration) else None
+            return bool(
+                type(session.registration_key) is str and bool(session.registration_key)
+                and type(session.registration_epoch) is int
+                and type(spec) is dict and spec.get('capability_id') == 'tool:browser_run'
+                and spec.get('_consent_registration_key') == session.registration_key
+                and spec.get('_grouping_epoch') == session.registration_epoch
+                and trusted_registration_key(TOOL, spec) == session.registration_key
+            )
+        except Exception:
+            return False
+
     def _session_network_current(self, session):
         """Playwright route tasks lack the worker ContextVar; validate its live row.
 
@@ -658,6 +674,7 @@ class BrowserRuntime:
             for session in list(self.sessions.values()):
                 try:
                     stale = (not session.current() or session.head != self._head()
+                             or not self._session_registration_current(session)
                              or self.control_current(session.owner_task) is not True)
                 except Exception:
                     stale = True
@@ -753,6 +770,8 @@ class BrowserRuntime:
                         else:
                             outcome = await browser.run_step(step)
                 if outcome.get('status') != 'done':
+                    if outcome.get('reason') == 'stale_browser_ref':
+                        raise BrowserPlanRefused('stale_browser_ref')
                     raise BrowserPlanRefused('browser_step_refused')
                 if not self._session_authorized(session, task, args):
                     raise BrowserPlanRefused('browser_approval_invalid')
@@ -810,7 +829,8 @@ class BrowserRuntime:
                 sid = secrets.token_hex(16)
                 session = BrowserSession(sid, driver, policy, pins, task.agent,
                                          task.decided_by, task, self._head(),
-                                         args['_binding']['registration_key'])
+                                         args['_binding']['registration_key'],
+                                         args['_binding']['registration_epoch'])
                 self.sessions[sid] = session
                 new = True
                 driver.set_transport(pins)

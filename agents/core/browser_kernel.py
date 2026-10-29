@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.core.automation_contracts import ContractTemplate, predicate
+from agents.core.browser_session import SessionRefused
 from agents.core.capability_actions import CapabilityActionAPI, PerformContext, PerformResult
 from agents.core.kernel import Action, Decision, Verdict
 
@@ -291,6 +292,10 @@ class BrowserActionExecutor:
                                               'args': action.payload['args']}, PerformContext())
             return PerformResult('completed', CAPABILITY, KIND, decision.reason,
                                  decision.tier, output=output, stage='handler')
+        except SessionRefused as exc:
+            return PerformResult('failed', CAPABILITY, KIND,
+                                 'stale_browser_ref' if str(exc) == 'stale_browser_ref'
+                                 else 'browser_step_failed', stage='handler')
         except Exception:
             return PerformResult('failed', CAPABILITY, KIND, 'browser_step_failed', stage='handler')
 

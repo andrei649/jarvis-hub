@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field
 
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import owner_web_principal, user_guard
 
 from agents.core.web_helpers import nocache_json
 
@@ -57,7 +57,7 @@ def _session_runtime():
     return runtime if callable(getattr(runtime, 'close_owner_session', None)) else None
 
 
-@router.get('/api/browser/sessions', dependencies=[Depends(user_guard)])
+@router.get('/api/browser/sessions', dependencies=[Depends(owner_web_principal)])
 async def browser_sessions():
     """Authenticated owner projection; no profile paths or page text authority."""
     runtime = _session_runtime()
@@ -80,7 +80,7 @@ async def browser_sessions():
                                                    or runtime._journal_uncertain)})
 
 
-@router.get('/api/browser/tasks/{task_id}', dependencies=[Depends(user_guard)])
+@router.get('/api/browser/tasks/{task_id}', dependencies=[Depends(owner_web_principal)])
 async def browser_task_status(task_id: int):
     """Show the owner's browser outcome without exposing page text or raw task data."""
     runtime = _session_runtime()
@@ -103,7 +103,7 @@ async def browser_task_status(task_id: int):
     return nocache_json(result)
 
 
-@router.post('/api/browser/sessions/{session_id}/close', dependencies=[Depends(user_guard)])
+@router.post('/api/browser/sessions/{session_id}/close', dependencies=[Depends(owner_web_principal)])
 async def browser_session_close(session_id: str):
     """An authenticated owner may always stop a fresh-profile browser."""
     runtime = _session_runtime()

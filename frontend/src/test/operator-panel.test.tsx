@@ -72,6 +72,18 @@ async function previewDesktop(steps = 1) {
 }
 
 describe('OperatorPanel browser policy dry run', () => {
+  it('does not offer owner sessions when the owner-only projection rejects', async () => {
+    get.mockImplementation(async (path) => {
+      if (path === '/api/browser/sessions') throw new Error('admin token required');
+      return { available: true };
+    });
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    expect((screen.getByRole('button', { name: 'Start fresh session with approval' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('refuses a stale ready button when the server reports uncertain cleanup', async () => {
     get.mockResolvedValueOnce({ available: true }).mockResolvedValueOnce({ available: false });
     render(<OperatorPanel />);
@@ -116,6 +128,7 @@ describe('OperatorPanel browser policy dry run', () => {
     render(<OperatorPanel />);
     addBrowserStep('navigate', 'https://example.com/start');
     await waitFor(() => expect(screen.getByLabelText('Live fresh-profile session')).toBeTruthy());
+    expect(get).toHaveBeenCalledWith('/api/browser/sessions', { admin: true });
     fireEvent.click(screen.getByRole('button', { name: 'Start fresh session with approval' }));
     await waitFor(() => expect(screen.getByText(/Browser task 90 queued/)).toBeTruthy());
     expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
@@ -129,6 +142,9 @@ describe('OperatorPanel browser policy dry run', () => {
     expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
       mode: 'act', session_id: sid, steps: [{ action: 'press', ref: '@e1', key: 'Enter' }],
     } });
+    fireEvent.click(screen.getByRole('button', { name: 'Close fresh session' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      `/api/browser/sessions/${sid}/close`, {}, { admin: true }));
   });
 
   it('shows a later bounded task outcome without rendering page content', async () => {
@@ -145,6 +161,7 @@ describe('OperatorPanel browser policy dry run', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start fresh session with approval' }));
     await waitFor(() => expect(screen.getByLabelText('browser task outcome').textContent)
       .toContain('completed · 2 steps completed'));
+    expect(get).toHaveBeenCalledWith('/api/browser/tasks/92', { admin: true });
     expect(screen.queryByText('untrusted page instructions')).toBeNull();
   });
 

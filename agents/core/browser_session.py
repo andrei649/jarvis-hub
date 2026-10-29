@@ -19,6 +19,7 @@ MAX_SESSIONS = 4
 MAX_REFS = 100
 MAX_FRAMES = 16
 MAX_REF_TEXT = 128
+MAX_REF_TARGET = 1024
 IDLE_SECONDS = 60.0
 LIFETIME_SECONDS = 600.0
 
@@ -32,8 +33,18 @@ _SEMANTICS = """(e) => {
   const role = e.getAttribute('role') || tag;
   const name = e.getAttribute('aria-label') || e.getAttribute('title') ||
     (tag === 'input' ? (e.getAttribute('placeholder') || '') : (e.textContent || '').trim());
-  const target = e.getAttribute('href') || e.getAttribute('formaction') ||
-    e.getAttribute('action') || e.getAttribute('type') || '';
+  const form = e.form || (tag === 'form' ? e : null);
+  const target = JSON.stringify({
+    own: [e.getAttribute('href') || '', e.getAttribute('action') || '',
+      e.getAttribute('type') || '', e.getAttribute('form') || ''],
+    form: form ? [form.action, form.method, form.target, form.enctype, !!form.noValidate] : null,
+    override: [e.getAttribute('formaction') || '', e.getAttribute('formmethod') || '',
+      e.getAttribute('formtarget') || '', e.getAttribute('formenctype') || '',
+      e.hasAttribute('formnovalidate')],
+    effective: form && (tag === 'button' || tag === 'input') ?
+      [e.formAction || form.action, e.formMethod || form.method,
+       e.formTarget || form.target, e.formEnctype || form.enctype, !!e.formNoValidate] : null,
+  });
   return {role, name, target, connected: e.isConnected,
     focus: e.ownerDocument.activeElement === e,
     disabled: !!e.disabled, hidden: e.getAttribute('aria-hidden') === 'true'};
@@ -64,6 +75,7 @@ class BrowserSession:
     owner_task: object
     head: str
     registration_key: str
+    registration_epoch: int | None = None
     created: float = field(default_factory=time.monotonic)
     last_used: float = field(default_factory=time.monotonic)
     generation: int = 0
@@ -147,7 +159,7 @@ class BrowserSession:
                         continue
                     role = self._bounded(semantics.get('role'))
                     name = self._bounded(semantics.get('name'))
-                    target = self._bounded(semantics.get('target'))
+                    target = self._bounded(semantics.get('target'), MAX_REF_TARGET)
                     if role is None or name is None or target is None:
                         continue
                     ref = f'@e{self.next_ref}'

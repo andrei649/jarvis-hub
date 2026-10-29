@@ -306,6 +306,7 @@ export function OperatorPanel() {
   const [browserBusy, setBrowserBusy] = useState<'check' | 'preview' | 'run' | 'session' | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [browserAvailable, setBrowserAvailable] = useState(false);
+  const [browserOwnerAvailable, setBrowserOwnerAvailable] = useState(false);
   const [browserRunTaskId, setBrowserRunTaskId] = useState<number | null>(null);
   const [browserTaskOutcome, setBrowserTaskOutcome] = useState<BrowserTaskOutcome | null>(null);
   const [browserCheck, setBrowserCheck] = useState<BrowserCheckResult | null>(null);
@@ -322,8 +323,13 @@ export function OperatorPanel() {
     const refresh = () => apiGet('/api/browser/status').then((value) => {
       if (live) setBrowserAvailable(isRecord(value) && value.available === true);
     }).catch(() => { if (live) setBrowserAvailable(false); });
-    const refreshSessions = () => apiGet('/api/browser/sessions').then((value) => {
-      if (!live || !isRecord(value) || !Array.isArray(value.sessions)) return;
+    const refreshSessions = () => apiGet('/api/browser/sessions', { admin: true }).then((value) => {
+      if (!live) return;
+      if (!isRecord(value) || !Array.isArray(value.sessions)) {
+        setBrowserOwnerAvailable(false);
+        return;
+      }
+      setBrowserOwnerAvailable(true);
       const safe = value.sessions.filter((item): item is BrowserSessionView =>
         isRecord(item) && typeof item.id === 'string' && /^[0-9a-f]{32}$/.test(item.id)
         && typeof item.origin === 'string' && typeof item.generation === 'number'
@@ -331,7 +337,7 @@ export function OperatorPanel() {
         && typeof item.expires_in === 'number').slice(0, 4);
       setBrowserSessions(safe);
       setBrowserSessionId((old) => safe.some((item) => item.id === old) ? old : (safe[0]?.id || ''));
-    }).catch(() => { if (live) setBrowserSessions([]); });
+    }).catch(() => { if (live) { setBrowserSessions([]); setBrowserOwnerAvailable(false); } });
     void refresh();
     void refreshSessions();
     const timer = window.setInterval(() => { void refresh(); void refreshSessions(); }, 5_000);
@@ -341,7 +347,7 @@ export function OperatorPanel() {
   useEffect(() => {
     if (browserRunTaskId === null) return;
     let live = true;
-    const refresh = () => apiGet(`/api/browser/tasks/${browserRunTaskId}`).then((value) => {
+    const refresh = () => apiGet(`/api/browser/tasks/${browserRunTaskId}`, { admin: true }).then((value) => {
       if (!live || !isRecord(value) || value.found !== true || typeof value.status !== 'string') return;
       setBrowserTaskOutcome({ status: value.status.slice(0, 32),
         ...(typeof value.ok === 'boolean' ? { ok: value.ok } : {}),
@@ -577,7 +583,7 @@ export function OperatorPanel() {
 
   const startBrowserSession = () => {
     const first = browserPlanRef.current[0];
-    if (!first || first.action !== 'navigate' || !browserAvailable) {
+    if (!first || first.action !== 'navigate' || !browserAvailable || !browserOwnerAvailable) {
       setBrowserError('Start with a browser navigation step');
       return;
     }
@@ -601,7 +607,7 @@ export function OperatorPanel() {
     if (!browserSessionId) return;
     setBrowserBusy('session');
     try {
-      await apiPost(`/api/browser/sessions/${browserSessionId}/close`, {});
+      await apiPost(`/api/browser/sessions/${browserSessionId}/close`, {}, { admin: true });
       setBrowserSessions((old) => old.filter((item) => item.id !== browserSessionId));
       setBrowserSessionId('');
     } catch (error) {
@@ -814,7 +820,7 @@ export function OperatorPanel() {
             <button className="tool-btn" type="button" disabled={browserBusy !== null} onClick={previewBrowserPlan}>preview browser plan</button>
             <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable}
               onClick={runBrowserPlan}>Run with approval</button>
-            <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable}
+            <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable || !browserOwnerAvailable}
               onClick={startBrowserSession}>Start fresh session with approval</button>
           </div>
           <p style={mono}>{browserAvailable ? 'Browser execution available for server-approved domains' : 'Browser execution unavailable'}</p>

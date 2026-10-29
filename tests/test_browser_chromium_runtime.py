@@ -47,7 +47,7 @@ def browser_processes_for_profile(profile):
 
 @pytest.fixture
 async def local_page():
-    state = {'clicked': 0, 'hosts': [], 'websocket_handshakes': 0}
+    state = {'clicked': 0, 'hosts': [], 'websocket_handshakes': 0, 'form_submits': 0}
 
     async def respond(reader, writer):
         try:
@@ -62,6 +62,15 @@ async def local_page():
             if path == '/clicked':
                 state['clicked'] += 1
                 body = b'ok'
+                status = '200 OK'
+            elif path in {'/first', '/second'}:
+                state['form_submits'] += 1
+                body = b'form submitted'
+                status = '200 OK'
+            elif path == '/form':
+                body = (b'<!doctype html><title>Native form</title>'
+                        b'<form id="owner" action="/first" method="get" target="_self">'
+                        b'<button id="submit" type="submit">Pay</button></form>')
                 status = '200 OK'
             elif path == '/frame':
                 body = (f'<!doctype html><title>Frames</title><h1>Main frame</h1>'
@@ -209,8 +218,9 @@ async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(brows
     assert browser_processes_for_profile(rig.runtime.last_profile) == []
 
 
-async def test_session_snapshot_ref_survives_separate_owner_approved_call(browser_rig):
+async def test_session_snapshot_ref_survives_separate_owner_approved_call(browser_rig, monkeypatch):
     rig = browser_rig
+    monkeypatch.setattr(rig.web, 'ADMIN_TOKEN', 'browser-admin')
     start = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
         'mode': 'start', 'steps': [
             {'action': 'navigate', 'url': rig.page.origin + '/'},
@@ -248,7 +258,7 @@ async def test_session_snapshot_ref_survives_separate_owner_approved_call(browse
     assert rig.page.state['clicked'] == 1
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
                                  base_url='http://testserver',
-                                 headers={'X-User-Token': 'browser-user'}) as client:
+                                 headers={'X-Admin-Token': 'browser-admin'}) as client:
         shown = await client.get(f"/api/browser/tasks/{act['task_id']}")
         assert shown.status_code == 200
         assert shown.json() == {'found': True, 'status': 'done', 'ok': True, 'steps': 2}
@@ -282,6 +292,7 @@ async def test_session_ref_same_node_semantic_change_and_focus_refuse(browser_ri
     changed = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
                                                   'steps': [{'action': 'click', 'ref': button['ref']}]})
     assert changed['ok'] is False and rig.page.state['clicked'] == 0
+    assert changed['reason'] == 'stale_browser_ref'
     assert sid not in rig.runtime.sessions
     assert not browser_identity_alive(rig.runtime.last_browser_identity)
 
@@ -312,6 +323,7 @@ async def test_session_ref_same_node_semantic_change_and_focus_refuse(browser_ri
     changed_target = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
         'steps': [{'action': 'click', 'ref': ref}]})
     assert changed_target['ok'] is False
+    assert changed_target['reason'] == 'stale_browser_ref'
     assert sid not in rig.runtime.sessions
 
     started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
@@ -349,6 +361,34 @@ async def test_session_wrong_owner_and_forged_ref_never_mutate(browser_rig):
         'steps': [{'action': 'click', 'ref': '@e999'}]})
     assert forged['ok'] is False and rig.page.state['clicked'] == 0
     assert sid not in rig.runtime.sessions
+
+
+@pytest.mark.parametrize('mutation', [
+    "document.querySelector('#owner').action = '/second'",
+    "document.querySelector('#owner').method = 'post'",
+    "document.querySelector('#submit').formAction = '/second'",
+    "document.querySelector('#submit').formTarget = '_blank'",
+])
+async def test_same_node_native_form_target_change_refuses_before_submit(browser_rig, mutation):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/form'}, {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['name'] == 'Pay')
+    try:
+        await rig.runtime.sessions[sid].driver._page.evaluate(mutation)
+        changed = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+            'steps': [{'action': 'click', 'ref': ref}]})
+        assert changed == {'ok': False, 'reason': 'stale_browser_ref'}
+        assert rig.page.state['form_submits'] == 0
+        assert sid not in rig.runtime.sessions
+        assert not browser_identity_alive(rig.runtime.last_browser_identity)
+    finally:
+        if sid in rig.runtime.sessions:
+            await rig.runtime.close_owner_session(sid)
 
 
 async def test_session_cross_origin_frame_ref_and_back_invalidation(browser_rig):
@@ -415,7 +455,7 @@ async def test_idle_session_blocks_background_page_egress(browser_rig):
     assert await rig.runtime.close_owner_session(sid)
 
 
-@pytest.mark.parametrize('change', ['config', 'kill'])
+@pytest.mark.parametrize('change', ['config', 'kill', 'registration'])
 async def test_session_revoked_control_reaps_native_chrome(browser_rig, monkeypatch, change):
     rig = browser_rig
     started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
@@ -427,8 +467,10 @@ async def test_session_revoked_control_reaps_native_chrome(browser_rig, monkeypa
     profile = rig.runtime.sessions[sid].driver.profile_dir
     if change == 'config':
         monkeypatch.setenv('JARVIS_PLAYWRIGHT_BROWSER', 'firefox')
-    else:
+    elif change == 'kill':
         rig.kill.engage(reason='test session stop')
+    else:
+        rig.orch.tool_rpc._tools['browser_run']['_consent_registration_key'] = 'changed'
     async with asyncio.timeout(10):
         while sid in rig.runtime.sessions or profile.exists() or browser_identity_alive(identity):
             await asyncio.sleep(0.05)
@@ -569,24 +611,37 @@ async def test_owner_close_cancels_active_session_before_ref_dispatch(browser_ri
     assert not profile.exists() and not rig.runtime.journal._file(sid).exists()
 
 
-async def test_authenticated_owner_session_projection_and_close(browser_rig):
+async def test_authenticated_owner_session_projection_and_close(browser_rig, monkeypatch):
     rig = browser_rig
+    monkeypatch.setattr(rig.web, 'ADMIN_TOKEN', 'browser-admin')
     started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
         {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
     ]})
     sid = started['session_id']
     profile = rig.runtime.sessions[sid].driver.profile_dir
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
-                                 base_url='http://testserver',
-                                 headers={'X-User-Token': 'browser-user'}) as client:
-        listing = await client.get('/api/browser/sessions')
-        assert listing.status_code == 200
-        row = next(item for item in listing.json()['sessions'] if item['id'] == sid)
-        assert row['origin'] == rig.page.origin and row['refs']
-        assert 'profile' not in row and 'owner' not in row
-        closed = await client.post(f'/api/browser/sessions/{sid}/close', json={})
-        assert closed.status_code == 200 and closed.json()['closed'] is True
-        assert (await client.get('/api/browser/sessions')).json()['sessions'] == []
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                     base_url='http://testserver',
+                                     headers={'X-User-Token': 'browser-user'}) as user:
+            assert (await user.get('/api/browser/status')).status_code == 200
+            assert (await user.get('/api/browser/sessions')).status_code == 401
+            assert (await user.get('/api/browser/tasks/1')).status_code == 401
+            assert (await user.post(f'/api/browser/sessions/{sid}/close', json={})).status_code == 401
+            assert sid in rig.runtime.sessions
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                     base_url='http://testserver',
+                                     headers={'X-Admin-Token': 'browser-admin'}) as owner:
+            listing = await owner.get('/api/browser/sessions')
+            assert listing.status_code == 200
+            row = next(item for item in listing.json()['sessions'] if item['id'] == sid)
+            assert row['origin'] == rig.page.origin and row['refs']
+            assert 'profile' not in row and 'owner' not in row
+            closed = await owner.post(f'/api/browser/sessions/{sid}/close', json={})
+            assert closed.status_code == 200 and closed.json()['closed'] is True
+            assert (await owner.get('/api/browser/sessions')).json()['sessions'] == []
+    finally:
+        if sid in rig.runtime.sessions:
+            await rig.runtime.close_owner_session(sid)
     assert not profile.exists()
 
 
