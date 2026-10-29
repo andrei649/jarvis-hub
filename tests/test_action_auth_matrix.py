@@ -841,6 +841,83 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
                 assert task.result["status"] != "ok"
         finally:
             queue.close()
+    elif kind == "browser.dialog":
+        # A distinct signed response row and current signed opener are needed
+        # before the native Dialog object's guarded method can run.
+        import asyncio
+        import uuid
+        from types import SimpleNamespace
+
+        from agents.core.autonomy.queue import TaskStatus
+        from agents.core.browser_kernel import (
+            approved_dialog_scope,
+            authorize_dialog_response,
+            physical_browser_dialog_allowed,
+        )
+        from agents.core.browser_playwright import PlaywrightBrowserDriver
+        from agents.core.browser_runtime import BrowserRuntime
+        from agents.core.kernel import kernel_enabled
+        from tests.test_browser_dialog_queue import _enqueue, _queue
+
+        class NativeDialog:
+            calls = 0
+
+            async def dismiss(self):
+                self.calls += 1
+
+        dialog = NativeDialog()
+        if not kernel_enabled():
+            # The default-off runtime cannot register a browser-dialog tool or
+            # mint this private physical scope.
+            assert not physical_browser_dialog_allowed(dialog, 'dismiss')
+            assert dialog.calls == 0
+            return
+        queue = _queue(tmp_path)
+        try:
+            opener_id = _enqueue(queue, 'toolrpc.browser_run', {
+                'tool': 'browser_run', 'args': {'mode': 'start'}, 'target': 'browser_run'})
+            opener = queue.claim_mediated(opener_id, execution_id=str(uuid.uuid4()))
+            assert opener is not None and opener.status == TaskStatus.RUNNING
+            opener_fp = queue.execution_fingerprint(opener)
+            response_id = _enqueue(queue, 'toolrpc.browser_dialog', {
+                'tool': 'browser_dialog', 'args': {
+                    'opener_task_id': opener_id, 'opener_fingerprint': opener_fp,
+                    'dialog_id': 'f' * 32, 'choice': 'dismiss'},
+                'target': 'browser_dialog'})
+            response = queue.claim_browser_dialog(
+                response_id, opener_task_id=opener_id,
+                opener_fingerprint=opener_fp, execution_id=str(uuid.uuid4()))
+            assert response is not None and response.attempts == 1
+            runtime = object.__new__(BrowserRuntime)
+            runtime.queue = queue
+            runtime._dialog_memory_current = lambda _session, _episode: True
+            episode = SimpleNamespace(
+                opener_task_id=opener_id, opener_fingerprint=opener_fp,
+                claimed_task=response, owner='owner-a', agent='ultron')
+            def current():
+                return runtime._dialog_durable_current(None, episode)
+            assert current()
+            driver = PlaywrightBrowserDriver(host_enabled=True)
+            observed = SimpleNamespace(dialog=dialog, kind='alert')
+            driver._dialog_observer = SimpleNamespace(pending=lambda: observed)
+
+            async def exercise():
+                with approved_dialog_scope(
+                        response, opener, dialog, session_id='s' * 32,
+                        generation=0, plan_sha256='p' * 64, step_index=0,
+                        current=current):
+                    granted = await authorize_dialog_response(
+                        lambda action, *, approval_check: (
+                            spy(action) if approval_check(action) else None))
+                    assert physical_browser_dialog_allowed(dialog, 'dismiss') is granted
+                    sent = await driver.respond_dialog(observed, 'dismiss')
+                    assert sent is granted
+
+            asyncio.run(exercise())
+            assert dialog.calls == (1 if spy._verdict is Verdict.GRANT else 0)
+            assert queue.get(response_id).attempts == 1
+        finally:
+            queue.close()
     elif kind == "permission.grant":
         # 1.1.0: widening the consent ledger is itself privileged. The ask crosses
         # the kernel before it can reach the decision inbox; the grant row is only
@@ -1127,6 +1204,14 @@ def test_browser_step_kernel_denial_after_owner_plan_never_actuates_or_adds_card
     spy = _SpyKernel(Verdict.DENY)
     _exercise("browser.step", spy, tmp_path, monkeypatch)
     assert len(spy.calls) == 1 and spy.calls[0].kind == "browser.step"
+
+
+def test_browser_dialog_kernel_denial_after_distinct_owner_decision_never_responds(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    spy = _SpyKernel(Verdict.DENY)
+    _exercise("browser.dialog", spy, tmp_path, monkeypatch)
+    assert len(spy.calls) == 1 and spy.calls[0].kind == "browser.dialog"
 
 
 def test_custom_endpoint_kernel_denial_leaves_no_catalog_or_audit(monkeypatch, tmp_path):

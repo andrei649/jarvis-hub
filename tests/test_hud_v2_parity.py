@@ -432,6 +432,9 @@ def test_operator_routes_have_a_governed_build_caller():
     owner_calls = (
         "apiGet('/api/browser/sessions', { admin: true })",
         "apiGet(`/api/browser/tasks/${browserRunTaskId}`, { admin: true })",
+        "apiGet(`/api/browser/dialogs/${browserRunTaskId}`, { admin: true })",
+        "apiGet(`/api/browser/dialogs/tasks/${pending.response_task_id}/card`, { admin: true })",
+        "apiPost(`/api/browser/dialogs/${dialog.opener_task_id}/proposals`,\n        raw, { admin: true })",
         "apiPost(`/api/browser/sessions/${browserSessionId}/close`, {}, { admin: true })",
     )
     user_path_source = operator_source

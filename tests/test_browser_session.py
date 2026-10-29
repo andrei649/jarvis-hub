@@ -459,12 +459,26 @@ async def test_page_error_listener_registration_failure_removes_partial_console_
     manager = FakeManager()
     page = Page()
     manager.playwright.page = page
-    manager.playwright.context.page = page
+    context = manager.playwright.context
+    context.page = page
+    context.pages = [page]
+    context.listeners = {}
+
+    def on(event, callback):
+        context.listeners[event] = callback
+
+    def remove_listener(event, callback):
+        if context.listeners.get(event) == callback:
+            context.listeners.pop(event)
+
+    context.on = on
+    context.remove_listener = remove_listener
     driver = PlaywrightBrowserDriver(host_enabled=True, playwright_factory=lambda: manager)
     driver.set_url_guard(lambda _url: True)
     with pytest.raises(PlaywrightUnavailable):
         await driver._ensure_started()
     assert 'console' in page.removed and not page.listeners
+    assert not context.listeners
     assert driver._console_page is None and not driver._console_records
     assert driver.profile_dir is None
 

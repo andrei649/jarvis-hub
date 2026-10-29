@@ -156,6 +156,9 @@ class PlaywrightBrowserDriver:
         self._dialog_handlers: list[tuple[object, str, object]] = []
         self._dialog_attempted = False
         self._native_aborted = False
+        self._unexpected_page = False
+        self._unexpected_page_event = asyncio.Event()
+        self._known_pages: frozenset[object] = frozenset()
 
     def _clear_console(self) -> None:
         self._console_records.clear()
@@ -461,6 +464,11 @@ class PlaywrightBrowserDriver:
                     accept_downloads=True,
                     service_workers="block",
                 )
+                if not callable(getattr(self._context, 'on', None)):
+                    raise PlaywrightUnavailable('browser page boundary unavailable')
+                # Playwright emits the context dialog before a page dialog and
+                # before its implicit dismissal fallback for an unobserved page.
+                self._context.on('dialog', self._on_context_dialog)
                 if self._factory is None:
                     await self._capture_owned_browser()
                     if self._ownership_observer is not None:
@@ -484,6 +492,8 @@ class PlaywrightBrowserDriver:
                     raise PlaywrightUnavailable('browser WebRTC guard unavailable')
                 self._page = await self._context.new_page()
                 self._page.set_default_timeout(self.timeout_ms)
+                self._known_pages = frozenset(self._context.pages)
+                self._context.on('page', self._on_unexpected_page)
                 if callable(getattr(self._page, 'on', None)):
                     self._console_page = self._page
                     self._page.on('console', self._on_console)
@@ -575,8 +585,8 @@ class PlaywrightBrowserDriver:
     async def _close_resources(self) -> None:
         failures = []
         observer = self._dialog_observer
-        if (observer is not None and (observer.pending() is not None
-                                      or observer.refused_reason)):
+        if (self._unexpected_page or (observer is not None and
+                (observer.pending() is not None or observer.refused_reason))):
             try:
                 await self._abort_unresolved_modal()
             except Exception:
@@ -585,6 +595,13 @@ class PlaywrightBrowserDriver:
             await self.stop_dialog_observer()
         except Exception:
             failures.append('dialog_observer_close_unverified')
+        if self._context is not None:
+            remove = getattr(self._context, 'remove_listener', None)
+            if callable(remove):
+                with contextlib.suppress(Exception):
+                    remove('page', self._on_unexpected_page)
+                with contextlib.suppress(Exception):
+                    remove('dialog', self._on_context_dialog)
         if self._console_page is not None:
             remove = getattr(self._console_page, 'remove_listener', None)
             if callable(remove):
@@ -689,6 +706,8 @@ class PlaywrightBrowserDriver:
         if self.browser_name != 'chromium' or not self.host_enabled:
             raise PlaywrightUnavailable('browser_dialog_unavailable')
         page = await self._ensure_started()
+        if self.unexpected_page():
+            raise PlaywrightUnavailable('browser_dialog_unavailable')
         if self._dialog_observer is not None:
             return self._dialog_observer
         context = self._context
@@ -703,7 +722,7 @@ class PlaywrightBrowserDriver:
             observer = DialogFrameObserver(page=page)
             for event, callback in (
                 ('Page.javascriptDialogOpening', observer.on_cdp_open),
-                ('Page.frameNavigated', lambda _event: observer.invalidate()),
+                ('Page.frameNavigated', observer.on_frame_navigated),
                 ('Page.frameDetached', lambda _event: observer.invalidate()),
                 ('Page.navigatedWithinDocument', lambda _event: observer.invalidate()),
             ):
@@ -734,6 +753,42 @@ class PlaywrightBrowserDriver:
         self._dialog_observer = observer
         return observer
 
+    def unexpected_page(self) -> bool:
+        context = self._context
+        return self._unexpected_page or bool(context is not None and any(
+            page not in self._known_pages for page in context.pages))
+
+    async def wait_unexpected_page(self, seconds: float) -> bool:
+        if self.unexpected_page():
+            return True
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._unexpected_page_event.wait(), seconds)
+        return self.unexpected_page()
+
+    def _on_unexpected_page(self, page) -> None:
+        if page in self._known_pages:
+            return
+        self._unexpected_page = True
+        self._unexpected_page_event.set()
+        observer = self._dialog_observer
+        if observer is not None:
+            observer.refuse('dialog_page_unknown')
+
+    def _on_context_dialog(self, dialog) -> None:
+        try:
+            if (dialog.page is self._page and self._page is not None
+                    and self._dialog_observer is not None):
+                return
+        except Exception:
+            pass
+        # The context listener retains an unknown-page modal before Playwright
+        # can invoke its no-listener auto-dismiss fallback.
+        self._unexpected_page = True
+        self._unexpected_page_event.set()
+        observer = self._dialog_observer
+        if observer is not None:
+            observer.refuse('dialog_page_unknown')
+
     async def stop_dialog_observer(self) -> None:
         for emitter, event, callback in self._dialog_handlers:
             remove = getattr(emitter, 'remove_listener', None)
@@ -754,7 +809,8 @@ class PlaywrightBrowserDriver:
                 if not self._native_aborted:
                     raise PlaywrightDriverError('browser_dialog_cleanup_unverified') from None
 
-    async def arm_dialog_observer(self, *, document_epoch: int):
+    async def arm_dialog_observer(self, *, document_epoch: int,
+                                  navigation_target: str | None = None):
         """Capture the actual main-frame identity before one approved operation."""
         observer, cdp = self._dialog_observer, self._dialog_cdp
         if observer is None or cdp is None:
@@ -766,7 +822,8 @@ class PlaywrightBrowserDriver:
             if not all(type(value) is str and value for value in (root_id, loader_id, url)):
                 raise ValueError('missing frame identity')
             observer.arm(root_frame_id=root_id, loader_id=loader_id,
-                         frame_url=url, document_epoch=document_epoch)
+                         frame_url=url, document_epoch=document_epoch,
+                         navigation_target=navigation_target)
             self._dialog_attempted = False
             return observer
         except Exception:
@@ -779,7 +836,8 @@ class PlaywrightBrowserDriver:
 
         observer = self._dialog_observer
         if (observer is None or observer.pending() is not observed
-                or self._dialog_attempted or choice not in {'accept', 'dismiss'}
+                or self.unexpected_page() or self._dialog_attempted
+                or choice not in {'accept', 'dismiss'}
                 or not physical_browser_dialog_allowed(observed.dialog, choice)):
             return False
         if (prompt_text is not None and (choice != 'accept' or observed.kind != 'prompt'

@@ -20,6 +20,7 @@ from .env_config import env_str
 MAX_STEPS = 20
 MAX_PLAN_BYTES = 60_000
 CLOSE_WAIT_SECONDS = 15.0
+POPUP_EVENT_WINDOW_SECONDS = 1.0
 TOOL = 'browser_run'
 KIND = 'toolrpc.browser_run'
 TITLE = 'Run approved browser plan'
@@ -554,6 +555,12 @@ class BrowserRuntime:
                                     outcome = {'action': 'snapshot', 'status': 'done', 'result': result}
                                 else:
                                     outcome = await browser.run_step(step)
+                                if step['action'] in {'navigate', 'click', 'type', 'submit',
+                                                      'scroll', 'back', 'press'}:
+                                    watch_popup = getattr(driver, 'wait_unexpected_page', None)
+                                    if callable(watch_popup) and await watch_popup(
+                                            POPUP_EVENT_WINDOW_SECONDS):
+                                        raise BrowserPlanRefused('dialog_unresolved')
                         if outcome.get('status') != 'done':
                             raise BrowserPlanRefused('browser_step_refused')
                         trace.append(outcome)
@@ -799,6 +806,38 @@ class BrowserRuntime:
             and self.control_current(task) is True
         )
 
+    def _dialog_durable_current(self, session, episode) -> bool:
+        """Recheck both signed rows synchronously at the physical method gate."""
+        try:
+            claimed = getattr(episode, 'claimed_task', None)
+            if (claimed is None or self.queue is None
+                    or not self._dialog_memory_current(session, episode)):
+                return False
+            opener = self.queue.get(episode.opener_task_id)
+            response = self.queue.get(claimed.id)
+            if opener is None or response is None:
+                return False
+            opener_fp = self.queue.execution_fingerprint(opener)
+            response_fp = self.queue.execution_fingerprint(response)
+            return bool(
+                opener.status == 'running' and opener.kind == 'toolrpc.browser_run'
+                and opener.id == episode.opener_task_id
+                and opener.agent == episode.agent and opener.decided_by == episode.owner
+                and opener.decision == 'accept'
+                and opener_fp == episode.opener_fingerprint
+                and self.queue.validate_mediated_execution(opener, opener_fp)
+                and response.status == 'running'
+                and response.kind == 'toolrpc.browser_dialog'
+                and response.id == claimed.id and response.agent == episode.agent
+                and response.decided_by == episode.owner
+                and response.decision == 'accept' and response.attempts == 1
+                and response.payload == claimed.payload
+                and response_fp == self.queue.execution_fingerprint(claimed)
+                and self.queue.validate_mediated_execution(response, response_fp)
+            )
+        except Exception:
+            return False
+
     async def _respond_dialog_episode(self, session, episode, bridge,
                                       step_timeout, plan_deadline) -> None:
         from .browser_dialogs import DialogObservationRefused
@@ -807,6 +846,7 @@ class BrowserRuntime:
         loop = asyncio.get_running_loop()
         if not episode.capture(now=loop.time()):
             raise DialogObservationRefused('dialog_frame_unknown')
+        episode.generation = session.generation
         episode.expires_at = min(loop.time() + 60, plan_deadline, session.created + 600)
         step_timeout.reschedule(episode.expires_at)
         if not self._dialog_memory_current(session, episode):
@@ -854,7 +894,7 @@ class BrowserRuntime:
                                                 claimed, claimed_fp)
                 or not await asyncio.to_thread(self.queue.validate_mediated_execution,
                                                 opener_live, episode.opener_fingerprint)
-                or not self._dialog_memory_current(session, episode)):
+                or not self._dialog_durable_current(session, episode)):
             raise DialogObservationRefused('dialog_unresolved')
         observed = episode.observed
         if observed is None:
@@ -873,16 +913,22 @@ class BrowserRuntime:
             claimed, opener_live, observed.dialog, session_id=session.id,
             generation=episode.generation, plan_sha256=episode.plan_sha256,
             step_index=episode.step_index,
-            current=lambda: self._dialog_memory_current(session, episode),
+            current=lambda: self._dialog_durable_current(session, episode),
         ):
             if not await authorize_dialog_response(self.authorizer):
                 raise DialogObservationRefused('dialog_unresolved')
-            if not self._dialog_memory_current(session, episode):
+            if not self._dialog_durable_current(session, episode):
                 raise DialogObservationRefused('dialog_unresolved')
             if not await session.driver.respond_dialog(
                     observed, safe['choice'], prompt_text=prompt_text):
                 raise DialogObservationRefused('dialog_unresolved')
         episode.responded = True
+        # The approved native answer has been attempted. Retire this modal
+        # observer before the opening navigation resumes; its expected frame
+        # transition is no longer evidence of an unapproved dialog. The
+        # context listener remains installed and refuses any later modal.
+        self._dialog_episodes.pop(episode.opener_task_id, None)
+        await session.driver.stop_dialog_observer()
 
     async def _settle_dialog(self, episode, *, success: bool) -> None:
         from .autonomy.queue import TaskStatus
@@ -892,8 +938,22 @@ class BrowserRuntime:
             return
         task = getattr(episode, 'settlement_task', None)
         if task is None:
-            result = {'status': 'completed'} if success else {
-                'reason': 'dialog_outcome_unknown', 'possibly_applied': True}
+            if success:
+                result = {'status': 'completed'}
+            elif getattr(episode, 'responded', False):
+                # The native method returned, but the opening browser operation
+                # did not complete (for example, dismissing beforeunload
+                # cancels navigation). Keep the one-use row failed and report
+                # the two facts separately.
+                result = {
+                    'reason': 'dialog_opening_incomplete',
+                    'native_response': 'confirmed',
+                    'choice': claimed.payload['args']['choice'],
+                    'opening': 'not_completed',
+                    'opener_possibly_applied': True,
+                }
+            else:
+                result = {'reason': 'dialog_outcome_unknown', 'possibly_applied': True}
             status = TaskStatus.DONE if success else TaskStatus.FAILED
             task = asyncio.create_task(asyncio.to_thread(
                 self.queue.transition, claimed.id, status, result=result,
@@ -1047,8 +1107,11 @@ class BrowserRuntime:
                     observer = getattr(session.driver, '_dialog_observer', None)
                     stale = (not session.current() or session.head != self._head()
                              or not self._session_registration_current(session)
+                             or (callable(getattr(session.driver, 'unexpected_page', None))
+                                 and session.driver.unexpected_page())
                              or bool(getattr(observer, 'refused_reason', ''))
                              or any(episode.session_id == session.id and
+                                    episode.observed is not None and
                                     self._episode_for(episode.agent, episode.opener_task_id,
                                                       episode.dialog_id) is not episode
                                     for episode in self._dialog_episodes.values())
@@ -1156,7 +1219,10 @@ class BrowserRuntime:
                               and step['action'] in {'navigate', 'click', 'type', 'submit',
                                                     'scroll', 'back', 'press'}):
                             observer = await driver.start_dialog_observer()
-                            await driver.arm_dialog_observer(document_epoch=session.generation)
+                            await driver.arm_dialog_observer(
+                                document_epoch=session.generation,
+                                navigation_target=(step['url'] if step['action'] == 'navigate'
+                                                   else None))
                             bridge = self.dialog_worker.begin_browser_dialog_bridge(task)
                             if bridge is None:
                                 raise BrowserPlanRefused('dialog_unavailable')
@@ -1186,6 +1252,8 @@ class BrowserRuntime:
                                     )
                                 except ExceptionGroup:
                                     raise BrowserPlanRefused('dialog_unresolved') from None
+                                if await driver.wait_unexpected_page(POPUP_EVENT_WINDOW_SECONDS):
+                                    raise BrowserPlanRefused('dialog_unresolved')
                                 dialog_settled = outcome.get('status') == 'done'
                                 await self._settle_dialog(episode, success=dialog_settled)
                             except BaseException:

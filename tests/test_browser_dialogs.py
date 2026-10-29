@@ -47,6 +47,40 @@ def test_navigation_without_modal_disarms_without_false_dialog_failure():
     assert not observer.ready.is_set()
 
 
+def test_exact_approved_main_document_transition_preserves_dialog_observer():
+    page = object()
+    observer = DialogFrameObserver(page=page)
+    observer.arm(root_frame_id='root', loader_id='old',
+                 frame_url='about:blank', document_epoch=0,
+                 navigation_target='http://fixture.browser.test/destination')
+    observer.on_frame_navigated({'frame': {
+        'id': 'root', 'loaderId': 'new',
+        'url': 'http://fixture.browser.test/destination'}})
+    dialog = SimpleNamespace(page=page, type='alert', message='inline', default_value='')
+    observer.on_cdp_open({'frameId': 'root',
+                          'url': 'http://fixture.browser.test/destination',
+                          'type': 'alert', 'message': 'inline'})
+    observer.on_playwright_dialog(dialog)
+    assert observer.pending() is not None
+    assert observer.pending().loader_id == 'new'
+    assert observer.pending().dialog is dialog
+
+
+@pytest.mark.parametrize('frame', [
+    {'id': 'child', 'loaderId': 'new', 'url': 'http://fixture.browser.test/destination'},
+    {'id': 'root', 'loaderId': 'new', 'url': 'http://fixture.browser.test/other'},
+    {'id': 'root', 'loaderId': 'old', 'url': 'http://fixture.browser.test/destination'},
+])
+def test_navigation_transition_refuses_unrelated_frame_url_or_loader(frame):
+    observer = DialogFrameObserver(page=object())
+    observer.arm(root_frame_id='root', loader_id='old', frame_url='about:blank',
+                 document_epoch=0,
+                 navigation_target='http://fixture.browser.test/destination')
+    observer.on_frame_navigated({'frame': frame})
+    assert observer.pending() is None
+    assert not observer._armed
+
+
 def test_main_frame_alert_pairs_with_exact_playwright_object():
     page = object()
     dialog = SimpleNamespace(page=page, type='alert', message='hello', default_value='')
@@ -144,6 +178,7 @@ async def test_driver_installs_internal_cdp_and_playwright_observers_before_oper
     class Context:
         def __init__(self, cdp):
             self.cdp = cdp
+            self.pages = [page]
 
         async def new_cdp_session(self, _page):
             return self.cdp
@@ -152,6 +187,7 @@ async def test_driver_installs_internal_cdp_and_playwright_observers_before_oper
     driver = PlaywrightBrowserDriver(host_enabled=True)
     driver._page = page
     driver._context = Context(cdp)
+    driver._known_pages = frozenset({page})
     observer = await driver.start_dialog_observer()
     assert cdp.calls == ['Page.enable', 'Page.getFrameTree']
     await driver.arm_dialog_observer(document_epoch=0)
@@ -401,3 +437,70 @@ def test_dialog_episode_exposes_only_bounded_pending_observation_and_expires():
     observer.on_playwright_dialog(native)
     assert episode.capture(now=2) is False
     assert episode.pending(now=2) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('observed', 'current', 'must_close'), [
+    (False, True, False),
+    (True, True, True),
+    (False, False, True),
+])
+async def test_reaper_preserves_unobserved_operation_but_closes_stale_episode_or_session(
+        monkeypatch, observed, current, must_close):
+    from agents.core import browser_runtime as runtime_module
+
+    runtime = object.__new__(BrowserRuntime)
+    session = SimpleNamespace(
+        id='s' * 32, head='current-head', current=lambda: current,
+        driver=SimpleNamespace(_dialog_observer=SimpleNamespace(refused_reason=''),
+                               unexpected_page=lambda: False),
+        owner_task=object())
+    runtime.sessions = {session.id: session}
+    runtime._uncertain_sessions = {}
+    runtime._dialog_episodes = {1: SimpleNamespace(
+        session_id=session.id, observed=object() if observed else None,
+        agent='agent-a', opener_task_id=1, dialog_id='d' * 32)}
+    runtime._head = lambda: 'current-head'
+    runtime._session_registration_current = lambda _session: True
+    runtime._episode_for = lambda *_args: None
+    runtime.control_current = lambda _task: True
+    closed = []
+
+    async def close_owner_session(sid):
+        closed.append(sid)
+        runtime.sessions.pop(sid, None)
+
+    runtime.close_owner_session = close_owner_session
+    ticks = 0
+
+    async def next_tick(_seconds):
+        nonlocal ticks
+        ticks += 1
+        await asyncio.sleep(0)
+        if ticks == 2:
+            runtime.sessions.clear()
+
+    monkeypatch.setattr(runtime_module, 'asyncio', SimpleNamespace(sleep=next_tick))
+    await runtime._reap_sessions()
+    assert closed == ([session.id] if must_close else [])
+
+
+def test_context_dialog_listener_preserves_owned_pairing_and_refuses_foreign_or_late_modal():
+    driver = PlaywrightBrowserDriver(host_enabled=True)
+    owned, foreign = object(), object()
+    refused = []
+    driver._page = owned
+    driver._context = SimpleNamespace(pages=[owned])
+    driver._known_pages = frozenset({owned})
+    driver._dialog_observer = SimpleNamespace(refuse=refused.append)
+    driver._on_context_dialog(SimpleNamespace(page=owned))
+    assert refused == [] and not driver.unexpected_page()
+    driver._on_context_dialog(SimpleNamespace(page=foreign))
+    assert refused == ['dialog_page_unknown'] and driver.unexpected_page()
+
+    after_response = PlaywrightBrowserDriver(host_enabled=True)
+    after_response._page = owned
+    after_response._context = SimpleNamespace(pages=[owned])
+    after_response._known_pages = frozenset({owned})
+    after_response._on_context_dialog(SimpleNamespace(page=owned))
+    assert after_response.unexpected_page()

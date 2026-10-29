@@ -220,18 +220,24 @@ class DialogFrameObserver:
         self._playwright: object | None = None
         self._playwright_at = 0.0
         self._paired: ObservedDialog | None = None
+        self._navigation_target: str | None = None
         self.ready = asyncio.Event()
 
     def arm(self, *, root_frame_id: str, loader_id: str,
-            frame_url: str, document_epoch: int) -> None:
+            frame_url: str, document_epoch: int,
+            navigation_target: str | None = None) -> None:
         if (not root_frame_id or not loader_id or not frame_url
-                or type(document_epoch) is not int or document_epoch < 0):
+                or type(document_epoch) is not int or document_epoch < 0
+                or (navigation_target is not None and
+                    (type(navigation_target) is not str or not navigation_target))):
             self.refuse('dialog_frame_unknown')
             return
         self.root_frame_id = root_frame_id
         self.loader_id = loader_id
         self.frame_url = urldefrag(frame_url).url
         self.document_epoch = document_epoch
+        self._navigation_target = (urldefrag(navigation_target).url
+                                   if navigation_target else None)
         self.refused_reason = ''
         self._cdp = None
         self._cdp_at = 0.0
@@ -249,6 +255,7 @@ class DialogFrameObserver:
         self._playwright = None
         self._playwright_at = 0.0
         self._paired = None
+        self._navigation_target = None
         self.ready.set()
 
     def disarm(self) -> None:
@@ -258,7 +265,29 @@ class DialogFrameObserver:
         self._playwright = None
         self._playwright_at = 0.0
         self._paired = None
+        self._navigation_target = None
         self.ready.clear()
+
+    def on_frame_navigated(self, event: object) -> None:
+        target = self._navigation_target
+        if not self._armed or target is None or self._cdp is not None or self._playwright is not None:
+            self.invalidate()
+            return
+        frame = event.get('frame') if isinstance(event, dict) else None
+        if not isinstance(frame, dict):
+            self.refuse('dialog_document_changed')
+            return
+        frame_id, loader_id, url = (frame.get(key) for key in ('id', 'loaderId', 'url'))
+        if (type(frame_id) is not str or frame_id != self.root_frame_id
+                or type(loader_id) is not str or not loader_id
+                or loader_id == self.loader_id or type(url) is not str
+                or urldefrag(url).url != target or frame.get('parentId') is not None):
+            self.refuse('dialog_document_changed')
+            return
+        self.loader_id = loader_id
+        self.frame_url = target
+        self.document_epoch += 1
+        self._navigation_target = None
 
     def invalidate(self) -> None:
         if self._cdp is None and self._playwright is None and self._paired is None:
