@@ -14,7 +14,7 @@ import stat
 from pathlib import Path
 from urllib.parse import quote
 
-from .checkpoint_payloads import CheckpointPayloadStore, PayloadRefusal
+from .checkpoint_payloads import CheckpointPayloadStore, PayloadRefusal, _ref
 from .commands import Principal
 from .file_tools import FileScope, SnapshotStore
 
@@ -124,16 +124,16 @@ class CheckpointInventory:
         return ({"state": "ready", "bytes": total if exact else None,
                  "bytes_exact": exact}, names, exact)
 
-    def _read_index(self) -> tuple[list[dict], bool, bool, str]:
+    def _read_index(self) -> tuple[list[dict], list[dict], bool, bool, str]:
         db_path = self.snapshots.directory / "history.sqlite3"
         try:
             info = os.stat(db_path, follow_symlinks=False)
         except FileNotFoundError:
-            return [], False, True, "absent"
+            return [], [], False, True, "absent"
         except OSError:
-            return [], False, False, "unreachable"
+            return [], [], False, False, "unreachable"
         if not stat.S_ISREG(info.st_mode):
-            return [], False, False, "invalid"
+            return [], [], False, False, "invalid"
         connection = None
         try:
             uri = "file:" + quote(str(db_path), safe="/") + "?mode=ro"
@@ -144,7 +144,7 @@ class CheckpointInventory:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
                 "('entries','groups','group_files')")}
             if "entries" not in tables:
-                return [], "groups" in tables, False, "invalid"
+                return [], [], "groups" in tables, False, "invalid"
             rows: list[dict] = []
             complete = True
             bytes_exact = True
@@ -165,6 +165,15 @@ class CheckpointInventory:
                 )
                 rows.append(item)
             has_groups = "groups" in tables
+            raw_group_files: list[dict] = []
+            if "group_files" in tables:
+                child_rows = connection.execute(
+                    "SELECT * FROM group_files ORDER BY group_id,path LIMIT ?",
+                    (MAX_INDEX_ROWS + 1,),
+                ).fetchall()
+                raw_group_files = [dict(child) for child in child_rows[:MAX_INDEX_ROWS]]
+                if len(child_rows) > MAX_INDEX_ROWS or not has_groups:
+                    complete = False
             if has_groups:
                 group_rows = connection.execute(
                     "SELECT * FROM groups ORDER BY id LIMIT ?",
@@ -175,16 +184,13 @@ class CheckpointInventory:
                 group_refs: dict[str, set[str]] = {}
                 group_metadata: dict[str, list[dict]] = {}
                 if "group_files" in tables:
-                    size_rows = connection.execute(
-                        "SELECT * FROM group_files ORDER BY group_id,path LIMIT ?",
-                        (MAX_INDEX_ROWS + 1,),
-                    ).fetchall()
-                    if len(size_rows) > MAX_INDEX_ROWS:
-                        complete = False
-                    for size_row in size_rows[:MAX_INDEX_ROWS]:
+                    group_ids = {row["id"] for row in group_rows[:MAX_INDEX_ROWS]}
+                    for size_row in raw_group_files:
                         ident = size_row["group_id"]
+                        if ident not in group_ids:
+                            complete = False
                         size = size_row["post_size"]
-                        group_metadata.setdefault(ident, []).append(dict(size_row))
+                        group_metadata.setdefault(ident, []).append(size_row)
                         group_refs.setdefault(ident, set()).update(
                             ref for ref in (size_row["pre_ref"], size_row["undo_ref"])
                             if isinstance(ref, str)
@@ -205,9 +211,9 @@ class CheckpointInventory:
             if not complete or not bytes_exact:
                 for item in rows:
                     item["observed_post_bytes"] = None
-            return rows, has_groups, complete, "ready"
+            return rows, raw_group_files, has_groups, complete, "ready"
         except (sqlite3.Error, KeyError, TypeError, ValueError):
-            return [], False, False, "invalid"
+            return [], [], False, False, "invalid"
         finally:
             if connection is not None:
                 connection.close()
@@ -215,9 +221,9 @@ class CheckpointInventory:
     def _inventory(self, project: str | None) -> dict:
         storage, storage_names, storage_complete = self._storage()
         if storage["state"] in {"invalid", "unreachable"}:
-            rows, has_groups, index_complete, index_state = [], False, False, "invalid"
+            rows, raw_group_files, has_groups, index_complete, index_state = [], [], False, False, "invalid"
         else:
-            rows, has_groups, index_complete, index_state = self._read_index()
+            rows, raw_group_files, has_groups, index_complete, index_state = self._read_index()
         for row in rows:
             try:
                 row["root_state"] = self._root_state(
@@ -236,7 +242,8 @@ class CheckpointInventory:
             complete = False
         elif owned["state"] == "ready":
             generic_records = {name[:-5] for name, *_ in storage_names
-                               if name.endswith(".json") and "/" not in name}
+                               if name.endswith(".json") and "/" not in name
+                               and _ref(name[:-5])}
             for row in rows:
                 record_refs, _ = self._row_refs(row)
                 if any(ref not in owned["records"] and ref not in generic_records
@@ -248,7 +255,8 @@ class CheckpointInventory:
             storage["bytes_exact"] = False
         all_rows = rows
         rows = [row for row in all_rows if row["root"] == project] if project is not None else all_rows
-        return {"rows": rows, "all_rows": all_rows, "owned": owned,
+        return {"rows": rows, "all_rows": all_rows, "raw_group_files": raw_group_files,
+                "owned": owned,
                 "store": storage, "storage_names": storage_names,
                 "index_state": index_state, "groups_supported": has_groups,
                 "complete": complete, "index_complete": index_complete}
@@ -265,6 +273,47 @@ class CheckpointInventory:
     @staticmethod
     def _complete_row(row: dict) -> bool:
         return row["status"] in (_FILE_COMPLETE if row["type"] == "file" else _GROUP_COMPLETE)
+
+    @staticmethod
+    def _reference_breakdown(remaining: list[dict], owned: dict | None,
+                             storage_names: list[tuple], complete: bool) -> dict:
+        keys = ("generic_retained_records", "generic_index_referenced_records",
+                "shared_owned_records", "shared_owned_blobs",
+                "retained_direct_post_blobs", "protected_owned_records",
+                "protected_owned_blobs", "unreferenced_owned_records",
+                "unreferenced_owned_blobs")
+        if not complete or owned is None:
+            return {"complete": False, **dict.fromkeys(keys)}
+        generic_names = {name[:-5] for name, *_ in storage_names
+                         if name.endswith(".json") and "/" not in name
+                         and _ref(name[:-5])}
+        generic_refs: set[str] = set()
+        direct_post: set[str] = set()
+        record_holders: dict[str, set[tuple]] = {}
+        blob_holders: dict[str, set[tuple]] = {}
+        for row in remaining:
+            identity = (row["root"], row["root_dev"], row["root_ino"])
+            records, posts = CheckpointInventory._row_refs(row)
+            for ref in records:
+                if ref in generic_names and ref not in owned["records"]:
+                    generic_refs.add(ref)
+                if ref in owned["records"]:
+                    record_holders.setdefault(ref, set()).add(identity)
+                    blob_holders.setdefault(owned["records"][ref]["blob_sha"], set()).add(identity)
+            for sha in posts:
+                if sha in owned["blobs"]:
+                    direct_post.add(sha)
+                    blob_holders.setdefault(sha, set()).add(identity)
+        return {"complete": True,
+                "generic_retained_records": len(generic_names),
+                "generic_index_referenced_records": len(generic_refs),
+                "shared_owned_records": sum(len(holders) > 1 for holders in record_holders.values()),
+                "shared_owned_blobs": sum(len(holders) > 1 for holders in blob_holders.values()),
+                "retained_direct_post_blobs": len(direct_post),
+                "protected_owned_records": len(record_holders),
+                "protected_owned_blobs": len(blob_holders),
+                "unreferenced_owned_records": len(owned["records"]) - len(record_holders),
+                "unreferenced_owned_blobs": len(owned["blobs"]) - len(blob_holders)}
 
     @staticmethod
     def _categories(names: list[tuple], owned: dict | None, exact: bool) -> dict:
@@ -284,7 +333,8 @@ class CheckpointInventory:
                 key = "index_bytes"
             elif name.startswith("checkpoint_operations.sqlite3"):
                 key = "operation_journal_bytes"
-            elif (name.endswith(".json") and "/" not in name) or name.startswith("blobs/"):
+            elif ((name.endswith(".json") and "/" not in name and _ref(name[:-5]))
+                  or (name.startswith("blobs/") and _ref(name[6:]))):
                 key = "generic_snapshot_bytes"
             else:
                 key = "other_overhead_bytes"
@@ -308,7 +358,8 @@ class CheckpointInventory:
             for ref in record_refs:
                 if ref in records:
                     owners.setdefault(("record", ref), set()).add(identity)
-                    bytes_used += records[ref]["physical_size"]
+                    if bytes_used is not None:
+                        bytes_used += records[ref]["physical_size"]
                     seen_blobs.add(records[ref]["blob_sha"])
                 else:
                     bytes_used = None
@@ -450,6 +501,7 @@ class CheckpointInventory:
             selected = [row for row in rows if self._complete_row(row)]
         else:
             selected = []
+            budget_unknown = False
             by_project: dict[tuple, list[dict]] = {}
             for row in rows:
                 identity = (row["root"], row["root_dev"], row["root_ino"])
@@ -460,8 +512,12 @@ class CheckpointInventory:
                 # The inventory is newest-first; a retained newest complete row
                 # stays protected even when the requested byte cap is impossible.
                 logical = accounting.get("row_logical", {})
-                current_bytes = (sum(logical[row["id"]] for row in live)
-                                 if all(logical.get(row["id"]) is not None for row in live) else None)
+                retained_live = [row for row in project_rows if row["root_state"] == "live"]
+                current_bytes = (sum(logical[row["id"]] for row in retained_live)
+                                 if all(logical.get(row["id"]) is not None
+                                        for row in retained_live) else None)
+                if max_bytes is not None and current_bytes is None:
+                    budget_unknown = True
                 min_keep = keep_last if keep_last is not None else 1
                 if keep_last is None and max_bytes is None:
                     chosen = [row for row in live[1:] if row["status"] in (
@@ -484,6 +540,12 @@ class CheckpointInventory:
                     selected.extend(row for row in complete if row["root_state"] in
                                     {"unreachable", "unconfigured"})
             selected.sort(key=lambda row: (-float(row["created_at"]), row["id"]))
+        if action != "prune":
+            budget_unknown = False
+        remaining_eligible_rows = 0
+        if action == "clear" and len(selected) > MAX_LIMIT:
+            remaining_eligible_rows = len(selected) - MAX_LIMIT
+            selected = selected[:MAX_LIMIT]
         selected_ids = {row["id"] for row in selected}
         remaining = [row for row in all_rows if row["id"] not in selected_ids]
         owned = view["owned"]
@@ -504,7 +566,21 @@ class CheckpointInventory:
             gc_blobs = sorted(set(owned["blobs"]) - retained_blobs) if action != "clear-legacy" else []
             reclaimable = sum(owned["records"][ref]["physical_size"] for ref in gc_records)
             reclaimable += sum(owned["blobs"][sha]["physical_size"] for sha in gc_blobs)
-        gc_candidate_overflow = len(gc_records) + len(gc_blobs) > MAX_GC_CANDIDATES
+        if budget_unknown:
+            gc_records, gc_blobs, reclaimable = [], [], None
+        remaining_eligible_assets = 0
+        if action == "clear" and len(gc_records) + len(gc_blobs) > MAX_GC_CANDIDATES:
+            all_records, all_blobs = gc_records, gc_blobs
+            gc_records = all_records[:MAX_GC_CANDIDATES]
+            retained_owned_records = set(owned["records"]) - set(gc_records)
+            retained_owned_blobs = {owned["records"][ref]["blob_sha"]
+                                    for ref in retained_owned_records}
+            gc_blobs = [sha for sha in all_blobs if sha not in retained_owned_blobs][
+                :MAX_GC_CANDIDATES - len(gc_records)]
+            remaining_eligible_assets = len(all_records) + len(all_blobs) - len(gc_records) - len(gc_blobs)
+            reclaimable = sum(owned["records"][ref]["physical_size"] for ref in gc_records)
+            reclaimable += sum(owned["blobs"][sha]["physical_size"] for sha in gc_blobs)
+        gc_candidate_overflow = action != "clear" and len(gc_records) + len(gc_blobs) > MAX_GC_CANDIDATES
         if gc_candidate_overflow:
             reclaimable = None
         # Include the entire bounded index, root currentness and storage names;
@@ -515,6 +591,7 @@ class CheckpointInventory:
             "index_state": view["index_state"], "complete": view["complete"],
             "rows": [(row["id"], row["root_state"], row["_generation"])
                      for row in all_rows],
+            "raw_group_files": view["raw_group_files"],
             "owned": ({**owned, "identity": {
                 **owned["identity"],
                 "generic": {key: owned["identity"]["generic"][key]
@@ -531,11 +608,8 @@ class CheckpointInventory:
         }
         generation = hashlib.sha256(json.dumps(
             material, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
-        records = {name[:-5] for name, *_ in view["storage_names"]
-                   if name.endswith(".json") and "/" not in name}
-        shared = {ref for row in all_rows for ref in (
-            row.get("pre_ref"), row.get("undo_ref"), *row.get("_refs", ()))
-                  if ref in records}
+        reference_breakdown = self._reference_breakdown(
+            remaining, owned, view["storage_names"], view["complete"])
         remaining_over_bytes = None
         if max_bytes is not None and accounting.get("row_logical") is not None:
             totals: dict[tuple, int | None] = {}
@@ -549,17 +623,24 @@ class CheckpointInventory:
             if all(total is not None for total in totals.values()):
                 remaining_over_bytes = sum(max(0, total - max_bytes) for total in totals.values())
         return {
-            "ok": view["complete"] and not gc_candidate_overflow, "action": action,
+            "ok": view["complete"] and not gc_candidate_overflow and not budget_unknown,
+            "action": action,
             "candidates": [self._public_row(row) for row in selected[:limit]],
             "omitted": max(0, len(selected) - limit) if view["index_complete"] else None,
-            "truncated": not view["complete"] or len(selected) > limit or gc_candidate_overflow,
-            "complete": view["complete"] and len(selected) <= limit and not gc_candidate_overflow,
+            "truncated": (not view["complete"] or len(selected) > limit or
+                          gc_candidate_overflow or budget_unknown),
+            "complete": (view["complete"] and len(selected) <= limit and
+                         not gc_candidate_overflow and not budget_unknown),
             "generation": generation, "reclaimable_bytes": reclaimable,
             "owned_gc": {"records": gc_records[:MAX_GC_CANDIDATES],
                          "blobs": gc_blobs[:max(0, MAX_GC_CANDIDATES - len(gc_records))],
                          "omitted": max(0, len(gc_records) + len(gc_blobs) - MAX_GC_CANDIDATES),
                          "reclaimable_bytes": reclaimable,
-                         "complete": view["complete"] and not gc_candidate_overflow},
+                         "complete": view["complete"] and not gc_candidate_overflow
+                         and not budget_unknown},
+            "batch": {"remaining_eligible_rows": remaining_eligible_rows,
+                      "remaining_eligible_assets": remaining_eligible_assets,
+                      "needs_fresh_approval": bool(remaining_eligible_rows or remaining_eligible_assets)},
             "protected_rows": len(remaining),
             "retention": {"keep_last": keep_last, "max_bytes": max_bytes,
                           "include_orphans": include_orphans,
@@ -568,6 +649,6 @@ class CheckpointInventory:
                           "budget_unattainable": (max_bytes is not None and
                                                   (remaining_over_bytes is None or
                                                    remaining_over_bytes > 0))},
-            "protected_shared_refs": len(shared),
+            "reference_breakdown": reference_breakdown,
             "legacy_format_identified": False,
         }

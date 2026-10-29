@@ -549,7 +549,7 @@ class CheckpointPayloadStore:
         with self._read() as handles:
             if handles is None:
                 raise PayloadRefusal("inventory_changed")
-            _generic, _namespace, record_dir, blob_dir = handles
+            _generic, namespace, record_dir, blob_dir = handles
             pending_records = set(expected["records"])
             pending_blobs = set(expected["blobs"])
             for kind, names, parent, pending, rows in (
@@ -576,12 +576,72 @@ class CheckpointPayloadStore:
                         raise PayloadRefusal("blob_invalid")
                     if not current_check():
                         raise PayloadRefusal("authority_changed")
-                    named = os.stat(name, dir_fd=parent, follow_symlinks=False)
-                    if _fingerprint(named) != rows[ref]["fingerprint"]:
-                        raise PayloadRefusal("asset_changed")
-                    os.unlink(name, dir_fd=parent)
-                    os.fsync(parent)
+                    self._claim_verified_asset(namespace, parent, name, found[0],
+                                               rows[ref]["fingerprint"], current_check)
                     pending.remove(ref)
                     removed[kind].append(ref)
                     removed["bytes"] += rows[ref]["physical_size"]
         return removed
+
+    def _claim_verified_asset(self, namespace: int, parent: int, name: str,
+                              expected_data: bytes, expected_fingerprint: dict,
+                              current_check: Callable[[], bool]) -> None:
+        """Move a replaceable source name into a private, unlistable capability dir.
+
+        The original name may be swapped until rename, so the moved inode and
+        bytes are checked after the atomic move. The random capability name is
+        never exposed in the shared, listable records/blobs directories. On a
+        mismatch or interruption, retain the claimed content and refuse future
+        inventory until an owner inspects the quarantine.
+        """
+        claim_dir_name = ".nerva-gc-" + secrets.token_hex(16)
+        claim_name = secrets.token_hex(32)
+        os.mkdir(claim_dir_name, mode=0o700, dir_fd=namespace)
+        claim_dir = None
+        moved = False
+        removed = False
+        try:
+            claim_dir = os.open(claim_dir_name, _OPEN_DIR, dir_fd=namespace)
+            _dir_info(claim_dir, private=True)
+            os.fchmod(claim_dir, 0o300)  # write + traverse; capability name cannot be listed
+            os.fsync(namespace)
+            if not current_check():
+                raise PayloadRefusal("authority_changed")
+            os.rename(name, claim_name, src_dir_fd=parent, dst_dir_fd=claim_dir)
+            moved = True
+            os.fsync(parent)
+            os.fsync(claim_dir)
+            cap = MAX_METADATA_BYTES if name.endswith(".json") else MAX_CAPTURE_BYTES
+            claimed = _read_file(claim_dir, claim_name, cap=cap)
+            if claimed is None or claimed[0] != expected_data:
+                raise PayloadRefusal("claimed_asset_changed")
+            # Rename updates ctime, so compare the immutable inode, owner,
+            # mode, size and mtime plus the verified complete byte stream.
+            for key in ("dev", "ino", "size", "mode", "nlink", "uid", "mtime_ns"):
+                if _fingerprint(claimed[1])[key] != expected_fingerprint[key]:
+                    raise PayloadRefusal("claimed_asset_changed")
+            if not current_check():
+                raise PayloadRefusal("authority_changed")
+            fd = os.open(claim_name, _OPEN_FILE, dir_fd=claim_dir)
+            try:
+                before = os.fstat(fd)
+                if _fingerprint(before) != _fingerprint(claimed[1]):
+                    raise PayloadRefusal("claimed_asset_changed")
+                os.unlink(claim_name, dir_fd=claim_dir)
+                removed = True
+                after = os.fstat(fd)
+                if _identity(after) != _identity(before) or after.st_nlink != 0:
+                    raise PayloadRefusal("claimed_asset_changed")
+                os.fsync(claim_dir)
+            finally:
+                os.close(fd)
+            os.rmdir(claim_dir_name, dir_fd=namespace)
+            os.fsync(namespace)
+        finally:
+            if claim_dir is not None:
+                os.close(claim_dir)
+            if not moved and not removed:
+                with contextlib.suppress(OSError):
+                    os.rmdir(claim_dir_name, dir_fd=namespace)
+                with contextlib.suppress(OSError):
+                    os.fsync(namespace)

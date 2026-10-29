@@ -110,8 +110,10 @@ class CheckpointMaintenance:
             return False
 
     @staticmethod
-    def _row_signature(rows: list[dict]) -> str:
-        material = [(row["id"], row["root_state"], row["_generation"]) for row in rows]
+    def _row_signature(rows: list[dict], raw_group_files: list[dict] | None = None) -> str:
+        material = {"rows": [(row["id"], row["root_state"], row["_generation"])
+                             for row in rows],
+                    "raw_group_files": raw_group_files or []}
         return hashlib.sha256(json.dumps(
             material, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
 
@@ -153,6 +155,9 @@ class CheckpointMaintenance:
         tables = {item[0] for item in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name IN ('groups','group_files')")}
+        if "group_files" in tables and "groups" not in tables:
+            raise RuntimeError("group_schema_incomplete")
+        raw_group_files = []
         if "groups" in tables:
             if "group_files" not in tables:
                 raise RuntimeError("group_schema_incomplete")
@@ -163,8 +168,12 @@ class CheckpointMaintenance:
             if len(groups) > MAX_INDEX_ROWS or len(members) > MAX_INDEX_ROWS:
                 raise RuntimeError("index_truncated")
             group_files: dict[str, list[dict]] = {}
+            group_ids = {source["id"] for source in groups}
             for member in members:
+                if member["group_id"] not in group_ids:
+                    raise RuntimeError("orphan_group_file")
                 group_files.setdefault(member["group_id"], []).append(dict(member))
+                raw_group_files.append(dict(member))
             for source in groups:
                 raw = dict(source)
                 rows.append({"id": "group:" + str(raw["id"]), "root": raw["root"],
@@ -176,7 +185,7 @@ class CheckpointMaintenance:
         if project is not None:
             rows = [row for row in rows if row["root"] == project]
         rows.sort(key=lambda row: (-float(row["created_at"]), row["id"]))
-        return cls._row_signature(rows)
+        return cls._row_signature(rows, raw_group_files)
 
     @staticmethod
     def _inspect_existing(db_path: Path, operation_key: str, intent_sha: str) -> dict | None:
@@ -309,9 +318,12 @@ class CheckpointMaintenance:
                     return _refused("stale_preview")
                 if action == "prune" and any(row["root_state"] == "changed" for row in selected.values()):
                     return _refused("root_untrusted")
-                row_signature = self._row_signature(rows)
+                row_signature = self._row_signature(rows, view["raw_group_files"])
+                selected_groups = {ident[6:] for ident in selected if ident.startswith("group:")}
                 remaining_signature = self._row_signature(
-                    [row for row in rows if row["id"] not in selected])
+                    [row for row in rows if row["id"] not in selected],
+                    [child for child in view["raw_group_files"]
+                     if child["group_id"] not in selected_groups])
                 owned_before = view["owned"]
                 generic_names = self._stable_storage_names(view)
                 # Durable claim is committed independently of physical deletion.
@@ -330,7 +342,8 @@ class CheckpointMaintenance:
                 committed_assets: dict | None = None
                 try:
                     current = inventory._inventory(None)
-                    if (not current["complete"] or self._row_signature(current["rows"]) != row_signature
+                    if (not current["complete"] or self._row_signature(
+                            current["rows"], current["raw_group_files"]) != row_signature
                             or not self._owned_current(owned_before, current["owned"])
                             or self._stable_storage_names(current) != generic_names):
                         raise RuntimeError("state_changed_after_claim")
@@ -340,7 +353,8 @@ class CheckpointMaintenance:
                     # The callback can itself observe or change local state;
                     # bind the exact rows/root identities again after it ran.
                     current = inventory._inventory(None)
-                    if (not current["complete"] or self._row_signature(current["rows"]) != row_signature
+                    if (not current["complete"] or self._row_signature(
+                            current["rows"], current["raw_group_files"]) != row_signature
                             or not self._owned_current(owned_before, current["owned"])
                             or self._stable_storage_names(current) != generic_names):
                         raise RuntimeError("state_changed_after_authority")
@@ -362,7 +376,8 @@ class CheckpointMaintenance:
                         guard.execute("BEGIN IMMEDIATE")
                         remaining = inventory._inventory(None)
                         if (not remaining["complete"] or
-                                self._row_signature(remaining["rows"]) != remaining_signature or
+                                self._row_signature(remaining["rows"], remaining["raw_group_files"])
+                                != remaining_signature or
                                 self._stable_storage_names(remaining) != generic_names):
                             raise RuntimeError("state_changed_before_payload")
 

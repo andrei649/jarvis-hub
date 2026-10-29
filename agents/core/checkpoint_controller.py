@@ -144,6 +144,7 @@ class CheckpointController:
                                "include_orphans": intent["include_orphans"],
                                "keep_last": intent["keep_last"], "max_bytes": intent["max_bytes"],
                                "owned_gc": plan["owned_gc"],
+                               "batch": plan["batch"],
                                "protected_rows": plan["protected_rows"],
                                "retained_shared_data": True}
                 if self._runtime() != (worker, queue):
