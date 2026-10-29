@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 stdlib (`ctypes`, `pathlib`, `dataclasses`), Microsoft `kernel32`, `ntdll`, `advapi32`; pytest; GitHub Actions Windows runner.
 
-**Spec:** `jarvis-hub/.superpowers/sdd/2026-10-28-local-completion/task-45-h011-windows-plan.md` and `h011-windows-adapter-map.md` in the canonical ignored Nerva folder.
+**Spec:** [H011 Windows read primitives](../specs/2026-10-29-h011-windows-read-primitives.md). The broader integration is tracked in [the local completion plan](2026-10-28-local-completion.md).
 
 ## Global constraints
 
