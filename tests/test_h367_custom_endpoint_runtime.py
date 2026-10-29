@@ -87,6 +87,31 @@ async def test_custom_wire_uses_pinned_loopback_and_no_ambient_key(active):
 
 
 @pytest.mark.asyncio
+async def test_custom_status_tps_includes_synthetic_response_header_delay(active, monkeypatch):
+    from agents.core import turn_usage
+    from agents.core.llm.providers.custom_runtime import custom_client
+    from agents.core.llm.tool_protocol import TokenUsage
+    from agents.core.turn_usage import model_usage_scope, record_usage, turn_usage_scope
+
+    clock = [1.0]
+    monkeypatch.setattr(turn_usage, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
+    runtime = active.current_runtime()
+    backend = SimpleNamespace(profile=runtime.profile, _custom_endpoint_runtime=runtime)
+    runtime.bind_backend(backend, SimpleNamespace(_compatible_backend=backend))
+    async def delayed_headers(_request):
+        clock[0] = 3.0
+        return httpx.Response(200, json={'ok': True})
+
+    async with custom_client(runtime, inner=httpx.MockTransport(delayed_headers)) as client:
+        with turn_usage_scope() as usage, model_usage_scope(model='m', route='cloud'):
+            assert (await client.post('/chat/completions', json={'model': 'm', 'messages': []})).status_code == 200
+            clock[0] = 4.0
+            record_usage(TokenUsage(input_tokens=10, output_tokens=60, counts_complete=True))
+            assert usage.snapshot()['api_calls'] == 1
+            assert usage.status_snapshot()['tps'] == 20.0
+
+
+@pytest.mark.asyncio
 async def test_ipv6_loopback_wire_keeps_bracketed_logical_host(service_fixture):
     from agents.core.llm.providers.custom_runtime import custom_client
 

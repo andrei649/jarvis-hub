@@ -1285,6 +1285,8 @@ class AgentToolRuntime:
                 if committed is None:
                     return False
                 _active_clock.set(replace(binding, snapshot=committed))
+                from .turn_outcome import record_accepted_compression
+                record_accepted_compression(committed.session_id, committed.instance_id)
             original_messages[:] = messages
             original_compacted.update(compacted)
             from .skills.tools import note_compacted

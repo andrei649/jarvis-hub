@@ -268,6 +268,44 @@ async def test_main_compaction_hook_counts_only_accepted_clock_commit(tmp_path, 
     finally:
         reset_turn_outcome(token)
         EPOCHS.invalidate_selection()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("accepted", [False, True])
+async def test_tool_loop_commit_counts_and_resets_only_after_publication(tmp_path, monkeypatch, accepted):
+    from agents.core import agent_runtime
+    from agents.core.agent_runtime import AgentToolRuntime
+    from agents.core.conversation_clock import clock_scope, render_snapshot
+    from agents.core.status_cache_epoch import EPOCHS
+    from agents.core.turn_outcome import open_turn_outcome, reset_turn_outcome
+    from tests.test_compaction_clock import store
+
+    manager = store(tmp_path)
+    clock = manager.clock_snapshot("a")
+    key = ("owner", "a", clock.instance_id, "jarvis", "cloud", "provider", "model")
+    EPOCHS.invalidate_selection()
+    assert EPOCHS.observe(key, 100, 300, 100) == 60.0
+    runtime = AgentToolRuntime(object(), enabled=lambda: True)
+    monkeypatch.setattr(runtime, "_context_budget", lambda *_args: 100)
+    monkeypatch.setattr(agent_runtime, "estimate_messages", lambda rows:
+                        101 if len(rows[-1]["content"]) > 1000 else 90)
+    if not accepted:
+        monkeypatch.setattr(manager, "commit_clock", lambda *_args, **_kwargs: None)
+    rows = [{"role": "system", "content": render_snapshot("soul", clock)},
+            {"role": "tool", "content": "x" * 5000}]
+    sink, token = open_turn_outcome()
+    try:
+        with turn_usage_scope() as usage, clock_scope(manager, clock):
+            assert usage.bind_status_scope(("owner", "a", clock.instance_id))
+            result = await runtime._compact_context(rows, set(), model="m", max_tokens=10,
+                                                    agent_id="jarvis", event_sink=None)
+            assert result is accepted
+            assert sink.progress() == ({"compressions": 1} if accepted else None)
+            assert EPOCHS.value(key) == (None if accepted else 60.0)
+    finally:
+        reset_turn_outcome(token)
+        EPOCHS.invalidate_selection()
+        manager.close()
         manager.close()
 
 
@@ -338,7 +376,7 @@ def test_cache_epoch_follows_two_turns_of_one_authenticated_instance(monkeypatch
     EPOCHS.invalidate_selection()
 
 
-def test_only_changed_model_setting_invalidates_cache_epoch(tmp_path, monkeypatch):
+def test_deferred_or_failed_model_setting_apply_preserves_cache_epoch(tmp_path, monkeypatch):
     from agents.core import settings_db
     from agents.core.status_cache_epoch import EPOCHS
 
@@ -353,6 +391,15 @@ def test_only_changed_model_setting_invalidates_cache_epoch(tmp_path, monkeypatc
     settings_db.put_category("display", {"status_bar_fields": ["latency", "cache_hit"]})
     assert EPOCHS.value(key) == 60.0
     settings_db.put_category("llm", {"default_model": "synthetic-model"})
+    assert EPOCHS.value(key) == 60.0
+    def failed_apply(_category, _values):
+        raise RuntimeError("synthetic listener failure")
+    monkeypatch.setattr(settings_db, "_change_listeners", [failed_apply])
+    settings_db.put_category("llm", {"default_model": "another-model"})
+    assert EPOCHS.value(key) == 60.0
+    # A trusted physical identity transition is the verified reset boundary.
+    EPOCHS.observe(("owner", "session", "instance", "jarvis", "cloud", "provider", "new-model"),
+                   100, 0, 0)
     assert EPOCHS.value(key) is None
 
 

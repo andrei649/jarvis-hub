@@ -18,6 +18,7 @@ vi.mock('../gap', () => ({ FirstRunGate: () => null }));
 
 let streams: Array<(response: Response) => void> = [];
 let requests: Array<{ path: string; body?: string; signal?: AbortSignal }> = [];
+let powerPayload: unknown = {};
 const event = (payload: unknown) => `data: ${JSON.stringify(payload)}\n\n`;
 const ended = (outcome: unknown, sessionId = 'topic_a') => new Response(
   event({ type: 'start', agent: 'jarvis' }) + event({ type: 'end', agent: 'jarvis',
@@ -32,9 +33,11 @@ beforeEach(() => {
   localStorage.setItem('hud.seen', '1');
   history.replaceState(null, '', '/v2');
   streams = []; requests = [];
+  powerPayload = {};
   vi.stubGlobal('fetch', vi.fn(async (path: string, init?: { body?: string; signal?: AbortSignal }) => {
     requests.push({ path, body: init?.body, signal: init?.signal });
     if (path === '/chat/stream') return new Promise<Response>(resolve => streams.push(resolve));
+    if (path === '/api/power') return new Response(JSON.stringify(powerPayload));
     return new Response(JSON.stringify({ configured: false, revision: '0', preferences: {} }));
   }));
 });
@@ -85,6 +88,31 @@ it('renders selected metrics with cache thresholds and truthful local battery', 
   expect(screen.getByLabelText('Turn generation and settlement').textContent).toContain('80 ms');
   expect(screen.getByLabelText('Prompt elapsed to first visible chunk').textContent).toContain('25 ms');
 });
+
+it.each([[false, '/v2/chat'], [true, '/v2/chat?desktop=floating']] as const)(
+  'forwards local battery into mounted ChatMode floating=%s', async (floating, path) => {
+    powerPayload = { power: { on_battery: true, percent: 75 } };
+    history.replaceState(null, '', path);
+    render(<App floating={floating} />);
+    await screen.findByLabelText('Attach images');
+    await send('battery status');
+    await complete({ battery: true });
+    expect((await screen.findByLabelText('Battery')).textContent).toContain('75%');
+  },
+);
+
+it.each([[false, '/v2/chat'], [true, '/v2/chat?desktop=floating']] as const)(
+  'hides selected battery in mounted ChatMode when local power is unknown floating=%s',
+  async (floating, path) => {
+    history.replaceState(null, '', path);
+    render(<App floating={floating} />);
+    await screen.findByLabelText('Attach images');
+    await send('battery status');
+    await complete({ battery: true });
+    await screen.findByText('Completed reply');
+    expect(screen.queryByLabelText('Battery')).toBeNull();
+  },
+);
 
 it.each([[70, 'high'], [40, 'medium'], [39.9, 'low']] as const)(
   'uses the frozen 70/40 cache bands for %s%%', (rate, band) => {

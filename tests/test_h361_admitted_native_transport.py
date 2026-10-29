@@ -304,6 +304,30 @@ async def test_native_guard_records_one_physical_attempt_per_dialect(tmp_path, c
 
 
 @pytest.mark.asyncio
+async def test_native_status_tps_includes_synthetic_response_header_delay(tmp_path, monkeypatch):
+    from agents.core import turn_usage
+    from agents.core.llm.tool_protocol import TokenUsage
+    from agents.core.turn_usage import model_usage_scope, record_usage
+
+    clock = [1.0]
+    monkeypatch.setattr(turn_usage, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
+    async def delayed_headers(_request):
+        clock[0] = 3.0
+        return httpx.Response(200, json={'ok': True})
+
+    client, url, headers, _actions = client_for(tmp_path, CASES[-1], delayed_headers)
+    try:
+        with turn_usage_scope() as usage, model_usage_scope(model='m', route='cloud'):
+            assert (await prepared_post(client, url, headers, {'model': 'm'})).status_code == 200
+            clock[0] = 4.0
+            record_usage(TokenUsage(input_tokens=10, output_tokens=60, counts_complete=True))
+            assert usage.snapshot()['api_calls'] == 1
+            assert usage.status_snapshot()['tps'] == 20.0
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('case', CASES)
 async def test_selected_retry_prepares_a_fresh_ticket_and_counts_each_wire_attempt(tmp_path, case):
     seen = []

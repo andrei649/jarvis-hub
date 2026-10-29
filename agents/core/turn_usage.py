@@ -136,6 +136,21 @@ class _Pending:
     status_key: tuple | None
 
 
+@dataclass(slots=True)
+class _TransportEntry:
+    """Single-use server clock tied to one task and physical request object."""
+
+    owner: object
+    request: Any
+    started: float
+    used: bool = False
+
+
+def physical_transport_entry(request: Any) -> _TransportEntry:
+    """Capture the clock immediately before an admitted transport is entered."""
+    return _TransportEntry(_owner(), request, time.monotonic())
+
+
 class TurnUsage:
     """One request's mutable accounting state; snapshots are immutable copies."""
 
@@ -201,7 +216,8 @@ class TurnUsage:
 
     def _dispatch(self, provider: str | None, model: str | None, route: str,
                   request: Any, owner: object, context_window: int | None = None,
-                  primary: bool = True, agent_id: str | None = None) -> None:
+                  primary: bool = True, agent_id: str | None = None,
+                  started: float | None = None) -> None:
         with self._lock:
             if self._closed:
                 return
@@ -237,7 +253,8 @@ class TurnUsage:
             status_key = (self._status_scope + (agent_id, route, provider, model)
                           if self._status_scope is not None and agent_id and provider and model
                           else None)
-            self._pending[owner] = _Pending(pair, local, time.monotonic(), context_window,
+            self._pending[owner] = _Pending(pair, local, time.monotonic() if started is None else started,
+                                            context_window,
                                             primary, status_key)
             if self._status_scope is not None and status_key is None:
                 from .status_cache_epoch import EPOCHS
@@ -446,7 +463,8 @@ def detached_turn_usage():
         _CURRENT.reset(current)
 
 
-def record_dispatch(provider: str, request: Any) -> None:
+def record_dispatch(provider: str, request: Any, *,
+                    entry: _TransportEntry | None = None) -> None:
     """Observe accepted inference and refuse confident totals for unknown POSTs."""
     collector, generation = _CURRENT.get(), _MODEL.get()
     if collector is None or getattr(request, "method", "").upper() != "POST":
@@ -470,11 +488,19 @@ def record_dispatch(provider: str, request: Any) -> None:
     wire_model = _wire_model(request)
     expected_model = generation.model if generation is not None else None
     selected_model = expected_model if expected_model is not None and expected_model == wire_model else None
+    started = None
+    if entry is not None:
+        if (type(entry) is _TransportEntry and not entry.used
+                and entry.owner is _owner() and entry.request is request):
+            entry.used = True
+            started = entry.started
+        else:
+            started = float("nan")  # A mismatched bridge cannot publish a rate.
     collector._dispatch(_identity(provider, 64), selected_model,
                         generation.route if generation is not None else "",
                         request, _owner(), generation.context_window if generation is not None else None,
                         generation.primary if generation is not None else False,
-                        generation.agent_id if generation is not None else None)
+                        generation.agent_id if generation is not None else None, started)
 
 
 def invalidate_current_cache_epoch() -> None:

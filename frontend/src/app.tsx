@@ -651,7 +651,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     {questionPanel}
     <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
-    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
+    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
   </div></RouteBoundary>;
 
@@ -725,7 +725,7 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
+                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

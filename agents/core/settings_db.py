@@ -3,7 +3,6 @@ settings_db.py — SQLite-backed settings store for the admin panel.
 Seeds defaults from agents.yaml on first init.
 """
 
-import contextvars
 import json
 import logging
 import math
@@ -26,17 +25,10 @@ from agents.core.llm.reasoning_effort import LADDER as REASONING_EFFORT_LADDER
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.settings")
-_defer_model_epoch = contextvars.ContextVar("nerva_defer_model_epoch", default=False)
-
-
 @contextmanager
 def defer_model_epoch_invalidation():
-    """A local-provider adoption invalidates only after live apply succeeds."""
-    token = _defer_model_epoch.set(True)
-    try:
-        yield
-    finally:
-        _defer_model_epoch.reset(token)
+    """Keep local-adoption callers compatible; row writes never reset epochs."""
+    yield
 
 
 def _logsafe(value: object) -> str:
@@ -1395,15 +1387,11 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
         raise
     updated = 0
     skipped = []
-    model_selection_changed = False
-    model_keys = {'backend_type', 'default_model', 'compatible_provider', 'compatible_model'}
     for key, value in data.items():
         cur = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", (cat, key))
         previous = cur.fetchone()
         if previous:
             stored = _encrypt_if_secret(key, value)
-            if cat == 'llm' and key in model_keys and previous[0] != json.dumps(stored):
-                model_selection_changed = True
             conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(stored), cat, key))
             updated += 1
             continue
@@ -1414,8 +1402,6 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
         spec = next((r for r in DEFAULTS if r["category"] == cat and r["key"] == key), None)
         if spec is not None:
             stored = _encrypt_if_secret(key, value)
-            if cat == 'llm' and key in model_keys:
-                model_selection_changed = True
             conn.execute(
                 "INSERT INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
                 (cat, key, json.dumps(stored), spec["label"], spec["kind"],
@@ -1427,10 +1413,6 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
     conn.commit()
     conn.close()
     _require_readable_store()
-    if model_selection_changed and not _defer_model_epoch.get():
-        from .status_cache_epoch import EPOCHS
-
-        EPOCHS.invalidate_selection()
     if skipped:
         logger.warning("put_category(%s): ignored unknown keys: %s",
                        _logsafe(cat), _logsafe(skipped))
