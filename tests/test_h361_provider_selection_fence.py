@@ -117,7 +117,10 @@ def _hold_shared(path: str, ready, release):
         release.wait(5)
 
 
-def _special_store_probe(path: str, mode: str, channel):
+def _special_store_probe(path: str, mode: str, channel, start, startup_gate=None,
+                         operation_gate=None):
+    if startup_gate is not None:
+        startup_gate.wait(10)
     settings_db.DB_PATH = Path(path)
 
     async def cancelled_acquire():
@@ -130,6 +133,12 @@ def _special_store_probe(path: str, mode: str, channel):
             return 'cancelled'
 
     try:
+        channel.send('ready')
+        if not start.wait(10):
+            return
+        channel.send('entered')
+        if operation_gate is not None:
+            operation_gate.wait(10)
         if mode == 'shared':
             with selection_gates.shared(path):
                 channel.send('accepted')
@@ -144,27 +153,123 @@ def _special_store_probe(path: str, mode: str, channel):
         channel.close()
 
 
+class _ProbeDeadline(AssertionError):
+    def __init__(self, phase: str, mode: str):
+        self.phase = phase
+        super().__init__(f'{mode} FIFO probe {phase} deadline exceeded')
+
+
+def _run_special_store_probe(path: Path, mode: str, *, startup_gate=None,
+                             operation_gate=None, after_start=None,
+                             startup_timeout=8.0, dispatch_timeout=2.0,
+                             operation_timeout=1.5, timings=None):
+    """Measure interpreter startup separately from the bounded gate operation."""
+    ctx = mp.get_context('spawn')
+    receive, send = ctx.Pipe(duplex=False)
+    start = ctx.Event()
+    child = ctx.Process(target=_special_store_probe,
+                        args=(str(path), mode, send, start, startup_gate, operation_gate))
+    started = False
+    try:
+        child.start()
+        started = True
+        startup_started = time.monotonic()
+        send.close()
+        if after_start is not None:
+            after_start(receive)
+        if not receive.poll(startup_timeout):
+            raise _ProbeDeadline('startup', mode)
+        try:
+            ready = receive.recv()
+        except EOFError:
+            raise AssertionError(f'{mode} FIFO probe exited during startup') from None
+        assert ready == 'ready', f'{mode} FIFO probe did not become ready'
+        startup_elapsed = time.monotonic() - startup_started
+        start.set()
+        if not receive.poll(dispatch_timeout):
+            raise _ProbeDeadline('dispatch', mode)
+        try:
+            entered = receive.recv()
+        except EOFError:
+            raise AssertionError(f'{mode} FIFO probe exited before operation') from None
+        assert entered == 'entered', f'{mode} FIFO probe did not enter its operation'
+        operation_started = time.monotonic()
+        if not receive.poll(operation_timeout):
+            raise _ProbeDeadline('operation', mode)
+        try:
+            result = receive.recv()
+        except EOFError:
+            raise AssertionError(f'{mode} FIFO probe exited during operation') from None
+        if timings is not None:
+            timings.update(startup_s=startup_elapsed,
+                           operation_s=time.monotonic() - operation_started)
+        assert result in {'refused', 'cancelled'}, f'{mode} FIFO gate accepted unsafe store: {result}'
+        child.join(2)
+        assert child.exitcode == 0, f'{mode} FIFO probe exit failed after gate result'
+        return result
+    finally:
+        start.set()
+        if started and child.is_alive():
+            child.terminate()
+            child.join(2)
+        if started and child.is_alive():
+            child.kill()
+            child.join(2)
+        send.close()
+        receive.close()
+        assert not started or not child.is_alive(), f'{mode} FIFO probe could not be reaped'
+
+
 @pytest.mark.parametrize('mode', ['shared', 'exclusive', 'async_cancel'])
 def test_fifo_store_refuses_with_bounded_gate_and_cancellation(tmp_path, mode):
     if not hasattr(os, 'mkfifo'):
         pytest.skip('POSIX FIFO unavailable')
     fifo = tmp_path / 'settings.db'
     os.mkfifo(fifo, 0o600)
-    ctx = mp.get_context('spawn')
-    receive, send = ctx.Pipe(duplex=False)
-    child = ctx.Process(target=_special_store_probe, args=(str(fifo), mode, send))
-    child.start()
-    send.close()
-    try:
-        child.join(1.5)
-        assert not child.is_alive(), f'{mode} gate blocked on FIFO store'
-        assert child.exitcode == 0 and receive.poll(0.1)
-        assert receive.recv() in {'refused', 'cancelled'}
-    finally:
-        if child.is_alive():
-            child.terminate()
-            child.join(2)
-        receive.close()
+    assert _run_special_store_probe(fifo, mode) in {'refused', 'cancelled'}
+
+
+def test_fifo_probe_distinguishes_slow_startup_from_gate_deadline(tmp_path):
+    if not hasattr(os, 'mkfifo'):
+        pytest.skip('POSIX FIFO unavailable')
+    fifo = tmp_path / 'settings.db'
+    os.mkfifo(fifo, 0o600)
+    startup_gate = mp.get_context('spawn').Event()
+    timings = {}
+
+    def delayed_start(receive):
+        assert not receive.poll(0.25), 'child unexpectedly passed the controlled startup gate'
+        startup_gate.set()
+
+    assert _run_special_store_probe(fifo, 'shared', startup_gate=startup_gate,
+                                    after_start=delayed_start, operation_timeout=0.4,
+                                    timings=timings) == 'refused'
+    assert timings['startup_s'] >= 0.25
+    assert timings['operation_s'] < 0.4
+
+
+def test_fifo_probe_bounds_startup_and_reaps_child(tmp_path):
+    if not hasattr(os, 'mkfifo'):
+        pytest.skip('POSIX FIFO unavailable')
+    fifo = tmp_path / 'settings.db'
+    os.mkfifo(fifo, 0o600)
+    startup_gate = mp.get_context('spawn').Event()
+    with pytest.raises(_ProbeDeadline, match='startup deadline exceeded') as error:
+        _run_special_store_probe(fifo, 'shared', startup_gate=startup_gate,
+                                 startup_timeout=0.25)
+    assert error.value.phase == 'startup'
+
+
+def test_fifo_probe_detects_a_deliberately_stalled_operation_and_reaps_child(tmp_path):
+    if not hasattr(os, 'mkfifo'):
+        pytest.skip('POSIX FIFO unavailable')
+    fifo = tmp_path / 'settings.db'
+    os.mkfifo(fifo, 0o600)
+    operation_gate = mp.get_context('spawn').Event()
+    with pytest.raises(_ProbeDeadline, match='operation deadline exceeded') as error:
+        _run_special_store_probe(fifo, 'async_cancel', operation_gate=operation_gate,
+                                 operation_timeout=0.25)
+    assert error.value.phase == 'operation'
 
 
 def test_crossprocess_shared_lease_refuses_pair_writer_without_partial_batch(store):
