@@ -1,64 +1,74 @@
 # Playwright Operator (H28.1)
 
-Jarvis keeps browser actuation off by default. `GovernedBrowser` still uses
-`NullBrowserDriver` unless a caller explicitly injects `PlaywrightBrowserDriver`.
+The browser host stays off by default. The current owner Operator panel can submit
+one governed `browser_run` plan through authenticated `/api/toolrpc/call`, then
+show its durable task id and Decision Inbox link. Execution requires the owner's
+accepted task, current mediation/registration/worker evidence and exact per-step
+Kernel authority. Calling the driver directly is not an execution permission.
 
-## Host setup
+## Local runtime prerequisites
 
-Install the optional Python runtime and one browser binary in the Jarvis environment:
+Install `requirements-browser.txt` into the isolated Python environment used by the
+hub. It pins Playwright and psutil; an already installed Google Chrome supplies the
+engine, so this path does not require a Playwright browser download. The current
+Mac path is `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`; Linux
+also checks the usual Chrome/Chromium executable names on PATH. Native Windows
+browser acceptance remains unverified; the separate desktop seam below is unchanged.
 
-```powershell
-python -m pip install playwright
-python -m playwright install chromium
-$env:JARVIS_PLAYWRIGHT_HOST = "1"
-```
+The server needs all of the following before readiness can become true:
 
-Optional settings:
+- `JARVIS_PLAYWRIGHT_HOST=1` and `JARVIS_UNIFIED_ACTION_API=1`.
+- The Action Kernel enabled and task mediation in `enforce` mode
+  (`JARVIS_TASK_MEDIATION=enforce`), with the current governed worker registered.
+- `JARVIS_PLAYWRIGHT_BROWSER=chromium` (the default).
+- A nonempty server-owned `JARVIS_BROWSER_ALLOWED_DOMAINS` list, at most64 entries.
+- The optional Python libraries, installed engine and no unresolved browser cleanup.
 
-- `JARVIS_PLAYWRIGHT_BROWSER=chromium|firefox|webkit` (default `chromium`)
-- `JARVIS_PLAYWRIGHT_HEADLESS=1|0` (default `1`)
-- `JARVIS_PLAYWRIGHT_DOWNLOAD_DIR=<absolute path>` (required only for downloads)
+These are prerequisites for a later owner-controlled activation, not settings this
+implementation enables automatically. `GET /api/browser/status` is a user-guarded,
+read-only availability check; it neither launches Chrome nor resolves a site. A
+missing prerequisite or uncertain cleanup returns `available:false`.
 
 ## Governed use
 
-```python
-from agents.core.browser_agent import BrowserPolicy, GovernedBrowser
-from agents.core.browser_playwright import PlaywrightBrowserDriver
+In Operator, create a plan starting with navigation and choose **Run with approval**.
+The HUD rechecks server readiness, submits only the steps, and displays the task id
+and Decision Inbox link. Approve that exact task as the owner. The server rechecks
+its durable plan, configuration, registration and worker identity before execution.
+The editable allowlist used by **Check** and **Preview** is not execution authority;
+the server's domain list and pinned resolver govern real requests.
 
-policy = BrowserPolicy(["example.com"])
-driver = PlaywrightBrowserDriver.from_env()
-driver.set_url_guard(policy.domain_allowed)
-browser = GovernedBrowser(
-    driver=driver,
-    policy=policy,
-    approvals=approval_queue,
-)
-try:
-    result = await browser.run([
-        {"action": "navigate", "url": "https://example.com"},
-        {"action": "extract", "selector": "main"},
-    ])
-finally:
-    await driver.close()
-```
+The registered schema accepts1–20 steps: `navigate`, `snapshot`, `extract`, `wait`,
+`click`, `type` and `submit`. It caps the plan and its strings and rejects extra
+fields. Click/type/submit use exact task-bound `browser.step` receipts; reads and
+navigation recheck live Kernel policy after awaits. The runtime owns one fresh
+temporary profile, without the owner's saved cookies or logins.
 
-The driver refuses to start until a per-request URL guard is explicitly bound. Passing
-the same `BrowserPolicy.domain_allowed` guard used by `GovernedBrowser` means off-list
-navigation, redirects, and subresources are checked before each request. Click/type/submit/download/
-execute-js/upload still require the existing approval queue. Each driver instance
-creates a fresh browser context with no ambient cookies or cache. Screenshots are
-returned in memory; service workers are blocked so they cannot bypass request routing;
-downloads require an explicit directory and are saved with sanitized filenames.
+All DNS answers must pass the public policy. The same allowlist and IP pins apply
+to navigation, redirects and subresources; unpinned destinations and WebSockets are
+blocked. The governed path does not enable LAN browsing through the library's
+private-URL flag. It blocks service workers and WebRTC and verifies actual owned
+Chrome process exit before deleting its profile. Interrupted or uncertain cleanup
+retains its owner and blocks new execution until resolved.
 
-## Live smoke
+Stable element references, scroll/back/press, image/vision/console/dialog tools,
+CDP/browser_exec, other engines, real profiles, recording and durable sessions remain
+accepted follow-ups. Low-level driver methods do not make those tools available.
 
-The normal suite uses a faithful async fake and needs no Playwright installation. To run
-the owner-gated Chromium smoke after host setup:
+## Local synthetic acceptance
 
-```powershell
-$env:JARVIS_PLAYWRIGHT_LIVE = "1"
-python -m pytest tests/test_h28_playwright_driver.py -q
-```
+`tests/test_browser_chromium_runtime.py` exercises the authenticated owner ToolRPC
+proposal and approval path against a private ephemeral loopback fixture. Its9 cases
+include four test functions with five actual installed-Chrome launches and five
+prelaunch/status checks. They verify pins, one mutation, denial, timeout/cancellation,
+readiness and native-process/profile cleanup. The test-only loopback policy cannot
+be supplied in a production request.
+
+The recorded local run used an isolated `.venv-browser` Playwright installation
+with canonical test dependencies. Running the canonical environment without the
+optional package may skip those cases; a skip is not native acceptance. This Mac
+fixture is separate from the owner-host external-site/headed proof in the manual,
+other platforms, saved-profile consent and advanced browser acceptance.
 
 ## Windows desktop host (H28.4)
 

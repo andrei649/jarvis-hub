@@ -273,11 +273,35 @@ RFC1918 / loopback literals, so the governed browser can reach house devices.
 `BrowserPolicy` lan mode — not shipped in this wave.
 **Revert:** unset + restart; unpinned hosts fail at name resolution again.
 
-*Related, unchanged default:* `JARVIS_PLAYWRIGHT_HOST` (default off, no section of its
-own on this page) still decides whether a real browser runtime may start at all. With
-`chromium`, `PlaywrightBrowserDriver.from_env()` now binds the IP-pinned transport
-(`agents/core/browser_transport.py`) so navigation **can** start; `firefox`/`webkit`
-stay transport-less and refuse `pinned_transport_requires_chromium`.
+The owner-reachable `browser_run` path retains public-only policy and does not
+enable LAN browsing through this library flag. Its separate prerequisites follow.
+
+### `JARVIS_PLAYWRIGHT_HOST`
+
+**Default: OFF.** The governed owner runtime also requires
+`JARVIS_UNIFIED_ACTION_API=1`, the enabled Action Kernel, task mediation in `enforce`
+mode, a current registered worker, optional `requirements-browser.txt` dependencies,
+an installed Chrome/Chromium engine and a nonempty server-owned
+`JARVIS_BROWSER_ALLOWED_DOMAINS` list. `JARVIS_PLAYWRIGHT_BROWSER` remains `chromium`;
+Firefox/WebKit pinned transports are not supported by this path.
+
+**ON with every prerequisite:** Operator **Run with approval** proposes an exact
+durable `browser_run` task through authenticated ToolRPC. The owner must accept it;
+each mutating step then needs its exact Kernel receipt. The server domain list,
+public DNS/IP pins and current task/worker/configuration remain authoritative.
+Check/Preview's editable allowlist cannot widen execution. Each run uses a fresh
+temporary profile and verifies native Chrome exit before releasing it. Uncertain
+cleanup retains its owner and makes readiness false.
+
+**Status:** user-guarded `GET /api/browser/status` returns read-only availability,
+without browser launch or DNS lookup. Missing prerequisites or pending cleanup
+return `available:false`. The strict plan supports navigate/snapshot/extract/wait
+and click/type/submit; advanced tools, other engines, owner profiles and LAN routing
+remain open. Local Mac synthetic Chrome proof is separate from owner-host/live-site
+acceptance; see `docs/PLAYWRIGHT_OPERATOR.md`.
+
+**Revert:** unset the host flag and restart through the normal owner workflow. No
+host flag, service or owner browser profile is activated by the local implementation.
 
 ### `JARVIS_COMPANY_MODE`
 

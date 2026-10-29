@@ -91,6 +91,7 @@
   "GET /api/autonomy/escalation/targets",
   "GET /api/autonomy/tasks/{task_id}/preview",
   "GET /api/brain/summary",
+  "GET /api/browser/status",
   "GET /api/cameras/events",
   "GET /api/cameras/status",
   "GET /api/canvas",
