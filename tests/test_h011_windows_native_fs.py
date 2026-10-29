@@ -158,6 +158,17 @@ def test_fake_drive_remap_high_id_collision_read_change_and_acl_refuse():
                 fs.verify_private_acl(note)
 
 
+def test_fake_private_acl_refuses_wrong_owner_with_protected_allowed_aces():
+    api = FakeApi()
+    api.acl = ("S-1-5-32-544", "owner", True, (("owner", "allow"),
+                                              ("S-1-5-18", "allow")))
+    fs = WindowsHistoryFs(api)
+    with (fs.open_root(r"C:\project") as root,
+          fs.open_child(root, "note.txt", directory=False) as note,
+          pytest.raises(WindowsFsRefusal, match="acl_invalid")):
+        fs.verify_private_acl(note)
+
+
 def test_fake_mount_remap_during_rewalk_refuses_at_final_fence():
     api = FakeApi()
     fs = WindowsHistoryFs(api)
@@ -515,11 +526,23 @@ def test_native_private_owner_acl_accepts_only_protected_allowed_aces(tmp_path):
     note.write_bytes(b"private")
     fs = WindowsHistoryFs()
     sid = fs.api._current_sid()
+    assert ctypes.sizeof(fs.api.w.DWORD) == 4
+    assert ctypes.sizeof(fs.api.AclSize) == 12
+    assert ctypes.sizeof(fs.api.AceHeader) == 4
+    set_owner = subprocess.run(["icacls", str(note), "/setowner", f"*{sid}"],
+                               capture_output=True, text=True, check=False)
+    assert set_owner.returncode == 0, set_owner.stderr
     private = subprocess.run(["icacls", str(note), "/inheritance:r", "/grant:r",
                               f"*{sid}:F"], capture_output=True, text=True, check=False)
     assert private.returncode == 0, private.stderr
     with fs.open_root(str(tmp_path)) as root, fs.open_child(
             root, note.name, directory=False) as held:
+        owner, current, protected, aces = fs.api.acl_info(held.raw)
+        assert (owner, current, protected) == (sid, sid, True), (
+            owner, current, protected, aces)
+        allowed = {sid, "S-1-5-18", "S-1-5-32-544"}
+        assert aces and (sid, "allow") in aces and all(
+            ace_sid in allowed and kind == "allow" for ace_sid, kind in aces), aces
         fs.verify_private_acl(held)
         hostile = subprocess.run(["icacls", str(note), "/grant", "*S-1-1-0:R"],
                                  capture_output=True, text=True, check=False)
