@@ -347,3 +347,14 @@ not replace the failed complete4436075e result. No frontend source or HTTP route
 changed in this batch; frontend2703 and mobile359 remain the prior verified/reused
 counts respectively. Root owns fresh backend collection,200 semantic/citation claim
 updates, publication to the same draft and the next clean serial complete milestone.
+
+Complete milestone49 on unchanged e68eb272 finished2026-10-29T08:58:55Z:
+30503 collected,30392 passed,zero failures/errors,111 skipped in1115.705 seconds.
+Every prior failing group (8,27,14,4 cases) passes in this complete run. Source/head
+and tracked state remained unchanged throughout. Backend test-count verification
+matches30503. The committed full-backend-e68eb272 evidence receipt records the exact
+scope; this does not establish live provider/profile/device or native Windows proof.
+Existing warning categories remain explicit. H011's reviewed POSIX integration gate
+is now satisfied; it stays partial for Windows/native forward/rollback work.
+Task37 native dialogs and Task45 Windows read primitives remain isolated and do not
+inherit this result. Their future reviewed code will need the relevant new checks.
