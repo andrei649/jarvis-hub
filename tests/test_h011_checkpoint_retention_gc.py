@@ -503,3 +503,86 @@ def test_preview_categorizes_generic_shared_owned_direct_post_and_unreferenced(t
     assert refs["retained_direct_post_blobs"] == 1
     assert refs["unreferenced_owned_blobs"] >= 1
     assert orphan_blob in plan["owned_gc"]["blobs"]
+
+
+@pytest.mark.parametrize("post_sha", [_key("missing-post"), "malformed-post", 123])
+def test_file_nonnull_unknown_post_ref_makes_inventory_and_gc_incomplete(tmp_path, post_sha):
+    roots, store, scope, history, payloads = _setup(tmp_path)
+    snap = _add(history, payloads, roots[0], 1)
+    with sqlite3.connect(store.directory / "history.sqlite3") as db:
+        db.execute("UPDATE entries SET post_sha=? WHERE id=1", (post_sha,))
+    inventory = CheckpointInventory(store, scope)
+    status = inventory.status(OWNER)
+    plan = inventory.maintenance_preview(OWNER, "clear")
+    assert status["ok"] is False and status["owned_payloads"]["physical_bytes"] is None
+    assert plan["ok"] is False and plan["reference_breakdown"]["complete"] is False
+    assert plan["reference_breakdown"]["protected_owned_blobs"] is None
+    assert plan["reclaimable_bytes"] is None
+    result = CheckpointMaintenance(store, scope).apply(
+        OWNER, action="clear", project=None, generation=plan["generation"],
+        candidates=["file:1"], operation_key=_key(f"bad-file-post-{post_sha}"),
+        authority_check=lambda: True)
+    assert result["status"] == "refused"
+    assert payloads.load(snap.ref) is not None
+
+
+@pytest.mark.parametrize("post_sha", [_key("missing-group-post"), "malformed-post"])
+def test_group_child_nonnull_unknown_post_ref_blocks_gc(tmp_path, post_sha):
+    roots, store, scope, history, payloads = _setup(tmp_path)
+    snap = payloads.take_captured(roots[0] / "group.txt", existed=True,
+                                  data=b"group", mode=0o600, now=1)
+    info = roots[0].stat()
+    with history._connection() as db:
+        db.execute("""INSERT INTO groups
+            (id,root,root_dev,root_ino,source_kind,source_key,status,created_at)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            ("b" * 32, str(roots[0]), info.st_dev, info.st_ino,
+             "terminal", "test", "finished", 1.0))
+        db.execute("""INSERT INTO group_files
+            (group_id,path,pre_ref,pre_existed,post_existed,post_sha,post_size)
+            VALUES (?,?,?,1,1,?,5)""",
+            ("b" * 32, "group.txt", snap.ref, post_sha))
+        db.commit()
+    inventory = CheckpointInventory(store, scope)
+    plan = inventory.maintenance_preview(OWNER, "clear")
+    assert plan["ok"] is False and plan["reference_breakdown"]["complete"] is False
+    assert plan["reclaimable_bytes"] is None
+    result = CheckpointMaintenance(store, scope).apply(
+        OWNER, action="clear", project=None, generation=plan["generation"],
+        candidates=["group:" + "b" * 32], operation_key=_key(f"bad-group-post-{post_sha}"),
+        authority_check=lambda: True)
+    assert result["status"] == "refused"
+    assert payloads.load(snap.ref) is not None
+
+
+@pytest.mark.parametrize("post_existed,status", [(0, "applied"), (None, "capturing")])
+def test_legitimate_null_file_post_state_does_not_invent_owned_blob(tmp_path, post_existed, status):
+    roots, store, scope, history, payloads = _setup(tmp_path)
+    snap = _add(history, payloads, roots[0], 1, status=status)
+    with sqlite3.connect(store.directory / "history.sqlite3") as db:
+        db.execute("UPDATE entries SET post_existed=?,post_sha=NULL,post_size=NULL WHERE id=1",
+                   (post_existed,))
+    plan = CheckpointInventory(store, scope).maintenance_preview(OWNER, "prune")
+    assert plan["ok"] is True and plan["reference_breakdown"]["complete"] is True
+    assert snap.ref not in plan["owned_gc"]["records"]
+
+
+def test_legitimate_null_group_child_post_does_not_invent_blob(tmp_path):
+    roots, store, scope, history, payloads = _setup(tmp_path)
+    snap = payloads.take_captured(roots[0] / "group.txt", existed=True,
+                                  data=b"group", mode=0o600, now=1)
+    info = roots[0].stat()
+    with history._connection() as db:
+        db.execute("""INSERT INTO groups
+            (id,root,root_dev,root_ino,source_kind,source_key,status,created_at)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            ("c" * 32, str(roots[0]), info.st_dev, info.st_ino,
+             "terminal", "test", "finished", 1.0))
+        db.execute("""INSERT INTO group_files
+            (group_id,path,pre_ref,pre_existed,post_existed,post_sha,post_size)
+            VALUES (?,?,?,1,0,NULL,0)""",
+            ("c" * 32, "group.txt", snap.ref))
+        db.commit()
+    plan = CheckpointInventory(store, scope).maintenance_preview(OWNER, "prune")
+    assert plan["ok"] is True and plan["reference_breakdown"]["complete"] is True
+    assert snap.ref not in plan["owned_gc"]["records"]

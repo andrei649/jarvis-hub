@@ -240,14 +240,22 @@ class CheckpointInventory:
             owned = None
         if owned is None or owned["complete"] is not True:
             complete = False
-        elif owned["state"] == "ready":
-            generic_records = {name[:-5] for name, *_ in storage_names
-                               if name.endswith(".json") and "/" not in name
-                               and _ref(name[:-5])}
+        else:
+            generic_records = ({name[:-5] for name, *_ in storage_names
+                                if name.endswith(".json") and "/" not in name
+                                and _ref(name[:-5])}
+                               if owned["state"] == "ready" else set())
             for row in rows:
                 record_refs, _ = self._row_refs(row)
-                if any(ref not in owned["records"] and ref not in generic_records
-                       for ref in record_refs):
+                if (owned["state"] == "ready" and
+                        any(ref not in owned["records"] and ref not in generic_records
+                            for ref in record_refs)):
+                    complete = False
+                    break
+                members = row["_generation"].get("files", []) if row["type"] == "group" else [row]
+                if any((post := member.get("post_sha")) is not None and
+                       (not _ref(post) or post not in owned["blobs"])
+                       for member in members):
                     complete = False
                     break
         if not complete:

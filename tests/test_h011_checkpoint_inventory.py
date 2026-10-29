@@ -266,6 +266,8 @@ def test_preview_protects_shared_refs_and_has_no_effect(tmp_path):
     inventory, root, store = service(tmp_path)
     with legacy_db(store) as db:
         add_file(db, root)
+        db.execute("UPDATE entries SET post_existed=0,post_sha=NULL,post_size=0 WHERE id=1")
+        db.commit()
     (store / f"{REF}.json").write_text('{"blob_sha":"' + REF + '"}')
     blobs = store / "blobs"
     blobs.mkdir()

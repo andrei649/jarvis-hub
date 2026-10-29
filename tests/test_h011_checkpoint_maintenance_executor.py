@@ -11,6 +11,7 @@ import pytest
 
 from agents.core.checkpoint_inventory import CheckpointInventory
 from agents.core.checkpoint_maintenance import CheckpointMaintenance
+from agents.core.checkpoint_payloads import CheckpointPayloadStore
 from agents.core.commands import Principal
 from agents.core.file_checkpoint_history import FileCheckpointHistory, _locked
 from agents.core.file_tools import FileScope, SnapshotStore
@@ -35,6 +36,7 @@ def environment(tmp_path):
 
 def add_file(root, note, store, history, *, status="applied", ident=None):
     generic = store.take(note)
+    post_sha = CheckpointPayloadStore(store).put_blob(b"after")
     info = root.stat()
     with _locked(store.directory), history._connection() as db:
         if ident is None:
@@ -43,7 +45,7 @@ def add_file(root, note, store, history, *, status="applied", ident=None):
                  post_sha,post_size,post_mode,source_kind,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (str(note), str(root), info.st_dev, info.st_ino, "write",
-                 generic.ref, status, 1, key("after"), 5, 0o644, "filetools", 1.0))
+                 generic.ref, status, 1, post_sha, 5, 0o644, "filetools", 1.0))
             ident = cursor.lastrowid
         else:
             db.execute("""INSERT INTO entries
@@ -51,7 +53,7 @@ def add_file(root, note, store, history, *, status="applied", ident=None):
                  post_sha,post_size,post_mode,source_kind,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (ident, str(note), str(root), info.st_dev, info.st_ino, "write",
-                 generic.ref, status, 1, key("after"), 5, 0o644, "filetools", float(ident)))
+                 generic.ref, status, 1, post_sha, 5, 0o644, "filetools", float(ident)))
         db.commit()
     return f"file:{ident}", generic.ref
 
