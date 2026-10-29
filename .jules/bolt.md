@@ -59,3 +59,7 @@
 ## 2026-04-14 - O(1) Map Lookups and Single-Pass Grouping in Agents and Memory Modes
 **Learning:** `AgentsMode` and `MemoryMode` in `frontend/src/modes.tsx` performed repetitive O(N) array scans (`.filter()` per tier and `.find()` for edge endpoints) during renders and slider adjustments. In Knowledge Graph rendering, calling `.find()` twice per edge creates 2*E*N array comparisons on every slider movement.
 **Action:** Pre-compute static or memoized `Map` instances (`V2_AGENTS_MAP`, `agentsByTier`, `kgNodeMap`) to convert repeated array scans into O(1) lookups and single-pass calculations.
+
+## 2026-04-15 - Redundant Canvas 2D State Setter Calls in Particle Animation Loops
+**Learning:** Reassigning Canvas 2D context properties (e.g. `ctx.fillStyle`) unconditionally inside high-frequency animation loops (such as the 620-particle loop in `VoiceOrb` in `frontend/src/orb.tsx`) triggers native binding property setter overhead ~37,200 times per second at 60 FPS.
+**Action:** Cache local canvas state variables (e.g. `curFill`) inside high-frequency drawing loops and assign `ctx.fillStyle` only when the calculated state actually changes.
