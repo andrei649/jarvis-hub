@@ -7,7 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from agents.core.browser_dialogs import DialogFrameObserver, run_with_dialog_supervisor
+from agents.core.browser_dialogs import (
+    DialogFrameObserver,
+    DialogPromptStore,
+    run_with_dialog_supervisor,
+)
 from agents.core.browser_playwright import PlaywrightBrowserDriver
 
 
@@ -136,3 +140,42 @@ async def test_opening_stays_in_parent_task_and_empty_context_child_unblocks_it(
         assert await asyncio.wait_for(call, 1) == 'opened'
     finally:
         step_permit.reset(token)
+
+
+def test_prompt_store_binds_exact_sanitized_task_and_consumes_once():
+    tasks = {}
+    store = DialogPromptStore(task_lookup=tasks.get,
+                              task_fingerprint=lambda task: task.fingerprint)
+    lease = store.seal('agent-a', {'opener_task_id': 11, 'dialog_id': 'a' * 32,
+                                   'choice': 'accept', 'prompt_text': 'private-marker'})
+    safe = lease.args
+    assert 'private-marker' not in repr(safe)
+    assert safe['prompt_length'] == len('private-marker')
+    assert len(safe['prompt_digest']) == 64
+    ref = safe['prompt_ref']
+    tasks[23] = SimpleNamespace(kind='toolrpc.browser_dialog', agent='agent-a',
+                                status='proposed', fingerprint='fingerprint-a',
+                                payload={'tool': 'browser_dialog', 'args': safe})
+    lease.bind(23)
+    lease.release()
+    assert store.peek(ref, task_id=23, fingerprint='fingerprint-a', agent='agent-b') is None
+    assert store.peek(ref, task_id=23, fingerprint='fingerprint-a', agent='agent-a') == 'private-marker'
+    assert store.consume(ref, task_id=23, fingerprint='fingerprint-a', agent='agent-a') == 'private-marker'
+    assert store.consume(ref, task_id=23, fingerprint='fingerprint-a', agent='agent-a') is None
+
+
+def test_prompt_store_wipes_failed_unbound_proposal_and_rejects_changed_row():
+    tasks = {}
+    store = DialogPromptStore(task_lookup=tasks.get,
+                              task_fingerprint=lambda task: task.fingerprint)
+    lease = store.seal('agent-a', {'opener_task_id': 11, 'dialog_id': 'b' * 32,
+                                   'choice': 'accept', 'prompt_text': 'private-marker'})
+    ref = lease.args['prompt_ref']
+    tasks[23] = SimpleNamespace(kind='toolrpc.browser_dialog', agent='agent-a',
+                                status='proposed', fingerprint='fingerprint-a',
+                                payload={'tool': 'browser_dialog', 'args': {
+                                    **lease.args, 'choice': 'dismiss'}})
+    with pytest.raises(ValueError, match='dialog_task_changed'):
+        lease.bind(23)
+    lease.release()
+    assert store.peek(ref, task_id=23, fingerprint='fingerprint-a', agent='agent-a') is None
