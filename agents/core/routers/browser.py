@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Mapping
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field
 
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import owner_web_principal, user_guard
 
 from agents.core.web_helpers import nocache_json
 
@@ -44,6 +46,72 @@ async def browser_status():
     from agents.core.operator_router import _browser_available
 
     return nocache_json({'available': _browser_available(get_orch())})
+
+
+def _session_runtime():
+    from agents.core.app_state import get_orch
+
+    server = getattr(get_orch(), 'tool_rpc', None)
+    spec = getattr(server, '_tools', {}).get('browser_run') if server is not None else None
+    runtime = getattr(spec.get('handler'), '__self__', None) if isinstance(spec, dict) else None
+    return runtime if callable(getattr(runtime, 'close_owner_session', None)) else None
+
+
+@router.get('/api/browser/sessions', dependencies=[Depends(owner_web_principal)])
+async def browser_sessions():
+    """Authenticated owner projection; no profile paths or page text authority."""
+    runtime = _session_runtime()
+    if runtime is None:
+        return nocache_json({'available': False, 'sessions': []})
+    rows = []
+    for session in list(runtime.sessions.values())[:4]:
+        page = getattr(session.driver, '_page', None)
+        url = str(getattr(page, 'url', ''))
+        parsed = urlsplit(url)
+        origin = f'{parsed.scheme}://{parsed.netloc}' if parsed.scheme in {'http', 'https'} else ''
+        rows.append({'id': session.id, 'origin': origin[:253],
+                     'generation': session.generation,
+                     'refs': [{'ref': key, 'role': value.role[:64], 'name': value.name[:128]}
+                              for key, value in list(session.refs.items())[:100]],
+                     'active': session.active_task is not None,
+                     'expires_in': max(0, int(600 - (__import__('time').monotonic() - session.created)))})
+    return nocache_json({'available': runtime.ready(), 'sessions': rows,
+                         'cleanup_uncertain': bool(runtime._uncertain_drivers
+                                                   or runtime._journal_uncertain)})
+
+
+@router.get('/api/browser/tasks/{task_id}', dependencies=[Depends(owner_web_principal)])
+async def browser_task_status(task_id: int):
+    """Show the owner's browser outcome without exposing page text or raw task data."""
+    runtime = _session_runtime()
+    if runtime is None or runtime.queue is None or task_id < 1:
+        return nocache_json({'found': False}, status_code=404)
+    task = await asyncio.to_thread(runtime.queue.get, task_id)
+    if task is None or task.kind != 'toolrpc.browser_run':
+        return nocache_json({'found': False}, status_code=404)
+    outcome = task.result.get('result') if type(task.result) is dict else None
+    result = {'found': True, 'status': task.status if task.status in {
+        'proposed', 'approved', 'running', 'blocked', 'done', 'failed',
+        'rejected', 'deferred', 'quarantined', 'expired'} else 'unknown'}
+    if type(outcome) is dict and type(outcome.get('ok')) is bool:
+        result['ok'] = outcome['ok']
+        if type(outcome.get('trace')) is list:
+            result['steps'] = min(len(outcome['trace']), 20)
+        reason = outcome.get('reason')
+        if type(reason) is str and re.fullmatch('[a-z_]{1,64}', reason):
+            result['reason'] = reason
+    return nocache_json(result)
+
+
+@router.post('/api/browser/sessions/{session_id}/close', dependencies=[Depends(owner_web_principal)])
+async def browser_session_close(session_id: str):
+    """An authenticated owner may always stop a fresh-profile browser."""
+    runtime = _session_runtime()
+    if runtime is None or re.fullmatch('[0-9a-f]{32}', session_id) is None:
+        return nocache_json({'closed': False, 'reason': 'browser_session_unavailable'}, status_code=404)
+    closed = await runtime.close_owner_session(session_id)
+    return nocache_json({'closed': closed, 'reason': '' if closed else 'browser_session_unavailable'},
+                        status_code=200 if closed else 409)
 
 
 class _StrictBrowserBody(BaseModel):

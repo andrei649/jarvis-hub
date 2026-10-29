@@ -36,7 +36,8 @@ READ_ONLY = frozenset({"navigate", "extract", "snapshot", "screenshot", "wait"})
 # browser_playwright's "unavailable" means a configured one could not bind (a bug
 # report). Naming them apart is the difference between the two answers.
 TRANSPORT_NOT_CONFIGURED = "browser transport not configured"
-RISKY = frozenset({"click", "type", "submit", "download", "execute_js", "upload"})
+RISKY = frozenset({"click", "type", "submit", "scroll", "back", "press",
+                   "download", "execute_js", "upload"})
 
 
 def classify_step(action: str) -> str:
@@ -84,7 +85,7 @@ class BrowserPolicy:
 
 
 class FixtureBrowserPolicy(BrowserPolicy):
-    """Injected local test fixture: one exact ephemeral loopback origin only."""
+    """Injected test seam: two exact synthetic hosts on one ephemeral port."""
 
     def __init__(self, origin: str) -> None:
         parsed = urlsplit(origin)
@@ -93,15 +94,16 @@ class FixtureBrowserPolicy(BrowserPolicy):
                 or parsed.fragment or parsed.username is not None):
             raise ValueError('invalid browser fixture origin')
         self.origin = f'http://fixture.browser.test:{parsed.port}'
-        super().__init__(['fixture.browser.test'])
+        self.port = parsed.port
+        super().__init__(['fixture.browser.test', 'frame.other.test'])
 
     def domain_allowed(self, url: str) -> tuple[bool, str]:
         try:
             if type(url) is not str or any(ord(char) <= 32 or ord(char) == 127 for char in url):
                 return False, 'fixture_only'
             parsed = urlsplit(url)
-            if (parsed.scheme == 'http' and parsed.hostname == 'fixture.browser.test'
-                    and parsed.port and f'http://fixture.browser.test:{parsed.port}' == self.origin
+            if (parsed.scheme == 'http' and parsed.hostname in {'fixture.browser.test', 'frame.other.test'}
+                    and parsed.port == self.port
                     and parsed.username is None and parsed.password is None
                     and not parsed.fragment and len(url) <= 2000):
                 return True, ''

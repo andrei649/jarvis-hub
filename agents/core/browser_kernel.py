@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.core.automation_contracts import ContractTemplate, predicate
+from agents.core.browser_session import SessionRefused
 from agents.core.capability_actions import CapabilityActionAPI, PerformContext, PerformResult
 from agents.core.kernel import Action, Decision, Verdict
 
@@ -56,7 +57,7 @@ CAPABILITY = "action:browser.step"
 MAX_ACTION_CHARS = 32
 MAX_ARG_CHARS = 2_000
 MAX_ARGS = 20
-APPROVED_MUTATIONS = frozenset({'click', 'type', 'submit'})
+APPROVED_MUTATIONS = frozenset({'click', 'type', 'submit', 'scroll', 'back', 'press'})
 APPROVED_READS = frozenset({'navigate', 'extract', 'snapshot', 'wait'})
 
 
@@ -68,6 +69,8 @@ class _ApprovedStep:
     step: dict
     current: object
     owner_task: object
+    session_id: str | None = None
+    session_generation: int | None = None
 
 
 _APPROVED_STEP: ContextVar[_ApprovedStep | None] = ContextVar('browser_approved_step', default=None)
@@ -75,9 +78,11 @@ _PHYSICAL_STEP: ContextVar[_ApprovedStep | None] = ContextVar('browser_physical_
 
 
 @contextmanager
-def approved_step_scope(task, plan_sha256, index, step, current):
+def approved_step_scope(task, plan_sha256, index, step, current, *,
+                        session_id=None, session_generation=None):
     """Private lifetime of one exact step in the durable approved plan."""
-    receipt = _ApprovedStep(task, plan_sha256, index, deepcopy(step), current, asyncio.current_task())
+    receipt = _ApprovedStep(task, plan_sha256, index, deepcopy(step), current,
+                            asyncio.current_task(), session_id, session_generation)
     token = _APPROVED_STEP.set(receipt)
     try:
         yield
@@ -99,6 +104,9 @@ def browser_receipt_matches(action: Action) -> bool:
         'plan_sha256': receipt.plan_sha256,
         'step_index': receipt.index,
     }
+    if receipt.session_id is not None:
+        expected['session_id'] = receipt.session_id
+        expected['session_generation'] = receipt.session_generation
     try:
         return (action.kind == KIND and action.agent == getattr(task, 'agent', None)
                 and action.origin == getattr(task, 'origin', None)
@@ -133,16 +141,20 @@ def physical_browser_step_allowed(action: str, args: dict) -> bool:
 
 def _action_for(receipt: _ApprovedStep) -> Action:
     step = receipt.step
+    payload = {
+        'action': step['action'],
+        'args': {key: value for key, value in step.items() if key != 'action'},
+        'risk_tier': 3,
+        'approved_task_id': receipt.task.id,
+        'plan_sha256': receipt.plan_sha256,
+        'step_index': receipt.index,
+    }
+    if receipt.session_id is not None:
+        payload['session_id'] = receipt.session_id
+        payload['session_generation'] = receipt.session_generation
     return Action(
         kind=KIND, agent=receipt.task.agent, title=f"Browser {step['action']}",
-        payload={
-            'action': step['action'],
-            'args': {key: value for key, value in step.items() if key != 'action'},
-            'risk_tier': 3,
-            'approved_task_id': receipt.task.id,
-            'plan_sha256': receipt.plan_sha256,
-            'step_index': receipt.index,
-        }, origin=receipt.task.origin,
+        payload=payload, origin=receipt.task.origin,
     )
 
 
@@ -280,6 +292,10 @@ class BrowserActionExecutor:
                                               'args': action.payload['args']}, PerformContext())
             return PerformResult('completed', CAPABILITY, KIND, decision.reason,
                                  decision.tier, output=output, stage='handler')
+        except SessionRefused as exc:
+            return PerformResult('failed', CAPABILITY, KIND,
+                                 'stale_browser_ref' if str(exc) == 'stale_browser_ref'
+                                 else 'browser_step_failed', stage='handler')
         except Exception:
             return PerformResult('failed', CAPABILITY, KIND, 'browser_step_failed', stage='handler')
 

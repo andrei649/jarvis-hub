@@ -951,6 +951,7 @@ class AutonomyCoordinator:
                 'browser_run', browser_tool.execute, gated=True,
                 description='Propose one bounded browser plan on server-allowed public domains; owner approval required.',
                 input_schema=BROWSER_RUN_SCHEMA, capability_id="tool:browser_run",
+                consent_revision="nerva.browser_run.v1",
                 preflight=browser_tool.preflight, trusted_execution=True,
                 gated_intake=browser_tool.intake, parallel_safe=False,
                 untrusted_output=True, max_result_bytes=20_000,

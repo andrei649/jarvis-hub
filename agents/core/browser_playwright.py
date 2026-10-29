@@ -127,6 +127,8 @@ class PlaywrightBrowserDriver:
         self._factory = playwright_factory
         self._url_guard: Callable[[str], tuple[bool, str] | bool] | None = None
         self._execution_guard: Callable[[], bool] | None = None
+        self._ref_resolver = None
+        self._ownership_observer = None
         self._transport: PinnedResolver | None = None
         self._launched_hosts: frozenset[str] = frozenset()
         self._profile_dir: Path | None = None
@@ -182,6 +184,16 @@ class PlaywrightBrowserDriver:
         if not callable(guard) or self._page is not None:
             raise ValueError('execution guard must be callable before browser startup')
         self._execution_guard = guard
+
+    def set_ref_resolver(self, resolver) -> None:
+        if not callable(resolver) or self._page is not None:
+            raise ValueError('ref resolver must be callable before browser startup')
+        self._ref_resolver = resolver
+
+    def set_ownership_observer(self, observer) -> None:
+        if not callable(observer) or self._page is not None:
+            raise ValueError('ownership observer must be callable before browser startup')
+        self._ownership_observer = observer
 
     def _assert_execution_current(self) -> None:
         if self._execution_guard is None and self._factory is not None:
@@ -342,6 +354,8 @@ class PlaywrightBrowserDriver:
                 # A fresh, dedicated profile per run: cookies, storage, and history
                 # never touch (or leak from) the owner's own browser profile.
                 self._profile_dir = Path(tempfile.mkdtemp(prefix=PROFILE_PREFIX))
+                if self._ownership_observer is not None:
+                    await self._ownership_observer('profile', self._profile_dir, self._owned_child)
                 self._context = await browser_type.launch_persistent_context(
                     str(self._profile_dir),
                     headless=self.headless,
@@ -353,6 +367,9 @@ class PlaywrightBrowserDriver:
                 )
                 if self._factory is None:
                     await self._capture_owned_browser()
+                    if self._ownership_observer is not None:
+                        await self._ownership_observer('native', self._profile_dir,
+                                                       self._owned_browser_identity)
                 self._browser = getattr(self._context, "browser", None)
                 if self._url_guard is not None:
                     await self._context.route("**/*", self._route_request)
@@ -631,32 +648,88 @@ class PlaywrightBrowserDriver:
         self._assert_execution_current()
         return {"waited": "timer", "timeout_ms": timeout_ms}
 
-    async def click(self, *, selector: str) -> dict:
-        self._require_approved_mutation('click', {'selector': selector})
+    async def click(self, *, selector: str | None = None, ref: str | None = None) -> dict:
+        args = {'ref': ref} if ref is not None and selector is None else {'selector': selector}
+        self._require_approved_mutation('click', args)
         page = await self._ensure_started()
         self._assert_execution_current()
+        if ref is not None and selector is None and self._ref_resolver is not None:
+            handle = await self._ref_resolver(ref, 'click')
+            self._assert_execution_current()
+            await handle.click()
+            return {'clicked': ref}
+        if selector is None or ref is not None:
+            raise PlaywrightHostDisabled('approved browser step required')
         await page.locator(selector).first.click()
         return {"clicked": selector}
 
-    async def type(self, *, selector: str, text: str, clear: bool = True) -> dict:
+    async def type(self, *, selector: str | None = None, ref: str | None = None,
+                   text: str, clear: bool = True) -> dict:
         if clear is not True:
             raise PlaywrightHostDisabled('approved browser step required')
-        self._require_approved_mutation('type', {'selector': selector, 'text': text})
+        args = {'ref': ref, 'text': text} if ref is not None and selector is None else {'selector': selector, 'text': text}
+        self._require_approved_mutation('type', args)
         page = await self._ensure_started()
         self._assert_execution_current()
-        locator = page.locator(selector).first
+        if ref is not None and selector is None and self._ref_resolver is not None:
+            locator = await self._ref_resolver(ref, 'type')
+        elif selector is not None and ref is None:
+            locator = page.locator(selector).first
+        else:
+            raise PlaywrightHostDisabled('approved browser step required')
+        self._assert_execution_current()
         if clear:
             await locator.fill(text)
         else:
             await locator.type(text)
-        return {"typed": selector}
+        return {"typed": ref or selector}
 
-    async def submit(self, *, selector: str) -> dict:
-        self._require_approved_mutation('submit', {'selector': selector})
+    async def submit(self, *, selector: str | None = None, ref: str | None = None) -> dict:
+        args = {'ref': ref} if ref is not None and selector is None else {'selector': selector}
+        self._require_approved_mutation('submit', args)
         page = await self._ensure_started()
         self._assert_execution_current()
-        await page.locator(selector).first.press("Enter")
-        return {"submitted": selector}
+        if ref is not None and selector is None and self._ref_resolver is not None:
+            locator = await self._ref_resolver(ref, 'submit')
+        elif selector is not None and ref is None:
+            locator = page.locator(selector).first
+        else:
+            raise PlaywrightHostDisabled('approved browser step required')
+        self._assert_execution_current()
+        await locator.press("Enter")
+        return {"submitted": ref or selector}
+
+    async def scroll(self, *, ref: str, direction: str, pixels: int) -> dict:
+        args = {'ref': ref, 'direction': direction, 'pixels': pixels}
+        self._require_approved_mutation('scroll', args)
+        if self._ref_resolver is None:
+            raise PlaywrightHostDisabled('approved browser step required')
+        handle = await self._ref_resolver(ref, 'scroll')
+        self._assert_execution_current()
+        await handle.evaluate('(e, d) => e.scrollBy(0, d)', pixels if direction == 'down' else -pixels)
+        self._assert_execution_current()
+        return {'scrolled': ref, 'pixels': pixels, 'direction': direction}
+
+    async def press(self, *, ref: str, key: str) -> dict:
+        self._require_approved_mutation('press', {'ref': ref, 'key': key})
+        if self._ref_resolver is None:
+            raise PlaywrightHostDisabled('approved browser step required')
+        handle = await self._ref_resolver(ref, 'press')
+        self._assert_execution_current()
+        await handle.press(key)
+        self._assert_execution_current()
+        return {'pressed': ref, 'key': key}
+
+    async def back(self) -> dict:
+        self._require_approved_mutation('back', {})
+        page = await self._ensure_started()
+        self._assert_execution_current()
+        response = await page.go_back(wait_until='domcontentloaded', timeout=self.timeout_ms)
+        self._assert_execution_current()
+        allowed, reason = await asyncio.to_thread(self._egress_verdict, page.url)
+        if not allowed:
+            raise PlaywrightEgressBlocked(reason)
+        return {'url': self._bounded_text(page.url, 2048), 'status': getattr(response, 'status', None)}
 
     async def execute_js(self, *, script: str, arg: Any = None) -> dict:
         self._require_approved_mutation('execute_js', {'script': script, 'arg': arg})
