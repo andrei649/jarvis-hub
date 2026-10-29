@@ -32,6 +32,7 @@ ExternalBindingName = Literal[
     "permission_ledger",
     "work_runs",
     "company_runtime",
+    "custom_endpoint_service",
     "session_kernels",
 ]
 
@@ -60,6 +61,7 @@ EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[ExternalBindingCallsite, ...]] = Ma
         "work_runs": (("agents/core/autonomy_coordinator.py", 2378, 12),),
         "argus": (("agents/core/plugin_manager.py", 364, 8),),
         "company_runtime": (("agents/core/scheduler_service.py", 377, 12),),
+        "custom_endpoint_service": (("agents/core/llm/custom_endpoint_service.py", 547, 4),),
     }
 )
 
@@ -87,6 +89,7 @@ class ExternalOrchestratorBindings(Protocol):
     permission_ledger: Any | None
     work_runs: Any | None
     company_runtime: Any | None
+    custom_endpoint_service: Any | None
     session_kernels: Any | None
 
 

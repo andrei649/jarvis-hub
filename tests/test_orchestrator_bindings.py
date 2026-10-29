@@ -698,6 +698,20 @@ def test_orchestrator_exposes_external_binding_protocol_before_wiring() -> None:
     assert not isinstance(orch, ExternalOrchestratorBindings)
 
 
+def test_custom_endpoint_service_lazily_binds_once_to_its_declared_slot(tmp_path, monkeypatch) -> None:
+    from agents.core import paths
+    from agents.core.llm.custom_endpoint_service import get_custom_endpoint_service
+
+    orch = Orchestrator(JarvisConfig())
+    assert orch.custom_endpoint_service is None
+    monkeypatch.setattr(paths, 'data_path', lambda name: tmp_path / name)
+    service = get_custom_endpoint_service(orch)
+    assert service is orch.custom_endpoint_service
+    assert service.root == tmp_path / 'custom-endpoints'
+    monkeypatch.setattr(paths, 'data_path', lambda _name: pytest.fail('factory recomposed service'))
+    assert get_custom_endpoint_service(orch) is service
+
+
 def test_external_binding_writer_inventory_exactly_matches_production_calls() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     observed, parse_errors = _observed_binding_writer_map(repo_root)

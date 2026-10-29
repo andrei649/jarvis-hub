@@ -536,6 +536,7 @@ def get_custom_endpoint_service(orch):
     if existing is not None:
         return existing
     from agents.core.kernel.binding import make_action_kernel
+    from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
     from agents.core.paths import data_path
 
     root = data_path('custom-endpoints')
@@ -543,5 +544,5 @@ def get_custom_endpoint_service(orch):
                                     kernel=lambda: make_action_kernel(orch),
                                     audit=getattr(orch, 'audit', None),
                                     enabled=kernel_enabled)
-    orch.custom_endpoint_service = service
+    bind_external_orchestrator_attribute(orch, "custom_endpoint_service", service)
     return service
