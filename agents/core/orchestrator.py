@@ -3613,11 +3613,13 @@ class Orchestrator:
         if tasks is None:
             tasks = self._title_tasks = set()
         for manager, session, text, generate in pending:
+            upgrade = self._upgrade_session_title(manager, session, text, generate)
             try:
                 from .turn_usage import detached_turn_usage
                 with detached_turn_usage():
-                    task = asyncio.create_task(self._upgrade_session_title(manager, session, text, generate))
+                    task = asyncio.create_task(upgrade)
             except RuntimeError:            # no running loop: no upgrade, the instant title stays
+                upgrade.close()
                 return
             tasks.add(task)
             task.add_done_callback(tasks.discard)

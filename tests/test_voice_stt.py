@@ -4,7 +4,7 @@ Headless-safe: the real Whisper engine is never constructed (it would download a
 ~2GB model and needs hardware). We assert honest degradation + the wiring, mirroring
 the mocked style of test_tts.py."""
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from fastapi.testclient import TestClient
 from agents import web
 from agents.core.routers import voice as voice_router  # voice routes extracted from web.py (CLN-3)
@@ -40,6 +40,7 @@ def test_stt_unavailable_is_honest(client):
 @patch("core.voice.stt.HAS_WHISPER", True)
 def test_stt_transcribes_via_engine(client):
     fake = AsyncMock()
+    fake._use_command = Mock(return_value=False)
     fake.transcribe_async = AsyncMock(return_value="salut lume")
     # Patch the cached-engine factory so no real model loads.
     with patch.object(voice_router, "_stt_engine", return_value=fake):
@@ -49,6 +50,7 @@ def test_stt_transcribes_via_engine(client):
     assert data["text"] == "salut lume"
     assert data["lang"] == "ro"
     fake.transcribe_async.assert_awaited_once()
+    assert isinstance(fake.transcribe_async.await_args.args[0], str)
 
 
 def test_stt_engine_uses_configured_model_size(monkeypatch):
@@ -72,6 +74,7 @@ def test_stt_engine_uses_configured_model_size(monkeypatch):
 def test_stt_lang_falls_back_to_setting(client, monkeypatch):
     # No ?lang= → use voice.stt_language from /admin instead of the old "ro" literal.
     fake = AsyncMock()
+    fake._use_command = Mock(return_value=False)
     fake.transcribe_async = AsyncMock(return_value="hello world")
     monkeypatch.setattr("agents.core.settings_db.get_value",
                         lambda cat, key, default=None: "en" if key == "stt_language" else default)
@@ -80,6 +83,7 @@ def test_stt_lang_falls_back_to_setting(client, monkeypatch):
     assert resp.status_code == 200
     assert resp.json()["lang"] == "en"
     fake.transcribe_async.assert_awaited_once()
+    assert isinstance(fake.transcribe_async.await_args.args[0], str)
 
 
 @patch("core.voice.stt.HAS_WHISPER", True)
