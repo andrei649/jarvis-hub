@@ -158,6 +158,27 @@ class PlaywrightBrowserDriver:
         self._console_truncated = 0
         self._console_epoch += 1
 
+    def _record_console(self, level: str, raw_text: str, origin: str,
+                        *, shortened: bool = False) -> None:
+        text = raw_text[:MAX_CONSOLE_TEXT]
+        if shortened or len(raw_text) > MAX_CONSOLE_TEXT:
+            self._console_truncated += 1
+        # Console location is a source URL, not a frame identity. Page errors
+        # have no trustworthy source location at all.
+        record = {'level': level, 'text': text, 'source_origin': origin,
+                  'document_epoch': self._console_epoch, '_frame_id': None}
+        size = len(json.dumps(record, ensure_ascii=False).encode('utf-8'))
+        while self._console_records and (len(self._console_records) >= MAX_CONSOLE_RECORDS
+                                         or self._console_bytes + size > MAX_CONSOLE_BYTES):
+            old = self._console_records.popleft()
+            self._console_bytes -= len(json.dumps(old, ensure_ascii=False).encode('utf-8'))
+            self._console_dropped += 1
+        if size <= MAX_CONSOLE_BYTES:
+            self._console_records.append(record)
+            self._console_bytes += size
+        else:
+            self._console_dropped += 1
+
     def _on_console(self, message) -> None:
         """Playwright's fixed event fields only; never hold JSHandles or arguments."""
         try:
@@ -171,25 +192,19 @@ class PlaywrightBrowserDriver:
                       and parsed.username is None and parsed.password is None
                       and (parsed.port is None or 1 <= parsed.port <= 65_535)
                       and len(parsed.netloc) <= 253 else '')
-            text = raw_text[:MAX_CONSOLE_TEXT]
-            if len(raw_text) > MAX_CONSOLE_TEXT:
-                self._console_truncated += 1
-            # Playwright's console location is a source URL, not the execution
-            # frame. Keep identity unknown and discard on any child navigation.
-            frame_id = None
-            record = {'level': level, 'text': text, 'source_origin': origin,
-                      'document_epoch': self._console_epoch, '_frame_id': frame_id}
-            size = len(json.dumps(record, ensure_ascii=False).encode('utf-8'))
-            while self._console_records and (len(self._console_records) >= MAX_CONSOLE_RECORDS
-                                             or self._console_bytes + size > MAX_CONSOLE_BYTES):
-                old = self._console_records.popleft()
-                self._console_bytes -= len(json.dumps(old, ensure_ascii=False).encode('utf-8'))
+            self._record_console(level, raw_text, origin)
+        except Exception:
+            self._console_dropped += 1
+
+    def _on_page_error(self, error) -> None:
+        """Keep only a bounded first message line, never the Error/stack object."""
+        try:
+            raw = error.message
+            if type(raw) is not str or not raw:
                 self._console_dropped += 1
-            if size <= MAX_CONSOLE_BYTES:
-                self._console_records.append(record)
-                self._console_bytes += size
-            else:
-                self._console_dropped += 1
+                return
+            first_line = raw[:MAX_CONSOLE_TEXT + 1].splitlines()[0]
+            self._record_console('error', first_line, '', shortened=first_line != raw)
         except Exception:
             self._console_dropped += 1
 
@@ -463,10 +478,11 @@ class PlaywrightBrowserDriver:
                 self._page = await self._context.new_page()
                 self._page.set_default_timeout(self.timeout_ms)
                 if callable(getattr(self._page, 'on', None)):
+                    self._console_page = self._page
                     self._page.on('console', self._on_console)
+                    self._page.on('pageerror', self._on_page_error)
                     self._page.on('framenavigated', self._on_console_navigation)
                     self._page.on('framedetached', self._on_console_navigation)
-                    self._console_page = self._page
                 elif self._factory is None:
                     raise PlaywrightUnavailable('browser console event boundary unavailable')
                 return self._page
@@ -554,6 +570,7 @@ class PlaywrightBrowserDriver:
             remove = getattr(self._console_page, 'remove_listener', None)
             if callable(remove):
                 for event, handler in (('console', self._on_console),
+                                       ('pageerror', self._on_page_error),
                                        ('framenavigated', self._on_console_navigation),
                                        ('framedetached', self._on_console_navigation)):
                     with contextlib.suppress(Exception):

@@ -76,6 +76,25 @@ def test_owner_observation_projection_is_typed_bounded_and_never_raw_task_data()
     ]
 
 
+def test_owner_projection_keeps_bounded_page_error_with_honest_unknown_origin():
+    from agents.core.routers.browser import _project_browser_observations
+
+    observed, truncated = _project_browser_observations([{
+        'action': 'console', 'status': 'done',
+        'result': {'observation': 'console', 'untrusted': True, 'records': [
+            {'level': 'error', 'text': 'Uncaught page failure',
+             'source_origin': '', 'document_epoch': 3, 'stack': '/private/path'},
+            {'level': 'error', 'text': 'untrusted-url',
+             'source_origin': 'file:///private/path', 'document_epoch': 3},
+        ]},
+    }])
+    assert truncated is False
+    assert observed == [{'action': 'console', 'records': [
+        {'level': 'error', 'text': 'Uncaught page failure',
+         'source_origin': '', 'document_epoch': 3},
+    ]}]
+
+
 def test_console_event_ring_caps_text_records_and_bytes_without_retaining_arguments():
     import json
     from types import SimpleNamespace
@@ -119,6 +138,38 @@ def test_duplicate_url_child_console_event_is_not_retained_after_either_navigati
     driver._on_console_navigation((first, second)[navigated])
     assert not driver._console_records
     assert driver._console_bytes == 0
+
+
+def test_uncaught_page_error_uses_bounded_unknown_origin_ring_without_stack():
+    import json
+    from types import SimpleNamespace
+
+    from agents.core.browser_playwright import (
+        MAX_CONSOLE_BYTES,
+        MAX_CONSOLE_RECORDS,
+        MAX_CONSOLE_TEXT,
+        PlaywrightBrowserDriver,
+    )
+
+    driver = PlaywrightBrowserDriver()
+    first = SimpleNamespace(url='https://example.test/child')
+    second = SimpleNamespace(url=first.url)
+    main = SimpleNamespace(url='https://example.test/main')
+    driver._page = SimpleNamespace(frames=[main, first, second], main_frame=main)
+    secret_stack = 'stack-secret-path'
+    for index in range(80):
+        driver._on_page_error(SimpleNamespace(message=f'Uncaught {index}: ' + 'x' * 900
+                                           + '\n' + secret_stack,
+                                              stack=secret_stack, location={'url': first.url}))
+    assert len(driver._console_records) <= MAX_CONSOLE_RECORDS
+    assert driver._console_bytes <= MAX_CONSOLE_BYTES
+    assert driver._console_dropped > 0 and driver._console_truncated == 80
+    assert all(record['level'] == 'error' and record['source_origin'] == ''
+               and record['_frame_id'] is None and len(record['text']) <= MAX_CONSOLE_TEXT
+               and secret_stack not in json.dumps(record)
+               for record in driver._console_records)
+    driver._on_console_navigation(second)
+    assert not driver._console_records and driver._console_bytes == 0
 
 
 @pytest.mark.asyncio
@@ -319,7 +370,41 @@ async def test_uncertain_native_close_still_removes_console_listener_and_buffer(
     with pytest.raises(PlaywrightDriverError):
         await driver._close_resources()
     assert driver._console_page is None and not driver._console_records
-    assert set(removed) == {'console', 'framenavigated', 'framedetached'}
+    assert set(removed) == {'console', 'pageerror', 'framenavigated', 'framedetached'}
+
+
+@pytest.mark.asyncio
+async def test_page_error_listener_registration_failure_removes_partial_console_listener():
+    from agents.core.browser_playwright import PlaywrightBrowserDriver, PlaywrightUnavailable
+    from tests.test_h28_playwright_driver import FakeManager, FakePage
+
+    class Page(FakePage):
+        def __init__(self):
+            super().__init__()
+            self.listeners = {}
+            self.removed = []
+
+        def on(self, event, callback):
+            if event == 'pageerror':
+                raise OSError('synthetic listener registration failure')
+            self.listeners[event] = callback
+
+        def remove_listener(self, event, callback):
+            self.removed.append(event)
+            if self.listeners.get(event) == callback:
+                self.listeners.pop(event)
+
+    manager = FakeManager()
+    page = Page()
+    manager.playwright.page = page
+    manager.playwright.context.page = page
+    driver = PlaywrightBrowserDriver(host_enabled=True, playwright_factory=lambda: manager)
+    driver.set_url_guard(lambda _url: True)
+    with pytest.raises(PlaywrightUnavailable):
+        await driver._ensure_started()
+    assert 'console' in page.removed and not page.listeners
+    assert driver._console_page is None and not driver._console_records
+    assert driver.profile_dir is None
 
 
 def test_actionable_refs_require_real_live_nodes_not_aria_ordinals():

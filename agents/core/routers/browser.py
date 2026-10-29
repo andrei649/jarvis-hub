@@ -90,7 +90,8 @@ def _project_browser_observations(trace) -> tuple[list[dict], bool]:
                 if (type(item) is dict and item.get('level') in {
                         'log', 'info', 'warning', 'error', 'debug', 'other'}
                         and type(item.get('text')) is str and len(item['text']) <= 512
-                        and _safe_origin(item.get('source_origin'))
+                        and (item.get('source_origin') == ''
+                             or _safe_origin(item.get('source_origin')))
                         and type(item.get('document_epoch')) is int
                         and item['document_epoch'] >= 0):
                     records.append({key: item[key] for key in

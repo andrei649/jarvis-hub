@@ -180,6 +180,7 @@ describe('OperatorPanel browser policy dry run', () => {
         observations: [
           { action: 'console', records: [
             { level: 'log', text: '<script>alert(1)</script>', source_origin: 'https://example.com' },
+            { level: 'error', text: 'Uncaught page failure', source_origin: '', stack: '/private/stack' },
           ], dropped: 2 },
           { action: 'get_images', images: [
             { alt: 'Owner image', source_url: 'https://example.com/a.png',
@@ -201,7 +202,9 @@ describe('OperatorPanel browser policy dry run', () => {
     const area = screen.getByLabelText('browser observations');
     expect(area.textContent).toContain('<script>alert(1)</script>');
     expect(area.querySelector('script')).toBeNull();
+    expect(area.textContent).toContain('unknown origin · Uncaught page failure');
     expect(area.textContent).toContain('Owner image');
+    expect(area.textContent).not.toContain('/private/stack');
     expect(area.textContent).not.toContain('private-cookie');
     expect(area.textContent).not.toContain('raw dump');
   });

@@ -87,7 +87,7 @@ function safeBrowserObservations(value: unknown): BrowserObservation[] {
       const records = raw.records.slice(0, 32).filter((item) => isRecord(item)
         && ['log', 'info', 'warning', 'error', 'debug', 'other'].includes(String(item.level))
         && typeof item.text === 'string' && item.text.length <= 512
-        && safeBrowserOrigin(item.source_origin))
+        && (item.source_origin === '' || safeBrowserOrigin(item.source_origin)))
         .map((item) => ({ level: String(item.level), text: String(item.text),
           source_origin: String(item.source_origin) }));
       return [{ action: 'console', records, ...dropped, ...truncated }];
@@ -907,7 +907,7 @@ export function OperatorPanel() {
                     {observation.truncated ? ' · truncated' : ''}</div>
                   {observation.action === 'console' ?
                     <ol>{observation.records.map((record, row) =>
-                      <li key={row}>{record.level} · {record.source_origin} · {record.text}</li>)}</ol>
+                      <li key={row}>{record.level} · {record.source_origin || 'unknown origin'} · {record.text}</li>)}</ol>
                     : <ol>{observation.images.map((item, row) =>
                       <li key={row}>{item.alt} · {item.frame_origin} · {item.width}×{item.height}
                         {item.ref ? ` · ${item.ref}` : ''}

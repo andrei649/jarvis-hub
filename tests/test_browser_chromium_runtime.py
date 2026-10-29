@@ -109,6 +109,10 @@ async def local_page():
                         '<script>for(let i=0;i<80;i++) console.log(String(i)+":"+"x".repeat(1000))</script>'
                         + images).encode()
                 status = '200 OK'
+            elif path == '/pageerror':
+                body = (b'<!doctype html><title>Uncaught fixture</title>'
+                        b'<script>throw new Error("uncaught-page-marker")</script>')
+                status = '200 OK'
             elif path in {'/pixel', '/pixel-child', '/pixel-hidden'}:
                 body = b'GIF89a'  # only request counting matters; dimensions are fixed in markup
                 status = '200 OK'
@@ -413,6 +417,60 @@ async def test_console_and_image_inventory_report_honest_native_bounds(browser_r
                    for item in images['images'])
     finally:
         assert await rig.runtime.close_owner_session(sid)
+
+
+async def test_owner_approved_console_observes_bounded_uncaught_page_error(browser_rig, monkeypatch):
+    from agents.core.browser_playwright import PlaywrightHostDisabled
+
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/pageerror'}, {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    driver = rig.runtime.sessions[sid].driver
+    profile = driver.profile_dir
+    identity = driver.owned_browser_identity
+    try:
+        with pytest.raises(PlaywrightHostDisabled):
+            await driver.console()
+        proposed = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+            'mode': 'act', 'session_id': sid, 'steps': [{'action': 'console'}]}})
+        assert proposed['reason'] == 'approval_required', proposed
+        await rig.worker.apply_decision(proposed['task_id'], 'accept', decided_by='andrei')
+        await rig.worker.tick()
+        observed = rig.queue.get(proposed['task_id']).result['result']
+        assert observed['ok'] is True, observed
+        console = observed['trace'][0]['result']
+        assert console['observation'] == 'console' and console['untrusted'] is True
+        errors = [row for row in console['records'] if 'uncaught-page-marker' in row['text']]
+        assert len(errors) == 1
+        assert errors[0]['level'] == 'error' and errors[0]['source_origin'] == ''
+        assert '\n' not in errors[0]['text'] and 'stack' not in errors[0]
+        monkeypatch.setattr(rig.web, 'ADMIN_TOKEN', 'browser-admin')
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                     base_url='http://testserver',
+                                     headers={'X-User-Token': 'browser-user'}) as user:
+            assert (await user.get(f"/api/browser/tasks/{proposed['task_id']}")).status_code == 401
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                     base_url='http://testserver',
+                                     headers={'X-Admin-Token': 'browser-admin'}) as owner:
+            response = await owner.get(f"/api/browser/tasks/{proposed['task_id']}")
+            assert response.status_code == 200
+            body = response.json()
+            projected = body['observations'][0]['records']
+            assert any('uncaught-page-marker' in row['text'] and row['source_origin'] == ''
+                       for row in projected)
+            assert 'trace' not in body and 'stack' not in str(projected)
+        navigated = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+            'steps': [{'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'console'}]})
+        assert navigated['ok'] is True, navigated
+        assert not any('uncaught-page-marker' in row['text']
+                       for row in navigated['trace'][1]['result']['records'])
+    finally:
+        assert await rig.runtime.close_owner_session(sid)
+    assert not profile.exists() and not browser_identity_alive(identity)
+    assert not driver._console_records and driver._console_page is None
 
 
 async def test_console_navigation_and_close_discard_prior_document_events(browser_rig):
