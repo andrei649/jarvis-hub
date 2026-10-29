@@ -23,6 +23,18 @@ function mockResponses() {
 beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); });
 
 describe('named custom endpoint owner panel', () => {
+  it('shows an unsuccessful models validation as a failure', async () => {
+    global.fetch = vi.fn(async (url, init = {}) => ({
+      ok: true, status: 200, json: async () =>
+        String(url).endsWith('/validate') ? { ok: false, models: 0, identity: 'custom:office' }
+        : { ...catalog, endpoints: [{ ...catalog.endpoints[0], active: true }], active: 'custom:office' },
+    }));
+    render(<CustomEndpointsPanel />);
+    await screen.findByText(/Office · custom:office/);
+    fireEvent.click(screen.getByText('Validate /models'));
+    await screen.findByText(/validation failed/);
+    expect(screen.queryByText(/validation completed/)).toBeNull();
+  });
   it('uses revisioned activation and an explicit price acknowledgement', async () => {
     const calls = mockResponses();
     render(<CustomEndpointsPanel />);

@@ -54,6 +54,15 @@ def test_create_and_activate_require_owner_kernel_guard_and_audit(service):
     assert svc.current_runtime().endpoint.identity == "custom:one"
 
 
+def test_special_private_ipv4_never_reaches_owner_approval_or_catalog(service):
+    svc, seen, events = service
+    with pytest.raises(metadata.CustomEndpointInvalid):
+        svc.create('bench', 'Bench', 'http://198.18.0.1:9999/v1', 'm',
+                   'none', 'unknown', grant_destination=True, actor=owner())
+    assert seen == [] and events == []
+    assert metadata.list_endpoints() == []
+
+
 def test_raw_metadata_cannot_mint_consent_and_audit_failure_is_atomic(service):
     svc, _, _ = service
     from agents.core.llm import custom_endpoint_consent

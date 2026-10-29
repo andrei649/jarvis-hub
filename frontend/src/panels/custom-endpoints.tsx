@@ -38,13 +38,14 @@ export function CustomEndpointsPanel() {
   };
   useEffect(() => { void reload().catch((err) => setMessage(refusal(err))); }, []);
 
-  const run = async (operation: () => Promise<unknown>, successful: string, credential = false) => {
+  const run = async (operation: () => Promise<unknown>,
+    successful: string | ((result: unknown) => string), credential = false) => {
     setBusy(true); setMessage('');
     try {
-      await operation();
+      const result = await operation();
       if (credential) setSecret('');
       await reload();
-      setMessage(successful);
+      setMessage(typeof successful === 'string' ? successful : successful(result));
     } catch (err) {
       if (credential) setSecret('');
       setMessage(refusal(err) + ' · refresh the list before retrying');
@@ -99,7 +100,9 @@ export function CustomEndpointsPanel() {
         }, { admin: true }), `${item.identity} selected`)}>Activate</button>
       <button disabled={busy || !item.active} onClick={() => void run(
         () => apiPost(path(item.key) + '/validate', {}, { admin: true }),
-        `${item.identity} validation completed`)}>Validate /models</button>
+        (result) => (result && typeof result === 'object' && 'ok' in result && result.ok === true)
+          ? `${item.identity} validation completed` : `${item.identity} validation failed`)}>
+        Validate /models</button>
       <button disabled={busy} onClick={() => {
         const name = window.prompt('New display name', item.name);
         if (name && name !== item.name) void run(() => apiPut(path(item.key),

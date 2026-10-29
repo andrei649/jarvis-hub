@@ -132,6 +132,11 @@ def test_url_classes_allow_bounded_proxy_prefix_and_refuse_ambiguous_paths(store
     assert classify_url('http://modelbox.lan:1234/v1') == 'lan'
     assert classify_url('http://192.168.1.3:1234/v1') == 'lan'
     assert classify_url('https://example.org/api/v1') == 'public'
+    # Admission must agree with the physical LAN resolver, which accepts only
+    # loopback and RFC1918 destinations rather than all ipaddress.is_private.
+    for address in ('198.18.0.1', '100.64.0.1', '169.254.1.1'):
+        with pytest.raises(CustomEndpointInvalid):
+            classify_url(f'http://{address}:1234/v1')
     for url in ('https://example.org/v1/../v1', 'https://example.org/%76%31',
                 'https://example.org/v1?model=m', 'http://example.org/v1',
                 'http://metadata.google.internal/v1'):

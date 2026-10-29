@@ -87,6 +87,29 @@ async def test_custom_wire_uses_pinned_loopback_and_no_ambient_key(active):
 
 
 @pytest.mark.asyncio
+async def test_ipv6_loopback_wire_keeps_bracketed_logical_host(service_fixture):
+    from agents.core.llm.providers.custom_runtime import custom_client
+
+    svc, _, _ = service_fixture
+    created = svc.create('six', 'Six', 'http://[::1]:1234/v1', 'm',
+                         'none', 'local', actor=owner())
+    svc.activate('six', expected_revision=created['revision'],
+                 expected_choice_epoch=metadata.read_choice().epoch,
+                 acknowledge_unknown_price=True, actor=owner())
+    runtime = svc.current_runtime()
+    backend = SimpleNamespace(profile=runtime.profile, _custom_endpoint_runtime=runtime)
+    runtime.bind_backend(backend, SimpleNamespace(_compatible_backend=backend))
+    seen = []
+    async with custom_client(runtime, inner=httpx.MockTransport(
+            lambda request: (seen.append(request), httpx.Response(200, content=b'{}'))[1])) as client:
+        assert (await client.post('/chat/completions',
+                                  json={'model': 'm', 'messages': []})).status_code == 200
+    assert seen[0].url.host == '::1'
+    assert seen[0].headers['host'] == '[::1]:1234'
+    assert seen[0].extensions['sni_hostname'] == '::1'
+
+
+@pytest.mark.asyncio
 async def test_generic_writer_refused_while_custom_body_is_open(active):
     from agents.core.llm.providers.custom_runtime import custom_client
     from agents.core.llm.providers.selection_gates import SelectionBusy

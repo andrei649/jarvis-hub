@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from agents.core import settings_db
+from agents.core.security.ssrf import _safe_for_mode
 
 from .providers import DATA_POLICIES, selection_gates
 
@@ -125,10 +126,10 @@ def classify_url(base_url: str) -> str:
         else:
             if ip.is_loopback:
                 kind = "loopback"
-            elif (isinstance(ip, ipaddress.IPv4Address) and ip.is_private
-                  and not ip.is_link_local and not ip.is_reserved):
+            elif (isinstance(ip, ipaddress.IPv4Address)
+                  and not ip.is_loopback and _safe_for_mode(host, 'lan')):
                 kind = "lan"
-            elif ip.is_global:
+            elif _safe_for_mode(host, 'public'):
                 kind = "public"
             else:
                 raise CustomEndpointInvalid("unsafe endpoint address")

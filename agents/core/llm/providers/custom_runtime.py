@@ -12,7 +12,7 @@ import httpcore
 import httpx
 
 from agents.core import settings_db
-from agents.core.security.ssrf import resolve_and_validate
+from agents.core.security.ssrf import _safe_for_mode, resolve_and_validate
 from agents.core.turn_usage import record_dispatch
 
 from .. import custom_endpoint_consent as consent
@@ -126,9 +126,8 @@ class CustomEndpointRuntime:
             if (kind == 'loopback' and not literal.is_loopback
                     or kind == 'lan' and not (
                         isinstance(literal, ipaddress.IPv4Address)
-                        and literal.is_private and not literal.is_loopback
-                        and not literal.is_link_local and not literal.is_reserved)
-                    or kind == 'public' and not literal.is_global):
+                        and not literal.is_loopback and _safe_for_mode(address, 'lan'))
+                    or kind == 'public' and not _safe_for_mode(address, 'public')):
                 raise ProviderPackageError('custom endpoint DNS refused')
             checked, refusal = resolve_and_validate(
                 address, mode='public' if kind == 'public' else 'lan')
@@ -170,7 +169,7 @@ class CustomEndpointRuntime:
             headers['Authorization'] = 'Bearer ' + key
         else:
             headers['x-api-key'] = key
-        authority = logical.host
+        authority = f'[{logical.host}]' if ':' in logical.host else logical.host
         if logical.port not in (None, 80 if logical.scheme == 'http' else 443):
             authority += ':' + str(logical.port)
         headers['Host'] = authority

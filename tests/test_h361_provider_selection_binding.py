@@ -1,6 +1,9 @@
 """Owner selected metadata uses a live signed record, vault HWM and real Kernel."""
 import asyncio
+import hashlib
+import hmac
 import json
+import multiprocessing as mp
 import os
 import sqlite3
 import stat
@@ -933,3 +936,192 @@ def test_owner_route_reports_bounded_guard_requirement_without_message_echo(
     assert secret not in response.text
     assert provider_selection.current_revision() == before
     assert provider_selection.read_selection() is None
+
+
+def _install_pre_choice_epoch_selection(svc, *, proof=None):
+    """Recreate the exact pre-H367 JSON and private HMAC without a new owner action."""
+    from agents.core.llm.providers import selection_consent
+
+    selected = provider_selection.read_selection()
+    binding = selected.binding
+    record = svc._store().require_runnable(binding.provider_id,
+        expected_hash=binding.package_hash, home=svc.home)
+    policy = record.profile.data_policy_for(binding.model)[0]
+    fields = asdict(binding)
+    fields.pop('choice_epoch')
+    fields.pop('consent_proof')
+    message = selection_consent._DOMAIN + json.dumps({
+        'revision': selected.revision, 'binding': fields, 'policy': policy,
+        'declaration_policy': record.profile.data_policy,
+        'declaration_models': record.profile.data_policy_models,
+    }, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('ascii')
+    old_proof = hmac.new(selection_consent._key(svc.root, create=False),
+                         message, hashlib.sha256).hexdigest() if proof is None else proof
+    fields['consent_proof'] = old_proof
+    payload = json.dumps(fields, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    conn = settings_db.get_conn()
+    try:
+        with conn:
+            conn.execute('UPDATE signed_provider_selection SET record_json=?,record_hash=? '
+                         'WHERE singleton=1',
+                         (payload, provider_selection._digest(selected.revision, payload)))
+            conn.execute('UPDATE provider_choice_epoch SET epoch=0 WHERE singleton=1')
+    finally:
+        conn.close()
+    return selected.revision, payload
+
+
+def test_genuine_old_signed_proof_migrates_without_new_owner_consent(
+        service, tmp_path, selected_store):
+    from agents.core.llm.custom_endpoints import read_choice
+
+    svc, _, _, seen, events, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-upgrade-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+        expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    before_actions = sum(action.kind == 'provider.selection' for action, _ in seen)
+    before_events = sum(event.action_taken.startswith('provider_selection_') for event in events)
+    revision, legacy_json = _install_pre_choice_epoch_selection(svc)
+    assert 'choice_epoch' not in legacy_json
+    assert provider_selection.read_selection().binding.choice_epoch == 0
+    runtime = svc.selected_runtime()
+    saved = provider_selection.read_selection()
+    assert runtime.selection == saved
+    assert saved.revision == revision
+    assert saved.binding.choice_epoch == read_choice().epoch > 0
+    assert svc.selection_status(actor=owner())['status'] == 'selected'
+    assert sum(action.kind == 'provider.selection' for action, _ in seen) == before_actions
+    assert sum(event.action_taken.startswith('provider_selection_') for event in events) == before_events
+    assert svc.selected_runtime().selection == saved
+    settings_db.put_category('llm', {'compatible_model': 'other-model'})
+    assert provider_selection.read_selection() is None
+    assert read_choice().epoch > saved.binding.choice_epoch
+
+
+@pytest.mark.parametrize('mode', ['forged', 'proofless', 'rotated', 'superseded_epoch',
+                                   'custom_active', 'busy'])
+def test_old_signed_migration_refuses_unproven_or_concurrently_held_scope(
+        service, tmp_path, selected_store, mode):
+    from agents.core.llm.providers import selection_gates
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-upgrade-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+        expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    revision, legacy_json = _install_pre_choice_epoch_selection(
+        svc, proof='0' * 64 if mode == 'forged' else '' if mode == 'proofless' else None)
+    if mode == 'rotated':
+        svc.put_credential('synthetic-addon', artifact['package_hash'],
+                           'synthetic-rotated-key', actor=owner())
+    elif mode == 'superseded_epoch':
+        conn = settings_db.get_conn()
+        try:
+            with conn:
+                conn.execute('UPDATE provider_choice_epoch SET epoch=1 WHERE singleton=1')
+        finally:
+            conn.close()
+    elif mode == 'custom_active':
+        conn = settings_db.get_conn()
+        try:
+            with conn:
+                conn.execute("UPDATE custom_endpoint_choice SET active_key='unproven' WHERE singleton=1")
+        finally:
+            conn.close()
+    if mode == 'busy':
+        with selection_gates.shared(settings_db.DB_PATH), pytest.raises(selection_gates.SelectionBusy):
+            svc.selected_runtime()
+    else:
+        with pytest.raises(ProviderPackageError):
+            svc.selected_runtime()
+    assert provider_selection.read_selection().revision == revision
+    conn = settings_db.get_conn()
+    try:
+        assert conn.execute('SELECT record_json FROM signed_provider_selection').fetchone()[0] == legacy_json
+    finally:
+        conn.close()
+
+
+def _hold_legacy_choice_read_lease(path, pipe):
+    from pathlib import Path
+
+    from agents.core import settings_db as isolated_settings
+    from agents.core.llm.providers import selection_gates as isolated_gates
+
+    isolated_settings.DB_PATH = Path(path)
+    with isolated_gates.shared(isolated_settings.DB_PATH):
+        pipe.send('held')
+        pipe.recv()
+    pipe.close()
+
+
+def test_old_signed_upgrade_waits_for_cross_process_reader_then_migrates(
+        service, tmp_path, selected_store):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-upgrade-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+        expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    revision, legacy_json = _install_pre_choice_epoch_selection(svc)
+    from agents.core.llm.providers.selection_gates import SelectionBusy
+
+    context = mp.get_context('spawn')
+    parent, child = context.Pipe()
+    process = context.Process(target=_hold_legacy_choice_read_lease,
+                              args=(str(settings_db.DB_PATH), child))
+    try:
+        process.start()
+        child.close()
+        assert parent.poll(5) and parent.recv() == 'held'
+        with pytest.raises(SelectionBusy):
+            svc.selected_runtime()
+        conn = settings_db.get_conn()
+        try:
+            assert conn.execute('SELECT record_json FROM signed_provider_selection').fetchone()[0] == legacy_json
+        finally:
+            conn.close()
+        parent.send('release')
+        process.join(5)
+        assert process.exitcode == 0
+        assert svc.selected_runtime().selection.revision == revision
+        assert provider_selection.read_selection().binding.choice_epoch == 1
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+        parent.close()
+        child.close()
+
+
+def test_unknown_old_selection_fields_never_become_consent(
+        service, tmp_path, selected_store):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-upgrade-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+        expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    revision, payload = _install_pre_choice_epoch_selection(svc)
+    fields = json.loads(payload)
+    fields['unknown_version'] = 2
+    changed = json.dumps(fields, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    conn = settings_db.get_conn()
+    try:
+        with conn:
+            conn.execute('UPDATE signed_provider_selection SET record_json=?,record_hash=? '
+                         'WHERE singleton=1',
+                         (changed, provider_selection._digest(revision, changed)))
+    finally:
+        conn.close()
+    with pytest.raises(provider_selection.SelectionInvalid):
+        svc.selected_runtime()
+    conn = settings_db.get_conn()
+    try:
+        assert conn.execute('SELECT record_json FROM signed_provider_selection').fetchone()[0] == changed
+        assert conn.execute('SELECT epoch FROM provider_choice_epoch').fetchone()[0] == 0
+    finally:
+        conn.close()
