@@ -12,6 +12,7 @@ import json
 import os
 import secrets
 import stat
+import threading
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
@@ -20,6 +21,58 @@ from .packages import ProviderPackageError, _secure_root
 
 _KEY_NAME = 'selection-consent.key'
 _DOMAIN = b'nerva:signed-provider-selection-consent:v1\0'
+_ISSUED: dict[object, tuple] = {}
+_ISSUED_LOCK = threading.Lock()
+
+
+def _close(capability):
+    if type(capability) is not object:
+        return
+    with _ISSUED_LOCK:
+        _ISSUED.pop(capability, None)
+
+
+def _issue(service, actor, action, decision, binding, revision, profile, policy):
+    """Issue only inside the exact live selection receipt, after all audits."""
+    from agents.core.kernel import Decision, Verdict
+
+    from .install_service import (
+        _SELECTION_AUDIT_DONE,
+        _SELECTION_RECEIPT,
+        selection_receipt_matches,
+    )
+
+    receipt = _SELECTION_RECEIPT.get()
+    payload = getattr(action, 'payload', {})
+    if (receipt is None or _SELECTION_AUDIT_DONE.get() is not action
+            or receipt[0] is not service or receipt[1] is not action
+            or receipt[2] is not actor or receipt[3] != threading.get_ident()
+            or not selection_receipt_matches(action)
+            or type(decision) is not Decision or decision.verdict is not Verdict.GRANT
+            or decision.tier != 3 or action.kind != 'provider.selection'
+            or payload.get('operation') != 'select'
+            or payload.get('selected_revision') != revision
+            or payload.get('current_revision') != revision - 1
+            or payload.get('authority') != binding.authority
+            or payload.get('home') != binding.home
+            or payload.get('provider_id') != binding.provider_id
+            or payload.get('source') != binding.source
+            or payload.get('artifact_id') != binding.artifact_id
+            or payload.get('package_hash') != binding.package_hash
+            or payload.get('endpoint') != binding.endpoint
+            or payload.get('auth_type') != binding.auth_type
+            or payload.get('model') != binding.model
+            or payload.get('credential_generation') != binding.credential_generation
+            or payload.get('price_ack') is not True
+            or binding.unknown_price_ack is not True
+            or payload.get('data_ack') is not binding.data_policy_ack):
+        raise ProviderPackageError('selection mint capability unavailable')
+    capability = object()
+    with _ISSUED_LOCK:
+        _ISSUED[capability] = (service, actor, Path(service.root),
+                               _message(binding, revision, profile, policy),
+                               threading.get_ident())
+    return capability
 
 
 def _root_fd(root: Path):
@@ -134,9 +187,23 @@ def _message(binding, revision: int, profile, policy: str) -> bytes:
                                 ensure_ascii=True).encode('ascii')
 
 
-def mint(root, binding, revision: int, profile, policy: str) -> str:
-    """Persist a fresh private key before the caller publishes the CAS row."""
+def mint(root, binding, revision: int, profile, policy: str, *, capability=None) -> str:
+    """Consume the exact post-audit capability before touching private key bytes."""
+    if type(capability) is not object:
+        raise ProviderPackageError('selection mint capability required')
+    with _ISSUED_LOCK:
+        issued = _ISSUED.pop(capability, None)
+    if issued is None:
+        raise ProviderPackageError('selection mint capability required')
     message = _message(binding, revision, profile, policy)
+    from .install_service import _owner_current
+
+    service, actor, issued_root, issued_message, issued_thread = issued
+    if (issued_thread != threading.get_ident()
+            or issued_root != Path(root) or service.root != Path(root)
+            or not hmac.compare_digest(issued_message, message)
+            or service.enabled() is not True or not _owner_current(actor)):
+        raise ProviderPackageError('selection mint capability changed or expired')
     return hmac.new(_key(Path(root), create=True), message, hashlib.sha256).hexdigest()
 
 

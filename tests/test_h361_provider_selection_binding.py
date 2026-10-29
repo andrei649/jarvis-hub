@@ -378,6 +378,177 @@ def test_true_flag_raw_cas_without_owner_proof_cannot_construct_runtime(
     assert svc.selection_status(actor=owner())['status'] == 'stale'
 
 
+def test_direct_mint_without_owner_decision_cannot_make_true_flag_cas_authoritative(
+        service, tmp_path, selected_store):
+    from agents.core.llm.providers.credentials import credential_binding
+    from agents.core.llm.providers.selection_consent import mint
+
+    svc, _, _, seen, events, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-direct-mint-key', actor=owner())
+    record = svc._store().require_runnable('synthetic-addon',
+        expected_hash=artifact['package_hash'], home=svc.home)
+    scope = credential_binding(record, svc.home)
+    binding = provider_selection.SelectionBinding(
+        'local-owner-v1', svc.home, record.provider_id, 'synthetic-model',
+        record.source, record.artifact_id, record.package_hash, scope.endpoint,
+        scope.auth_type, svc._credentials().status(scope)['generation'],
+        unknown_price_ack=True, data_policy_ack=True)
+    revision = provider_selection.current_revision()
+    policy = record.profile.data_policy_for(binding.model)[0]
+    with pytest.raises(ProviderPackageError, match='mint capability'):
+        mint(svc.root, binding, revision + 1, record.profile, policy)
+    assert not (svc.root / 'selection-consent.key').exists()
+    assert provider_selection.read_selection() is None
+    assert provider_selection.current_revision() == revision
+    assert not [action for action, _ in seen if action.kind == 'provider.selection']
+    assert not [event for event in events if event.action_taken.startswith('provider_selection_')]
+
+
+def test_owner_mint_capability_is_one_use_and_revision_bound(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm.providers import selection_consent
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-capability-key', actor=owner())
+    minted = []
+    real_mint = selection_consent.mint
+
+    def capture_mint(root, binding, revision, profile, policy, *, capability=None):
+        minted.append((root, binding, revision, profile, policy, capability))
+        return real_mint(root, binding, revision, profile, policy,
+                         capability=capability)
+
+    monkeypatch.setattr(selection_consent, 'mint', capture_mint)
+    selected = svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    assert len(minted) == 1
+    root, binding, revision, profile, policy, capability = minted[0]
+    with pytest.raises(ProviderPackageError, match='mint capability'):
+        real_mint(root, binding, revision, profile, policy, capability=capability)
+    assert provider_selection.current_revision() == selected['revision']
+    assert svc.selected_runtime().selection.revision == selected['revision']
+
+
+@pytest.mark.parametrize('change', ['revision', 'binding', 'policy'])
+def test_wrong_scope_consumes_capability_without_key_or_selection(
+        service, tmp_path, selected_store, monkeypatch, change):
+    from agents.core.llm.providers import selection_consent
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-capability-key', actor=owner())
+    before = provider_selection.current_revision()
+    real_mint = selection_consent.mint
+
+    def wrong_scope(root, binding, revision, profile, policy, *, capability=None):
+        wrong_binding = replace(binding, home='other-owner-home') if change == 'binding' else binding
+        wrong_revision = revision + 1 if change == 'revision' else revision
+        wrong_policy = 'trains-on-inputs' if change == 'policy' else policy
+        with pytest.raises(ProviderPackageError):
+            real_mint(root, wrong_binding, wrong_revision, profile, wrong_policy,
+                      capability=capability)
+        return real_mint(root, binding, revision, profile, policy,
+                         capability=capability)
+
+    monkeypatch.setattr(selection_consent, 'mint', wrong_scope)
+    with pytest.raises(ProviderPackageError, match='mint capability'):
+        svc.select_provider('synthetic-addon', artifact['package_hash'],
+            'synthetic-model', expected_revision=before,
+            acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+    assert not (svc.root / 'selection-consent.key').exists()
+
+
+def test_owner_expiry_after_audit_refuses_capability_mint(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm.providers import selection_consent
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-capability-key', actor=owner())
+    before = provider_selection.current_revision()
+    live = [True]
+    actor = owner(lambda: live[0])
+    real_mint = selection_consent.mint
+
+    def expired_mint(*args, **kwargs):
+        live[0] = False
+        return real_mint(*args, **kwargs)
+
+    monkeypatch.setattr(selection_consent, 'mint', expired_mint)
+    with pytest.raises(ProviderPackageError, match='mint capability'):
+        svc.select_provider('synthetic-addon', artifact['package_hash'],
+            'synthetic-model', expected_revision=before,
+            acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=actor)
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+
+
+def test_capability_cannot_issue_during_guard_audit_callback(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.kernel import Decision
+    from agents.core.llm import selection_guards as sg
+    from agents.core.llm.providers import install_service, selection_consent
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-capability-key', actor=owner())
+    record = svc._store().require_runnable('synthetic-addon',
+        expected_hash=artifact['package_hash'], home=svc.home)
+    real_record = sg.record
+    checked = []
+
+    def before_audit_returns(findings, surface, audit_log):
+        service_ref, action, actor, _thread = install_service._SELECTION_RECEIPT.get()
+        payload = action.payload
+        binding = provider_selection.SelectionBinding(
+            payload['authority'], payload['home'], payload['provider_id'],
+            payload['model'], payload['source'], payload['artifact_id'],
+            payload['package_hash'], payload['endpoint'], payload['auth_type'],
+            payload['credential_generation'], unknown_price_ack=True,
+            data_policy_ack=payload['data_ack'])
+        with pytest.raises(ProviderPackageError, match='mint capability'):
+            selection_consent._issue(
+                service_ref, actor, action, Decision(Verdict.GRANT, tier=3),
+                binding, payload['selected_revision'], record.profile,
+                record.profile.data_policy_for(binding.model)[0])
+        checked.append(True)
+        return real_record(findings, surface, audit_log)
+
+    monkeypatch.setattr(sg, 'record', before_audit_returns)
+    chosen = svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    assert checked == [True]
+    assert svc.selected_runtime().selection.revision == chosen['revision']
+
+
+def test_guard_audit_failure_never_issues_mint_capability(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm import selection_guards as sg
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-capability-key', actor=owner())
+    before = provider_selection.current_revision()
+
+    def failed_guard_audit(*_args):
+        raise OSError('synthetic selection guard audit failure')
+
+    monkeypatch.setattr(sg, 'record', failed_guard_audit)
+    with pytest.raises(ProviderPackageError, match='selection guard consent audit unavailable'):
+        svc.select_provider('synthetic-addon', artifact['package_hash'],
+            'synthetic-model', expected_revision=before,
+            acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+    assert not (svc.root / 'selection-consent.key').exists()
+
+
 @pytest.mark.parametrize('operation', ['clear', 'reselect'])
 def test_legacy_true_flag_row_stays_inert_but_owner_can_recover(
         service, tmp_path, selected_store, operation):

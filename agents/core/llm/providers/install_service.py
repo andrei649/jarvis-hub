@@ -41,6 +41,8 @@ _CREDENTIAL_RECEIPT: ContextVar[tuple | None] = ContextVar(
     'signed_provider_credential_receipt', default=None)
 _SELECTION_RECEIPT: ContextVar[tuple | None] = ContextVar(
     'signed_provider_selection_receipt', default=None)
+_SELECTION_AUDIT_DONE: ContextVar[Action | None] = ContextVar(
+    'signed_provider_selection_audit_done', default=None)
 
 
 def _owner_current(actor):
@@ -384,13 +386,29 @@ class ProviderInstallService:
         return SelectedProviderRuntime(self, selection) if selection is not None else None
 
     def _selection_authorize(self, binding, *, operation, revision, actor,
-                             price_ack, data_ack):
+                             price_ack, data_ack, candidate_profile=None):
         from agents.core.action_origin import current_action_origin
         from agents.core.kernel import kernel_enabled
+        from agents.core.llm import selection_guards
         from agents.core.security.types import SecurityEvent, SecurityEventType
 
         if not kernel_enabled() or not callable(getattr(self.audit, 'log', None)):
             raise ProviderPackageError('selection kernel or audit unavailable')
+        findings = []
+        if operation == 'select':
+            if candidate_profile is None:
+                raise ProviderPackageError('signed selection candidate unavailable')
+            choice = selection_guards.Choice('provider.selection', binding.provider_id,
+                                             binding.model)
+            try:
+                with selection_guards._signed_candidate(
+                        candidate_profile, binding.provider_id, binding.model):
+                    findings = selection_guards.enforce(
+                        [choice], acknowledge_training=data_ack)
+            except selection_guards.SelectionRefused:
+                raise
+            except Exception:
+                raise ProviderPackageError('selection guard unavailable') from None
         scope_digest = hashlib.sha256(json.dumps(
             [binding.authority, binding.home, binding.provider_id, binding.source,
              binding.artifact_id, binding.package_hash, binding.endpoint, binding.model,
@@ -418,39 +436,54 @@ class ProviderInstallService:
                 raise ProviderPackageError('selection kernel unavailable')
             decision = gate(action, approval_check=lambda candidate: candidate is action
                             and selection_receipt_matches(action))
-        finally:
-            _SELECTION_RECEIPT.reset(token)
-        if (type(decision) is not Decision or decision.verdict is not Verdict.GRANT
-                or decision.tier != 3):
-            raise ProviderPackageError('selection mutation refused')
-        try:
-            self.audit.log(SecurityEvent(
-                event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
-                action_taken='provider_selection_' + operation + '_authorized',
-                content_preview=(f'provider={binding.provider_id}; '
-                                 f'artifact={binding.artifact_id}; revision={revision + 1}; '
-                                 f'credential_generation={binding.credential_generation}; '
-                                 f'scope_sha256={scope_digest}')))
-            if operation == 'select':
+            if (type(decision) is not Decision or decision.verdict is not Verdict.GRANT
+                    or decision.tier != 3):
+                raise ProviderPackageError('selection mutation refused')
+            try:
                 self.audit.log(SecurityEvent(
                     event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
-                    action_taken='provider_selection_unknown_price_acknowledged',
+                    action_taken='provider_selection_' + operation + '_authorized',
                     content_preview=(f'provider={binding.provider_id}; '
-                                     f'artifact={binding.artifact_id}; scope_sha256={scope_digest}')))
-                if data_ack:
+                                     f'artifact={binding.artifact_id}; revision={revision + 1}; '
+                                     f'credential_generation={binding.credential_generation}; '
+                                     f'scope_sha256={scope_digest}')))
+                if operation == 'select':
                     self.audit.log(SecurityEvent(
                         event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
-                        action_taken='provider_selection_data_policy_acknowledged',
+                        action_taken='provider_selection_unknown_price_acknowledged',
                         content_preview=(f'provider={binding.provider_id}; '
                                          f'artifact={binding.artifact_id}; scope_sha256={scope_digest}')))
-        except Exception:
-            raise ProviderPackageError('selection consent audit unavailable') from None
+                    if data_ack:
+                        self.audit.log(SecurityEvent(
+                            event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
+                            action_taken='provider_selection_data_policy_acknowledged',
+                            content_preview=(f'provider={binding.provider_id}; '
+                                             f'artifact={binding.artifact_id}; scope_sha256={scope_digest}')))
+            except Exception:
+                raise ProviderPackageError('selection consent audit unavailable') from None
+            if operation == 'select':
+                try:
+                    selection_guards.record(findings, 'signed provider selection', self.audit)
+                except Exception:
+                    raise ProviderPackageError('selection guard consent audit unavailable') from None
+                from .selection_consent import _issue
+
+                audited = _SELECTION_AUDIT_DONE.set(action)
+                try:
+                    return _issue(self, actor, action, decision, binding, revision + 1,
+                                  candidate_profile,
+                                  candidate_profile.data_policy_for(binding.model)[0])
+                finally:
+                    _SELECTION_AUDIT_DONE.reset(audited)
+            return None
+        finally:
+            _SELECTION_RECEIPT.reset(token)
 
     def select_provider(self, provider_id, package_hash, model, *, expected_revision,
                         acknowledge_unknown_price=False, acknowledge_data_policy=False,
                         actor):
         from agents.core import settings_db
-        from agents.core.llm import provider_selection, selection_guards
+        from agents.core.llm import provider_selection
         from agents.core.llm.providers import selection_gates
 
         from .credentials import credential_binding
@@ -483,15 +516,6 @@ class ProviderInstallService:
                 if acknowledge_unknown_price is not True or (policy in {
                         'unknown', 'trains-on-inputs'} and acknowledge_data_policy is not True):
                     raise ProviderPackageError('explicit selected provider risk acknowledgement required')
-                choice = selection_guards.Choice('provider.selection', provider_id, model)
-                try:
-                    with selection_guards._signed_candidate(record.profile, provider_id, model):
-                        findings = selection_guards.enforce(
-                            [choice], acknowledge_training=acknowledge_data_policy)
-                except selection_guards.SelectionRefused:
-                    raise
-                except Exception:
-                    raise ProviderPackageError('selection guard unavailable') from None
                 binding = provider_selection.SelectionBinding(
                     'local-owner-v1', self.home, record.provider_id, model,
                     record.source, record.artifact_id, record.package_hash,
@@ -499,20 +523,21 @@ class ProviderInstallService:
                     unknown_price_ack=True,
                     data_policy_ack=acknowledge_data_policy)
                 self._owner(actor)
-                self._selection_authorize(binding, operation='select', revision=current,
-                                          actor=actor, price_ack=True,
-                                          data_ack=acknowledge_data_policy)
-                try:
-                    selection_guards.record(findings, 'signed provider selection', self.audit)
-                except Exception:
-                    raise ProviderPackageError('selection guard consent audit unavailable') from None
-                self._owner(actor)
-                if self._credential_record_locked(store, provider_id, package_hash) != record:
-                    raise ProviderPackageError('signed provider changed before selection')
-                from .selection_consent import mint
+                capability = self._selection_authorize(
+                    binding, operation='select', revision=current, actor=actor,
+                    price_ack=True, data_ack=acknowledge_data_policy,
+                    candidate_profile=record.profile)
+                from .selection_consent import _close, mint
 
-                binding = replace(binding, consent_proof=mint(
-                    self.root, binding, current + 1, record.profile, policy))
+                try:
+                    self._owner(actor)
+                    if self._credential_record_locked(store, provider_id, package_hash) != record:
+                        raise ProviderPackageError('signed provider changed before selection')
+                    binding = replace(binding, consent_proof=mint(
+                        self.root, binding, current + 1, record.profile, policy,
+                        capability=capability))
+                finally:
+                    _close(capability)
                 saved = provider_selection.compare_and_swap(
                     settings_db.DB_PATH, binding, expected_revision=current)
         return {'status': 'selected', 'provider': binding.provider_id, 'model': binding.model,
