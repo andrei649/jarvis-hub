@@ -413,11 +413,15 @@ async def test_admin_pair_put_sqlite_contention_keeps_loop_live(store, monkeypat
     entered_at = []
     real_put = admin.put_category
     release = threading.Timer(0.8, held.rollback)
+    allow_worker = threading.Event()
+    release_started = threading.Event()
 
     def timed_put(*args, **kwargs):
         entered_at.append(time.monotonic())
-        loop.call_soon_threadsafe(tick.set)
         release.start()
+        release_started.set()
+        loop.call_soon_threadsafe(tick.set)
+        assert allow_worker.wait(2)
         return real_put(*args, **kwargs)
 
     monkeypatch.setattr(admin, 'put_category', timed_put)
@@ -425,12 +429,19 @@ async def test_admin_pair_put_sqlite_contention_keeps_loop_live(store, monkeypat
         'compatible_model': 'after-sqlite-contention'})))
     try:
         await asyncio.wait_for(tick.wait(), 2)
+        assert release_started.is_set(), 'timer must be owned before the loop resumes'
         assert entered_at and time.monotonic() - entered_at[0] < 0.25
     finally:
-        if release.ident is not None:
+        allow_worker.set()
+        if release_started.wait(2):
             release.join(2)
         else:
+            # A worker that starts later must not roll back a closed handle.
+            release.cancel()
+            if release.ident is not None:
+                release.join(2)
             held.rollback()
+        assert not release.is_alive()
         held.close()
     response = await asyncio.wait_for(task, 2)
     assert response['updated'] == 1
@@ -450,6 +461,7 @@ async def test_admin_pair_put_sqlite_busy_refuses_without_partial_write(store, m
 
     monkeypatch.setattr(admin, '_retention_gate', no_retention)
     before = settings_db.get_value('llm', 'compatible_model')
+    before_revision = provider_selection.current_revision(store)
     tick = asyncio.Event()
     asyncio.get_running_loop().call_later(0.05, tick.set)
     task = asyncio.create_task(admin.admin_put_category('llm', admin.AdminPutBody(values={
@@ -459,6 +471,7 @@ async def test_admin_pair_put_sqlite_busy_refuses_without_partial_write(store, m
         response = await asyncio.wait_for(task, 7)
         assert response.status_code == 409
         assert settings_db.get_value('llm', 'compatible_model') == before
+        assert provider_selection.current_revision(store) == before_revision
     finally:
         held.rollback()
         held.close()
