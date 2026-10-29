@@ -1,10 +1,15 @@
 """A dialog response is claimed once beside its current signed opener."""
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import uuid
+
+import pytest
 
 from agents.core.autonomy.mediation import ReceiptExpectation, issue_receipt
 from agents.core.autonomy.queue import TaskQueue, TaskStatus
+from agents.core.autonomy.worker import AutonomyWorker, _ExecutionPermit
 from tests.test_task_mediation_evidence import NOW_MS, _head_anchor, _signer
 
 
@@ -87,3 +92,65 @@ def test_dialog_claim_blocks_wrong_owner_and_revoked_opener(tmp_path):
     assert queue.claim_browser_dialog(response, opener_task_id=opener_id,
                                       opener_fingerprint=fingerprint,
                                       execution_id=str(uuid.uuid4())) is None
+
+
+@pytest.mark.asyncio
+async def test_generic_worker_explicitly_holds_dialog_response_for_private_child(tmp_path):
+    queue = _queue(tmp_path)
+    response = _enqueue(queue, 'toolrpc.browser_dialog',
+                        {'tool': 'browser_dialog', 'args': {
+                            'opener_task_id': 11, 'opener_fingerprint': 'not-current',
+                            'choice': 'dismiss', 'dialog_id': 'c' * 32},
+                         'target': 'browser_dialog'})
+    called = 0
+
+    async def executor(_task):
+        nonlocal called
+        called += 1
+        return {'status': 'ok'}
+
+    worker = AutonomyWorker(queue, executor=executor)
+    result = await worker._run_runnable([queue.get(response)])
+    assert result['held'] == 1
+    assert called == 0
+    assert queue.get(response).status == 'approved'
+
+
+@pytest.mark.asyncio
+async def test_private_same_worker_bridge_claims_in_empty_context_only_while_opener_lives(tmp_path):
+    queue = _queue(tmp_path)
+    opener_id = _enqueue(queue, 'toolrpc.browser_run',
+                         {'tool': 'browser_run', 'args': {'mode': 'start'}, 'target': 'browser_run'})
+    opener = queue.claim_mediated(opener_id, execution_id=str(uuid.uuid4()))
+    assert opener is not None
+    fingerprint = queue.execution_fingerprint(opener)
+    worker = AutonomyWorker(queue)
+    permit = _ExecutionPermit(opener)
+    assert permit.consume(opener, validate=lambda _task, _fp: True)
+    token = worker._execution_context.set(permit)
+    try:
+        bridge = worker.begin_browser_dialog_bridge(opener)
+    finally:
+        worker._execution_context.reset(token)
+    response_id = _enqueue(queue, 'toolrpc.browser_dialog',
+                           {'tool': 'browser_dialog', 'args': {
+                               'opener_task_id': opener_id, 'opener_fingerprint': fingerprint,
+                               'choice': 'dismiss', 'dialog_id': 'd' * 32},
+                            'target': 'browser_dialog'})
+
+    async def claim():
+        assert worker._execution_context.get() is None
+        return await worker.claim_browser_dialog_bridge(bridge, response_id)
+
+    claimed = await asyncio.create_task(claim(), context=contextvars.Context())
+    assert claimed is not None and claimed.status == 'running' and claimed.attempts == 1
+    bridge.close()
+    next_id = _enqueue(queue, 'toolrpc.browser_dialog',
+                       {'tool': 'browser_dialog', 'args': {
+                           'opener_task_id': opener_id, 'opener_fingerprint': fingerprint,
+                           'choice': 'dismiss', 'dialog_id': 'e' * 32},
+                        'target': 'browser_dialog'})
+    assert await asyncio.create_task(
+        worker.claim_browser_dialog_bridge(bridge, next_id),
+        context=contextvars.Context(),
+    ) is None

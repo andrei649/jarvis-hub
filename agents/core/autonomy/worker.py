@@ -496,6 +496,8 @@ class _ExecutionPermit:
         self._fingerprint = TaskQueue.execution_fingerprint(task)
         self._active = True
         self._consumed = False
+        self._revoked = False
+        self._owner_task: asyncio.Task | None = None
         self._lock = threading.Lock()
 
     def consume(self, task: Task, *, validate: Callable[[Task, str], bool]) -> bool:
@@ -514,6 +516,10 @@ class _ExecutionPermit:
         if allowed:
             with self._lock:
                 self._consumed = True
+                try:
+                    self._owner_task = asyncio.current_task()
+                except RuntimeError:
+                    self._owner_task = None
         return allowed
 
     @property
@@ -521,9 +527,35 @@ class _ExecutionPermit:
         with self._lock:
             return self._consumed
 
+    @property
+    def current_owner_task(self) -> asyncio.Task | None:
+        with self._lock:
+            return self._owner_task if self._consumed and not self._revoked else None
+
     def revoke(self) -> None:
         with self._lock:
             self._active = False
+            self._revoked = True
+
+
+class _BrowserDialogBridge:
+    """Process-local same-worker continuation; a task id is never this handle."""
+
+    def __init__(self, worker: AutonomyWorker, opener: Task,
+                 permit: _ExecutionPermit, parent_task: asyncio.Task) -> None:
+        self.worker = worker
+        self.opener_id = opener.id
+        self.fingerprint = TaskQueue.execution_fingerprint(opener)
+        self.agent = opener.agent
+        self.permit = permit
+        self.parent_task = parent_task
+        self.child_task: asyncio.Task | None = None
+        self.active = True
+        self.claimed = False
+
+    def close(self) -> None:
+        self.active = False
+        self.worker._dialog_bridges.discard(self)
 
 
 def is_night_window(hour: int, start: int = 23, end: int = 6) -> bool:
@@ -659,6 +691,58 @@ class AutonomyWorker:
         self._execution_context = ContextVar(
             f"autonomy_mediated_execution_{id(self)}", default=None
         )
+        self._dialog_bridges: set[_BrowserDialogBridge] = set()
+
+    def begin_browser_dialog_bridge(self, opener: Task) -> _BrowserDialogBridge | None:
+        """Only the consumed opener worker task can retain a dialog child handle."""
+        permit = self._execution_context.get()
+        current = asyncio.current_task()
+        if (not isinstance(permit, _ExecutionPermit) or current is None
+                or permit.current_owner_task is not current
+                or opener.kind != 'toolrpc.browser_run' or opener.status != 'running'
+                or self.queue.mediation_mode != 'enforce'
+                or permit._fingerprint != TaskQueue.execution_fingerprint(opener)):
+            return None
+        bridge = _BrowserDialogBridge(self, opener, permit, current)
+        self._dialog_bridges.add(bridge)
+        return bridge
+
+    async def claim_browser_dialog_bridge(self, bridge: _BrowserDialogBridge,
+                                          response_id: int) -> Task | None:
+        """Offload one signed response CAS without copying the opener ContextVar."""
+        child = asyncio.current_task()
+        if (not isinstance(bridge, _BrowserDialogBridge)
+                or bridge.worker is not self or bridge not in self._dialog_bridges
+                or not bridge.active or bridge.claimed or child is None
+                or child is bridge.parent_task or bridge.parent_task.done()
+                or bridge.permit.current_owner_task is not bridge.parent_task):
+            return None
+        if bridge.child_task is None:
+            bridge.child_task = child
+        if bridge.child_task is not child:
+            return None
+        bridge.claimed = True
+        task = asyncio.create_task(asyncio.to_thread(
+            self.queue.claim_browser_dialog, response_id,
+            opener_task_id=bridge.opener_id, opener_fingerprint=bridge.fingerprint,
+            execution_id=str(uuid.uuid4()),
+        ))
+        cancelled = False
+        while True:
+            try:
+                claimed = await asyncio.shield(task)
+                break
+            except asyncio.CancelledError:
+                cancelled = True
+                if task.done():
+                    claimed = task.result()
+                    break
+        if cancelled:
+            raise asyncio.CancelledError
+        if (not bridge.active or bridge.parent_task.done()
+                or bridge.permit.current_owner_task is not bridge.parent_task):
+            return None
+        return claimed
 
     def attach_approval_judge(self, judge, *, loop=None, capacity=None, audit=None) -> None:
         """Bind default advisory review and optional sealed smart terminal decisions."""
@@ -1738,6 +1822,12 @@ class AutonomyWorker:
         """Original serial execution path, shared by ordinary and parallel rows."""
         ran = done = failed = held = 0
         for task in runnable:
+            # The opener occupies this same serial worker while a native modal
+            # blocks its Playwright call. Only its retained private continuation
+            # may claim the separately approved dialog row.
+            if task.kind == 'toolrpc.browser_dialog':
+                held += 1
+                continue
             # Q6: a per-agent halt (scope = the agent's name, ch07 GOV-178)
             # holds that agent's tasks at this same kernel-independent seam —
             # they stay APPROVED and run on the first tick after release.
