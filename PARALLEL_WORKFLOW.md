@@ -150,3 +150,81 @@ Evidence reuse is allowed only when:
    (`lease=none` until enforcement exists).
 
 Do not use age-of-file rules, local MD5 markers, or a model name as evidence that an edit is safe.
+
+## 10. Safe and efficient parallel development — rules added 2026-10-29
+
+These rules are for splitting work across parallel lanes without letting
+coordination, conflicts, or verification become the bottleneck. They do not
+replace `AGENTS.md`, and they do not weaken any security, kernel, workflow,
+or deployment control.
+
+### 10.1 Lane cap and scaling
+
+- Run at most **4 active agents in total**, including the coordinator.
+  Do not scale lanes to dozens or hundreds: beyond a small number of lanes,
+  merge conflicts, review queueing, and test reruns grow faster than output.
+- A coordinator coordinates only. It does not implement code in a lane it
+  coordinates, and it does not approve its own high-risk work.
+- Agents must not delegate further. If a lane needs help, it escalates to
+  the coordinator instead of spawning its own sub-lanes.
+- Efficiency is measured by merged, verified slices — not by lanes started,
+  branches opened, or agents running.
+
+### 10.2 One writer, frozen interfaces
+
+- Assign **one writer per file and per narrow path prefix**. No two active
+  lanes may edit the same file, even in different sections, unless the
+  coordinator has recorded an explicit handoff and merge order.
+- Freeze shared interfaces **before** parallel work starts: public contracts,
+  API shapes, database migrations, generated files, and status ledgers.
+  A lane that needs to change a frozen interface stops and escalates;
+  it does not unilaterally change it mid-wave.
+- Serialization points are worked on one at a time, in dependency order:
+  shared generated files, migrations, public contracts, branch policy,
+  status ledgers, workflows, kernel, and security roots. Parallelize
+  around them, never through them.
+
+### 10.3 Slice size, branches, and the merge queue
+
+- One slice = one branch = one pull request = one rollback unit.
+  Keep slices small enough to review, test, and revert on their own.
+- Never push directly to `main` under this workflow.
+- Merge in dependency order, one slice at a time, and re-verify at the
+  integrated head after each merge. A new commit makes prior CI and
+  governance evidence `stale`; do not copy it forward.
+- If a slice conflicts, stop only that slice, preserve both contributions
+  in separate branches, and let the coordinator decide the contract
+  owner and merge order. Do not silently overwrite another lane's work.
+
+### 10.4 Safety gates that parallel work must not bypass
+
+- Security, kernel, workflow, and deployment changes require an
+  independent reviewer who did not build the change. A builder must not
+  clear its own findings on those paths.
+- Deployment, release, and promotion require owner approval. Parallel
+  lanes may prepare and verify a release candidate, but they do not
+  deploy, promote, or roll back production on their own.
+- A lane must not weaken a classifier, policy, security boundary, Action
+  Kernel control, workflow, or emergency-stop mechanism as part of
+  evaluating or delivering its own change. Those paths are evaluated
+  against the trusted base, not against the change itself.
+- Secrets, credentials, and personal data stay out of branches, PR
+  bodies, logs, and evidence receipts.
+
+### 10.5 Verification and efficiency
+
+- Before pushing a slice, run the tests that cover what it changed and
+  report the exact commands and results in the PR.
+- Run integration suites after a batch, and full suites serially at a
+  milestone — not after every slice, and not in parallel against the
+  same shared state.
+- Use the query tools for large ledgers instead of loading whole files
+  into context, and keep PR descriptions focused on goal, changed
+  paths, tests, rollback, and dependencies.
+- Review is capped at two consolidated rounds (see §6). If material
+  findings remain, escalate with the finding, risk, options, and exact
+  head — do not bounce patches between lanes indefinitely.
+- A blocker is escalated once, with evidence. Do not repeat speculative
+  review loops, do not claim an unrun suite as passing, and do not
+  claim a slice is finished while its tests, review, or merge evidence
+  is still pending.
