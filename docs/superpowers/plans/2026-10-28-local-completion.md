@@ -311,3 +311,26 @@ context description are corrected without closing their remaining requirements.
 Task42 H011 retention/owned-payload GC is isolated under repair and receives no credit.
 All39 backlog items and all697 accepted contracts remain in the objective. The owner
 has now requested GitHub review checkpoints; publish reviewed batches to draftPR1321.
+
+Complete backend4436075e finished on clean unchanged source:30457 tests,
+30342 passed,4 failed,0 errors,111 skipped in1134.383 seconds. All14 ae618ee8
+failures and all27 earlier failures pass in this complete run. Seven of the8 prior
+browser failures pass; the binding-inventory case recurred because Task41 moved
+the custom-endpoint bind call from547 to551. Root reproduced that case and changed
+only its exact AST coordinate; the full51-case binding module passes. Independent
+review preserves all9 affected contract verdicts. The other3 failures concern two
+duplicate effective-window metadata reads and a postcommit metric hook on a minimal
+synthetic clock. The original H686 author reproduced all3 without changing their
+assertions and is preparing a source-backed immutable-window/optional-identity fix.
+This complete milestone is failed; future code receives no inherited full-green claim.
+
+DraftPR1321 now contains106 commits through4436075e; its body records this full result
+and all4 regressions. Its Bandit, Semgrep, gitleaks, pip-audit, HUD build, policy and
+lockfile checks pass on that head; Ubuntu tests were still running when inspected.
+H011 Task42's original5 findings and direct-post round2 repair are independently
+approved. Root additionally found removal of the existing maintenance `--force`
+command shape; the original author has a third scoped compatibility repair in review.
+Task37 native-dialog design now preserves exact opening-task authority and uses a
+separate response-task/Kernel scope, with actual Chrome frame-ID probes; implementation
+must retain the frozen model-facing dialog tool requirement. H011 Windows remains a
+separate native-adapter plan with unresolved native proof boundaries.
