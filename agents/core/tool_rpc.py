@@ -494,6 +494,7 @@ class ToolRPCServer:
         gated_review: GatedReview | None = None,
         consent_revision: str | None = None,
         parallel_safe: bool | None = None,
+        gated_seal: Callable | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -568,6 +569,11 @@ class ToolRPCServer:
                     or inspect.iscoroutinefunction(type(gated_review).__call__))
         ):
             raise ValueError("gated review requires async trusted custom intake")
+        if gated_seal is not None and (
+            not callable(gated_seal) or not gated or not trusted_execution
+            or gated_intake is None
+        ):
+            raise ValueError("gated seal requires trusted custom intake")
         if classifier is not None and (not callable(classifier) or not gated):
             raise ValueError("a call classifier requires a gated tool")
         if schema_overrides is not None and not callable(schema_overrides):
@@ -609,6 +615,7 @@ class ToolRPCServer:
             "untrusted_output": bool(untrusted_output),
             "gated_intake": gated_intake,
             "gated_review": gated_review,
+            "gated_seal": gated_seal,
             "classifier": classifier,
             "max_result_bytes": max_result_bytes,
             "schema_overrides": schema_overrides,
@@ -725,6 +732,56 @@ class ToolRPCServer:
 
     async def handle(self, request: dict, *, actor: Optional[str] = None,
                      _execution_check: Callable[[str, Mapping], bool] | None = None) -> dict:
+        """Seal selected sensitive proposals before the generic ToolRPC path."""
+        name = str((request or {}).get('tool', ''))
+        spec = self._tools.get(name)
+        sealer = spec.get('gated_seal') if spec is not None else None
+        if sealer is None:
+            return await self._handle_unsealed(request, actor=actor,
+                                               _execution_check=_execution_check)
+        effective_actor = actor or self.agent
+        raw_args = (request or {}).get('args') or {}
+        from .job_toolsets import allows
+        if (type(raw_args) is not dict or not allows(name)
+                or (not self.allows(name))):
+            return await self._handle_unsealed(request, actor=actor,
+                                               _execution_check=_execution_check)
+        if _execution_check is not None:
+            try:
+                if _execution_check(name, {'name': name, 'gated': spec['gated']}) is not True:
+                    return {'ok': False, 'reason': 'tool_not_allowed', 'tool': name}
+            except Exception:
+                return {'ok': False, 'reason': 'tool_not_allowed', 'tool': name}
+        try:
+            lease = sealer(effective_actor, raw_args)
+            safe_args = lease.args
+            if type(safe_args) is not dict or 'prompt_text' in safe_args:
+                raise ValueError('invalid sanitized args')
+        except Exception:
+            logger.warning('tool-rpc sensitive proposal seal refused: %s', name)
+            return {'ok': False, 'reason': 'validation_failed', 'tool': name}
+        try:
+            result = await self._handle_unsealed(
+                {'tool': name, 'args': safe_args}, actor=actor,
+                _execution_check=_execution_check,
+            )
+            task_id = result.get('task_id') if type(result) is dict else None
+            if (result.get('reason') == 'approval_required'
+                    and type(task_id) is int and task_id > 0):
+                try:
+                    lease.bind(task_id)
+                except Exception:
+                    logger.warning('tool-rpc sensitive proposal binding refused: %s', name)
+                    return {'ok': False, 'reason': 'enqueue_failed', 'tool': name}
+            return result
+        finally:
+            try:
+                lease.release()
+            except Exception:
+                logger.warning('tool-rpc sensitive proposal release failed: %s', name)
+
+    async def _handle_unsealed(self, request: dict, *, actor: Optional[str] = None,
+                               _execution_check: Callable[[str, Mapping], bool] | None = None) -> dict:
         effective_actor = actor or self.agent
         name = str((request or {}).get("tool", ""))
         args = (request or {}).get("args") or {}

@@ -16,7 +16,7 @@ from types import CodeType, FunctionType, MethodType
 
 _CALLBACKS = (
     "handler", "preflight", "classifier", "gated_intake", "gated_review",
-    "schema_overrides",
+    "gated_seal", "schema_overrides",
 )
 _STATIC = (
     "consent_revision", "description", "input_schema", "capability_id",
