@@ -191,6 +191,11 @@ def compare_and_swap(path: str | Path | None, binding: SelectionBinding,
             conn.close()
         if _read(target) != (next_revision, binding):
             raise SelectionInvalid('selection durable readback failed')
+        if (_old is None or (_old.provider_id, _old.model, _old.endpoint)
+                != (binding.provider_id, binding.model, binding.endpoint)):
+            from agents.core.status_cache_epoch import EPOCHS
+
+            EPOCHS.invalidate_selection()
     return SelectionRecord(next_revision, binding)
 
 
@@ -225,4 +230,7 @@ def compare_and_clear(path: str | Path | None = None, *, expected_revision: int)
             conn.close()
         if _read(target) != (next_revision, None):
             raise SelectionInvalid('selection clear durable readback failed')
+        from agents.core.status_cache_epoch import EPOCHS
+
+        EPOCHS.invalidate_selection()
     return next_revision

@@ -2,7 +2,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from '../app';
-import { turnOutcome } from '../turn-outcome';
+import { StatusStrip, turnOutcome } from '../turn-outcome';
 
 vi.mock('../voice', () => ({ useVoice: () => ({ active: false, toggle: () => {} }) }));
 vi.mock('../mesh', () => ({
@@ -56,6 +56,43 @@ async function complete(outcome: unknown, sessionId = 'topic_a') {
   await act(async () => resolve(ended(outcome, sessionId)));
 }
 const readout = () => screen.queryByLabelText('Turn duration');
+
+it('parses source-backed H686 fields and drops malformed metrics independently', () => {
+  const outcome = turnOutcome({ model: 'actual', context_detail: { prompt_tokens: 500, window_tokens: 1000 },
+    context_pct: 50, cache_hit: 60, tps: 40, compressions: 2, duration_ms: 80,
+    prompt_elapsed_ms: 25, total_tokens: 580, title: 'Current chat', battery: true,
+    bg_processes: 99, goal: 'guessed' });
+  expect(outcome).toMatchObject({ model: 'actual', context_pct: 50, cache_hit: 60,
+    tps: 40, compressions: 2, duration_ms: 80, prompt_elapsed_ms: 25,
+    total_tokens: 580, title: 'Current chat', battery: true });
+  expect(outcome).not.toHaveProperty('bg_processes');
+  expect(outcome).not.toHaveProperty('goal');
+  expect(turnOutcome({ context_pct: 120, cache_hit: -1, tps: Infinity,
+    duration_ms: '20', total_tokens: -1, model: '<script>' })).toBeNull();
+});
+
+it('renders selected metrics with cache thresholds and truthful local battery', () => {
+  const outcome = turnOutcome({ model: 'actual', context_detail: { prompt_tokens: 500, window_tokens: 1000 },
+    context_pct: 50, cache_hit: 60, tps: 40, compressions: 2, duration_ms: 80,
+    prompt_elapsed_ms: 25, total_tokens: 580, title: 'Current chat', battery: true });
+  render(<StatusStrip outcome={outcome} power={{ onBattery: true, percent: 75, deferred: false,
+    resumedAt: null, keepAwake: { enabled: false, active: false, refused: null, error: null } }} />);
+  expect(screen.getByLabelText('Request output tokens per second').textContent).toContain('40');
+  expect(screen.getByLabelText('Prompt cache hit').getAttribute('data-band')).toBe('medium');
+  expect(screen.getByLabelText('Prompt context').textContent).toContain('500 / 1000');
+  expect(screen.getByLabelText('Battery').textContent).toContain('75%');
+  expect(screen.getByLabelText('Accepted compressions').textContent).toContain('2');
+  expect(screen.getByLabelText('Turn generation and settlement').textContent).toContain('80 ms');
+  expect(screen.getByLabelText('Prompt elapsed to first visible chunk').textContent).toContain('25 ms');
+});
+
+it.each([[70, 'high'], [40, 'medium'], [39.9, 'low']] as const)(
+  'uses the frozen 70/40 cache bands for %s%%', (rate, band) => {
+    const { unmount } = render(<StatusStrip outcome={turnOutcome({ cache_hit: rate })} />);
+    expect(screen.getByLabelText('Prompt cache hit').getAttribute('data-band')).toBe(band);
+    unmount();
+  },
+);
 
 it('keeps every valid bounded file attempt from the owner outcome', () => {
   const attempts = Array.from({ length: 33 }, (_, index) => ({

@@ -11,6 +11,7 @@ import json
 import math
 import re
 import threading
+import time
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
@@ -103,6 +104,9 @@ class _Generation:
     collector: TurnUsage
     model: str | None
     route: str
+    context_window: int | None = None
+    primary: bool = True
+    agent_id: str | None = None
     parent: _Generation | None = None
     dispatches: int = 0
     active: bool = True
@@ -126,6 +130,10 @@ class _Pair:
 class _Pending:
     pair: _Pair
     local: bool
+    started: float
+    context_window: int | None
+    primary: bool
+    status_key: tuple | None
 
 
 class TurnUsage:
@@ -141,6 +149,34 @@ class TurnUsage:
         # Strong references prevent id reuse while the bounded turn is open.
         self._seen_usage: dict[int, Any] = {}
         self._on_progress = on_progress
+        self._status_observation: dict | None = None
+        self._status_scope: tuple[str, str, str] | None = None
+        self._status_key: tuple | None = None
+
+    def bind_status_scope(self, scope: tuple[str, str, str]) -> bool:
+        """Bind authenticated principal and durable conversation instance once."""
+        with self._lock:
+            if (self._closed or self._api_calls or self._status_scope is not None
+                    or type(scope) is not tuple or len(scope) != 3
+                    or any(type(item) is not str or not 1 <= len(item) <= 128 for item in scope)):
+                return False
+            self._status_scope = scope
+            return True
+
+    def invalidate_cache_epoch(self) -> None:
+        from .status_cache_epoch import EPOCHS
+
+        with self._lock:
+            if self._status_scope is not None:
+                EPOCHS.invalidate_conversation(self._status_scope)
+
+    def _poison_cache(self, key: tuple | None = None) -> None:
+        from .status_cache_epoch import EPOCHS
+
+        if key is not None:
+            EPOCHS.contaminate(key)
+        elif self._status_scope is not None:
+            EPOCHS.contaminate_conversation(self._status_scope)
 
     def observe_progress(self, callback: Callable[[dict], None]) -> None:
         """Install one optional request-owned display observer before dispatch."""
@@ -155,23 +191,30 @@ class TurnUsage:
             for attempt in self._pending.values():
                 attempt.pair.unknown_usage = True
                 attempt.pair.unknown_cost = True
+                if attempt.status_key is not None:
+                    from .status_cache_epoch import EPOCHS
+
+                    EPOCHS.contaminate(attempt.status_key)
             self._pending.clear()
             self._seen_usage.clear()
             self._closed = True
 
     def _dispatch(self, provider: str | None, model: str | None, route: str,
-                  request: Any, owner: object) -> None:
+                  request: Any, owner: object, context_window: int | None = None,
+                  primary: bool = True, agent_id: str | None = None) -> None:
         with self._lock:
             if self._closed:
                 return
             if self._api_calls >= _MAX_CALLS:
                 self._unattributed = True
+                self._poison_cache()
                 return
             self._api_calls += 1
             key = (provider, model)
             if key not in self._pairs:
                 if len(self._pairs) >= _MAX_PAIRS:
                     self._unattributed = True
+                    self._poison_cache()
                     return
                 self._pairs[key] = _Pair(provider, model)
             pair = self._pairs[key]
@@ -180,13 +223,26 @@ class TurnUsage:
             if old is not None:
                 old.pair.unknown_usage = True
                 old.pair.unknown_cost = True
+                if old.status_key is not None:
+                    from .status_cache_epoch import EPOCHS
+
+                    EPOCHS.contaminate(old.status_key)
             if owner not in self._pending and len(self._pending) >= _MAX_PENDING:
                 pair.unknown_usage = pair.unknown_cost = True
                 self._unattributed = True
+                self._poison_cache()
                 return
             local = _local_proof(provider or "", request, route)
             pair.local_only &= local
-            self._pending[owner] = _Pending(pair, local)
+            status_key = (self._status_scope + (agent_id, route, provider, model)
+                          if self._status_scope is not None and agent_id and provider and model
+                          else None)
+            self._pending[owner] = _Pending(pair, local, time.monotonic(), context_window,
+                                            primary, status_key)
+            if self._status_scope is not None and status_key is None:
+                from .status_cache_epoch import EPOCHS
+
+                EPOCHS.contaminate_conversation(self._status_scope)
 
     def _usage(self, usage: Any, owner: object) -> None:
         with self._lock:
@@ -199,6 +255,7 @@ class TurnUsage:
                 return  # duplicate, unrelated task, or no accepted dispatch
             if len(self._seen_usage) >= _MAX_SEEN_USAGE:
                 self._unattributed = True
+                self._poison_cache(attempt.status_key)
             else:
                 self._seen_usage[id(usage)] = usage
             pair = attempt.pair
@@ -209,12 +266,43 @@ class TurnUsage:
                            for value in fields)
                     or sum(fields) > _MAX_TOKENS):
                 pair.unknown_usage = pair.unknown_cost = True
+                if attempt.status_key is not None:
+                    from .status_cache_epoch import EPOCHS
+
+                    EPOCHS.contaminate(attempt.status_key)
                 return
             inputs, outputs, cache_read, cache_write = fields
+            if attempt.status_key is not None:
+                from .status_cache_epoch import EPOCHS
+
+                if getattr(usage, "prompt_counts_complete", None) is True:
+                    EPOCHS.observe(attempt.status_key, inputs, cache_read, cache_write)
+                else:
+                    EPOCHS.contaminate(attempt.status_key)
+            finished = time.monotonic()
+            elapsed = finished - attempt.started
+            if self._api_calls == 1 and pair.model is not None and attempt.primary:
+                observation: dict = {"model": pair.model}
+                if math.isfinite(elapsed) and elapsed > 0:
+                    rate = outputs / elapsed
+                    if math.isfinite(rate) and rate <= 1_000_000_000:
+                        observation["tps"] = rate
+                window = attempt.context_window
+                prompt = inputs + cache_read + cache_write
+                if (getattr(usage, "prompt_counts_complete", None) is True
+                        and type(window) is int and 0 < window <= _MAX_TOKENS
+                        and prompt <= window):
+                    observation["context_detail"] = {
+                        "prompt_tokens": prompt, "window_tokens": window,
+                    }
+                    observation["context_pct"] = 100 * prompt / window
+                self._status_observation = observation
+                self._status_key = attempt.status_key
             pair.input_tokens += inputs + cache_read + cache_write
             pair.output_tokens += outputs
             if pair.input_tokens > _MAX_TOKENS or pair.output_tokens > _MAX_TOKENS:
                 pair.unknown_usage = pair.unknown_cost = True
+                self._poison_cache(attempt.status_key)
                 return
             if attempt.local:
                 return
@@ -288,6 +376,21 @@ class TurnUsage:
                 result["price_verified_at"] = PRICES_VERIFIED
             return result
 
+    def status_snapshot(self) -> dict:
+        """One physical inference only; H220's aggregate snapshot remains separate."""
+        with self._lock:
+            if (self._api_calls != 1 or self._unattributed or self._pending
+                    or any(pair.unknown_usage for pair in self._pairs.values())):
+                return {}
+            result = dict(self._status_observation or {})
+            if self._status_key is not None:
+                from .status_cache_epoch import EPOCHS
+
+                cache_hit = EPOCHS.value(self._status_key)
+                if cache_hit is not None:
+                    result['cache_hit'] = cache_hit
+            return result
+
 
 @contextmanager
 def turn_usage_scope(*, on_progress: Callable[[dict], None] | None = None):
@@ -302,12 +405,17 @@ def turn_usage_scope(*, on_progress: Callable[[dict], None] | None = None):
 
 
 @contextmanager
-def model_usage_scope(*, model: str, route: str = ""):
+def model_usage_scope(*, model: str, route: str = "", context_window: int | None = None,
+                      primary: bool = True, agent_id: str | None = None):
     """Mark real generation intent and carry routed model provenance to egress."""
     collector = _CURRENT.get()
     parent = _MODEL.get()
     selected_route = route or (parent.route if parent is not None and parent.active else "")
     generation = _Generation(collector, _identity(model, 120), selected_route,
+                             context_window if type(context_window) is int
+                             and 0 < context_window <= _MAX_TOKENS else None,
+                             primary,
+                             _identity(agent_id, 128),
                              parent if parent is not None and parent.active and
                              parent.collector is collector else None) if collector else None
     token = _MODEL.set(generation)
@@ -320,6 +428,7 @@ def model_usage_scope(*, model: str, route: str = ""):
                 with collector._lock:
                     if not collector._closed:
                         collector._unattributed = True
+                        collector._poison_cache()
         _MODEL.reset(token)
 
 
@@ -351,6 +460,7 @@ def record_dispatch(provider: str, request: Any) -> None:
             with collector._lock:
                 if not collector._closed:
                     collector._unattributed = True
+                    collector._poison_cache()
         return
     if generation is not None:
         scope = generation
@@ -362,7 +472,15 @@ def record_dispatch(provider: str, request: Any) -> None:
     selected_model = expected_model if expected_model is not None and expected_model == wire_model else None
     collector._dispatch(_identity(provider, 64), selected_model,
                         generation.route if generation is not None else "",
-                        request, _owner())
+                        request, _owner(), generation.context_window if generation is not None else None,
+                        generation.primary if generation is not None else False,
+                        generation.agent_id if generation is not None else None)
+
+
+def invalidate_current_cache_epoch() -> None:
+    collector = _CURRENT.get()
+    if collector is not None:
+        collector.invalidate_cache_epoch()
 
 
 def record_usage(usage: Any) -> None:

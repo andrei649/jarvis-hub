@@ -709,7 +709,7 @@ function App({ floating = false, shortcuts, onWorld }: {
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />

@@ -126,11 +126,14 @@ def test_setting_is_declared_and_rejects_noncanonical_lists():
     row = next(r for r in settings_db.DEFAULTS if (r["category"], r["key"]) == ("display", "status_bar_fields"))
     assert row["value"] == ["latency"]
     assert row["kind"] == "tags"
-    allowed = {"model", "context_pct", "cache_hit", "latency", "tps", "compressions", "bg_tasks", "duration"}
+    allowed = {"model", "context_detail", "context_pct", "cache_hit", "latency", "tps",
+               "compressions", "bg_tasks", "bg_processes", "bg_subagents", "goal", "duration",
+               "prompt_elapsed", "idle_since", "focus", "yolo", "stash", "battery", "title",
+               "total_tokens"}
     assert set(row["opts"]) == allowed
     assert settings_db.validate_category("display", {"status_bar_fields": []}) == []
     assert settings_db.validate_category("display", {"status_bar_fields": list(allowed)}) == []
-    for bad in (["latency", "latency"], ["unknown"], ["latency"] * 9, "latency", [1]):
+    for bad in (["latency", "latency"], ["unknown"], ["latency"] * 21, "latency", [1]):
         assert settings_db.validate_category("display", {"status_bar_fields": bad}), bad
 
 

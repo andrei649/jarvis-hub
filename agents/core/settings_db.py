@@ -3,6 +3,7 @@ settings_db.py — SQLite-backed settings store for the admin panel.
 Seeds defaults from agents.yaml on first init.
 """
 
+import contextvars
 import json
 import logging
 import math
@@ -12,7 +13,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any
 
 from agents.core.config_read_errors import report_unreadable
@@ -25,6 +26,17 @@ from agents.core.llm.reasoning_effort import LADDER as REASONING_EFFORT_LADDER
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.settings")
+_defer_model_epoch = contextvars.ContextVar("nerva_defer_model_epoch", default=False)
+
+
+@contextmanager
+def defer_model_epoch_invalidation():
+    """A local-provider adoption invalidates only after live apply succeeds."""
+    token = _defer_model_epoch.set(True)
+    try:
+        yield
+    finally:
+        _defer_model_epoch.reset(token)
 
 
 def _logsafe(value: object) -> str:
@@ -217,7 +229,12 @@ _CHANGED_DEFAULTS: tuple[tuple[str, str, str, Any, Any], ...] = (
 )
 
 # ── default settings — seed values ────────────────────────────────
-_STATUS_FIELDS = ("model", "context_pct", "cache_hit", "latency", "tps", "compressions", "bg_tasks", "duration")
+_STATUS_FIELDS = (
+    "model", "context_detail", "context_pct", "cache_hit", "latency", "tps",
+    "compressions", "bg_tasks", "bg_processes", "bg_subagents", "goal",
+    "duration", "prompt_elapsed", "idle_since", "focus", "yolo", "stash",
+    "battery", "title", "total_tokens",
+)
 
 DEFAULTS: list[dict[str, Any]] = [
     # H135: only explicit owner choices; empty preserves device motion defaults.
@@ -1035,7 +1052,7 @@ _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for
 
 def selected_status_fields(raw: Any) -> frozenset[str] | None:
     """Validate a stored display selection, including rows predating write bounds."""
-    if (not isinstance(raw, list) or len(raw) > 8
+    if (not isinstance(raw, list) or len(raw) > 20
             or any(type(item) is not str or item not in _STATUS_FIELDS for item in raw)
             or len(set(raw)) != len(raw)):
         return None
@@ -1095,7 +1112,7 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
             or (value != "" and (value != value.strip() or not os.path.isabs(value)))):
         return f"{key}: expected an absolute project folder path or empty"
     if key == "status_bar_fields" and selected_status_fields(value) is None:
-        return f"{key}: expected up to eight distinct declared status fields"
+        return f"{key}: expected up to twenty distinct declared status fields"
     if key == "execute_code_env_passthrough":
         from .code_env import _passable_name
 
@@ -1378,10 +1395,15 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
         raise
     updated = 0
     skipped = []
+    model_selection_changed = False
+    model_keys = {'backend_type', 'default_model', 'compatible_provider', 'compatible_model'}
     for key, value in data.items():
-        cur = conn.execute("SELECT key FROM settings WHERE category=? AND key=?", (cat, key))
-        if cur.fetchone():
+        cur = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", (cat, key))
+        previous = cur.fetchone()
+        if previous:
             stored = _encrypt_if_secret(key, value)
+            if cat == 'llm' and key in model_keys and previous[0] != json.dumps(stored):
+                model_selection_changed = True
             conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(stored), cat, key))
             updated += 1
             continue
@@ -1392,6 +1414,8 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
         spec = next((r for r in DEFAULTS if r["category"] == cat and r["key"] == key), None)
         if spec is not None:
             stored = _encrypt_if_secret(key, value)
+            if cat == 'llm' and key in model_keys:
+                model_selection_changed = True
             conn.execute(
                 "INSERT INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
                 (cat, key, json.dumps(stored), spec["label"], spec["kind"],
@@ -1403,6 +1427,10 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
     conn.commit()
     conn.close()
     _require_readable_store()
+    if model_selection_changed and not _defer_model_epoch.get():
+        from .status_cache_epoch import EPOCHS
+
+        EPOCHS.invalidate_selection()
     if skipped:
         logger.warning("put_category(%s): ignored unknown keys: %s",
                        _logsafe(cat), _logsafe(skipped))

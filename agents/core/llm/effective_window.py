@@ -32,3 +32,23 @@ def resolve_effective_window(backend, model: str) -> EffectiveWindow:
         return EffectiveWindow(value)
     except Exception:
         return EffectiveWindow(valid=False)
+
+
+def authoritative_context_window(backend, model: str, *, resolved: int | None = None) -> int | None:
+    """Physical backend window only; a configured/model-family fallback is insufficient."""
+    try:
+        reader = getattr(backend, 'context_window', None)
+        if not callable(reader):
+            return None
+        value = reader(model)
+        if inspect.isawaitable(value):
+            if inspect.iscoroutine(value):
+                value.close()
+            return None
+        if type(value) is not int or not 0 < value <= 1_000_000_000_000:
+            return None
+        if resolved is not None and (type(resolved) is not int or resolved != value):
+            return None
+        return value
+    except Exception:
+        return None
