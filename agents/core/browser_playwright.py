@@ -154,6 +154,7 @@ class PlaywrightBrowserDriver:
         self._dialog_page = None
         self._dialog_observer = None
         self._dialog_handlers: list[tuple[object, str, object]] = []
+        self._dialog_attempted = False
 
     def _clear_console(self) -> None:
         self._console_records.clear()
@@ -571,7 +572,11 @@ class PlaywrightBrowserDriver:
             await self._close_resources()
 
     async def _close_resources(self) -> None:
-        await self.stop_dialog_observer()
+        failures = []
+        try:
+            await self.stop_dialog_observer()
+        except Exception:
+            failures.append('dialog_observer_close_unverified')
         if self._console_page is not None:
             remove = getattr(self._console_page, 'remove_listener', None)
             if callable(remove):
@@ -584,7 +589,6 @@ class PlaywrightBrowserDriver:
             self._console_page = None
         self._clear_console()
         self._page = None
-        failures = []
         for attr, method_name in (('_context', 'close'), ('_browser', 'close'),
                                   ('_playwright', 'stop')):
             resource = getattr(self, attr)
@@ -719,10 +723,32 @@ class PlaywrightBrowserDriver:
                 raise ValueError('missing frame identity')
             observer.arm(root_frame_id=root_id, loader_id=loader_id,
                          frame_url=url, document_epoch=document_epoch)
+            self._dialog_attempted = False
             return observer
         except Exception:
             observer.refuse('dialog_frame_unknown')
             raise PlaywrightUnavailable('browser_dialog_unavailable') from None
+
+    async def respond_dialog(self, observed, choice: str, *, prompt_text: str | None = None) -> bool:
+        """One guarded Playwright response to the exact observed native object."""
+        from .browser_kernel import physical_browser_dialog_allowed
+
+        observer = self._dialog_observer
+        if (observer is None or observer.pending() is not observed
+                or self._dialog_attempted or choice not in {'accept', 'dismiss'}
+                or not physical_browser_dialog_allowed(observed.dialog, choice)):
+            return False
+        if (prompt_text is not None and (choice != 'accept' or observed.kind != 'prompt'
+                                         or type(prompt_text) is not str or len(prompt_text) > 1024)):
+            return False
+        self._dialog_attempted = True
+        if choice == 'dismiss':
+            await observed.dialog.dismiss()
+        elif observed.kind == 'prompt':
+            await observed.dialog.accept(prompt_text=prompt_text or '')
+        else:
+            await observed.dialog.accept()
+        return True
 
     async def navigate(self, *, url: str, wait_until: str = "domcontentloaded") -> dict:
         self._assert_execution_current()

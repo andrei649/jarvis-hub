@@ -319,6 +319,7 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     "media.restore": (),
     "desktop.step": (),
     "browser.step": (),
+    "browser.dialog": (),
     # house.control / house.security_control — HouseActuator.execute_task; the
     # registered handler raises HouseActuationError(reason) instead of returning.
     # ``execution_in_progress`` is only another execution of this task in flight right

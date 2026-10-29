@@ -240,6 +240,7 @@ def authorize(action: Action,
         sealed_provider_selection = False
         sealed_custom_endpoint = False
         sealed_browser_step = False
+        sealed_browser_dialog = False
         if action.kind == "plugin.load":
             from ..llm.providers.admission_contract import PROVIDER_LOAD_CONTRACT
             with contextlib.suppress(Exception):
@@ -273,6 +274,10 @@ def authorize(action: Action,
             from ..browser_kernel import browser_receipt_matches
             with contextlib.suppress(Exception):
                 sealed_browser_step = browser_receipt_matches(action)
+        elif action.kind == "browser.dialog":
+            from ..browser_kernel import browser_dialog_receipt_matches
+            with contextlib.suppress(Exception):
+                sealed_browser_dialog = browser_dialog_receipt_matches(action)
         task_receipt = (
             (sealed_terminal or sealed_checkpoint or sealed_hermes)
             and isinstance(approved_task_id, int)
@@ -281,7 +286,8 @@ def authorize(action: Action,
         )
         if (
             (task_receipt or sealed_provider or sealed_provider_egress or sealed_provider_credential
-             or sealed_provider_selection or sealed_custom_endpoint or sealed_browser_step)
+             or sealed_provider_selection or sealed_custom_endpoint or sealed_browser_step
+             or sealed_browser_dialog)
             and pdec.outcome == ASK
             and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
             and callable(approval_check)
@@ -300,6 +306,7 @@ def authorize(action: Action,
                            "sealed_provider_selection_approval" if sealed_provider_selection else
                            "sealed_custom_endpoint_approval" if sealed_custom_endpoint else
                            "sealed_browser_approval" if sealed_browser_step else
+                           "sealed_browser_dialog_approval" if sealed_browser_dialog else
                            "sealed_hermes_approval")
             decision = Decision(Verdict.GRANT, reason=f"{seal_reason}; {pdec.reason}", tier=tier,
                                 task_id=approved_task_id if task_receipt else None)

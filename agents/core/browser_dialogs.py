@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from urllib.parse import urldefrag
+from urllib.parse import urldefrag, urlsplit
 
 _TYPES = frozenset({'alert', 'confirm', 'prompt', 'beforeunload'})
 _TEXT_LIMIT = 1024
@@ -245,6 +245,69 @@ class DialogFrameObserver:
 
     def pending(self) -> ObservedDialog | None:
         return self._paired if self._armed and not self.refused_reason else None
+
+
+class DialogEpisode:
+    """One process-local modal slot observed during one approved operation."""
+
+    def __init__(self, *, opener_task_id: int, opener_fingerprint: str,
+                 agent: str, owner: str, session_id: str, generation: int,
+                 plan_sha256: str, step_index: int, observer: DialogFrameObserver,
+                 expires_at: float) -> None:
+        self.opener_task_id = opener_task_id
+        self.opener_fingerprint = opener_fingerprint
+        self.agent = agent
+        self.owner = owner
+        self.session_id = session_id
+        self.generation = generation
+        self.plan_sha256 = plan_sha256
+        self.step_index = step_index
+        self.observer = observer
+        self.expires_at = expires_at
+        self.observed: ObservedDialog | None = None
+        self.dialog_id: str | None = None
+        self.response_id: int | None = None
+        self.response_ready = asyncio.Event()
+        self.closed = False
+
+    def capture(self, *, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        observed = self.observer.pending()
+        if (self.closed or observed is None or self.observed is not None
+                or now >= self.expires_at):
+            return False
+        self.observed = observed
+        self.dialog_id = secrets.token_hex(16)
+        return True
+
+    def pending(self, *, now: float | None = None) -> dict | None:
+        now = time.monotonic() if now is None else now
+        observed = self.observed
+        if (self.closed or observed is None or self.dialog_id is None
+                or self.observer.pending() is not observed or now >= self.expires_at):
+            return None
+        parsed = urlsplit(self.observer.frame_url)
+        if parsed.scheme not in {'http', 'https'} or not parsed.hostname:
+            return None
+        origin = f'{parsed.scheme}://{parsed.netloc}'
+        return {'status': 'pending', 'opener_task_id': self.opener_task_id,
+                'session_id': self.session_id, 'generation': self.generation,
+                'dialog_id': self.dialog_id, 'type': observed.kind,
+                'origin': origin[:253], 'message': observed.message[:256],
+                'default_value': observed.default_value[:256],
+                'remaining_seconds': max(0, int(self.expires_at - now))}
+
+    def bind_response(self, task_id: int) -> None:
+        if (self.pending() is None or self.response_id is not None
+                or type(task_id) is not int or task_id <= 0):
+            raise ValueError('dialog_episode_stale')
+        self.response_id = task_id
+        self.response_ready.set()
+
+    def close(self) -> None:
+        self.closed = True
+        self.response_ready.set()
+        self.observer.refuse('dialog_closed')
 
 
 async def run_with_dialog_supervisor[T](

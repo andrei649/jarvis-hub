@@ -96,6 +96,7 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # A plan assembled from a page the agent just read is precisely the case that
     # has to be forced back to ASK, and the browser's own queue cannot know that.
     "browser.step": Mediation.KERNEL,
+    "browser.dialog": Mediation.KERNEL,
     # ORIZONT 30 — every Home Assistant mutation crosses the unified facade.
     # Security control retains an owner-confirmation floor; recovery is separate
     # so a halt or policy change can refuse compensation honestly.

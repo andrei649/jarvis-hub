@@ -8,11 +8,18 @@ from types import SimpleNamespace
 import pytest
 
 from agents.core.browser_dialogs import (
+    DialogEpisode,
     DialogFrameObserver,
     DialogPromptStore,
     run_with_dialog_supervisor,
 )
+from agents.core.browser_kernel import (
+    approved_dialog_scope,
+    authorize_dialog_response,
+    physical_browser_dialog_allowed,
+)
 from agents.core.browser_playwright import PlaywrightBrowserDriver
+from agents.core.kernel import Decision, Verdict
 
 
 def test_same_url_child_dialog_is_not_admitted_as_main_frame():
@@ -179,3 +186,87 @@ def test_prompt_store_wipes_failed_unbound_proposal_and_rejects_changed_row():
         lease.bind(23)
     lease.release()
     assert store.peek(ref, task_id=23, fingerprint='fingerprint-a', agent='agent-a') is None
+
+
+@pytest.mark.asyncio
+async def test_dialog_needs_distinct_exact_kernel_receipt_in_child_task():
+    dialog = object()
+    response = SimpleNamespace(id=23, kind='toolrpc.browser_dialog', agent='agent-a',
+                               origin='generated', payload={'args': {
+                                   'opener_task_id': 11, 'opener_fingerprint': 'f' * 64,
+                                   'dialog_id': 'd' * 32, 'choice': 'dismiss'}})
+    opener = SimpleNamespace(id=11)
+    seen = []
+    def current():
+        return True
+
+    def kernel(action, *, approval_check):
+        seen.append(action)
+        assert approval_check(action) is True
+        assert 'private-marker' not in repr(action)
+        return Decision(Verdict.GRANT, 'sealed_browser_dialog_approval', tier=3)
+
+    assert not physical_browser_dialog_allowed(dialog, 'dismiss')
+    with approved_dialog_scope(response, opener, dialog, session_id='s' * 32,
+                               generation=1, plan_sha256='p' * 64, step_index=2,
+                               current=current):
+        assert not physical_browser_dialog_allowed(dialog, 'dismiss')
+        assert await authorize_dialog_response(kernel) is True
+        assert len(seen) == 1 and seen[0].kind == 'browser.dialog'
+        assert physical_browser_dialog_allowed(dialog, 'dismiss')
+        assert not physical_browser_dialog_allowed(object(), 'dismiss')
+        assert not physical_browser_dialog_allowed(dialog, 'accept')
+        assert await asyncio.create_task(authorize_dialog_response(kernel)) is False
+    assert not physical_browser_dialog_allowed(dialog, 'dismiss')
+
+
+@pytest.mark.asyncio
+async def test_driver_native_dialog_method_requires_exact_scope_and_is_one_use():
+    class NativeDialog:
+        def __init__(self):
+            self.calls = []
+
+        async def dismiss(self):
+            self.calls.append(('dismiss',))
+
+        async def accept(self, **kwargs):
+            self.calls.append(('accept', kwargs))
+
+    native = NativeDialog()
+    response = SimpleNamespace(id=23, agent='agent-a', origin='generated',
+                               payload={'args': {'opener_task_id': 11,
+                                                 'dialog_id': 'd' * 32,
+                                                 'choice': 'dismiss'}})
+    driver = PlaywrightBrowserDriver(host_enabled=True)
+    observed = SimpleNamespace(dialog=native, kind='alert')
+    driver._dialog_observer = SimpleNamespace(pending=lambda: observed)
+    assert await driver.respond_dialog(observed, 'dismiss') is False
+    with approved_dialog_scope(response, SimpleNamespace(id=11), native,
+                               session_id='s' * 32, generation=1,
+                               plan_sha256='p' * 64, step_index=2,
+                               current=lambda: True):
+        assert await authorize_dialog_response(
+            lambda _action, *, approval_check: Decision(Verdict.GRANT, tier=3))
+        assert await driver.respond_dialog(observed, 'dismiss') is True
+        assert await driver.respond_dialog(observed, 'dismiss') is False
+    assert native.calls == [('dismiss',)]
+
+
+def test_dialog_episode_exposes_only_bounded_pending_observation_and_expires():
+    page = object()
+    observer = DialogFrameObserver(page=page)
+    observer.arm(root_frame_id='root', loader_id='loader',
+                 frame_url='http://fixture.browser.test/page', document_epoch=1)
+    episode = DialogEpisode(opener_task_id=11, opener_fingerprint='f' * 64,
+                            agent='agent-a', owner='owner-a', session_id='s' * 32,
+                            generation=2, plan_sha256='p' * 64, step_index=0,
+                            observer=observer, expires_at=100.0)
+    assert episode.pending(now=1) is None
+    native = SimpleNamespace(page=page, type='prompt', message='a' * 1100,
+                             default_value='default')
+    observer.on_cdp_open({'frameId': 'root', 'url': 'http://fixture.browser.test/page',
+                          'type': 'prompt', 'message': 'a' * 1100,
+                          'defaultPrompt': 'default'})
+    observer.on_playwright_dialog(native)
+    assert episode.capture(now=2) is False
+    assert episode.pending(now=2) is None

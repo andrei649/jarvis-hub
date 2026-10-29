@@ -470,6 +470,20 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.browser_kernel:BrowserActionExecutor.perform",
         contract_ref="agents.core.browser_kernel:BROWSER_STEP_CONTRACT",
     ),
+    "browser.dialog": _action(
+        "browser.dialog",
+        "Respond once to an observed native browser dialog under a separate owner decision.",
+        required=("dialog_id", "choice", "approved_task_id", "opener_task_id"),
+        risk="sensitive",
+        supports=("mutate",),
+        rollback=RollbackContract(
+            mode="none",
+            description="The dialog response cannot be reversed.",
+            limitations="The opening browser operation may already have had effects.",
+        ),
+        implementation="agents.core.browser_kernel:authorize_dialog_response",
+        contract_ref="agents.core.browser_kernel:browser_dialog_receipt_matches",
+    ),
     "house.control": _action(
         "house.control",
         "Apply a bounded reversible light or climate command through Home Assistant.",

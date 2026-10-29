@@ -77,6 +77,97 @@ _APPROVED_STEP: ContextVar[_ApprovedStep | None] = ContextVar('browser_approved_
 _PHYSICAL_STEP: ContextVar[_ApprovedStep | None] = ContextVar('browser_physical_step', default=None)
 
 
+@dataclass(frozen=True)
+class _ApprovedDialog:
+    response: object
+    opener: object
+    dialog: object
+    session_id: str
+    generation: int
+    plan_sha256: str
+    step_index: int
+    current: object
+    owner_task: object
+
+
+_APPROVED_DIALOG: ContextVar[_ApprovedDialog | None] = ContextVar(
+    'browser_approved_dialog', default=None)
+_PHYSICAL_DIALOG: ContextVar[_ApprovedDialog | None] = ContextVar(
+    'browser_physical_dialog', default=None)
+
+
+@contextmanager
+def approved_dialog_scope(response, opener, dialog, *, session_id, generation,
+                          plan_sha256, step_index, current):
+    """One response row and one native Dialog object in its separate child task."""
+    receipt = _ApprovedDialog(response, opener, dialog, session_id, generation,
+                              plan_sha256, step_index, current, asyncio.current_task())
+    token = _APPROVED_DIALOG.set(receipt)
+    prior_physical = _PHYSICAL_DIALOG.get()
+    try:
+        yield
+    finally:
+        _PHYSICAL_DIALOG.set(prior_physical)
+        _APPROVED_DIALOG.reset(token)
+
+
+def _dialog_action(receipt: _ApprovedDialog) -> Action:
+    response = receipt.response
+    safe = response.payload['args']
+    return Action(
+        kind='browser.dialog', agent=response.agent, origin=response.origin,
+        title='Respond to native browser dialog',
+        payload={**safe, 'risk_tier': 3, 'approved_task_id': response.id,
+                 'session_id': receipt.session_id,
+                 'session_generation': receipt.generation,
+                 'plan_sha256': receipt.plan_sha256,
+                 'step_index': receipt.step_index},
+    )
+
+
+def browser_dialog_receipt_matches(action: Action) -> bool:
+    receipt = _APPROVED_DIALOG.get()
+    try:
+        return bool(receipt is not None and asyncio.current_task() is receipt.owner_task
+                    and action == _dialog_action(receipt) and receipt.current() is True)
+    except Exception:
+        return False
+
+
+async def authorize_dialog_response(authorizer) -> bool:
+    """Obtain a distinct exact Kernel decision before a native accept/dismiss."""
+    receipt = _APPROVED_DIALOG.get()
+    if receipt is None or asyncio.current_task() is not receipt.owner_task:
+        return False
+    action = _dialog_action(receipt)
+    if not browser_dialog_receipt_matches(action) or not callable(authorizer):
+        return False
+    try:
+        decision = authorizer(action, approval_check=lambda candidate: (
+            candidate == action and browser_dialog_receipt_matches(candidate)))
+        if inspect.isawaitable(decision):
+            decision = await decision
+    except Exception:
+        return False
+    if (not isinstance(decision, Decision) or decision.verdict is not Verdict.GRANT
+            or not browser_dialog_receipt_matches(action)):
+        return False
+    _PHYSICAL_DIALOG.set(receipt)
+    return True
+
+
+def physical_browser_dialog_allowed(dialog: object, choice: str) -> bool:
+    receipt = _APPROVED_DIALOG.get()
+    try:
+        return bool(receipt is not None and _PHYSICAL_DIALOG.get() is receipt
+                    and asyncio.current_task() is receipt.owner_task
+                    and dialog is receipt.dialog
+                    and choice == receipt.response.payload['args']['choice']
+                    and receipt.current() is True)
+    except Exception:
+        return False
+
+
 @contextmanager
 def approved_step_scope(task, plan_sha256, index, step, current, *,
                         session_id=None, session_generation=None):
