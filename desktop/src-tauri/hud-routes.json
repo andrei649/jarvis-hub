@@ -256,6 +256,8 @@
     "/v2/console/escalation/",
     "/v2/console/llm-routing",
     "/v2/console/llm-routing/",
+    "/v2/console/custom-endpoints",
+    "/v2/console/custom-endpoints/",
     "/v2/console/support-voice",
     "/v2/console/support-voice/",
     "/v2/console/backup",

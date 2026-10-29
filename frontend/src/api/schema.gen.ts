@@ -6458,6 +6458,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/llm/custom-endpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Custom */
+        get: operations["list_custom_api_admin_llm_custom_endpoints_get"];
+        put?: never;
+        /** Create Custom */
+        post: operations["create_custom_api_admin_llm_custom_endpoints_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Rename Custom */
+        put: operations["rename_custom_api_admin_llm_custom_endpoints__key__put"];
+        post?: never;
+        /** Delete Custom */
+        delete: operations["delete_custom_api_admin_llm_custom_endpoints__key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/{key}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Activate Custom */
+        put: operations["activate_custom_api_admin_llm_custom_endpoints__key__activate_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Clear Custom */
+        delete: operations["clear_custom_api_admin_llm_custom_endpoints_active_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/{key}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Custom */
+        post: operations["validate_custom_api_admin_llm_custom_endpoints__key__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/custom-endpoints/{key}/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credential Status */
+        get: operations["credential_status_api_admin_llm_custom_endpoints__key__credential_get"];
+        /** Credential Put */
+        put: operations["credential_put_api_admin_llm_custom_endpoints__key__credential_put"];
+        post?: never;
+        /** Credential Delete */
+        delete: operations["credential_delete_api_admin_llm_custom_endpoints__key__credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/oauth/status": {
         parameters: {
             query?: never;
@@ -13132,6 +13238,28 @@ export interface components {
             /** Confirm */
             confirm: string;
         };
+        /** ActivateBody */
+        ActivateBody: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Expected Choice Epoch */
+            expected_choice_epoch: number;
+            /**
+             * Acknowledge Unknown Price
+             * @default false
+             */
+            acknowledge_unknown_price: boolean;
+            /**
+             * Acknowledge Data Policy
+             * @default false
+             */
+            acknowledge_data_policy: boolean;
+            /**
+             * Grant Destination
+             * @default false
+             */
+            grant_destination: boolean;
+        };
         /** AdminPutBody */
         AdminPutBody: {
             /** Values */
@@ -13547,11 +13675,6 @@ export interface components {
             notices: components["schemas"]["TurnNotice"][];
             outcome?: components["schemas"]["TurnOutcome"] | null;
         };
-        /** ClearBody */
-        ClearBody: {
-            /** Expected Revision */
-            expected_revision: number;
-        };
         /** ClimateControlBody */
         ClimateControlBody: {
             /** Entity Id */
@@ -13727,6 +13850,26 @@ export interface components {
              */
             switch: boolean;
         };
+        /** CreateBody */
+        CreateBody: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Base Url */
+            base_url: string;
+            /** Model */
+            model: string;
+            /** Auth Type */
+            auth_type: string;
+            /** Data Policy */
+            data_policy: string;
+            /**
+             * Grant Destination
+             * @default false
+             */
+            grant_destination: boolean;
+        };
         /** CreateMandateBody */
         CreateMandateBody: {
             /** Payees */
@@ -13791,6 +13934,11 @@ export interface components {
             /** Project Id */
             project_id?: string | null;
         };
+        /** CredentialBody */
+        CredentialBody: {
+            /** Secret */
+            secret: string;
+        };
         /** CredentialPut */
         CredentialPut: {
             /** Provider */
@@ -13851,6 +13999,11 @@ export interface components {
             name: string;
             /** Sources */
             sources?: string[];
+        };
+        /** DeleteBody */
+        DeleteBody: {
+            /** Expected Revision */
+            expected_revision: number;
         };
         /** DescribeAutoBody */
         DescribeAutoBody: {
@@ -14868,6 +15021,13 @@ export interface components {
             /** Project Id */
             project_id?: string | null;
         };
+        /** RenameBody */
+        RenameBody: {
+            /** Name */
+            name: string;
+            /** Expected Revision */
+            expected_revision: number;
+        };
         /** RequestPaymentBody */
         RequestPaymentBody: {
             /** Mandate Id */
@@ -15701,6 +15861,11 @@ export interface components {
             /** Inputs */
             inputs?: string[];
         };
+        /** ClearBody */
+        agents__core__routers__custom_endpoints__ClearBody: {
+            /** Expected Choice Epoch */
+            expected_choice_epoch: number;
+        };
         /** BriefBody */
         agents__core__routers__market__BriefBody: {
             /** Watches */
@@ -15716,6 +15881,11 @@ export interface components {
             live: boolean;
             /** Positions */
             positions?: components["schemas"]["Position"][];
+        };
+        /** ClearBody */
+        agents__core__routers__provider_selection__ClearBody: {
+            /** Expected Revision */
+            expected_revision: number;
         };
     };
     responses: never;
@@ -26180,9 +26350,328 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ClearBody"];
+                "application/json": components["schemas"]["agents__core__routers__provider_selection__ClearBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_custom_api_admin_llm_custom_endpoints_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_custom_api_admin_llm_custom_endpoints_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_custom_api_admin_llm_custom_endpoints__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_custom_api_admin_llm_custom_endpoints__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_custom_api_admin_llm_custom_endpoints__key__activate_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_custom_api_admin_llm_custom_endpoints_active_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["agents__core__routers__custom_endpoints__ClearBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_custom_api_admin_llm_custom_endpoints__key__validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_status_api_admin_llm_custom_endpoints__key__credential_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_put_api_admin_llm_custom_endpoints__key__credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_delete_api_admin_llm_custom_endpoints__key__credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

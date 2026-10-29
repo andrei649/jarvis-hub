@@ -758,6 +758,29 @@ def test_kanban_route_gap_document_matches_the_uncalled_routes():
     uncalled = {path for path in UNCALLED_BACKLOG if path.startswith("/api/kanban/")}
     assert documented == uncalled
 
+# The owner panel composes these exact URLs from BASE and its encoded key helper.
+# The dedicated gate verifies both the mounted panel and the actual request expression.
+CUSTOM_ENDPOINT_HTTP_CONSUMERS: dict[str, tuple[str, str]] = {
+    "/api/admin/llm/custom-endpoints/active": ("apiDeleteBody(BASE + '/active'", "Clear active choice"),
+    "/api/admin/llm/custom-endpoints/{key}/activate": ("apiPut(path(item.key) + '/activate'", "Activate"),
+    "/api/admin/llm/custom-endpoints/{key}/credential": ("apiPut(path(item.key) + '/credential'", "Set or rotate"),
+    "/api/admin/llm/custom-endpoints/{key}/validate": ("apiPost(path(item.key) + '/validate'", "Validate /models"),
+}
+
+
+def test_mounted_custom_endpoint_composed_callers_are_accounted_for():
+    files = _client_files()
+    panel = files["frontend/src/panels/custom-endpoints.tsx"]
+    assert "CustomEndpointsPanel" in files["frontend/src/gap.tsx"]
+    assert '"component": "CustomEndpointsPanel"' in files["frontend/src/console-routes.ts"]
+    assert "const BASE = '/api/admin/llm/custom-endpoints'" in panel
+    assert "`${BASE}/${encodeURIComponent(key)}`" in panel
+    routes = set(_snapshot_routes())
+    for path, (request, label) in CUSTOM_ENDPOINT_HTTP_CONSUMERS.items():
+        assert path in routes and path in COMPUTED_URL_CALLERS
+        assert request in panel and label in panel
+
+
 # Routes whose client call is BUILT rather than written: the last segment comes from a
 # variable (`'/api/missions/' + id + '/' + action`), so no literal template exists for the
 # matcher above to find. Each entry names the client file that builds it, and
@@ -767,6 +790,7 @@ def test_kanban_route_gap_document_matches_the_uncalled_routes():
 # NOT unfinished work: putting them on the punch list would record a false statement and
 # send a future reader to build controls that already exist.
 COMPUTED_URL_CALLERS: dict[str, str] = {
+    **dict.fromkeys(CUSTOM_ENDPOINT_HTTP_CONSUMERS, "frontend/src/panels/custom-endpoints.tsx"),
     # HermesRuntimePanel composes `/api/hermes/${action}` from its start/stop controls.
     "/api/hermes/start": "frontend/src/hermes-runtime-panel.tsx",
     "/api/hermes/stop": "frontend/src/hermes-runtime-panel.tsx",
@@ -918,7 +942,7 @@ def test_computed_url_callers_stay_real():
             problems.append(f"{path}: no longer a route")
         elif source is None:
             problems.append(f"{path}: {client} is not in the client corpus")
-        elif path in KANBAN_HTTP_CONSUMERS:
+        elif path in KANBAN_HTTP_CONSUMERS or path in CUSTOM_ENDPOINT_HTTP_CONSUMERS:
             # The dedicated gate checks the composed URL and its mounted caller.
             continue
         elif path in {"/api/hermes/start", "/api/hermes/stop"}:

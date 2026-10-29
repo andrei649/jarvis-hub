@@ -541,3 +541,7 @@ screens use their own theme and require separate contrast/device evidence. See
 browser scope and exclusions; no full native accessibility claim is made.
 
 Browser accessibility readiness (2026-10-09): the HUD Admin EstopCard exposes its pending state to assistive technology and its browser scan. This changes no native endpoint or control; native device accessibility remains separately unverified.
+
+## Named compatible endpoints (H367, 2026-10-29)
+
+The owner desktop HUD has Console → Admin → Custom Endpoints and the CLI has `nerva provider custom`. Ten admin-only routes under `/api/admin/llm/custom-endpoints` manage named entries, activation/clear, validation and endpoint credentials. Native mobile has no corresponding configuration or secret-entry surface; this remains owner desktop administration. The generated desktop route manifest includes the new panel, with floating chat routes unchanged. Local source/frontend tests do not establish a native GUI, physical-device or live endpoint result.

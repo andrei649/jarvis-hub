@@ -861,3 +861,9 @@ signed summary, record an exact permanent owner decision, promote and revoke it.
 No dedicated HUD install/review flow is present yet. Package installation alone
 does not change the active model or make another native dialect available; owner
 selection, credential controls and live runtime/provider acceptance remain open.
+
+## Named compatible endpoints — local integration (2026-10-29)
+
+Console → Admin → Custom Endpoints now provides durable named `custom:<key>` entries, display-name aliases, create/rename/delete, exact revision/choice-epoch activation and clear, endpoint-scoped credential metadata/set/rotate/delete, and an explicit bounded `/models` validation. All ten routes under `/api/admin/llm/custom-endpoints` require the admin owner credential. Creation does not probe the destination; LAN/public creation and activation require an explicit destination grant. Validation displays a negative outcome as failure. A valid old signed selection is authenticated and rebound during upgrade; raw or stale selections remain inert. The CLI mirrors these operations under `nerva provider custom`; secret input uses stdin.
+
+The new panel is a local implementation, with synthetic owner/Kernel/Vault/DNS/HTTP and mounted frontend checks. It does not close the separate signed-package HUD controls above, native-mobile configuration, live endpoint/device acceptance or the broader H361/H633 requirements. Capability proof classification and complete batch integration remain explicit gates.

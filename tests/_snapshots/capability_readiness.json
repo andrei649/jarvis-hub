@@ -26,6 +26,7 @@
   "action:plugin.egress": "wired",
   "action:plugin.load": "wired",
   "action:provider.credential": "wired",
+  "action:provider.custom_endpoint": "wired",
   "action:provider.selection": "wired",
   "action:repo.sync": "wired",
   "action:report.export": "wired",

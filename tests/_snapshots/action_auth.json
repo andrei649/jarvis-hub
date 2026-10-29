@@ -26,6 +26,7 @@
  "plugin.egress": "kernel",
  "plugin.load": "kernel",
  "provider.credential": "kernel",
+ "provider.custom_endpoint": "kernel",
  "provider.selection": "kernel",
  "repo.sync": "kernel",
  "report.export": "kernel",
