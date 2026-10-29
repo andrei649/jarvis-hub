@@ -86,9 +86,13 @@ def test_architecture_points_at_the_developer_docs():
 
 
 def test_nerva_dispatches_only_to_its_own_functions():
-    from agents.cli import nerva
+    from agents.cli import custom_endpoints, nerva
 
-    assert {fn.__module__ for fn in nerva._VERBS.values()} == {"agents.cli.nerva"}
+    assert nerva._VERBS["provider"] is custom_endpoints.run
+    assert {verb: fn.__module__ for verb, fn in nerva._VERBS.items()} == {
+        verb: ("agents.cli.custom_endpoints" if verb == "provider" else "agents.cli.nerva")
+        for verb in nerva._VERBS
+    }
     assert all(callable(fn) for fn in nerva._VERBS.values())
 
 

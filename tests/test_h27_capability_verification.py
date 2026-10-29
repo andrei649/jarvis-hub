@@ -130,6 +130,10 @@ def test_every_action_and_live_tool_verification_ref_matches_a_real_case():
     assert CUSTOM_ENDPOINT_ACTION_CASES[0].metadata["promotable"] is False
     assert ACTION_CAPABILITY_MANIFESTS["provider.custom_endpoint"].verification == (
         "reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable")
+    from agents.core.capability_verification import action_verification_ref
+    assert action_verification_ref("provider.custom_endpoint") == (
+        "reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable")
+    assert action_verification_ref("plugin.load") == "reality-v1:action-plugin-load-kernel-halt"
 
     for manifest in ACTION_CAPABILITY_MANIFESTS.values():
         assert manifest.verification in cases

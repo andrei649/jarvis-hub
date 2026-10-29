@@ -627,7 +627,7 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     # by this autonomy worker's handler-returned `failed` classification.
     assert REFUSAL_REASONS_BY_KIND['plugin.load'] == frozenset()
     assert not is_refusal('plugin.load', {'status': 'failed', 'reason': 'kernel_denied'})
-    for kind in ('provider.credential', 'provider.selection'):
+    for kind in ('provider.credential', 'provider.selection', 'provider.custom_endpoint'):
         assert REFUSAL_REASONS_BY_KIND[kind] == frozenset()
         assert not is_refusal(kind, {'status': 'failed', 'reason': 'kernel_denied'})
     assert set(REFUSAL_REASON_PREFIXES_BY_KIND) <= set(ACTION_CAPABILITY_MANIFESTS)
