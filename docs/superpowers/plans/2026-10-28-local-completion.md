@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- The objective remains all backlog implementation and all 697 accepted Hermes contracts. Current baseline: 42 open backlog entries; 130 equivalent, 446 partial, 121 missing Hermes contracts.
-- Develop locally; do not push, open PRs, merge remotely, deploy, activate paid providers, ingest private data, or change global configuration. Publication waits until the project is finished.
+- The objective remains all backlog implementation and all 697 accepted Hermes contracts. Initial baseline: 42 open backlog entries; 130 equivalent, 446 partial, 121 missing Hermes contracts. Current counts are recorded in the continuation notes and generated status.
+- The owner authorized publishing review checkpoints on 2026-10-29. The coordinator publishes reviewed batches to draft PR1321 on `codex/local-development-20261028`; merge, deployment, paid-provider activation, private-data ingestion and global configuration changes remain outside this publication step.
 - Preserve native authority, Action Kernel, default-off integrations, tenant isolation and existing user data. No automatic credential or device activation.
 - Keep historical evidence distinct from current implementation and live acceptance. Do not close ledger rows on narrow mock-only proof.
 - One writer per file. Coordinator owns shared ledgers, plans, generated artifacts, integration, and critical review. Workers do not delegate or change branches.
@@ -386,3 +386,14 @@ backend collection is30543. Native acceptance awaits a new zero-skip Windows job
 Task37's first independent reviews found three P1s: initial-navigation modal
 discovery, popup implicit dismissal, and post-validation durable authority revocation.
 Its isolated candidate is not approved and is returning to its original author.
+
+Windows on1f9579aa then executed39 cases with38 passed,1 failed andzero skips.
+All native read/identity/reparse/UTF16/cleanup cases ran; the positive private-owner
+ACL case alone refused. Its fixture had not established its intended owner. Reviewed
+fixture-only907e9263 is integrated as3e86f179: explicitly set that owner, assert
+actual Windows ABI sizes and descriptor fields, and retain strict wrong-owner and
+hostile-ACL refusal. The previous log lacks the ACL tuple, so owner mismatch remains
+a hypothesis until the next Windows job. Production ACL code is unchanged. Canonical
+coverage passes162 with6 native skips; fresh backend collection30544. The Windows
+Unit2 plan now matches accepted POSIX SQLite/locking behavior; custom connection-ID
+hooks/VFS and destination-leaf-ID CAS are optional strengthening, not invented gates.

@@ -10,11 +10,14 @@
 
 **Spec:** [H011 Windows read primitives](../specs/2026-10-29-h011-windows-read-primitives.md). The broader integration is tracked in [the local completion plan](2026-10-28-local-completion.md).
 
-**Freshness (2026-10-29):** Source base `93498f9a`; reviewed candidate through
-`dc5ca411`, integrated through `08f46156`. Changed paths are the module, its tests,
-the focused Windows workflow and this plan listed below. Local source review and
-preflight are complete; the next action is the zero-skip native Windows PR job.
-Windows production history stays disabled while later adapter units remain open.
+**Freshness (2026-10-29):** Initial source base `93498f9a`; the typed-pointer repair
+is integrated as `df291141`. Actual Windows on `1f9579aa` executed all39 tests:
+38 passed and the private-owner ACL positive case failed. The fixture had not
+explicitly set its intended owner, and the old log lacked the observed ACL tuple.
+Reviewed fixture-only candidate `907e9263`, integrated as `3e86f179`, sets that owner
+and asserts native ABI sizes and descriptor fields; production ACL policy is
+unchanged. Native acceptance awaits its new zero-skip Windows job. Windows
+production history stays disabled while later adapter units remain open.
 
 ## Global constraints
 
