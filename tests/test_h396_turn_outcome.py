@@ -356,6 +356,7 @@ async def test_toolrpc_counts_physical_execution_separately_from_queued_proposal
 @pytest.mark.parametrize(('body', 'failures', 'basis'), [
     ({'status': 'blocked', 'reason': 'policy_denied'}, 1, 'observed'),
     ({'status': 'denied', 'reason': 'policy_denied'}, 1, 'observed'),
+    ({'ok': True, 'status': 'denied'}, 1, 'observed'),
     ({'status': 'completed'}, 0, 'observed'),
     ({'status': 'unclassified'}, None, 'unknown'),
 ])
@@ -390,6 +391,8 @@ async def test_registered_handler_result_status_is_counted_at_physical_execution
     ({'ok': True, 'image': True}, 0, 'observed'),
     ({'ok': False, 'reason': 'image_unreadable'}, 1, 'observed'),
     ({'status': 'blocked', 'reason': 'policy_denied'}, 1, 'observed'),
+    ({'ok': True, 'status': 'denied'}, 1, 'observed'),
+    ({'status': 'completed'}, 0, 'observed'),
     ({'status': 'unclassified'}, None, 'unknown'),
     ('opaque', None, 'unknown'),
     (None, None, 'unknown'),
@@ -412,6 +415,45 @@ async def test_registered_native_content_structured_disposition_counts_without_i
         assert response['ok'] is True
         assert response['result'] == structured
         assert response['content'][0]['bytes'] == len(image)
+        turn_outcome.record_turn_completion('answered')
+        turn_outcome.record_turn_latency(1)
+        assert sink.close()['tools'] == {
+            'proposed': 1, 'queued': 0, 'executed': 1,
+            'failures': failures, 'basis': basis}
+    finally:
+        turn_outcome.reset_turn_outcome(token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('native', [False, True], ids=['mapping', 'native-content'])
+@pytest.mark.parametrize('status', [['phase-one'], {'phase': 'one'}, None, 3, True, False],
+                         ids=['list', 'dict', 'null', 'number', 'true', 'false'])
+@pytest.mark.parametrize(('ok', 'failures', 'basis'), [
+    (True, 0, 'observed'),
+    (False, 1, 'observed'),
+    ('absent', None, 'unknown'),
+])
+async def test_registered_handler_json_status_shapes_preserve_result_and_accounting(
+        native, status, ok, failures, basis):
+    from agents.core.tool_rpc import ToolContent, ToolRPCServer
+
+    body = {'status': status}
+    if ok != 'absent':
+        body['ok'] = ok
+    server = ToolRPCServer()
+
+    async def handler(_args):
+        return ToolContent([ToolContent.text('native')], structured=body) if native else body
+
+    server.register_tool('synthetic', handler)
+    sink, token = turn_outcome.open_turn_outcome()
+    try:
+        turn_outcome.record_tool_proposed()
+        response = await server.handle({'tool': 'synthetic', 'args': {}})
+        assert response['ok'] is True
+        assert response['result'] == body
+        if native:
+            assert response['content'] == [{'type': 'text', 'text': 'native'}]
         turn_outcome.record_turn_completion('answered')
         turn_outcome.record_turn_latency(1)
         assert sink.close()['tools'] == {

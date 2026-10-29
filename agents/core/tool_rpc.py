@@ -1096,12 +1096,13 @@ class ToolRPCServer:
             disposition = result.structured if isinstance(result, ToolContent) else result
             if isinstance(disposition, Mapping):
                 status = disposition.get('status')
-                if disposition.get('ok') is False or status in {
+                known_status = status if isinstance(status, str) else None
+                if disposition.get('ok') is False or known_status in {
                         'failed', 'refused', 'error', 'blocked', 'denied',
                         'rejected', 'cancelled', 'canceled'}:
                     success = False
-                elif (status in {'ok', 'completed', 'success', 'succeeded', 'done'}
-                      or (status is None and disposition.get('ok') is True)):
+                elif (disposition.get('ok') is True
+                      or known_status in {'ok', 'completed', 'success', 'succeeded', 'done'}):
                     success = True
             record_tool_executed(success=success)
             return result
