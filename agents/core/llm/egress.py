@@ -41,6 +41,7 @@ from agents.core.observability.egress_monitor import EGRESS_MONITOR
 from .host_protocol import HostProtocolRefused, protocol_refusal
 
 _ADMITTED_REQUEST = object()
+_CUSTOM_REQUEST = object()
 
 
 def mark_admitted_request(request: httpx.Request) -> None:
@@ -49,6 +50,14 @@ def mark_admitted_request(request: httpx.Request) -> None:
 
 def is_admitted_request(request: httpx.Request) -> bool:
     return request.extensions.get("nerva.admitted") is _ADMITTED_REQUEST
+
+
+def mark_custom_request(request: httpx.Request) -> None:
+    request.extensions["nerva.custom"] = _CUSTOM_REQUEST
+
+
+def is_custom_request(request: httpx.Request) -> bool:
+    return request.extensions.get("nerva.custom") is _CUSTOM_REQUEST
 
 
 def _record(backend: str, request: httpx.Request, *, allowed: bool, reason: str = "") -> None:
@@ -91,7 +100,7 @@ def _recorder(backend: str, protocol_backend: str | None = None):
         # Admitted sends account at their leased transport. Ambiguous failures
         # after transport entry count as possible egress; this hook still
         # enforces data and host protocol before transport entry.
-        if not is_admitted_request(request):
+        if not is_admitted_request(request) and not is_custom_request(request):
             _record(backend, request, allowed=True)
             from agents.core.turn_usage import record_dispatch
             record_dispatch(backend, request)

@@ -52,6 +52,7 @@ def _issue(service, actor, action, decision, binding, revision, profile, policy)
             or decision.tier != 3 or action.kind != 'provider.selection'
             or payload.get('operation') != 'select'
             or payload.get('selected_revision') != revision
+            or payload.get('choice_epoch') != binding.choice_epoch
             or payload.get('current_revision') != revision - 1
             or payload.get('authority') != binding.authority
             or payload.get('home') != binding.home
@@ -174,6 +175,7 @@ def _key(root: Path, *, create: bool) -> bytes:
 
 def _message(binding, revision: int, profile, policy: str) -> bytes:
     if (type(revision) is not int or revision <= 0
+            or type(binding.choice_epoch) is not int or binding.choice_epoch <= 0
             or profile.id != binding.provider_id
             or binding.model not in profile.fallback_models
             or profile.data_policy_for(binding.model)[0] != policy):
@@ -213,6 +215,10 @@ def verify(root, selection, profile, policy: str) -> bool:
     if not binding.consent_proof:
         return False
     try:
+        from agents.core.llm.custom_endpoints import read_choice
+
+        if read_choice().epoch != binding.choice_epoch:
+            return False
         message = _message(binding, selection.revision, profile, policy)
         expected = hmac.new(_key(Path(root), create=False), message, hashlib.sha256).hexdigest()
         return hmac.compare_digest(binding.consent_proof, expected)

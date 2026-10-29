@@ -394,6 +394,18 @@ class ProviderInstallService:
 
         if not kernel_enabled() or not callable(getattr(self.audit, 'log', None)):
             raise ProviderPackageError('selection kernel or audit unavailable')
+        from agents.core import settings_db
+        epoch_conn = settings_db.get_conn()
+        try:
+            epoch_row = epoch_conn.execute(
+                'SELECT epoch FROM provider_choice_epoch WHERE singleton=1').fetchone()
+            if epoch_row is None or type(epoch_row[0]) is not int:
+                raise ProviderPackageError('effective provider choice unavailable')
+            next_choice_epoch = epoch_row[0] + 1
+        finally:
+            epoch_conn.close()
+        if operation == 'select' and binding.choice_epoch != next_choice_epoch:
+            raise ProviderPackageError('effective provider choice changed')
         findings = []
         if operation == 'select':
             if candidate_profile is None:
@@ -412,7 +424,7 @@ class ProviderInstallService:
         scope_digest = hashlib.sha256(json.dumps(
             [binding.authority, binding.home, binding.provider_id, binding.source,
              binding.artifact_id, binding.package_hash, binding.endpoint, binding.model,
-             binding.credential_generation, revision + 1, operation],
+             binding.credential_generation, revision + 1, next_choice_epoch, operation],
             sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         action = Action(
             kind='provider.selection', agent='jarvis',
@@ -425,6 +437,7 @@ class ProviderInstallService:
                      'auth_type': binding.auth_type, 'model': binding.model,
                      'operation': operation, 'current_revision': revision,
                      'selected_revision': revision + 1,
+                     'choice_epoch': next_choice_epoch,
                      'credential_generation': binding.credential_generation,
                      'scope_sha256': scope_digest,
                      'price_ack': price_ack, 'data_ack': data_ack,
@@ -498,6 +511,12 @@ class ProviderInstallService:
             current, _ = provider_selection._read(settings_db.DB_PATH)
             if current != expected_revision:
                 raise provider_selection.SelectionConflict('selection revision changed')
+            epoch_conn = settings_db.get_conn()
+            try:
+                next_choice_epoch = epoch_conn.execute(
+                    'SELECT epoch FROM provider_choice_epoch WHERE singleton=1').fetchone()[0] + 1
+            finally:
+                epoch_conn.close()
             store = self._store(actor=actor)
             with store._locked():
                 record = self._credential_record_locked(store, provider_id, package_hash)
@@ -521,7 +540,8 @@ class ProviderInstallService:
                     record.source, record.artifact_id, record.package_hash,
                     scope.endpoint, scope.auth_type, status['generation'],
                     unknown_price_ack=True,
-                    data_policy_ack=acknowledge_data_policy)
+                    data_policy_ack=acknowledge_data_policy,
+                    choice_epoch=next_choice_epoch)
                 self._owner(actor)
                 capability = self._selection_authorize(
                     binding, operation='select', revision=current, actor=actor,

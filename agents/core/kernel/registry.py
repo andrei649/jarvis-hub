@@ -113,6 +113,7 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     "plugin.load": Mediation.KERNEL,
     "provider.credential": Mediation.KERNEL,
     "provider.selection": Mediation.KERNEL,
+    "provider.custom_endpoint": Mediation.KERNEL,
     # 1.1.0 operator wave — widening what Nerva may touch is itself a privileged
     # act: the consent ledger crosses the kernel at request time and the grant is
     # written only from the approved task's execution (never by the requester).

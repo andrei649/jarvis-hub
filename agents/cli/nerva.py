@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from .client import HubClient, HubError, HubUnavailable, hub_url
+from .custom_endpoints import run as cmd_custom_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -190,6 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
     configure_nous_auth(verbs)
     from .secrets import register_parser as configure_secrets
     configure_secrets(verbs)
+    from .custom_endpoints import register_parser as configure_custom_endpoints
+    configure_custom_endpoints(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -4958,6 +4961,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "estop": cmd_estop,
     "company": cmd_company,
     "pairing": cmd_pairing,
+    "provider": cmd_custom_provider,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,

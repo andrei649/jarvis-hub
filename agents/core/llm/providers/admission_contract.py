@@ -150,6 +150,7 @@ def _bounded_selection(view, _now):
     required = {'schema', 'authority', 'home', 'provider_id', 'source', 'artifact_id',
                 'package_hash', 'endpoint', 'auth_type', 'model', 'operation',
                 'current_revision', 'selected_revision', 'scope_sha256',
+                'choice_epoch',
                 'credential_generation', 'price_ack', 'data_ack',
                 'risk_tier', 'irreversible'}
     if (type(view) is not dict or set(view) != required
@@ -161,6 +162,7 @@ def _bounded_selection(view, _now):
             or type(view['current_revision']) is not int or view['current_revision'] < 0
             or type(view['selected_revision']) is not int
             or view['selected_revision'] != view['current_revision'] + 1
+            or type(view['choice_epoch']) is not int or view['choice_epoch'] <= 0
             or type(view['scope_sha256']) is not str
             or re.fullmatch(r'[a-f0-9]{64}', view['scope_sha256']) is None
             or type(view['credential_generation']) is not int

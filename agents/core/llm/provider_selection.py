@@ -43,6 +43,7 @@ class SelectionBinding:
     unknown_price_ack: bool = False
     data_policy_ack: bool = False
     consent_proof: str = ''
+    choice_epoch: int = 0
 
     def __post_init__(self):
         try:
@@ -69,7 +70,8 @@ class SelectionBinding:
                 or type(self.unknown_price_ack) is not bool
                 or type(self.data_policy_ack) is not bool
                 or type(self.consent_proof) is not str
-                or self.consent_proof and not _HASH.fullmatch(self.consent_proof)):
+                or self.consent_proof and not _HASH.fullmatch(self.consent_proof)
+                or type(self.choice_epoch) is not int or self.choice_epoch < 0):
             raise SelectionInvalid('invalid signed selection metadata')
 
 
@@ -102,7 +104,8 @@ def _row(conn) -> tuple[int, SelectionBinding | None]:
         fields = json.loads(payload)
         expected = set(SelectionBinding.__dataclass_fields__)
         if (type(fields) is not dict
-                or set(fields) not in (expected, expected - {'consent_proof'})):
+                or not expected - {'consent_proof', 'choice_epoch'} <= set(fields)
+                or set(fields) - expected):
             raise ValueError('selection fields changed')
         binding = SelectionBinding(**fields)
         canonical = json.dumps(fields, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
@@ -171,12 +174,19 @@ def compare_and_swap(path: str | Path | None, binding: SelectionBinding,
                 revision, _old = _row(conn)
                 if revision != expected_revision:
                     raise SelectionConflict('selection revision changed')
+                epoch = conn.execute('SELECT epoch FROM provider_choice_epoch WHERE singleton=1').fetchone()
+                if epoch is None or type(epoch[0]) is not int:
+                    raise SelectionInvalid('effective provider choice unavailable')
                 cur = conn.execute(
                     'UPDATE signed_provider_selection SET revision=?,record_json=?,record_hash=? '
                     'WHERE singleton=1 AND revision=?',
                     (next_revision, payload, _digest(next_revision, payload), expected_revision))
                 if cur.rowcount != 1 or _row(conn) != (next_revision, binding):
                     raise SelectionInvalid('selection CAS readback failed')
+                conn.execute('UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,'
+                             'config_revision=NULL,credential_generation=NULL,consent_proof=NULL,'
+                             'unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1')
+                conn.execute('UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1')
         finally:
             conn.close()
         if _read(target) != (next_revision, binding):
@@ -207,6 +217,10 @@ def compare_and_clear(path: str | Path | None = None, *, expected_revision: int)
                     'WHERE singleton=1 AND revision=?', (next_revision, expected_revision))
                 if cur.rowcount != 1 or _row(conn) != (next_revision, None):
                     raise SelectionInvalid('selection clear readback failed')
+                conn.execute('UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,'
+                             'config_revision=NULL,credential_generation=NULL,consent_proof=NULL,'
+                             'unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1')
+                conn.execute('UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1')
         finally:
             conn.close()
         if _read(target) != (next_revision, None):

@@ -100,7 +100,8 @@ class OpenRouterBackend(LLMBackend):
         from .provider_request import profile_with_declarations, require_profile_kind
         from .providers import DEFAULT_REGISTRY
         from .providers.admitted_profiles import AdmittedProviderProfile
-        self.profile = (profile if isinstance(profile, AdmittedProviderProfile) else
+        self.profile = (profile if isinstance(profile, AdmittedProviderProfile)
+                        or profile is not None and profile.id.startswith('custom:') else
                         profile_with_declarations(
                             profile or DEFAULT_REGISTRY.get("openrouter"), effort_declarations))
         require_profile_kind(self.profile, "openai-compatible", "chat_completions")
@@ -119,6 +120,14 @@ class OpenRouterBackend(LLMBackend):
         self.api_key = api_key
         self.base_url = base_url
         admitted = isinstance(self.profile, AdmittedProviderProfile)
+        custom = self.profile.id.startswith('custom:')
+        if custom:
+            from .providers.custom_runtime import CustomEndpointRuntime
+
+            runtime = getattr(getattr(client, '_transport', None), 'runtime', None)
+            if (type(runtime) is not CustomEndpointRuntime or runtime.profile is not self.profile
+                    or api_key or client is None):
+                raise ProviderHookRuntimeError('custom_egress_unavailable')
         if admitted and client is not None:
             raise ProviderHookRuntimeError('native_egress_unavailable')
         if admitted:
@@ -130,6 +139,12 @@ class OpenRouterBackend(LLMBackend):
                                                      timeout=120.0)
 
     def _send_client(self):
+        custom = getattr(self, '_custom_endpoint_runtime', None)
+        if custom is not None:
+            from .providers.custom_runtime import require_custom_client
+            return require_custom_client(self.client, custom)
+        if self.profile.id.startswith('custom:'):
+            raise ProviderHookRuntimeError('custom_egress_unavailable')
         if isinstance(self.profile, AdmittedProviderProfile):
             from .providers.native_transport import require_native_client
             return require_native_client(self.client, self.profile)

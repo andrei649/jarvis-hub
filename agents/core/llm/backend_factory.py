@@ -131,6 +131,9 @@ def construct_backend(provider_id, *, model="", api_key=None, base_url=None, set
     from . import providers
     from .host_protocol import protocol_refusal
 
+    if str(provider_id).startswith('custom:'):
+        raise BackendUnavailable('custom endpoint requires current owner runtime')
+
     registry = providers.DEFAULT_REGISTRY if registry is None else registry
     from .providers.selected_runtime import current_construction
     selected = current_construction()
@@ -224,4 +227,19 @@ def construct_selected_backend(runtime, *, settings=None):
             api_key='' if runtime.binding.auth_type == 'none' else AUTH_MARKER,
             registry=runtime.registry, settings=settings)
     backend._selected_provider_runtime = runtime
+    return backend
+
+
+def construct_custom_backend(runtime):
+    """Build a keyless compatible adapter around the current custom wire gate."""
+    from .openrouter import OpenRouterBackend
+    from .providers.custom_runtime import CustomEndpointRuntime, custom_client
+
+    if type(runtime) is not CustomEndpointRuntime:
+        raise BackendUnavailable('custom runtime authority unavailable')
+    runtime.check()
+    client = custom_client(runtime)
+    backend = OpenRouterBackend('', base_url=runtime.endpoint.base_url,
+                                client=client, profile=runtime.profile)
+    backend._custom_endpoint_runtime = runtime
     return backend
