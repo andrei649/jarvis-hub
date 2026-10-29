@@ -586,6 +586,18 @@ class AgentToolRuntime:
             logger.info("tool_loop_exit agent=%r reason=%s", _bounded_identity(agent_id), result.exit_reason.value)
         from .turn_stops import record_runtime_stop
         record_runtime_stop(result.exit_reason)
+        if result.exit_reason is not ToolLoopExitReason.MODEL_RESPONSE:
+            from .turn_outcome import record_agent_observation
+
+            kind = ('pending_approval' if result.exit_reason is ToolLoopExitReason.APPROVAL_REQUIRED
+                    else 'timeout' if result.exit_reason is ToolLoopExitReason.DEADLINE
+                    else 'refused' if result.exit_reason in {
+                        ToolLoopExitReason.WINDOW_INVALID, ToolLoopExitReason.CONTEXT_REFUSED,
+                        ToolLoopExitReason.TURN_REVOKED, ToolLoopExitReason.REPLAY_REFUSED,
+                        ToolLoopExitReason.NO_CAPABILITY, ToolLoopExitReason.NO_TOOLS,
+                        ToolLoopExitReason.TOOLS_WITHDRAWN, ToolLoopExitReason.GUARDIAN_DENIED,
+                    } else 'failed')
+            record_agent_observation(agent_id, kind)
         from . import trajectory  # H652: the turn's own exit, for its saved trajectory
         trajectory.note_exit(result.exit_reason)
         return result
@@ -945,6 +957,14 @@ class AgentToolRuntime:
             steering.acknowledge()
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
+                from .llm.base import is_backend_failure_reply
+                from .turn_outcome import record_agent_observation, record_model_completion
+                if (turn.finish_reason == PROVIDER_REJECTED_FINISH
+                        or not (turn.content or '').strip()
+                        or is_backend_failure_reply(turn.content.lstrip())):
+                    record_agent_observation(agent_id, 'failed')
+                else:
+                    record_model_completion(agent_id)
                 return ToolLoopResult(turn.content, ToolLoopExitReason.MODEL_RESPONSE)
             if guardian_stopped:
                 from .approval_outcomes import DENIAL_BREAKER_NOTICE
@@ -954,6 +974,12 @@ class AgentToolRuntime:
             # fan-out plus one representative overflow call so both scheduling
             # and the next-turn context stay O(configured cap), not O(provider N).
             bounded_calls = turn.tool_calls[: self._max_tool_calls_per_turn + 1]
+            from .turn_outcome import record_tool_proposed
+
+            # The provider proposed every parsed call, even though execution
+            # deliberately retains only the bounded fan-out and one overflow.
+            for _call in turn.tool_calls:
+                record_tool_proposed()
             if turn.provider_replay is not None:
                 from .llm.provider_replay import replay_size
                 if len(turn.tool_calls) > self._max_tool_calls_per_turn:
@@ -1054,6 +1080,9 @@ class AgentToolRuntime:
                         "suspicious": False,
                     })
                 messages.append(message)
+                from .turn_outcome import record_accepted_tool_result
+
+                record_accepted_tool_result(agent_id)
                 trajectory.note_message(message)
                 if risk.external_untrusted:
                     output_risks[id(message)] = risk

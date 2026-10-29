@@ -280,7 +280,11 @@ async def test_real_public_wrapper_measures_after_cleanup_and_normal_refusal(mon
             reply = await instance.handle_input("hello")
         assert reply == CONTEXT_REFUSED_REPLY
         assert cleanup["done"] is True
-        assert collector.close() == {"latency_ms": 135}
+        measured = collector.close()
+        assert measured["latency_ms"] == 135
+        assert measured["completion"]["kind"] == "refused"
+        assert measured["completion"]["severity"] == "info"
+        assert measured["output"] == {"tokens": None, "basis": "unknown"}
     finally:
         turn_outcome.reset_turn_outcome(token)
 

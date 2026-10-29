@@ -13,7 +13,7 @@ import time
 import weakref
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, NotRequired, Optional, TypedDict
 
 from agents.core.env_config import env_flag, env_int, env_json_object, env_list, env_str
 from agents.core.cors_policy import normalize_cors_origins
@@ -1170,9 +1170,40 @@ class TurnNotice(BaseModel):
     text: str
 
 
-class TurnOutcome(BaseModel):
-    # Whole public orchestrator call, including its cleanup; not model latency.
-    latency_ms: int = Field(ge=0, strict=True)
+class TurnCompletion(TypedDict):
+    kind: str
+    explanation: str
+    severity: Literal['info', 'warning']
+    unanswered_tool_results: int
+
+
+class TurnToolAccounting(TypedDict):
+    proposed: int
+    queued: int
+    executed: int | None
+    failures: int | None
+    basis: Literal['observed', 'unknown']
+
+
+class TurnOutputFlow(TypedDict):
+    tokens: int | None
+    basis: Literal['provider_complete', 'visible_estimate', 'unknown']
+
+
+class TurnFileMutation(TypedDict):
+    attempt: int
+    operation: Literal['write', 'delete']
+    outcome: Literal['refused', 'unknown', 'applied_unverified']
+
+
+class TurnOutcome(TypedDict):
+    # The completion is source-assigned; latency remains an optional display choice.
+    latency_ms: NotRequired[int]
+    completion: NotRequired[TurnCompletion]
+    tools: NotRequired[TurnToolAccounting]
+    output: NotRequired[TurnOutputFlow]
+    file_mutations: NotRequired[list[TurnFileMutation]]
+    file_mutation_attribution: NotRequired[Literal['unknown']]
 
 
 class ChatResponse(BaseModel):
@@ -1321,15 +1352,18 @@ def _selected_turn_outcome(orchestrator, measured: dict | None) -> dict | None:
     """Only present requested metrics; a broken display setting cannot break chat."""
     if measured is None:
         return None
+    result = {name: measured[name] for name in (
+        'completion', 'tools', 'output', 'file_mutations', 'file_mutation_attribution')
+              if name in measured}
     try:
         from agents.core.settings_db import selected_status_fields
 
         fields = selected_status_fields(orchestrator.get_setting("display.status_bar_fields", ["latency"]))
-        if fields is None or "latency" not in fields:
-            return None
-        return {"latency_ms": measured["latency_ms"]}
+        if fields is not None and "latency" in fields and "latency_ms" in measured:
+            result['latency_ms'] = measured['latency_ms']
     except Exception:
-        return None
+        pass
+    return result or None
 
 
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_user_guard)])
@@ -1414,7 +1448,7 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                         finally:
                             code_interruptions.reset_conversation(conversation_token)
         finally:
-            measured_outcome = outcome_sink.close()
+            measured_outcome = outcome_sink.close(usage=collector.snapshot())
             reset_turn_outcome(outcome_token)
             queued_approvals[:] = sink
             turn_notices[:] = notices
@@ -1454,9 +1488,17 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     # runner task's context and the consumer below is what has to report it.
     queued_approvals: list[int] = []
     turn_notices: list[dict] = []
+    live_usage = None
 
     async def on_token(token: str):
+        from agents.core.turn_outcome import current_turn_outcome, record_visible_output
+
+        record_visible_output(token)
         await queue.put(("token", token))
+        outcome = current_turn_outcome()
+        if outcome is not None:
+            await queue.put(("outcome_progress", outcome.progress(
+                usage=live_usage.snapshot() if live_usage is not None else None)))
 
     async def on_clarify(prompt):
         acknowledged = asyncio.get_running_loop().create_future()
@@ -1464,9 +1506,27 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         return await acknowledged
 
     async def runner():
+        nonlocal live_usage
         from agents.core.turn_usage import turn_usage_scope
         from agents.core.turn_stops import turn_stops_scope
+        loop = asyncio.get_running_loop()
+
+        def usage_progress(snapshot):
+            from agents.core.turn_outcome import current_turn_outcome
+
+            outcome = current_turn_outcome()
+            if outcome is None:
+                return
+            event = ('outcome_progress', outcome.progress(usage=snapshot))
+            try:
+                if asyncio.get_running_loop() is loop:
+                    queue.put_nowait(event)
+            except RuntimeError:
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+
         with turn_usage_scope() as collector, turn_stops_scope() as stops:
+            collector.observe_progress(usage_progress)
+            live_usage = collector
             await run_in_scope(collector, stops)
 
     async def run_in_scope(collector, stops):
@@ -1488,7 +1548,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             queued_approvals[:] = sink
             turn_notices[:] = notices
             session = orch.session_id
-            measured = outcome_sink.close()
+            measured = outcome_sink.close(usage=collector.snapshot())
             await queue.put(("end", (text, session if isinstance(session, str) else None,
                                      _selected_turn_outcome(orch, measured), collector.snapshot(),
                                      stops.snapshot())))
@@ -1551,6 +1611,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             kind, data = await queue.get()
             if kind == "token":
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
+            elif kind == "outcome_progress":
+                yield f"data: {json.dumps({'type': 'outcome_progress', 'outcome': data})}\n\n"
             elif kind == "clarify":
                 prompt, acknowledged = data
                 yield f"data: {json.dumps(prompt)}\n\n"

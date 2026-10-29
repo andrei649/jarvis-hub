@@ -11,7 +11,8 @@ import json
 import math
 import re
 import threading
-from contextlib import contextmanager
+from collections.abc import Callable
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -130,7 +131,7 @@ class _Pending:
 class TurnUsage:
     """One request's mutable accounting state; snapshots are immutable copies."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_progress: Callable[[dict], None] | None = None) -> None:
         self._lock = threading.RLock()
         self._closed = False
         self._api_calls = 0
@@ -139,6 +140,13 @@ class TurnUsage:
         self._pending: dict[object, _Pending] = {}
         # Strong references prevent id reuse while the bounded turn is open.
         self._seen_usage: dict[int, Any] = {}
+        self._on_progress = on_progress
+
+    def observe_progress(self, callback: Callable[[dict], None]) -> None:
+        """Install one optional request-owned display observer before dispatch."""
+        with self._lock:
+            if not self._closed and self._api_calls == 0:
+                self._on_progress = callback
 
     def close(self) -> None:
         with self._lock:
@@ -282,9 +290,9 @@ class TurnUsage:
 
 
 @contextmanager
-def turn_usage_scope():
+def turn_usage_scope(*, on_progress: Callable[[dict], None] | None = None):
     """Bind and close one collector; inherited children cannot mutate it later."""
-    collector = TurnUsage()
+    collector = TurnUsage(on_progress=on_progress)
     token = _CURRENT.set(collector)
     try:
         yield collector
@@ -362,3 +370,6 @@ def record_usage(usage: Any) -> None:
     collector = _CURRENT.get()
     if collector is not None:
         collector._usage(usage, _owner())
+        if collector._on_progress is not None and not collector._closed:
+            with suppress(Exception):  # display cannot affect the provider response
+                collector._on_progress(collector.snapshot())

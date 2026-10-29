@@ -899,12 +899,27 @@ class AutonomyCoordinator:
             image_runtime, cloud_runtime=lambda: getattr(self._orch, "cloud_images", None),
             approved_task=_APPROVED_TASK.get,
         )
+        def _file_origin_lookup(task):
+            from .turn_outcome import FileExecutionOrigin
+
+            queue = getattr(self._orch, 'autonomy_queue', None)
+            if queue is None:
+                return None
+            origin_id = queue.file_execution_origin(task)
+            if origin_id is None:
+                return None
+            return FileExecutionOrigin(
+                origin_id,
+                lambda attempt, target, operation, outcome: queue.record_file_mutation_outcome(
+                    task, origin_id, attempt, target, operation, outcome),
+            )
         server = ToolRPCServer(
             secret_broker=getattr(self._orch, "secret_broker", None),
             enqueue=self._governed_enqueue,
             audit=getattr(self._orch, "intent_log", None),
             kernel=action_kernel,
             execution_context_check=_approved_execution_context,
+            file_origin_lookup=_file_origin_lookup,
         )
         from .channels.pending_input_runtime import register_clarify_tool
 

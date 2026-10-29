@@ -1102,6 +1102,15 @@ class Agent:
                     max_tokens=max_tokens,
                 )
 
+        def note_plain_response(response):
+            from .llm.base import is_backend_failure_reply
+            from .turn_outcome import record_agent_observation, record_model_completion
+
+            if isinstance(response, str) and response.strip() and not is_backend_failure_reply(response.lstrip()):
+                record_model_completion(self.id)
+            else:
+                record_agent_observation(self.id, 'failed')
+
         runtime = self.tool_runtime
         if runtime is not None and runtime.can_run(backend, agent_id=self.id):
             check_final_request(prompt)
@@ -1158,6 +1167,7 @@ class Agent:
                     on_token=on_token,
                 )
                 steering.acknowledge()
+                note_plain_response(response)
                 return response
 
             response = await backend.generate(
@@ -1172,6 +1182,7 @@ class Agent:
                 emitted = on_token(response)
                 if inspect.isawaitable(emitted):
                     await emitted
+            note_plain_response(response)
             return response
 
     async def process(self, text: str, context: dict, *, prepared=None) -> str:
@@ -1179,6 +1190,8 @@ class Agent:
         model = self.default_model()
 
         if not self.llm_router:
+            from .turn_outcome import record_agent_observation
+            record_agent_observation(self.id, 'unavailable')
             return f"[{self.name} no LLM backend]"
 
         if prepared is not None and getattr(prepared, "input_text", None) is not None:
@@ -1199,6 +1212,8 @@ class Agent:
             else:
                 res = self.llm_router.select_backend(self.id, prompt)
         except LocalBackendUnavailableError:
+            from .turn_outcome import record_agent_observation
+            record_agent_observation(self.id, 'unavailable')
             return LOCAL_SELECTION_UNAVAILABLE_REPLY
         route_name = ""
         if isinstance(res, tuple) and len(res) == 3:
