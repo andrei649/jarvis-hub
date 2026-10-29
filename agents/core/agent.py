@@ -1106,10 +1106,13 @@ class Agent:
             from .llm.base import is_backend_failure_reply
             from .turn_outcome import record_agent_observation, record_model_completion
 
+            agent_id = getattr(self, "id", None)
+            if type(agent_id) is not str or not agent_id:
+                return  # A minimal adapter has no source-backed identity for outcome telemetry.
             if isinstance(response, str) and response.strip() and not is_backend_failure_reply(response.lstrip()):
-                record_model_completion(self.id)
+                record_model_completion(agent_id)
             else:
-                record_agent_observation(self.id, 'failed')
+                record_agent_observation(agent_id, 'failed')
 
         runtime = self.tool_runtime
         if runtime is not None and runtime.can_run(backend, agent_id=self.id):

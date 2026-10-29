@@ -61,6 +61,19 @@ async def event(stream):
     return json.loads(frame.removeprefix("data: ").strip())
 
 
+async def visible_progress_then_end(stream):
+    progress = await event(stream)
+    assert set(progress) == {"type", "outcome"}
+    assert progress["type"] == "outcome_progress"
+    assert progress["outcome"]["output"] == {"tokens": 2, "basis": "visible_estimate"}
+    finished = await event(stream)
+    assert finished["type"] == "end"
+    assert finished["text"] == "Finished"
+    with pytest.raises(StopAsyncIteration):
+        await event(stream)
+    return finished
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("value,other,multi,choices", [
     ("2", False, False, ["Local", "Remote"]),
@@ -89,7 +102,7 @@ async def test_hud_question_answers_same_actual_model_turn(tmp_path, monkeypatch
             assert reply.status_code == 200, reply.text
             assert reply.headers["cache-control"] == "no-store"
         assert (await following)["type"] == "token"
-        assert (await event(stream))["type"] == "end"
+        await visible_progress_then_end(stream)
         assert cap["calls"] == 1
         assert answers[0]["user_response"] == ("Remote" if value == "2" else value)
         assert not orch._pending_input_service().inputs._active
@@ -125,7 +138,7 @@ async def test_actual_managed_tokens_cannot_answer_another_actors_question(tmp_p
                 assert not answers
             assert (await client.post(path, json={"cancel": True}, headers={"x-user-token": owner})).status_code == 200
             assert (await following)["type"] == "token"
-            assert (await event(stream))["type"] == "end"
+            await visible_progress_then_end(stream)
             assert (await client.post(path, json={"answer": "1"}, headers={"x-user-token": owner})).status_code == 404
         assert cap["calls"] == 1
         assert answers[0]["reason"] == "clarify_cancelled_or_timed_out"
@@ -155,7 +168,7 @@ async def test_revocation_stops_wait_credit_and_retires_the_owned_wait(tmp_path,
         cap["credit"].seconds()  # Real runtime budget sampling observes auth revocation.
         assert (await following)["type"] == "token"
         assert answers[0]["reason"] == "prompt_binding_lost"
-        assert (await event(stream))["type"] == "end"
+        await visible_progress_then_end(stream)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://localhost") as client:
             assert (await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"},
                                       headers={"x-user-token": token})).status_code == 401
@@ -172,7 +185,7 @@ async def test_expired_hud_question_unblocks_without_answer_or_new_model_turn(tm
         await event(stream)
         question = await event(stream)
         assert (await event(stream))["type"] == "token"
-        assert (await event(stream))["type"] == "end"
+        await visible_progress_then_end(stream)
         assert answers[0]["reason"] == "clarify_cancelled_or_timed_out" and cap["calls"] == 1
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://localhost") as client:
             assert (await client.post(f"/chat/pending/{question['id']}/answer", json={"answer": "1"})).status_code == 404
