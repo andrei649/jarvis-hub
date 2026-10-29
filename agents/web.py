@@ -1199,6 +1199,17 @@ class TurnFileMutation(TypedDict):
 class TurnOutcome(TypedDict):
     # The completion is source-assigned; latency remains an optional display choice.
     latency_ms: NotRequired[int]
+    duration_ms: NotRequired[int]
+    prompt_elapsed_ms: NotRequired[int]
+    model: NotRequired[str]
+    context_detail: NotRequired[dict[str, int]]
+    context_pct: NotRequired[float]
+    cache_hit: NotRequired[float]
+    tps: NotRequired[float]
+    compressions: NotRequired[int]
+    total_tokens: NotRequired[int]
+    title: NotRequired[str]
+    battery: NotRequired[bool]
     completion: NotRequired[TurnCompletion]
     tools: NotRequired[TurnToolAccounting]
     output: NotRequired[TurnOutputFlow]
@@ -1348,7 +1359,8 @@ def _web_principal(request: Request):
     return Principal(channel="web", sender=None, admin=admin)
 
 
-def _selected_turn_outcome(orchestrator, measured: dict | None) -> dict | None:
+def _selected_turn_outcome(orchestrator, measured: dict | None, *, usage: dict | None = None,
+                           session_id: str | None = None) -> dict | None:
     """Only present requested metrics; a broken display setting cannot break chat."""
     if measured is None:
         return None
@@ -1359,11 +1371,50 @@ def _selected_turn_outcome(orchestrator, measured: dict | None) -> dict | None:
         from agents.core.settings_db import selected_status_fields
 
         fields = selected_status_fields(orchestrator.get_setting("display.status_bar_fields", ["latency"]))
-        if fields is not None and "latency" in fields and "latency_ms" in measured:
-            result['latency_ms'] = measured['latency_ms']
+        if fields is not None:
+            mapping = {'latency': 'latency_ms', 'duration': 'duration_ms',
+                       'prompt_elapsed': 'prompt_elapsed_ms'}
+            for field in fields:
+                key = mapping.get(field, field)
+                if key in measured:
+                    result[key] = measured[key]
+            if ('total_tokens' in fields and type(usage) is dict
+                    and usage.get('usage_basis') == 'provider_complete'
+                    and all(type(usage.get(key)) is int and 0 <= usage[key] <= 1_000_000_000_000
+                            for key in ('input_tokens', 'output_tokens'))
+                    and usage['input_tokens'] + usage['output_tokens'] <= 1_000_000_000_000):
+                result['total_tokens'] = usage['input_tokens'] + usage['output_tokens']
+            if 'title' in fields and session_id and type(session_id) is str:
+                checkpoints = getattr(orchestrator, 'checkpoints', None)
+                read_title = getattr(checkpoints, 'session_title', None)
+                if callable(read_title) and orchestrator.get_setting('memory.session_titles', True) is True:
+                    title = read_title(session_id).get('title')
+                    if type(title) is str and title.strip():
+                        result['title'] = title[:200]
+            if 'battery' in fields:
+                result['battery'] = True  # selected client-owned PowerChip source
     except Exception:
         pass
     return result or None
+
+
+async def _bind_status_scope(collector, orchestrator, session_id: str | None) -> None:
+    """Use only the authenticated turn and an existing durable chat instance."""
+    from agents.core.orchestrator import current_principal
+
+    checkpoints = getattr(orchestrator, 'checkpoints', None)
+    reader = getattr(checkpoints, 'clock_snapshot', None)
+    if not callable(reader) or type(session_id) is not str or not session_id:
+        return
+    try:
+        clock = await asyncio.to_thread(reader, session_id)
+        instance = getattr(clock, 'instance_id', None)
+        principal = current_principal()
+        if type(instance) is str and instance:
+            collector.bind_status_scope((
+                'web:owner' if principal.admin else 'web:user', session_id, instance))
+    except Exception:
+        logger.warning('status cache scope unavailable', exc_info=True)
 
 
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_user_guard)])
@@ -1440,6 +1491,7 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                         await prepare_session(orch, req.session_id)
                     from agents.core.routers.chat_pending import http_chat_binding
                     async with http_chat_binding(orch, request, req.session_id or getattr(orch, "session_id", None)):
+                        await _bind_status_scope(collector, orch, req.session_id or getattr(orch, "session_id", None))
                         conversation_token = code_interruptions.bind_conversation(
                             str(req.session_id or getattr(orch, "session_id", None) or ""))
                         try:
@@ -1448,7 +1500,7 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                         finally:
                             code_interruptions.reset_conversation(conversation_token)
         finally:
-            measured_outcome = outcome_sink.close(usage=collector.snapshot())
+            measured_outcome = outcome_sink.close(usage=collector.snapshot(), status=collector.status_snapshot())
             reset_turn_outcome(outcome_token)
             queued_approvals[:] = sink
             turn_notices[:] = notices
@@ -1459,7 +1511,8 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
             session_titles.reset_own_words(words_token)
         return ChatResponse(reply=reply, session_id=orch.session_id if isinstance(orch.session_id, str) else None,
                             pending_approvals=queued_approvals, warming=warming, notices=turn_notices,
-                            outcome=_selected_turn_outcome(orch, measured_outcome), usage=collector.snapshot(),
+                            outcome=_selected_turn_outcome(orch, measured_outcome, usage=collector.snapshot(),
+                                                           session_id=orch.session_id), usage=collector.snapshot(),
                             runtime_stops=stops.snapshot())
     except Exception:
         # Constant reply — exception text in the client body is an
@@ -1497,7 +1550,9 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         await queue.put(("token", token))
         outcome = current_turn_outcome()
         if outcome is not None:
-            await queue.put(("outcome_progress", outcome.progress(
+            await queue.put(("outcome_progress", _selected_turn_outcome(orch, outcome.progress(
+                usage=live_usage.snapshot() if live_usage is not None else None,
+                status=live_usage.status_snapshot() if live_usage is not None else None),
                 usage=live_usage.snapshot() if live_usage is not None else None)))
 
     async def on_clarify(prompt):
@@ -1517,7 +1572,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             outcome = current_turn_outcome()
             if outcome is None:
                 return
-            event = ('outcome_progress', outcome.progress(usage=snapshot))
+            event = ('outcome_progress', _selected_turn_outcome(orch, outcome.progress(
+                usage=snapshot, status=collector.status_snapshot()), usage=snapshot))
             try:
                 if asyncio.get_running_loop() is loop:
                     queue.put_nowait(event)
@@ -1548,9 +1604,10 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             queued_approvals[:] = sink
             turn_notices[:] = notices
             session = orch.session_id
-            measured = outcome_sink.close(usage=collector.snapshot())
+            measured = outcome_sink.close(usage=collector.snapshot(), status=collector.status_snapshot())
             await queue.put(("end", (text, session if isinstance(session, str) else None,
-                                     _selected_turn_outcome(orch, measured), collector.snapshot(),
+                                     _selected_turn_outcome(orch, measured, usage=collector.snapshot(),
+                                                            session_id=session), collector.snapshot(),
                                      stops.snapshot())))
 
         try:
@@ -1570,6 +1627,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                                                  on_clarify, pending_current)
                                if runtime is not None else nullcontext())
                     with binding:
+                        await _bind_status_scope(collector, orch, session_id or getattr(orch, "session_id", None))
                         from agents.core import code_interruptions
                         conversation_token = code_interruptions.bind_conversation(
                             str(session_id or getattr(orch, "session_id", None) or ""))

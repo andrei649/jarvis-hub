@@ -45,6 +45,10 @@ class TurnOutcomeCollector:
         self._claimed = False
         self._closed = False
         self._latency_ms: int | None = None
+        self._started_at: float | None = None
+        self._duration_ms: int | None = None
+        self._prompt_elapsed_ms: int | None = None
+        self._compressions = 0
         self._completion: _Completion | None = None
         self._pending_results: dict[str, int] = {}
         self._agent_results: dict[str, str] = {}
@@ -72,11 +76,29 @@ class TurnOutcomeCollector:
             self._latency_ms = latency_ms
             return True
 
+    def begin(self, started_at: float) -> bool:
+        with self._lock:
+            if self._closed or not self._claimed or self._started_at is not None or not math.isfinite(started_at):
+                return False
+            self._started_at = started_at
+            return True
+
+    def accepted_compression(self) -> bool:
+        with self._lock:
+            if self._closed or self._compressions >= _MAX_COUNT:
+                return False
+            self._compressions += 1
+            return True
+
     def settle(self, kind: str) -> bool:
         with self._lock:
             if self._closed or self._completion is not None or kind not in _EXPLANATIONS:
                 return False
             self._completion = _Completion(kind, _EXPLANATIONS[kind])
+            if self._started_at is not None:
+                elapsed = (time.perf_counter() - self._started_at) * 1000
+                if math.isfinite(elapsed) and elapsed >= 0:
+                    self._duration_ms = round(elapsed)
             return True
 
     def accepted_tool_result(self, agent_id: str) -> bool:
@@ -185,6 +207,10 @@ class TurnOutcomeCollector:
         with self._lock:
             if self._closed or type(piece) is not str:
                 return False
+            if piece and self._prompt_elapsed_ms is None and self._started_at is not None:
+                elapsed = (time.perf_counter() - self._started_at) * 1000
+                if math.isfinite(elapsed) and elapsed >= 0:
+                    self._prompt_elapsed_ms = round(elapsed)
             self._visible_bytes = min(_MAX_VISIBLE_BYTES, self._visible_bytes + len(piece.encode('utf-8')))
             return True
 
@@ -207,13 +233,19 @@ class TurnOutcomeCollector:
             self._file_attribution_unknown = True
             return True
 
-    def progress(self, *, usage: dict | None = None) -> dict | None:
+    def progress(self, *, usage: dict | None = None, status: dict | None = None) -> dict | None:
         with self._lock:
             if self._closed:
                 return _copy(self._final)
             result: dict = {}
             if self._latency_ms is not None:
                 result['latency_ms'] = self._latency_ms
+            if self._duration_ms is not None:
+                result['duration_ms'] = self._duration_ms
+            if self._prompt_elapsed_ms is not None:
+                result['prompt_elapsed_ms'] = self._prompt_elapsed_ms
+            if self._compressions:
+                result['compressions'] = self._compressions
             if self._completion is not None:
                 pending = sum(self._pending_results.values())
                 result['completion'] = {
@@ -256,13 +288,17 @@ class TurnOutcomeCollector:
                                     'basis': 'visible_estimate'}
             elif self._completion is not None:
                 result['output'] = {'tokens': None, 'basis': 'unknown'}
+            if type(status) is dict:
+                for name in ('model', 'context_detail', 'context_pct', 'cache_hit', 'tps'):
+                    if name in status:
+                        result[name] = status[name]
             return result or None
 
-    def close(self, *, usage: dict | None = None) -> dict | None:
+    def close(self, *, usage: dict | None = None, status: dict | None = None) -> dict | None:
         with self._lock:
             if self._closed:
                 return _copy(self._final)
-            final = self.progress(usage=usage) if self._latency_ms is not None else None
+            final = self.progress(usage=usage, status=status) if self._latency_ms is not None else None
             self._final = final
             self._closed = True
             if final is not None and 'completion' in final:
@@ -356,6 +392,21 @@ def current_turn_outcome() -> TurnOutcomeCollector | None:
     return _current.get()
 
 
+def record_accepted_compression(session_id: str | None = None,
+                                instance_id: str | None = None) -> bool:
+    """Only call after a durable compaction publication has succeeded."""
+    sink = _current.get()
+    counted = bool(sink and sink.accepted_compression())
+    from .turn_usage import invalidate_current_cache_epoch
+
+    invalidate_current_cache_epoch()
+    if type(session_id) is str and type(instance_id) is str and session_id and instance_id:
+        from .status_cache_epoch import EPOCHS
+
+        EPOCHS.invalidate_instance(session_id, instance_id)
+    return counted
+
+
 def record_turn_completion(kind: str) -> bool:
     sink = _current.get()
     return bool(sink and sink.settle(kind))
@@ -424,6 +475,7 @@ def measure_turn_latency(fn):
             return await fn(*args, **kwargs)
         try:
             started = time.perf_counter()
+            sink.begin(started)
             result = await fn(*args, **kwargs)
             elapsed = (time.perf_counter() - started) * 1000
             if math.isfinite(elapsed):

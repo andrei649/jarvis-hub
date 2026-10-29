@@ -816,6 +816,8 @@ class AgentToolRuntime:
         # shared between concurrent runs and the model is known only here.
         from .llm.job_selection import selected_window
         known_window = effective_window.tokens if effective_window is not None else selected_window(model)
+        from .llm.effective_window import authoritative_context_window
+        status_window = authoritative_context_window(backend, model, resolved=known_window)
         # H297: "attachments" holds each call's image parts (by call id) between the
         # call and its tool message.
         spent: dict[str, Any] = {"bytes": 0, "window": known_window or max(0, int(window_for(model) or 0)),
@@ -915,7 +917,8 @@ class AgentToolRuntime:
                 from .approval_outcomes import mark_invocation_outcomes_visible
                 mark_invocation_outcomes_visible(messages)
                 from .turn_usage import model_usage_scope
-                with model_usage_scope(model=model, route=""):
+                with model_usage_scope(model=model, route="", context_window=status_window,
+                                       agent_id=agent_id):
                     # H297: image parts reach only a backend whose tool-result
                     # channel carries images; every other one reads the descriptors.
                     # One request carries at most the newest _MAX_REQUEST_IMAGES images
@@ -1282,6 +1285,8 @@ class AgentToolRuntime:
                 if committed is None:
                     return False
                 _active_clock.set(replace(binding, snapshot=committed))
+                from .turn_outcome import record_accepted_compression
+                record_accepted_compression(committed.session_id, committed.instance_id)
             original_messages[:] = messages
             original_compacted.update(compacted)
             from .skills.tools import note_compacted

@@ -1225,8 +1225,10 @@ class Agent:
                 model = routed_model
         else:
             backend, _ = res
-        from .llm.effective_window import resolve_effective_window
+        from .llm.effective_window import authoritative_context_window, resolve_effective_window
         effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
+        status_window = authoritative_context_window(
+            backend, model, resolved=effective_window.tokens if effective_window is not None else None)
         backend = bind_guardrails(self.guardrails, backend)
 
         clock_snapshot = context.get("_clock_snapshot", CLOCK_UNSET)
@@ -1275,7 +1277,8 @@ class Agent:
                     if self._checkpoint_manager:
                         self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
                 from .turn_usage import model_usage_scope
-                with model_usage_scope(model=model, route=route_name):
+                with model_usage_scope(model=model, route=route_name, agent_id=self.id,
+                                       context_window=status_window):
                     response = await self.generate_response(
                         backend=backend,
                         model=model,
@@ -1455,7 +1458,8 @@ class Agent:
                 from .llm.data_handling import physical_request_scope
                 guard = (lambda: check(backend, model, route_name)) if callable(check) else None
                 from .turn_usage import model_usage_scope
-                with model_usage_scope(model=model, route=route_name), physical_request_scope(guard):
+                with model_usage_scope(model=model, route=route_name, primary=False,
+                                       agent_id=self.id), physical_request_scope(guard):
                     response = await backend.generate(
                         model=model,
                         prompt=prompt,

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import httpcore
 import httpx
 
-from agents.core.turn_usage import record_dispatch
+from agents.core.turn_usage import physical_transport_entry, record_dispatch
 
 from ..egress import _record, _recorder, llm_async_client, mark_admitted_request
 from .admitted_profiles import AdmittedProviderProfile, current_signed_preparation
@@ -241,7 +241,7 @@ class AdmittedNativeTransport(httpx.AsyncBaseTransport):
         runtime = self.selected
         profile = self.profile
         selection_lease = lifecycle_lease = None
-        attempt_inner = wire = response = None
+        attempt_inner = wire = response = entry = None
         entered = accounted = handed = False
         failure = None
         sanitized_response = None
@@ -300,6 +300,7 @@ class AdmittedNativeTransport(httpx.AsyncBaseTransport):
                     attempt_inner = httpx.AsyncHTTPTransport(
                         verify=trust, trust_env=False)
                 entered = True
+                entry = physical_transport_entry(request)
                 try:
                     response = await attempt_inner.handle_async_request(wire)
                 finally:
@@ -313,7 +314,7 @@ class AdmittedNativeTransport(httpx.AsyncBaseTransport):
                     accounted = True
                     _record(profile.id, request, allowed=True,
                             reason='selected provider returned a refused status; request possibly sent')
-                    record_dispatch(profile.id, request)
+                    record_dispatch(profile.id, request, entry=entry)
                     if status < 400:
                         raise ProviderHookRuntimeError('native_egress_unavailable')
                     sanitized_response = httpx.Response(
@@ -329,7 +330,7 @@ class AdmittedNativeTransport(httpx.AsyncBaseTransport):
                     handed = True
                     accounted = True
                     _record(profile.id, request, allowed=True)
-                    record_dispatch(profile.id, request)
+                    record_dispatch(profile.id, request, entry=entry)
                     return response
         except BaseException as exc:
             if not accounted:
@@ -337,7 +338,7 @@ class AdmittedNativeTransport(httpx.AsyncBaseTransport):
                         reason=('selected transport entered; request possibly sent' if entered else
                                 'selected physical request refused before transport'))
                 if entered:
-                    record_dispatch(profile.id, request)
+                    record_dispatch(profile.id, request, entry=entry)
             if isinstance(exc, asyncio.CancelledError):
                 failure = asyncio.CancelledError()
             elif isinstance(exc, httpx.TimeoutException):

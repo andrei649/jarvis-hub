@@ -1,7 +1,19 @@
 import React from 'react';
+import type { PowerState } from './power-chip';
 
 export type TurnOutcome = {
   latency_ms?: number;
+  duration_ms?: number;
+  prompt_elapsed_ms?: number;
+  model?: string;
+  context_detail?: { prompt_tokens: number; window_tokens: number };
+  context_pct?: number;
+  cache_hit?: number;
+  tps?: number;
+  compressions?: number;
+  total_tokens?: number;
+  title?: string;
+  battery?: true;
   completion?: { kind: string; explanation: string; severity: 'info' | 'warning'; unanswered_tool_results: number };
   tools?: { proposed: number; queued: number; executed: number | null; failures: number | null; basis: 'observed' | 'unknown' };
   output?: { tokens: number | null; basis: 'provider_complete' | 'visible_estimate' | 'unknown' };
@@ -13,6 +25,10 @@ const count = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
+const percent = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+const finitePositive = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 /** Parse an untrusted SSE projection field by field; partial progress is useful. */
 export function turnOutcome(value: unknown): TurnOutcome | null {
@@ -20,6 +36,26 @@ export function turnOutcome(value: unknown): TurnOutcome | null {
   const result: TurnOutcome = {};
   if (typeof value.latency_ms === 'number' && Number.isFinite(value.latency_ms) && value.latency_ms >= 0)
     result.latency_ms = value.latency_ms;
+  if (count(value.duration_ms)) result.duration_ms = value.duration_ms;
+  if (count(value.prompt_elapsed_ms)) result.prompt_elapsed_ms = value.prompt_elapsed_ms;
+  if (typeof value.model === 'string' && value.model.length <= 120
+      && /^[A-Za-z0-9][A-Za-z0-9._:/+\-]*$/.test(value.model)) result.model = value.model;
+  if (object(value.context_detail) && count(value.context_detail.prompt_tokens)
+      && count(value.context_detail.window_tokens) && value.context_detail.window_tokens > 0
+      && value.context_detail.prompt_tokens <= value.context_detail.window_tokens)
+    result.context_detail = value.context_detail as TurnOutcome['context_detail'];
+  if (percent(value.context_pct)) {
+    if (!result.context_detail || Math.abs(value.context_pct
+      - 100 * result.context_detail.prompt_tokens / result.context_detail.window_tokens) < 1e-6)
+      result.context_pct = value.context_pct;
+  }
+  if (percent(value.cache_hit)) result.cache_hit = value.cache_hit;
+  if (finitePositive(value.tps)) result.tps = value.tps;
+  if (count(value.compressions)) result.compressions = value.compressions;
+  if (count(value.total_tokens)) result.total_tokens = value.total_tokens;
+  if (typeof value.title === 'string' && value.title.trim() && value.title.length <= 200)
+    result.title = value.title;
+  if (value.battery === true) result.battery = true;
   if (object(value.completion) && typeof value.completion.kind === 'string'
       && typeof value.completion.explanation === 'string'
       && (value.completion.severity === 'info' || value.completion.severity === 'warning')
@@ -62,12 +98,43 @@ function outputText(output: NonNullable<TurnOutcome['output']>): string {
 }
 
 /** Whole-turn result and live output flow; no objective-success claim. */
-export function StatusStrip({ outcome }: { outcome?: TurnOutcome | null }) {
+export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; power?: PowerState }) {
   if (!outcome) return null;
   return <section aria-label="Turn outcome" style={{ display: 'block', padding: '4px 8px',
     color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
     {outcome.latency_ms !== undefined && <output aria-label="Turn duration">
       Turn duration: {durationText(outcome.latency_ms)}
+    </output>}
+    {outcome.model && <output aria-label="Request model">Model: {outcome.model}</output>}
+    {outcome.context_detail && <output aria-label="Prompt context" style={{ display: 'block' }}>
+      Prompt context: {outcome.context_detail.prompt_tokens} / {outcome.context_detail.window_tokens}
+    </output>}
+    {outcome.context_pct !== undefined && <output aria-label="Prompt context percent" style={{ display: 'block' }}>
+      Context: {outcome.context_pct.toFixed(1)}%
+    </output>}
+    {outcome.cache_hit !== undefined && <output aria-label="Prompt cache hit"
+      data-band={outcome.cache_hit >= 70 ? 'high' : outcome.cache_hit >= 40 ? 'medium' : 'low'}
+      style={{ display: 'block', color: outcome.cache_hit >= 70 ? 'var(--accent)' : outcome.cache_hit >= 40 ? 'var(--amber)' : 'var(--red, #ef4444)' }}>
+      Cache hit since invalidation: {outcome.cache_hit.toFixed(1)}%
+    </output>}
+    {outcome.tps !== undefined && <output aria-label="Request output tokens per second" style={{ display: 'block' }}>
+      Request output tokens/s: {outcome.tps.toFixed(1)}
+    </output>}
+    {outcome.compressions !== undefined && <output aria-label="Accepted compressions" style={{ display: 'block' }}>
+      Accepted compressions: {outcome.compressions}
+    </output>}
+    {outcome.duration_ms !== undefined && <output aria-label="Turn generation and settlement" style={{ display: 'block' }}>
+      Generation and settlement: {durationText(outcome.duration_ms)}
+    </output>}
+    {outcome.prompt_elapsed_ms !== undefined && <output aria-label="Prompt elapsed to first visible chunk" style={{ display: 'block' }}>
+      First visible chunk: {durationText(outcome.prompt_elapsed_ms)}
+    </output>}
+    {outcome.total_tokens !== undefined && <output aria-label="Total provider tokens" style={{ display: 'block' }}>
+      Total provider tokens: {outcome.total_tokens}
+    </output>}
+    {outcome.title && <output aria-label="Session title" style={{ display: 'block' }}>Session: {outcome.title}</output>}
+    {outcome.battery && power?.onBattery && <output aria-label="Battery" style={{ display: 'block' }}>
+      Battery: {power.percent === null ? 'on battery' : `${power.percent}%`}
     </output>}
     {outcome.output && <output aria-label="Output token flow" style={{ display: 'block' }}>
       {outputText(outcome.output)}

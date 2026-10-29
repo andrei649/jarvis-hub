@@ -52,7 +52,7 @@ from .action_origin import (
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from .turn_outcome import (measure_turn_latency, record_turn_completion,
                            record_agent_observation, record_synthesis_observation,
-                           settle_agent_turn)
+                           settle_agent_turn, record_accepted_compression)
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import (
     ADMIN,
@@ -4623,9 +4623,13 @@ class Orchestrator:
                             await asyncio.shield(task)
                         except asyncio.CancelledError:
                             continue
+                if worker.result():
+                    record_accepted_compression(clock.session_id, clock.instance_id)
                 raise
             if committed and hasattr(self, "agents"):
                 _refresh_souls_at_boundary(self)
+            if committed:
+                record_accepted_compression(clock.session_id, clock.instance_id)
             return bool(committed)
         except asyncio.CancelledError:
             raise
@@ -5278,6 +5282,7 @@ class Orchestrator:
                 if committed is None:
                     raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
                 prompt_clock.set(committed)
+                record_accepted_compression(committed.session_id, committed.instance_id)
             if result.get("summary_deferred"):
                 # H674 — the turn went on without its summary: say so, and leave the
                 # merge prior to the summary still being written (a digest here would

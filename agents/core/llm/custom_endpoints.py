@@ -326,9 +326,14 @@ def activate_endpoint(key: str, *, expected_revision: int,
                              (key, endpoint.config_revision, credential_generation, proof,
                               int(unknown_price_ack), int(data_policy_ack)))
                 conn.execute("UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1")
-            return _choice(conn)
+            result = _choice(conn)
         finally:
             conn.close()
+        if (before.active_key, before.config_revision) != (result.active_key, result.config_revision):
+            from agents.core.status_cache_epoch import EPOCHS
+
+            EPOCHS.invalidate_selection()
+        return result
 
 
 def clear_endpoint_choice(*, expected_choice_epoch: int) -> CustomChoice:
@@ -341,13 +346,21 @@ def clear_endpoint_choice(*, expected_choice_epoch: int) -> CustomChoice:
                 row = conn.execute("SELECT epoch FROM provider_choice_epoch WHERE singleton=1").fetchone()
                 if row is None or row[0] != expected_choice_epoch:
                     raise CustomEndpointConflict("effective provider choice changed")
+                active = conn.execute("SELECT active_key FROM custom_endpoint_choice WHERE singleton=1").fetchone()
+                if active is None:
+                    raise CustomEndpointInvalid("endpoint choice unreadable")
                 conn.execute("UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,"
                              "config_revision=NULL,credential_generation=NULL,consent_proof=NULL,"
                              "unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1")
                 conn.execute("UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1")
-            return _choice(conn)
+            result = _choice(conn)
         finally:
             conn.close()
+        if active[0] is not None:
+            from agents.core.status_cache_epoch import EPOCHS
+
+            EPOCHS.invalidate_selection()
+        return result
 
 
 def delete_endpoint(key: str, *, expected_revision: int) -> None:
@@ -374,3 +387,7 @@ def delete_endpoint(key: str, *, expected_revision: int) -> None:
                 conn.execute("DELETE FROM custom_endpoints WHERE key=?", (key,))
         finally:
             conn.close()
+        if active[0] == key:
+            from agents.core.status_cache_epoch import EPOCHS
+
+            EPOCHS.invalidate_selection()

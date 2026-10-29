@@ -12,7 +12,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any
 
 from agents.core.config_read_errors import report_unreadable
@@ -25,6 +25,10 @@ from agents.core.llm.reasoning_effort import LADDER as REASONING_EFFORT_LADDER
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.settings")
+@contextmanager
+def defer_model_epoch_invalidation():
+    """Keep local-adoption callers compatible; row writes never reset epochs."""
+    yield
 
 
 def _logsafe(value: object) -> str:
@@ -217,7 +221,12 @@ _CHANGED_DEFAULTS: tuple[tuple[str, str, str, Any, Any], ...] = (
 )
 
 # ── default settings — seed values ────────────────────────────────
-_STATUS_FIELDS = ("model", "context_pct", "cache_hit", "latency", "tps", "compressions", "bg_tasks", "duration")
+_STATUS_FIELDS = (
+    "model", "context_detail", "context_pct", "cache_hit", "latency", "tps",
+    "compressions", "bg_tasks", "bg_processes", "bg_subagents", "goal",
+    "duration", "prompt_elapsed", "idle_since", "focus", "yolo", "stash",
+    "battery", "title", "total_tokens",
+)
 
 DEFAULTS: list[dict[str, Any]] = [
     # H135: only explicit owner choices; empty preserves device motion defaults.
@@ -1035,7 +1044,7 @@ _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for
 
 def selected_status_fields(raw: Any) -> frozenset[str] | None:
     """Validate a stored display selection, including rows predating write bounds."""
-    if (not isinstance(raw, list) or len(raw) > 8
+    if (not isinstance(raw, list) or len(raw) > 20
             or any(type(item) is not str or item not in _STATUS_FIELDS for item in raw)
             or len(set(raw)) != len(raw)):
         return None
@@ -1095,7 +1104,7 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
             or (value != "" and (value != value.strip() or not os.path.isabs(value)))):
         return f"{key}: expected an absolute project folder path or empty"
     if key == "status_bar_fields" and selected_status_fields(value) is None:
-        return f"{key}: expected up to eight distinct declared status fields"
+        return f"{key}: expected up to twenty distinct declared status fields"
     if key == "execute_code_env_passthrough":
         from .code_env import _passable_name
 
@@ -1379,8 +1388,9 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
     updated = 0
     skipped = []
     for key, value in data.items():
-        cur = conn.execute("SELECT key FROM settings WHERE category=? AND key=?", (cat, key))
-        if cur.fetchone():
+        cur = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", (cat, key))
+        previous = cur.fetchone()
+        if previous:
             stored = _encrypt_if_secret(key, value)
             conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(stored), cat, key))
             updated += 1

@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from core.settings_db import get_value, put_category
+from core.settings_db import defer_model_epoch_invalidation, get_value, put_category
 
 from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag, env_str
@@ -237,9 +237,10 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> dict[s
     old_default_model = get_value("llm", "default_model", "")
 
     try:
-        updated, skipped = put_category(
-            "llm", {"backend_type": provider, "default_model": model}
-        )
+        with defer_model_epoch_invalidation():
+            updated, skipped = put_category(
+                "llm", {"backend_type": provider, "default_model": model}
+            )
         if updated != 2 or skipped:
             raise RuntimeError("provider selection was not fully persisted")
         # Base LLMRouter instances honor this directly; HybridRouter.detect()
@@ -250,13 +251,14 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> dict[s
             raise RuntimeError("provider adoption did not take effect")
         router_.set_active_model(model)
     except asyncio.CancelledError:
-        rollback, _ = await _finish_local_provider_restore(
-            router_,
-            provider=old_provider,
-            backend_type=old_backend_type,
-            default_model=old_default_model,
-            runtime_model=old_runtime_model,
-        )
+        with defer_model_epoch_invalidation():
+            rollback, _ = await _finish_local_provider_restore(
+                router_,
+                provider=old_provider,
+                backend_type=old_backend_type,
+                default_model=old_default_model,
+                runtime_model=old_runtime_model,
+            )
         if not rollback["ok"]:
             logger.critical(
                 "local provider rollback incomplete after cancelled adoption to %s",
@@ -264,13 +266,14 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> dict[s
             )
         raise
     except Exception:
-        rollback, cancelled_during_restore = await _finish_local_provider_restore(
-            router_,
-            provider=old_provider,
-            backend_type=old_backend_type,
-            default_model=old_default_model,
-            runtime_model=old_runtime_model,
-        )
+        with defer_model_epoch_invalidation():
+            rollback, cancelled_during_restore = await _finish_local_provider_restore(
+                router_,
+                provider=old_provider,
+                backend_type=old_backend_type,
+                default_model=old_default_model,
+                runtime_model=old_runtime_model,
+            )
         if cancelled_during_restore:
             if not rollback["ok"]:
                 logger.critical(
@@ -326,6 +329,7 @@ async def _switch_local_model_locked(
 
     target_provider = provider or providers[0]
     current_provider = _local_provider_name(router_)
+    previous_model = getattr(router_, "active_model", None)
     if target_provider != current_provider:
         if target_provider not in {"lm-studio", "ollama"}:
             return nocache_json(
@@ -358,11 +362,18 @@ async def _switch_local_model_locked(
                 },
                 status_code=409,
             )
+        from agents.core.status_cache_epoch import EPOCHS
+
+        EPOCHS.invalidate_selection()
         return nocache_json(
             {"ok": True, "active": model_id, "provider": target_provider}
         )
 
     router_.set_active_model(model_id)
+    if previous_model != model_id:
+        from agents.core.status_cache_epoch import EPOCHS
+
+        EPOCHS.invalidate_selection()
     try:
         put_category("llm", {"default_model": model_id})
     except Exception:

@@ -13,7 +13,7 @@ import httpx
 
 from agents.core import settings_db
 from agents.core.security.ssrf import _safe_for_mode, resolve_and_validate
-from agents.core.turn_usage import record_dispatch
+from agents.core.turn_usage import physical_transport_entry, record_dispatch
 
 from .. import custom_endpoint_consent as consent
 from .. import custom_endpoints as metadata
@@ -251,7 +251,7 @@ class CustomEndpointTransport(httpx.AsyncBaseTransport):
         from ..data_handling import authorize, check_physical_request
 
         runtime = self.runtime
-        lease = pool = wire = response = None
+        lease = pool = wire = response = entry = None
         entered = accounted = handed = False
         try:
             self._check_client(request)
@@ -288,6 +288,7 @@ class CustomEndpointTransport(httpx.AsyncBaseTransport):
                 if type(pool._pool) is not httpcore.AsyncConnectionPool:
                     raise ProviderPackageError('custom direct transport unavailable')
             entered = True
+            entry = physical_transport_entry(wire)
             try:
                 response = await pool.handle_async_request(wire)
             finally:
@@ -298,14 +299,14 @@ class CustomEndpointTransport(httpx.AsyncBaseTransport):
                 await response.aclose()
                 _record(runtime.profile.id, wire, allowed=True,
                         reason='custom endpoint refused status; request possibly sent')
-                record_dispatch(runtime.profile.id, wire)
+                record_dispatch(runtime.profile.id, wire, entry=entry)
                 accounted = True
                 return httpx.Response(status, content=b'{"error":"custom_request_failed"}',
                                       headers={'content-type': 'application/json'}, request=request)
             response.stream = _CustomBody(response.stream, pool if pool is not self.inner else None, lease)
             self._streams.add(response.stream)
             _record(runtime.profile.id, wire, allowed=True)
-            record_dispatch(runtime.profile.id, wire)
+            record_dispatch(runtime.profile.id, wire, entry=entry)
             handed = accounted = True
             return response
         except BaseException as exc:
@@ -314,7 +315,7 @@ class CustomEndpointTransport(httpx.AsyncBaseTransport):
                         reason=('custom transport entered; request possibly sent' if entered else
                                 'custom physical request refused before transport'))
                 if entered:
-                    record_dispatch(runtime.profile.id, wire or request)
+                    record_dispatch(runtime.profile.id, wire or request, entry=entry)
             if isinstance(exc, asyncio.CancelledError):
                 raise
             if isinstance(exc, httpx.TimeoutException):
