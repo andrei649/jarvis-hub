@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Report, ReportRunDetail, WorkspaceDocument } from '../../api/types';
 import { renderApp } from '../../test/render';
 import { apiError, json, makeUser, mockFetch, shellRoutes, signedIn, type RouteHandler } from '../../test/mockApi';
@@ -8,6 +8,8 @@ import { navigate } from '../../router';
 import { consumeStartedRun, startRun } from './startRun';
 
 const NOW = Date.now() / 1000;
+
+beforeAll(async () => { await import('./index'); });
 
 const REPORT: Report = {
   id: 3, department_id: 1, name: 'Raport lunar contracte', instructions: 'Rezumă contractele lunii.', document_ids: [5],
