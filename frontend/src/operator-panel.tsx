@@ -32,6 +32,15 @@ interface BrowserPreviewRow {
   reason: string;
 }
 
+interface BrowserSessionView {
+  id: string;
+  origin: string;
+  generation: number;
+  refs: { ref: string; role: string; name: string }[];
+  active: boolean;
+  expires_in: number;
+}
+
 interface DesktopPreviewRow {
   action: string;
   decision: string;
@@ -287,20 +296,37 @@ export function OperatorPanel() {
   const browserPreviewRevisionRef = useRef(0);
   const browserCheckRequestRef = useRef(0);
   const browserPreviewRequestRef = useRef(0);
-  const [browserBusy, setBrowserBusy] = useState<'check' | 'preview' | 'run' | null>(null);
+  const [browserBusy, setBrowserBusy] = useState<'check' | 'preview' | 'run' | 'session' | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [browserAvailable, setBrowserAvailable] = useState(false);
   const [browserRunTaskId, setBrowserRunTaskId] = useState<number | null>(null);
   const [browserCheck, setBrowserCheck] = useState<BrowserCheckResult | null>(null);
   const [browserPreview, setBrowserPreview] = useState<BrowserPreviewRow[] | null>(null);
+  const [browserSessions, setBrowserSessions] = useState<BrowserSessionView[]>([]);
+  const [browserSessionId, setBrowserSessionId] = useState('');
+  const [browserSessionAction, setBrowserSessionAction] = useState<'snapshot' | 'click' | 'scroll' | 'back' | 'press'>('snapshot');
+  const [browserSessionRef, setBrowserSessionRef] = useState('');
+  const [browserSessionKey, setBrowserSessionKey] = useState('Enter');
+  const [browserSessionDirection, setBrowserSessionDirection] = useState<'up' | 'down'>('down');
 
   useEffect(() => {
     let live = true;
     const refresh = () => apiGet('/api/browser/status').then((value) => {
       if (live) setBrowserAvailable(isRecord(value) && value.available === true);
     }).catch(() => { if (live) setBrowserAvailable(false); });
+    const refreshSessions = () => apiGet('/api/browser/sessions').then((value) => {
+      if (!live || !isRecord(value) || !Array.isArray(value.sessions)) return;
+      const safe = value.sessions.filter((item): item is BrowserSessionView =>
+        isRecord(item) && typeof item.id === 'string' && /^[0-9a-f]{32}$/.test(item.id)
+        && typeof item.origin === 'string' && typeof item.generation === 'number'
+        && Array.isArray(item.refs) && typeof item.active === 'boolean'
+        && typeof item.expires_in === 'number').slice(0, 4);
+      setBrowserSessions(safe);
+      setBrowserSessionId((old) => safe.some((item) => item.id === old) ? old : (safe[0]?.id || ''));
+    }).catch(() => { if (live) setBrowserSessions([]); });
     void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 5_000);
+    void refreshSessions();
+    const timer = window.setInterval(() => { void refresh(); void refreshSessions(); }, 5_000);
     return () => { live = false; window.clearInterval(timer); };
   }, []);
 
@@ -493,6 +519,67 @@ export function OperatorPanel() {
         setBrowserError(isRecord(body) && typeof body.reason === 'string'
           ? body.reason.slice(0, MAX_REASON) : boundedError(error));
       }
+    } finally {
+      setBrowserBusy(null);
+    }
+  };
+
+  const queueBrowserSession = async (args: Record<string, unknown>) => {
+    setBrowserError(null);
+    setBrowserRunTaskId(null);
+    setBrowserBusy('session');
+    try {
+      const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args });
+      if (!isRecord(raw) || raw.reason !== 'approval_required'
+          || !Number.isSafeInteger(raw.task_id) || Number(raw.task_id) <= 0) {
+        throw new Error('Browser approval task was not confirmed');
+      }
+      setBrowserRunTaskId(Number(raw.task_id));
+    } catch (error) {
+      const body = isRecord(error) ? error.body : null;
+      if (isRecord(body) && body.reason === 'approval_required'
+          && Number.isSafeInteger(body.task_id) && Number(body.task_id) > 0) {
+        setBrowserRunTaskId(Number(body.task_id));
+      } else {
+        setBrowserError(isRecord(body) && typeof body.reason === 'string'
+          ? body.reason.slice(0, MAX_REASON) : boundedError(error));
+      }
+    } finally {
+      setBrowserBusy(null);
+    }
+  };
+
+  const startBrowserSession = () => {
+    const first = browserPlanRef.current[0];
+    if (!first || first.action !== 'navigate' || !browserAvailable) {
+      setBrowserError('Start with a browser navigation step');
+      return;
+    }
+    void queueBrowserSession({ mode: 'start', steps: [first, { action: 'snapshot' }] });
+  };
+
+  const actBrowserSession = () => {
+    if (!browserSessionId) return setBrowserError('Select a live browser session');
+    const action = browserSessionAction;
+    if (action !== 'snapshot' && action !== 'back' && !/^@e[1-9][0-9]{0,5}$/.test(browserSessionRef)) {
+      return setBrowserError('Select a live element reference');
+    }
+    const step = action === 'snapshot' || action === 'back' ? { action }
+      : action === 'press' ? { action, ref: browserSessionRef, key: browserSessionKey }
+      : action === 'scroll' ? { action, ref: browserSessionRef, direction: browserSessionDirection, pixels: 300 }
+      : { action, ref: browserSessionRef };
+    void queueBrowserSession({ mode: 'act', session_id: browserSessionId, steps: [step] });
+  };
+
+  const closeBrowserSession = async () => {
+    if (!browserSessionId) return;
+    setBrowserBusy('session');
+    try {
+      await apiPost(`/api/browser/sessions/${browserSessionId}/close`, {});
+      setBrowserSessions((old) => old.filter((item) => item.id !== browserSessionId));
+      setBrowserSessionId('');
+    } catch (error) {
+      setBrowserError(boundedError(error));
     } finally {
       setBrowserBusy(null);
     }
@@ -701,9 +788,49 @@ export function OperatorPanel() {
             <button className="tool-btn" type="button" disabled={browserBusy !== null} onClick={previewBrowserPlan}>preview browser plan</button>
             <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable}
               onClick={runBrowserPlan}>Run with approval</button>
+            <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable}
+              onClick={startBrowserSession}>Start fresh session with approval</button>
           </div>
           <p style={mono}>{browserAvailable ? 'Browser execution available for server-approved domains' : 'Browser execution unavailable'}</p>
           {browserRunTaskId && <p role="status">Browser task {browserRunTaskId} queued · <a href={appUrl('/v2/console#decision-inbox')}>Decision Inbox</a></p>}
+          {browserSessions.length > 0 && <div style={{ ...mono, marginTop: 8 }}>
+            <label htmlFor="operator-browser-session">Live fresh-profile session</label>
+            <select id="operator-browser-session" value={browserSessionId}
+              onChange={(event) => { setBrowserSessionId(event.target.value); setBrowserSessionRef(''); }}>
+              {browserSessions.map((session) => <option key={session.id} value={session.id}>
+                {session.origin} · {session.expires_in}s remaining
+              </option>)}
+            </select>
+            <label htmlFor="operator-browser-session-action">Session action</label>
+            <select id="operator-browser-session-action" value={browserSessionAction}
+              onChange={(event) => setBrowserSessionAction(event.target.value as typeof browserSessionAction)}>
+              {(['snapshot', 'click', 'scroll', 'back', 'press'] as const).map((action) =>
+                <option key={action} value={action}>{action}</option>)}
+            </select>
+            {browserSessionAction !== 'snapshot' && browserSessionAction !== 'back' && <>
+              <label htmlFor="operator-browser-session-ref">Observed element</label>
+              <select id="operator-browser-session-ref" value={browserSessionRef}
+                onChange={(event) => setBrowserSessionRef(event.target.value)}>
+                <option value="">Choose a current ref</option>
+                {(browserSessions.find((item) => item.id === browserSessionId)?.refs || []).map((item) =>
+                  <option key={item.ref} value={item.ref}>{item.ref} · {item.role} · {item.name.slice(0, 80)}</option>)}
+              </select>
+            </>}
+            {browserSessionAction === 'press' && <select aria-label="Browser key" value={browserSessionKey}
+              onChange={(event) => setBrowserSessionKey(event.target.value)}>
+              {['Enter', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'Space'].map((key) =>
+                <option key={key}>{key}</option>)}
+            </select>}
+            {browserSessionAction === 'scroll' && <select aria-label="Browser scroll direction"
+              value={browserSessionDirection}
+              onChange={(event) => setBrowserSessionDirection(event.target.value as 'up' | 'down')}>
+              <option value="down">down</option><option value="up">up</option>
+            </select>}
+            <button className="tool-btn" type="button" disabled={browserBusy !== null}
+              onClick={actBrowserSession}>Queue session action</button>
+            <button className="tool-btn" type="button" disabled={browserBusy !== null}
+              onClick={() => { void closeBrowserSession(); }}>Close fresh session</button>
+          </div>}
           <Alert value={browserError} />
           <BrowserResult check={browserCheck} preview={browserPreview} />
         </fieldset>

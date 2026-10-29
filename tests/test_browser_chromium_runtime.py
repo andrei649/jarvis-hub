@@ -4,6 +4,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib.util
+import json
+import os
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,6 +60,33 @@ async def local_page():
             if path == '/clicked':
                 state['clicked'] += 1
                 body = b'ok'
+                status = '200 OK'
+            elif path == '/frame':
+                body = (f'<!doctype html><title>Frames</title><h1>Main frame</h1>'
+                        f'<iframe id="child" src="http://frame.other.test:{port}/inside"></iframe>').encode()
+                status = '200 OK'
+            elif path == '/hidden-frame':
+                body = (f'<!doctype html><title>Hidden frame</title>'
+                        f'<iframe style="display:none" src="http://frame.other.test:{port}/inside"></iframe>').encode()
+                status = '200 OK'
+            elif path == '/inside':
+                body = (b'<!doctype html><title>Child frame</title>'
+                        b'<button id="child-button" onclick="this.dataset.clicked = 1">'
+                        b'Child click</button>')
+                status = '200 OK'
+            elif path == '/actions':
+                body = (b'<!doctype html><title>Actions</title>'
+                        b'<button id="activate" onclick="this.dataset.count = '
+                        b'(Number(this.dataset.count || 0) + 1); '
+                        b'fetch(\'/clicked\').then(() => this.dataset.sent = 1)">Activate</button>'
+                        b'<div id="scroller" role="region" tabindex="0" '
+                        b'style="height:60px;overflow:auto">'
+                        b'<div style="height:1200px">Tall content</div></div>')
+                status = '200 OK'
+            elif path == '/idle':
+                body = (b'<!doctype html><title>Idle egress</title>'
+                        b'<script>setTimeout(() => fetch("/clicked"), 2000)</script>'
+                        b'<button id="safe">Safe</button>')
                 status = '200 OK'
             elif path == '/escape':
                 body = (f'<!doctype html><title>Escape probe</title>'
@@ -168,6 +199,379 @@ async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(brows
     assert rig.runtime.last_browser_identity is not None
     assert not browser_identity_alive(rig.runtime.last_browser_identity)
     assert browser_processes_for_profile(rig.runtime.last_profile) == []
+
+
+async def test_session_snapshot_ref_survives_separate_owner_approved_call(browser_rig):
+    rig = browser_rig
+    start = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'start', 'steps': [
+            {'action': 'navigate', 'url': rig.page.origin + '/'},
+            {'action': 'snapshot'},
+        ]}})
+    assert start['reason'] == 'approval_required', start
+    await rig.worker.apply_decision(start['task_id'], 'accept', decided_by='andrei')
+    await rig.worker.tick()
+    start_result = rig.queue.get(start['task_id']).result['result']
+    assert start_result['ok'] is True, start_result
+    sid = start_result['session_id']
+    driver = rig.runtime.sessions[sid].driver
+    journal_path = rig.runtime.journal._file(sid)
+    ownership = rig.runtime.journal.read(journal_path)
+    assert ownership['profile'] == str(driver.profile_dir)
+    assert ownership['controller'][0] > 0
+    assert ownership['owner_process'][0] == os.getpid()
+    assert ownership['native'] == list(driver.owned_browser_identity)
+    refs = start_result['trace'][1]['result']['refs']
+    button = next(item for item in refs if item['role'] == 'button' and item['name'] == 'Click')
+    assert rig.page.state['clicked'] == 0
+    from agents.core.browser_playwright import PlaywrightHostDisabled
+    with pytest.raises(PlaywrightHostDisabled):
+        await driver.click(ref=button['ref'])
+    act = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid, 'steps': [
+            {'action': 'click', 'ref': button['ref']},
+            {'action': 'wait', 'selector': '#done', 'timeout_ms': 3000},
+        ]}})
+    assert act['reason'] == 'approval_required', act
+    await rig.worker.apply_decision(act['task_id'], 'accept', decided_by='andrei')
+    await rig.worker.tick()
+    result = rig.queue.get(act['task_id']).result['result']
+    assert result['ok'] is True, (result, list(driver.blocked_requests), rig.page.state)
+    assert rig.page.state['clicked'] == 1
+    assert await rig.runtime.close_owner_session(sid)
+    assert rig.runtime.last_profile is not None and not rig.runtime.last_profile.exists()
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
+    assert not journal_path.exists()
+
+
+async def _approved_session_call(rig, args, *, owner='andrei'):
+    proposed = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': args})
+    assert proposed['reason'] == 'approval_required', proposed
+    await rig.worker.apply_decision(proposed['task_id'], 'accept', decided_by=owner)
+    await rig.worker.tick()
+    return rig.queue.get(proposed['task_id']).result['result']
+
+
+async def test_session_ref_same_node_semantic_change_and_focus_refuse(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    driver = rig.runtime.sessions[sid].driver
+    button = next(item for item in started['trace'][1]['result']['refs']
+                  if item['role'] == 'button')
+    await driver._page.evaluate("document.querySelector('#click').textContent = 'Pay now'")
+    changed = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+                                                  'steps': [{'action': 'click', 'ref': button['ref']}]})
+    assert changed['ok'] is False and rig.page.state['clicked'] == 0
+    assert sid not in rig.runtime.sessions
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
+
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
+    ]})
+    sid = started['session_id']
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['role'] == 'button')
+    other_agent = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid, 'steps': [{'action': 'click', 'ref': ref}]}
+    }, actor='someone-else')
+    assert other_agent['reason'] == 'browser_session_unavailable'
+    assert rig.page.state['clicked'] == 0
+    wrong_focus = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'press', 'ref': ref, 'key': 'Enter'}]})
+    assert wrong_focus['ok'] is False and rig.page.state['clicked'] == 0
+    assert sid not in rig.runtime.sessions
+
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/actions'}, {'action': 'snapshot'},
+    ]})
+    sid = started['session_id']
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['name'] == 'Activate')
+    driver = rig.runtime.sessions[sid].driver
+    await driver._page.evaluate("document.querySelector('#activate').setAttribute('type', 'submit')")
+    changed_target = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': ref}]})
+    assert changed_target['ok'] is False
+    assert sid not in rig.runtime.sessions
+
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/actions'}, {'action': 'snapshot'},
+    ]})
+    sid = started['session_id']
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['name'] == 'Activate')
+    driver = rig.runtime.sessions[sid].driver
+    focused = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': ref},
+                  {'action': 'wait', 'selector': '[data-sent="1"]', 'timeout_ms': 3000}]})
+    assert focused['ok'] is True
+    assert rig.page.state['clicked'] == 1
+    await driver._page.evaluate("document.querySelector('#scroller').focus()")
+    transferred = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'press', 'ref': ref, 'key': 'Enter'}]})
+    assert transferred['ok'] is False
+    assert rig.page.state['clicked'] == 1
+
+
+async def test_session_wrong_owner_and_forged_ref_never_mutate(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
+    ]})
+    sid = started['session_id']
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['role'] == 'button')
+    wrong = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': ref}]}, owner='someone-else')
+    assert wrong['ok'] is False and rig.page.state['clicked'] == 0
+    assert sid in rig.runtime.sessions
+    forged = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': '@e999'}]})
+    assert forged['ok'] is False and rig.page.state['clicked'] == 0
+    assert sid not in rig.runtime.sessions
+
+
+async def test_session_cross_origin_frame_ref_and_back_invalidation(browser_rig):
+    rig = browser_rig
+    child = rig.page.origin.replace('fixture.browser.test', 'frame.other.test')
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': child + '/inside'},
+        {'action': 'navigate', 'url': rig.page.origin + '/frame'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    session = rig.runtime.sessions[sid]
+    driver = session.driver
+    refs = started['trace'][-1]['result']['refs']
+    child_ref = next(item for item in refs if item['name'] == 'Child click')
+    assert child_ref['frame_origin'] == child
+    cdp = await driver._context.new_cdp_session(driver._page)
+    targets = await cdp.send('Target.getTargets')
+    assert any(item.get('type') == 'iframe' and item.get('url', '').startswith(child)
+               for item in targets['targetInfos']), targets
+    assert {url.split(':')[0] for url in rig.page.state['hosts']} == {
+        'fixture.browser.test', 'frame.other.test'}
+    clicked = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': child_ref['ref']}]})
+    assert clicked['ok'] is True, clicked
+    frame = next(frame for frame in driver._page.frames if frame.url.startswith(child))
+    assert await frame.locator('#child-button').get_attribute('data-clicked') == '1'
+    backed = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'back'}]})
+    assert backed['ok'] is True, backed
+    assert child_ref['ref'] not in session.refs
+    stale = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': child_ref['ref']}]})
+    assert stale['ok'] is False and sid not in rig.runtime.sessions
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
+
+
+async def test_hidden_cross_origin_frame_never_mints_action_ref(browser_rig):
+    rig = browser_rig
+    child = rig.page.origin.replace('fixture.browser.test', 'frame.other.test')
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': child + '/inside'},
+        {'action': 'navigate', 'url': rig.page.origin + '/hidden-frame'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    assert all(item['frame_origin'] != child
+               for item in started['trace'][-1]['result']['refs'])
+    assert await rig.runtime.close_owner_session(started['session_id'])
+
+
+async def test_idle_session_blocks_background_page_egress(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/idle'}, {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    driver = rig.runtime.sessions[sid].driver
+    await asyncio.sleep(2.5)
+    assert rig.page.state['clicked'] == 0
+    assert any(item['reason'] == 'approved_task_revoked' for item in driver.blocked_requests)
+    assert await rig.runtime.close_owner_session(sid)
+
+
+@pytest.mark.parametrize('change', ['config', 'kill'])
+async def test_session_revoked_control_reaps_native_chrome(browser_rig, monkeypatch, change):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True
+    sid = started['session_id']
+    identity = rig.runtime.sessions[sid].driver.owned_browser_identity
+    profile = rig.runtime.sessions[sid].driver.profile_dir
+    if change == 'config':
+        monkeypatch.setenv('JARVIS_PLAYWRIGHT_BROWSER', 'firefox')
+    else:
+        rig.kill.engage(reason='test session stop')
+    async with asyncio.timeout(10):
+        while sid in rig.runtime.sessions or profile.exists() or browser_identity_alive(identity):
+            await asyncio.sleep(0.05)
+    assert not rig.runtime.journal._file(sid).exists()
+    assert rig.page.state['clicked'] == 0
+
+
+async def test_session_press_focus_and_scroll_are_new_kernel_mutations(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/actions'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    driver = rig.runtime.sessions[sid].driver
+    refs = started['trace'][1]['result']['refs']
+    button = next(item['ref'] for item in refs if item['name'] == 'Activate')
+    scroller = next(item['ref'] for item in refs if item['role'] == 'region')
+    first = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': button},
+                  {'action': 'press', 'ref': button, 'key': 'Enter'},
+                  {'action': 'scroll', 'ref': scroller, 'direction': 'down', 'pixels': 120}]})
+    assert first['ok'] is True, first
+    assert await driver._page.locator('#activate').get_attribute('data-count') == '2'
+    assert await driver._page.locator('#scroller').evaluate('(e) => e.scrollTop') > 0
+    assert await rig.runtime.close_owner_session(sid)
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
+
+
+async def test_orphan_journal_reaps_only_exact_native_chrome_after_controller_exit(tmp_path):
+    chrome = _chrome_binary()
+    if not chrome:
+        pytest.skip('installed local Chrome required')
+    from agents.core.browser_session import BrowserOwnershipJournal
+
+    journal = BrowserOwnershipJournal(tmp_path / 'journal')
+    sid = 'f' * 32
+    child_code = '''
+import json, os, psutil, subprocess, sys, tempfile
+from pathlib import Path
+from agents.core.browser_session import BrowserOwnershipJournal
+chrome, root, sid = sys.argv[1:]
+profile = Path(tempfile.mkdtemp(prefix='nerva-playwright-orphan-'))
+journal = BrowserOwnershipJournal(Path(root))
+controller = psutil.Process(os.getpid())
+record = {'profile': str(profile), 'controller': [controller.pid, controller.create_time()],
+    'owner_process': [controller.pid, controller.create_time()], 'native': None}
+journal.write(sid, record)
+proc = subprocess.Popen([chrome, '--headless=new', '--no-sandbox', '--no-first-run',
+    '--no-default-browser-check', '--disable-background-networking', '--no-proxy-server',
+    '--host-resolver-rules=MAP * ~NOTFOUND', '--remote-debugging-port=0',
+    '--user-data-dir=' + str(profile), 'about:blank'], start_new_session=True,
+    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+native = psutil.Process(proc.pid)
+record['native'] = [native.pid, native.create_time()]
+journal.write(sid, record)
+print(json.dumps(record), flush=True)
+os._exit(0)
+'''
+    env = dict(os.environ)
+    env['PYTHONPATH'] = os.pathsep.join([str(Path.cwd()), env.get('PYTHONPATH', '')])
+    child = await asyncio.to_thread(subprocess.run,
+        [sys.executable, '-c', child_code, chrome, str(journal.root), sid],
+        capture_output=True, text=True, timeout=15, env=env, check=True)
+    record = json.loads(child.stdout)
+    identity = tuple(record['native'])
+    try:
+        assert browser_identity_alive(identity)
+        assert await journal.reap_entry(journal._file(sid)) is True
+        assert not browser_identity_alive(identity)
+        assert not Path(record['profile']).exists()
+        assert not journal._file(sid).exists()
+    finally:
+        if browser_identity_alive(identity):
+            process = psutil.Process(identity[0])
+            for item in reversed([process, *process.children(recursive=True)]):
+                with contextlib.suppress(psutil.Error):
+                    item.kill()
+        with contextlib.suppress(OSError):
+            import shutil
+            shutil.rmtree(record['profile'])
+        journal.remove(sid)
+
+
+async def test_session_idle_reaper_closes_native_chrome(browser_rig, monkeypatch):
+    from agents.core import browser_session
+
+    rig = browser_rig
+    monkeypatch.setattr(browser_session, 'IDLE_SECONDS', 0.2)
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    identity = rig.runtime.sessions[sid].driver.owned_browser_identity
+    profile = rig.runtime.sessions[sid].driver.profile_dir
+    async with asyncio.timeout(10):
+        while (sid in rig.runtime.sessions or profile.exists()
+               or browser_identity_alive(identity)):
+            await asyncio.sleep(0.05)
+    assert not browser_identity_alive(identity)
+    assert not profile.exists()
+    assert not rig.runtime.journal._file(sid).exists()
+
+
+async def test_owner_close_cancels_active_session_before_ref_dispatch(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
+    ]})
+    sid = started['session_id']
+    session = rig.runtime.sessions[sid]
+    identity = session.driver.owned_browser_identity
+    profile = session.driver.profile_dir
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['name'] == 'Click')
+    entered = asyncio.Event()
+    original = session.driver._ref_resolver
+
+    async def paused(ref_value, action):
+        entered.set()
+        await asyncio.Event().wait()
+        return await original(ref_value, action)
+
+    session.driver._ref_resolver = paused
+    proposal = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid, 'steps': [{'action': 'click', 'ref': ref}]}})
+    assert proposal['reason'] == 'approval_required', proposal
+    await rig.worker.apply_decision(proposal['task_id'], 'accept', decided_by='andrei')
+    running = asyncio.create_task(rig.worker.tick())
+    await asyncio.wait_for(entered.wait(), 10)
+    assert await asyncio.wait_for(rig.runtime.close_owner_session(sid), 15)
+    with contextlib.suppress(asyncio.CancelledError):
+        await running
+    assert rig.page.state['clicked'] == 0
+    assert not browser_identity_alive(identity)
+    assert not profile.exists() and not rig.runtime.journal._file(sid).exists()
+
+
+async def test_authenticated_owner_session_projection_and_close(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/'}, {'action': 'snapshot'},
+    ]})
+    sid = started['session_id']
+    profile = rig.runtime.sessions[sid].driver.profile_dir
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                 base_url='http://testserver',
+                                 headers={'X-User-Token': 'browser-user'}) as client:
+        listing = await client.get('/api/browser/sessions')
+        assert listing.status_code == 200
+        row = next(item for item in listing.json()['sessions'] if item['id'] == sid)
+        assert row['origin'] == rig.page.origin and row['refs']
+        assert 'profile' not in row and 'owner' not in row
+        closed = await client.post(f'/api/browser/sessions/{sid}/close', json={})
+        assert closed.status_code == 200 and closed.json()['closed'] is True
+        assert (await client.get('/api/browser/sessions')).json()['sessions'] == []
+    assert not profile.exists()
 
 
 async def test_kernel_kill_after_owner_acceptance_prevents_chromium_start(browser_rig):

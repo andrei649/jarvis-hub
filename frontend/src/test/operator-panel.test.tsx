@@ -101,6 +101,36 @@ describe('OperatorPanel browser policy dry run', () => {
       .toContain('#decision-inbox');
   });
 
+  it('queues a fresh session and a later grounded press as distinct approvals', async () => {
+    const sid = 'a'.repeat(32);
+    get.mockImplementation(async (path) => path === '/api/browser/sessions'
+      ? { available: true, sessions: [{ id: sid, origin: 'https://example.com',
+        generation: 1, refs: [{ ref: '@e1', role: 'button', name: 'Continue' }],
+        active: false, expires_in: 60 }] }
+      : { available: true });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 90 },
+    })).mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 91 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect(screen.getByLabelText('Live fresh-profile session')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh session with approval' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 90 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      mode: 'start', steps: [{ action: 'navigate', url: 'https://example.com/start' },
+        { action: 'snapshot' }],
+    } });
+    fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'press' } });
+    fireEvent.change(screen.getByLabelText('Observed element'), { target: { value: '@e1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 91 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      mode: 'act', session_id: sid, steps: [{ action: 'press', ref: '@e1', key: 'Enter' }],
+    } });
+  });
+
   it('makes zero actuation calls on mount and explains the fail-closed boundary', () => {
     render(<OperatorPanel />);
     expect(post).not.toHaveBeenCalled();
