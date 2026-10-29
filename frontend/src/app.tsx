@@ -444,6 +444,8 @@ function App({ floating = false, shortcuts, onWorld }: {
         // No-op unless a voice turn opened a session (typed turns stay silent).
         try { if(source==='voice')voiceRef.current?.pushSpeakDelta(evt.text || ''); } catch { /* never break the stream over TTS */ }
         updateBubble(message=>({...message,text:streamed}));
+      } else if (evt.type === 'outcome_progress') {
+        if (id === latestTextTurn.current) setCurrentOutcome(turnOutcome(evt.outcome));
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
         const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;

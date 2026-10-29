@@ -2,6 +2,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from '../app';
+import { turnOutcome } from '../turn-outcome';
 
 vi.mock('../voice', () => ({ useVoice: () => ({ active: false, toggle: () => {} }) }));
 vi.mock('../mesh', () => ({
@@ -56,6 +57,13 @@ async function complete(outcome: unknown, sessionId = 'topic_a') {
 }
 const readout = () => screen.queryByLabelText('Turn duration');
 
+it('keeps every valid bounded file attempt from the owner outcome', () => {
+  const attempts = Array.from({ length: 33 }, (_, index) => ({
+    attempt: index + 1, operation: 'write', outcome: 'refused',
+  }));
+  expect(turnOutcome({ file_mutations: attempts })?.file_mutations).toHaveLength(33);
+});
+
 it.each(['/v2', '/v2/chat'])('shows only measured whole-turn duration in %s after the current end', async path => {
   await mount(path);
   expect(readout()).toBeNull();
@@ -66,6 +74,47 @@ it.each(['/v2', '/v2/chat'])('shows only measured whole-turn duration in %s afte
   expect(readout()?.textContent).toMatch(/Turn duration.*1\.25 s/);
   expect(screen.queryByText(/tokens per second/i)).toBeNull();
   expect(streamRequest()).toHaveLength(1);
+});
+
+it('renders live visible-output estimate, then reconciles observed usage and failed-file footer', async () => {
+  await mount('/v2/chat');
+  await send('write the note');
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const encoded = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+  await act(async () => streams.shift()!(new Response(body, {
+    headers: { 'Content-Type': 'text/event-stream' },
+  })));
+  await act(async () => {
+    controller.enqueue(encoded.encode(event({ type: 'start', agent: 'jarvis' })
+      + event({ type: 'token', text: 'Working' })
+      + event({ type: 'outcome_progress', outcome: {
+        output: { tokens: 2, basis: 'visible_estimate' },
+        tools: { proposed: 1, queued: 1, executed: 0, failures: 0, basis: 'observed' },
+      } })));
+  });
+  expect((await screen.findByLabelText('Output token flow')).textContent).toContain('~2 tokens (text estimate)');
+  expect(screen.getByLabelText('Tool call accounting').textContent).toContain('queued 1; executed 0');
+  await act(async () => {
+    controller.enqueue(encoded.encode(event({ type: 'end', text: 'Approval queued', session_id: 'topic_a',
+      outcome: {
+        latency_ms: 20,
+        completion: { kind: 'pending_approval', severity: 'warning',
+          explanation: 'Approval is pending.', unanswered_tool_results: 1 },
+        tools: { proposed: 1, queued: 1, executed: 0, failures: 0, basis: 'observed' },
+        output: { tokens: 9, basis: 'provider_complete' },
+        file_mutations: [{ attempt: 1, operation: 'write', outcome: 'unknown' }],
+      } })));
+    controller.close();
+  });
+  expect((await screen.findByLabelText('Output token flow')).textContent).toContain('9 (provider reported)');
+  expect(screen.getByLabelText('Turn completion').textContent).toContain('Warning: Approval is pending.');
+  expect(screen.getByLabelText('File mutation notes').textContent).toContain('effect uncertain');
+  await send('next turn');
+  expect(screen.queryByLabelText('Output token flow')).toBeNull();
+  expect(screen.queryByLabelText('Turn completion')).toBeNull();
+  expect(screen.queryByLabelText('File mutation notes')).toBeNull();
+  await complete(null);
 });
 
 it.each([null, {}, { latency_ms: -1 }, { latency_ms: '19' }, { latency_ms: true }, { latency_ms: null },

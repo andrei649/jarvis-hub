@@ -23,7 +23,7 @@ from typing import Callable, Optional
 from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
-from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, is_degraded_reply
+from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, is_backend_failure_reply, is_degraded_reply
 from .llm.auth_rotation import AuthLease
 from .llm.gemini import GeminiBackend
 from .llm.providers.admitted_profiles import AdmittedProviderProfile
@@ -50,7 +50,8 @@ from .action_origin import (
     reset_action_origin,
 )
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
-from .turn_outcome import measure_turn_latency
+from .turn_outcome import (measure_turn_latency, record_turn_completion,
+                           record_agent_observation, settle_agent_turn)
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import (
     ADMIN,
@@ -2515,20 +2516,25 @@ class Orchestrator:
                 cache.popitem(last=False)
             with compaction_scope(state):
                 reply = await self._handle_input(text, channel, agent_override, session_id)
+            settle_agent_turn()
             if _TURN_CHAT_OUTCOMES.get() is not None:
                 self._ack_chat_outcomes(reply)
             return reply
         except DataHandlingRefused as exc:
             record_runtime_stop("generation_refused")
+            record_turn_completion("refused")
             return exc.reply()
         except CompactionClockRefused:
             record_runtime_stop("context_refused")
+            record_turn_completion("refused")
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             record_runtime_stop("continuation_refused")
+            record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         except ForeignHistoryRefused:
             record_runtime_stop("continuation_refused")
+            record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
@@ -2563,11 +2569,13 @@ class Orchestrator:
         await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
+            record_turn_completion("command")
             return session_reply
 
         outcome = await self._dispatch_preappend_command(text)
         if outcome is not None:
             self.last_cognition = self._command_cognition(outcome)
+            record_turn_completion("command")
             return outcome.reply
         from .session_continuation import prepare_continuation_turn
 
@@ -2583,6 +2591,7 @@ class Orchestrator:
         if outcome is not None:
             await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
             self.last_cognition = self._command_cognition(outcome)
+            record_turn_completion("command")
             return outcome.reply
 
         skill_cmd = self.skills.parse_command(text)
@@ -2604,6 +2613,7 @@ class Orchestrator:
                         },
                         "trace": [{"step": "skill_execution", "duration_ms": 10, "result": skill_name}]
                     }
+                    record_turn_completion("command")
                     return result
 
         # Natural-language LLM-backend control (start / load / unload / status).
@@ -2614,6 +2624,7 @@ class Orchestrator:
                 if reply:
                     await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
                     self.last_cognition = self._control_cognition(llm_ctl[0])
+                    record_turn_completion("command")
                     return reply
 
         t_c0 = time.perf_counter()
@@ -2670,6 +2681,7 @@ class Orchestrator:
             )
         else:
             responses = {"jarvis": "I don't have a specialist for that yet."}
+            record_agent_observation("jarvis", "unavailable")
 
         handoff_target = self._detect_handoff(responses)
         if handoff_target:
@@ -2692,10 +2704,12 @@ class Orchestrator:
                 synthesized = responses[responder_id]
         except RuntimeError:
             record_runtime_stop("generation_failed")
+            settle_agent_turn(synthesis="failed")
             synthesized = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
             log_error(logger, E_LLM_BACKEND_MISSING, backend="synthesize")
         except Exception as e:
             record_runtime_stop("generation_failed")
+            settle_agent_turn(synthesis="failed")
             synthesized = f"I hit an issue processing that: {e}"
             log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
@@ -2760,20 +2774,25 @@ class Orchestrator:
                 cache.popitem(last=False)
             with compaction_scope(state):
                 reply = await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
+            settle_agent_turn()
             if _TURN_CHAT_OUTCOMES.get() is not None:
                 self._ack_chat_outcomes(reply)
             return reply
         except DataHandlingRefused as exc:
             record_runtime_stop("generation_refused")
+            record_turn_completion("refused")
             return exc.reply()
         except CompactionClockRefused:
             record_runtime_stop("context_refused")
+            record_turn_completion("refused")
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             record_runtime_stop("continuation_refused")
+            record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         except ForeignHistoryRefused:
             record_runtime_stop("continuation_refused")
+            record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
@@ -2807,6 +2826,7 @@ class Orchestrator:
         await self._guard_media_history(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
+            record_turn_completion("command")
             if on_token:
                 emitted = on_token(session_reply)
                 if inspect.isawaitable(emitted):
@@ -2815,6 +2835,7 @@ class Orchestrator:
 
         outcome = await self._dispatch_preappend_command(text)
         if outcome is not None:
+            record_turn_completion("command")
             if on_token:
                 emitted = on_token(outcome.reply)
                 if inspect.isawaitable(emitted):
@@ -2833,6 +2854,7 @@ class Orchestrator:
 
         outcome = await self._dispatch_command(text)
         if outcome is not None:
+            record_turn_completion("command")
             await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
             if on_token:
                 emitted = on_token(outcome.reply)
@@ -2848,6 +2870,7 @@ class Orchestrator:
             if skill:
                 result = await skill.execute(command, args, {"channel": channel})
                 if result:
+                    record_turn_completion("command")
                     await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
                     if on_token:
                         emitted = on_token(result)
@@ -2872,6 +2895,7 @@ class Orchestrator:
             if llm_ctl:
                 reply = await self._run_llm_control(*llm_ctl, channel=channel)
                 if reply:
+                    record_turn_completion("command")
                     await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
                     if on_token:
                         emitted = on_token(reply)
@@ -3117,6 +3141,7 @@ class Orchestrator:
                         request_scope = backend.request_scope(request_binding)
                 except LocalBackendUnavailableError:
                     record_runtime_stop("generation_failed")
+                    record_agent_observation(agent_id, "unavailable")
                     msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
                     if on_token:
@@ -3126,6 +3151,7 @@ class Orchestrator:
                     return msg
                 except DataHandlingRefused as exc:
                     record_runtime_stop("generation_refused")
+                    record_agent_observation(agent_id, "refused")
                     msg = exc.reply()
                     if on_token:
                         emitted = on_token(msg)
@@ -3136,6 +3162,7 @@ class Orchestrator:
                     raise
                 except RuntimeError:
                     record_runtime_stop("generation_failed")
+                    record_agent_observation(agent_id, "unavailable")
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
                     if on_token:
@@ -3186,6 +3213,9 @@ class Orchestrator:
                                if prepared is not None else {}),
                         )
                 synthesized = response
+                record_agent_observation(
+                    agent_id, 'answered' if isinstance(response, str) and response.strip()
+                    and not is_backend_failure_reply(response.lstrip()) else 'failed')
                 self._last_routes[agent_id] = route_name or ""
                 # `model` is the id handed to generate_response a few lines up, so this
                 # is the thing that ran — not the agent's configured model, which no
@@ -3246,7 +3276,11 @@ class Orchestrator:
             self._last_cached_tokens[agent_id] = primary_cached
             self._last_prompt_tokens[agent_id] = primary_prompt
             responses = {agent_id: synthesized, **secondary_responses}
-            synthesized = await self._synthesize(responses, intent)
+            try:
+                synthesized = await self._synthesize(responses, intent)
+            except Exception:
+                settle_agent_turn(synthesis="failed")
+                raise
             _stream_responses = responses
             responder_id = "jarvis"
         else:
@@ -3256,6 +3290,7 @@ class Orchestrator:
         # as a blank bubble. The backend already refuses to leak raw reasoning,
         # so an empty string here means "no answer was produced".
         if not (synthesized or "").strip():
+            record_agent_observation(agent_id or "jarvis", "failed")
             synthesized = "My reply was cut short before I finished, sir — the model ran out of context while thinking. Try again, simplify the request, or load a larger-context model in LM Studio."
             if on_token:
                 emitted = on_token(synthesized)
@@ -3962,6 +3997,8 @@ class Orchestrator:
                 return
             observations = queue.chat_outcome_snapshot(context)
             bind_approval_turn(context)
+            from .turn_outcome import bind_approval_origin
+            bind_approval_origin(context.turn_id)
             _TURN_CHAT_OUTCOMES.set({"queue": queue, "context": context, "observations": observations,
                                      "included": [], "persisted": False})
         except Exception:
@@ -5475,12 +5512,23 @@ class Orchestrator:
                         **({"prepared": prepared} if prepared is not None else {})),
                         timeout=seconds,
                     )
+                if isinstance(resp, str) and resp.strip():
+                    if (resp == LOCAL_SELECTION_UNAVAILABLE_REPLY
+                            or resp.startswith(f"[{agent_id} no LLM backend]")):
+                        record_agent_observation(agent_id, "unavailable")
+                    elif is_backend_failure_reply(resp.lstrip()):
+                        record_agent_observation(agent_id, "failed")
+                    else:
+                        record_agent_observation(agent_id, "answered")
+                else:
+                    record_agent_observation(agent_id, "failed")
                 # The origin as this task saw it once the agent returned: the tool loop
                 # carries a recall taint into the context that awaits it, which is this
                 # task, not the turn's (Hermes absorption 5a).
                 return agent_id, resp, self.agents[agent_id].last_latency, current_action_origin()
             except asyncio.TimeoutError:
                 record_runtime_stop("deadline")
+                record_agent_observation(agent_id, "timeout")
                 self.agents[agent_id]._record_failure("timeout")
                 log_error(logger, E_LLM_TIMEOUT, timeout=int(seconds), floor=floor)
                 if floor == TIMEOUT_FLOOR_REASONING:
@@ -5490,9 +5538,11 @@ class Orchestrator:
                 return agent_id, reply, 0.0, current_action_origin()
             except CompactionClockRefused:
                 record_runtime_stop("context_refused")
+                record_agent_observation(agent_id, "refused")
                 return agent_id, CONTEXT_REFUSED_REPLY, 0.0, current_action_origin()
             except Exception as e:
                 record_runtime_stop("generation_failed")
+                record_agent_observation(agent_id, "failed")
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
                 # First-run UX: "no model loaded" is the single most common failure,
