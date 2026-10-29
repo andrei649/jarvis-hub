@@ -358,12 +358,14 @@ class ProviderInstallService:
                                          actor=actor, operation='delete')
 
     def selection_status(self, *, actor):
-        from agents.core.llm.provider_selection import read_selection
-
         from .selected_runtime import SelectedProviderRuntime
 
         self._owner(actor)
-        selected = read_selection()
+        try:
+            selected = self._current_selection()
+        except ProviderPackageError:
+            from agents.core.llm.provider_selection import read_selection
+            selected = read_selection()
         if selected is None:
             return {'status': 'unselected'}
         b = selected.binding
@@ -377,13 +379,87 @@ class ProviderInstallService:
                 'credential_generation': b.credential_generation}
 
     def selected_runtime(self):
-        from agents.core.llm.provider_selection import read_selection
-
         from .selected_runtime import SelectedProviderRuntime
 
         self._ready()
-        selection = read_selection()
+        selection = self._current_selection()
         return SelectedProviderRuntime(self, selection) if selection is not None else None
+
+    def _current_selection(self):
+        """Rebind a still-current, privately proven pre-H367 choice once."""
+        from agents.core import settings_db
+        from agents.core.llm import provider_selection
+        from agents.core.llm.providers import selection_gates
+
+        from .credentials import credential_binding
+        from .selection_consent import rebind_legacy
+
+        selected = provider_selection.read_selection()
+        if selected is None or selected.binding.choice_epoch != 0:
+            return selected
+        with selection_gates.exclusive(settings_db.DB_PATH, signed=True):
+            conn = settings_db.get_conn()
+            try:
+                with conn:
+                    conn.execute('BEGIN IMMEDIATE')
+                    revision, binding = provider_selection._row(conn)
+                    if binding is None or binding.choice_epoch != 0:
+                        return (provider_selection.SelectionRecord(revision, binding)
+                                if binding is not None else None)
+                    raw = conn.execute('SELECT record_json,record_hash '
+                                       'FROM signed_provider_selection WHERE singleton=1').fetchone()
+                    fields = json.loads(raw[0])
+                    old_fields = set(provider_selection.SelectionBinding.__dataclass_fields__) - {'choice_epoch'}
+                    if set(fields) != old_fields:
+                        # A current-format raw row with epoch zero is not an
+                        # old authenticated record and gets no migration path.
+                        return provider_selection.SelectionRecord(revision, binding)
+                    epoch = conn.execute('SELECT epoch FROM provider_choice_epoch '
+                                         'WHERE singleton=1').fetchone()
+                    custom = conn.execute('SELECT active_key,consent_proof '
+                                          'FROM custom_endpoint_choice WHERE singleton=1').fetchone()
+                    if (epoch is None or epoch[0] != 0
+                            or custom is None or custom[0] is not None
+                            or custom[1] is not None or binding.home != self.home
+                            or binding.unknown_price_ack is not True):
+                        raise ProviderPackageError('legacy selection scope unavailable')
+                    store = self._store()
+                    record = store.require_runnable(binding.provider_id,
+                        expected_hash=binding.package_hash, home=self.home)
+                    if (record.artifact_id != binding.artifact_id
+                            or record.source != binding.source
+                            or record.profile.default_base_url != binding.endpoint
+                            or record.profile.auth_type != binding.auth_type
+                            or binding.model not in record.profile.fallback_models):
+                        raise ProviderPackageError('legacy selection admission changed')
+                    policy, _ = record.profile.data_policy_for(binding.model)
+                    if (policy in {'unknown', 'trains-on-inputs'}
+                            and binding.data_policy_ack is not True):
+                        raise ProviderPackageError('legacy selection risk consent unavailable')
+                    status = self._credentials().status(credential_binding(record, self.home))
+                    if (status['generation'] != binding.credential_generation
+                            or binding.auth_type != 'none' and not status['configured']):
+                        raise ProviderPackageError('legacy selection credential changed')
+                    proof = rebind_legacy(self.root, binding, revision,
+                                          record.profile, policy, 1)
+                    rebound = replace(binding, choice_epoch=1, consent_proof=proof)
+                    payload = provider_selection._json(rebound)
+                    changed = conn.execute('UPDATE signed_provider_selection '
+                        'SET record_json=?,record_hash=? WHERE singleton=1 AND revision=? '
+                        'AND record_json=? AND record_hash=?',
+                        (payload, provider_selection._digest(revision, payload),
+                         revision, raw[0], raw[1]))
+                    if changed.rowcount != 1 or conn.execute(
+                            'UPDATE provider_choice_epoch SET epoch=1 '
+                            'WHERE singleton=1 AND epoch=0').rowcount != 1:
+                        raise ProviderPackageError('legacy selection changed during migration')
+                    if provider_selection._row(conn) != (revision, rebound):
+                        raise ProviderPackageError('legacy selection readback failed')
+            finally:
+                conn.close()
+            if provider_selection._read(settings_db.DB_PATH) != (revision, rebound):
+                raise ProviderPackageError('legacy selection durable readback failed')
+            return provider_selection.SelectionRecord(revision, rebound)
 
     def _selection_authorize(self, binding, *, operation, revision, actor,
                              price_ack, data_ack, candidate_profile=None):
@@ -394,6 +470,18 @@ class ProviderInstallService:
 
         if not kernel_enabled() or not callable(getattr(self.audit, 'log', None)):
             raise ProviderPackageError('selection kernel or audit unavailable')
+        from agents.core import settings_db
+        epoch_conn = settings_db.get_conn()
+        try:
+            epoch_row = epoch_conn.execute(
+                'SELECT epoch FROM provider_choice_epoch WHERE singleton=1').fetchone()
+            if epoch_row is None or type(epoch_row[0]) is not int:
+                raise ProviderPackageError('effective provider choice unavailable')
+            next_choice_epoch = epoch_row[0] + 1
+        finally:
+            epoch_conn.close()
+        if operation == 'select' and binding.choice_epoch != next_choice_epoch:
+            raise ProviderPackageError('effective provider choice changed')
         findings = []
         if operation == 'select':
             if candidate_profile is None:
@@ -412,7 +500,7 @@ class ProviderInstallService:
         scope_digest = hashlib.sha256(json.dumps(
             [binding.authority, binding.home, binding.provider_id, binding.source,
              binding.artifact_id, binding.package_hash, binding.endpoint, binding.model,
-             binding.credential_generation, revision + 1, operation],
+             binding.credential_generation, revision + 1, next_choice_epoch, operation],
             sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         action = Action(
             kind='provider.selection', agent='jarvis',
@@ -425,6 +513,7 @@ class ProviderInstallService:
                      'auth_type': binding.auth_type, 'model': binding.model,
                      'operation': operation, 'current_revision': revision,
                      'selected_revision': revision + 1,
+                     'choice_epoch': next_choice_epoch,
                      'credential_generation': binding.credential_generation,
                      'scope_sha256': scope_digest,
                      'price_ack': price_ack, 'data_ack': data_ack,
@@ -498,6 +587,12 @@ class ProviderInstallService:
             current, _ = provider_selection._read(settings_db.DB_PATH)
             if current != expected_revision:
                 raise provider_selection.SelectionConflict('selection revision changed')
+            epoch_conn = settings_db.get_conn()
+            try:
+                next_choice_epoch = epoch_conn.execute(
+                    'SELECT epoch FROM provider_choice_epoch WHERE singleton=1').fetchone()[0] + 1
+            finally:
+                epoch_conn.close()
             store = self._store(actor=actor)
             with store._locked():
                 record = self._credential_record_locked(store, provider_id, package_hash)
@@ -521,7 +616,8 @@ class ProviderInstallService:
                     record.source, record.artifact_id, record.package_hash,
                     scope.endpoint, scope.auth_type, status['generation'],
                     unknown_price_ack=True,
-                    data_policy_ack=acknowledge_data_policy)
+                    data_policy_ack=acknowledge_data_policy,
+                    choice_epoch=next_choice_epoch)
                 self._owner(actor)
                 capability = self._selection_authorize(
                     binding, operation='select', revision=current, actor=actor,

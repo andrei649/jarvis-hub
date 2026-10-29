@@ -448,6 +448,15 @@ def provider_catalog(environ: Mapping[str, str] | None = None) -> list[dict]:
     return DEFAULT_REGISTRY.catalog(environ=environ)
 
 
+def custom_provider_registry() -> ProviderRegistry:
+    """A current owner catalog view, never a mutation of built-in declarations."""
+    from ..custom_endpoint_service import profile_for
+    from ..custom_endpoints import list_endpoints
+
+    return ProviderRegistry([*BUILTIN_PROFILES,
+                             *(profile_for(endpoint) for endpoint in list_endpoints())])
+
+
 __all__ = [
     "BUILTIN_PROFILES",
     "DATA_POLICIES",
@@ -459,4 +468,5 @@ __all__ = [
     "get_profile",
     "list_profiles",
     "provider_catalog",
+    "custom_provider_registry",
 ]

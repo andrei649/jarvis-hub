@@ -133,19 +133,65 @@ CREATE TABLE IF NOT EXISTS signed_provider_selection (
     record_hash TEXT
 );
 INSERT OR IGNORE INTO signed_provider_selection (singleton, revision) VALUES (1, 0);
+CREATE TABLE IF NOT EXISTS provider_choice_epoch (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    epoch INTEGER NOT NULL CHECK(epoch>=0)
+);
+INSERT OR IGNORE INTO provider_choice_epoch (singleton, epoch) VALUES (1, 0);
+CREATE TABLE IF NOT EXISTS custom_endpoints (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    auth_type TEXT NOT NULL,
+    data_policy TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK(revision>0),
+    config_revision INTEGER NOT NULL CHECK(config_revision>0),
+    admission_proof TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS custom_endpoint_aliases (
+    alias_key TEXT PRIMARY KEY,
+    alias TEXT NOT NULL,
+    endpoint_key TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS custom_endpoint_choice (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    revision INTEGER NOT NULL CHECK(revision>=0),
+    active_key TEXT,
+    config_revision INTEGER,
+    credential_generation INTEGER,
+    consent_proof TEXT,
+    unknown_price_ack INTEGER NOT NULL DEFAULT 0 CHECK(unknown_price_ack IN (0,1)),
+    data_policy_ack INTEGER NOT NULL DEFAULT 0 CHECK(data_policy_ack IN (0,1))
+);
+INSERT OR IGNORE INTO custom_endpoint_choice (singleton,revision) VALUES (1,0);
+DROP TRIGGER IF EXISTS signed_selection_pair_insert;
+DROP TRIGGER IF EXISTS signed_selection_pair_update;
+DROP TRIGGER IF EXISTS signed_selection_pair_delete;
 CREATE TRIGGER IF NOT EXISTS signed_selection_pair_insert
 AFTER INSERT ON settings
 WHEN NEW.category='llm' AND NEW.key IN ('compatible_provider','compatible_model')
 BEGIN
     UPDATE signed_provider_selection SET revision=revision+1, record_json=NULL, record_hash=NULL
     WHERE singleton=1;
+    UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,
+        config_revision=NULL,credential_generation=NULL,consent_proof=NULL,
+        unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1;
+    UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1;
 END;
 CREATE TRIGGER IF NOT EXISTS signed_selection_pair_update
 AFTER UPDATE OF value ON settings
 WHEN NEW.category='llm' AND NEW.key IN ('compatible_provider','compatible_model')
+    AND NOT (NEW.key='compatible_provider' AND NEW.value IN
+        ('"custom"', '"custom:' || (SELECT active_key FROM custom_endpoint_choice WHERE singleton=1) || '"')
+        AND (SELECT active_key FROM custom_endpoint_choice WHERE singleton=1) IS NOT NULL)
 BEGIN
     UPDATE signed_provider_selection SET revision=revision+1, record_json=NULL, record_hash=NULL
     WHERE singleton=1;
+    UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,
+        config_revision=NULL,credential_generation=NULL,consent_proof=NULL,
+        unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1;
+    UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1;
 END;
 CREATE TRIGGER IF NOT EXISTS signed_selection_pair_delete
 AFTER DELETE ON settings
@@ -153,6 +199,10 @@ WHEN OLD.category='llm' AND OLD.key IN ('compatible_provider','compatible_model'
 BEGIN
     UPDATE signed_provider_selection SET revision=revision+1, record_json=NULL, record_hash=NULL
     WHERE singleton=1;
+    UPDATE custom_endpoint_choice SET revision=revision+1,active_key=NULL,
+        config_revision=NULL,credential_generation=NULL,consent_proof=NULL,
+        unknown_price_ack=0,data_policy_ack=0 WHERE singleton=1;
+    UPDATE provider_choice_epoch SET epoch=epoch+1 WHERE singleton=1;
 END;
 """
 
@@ -678,7 +728,10 @@ def init_db(force: bool = False):
 def _init_db_fenced(force: bool = False):
     _require_readable_store()
     conn = get_conn()
-    conn.executescript(SCHEMA)
+    # Replacing the old pair triggers and creating the shared choice epoch is a
+    # single schema migration. A crash must never expose a store without the
+    # invalidation triggers that fence later generic writes.
+    conn.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nCOMMIT;")
     if force:
         conn.execute("DELETE FROM settings")
     # Once H329 has observed a store, missing switch rows are damage. An

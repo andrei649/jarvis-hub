@@ -192,3 +192,9 @@ export async function apiDelete<T = unknown>(path: string, opts?: { admin?: bool
   if (!res.ok) await failMutation('DELETE', path, res);
   return res.json() as Promise<T>;
 }
+/** Revisioned owner deletes carry their expected CAS value in a JSON body. */
+export async function apiDeleteBody<T = unknown>(path: string, body: unknown, opts?: { admin?: boolean }): Promise<T> {
+  const res = await request('DELETE', path, body, opts);
+  if (!res.ok) await failMutation('DELETE', path, res);
+  return res.json() as Promise<T>;
+}

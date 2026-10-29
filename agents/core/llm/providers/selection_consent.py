@@ -52,6 +52,7 @@ def _issue(service, actor, action, decision, binding, revision, profile, policy)
             or decision.tier != 3 or action.kind != 'provider.selection'
             or payload.get('operation') != 'select'
             or payload.get('selected_revision') != revision
+            or payload.get('choice_epoch') != binding.choice_epoch
             or payload.get('current_revision') != revision - 1
             or payload.get('authority') != binding.authority
             or payload.get('home') != binding.home
@@ -174,6 +175,7 @@ def _key(root: Path, *, create: bool) -> bytes:
 
 def _message(binding, revision: int, profile, policy: str) -> bytes:
     if (type(revision) is not int or revision <= 0
+            or type(binding.choice_epoch) is not int or binding.choice_epoch <= 0
             or profile.id != binding.provider_id
             or binding.model not in profile.fallback_models
             or profile.data_policy_for(binding.model)[0] != policy):
@@ -185,6 +187,35 @@ def _message(binding, revision: int, profile, policy: str) -> bytes:
                'declaration_models': profile.data_policy_models}
     return _DOMAIN + json.dumps(payload, sort_keys=True, separators=(',', ':'),
                                 ensure_ascii=True).encode('ascii')
+
+
+def rebind_legacy(root, binding, revision: int, profile, policy: str, epoch: int) -> str:
+    """Transfer only a valid pre-choice-epoch MAC to the same scoped choice."""
+    if (type(epoch) is not int or epoch != 1 or binding.choice_epoch != 0
+            or not binding.consent_proof):
+        raise ProviderPackageError('legacy selection consent unavailable')
+    fields = asdict(binding)
+    old_proof = fields.pop('consent_proof')
+    fields.pop('choice_epoch')
+    if (type(revision) is not int or revision <= 0
+            or profile.id != binding.provider_id
+            or binding.model not in profile.fallback_models
+            or profile.data_policy_for(binding.model)[0] != policy):
+        raise ProviderPackageError('legacy selection scope unavailable')
+    old_payload = {'revision': revision, 'binding': fields, 'policy': policy,
+                   'declaration_policy': profile.data_policy,
+                   'declaration_models': profile.data_policy_models}
+    key = _key(Path(root), create=False)
+    old_message = _DOMAIN + json.dumps(old_payload, sort_keys=True,
+        separators=(',', ':'), ensure_ascii=True).encode('ascii')
+    if not hmac.compare_digest(old_proof, hmac.new(
+            key, old_message, hashlib.sha256).hexdigest()):
+        raise ProviderPackageError('legacy selection consent unavailable')
+    from dataclasses import replace
+
+    rebound = replace(binding, choice_epoch=epoch, consent_proof='')
+    return hmac.new(key, _message(rebound, revision, profile, policy),
+                    hashlib.sha256).hexdigest()
 
 
 def mint(root, binding, revision: int, profile, policy: str, *, capability=None) -> str:
@@ -213,6 +244,10 @@ def verify(root, selection, profile, policy: str) -> bool:
     if not binding.consent_proof:
         return False
     try:
+        from agents.core.llm.custom_endpoints import read_choice
+
+        if read_choice().epoch != binding.choice_epoch:
+            return False
         message = _message(binding, selection.revision, profile, policy)
         expected = hmac.new(_key(Path(root), create=False), message, hashlib.sha256).hexdigest()
         return hmac.compare_digest(binding.consent_proof, expected)

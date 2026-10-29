@@ -238,6 +238,7 @@ def authorize(action: Action,
         sealed_provider_egress = False
         sealed_provider_credential = False
         sealed_provider_selection = False
+        sealed_custom_endpoint = False
         sealed_browser_step = False
         if action.kind == "plugin.load":
             from ..llm.providers.admission_contract import PROVIDER_LOAD_CONTRACT
@@ -261,6 +262,13 @@ def authorize(action: Action,
                 sealed_provider_selection = (
                     PROVIDER_SELECTION_CONTRACT.evaluate(action.payload).admissible
                     and selection_receipt_matches(action))
+        elif action.kind == "provider.custom_endpoint":
+            from ..llm.custom_endpoint_consent import receipt_matches
+            from ..llm.custom_endpoint_contract import CUSTOM_ENDPOINT_CONTRACT
+            with contextlib.suppress(Exception):
+                sealed_custom_endpoint = (
+                    CUSTOM_ENDPOINT_CONTRACT.evaluate(action.payload).admissible
+                    and receipt_matches(action))
         elif action.kind == "browser.step":
             from ..browser_kernel import browser_receipt_matches
             with contextlib.suppress(Exception):
@@ -273,7 +281,7 @@ def authorize(action: Action,
         )
         if (
             (task_receipt or sealed_provider or sealed_provider_egress or sealed_provider_credential
-             or sealed_provider_selection or sealed_browser_step)
+             or sealed_provider_selection or sealed_custom_endpoint or sealed_browser_step)
             and pdec.outcome == ASK
             and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
             and callable(approval_check)
@@ -290,6 +298,7 @@ def authorize(action: Action,
                            "sealed_provider_egress_approval" if sealed_provider_egress else
                            "sealed_provider_credential_approval" if sealed_provider_credential else
                            "sealed_provider_selection_approval" if sealed_provider_selection else
+                           "sealed_custom_endpoint_approval" if sealed_custom_endpoint else
                            "sealed_browser_approval" if sealed_browser_step else
                            "sealed_hermes_approval")
             decision = Decision(Verdict.GRANT, reason=f"{seal_reason}; {pdec.reason}", tier=tier,

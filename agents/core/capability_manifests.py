@@ -393,6 +393,21 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.llm.providers.install_service:ProviderInstallService.select_provider",
         contract_ref="agents.core.llm.providers.admission_contract:PROVIDER_SELECTION_CONTRACT",
     ),
+    "provider.custom_endpoint": _action(
+        "provider.custom_endpoint",
+        "Create or use one exact owner-managed named compatible endpoint.",
+        required=("key", "base_url", "model", "operation"),
+        risk="irreversible_or_money",
+        supports=("create", "activate", "rename", "delete", "clear",
+                  "credential_write", "credential_delete", "validate"),
+        rollback=RollbackContract(
+            mode="revoke",
+            description="Clear the named custom endpoint choice.",
+            limitations="A previously sent request cannot be recalled.",
+        ),
+        implementation="agents.core.llm.custom_endpoint_service:CustomEndpointService.activate",
+        contract_ref="agents.core.llm.custom_endpoint_contract:CUSTOM_ENDPOINT_CONTRACT",
+    ),
     "media.present": _action(
         "media.present",
         "Present content (media, webpage, camera, dashboard) on a registered output device.",

@@ -629,6 +629,49 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
                                 expected_revision=provider_selection.current_revision(),
                                 acknowledge_unknown_price=True,
                                 acknowledge_data_policy=True, actor=owner())
+    elif kind == "provider.custom_endpoint":
+        # Exercise the owner service through a real sealed Action Kernel. The
+        # spy observes the post-receipt decision, including a DENY, without
+        # replacing the receipt and schema checks or contacting a provider.
+        from types import SimpleNamespace
+
+        from agents.core import settings_db
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.kernel import kernel_enabled
+        from agents.core.kernel.binding import make_action_kernel
+        from agents.core.llm.custom_endpoint_service import CustomEndpointService
+        from agents.core.llm.custom_endpoints import read_endpoint
+        from agents.core.llm.providers.packages import ProviderPackageError
+        from agents.core.security.capability import KillSwitch
+        from tests.test_h361_provider_install_service import owner
+
+        enabled = kernel_enabled()
+        root = tmp_path / 'custom-endpoint-matrix'
+        root.mkdir(exist_ok=True)
+        monkeypatch.setattr(settings_db, 'DB_PATH', root / 'settings.db')
+        monkeypatch.setattr(settings_db, '_initialized', False)
+        settings_db.init_db(force=True)
+        orch = SimpleNamespace(autonomy=SimpleNamespace(policy=AutonomyPolicy()),
+                               kill_switch=KillSwitch(root / 'kill.json'),
+                               capabilities=None, intent_log=None)
+        bound = make_action_kernel(orch)
+        events = []
+
+        def gate(action, *, approval_check):
+            decision = bound(action, approval_check=approval_check)
+            assert decision.verdict is Verdict.GRANT
+            return spy(action)
+
+        svc = CustomEndpointService(root=root / 'custom', home='matrix-owner',
+                                    kernel=lambda: gate,
+                                    audit=SimpleNamespace(log=lambda event: events.append(event)))
+        if not enabled:
+            monkeypatch.delenv('JARVIS_ACTION_KERNEL', raising=False)
+        with suppress(ProviderPackageError):
+            svc.create('matrix', 'Synthetic', 'http://127.0.0.1:1234/v1',
+                       'model', 'none', 'local', actor=owner())
+        assert (read_endpoint('matrix') is not None) == (enabled and spy._verdict is Verdict.GRANT)
+        assert bool(events) == (enabled and spy._verdict is Verdict.GRANT)
     elif kind == "desktop.step":
         # The optional real host seam must cross CapabilityActionAPI immediately
         # before driver execution. The unified facade stays default-off; the outer
@@ -1084,6 +1127,14 @@ def test_browser_step_kernel_denial_after_owner_plan_never_actuates_or_adds_card
     spy = _SpyKernel(Verdict.DENY)
     _exercise("browser.step", spy, tmp_path, monkeypatch)
     assert len(spy.calls) == 1 and spy.calls[0].kind == "browser.step"
+
+
+def test_custom_endpoint_kernel_denial_leaves_no_catalog_or_audit(monkeypatch, tmp_path):
+    monkeypatch.setenv('JARVIS_ACTION_KERNEL', '1')
+    spy = _SpyKernel(Verdict.DENY)
+    _exercise('provider.custom_endpoint', spy, tmp_path, monkeypatch)
+    assert len(spy.calls) == 1
+    assert spy.calls[0].kind == 'provider.custom_endpoint'
 
 
 def test_broker_kernel_wiring_matches_classification():

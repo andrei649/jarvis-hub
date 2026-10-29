@@ -209,6 +209,8 @@ class HybridRouter(LLMRouter):
         self._cloud_fallback_mode = "on-demand"
         self._selected_provider_runtime = None
         self._selected_provider_required = False
+        self._custom_endpoint_runtime = None
+        self._custom_endpoint_required = False
 
         # Routing size thresholds (prompt INPUT tokens), live-tunable from /admin
         # via set_local_max / set_flash_max (settings watcher). Default to the
@@ -293,6 +295,15 @@ class HybridRouter(LLMRouter):
         )
 
     async def detect(self):
+        previous_custom = getattr(self, '_custom_endpoint_runtime', None)
+        if previous_custom is not None:
+            previous_custom.retire()
+        prior_custom_baseline = getattr(self, '_before_custom_compatible', None)
+        if prior_custom_baseline is not None:
+            await self._close_backend(prior_custom_baseline[0])
+            self._before_custom_compatible = None
+        self._custom_endpoint_runtime = None
+        self._custom_endpoint_required = False
         previous_selected = getattr(self, '_selected_provider_runtime', None)
         if previous_selected is not None:
             previous_selected.retire()
@@ -475,6 +486,10 @@ class HybridRouter(LLMRouter):
         service = get_install_service(get_orch())
         if service is not None:
             await self.refresh_selected(service)
+        from .custom_endpoint_service import get_custom_endpoint_service
+        custom_service = get_custom_endpoint_service(get_orch())
+        if custom_service is not None:
+            await self.refresh_custom(custom_service)
 
         # Re-stamp: `super().detect()` stamped after the LOCAL probe, but the cloud,
         # Claude and Ollama flags above were measured after that. The age reported by
@@ -487,6 +502,18 @@ class HybridRouter(LLMRouter):
         from .provider_selection import read_selection
 
         selected = await asyncio.to_thread(read_selection)
+        prior_custom = getattr(self, '_custom_endpoint_runtime', None)
+        if prior_custom is not None and selected is not None:
+            prior_custom.retire()
+            await self._close_backend(self._compatible_backend)
+            baseline = getattr(self, '_before_custom_compatible', None)
+            if baseline is not None:
+                (self._compatible_backend, self._compatible_model,
+                 self._compatible_provider_id, self._cloud_available) = baseline
+            self._before_custom_compatible = None
+            self._custom_endpoint_runtime = None
+            self._custom_endpoint_required = False
+
         previous = self._selected_provider_runtime
         if selected is None:
             if previous is not None or self._selected_provider_required:
@@ -538,6 +565,97 @@ class HybridRouter(LLMRouter):
         self._compatible_backend = backend
         self._compatible_provider_id = runtime.binding.provider_id
         self._compatible_model = runtime.binding.model
+        self._cloud_available = True
+
+    async def refresh_custom(self, service):
+        """Apply a current owner custom choice without probing its destination."""
+        from agents.core import settings_db
+
+        from .backend_factory import construct_custom_backend
+        from .custom_endpoints import read_choice
+
+        previous = getattr(self, '_custom_endpoint_runtime', None)
+        try:
+            choice = await asyncio.to_thread(read_choice)
+        except Exception:
+            self._custom_endpoint_required = True
+            if previous is not None:
+                previous.retire()
+                await self._close_backend(self._compatible_backend)
+            self._custom_endpoint_runtime = None
+            self._compatible_backend = None
+            return
+        if choice.active_key is None:
+            if previous is not None or getattr(self, '_custom_endpoint_required', False):
+                if previous is not None:
+                    previous.retire()
+                    await self._close_backend(self._compatible_backend)
+                baseline = getattr(self, '_before_custom_compatible', None)
+                if baseline is not None:
+                    current_pair = await asyncio.to_thread(settings_db.compatible_pair_state)
+                    if current_pair[1:] == getattr(self, '_before_custom_pair', None):
+                        (self._compatible_backend, self._compatible_model,
+                         self._compatible_provider_id, self._cloud_available) = baseline
+                    else:
+                        await self._close_backend(baseline[0])
+                        self._compatible_backend = None
+                self._before_custom_compatible = None
+                self._before_custom_pair = None
+                self._custom_endpoint_runtime = None
+            self._custom_endpoint_required = False
+            return
+        self._custom_endpoint_required = True
+        if previous is not None and previous.active and previous.choice == choice:
+            try:
+                await asyncio.to_thread(previous.check)
+                return
+            except Exception:
+                pass
+        previous_signed = getattr(self, '_selected_provider_runtime', None)
+        if previous_signed is not None:
+            previous_signed.retire()
+            await self._close_backend(self._compatible_backend)
+            baseline = getattr(self, '_before_selected_compatible', None)
+            if baseline is not None:
+                (self._compatible_backend, self._compatible_model,
+                 self._compatible_provider_id, self._cloud_available) = baseline
+            else:
+                self._compatible_backend = None
+            self._before_selected_compatible = None
+            self._selected_provider_runtime = None
+            self._selected_provider_required = False
+        if previous is None and getattr(self, '_before_custom_compatible', None) is None:
+            self._before_custom_compatible = (self._compatible_backend,
+                                              self._compatible_model,
+                                              self._compatible_provider_id,
+                                              self._cloud_available)
+            pair = await asyncio.to_thread(settings_db.compatible_pair_state)
+            self._before_custom_pair = pair[1:]
+        backend = None
+        try:
+            runtime = await asyncio.to_thread(service.current_runtime)
+            if runtime is None or runtime.choice != choice:
+                raise ValueError('custom choice changed')
+            backend = construct_custom_backend(runtime)
+            runtime.bind_backend(backend, self)
+            await asyncio.to_thread(runtime.check)
+        except Exception:
+            logger.error('owner custom endpoint construction refused')
+            if backend is not None:
+                await self._close_backend(backend)
+            if previous is not None:
+                previous.retire()
+                await self._close_backend(self._compatible_backend)
+            self._custom_endpoint_runtime = None
+            self._compatible_backend = None
+            return
+        if previous is not None:
+            previous.retire()
+            await self._close_backend(self._compatible_backend)
+        self._custom_endpoint_runtime = runtime
+        self._compatible_backend = backend
+        self._compatible_provider_id = runtime.endpoint.identity
+        self._compatible_model = runtime.endpoint.model
         self._cloud_available = True
 
     def _availability_changed(self, lm_up: bool, ol_up: bool) -> bool:
@@ -630,6 +748,14 @@ class HybridRouter(LLMRouter):
         """A changed cross-process selection cannot fall through a stale router."""
         if not route.startswith('cloud'):
             return
+        custom = getattr(self, '_custom_endpoint_runtime', None)
+        if custom is not None:
+            effective = getattr(backend, '_backend', backend)
+            if (not custom.active or effective is not custom.backend
+                    or model != custom.endpoint.model or not custom.proven_consent()):
+                raise LocalBackendUnavailableError('custom endpoint is unavailable')
+        elif getattr(self, '_custom_endpoint_required', False):
+            raise LocalBackendUnavailableError('custom endpoint choice is unavailable')
         from pathlib import Path
 
         from agents.core import settings_db
@@ -897,9 +1023,14 @@ class HybridRouter(LLMRouter):
 
     def provider_catalog(self) -> list[dict]:
         """Return declared provider profiles without probing network backends."""
+        from .custom_endpoint_service import profile_for
+        from .custom_endpoints import CustomEndpointInvalid, list_endpoints
         from .providers import provider_catalog
-
-        return provider_catalog()
+        builtins = provider_catalog()
+        try:
+            return builtins + [profile_for(item).status() for item in list_endpoints()]
+        except CustomEndpointInvalid:
+            return builtins
 
     async def aclose(self) -> None:
         """Close every backend's HTTP client pool (BUG-7).
@@ -919,3 +1050,7 @@ class HybridRouter(LLMRouter):
         if baseline is not None:
             await self._close_backend(baseline[0])
             self._before_selected_compatible = None
+        custom_baseline = getattr(self, '_before_custom_compatible', None)
+        if custom_baseline is not None:
+            await self._close_backend(custom_baseline[0])
+            self._before_custom_compatible = None

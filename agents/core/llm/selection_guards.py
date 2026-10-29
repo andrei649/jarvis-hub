@@ -121,6 +121,7 @@ def _usd(amount: float) -> str:
 Guard = Callable[[Choice], "Finding | None"]
 GUARDS: list[Guard] = []
 _SIGNED_CANDIDATE: ContextVar[tuple | None] = ContextVar('signed_guard_candidate', default=None)
+_CUSTOM_CANDIDATE: ContextVar[tuple | None] = ContextVar('custom_guard_candidate', default=None)
 
 
 @contextmanager
@@ -137,6 +138,19 @@ def _signed_candidate(profile, provider: str, model: str):
         yield
     finally:
         _SIGNED_CANDIDATE.reset(token)
+
+
+@contextmanager
+def _custom_candidate(profile, provider: str, model: str):
+    """Check the exact owner custom declaration without borrowing built-in rows."""
+    if (profile.id != provider or model not in profile.fallback_models
+            or not provider.startswith('custom:') or not profile.is_user_defined):
+        raise ValueError('custom guard candidate changed')
+    token = _CUSTOM_CANDIDATE.set((provider, model, profile))
+    try:
+        yield
+    finally:
+        _CUSTOM_CANDIDATE.reset(token)
 
 
 def register(guard: Guard) -> Guard:
@@ -170,6 +184,9 @@ def _current_signed_choice(choice: Choice) -> bool:
     candidate = _SIGNED_CANDIDATE.get()
     if candidate is not None and (choice.provider, choice.model) == candidate[:2]:
         return True
+    candidate = _CUSTOM_CANDIDATE.get()
+    if candidate is not None and (choice.provider, choice.model) == candidate[:2]:
+        return True
     _service, selected = _selected_service_record()
     return (selected is not None and selected.binding.provider_id == choice.provider
             and selected.binding.model == choice.model)
@@ -190,6 +207,9 @@ def _selected_service_record():
 
 def _profiles_for(provider: str, model: str | None = None):
     if provider:
+        candidate = _CUSTOM_CANDIDATE.get()
+        if candidate is not None and (provider, model) == candidate[:2]:
+            return [candidate[2]]
         candidate = _SIGNED_CANDIDATE.get()
         if candidate is not None and (provider, model) == candidate[:2]:
             return [candidate[2]]
