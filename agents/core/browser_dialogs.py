@@ -15,6 +15,7 @@ from urllib.parse import urldefrag, urlsplit
 
 _TYPES = frozenset({'alert', 'confirm', 'prompt', 'beforeunload'})
 _TEXT_LIMIT = 1024
+_PAIR_WINDOW_SECONDS = 1.0
 
 
 class DialogObservationRefused(ValueError):
@@ -180,6 +181,13 @@ class DialogPromptStore:
         with self._lock:
             self._entries.pop(ref, None)
 
+    def wipe_dialog(self, opener_task_id: int, dialog_id: str) -> None:
+        with self._lock:
+            for ref, entry in list(self._entries.items()):
+                if (entry.args.get('opener_task_id') == opener_task_id
+                        and entry.args.get('dialog_id') == dialog_id):
+                    self._entries.pop(ref, None)
+
 
 @dataclass(frozen=True)
 class ObservedDialog:
@@ -208,7 +216,9 @@ class DialogFrameObserver:
         self.refused_reason = ''
         self._armed = False
         self._cdp: tuple[str, str, str] | None = None
+        self._cdp_at = 0.0
         self._playwright: object | None = None
+        self._playwright_at = 0.0
         self._paired: ObservedDialog | None = None
         self.ready = asyncio.Event()
 
@@ -224,7 +234,9 @@ class DialogFrameObserver:
         self.document_epoch = document_epoch
         self.refused_reason = ''
         self._cdp = None
+        self._cdp_at = 0.0
         self._playwright = None
+        self._playwright_at = 0.0
         self._paired = None
         self._armed = True
         self.ready.clear()
@@ -233,14 +245,18 @@ class DialogFrameObserver:
         self.refused_reason = reason
         self._armed = False
         self._cdp = None
+        self._cdp_at = 0.0
         self._playwright = None
+        self._playwright_at = 0.0
         self._paired = None
         self.ready.set()
 
     def disarm(self) -> None:
         self._armed = False
         self._cdp = None
+        self._cdp_at = 0.0
         self._playwright = None
+        self._playwright_at = 0.0
         self._paired = None
         self.ready.clear()
 
@@ -268,6 +284,7 @@ class DialogFrameObserver:
             self.refuse()
             return
         self._cdp = (kind, message, default)
+        self._cdp_at = time.monotonic()
         self._try_pair()
 
     def on_playwright_dialog(self, dialog: object) -> None:
@@ -286,13 +303,15 @@ class DialogFrameObserver:
             self.refuse()
             return
         self._playwright = dialog
+        self._playwright_at = time.monotonic()
         self._try_pair()
 
     def _try_pair(self) -> None:
         if self._cdp is None or self._playwright is None:
             return
         dialog = self._playwright
-        if self._cdp != (dialog.type, dialog.message, dialog.default_value):
+        if (abs(self._cdp_at - self._playwright_at) > _PAIR_WINDOW_SECONDS
+                or self._cdp != (dialog.type, dialog.message, dialog.default_value)):
             self.refuse()
             return
         self._paired = ObservedDialog(

@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import threading
 from types import SimpleNamespace
 
 import pytest
 
+from agents.core.autonomy.queue import TaskStatus
 from agents.core.browser_dialogs import (
     DialogEpisode,
     DialogFrameObserver,
@@ -19,6 +21,7 @@ from agents.core.browser_kernel import (
     physical_browser_dialog_allowed,
 )
 from agents.core.browser_playwright import PlaywrightBrowserDriver
+from agents.core.browser_runtime import BrowserRuntime
 from agents.core.kernel import Decision, Verdict
 
 
@@ -59,6 +62,52 @@ def test_main_frame_alert_pairs_with_exact_playwright_object():
     assert pending.frame_id == 'main-1'
     assert pending.loader_id == 'load-1'
     assert pending.document_epoch == 3
+
+
+def test_dialog_pair_outside_short_native_event_window_refuses():
+    page = object()
+    observer = DialogFrameObserver(page=page)
+    observer.arm(root_frame_id='root', loader_id='loader',
+                 frame_url='http://fixture.browser.test/page', document_epoch=1)
+    observer.on_cdp_open({'frameId': 'root', 'url': 'http://fixture.browser.test/page',
+                          'type': 'alert', 'message': 'same'})
+    observer._cdp_at -= 2
+    observer.on_playwright_dialog(SimpleNamespace(page=page, type='alert',
+                                                   message='same', default_value=''))
+    assert observer.pending() is None and observer.refused_reason
+
+
+@pytest.mark.asyncio
+async def test_cancelled_settlement_retains_one_durable_unknown_outcome():
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def transition(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        calls.append((args, kwargs))
+
+    runtime = object.__new__(BrowserRuntime)
+    runtime.queue = SimpleNamespace(transition=transition,
+                                    execution_fingerprint=lambda _task: 'fp')
+    runtime._dialog_settlements = set()
+    runtime._dialog_settlement_failed = False
+    episode = SimpleNamespace(claimed_task=SimpleNamespace(id=27))
+    settling = asyncio.create_task(runtime._settle_dialog(episode, success=False))
+    assert await asyncio.to_thread(started.wait, 2)
+    settling.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await settling
+    assert len(runtime._dialog_settlements) == 1
+    release.set()
+    await asyncio.wait_for(episode.settlement_task, 5)
+    await asyncio.sleep(0)
+    assert not runtime._dialog_settlements
+    assert not runtime._dialog_settlement_failed
+    assert calls == [((27, TaskStatus.FAILED), {
+        'result': {'reason': 'dialog_outcome_unknown', 'possibly_applied': True},
+        'expected_status': TaskStatus.RUNNING,
+        'expected_execution_sha256': 'fp'})]
 
 
 @pytest.mark.asyncio
@@ -239,6 +288,20 @@ def test_owner_staged_prompt_ref_can_be_proposed_once_without_raw_model_text():
                                'choice': 'accept', 'prompt_ref': ref})
 
 
+def test_dialog_close_wipes_unconsumed_private_values_only_for_that_episode():
+    tasks = {}
+    store = DialogPromptStore(task_lookup=tasks.get,
+                              task_fingerprint=lambda task: task.fingerprint)
+    first = store.stage_owner_text('agent-a', 11, 'a' * 32, 'private-a')
+    second = store.stage_owner_text('agent-a', 12, 'b' * 32, 'private-b')
+    store.wipe_dialog(11, 'a' * 32)
+    with pytest.raises(ValueError, match='invalid_dialog_prompt'):
+        store.seal('agent-a', {'opener_task_id': 11, 'dialog_id': 'a' * 32,
+                               'choice': 'accept', 'prompt_ref': first})
+    assert store.seal('agent-a', {'opener_task_id': 12, 'dialog_id': 'b' * 32,
+                                  'choice': 'accept', 'prompt_ref': second}).args['prompt_ref'] == second
+
+
 @pytest.mark.asyncio
 async def test_dialog_needs_distinct_exact_kernel_receipt_in_child_task():
     dialog = object()
@@ -269,6 +332,23 @@ async def test_dialog_needs_distinct_exact_kernel_receipt_in_child_task():
         assert not physical_browser_dialog_allowed(dialog, 'accept')
         assert await asyncio.create_task(authorize_dialog_response(kernel)) is False
     assert not physical_browser_dialog_allowed(dialog, 'dismiss')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('verdict', [Verdict.QUEUE, Verdict.DENY])
+async def test_dialog_kernel_queue_or_denial_never_enables_physical_response(verdict):
+    dialog = object()
+    response = SimpleNamespace(id=23, kind='toolrpc.browser_dialog', agent='agent-a',
+                               origin='generated', payload={'args': {
+                                   'opener_task_id': 11, 'opener_fingerprint': 'f' * 64,
+                                   'dialog_id': 'd' * 32, 'choice': 'dismiss'}})
+    with approved_dialog_scope(response, SimpleNamespace(id=11), dialog,
+                               session_id='s' * 32, generation=1,
+                               plan_sha256='p' * 64, step_index=2,
+                               current=lambda: True):
+        assert await authorize_dialog_response(
+            lambda _action, *, approval_check: Decision(verdict, tier=3)) is False
+        assert not physical_browser_dialog_allowed(dialog, 'dismiss')
 
 
 @pytest.mark.asyncio

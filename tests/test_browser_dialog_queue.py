@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import threading
 import uuid
 
 import pytest
@@ -154,3 +155,48 @@ async def test_private_same_worker_bridge_claims_in_empty_context_only_while_ope
         worker.claim_browser_dialog_bridge(bridge, next_id),
         context=contextvars.Context(),
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_cancelled_claim_retains_the_durable_running_row_for_unknown_settlement(
+        tmp_path, monkeypatch):
+    queue = _queue(tmp_path)
+    opener_id = _enqueue(queue, 'toolrpc.browser_run',
+                         {'tool': 'browser_run', 'args': {'mode': 'start'},
+                          'target': 'browser_run'})
+    opener = queue.claim_mediated(opener_id, execution_id=str(uuid.uuid4()))
+    worker = AutonomyWorker(queue)
+    permit = _ExecutionPermit(opener)
+    assert permit.consume(opener, validate=lambda _task, _fp: True)
+    token = worker._execution_context.set(permit)
+    try:
+        bridge = worker.begin_browser_dialog_bridge(opener)
+    finally:
+        worker._execution_context.reset(token)
+    response_id = _enqueue(queue, 'toolrpc.browser_dialog',
+                           {'tool': 'browser_dialog', 'args': {
+                               'opener_task_id': opener_id,
+                               'opener_fingerprint': queue.execution_fingerprint(opener),
+                               'choice': 'dismiss', 'dialog_id': 'f' * 32},
+                            'target': 'browser_dialog'})
+    started, release = threading.Event(), threading.Event()
+    real_claim = queue.claim_browser_dialog
+
+    def delayed_claim(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return real_claim(*args, **kwargs)
+
+    monkeypatch.setattr(queue, 'claim_browser_dialog', delayed_claim)
+    child = asyncio.create_task(worker.claim_browser_dialog_bridge(bridge, response_id),
+                                context=contextvars.Context())
+    assert await asyncio.to_thread(started.wait, 2)
+    child.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(child, 5)
+    assert bridge.claimed_task is not None
+    assert bridge.claimed_task.id == response_id
+    assert queue.get(response_id).status == 'running'
+    assert queue.get(response_id).attempts == 1
+    bridge.close()

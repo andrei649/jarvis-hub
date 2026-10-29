@@ -243,6 +243,8 @@ class BrowserRuntime:
         self.dialog_worker = dialog_worker
         self.dialog_registration = dialog_registration
         self._dialog_episodes = {}
+        self._dialog_settlements = set()
+        self._dialog_settlement_failed = False
         if queue is not None:
             from .browser_dialogs import DialogPromptStore
 
@@ -272,6 +274,7 @@ class BrowserRuntime:
 
     def ready(self):
         return (not self._uncertain_drivers and not self._journal_uncertain
+                and not self._dialog_settlements and not self._dialog_settlement_failed
                 and local_browser_ready(kernel=self.authorizer, queue=self.queue,
                                         fixture_origin=self.fixture_origin))
 
@@ -288,7 +291,8 @@ class BrowserRuntime:
         return hashlib.sha256(encoded).hexdigest()
 
     def _ready(self):
-        if self._uncertain_drivers or self._journal_uncertain:
+        if (self._uncertain_drivers or self._journal_uncertain
+                or self._dialog_settlements or self._dialog_settlement_failed):
             raise BrowserPlanRefused('browser_cleanup_unverified')
         if not self.ready():
             raise BrowserPlanRefused('browser_unavailable')
@@ -631,7 +635,9 @@ class BrowserRuntime:
             return None
         session = self.sessions.get(episode.session_id)
         dialog_spec = self.dialog_registration() if callable(self.dialog_registration) else None
-        if (session is None or session.generation != episode.generation
+        if (session is None or not session.current()
+                or session.head != self._head()
+                or session.generation != episode.generation
                 or session.active_task is None
                 or session.active_task.id != episode.opener_task_id
                 or not self._session_registration_current(session)
@@ -783,6 +789,8 @@ class BrowserRuntime:
         task = session.active_task
         return bool(
             self._dialog_episodes.get(episode.opener_task_id) is episode
+            and self._episode_for(episode.agent, episode.opener_task_id,
+                                  episode.dialog_id) is episode
             and episode.pending() is not None and session.current()
             and task is not None and task.id == episode.opener_task_id
             and session.generation == episode.generation
@@ -882,10 +890,27 @@ class BrowserRuntime:
         claimed = getattr(episode, 'claimed_task', None)
         if claimed is None:
             return
-        result = {'status': 'completed'} if success else {
-            'reason': 'dialog_outcome_unknown', 'possibly_applied': True}
-        status = TaskStatus.DONE if success else TaskStatus.FAILED
-        await asyncio.to_thread(self.queue.transition, claimed.id, status, result=result)
+        task = getattr(episode, 'settlement_task', None)
+        if task is None:
+            result = {'status': 'completed'} if success else {
+                'reason': 'dialog_outcome_unknown', 'possibly_applied': True}
+            status = TaskStatus.DONE if success else TaskStatus.FAILED
+            task = asyncio.create_task(asyncio.to_thread(
+                self.queue.transition, claimed.id, status, result=result,
+                expected_status=TaskStatus.RUNNING,
+                expected_execution_sha256=self.queue.execution_fingerprint(claimed)))
+            episode.settlement_task = task
+            self._dialog_settlements.add(task)
+
+            def finished(done):
+                self._dialog_settlements.discard(done)
+                try:
+                    done.result()
+                except BaseException:
+                    self._dialog_settlement_failed = True
+
+            task.add_done_callback(finished)
+        await asyncio.shield(task)
 
     async def dialog_intake(self, agent: str, args: dict) -> int:
         return await asyncio.to_thread(self._dialog_intake_sync, agent, args)
@@ -1019,8 +1044,14 @@ class BrowserRuntime:
             await asyncio.sleep(1)
             for session in list(self.sessions.values()):
                 try:
+                    observer = getattr(session.driver, '_dialog_observer', None)
                     stale = (not session.current() or session.head != self._head()
                              or not self._session_registration_current(session)
+                             or bool(getattr(observer, 'refused_reason', ''))
+                             or any(episode.session_id == session.id and
+                                    self._episode_for(episode.agent, episode.opener_task_id,
+                                                      episode.dialog_id) is not episode
+                                    for episode in self._dialog_episodes.values())
                              or self.control_current(session.owner_task) is not True)
                 except Exception:
                     stale = True
@@ -1142,6 +1173,7 @@ class BrowserRuntime:
                                 dialog_registration_epoch=(
                                     self.dialog_registration() or {}).get('_grouping_epoch'))
                             self._dialog_episodes[task.id] = episode
+                            dialog_settled = False
                             try:
                                 try:
                                     outcome = await run_with_dialog_supervisor(
@@ -1154,13 +1186,19 @@ class BrowserRuntime:
                                     )
                                 except ExceptionGroup:
                                     raise BrowserPlanRefused('dialog_unresolved') from None
-                                await self._settle_dialog(episode, success=True)
+                                dialog_settled = outcome.get('status') == 'done'
+                                await self._settle_dialog(episode, success=dialog_settled)
                             except BaseException:
+                                episode.claimed_task = getattr(
+                                    episode, 'claimed_task', None) or bridge.claimed_task
                                 await self._settle_dialog(episode, success=False)
                                 raise
                             finally:
                                 self._dialog_episodes.pop(task.id, None)
-                                episode.close()
+                                if self.dialog_prompts is not None and episode.dialog_id:
+                                    self.dialog_prompts.wipe_dialog(task.id, episode.dialog_id)
+                                episode.close('dialog_unresolved' if (
+                                    episode.observed is not None and not dialog_settled) else '')
                                 bridge.close()
                         else:
                             outcome = await browser.run_step(step)

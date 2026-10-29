@@ -1040,6 +1040,8 @@ class AgentToolRuntime:
                     # A local cap refusal was not an executed observation. The raw
                     # envelope, not the display stub, defines progress.
                     stall_args = call.arguments if isinstance(call.arguments, dict) else {}
+                    if call.name == 'browser_dialog' and 'prompt_text' in stall_args:
+                        stall_args = {**stall_args, 'prompt_text': '[owner approval required]'}
                     if call.name in _ALWAYS_RESTATED:
                         stall_args = {"args": stall_args, "revision": restated.get(call.name, "")}
                     decision = stall.observe(call.name, stall_args, result)

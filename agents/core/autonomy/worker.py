@@ -553,6 +553,7 @@ class _BrowserDialogBridge:
         self.child_task: asyncio.Task | None = None
         self.active = True
         self.claimed = False
+        self.claimed_task: Task | None = None
 
     def close(self) -> None:
         self.active = False
@@ -738,6 +739,7 @@ class AutonomyWorker:
                 if task.done():
                     claimed = task.result()
                     break
+        bridge.claimed_task = claimed
         if cancelled:
             raise asyncio.CancelledError
         if (not bridge.active or bridge.parent_task.done()

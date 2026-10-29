@@ -269,13 +269,14 @@ async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(brows
     assert browser_processes_for_profile(rig.runtime.last_profile) == []
 
 
-@pytest.mark.parametrize(('kind', 'choice', 'private_text', 'expected'), [
-    ('alert', 'dismiss', None, 'yes'),
-    ('confirm', 'accept', None, 'true'),
-    ('prompt', 'accept', 'owner-private-marker', 'owner-private-marker'),
+@pytest.mark.parametrize(('kind', 'choice', 'private_text', 'expected', 'model_text'), [
+    ('alert', 'dismiss', None, 'yes', False),
+    ('confirm', 'accept', None, 'true', False),
+    ('prompt', 'accept', 'owner-private-marker', 'owner-private-marker', False),
+    ('prompt', 'accept', 'model-suggested-marker', 'model-suggested-marker', True),
 ])
 async def test_main_frame_dialog_uses_separate_owner_decision(
-        browser_rig, kind, choice, private_text, expected):
+        browser_rig, kind, choice, private_text, expected, model_text):
     rig = browser_rig
     rig.web.ADMIN_TOKEN = 'browser-admin'
     start = await _approved_session_call(rig, {'mode': 'start', 'steps': [
@@ -315,7 +316,7 @@ async def test_main_frame_dialog_uses_separate_owner_decision(
         args = {
             'opener_task_id': opener['task_id'], 'dialog_id': pending['dialog_id'],
             'choice': choice}
-        if private_text is not None:
+        if private_text is not None and not model_text:
             args['prompt_text'] = private_text
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
                                          base_url='http://testserver',
@@ -327,10 +328,16 @@ async def test_main_frame_dialog_uses_separate_owner_decision(
                 assert submitted.status_code == 202, submitted.json()
                 proposal = submitted.json()
         else:
+            if model_text:
+                args['prompt_text'] = private_text
             proposal = await rig.orch.tool_rpc.handle({'tool': 'browser_dialog', 'args': args})
         assert proposal['reason'] == 'approval_required', proposal
         assert rig.queue.get(proposal['task_id']).status == 'blocked'
-        assert 'owner-private-marker' not in repr(rig.queue.get(proposal['task_id']).payload)
+        if private_text is not None:
+            response_row = rig.queue.get(proposal['task_id'])
+            assert private_text not in repr(response_row.payload)
+            assert private_text not in repr(response_row.mediation_receipt)
+            assert private_text not in repr(proposal)
         assert rig.runtime._dialog_episodes[opener['task_id']].response_id == proposal['task_id']
         assert rig.queue.get(proposal['task_id']).decided_by == 'policy'
         assert await rig.runtime.owner_dialog_card('admin', proposal['task_id']) is not None
@@ -423,6 +430,65 @@ async def test_same_url_child_dialog_refuses_and_closes_owned_native_browser(bro
     assert result == {'ok': False, 'reason': 'dialog_unresolved'}
     assert sid not in rig.runtime.sessions
     assert not profile.exists() and not browser_identity_alive(identity)
+
+
+@pytest.mark.parametrize('revoke', ['kill', 'registration'])
+async def test_pending_dialog_revocation_closes_without_native_response(browser_rig, revoke):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/dialog-confirm'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True
+    sid = started['session_id']
+    session = rig.runtime.sessions[sid]
+    identity, profile = session.driver.owned_browser_identity, session.driver.profile_dir
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['name'] == 'Open dialog')
+    opener = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid, 'steps': [{'action': 'click', 'ref': ref}]}})
+    assert opener['reason'] == 'approval_required'
+    await rig.worker.apply_decision(opener['task_id'], 'accept', decided_by='andrei')
+    running = asyncio.create_task(rig.worker.tick())
+    for _ in range(100):
+        found = await rig.orch.tool_rpc.handle({'tool': 'browser_dialog_pending',
+            'args': {'opener_task_id': opener['task_id']}})
+        if found.get('result', {}).get('status') == 'pending':
+            break
+        await asyncio.sleep(.05)
+    assert found['result']['status'] == 'pending', found
+    assert (await rig.orch.tool_rpc.handle({'tool': 'browser_dialog_pending',
+        'args': {'opener_task_id': opener['task_id']}}, actor='other-agent'))['result']['status'] == 'none'
+    if revoke == 'kill':
+        rig.kill.engage(reason='test dialog revoke')
+    else:
+        rig.orch.tool_rpc._tools['browser_dialog']['_grouping_epoch'] = '0' * 32
+    await asyncio.wait_for(running, 10)
+    result = rig.queue.get(opener['task_id']).result['result']
+    assert result['ok'] is False and result['reason'] == 'dialog_unresolved'
+    assert sid not in rig.runtime.sessions
+    assert not profile.exists() and not browser_identity_alive(identity)
+
+
+async def test_unarmed_background_dialog_closes_owned_native_browser(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/dialog-alert'},
+    ]}, owner='admin')
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    session = rig.runtime.sessions[sid]
+    driver = session.driver
+    profile = driver.profile_dir
+    identity = driver.owned_browser_identity
+    await driver._page.evaluate("setTimeout(() => alert('background'), 10)")
+    async with asyncio.timeout(10):
+        while sid in rig.runtime.sessions:
+            await asyncio.sleep(.05)
+        while profile.exists() or browser_identity_alive(identity):
+            await asyncio.sleep(.05)
+    assert driver._native_aborted is True
+    assert driver._dialog_attempted is False
 
 
 async def test_session_snapshot_ref_survives_separate_owner_approved_call(browser_rig, monkeypatch):
