@@ -358,3 +358,20 @@ Existing warning categories remain explicit. H011's reviewed POSIX integration g
 is now satisfied; it stays partial for Windows/native forward/rollback work.
 Task37 native dialogs and Task45 Windows read primitives remain isolated and do not
 inherit this result. Their future reviewed code will need the relevant new checks.
+
+Task51 baseline warning cleanup is independently approved and integrated asae6afe34,
+with all3 reviewed files identical before root documentation. Its canonical330-case
+title/STT/Orchestrator run passes with RuntimeWarning treated as an error. The no-loop
+title coroutine closes correctly; STT test doubles now match the synchronous engine
+predicate and assert the actual file-based path. All76 affected claims preserve
+their verdicts; H011's completee68 integration proof stays intact.
+
+Task45 Unit1 and all3 scoped repair rounds are approved and integrated through08f46156.
+The isolated Windows read/identity/reparse/ACL module has no history/FileTools/GC
+caller or capability flip. Mount fencing, complete handle ownership on failed closes
+and exactUTF16 counted names have controlled RED/GREEN proof. Canonical combined
+coverage passes490 with6 native Windows skips on macOS (496 total). The new focused
+Windows PR job requires zero skips/errors/failures and will establish its actual
+runner/build/NTFS result after publication. Fresh backend collection30542; frontend2703,
+mobile359 and734 routes are unchanged. Full green30503 belongs toe68 and is not
+reassigned to this newer source. Task37 dialog/model/owner/native work remains isolated.

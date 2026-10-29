@@ -10,6 +10,12 @@
 
 **Spec:** [H011 Windows read primitives](../specs/2026-10-29-h011-windows-read-primitives.md). The broader integration is tracked in [the local completion plan](2026-10-28-local-completion.md).
 
+**Freshness (2026-10-29):** Source base `93498f9a`; reviewed candidate through
+`dc5ca411`, integrated through `08f46156`. Changed paths are the module, its tests,
+the focused Windows workflow and this plan listed below. Local source review and
+preflight are complete; the next action is the zero-skip native Windows PR job.
+Windows production history stays disabled while later adapter units remain open.
+
 ## Global constraints
 
 - Preserve `HISTORY_SUPPORTED = False` on Windows; no effect, store, schema, lock or SQLite adapter in this unit.
