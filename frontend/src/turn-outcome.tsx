@@ -101,11 +101,14 @@ function outputText(output: NonNullable<TurnOutcome['output']>): string {
 export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; power?: PowerState }) {
   if (!outcome) return null;
   return <section aria-label="Turn outcome" style={{ display: 'block', padding: '4px 8px',
-    color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-    {outcome.latency_ms !== undefined && <output aria-label="Turn duration">
+    color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 10,
+    width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box',
+    maxHeight: '35vh', overflowX: 'auto', overflowY: 'auto', overflowWrap: 'anywhere',
+    lineHeight: 1.4 }}>
+    {outcome.latency_ms !== undefined && <output aria-label="Turn duration" style={{ display: 'block' }}>
       Turn duration: {durationText(outcome.latency_ms)}
     </output>}
-    {outcome.model && <output aria-label="Request model">Model: {outcome.model}</output>}
+    {outcome.model && <output aria-label="Request model" style={{ display: 'block' }}>Model: {outcome.model}</output>}
     {outcome.context_detail && <output aria-label="Prompt context" style={{ display: 'block' }}>
       Prompt context: {outcome.context_detail.prompt_tokens} / {outcome.context_detail.window_tokens}
     </output>}

@@ -89,6 +89,39 @@ it('renders selected metrics with cache thresholds and truthful local battery', 
   expect(screen.getByLabelText('Prompt elapsed to first visible chunk').textContent).toContain('25 ms');
 });
 
+const longModel = `model/${'x'.repeat(114)}`;
+const longTitle = 'T'.repeat(200);
+
+it('separates status rows and keeps full valid long values within a bounded scrollable strip', () => {
+  render(<StatusStrip outcome={turnOutcome({ latency_ms: 1250, model: longModel,
+    title: longTitle, completion: { kind: 'answered', explanation: 'Done',
+      severity: 'info', unanswered_tool_results: 0 } })} />);
+  const strip = screen.getByLabelText('Turn outcome');
+  expect(strip.style.maxWidth).toBe('100%');
+  expect(strip.style.overflowWrap).toBe('anywhere');
+  expect(strip.style.overflowY).toBe('auto');
+  expect(strip.style.maxHeight).toBeTruthy();
+  expect(screen.getByLabelText('Turn duration').style.display).toBe('block');
+  expect(screen.getByLabelText('Request model').style.display).toBe('block');
+  expect(screen.getByLabelText('Request model').textContent).toContain(longModel);
+  expect(screen.getByLabelText('Session title').textContent).toContain(longTitle);
+  expect(screen.getByLabelText('Turn completion').textContent).toContain('Done');
+});
+
+it.each([[false, '/v2/chat'], [true, '/v2/chat?desktop=floating']] as const)(
+  'mounts long status values beside a reachable composer floating=%s', async (floating, path) => {
+    history.replaceState(null, '', path);
+    render(<App floating={floating} />);
+    await screen.findByLabelText('Attach images');
+    await send('long status');
+    await complete({ latency_ms: 1250, model: longModel, title: longTitle });
+    expect((screen.getByLabelText('Request model').textContent || '').includes(longModel)).toBe(true);
+    expect((screen.getByLabelText('Session title').textContent || '').includes(longTitle)).toBe(true);
+    expect(document.querySelector('[data-composer]')).toBeTruthy();
+    expect(screen.getByLabelText('Turn outcome').style.overflowY).toBe('auto');
+  },
+);
+
 it.each([[false, '/v2/chat'], [true, '/v2/chat?desktop=floating']] as const)(
   'forwards local battery into mounted ChatMode floating=%s', async (floating, path) => {
     powerPayload = { power: { on_battery: true, percent: 75 } };
