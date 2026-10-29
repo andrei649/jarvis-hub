@@ -150,6 +150,10 @@ class PlaywrightBrowserDriver:
         self._console_truncated = 0
         self._console_epoch = 0
         self._console_page = None
+        self._dialog_cdp = None
+        self._dialog_page = None
+        self._dialog_observer = None
+        self._dialog_handlers: list[tuple[object, str, object]] = []
 
     def _clear_console(self) -> None:
         self._console_records.clear()
@@ -567,6 +571,7 @@ class PlaywrightBrowserDriver:
             await self._close_resources()
 
     async def _close_resources(self) -> None:
+        await self.stop_dialog_observer()
         if self._console_page is not None:
             remove = getattr(self._console_page, 'remove_listener', None)
             if callable(remove):
@@ -629,6 +634,95 @@ class PlaywrightBrowserDriver:
         if failures:
             raise PlaywrightDriverError('browser_cleanup_unverified:' + ','.join(failures))
         self._launched_hosts = frozenset()
+
+    async def start_dialog_observer(self):
+        """Observe owned-page dialogs through Chromium CDP; never respond via CDP."""
+        from .browser_dialogs import DialogFrameObserver
+
+        if self.browser_name != 'chromium' or not self.host_enabled:
+            raise PlaywrightUnavailable('browser_dialog_unavailable')
+        page = await self._ensure_started()
+        if self._dialog_observer is not None:
+            return self._dialog_observer
+        context = self._context
+        if not callable(getattr(context, 'new_cdp_session', None)):
+            raise PlaywrightUnavailable('browser_dialog_unavailable')
+        cdp = None
+        handlers = []
+        try:
+            cdp = await context.new_cdp_session(page)
+            if not callable(getattr(cdp, 'on', None)) or not callable(getattr(page, 'on', None)):
+                raise PlaywrightUnavailable('browser_dialog_unavailable')
+            observer = DialogFrameObserver(page=page)
+            for event, callback in (
+                ('Page.javascriptDialogOpening', observer.on_cdp_open),
+                ('Page.frameNavigated', lambda _event: observer.invalidate()),
+                ('Page.frameDetached', lambda _event: observer.invalidate()),
+                ('Page.navigatedWithinDocument', lambda _event: observer.invalidate()),
+            ):
+                cdp.on(event, callback)
+                handlers.append((cdp, event, callback))
+            page.on('dialog', observer.on_playwright_dialog)
+            handlers.append((page, 'dialog', observer.on_playwright_dialog))
+            await cdp.send('Page.enable')
+            snapshot = await cdp.send('Page.getFrameTree')
+            root = snapshot.get('frameTree', {}).get('frame', {})
+            if (not isinstance(root, dict) or not all(
+                    type(root.get(key)) is str and root[key]
+                    for key in ('id', 'loaderId', 'url'))):
+                raise PlaywrightUnavailable('browser_dialog_unavailable')
+        except Exception:
+            for emitter, event, callback in handlers:
+                remove = getattr(emitter, 'remove_listener', None)
+                if callable(remove):
+                    with contextlib.suppress(Exception):
+                        remove(event, callback)
+            if cdp is not None:
+                with contextlib.suppress(Exception):
+                    await cdp.detach()
+            raise PlaywrightUnavailable('browser_dialog_unavailable') from None
+        self._dialog_cdp = cdp
+        self._dialog_page = page
+        self._dialog_handlers = handlers
+        self._dialog_observer = observer
+        return observer
+
+    async def stop_dialog_observer(self) -> None:
+        for emitter, event, callback in self._dialog_handlers:
+            remove = getattr(emitter, 'remove_listener', None)
+            if callable(remove):
+                with contextlib.suppress(Exception):
+                    remove(event, callback)
+        self._dialog_handlers = []
+        cdp = self._dialog_cdp
+        self._dialog_cdp = None
+        self._dialog_page = None
+        if self._dialog_observer is not None:
+            self._dialog_observer.refuse('dialog_closed')
+        self._dialog_observer = None
+        if cdp is not None:
+            try:
+                await cdp.detach()
+            except Exception:
+                raise PlaywrightDriverError('browser_dialog_cleanup_unverified') from None
+
+    async def arm_dialog_observer(self, *, document_epoch: int):
+        """Capture the actual main-frame identity before one approved operation."""
+        observer, cdp = self._dialog_observer, self._dialog_cdp
+        if observer is None or cdp is None:
+            raise PlaywrightUnavailable('browser_dialog_unavailable')
+        try:
+            snapshot = await cdp.send('Page.getFrameTree')
+            frame = snapshot['frameTree']['frame']
+            root_id, loader_id, url = (frame[key] for key in ('id', 'loaderId', 'url'))
+            if not all(type(value) is str and value for value in (root_id, loader_id, url)):
+                raise ValueError('missing frame identity')
+            observer.arm(root_frame_id=root_id, loader_id=loader_id,
+                         frame_url=url, document_epoch=document_epoch)
+            return observer
+        except Exception:
+            observer.refuse('dialog_frame_unknown')
+            raise PlaywrightUnavailable('browser_dialog_unavailable') from None
 
     async def navigate(self, *, url: str, wait_until: str = "domcontentloaded") -> dict:
         self._assert_execution_current()
