@@ -97,6 +97,23 @@ def test_selection_keeps_h396_diagnostics_when_latency_is_unselected():
     }
 
 
+def test_broken_optional_status_preference_retains_core_outcome_without_detail(caplog):
+    from agents import web
+
+    class BrokenOrch:
+        def get_setting(self, *_args):
+            raise RuntimeError('private status setting')
+
+    measured = {'completion': {'kind': 'answered'}, 'tools': {'called': 1},
+                'output': {'visible': True}, 'file_mutations': 1,
+                'file_mutation_attribution': 'confirmed', 'latency_ms': 20}
+    assert web._selected_turn_outcome(BrokenOrch(), measured) == {
+        key: measured[key] for key in ('completion', 'tools', 'output',
+                                      'file_mutations', 'file_mutation_attribution')}
+    assert 'optional turn status selection unavailable' in caplog.text
+    assert 'private status setting' not in caplog.text
+
+
 def test_cache_epoch_is_scoped_and_zero_reads_hide():
     from agents.core.status_cache_epoch import CacheEpochs
 

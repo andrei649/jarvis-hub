@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -26,6 +27,7 @@ MAX_IMAGE_SRC = 512
 MAX_IMAGE_BYTES = 8_000
 IDLE_SECONDS = 60.0
 LIFETIME_SECONDS = 600.0
+logger = logging.getLogger('jarvis.browser.session')
 
 
 class SessionRefused(ValueError):
@@ -141,6 +143,7 @@ class BrowserSession:
         self.observe_page(page)
         observation = await self.driver.observe_snapshot()
         output = []
+        skipped = 0
         for frame in list(page.frames)[:MAX_FRAMES]:
             if len(self.refs) >= MAX_REFS or len(output) >= MAX_REFS:
                 break
@@ -156,11 +159,13 @@ class BrowserSession:
                     if not await owner.is_visible():
                         continue
                 except Exception:
+                    skipped += 1
                     continue
             try:
                 locator = frame.locator('a,button,input,select,textarea,[role],[tabindex]')
                 count = min(await locator.count(), MAX_REFS - len(output))
             except Exception:
+                skipped += 1
                 continue
             for index in range(count):
                 try:
@@ -191,7 +196,10 @@ class BrowserSession:
                         output.pop()
                         break
                 except Exception:
+                    skipped += 1
                     continue
+        if skipped:
+            logger.debug('browser snapshot skipped inspection failures count=%d', skipped)
         observation['refs'] = output
         observation['generation'] = self.generation
         return observation
@@ -206,6 +214,7 @@ class BrowserSession:
         truncated = len(page.frames) > MAX_FRAMES
         scanned = 0
         budget_exhausted = False
+        skipped_frames = 0
         for frame in list(page.frames)[:MAX_FRAMES]:
             url = str(frame.url)
             parsed_frame = urlsplit(url)
@@ -223,6 +232,7 @@ class BrowserSession:
                     if not await owner.is_visible():
                         continue
                 except Exception:
+                    skipped_frames += 1
                     continue
             try:
                 locator = frame.locator('img')
@@ -308,6 +318,9 @@ class BrowserSession:
                 except Exception:
                     dropped += 1
                     truncated = True
+        if skipped_frames:
+            logger.debug('browser image frames skipped after inspection failure count=%d',
+                         skipped_frames)
         return {'observation': 'images', 'images': output, 'count': len(output),
                 'dropped': dropped, 'truncated': truncated, 'untrusted': True,
                 'generation': self.generation}

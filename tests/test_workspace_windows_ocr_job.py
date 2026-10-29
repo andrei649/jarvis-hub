@@ -11,6 +11,24 @@ from io import BytesIO
 import pytest
 
 
+def test_win_command_line_is_exact_and_rejects_nul_before_serialization():
+    import subprocess
+
+    from agents.core.workspace.win_job_process import _validated_command_line
+
+    command = ['C:\\Python\\python.exe', '-c', 'print("hello world")']
+    cwd = 'C:\\scratch'
+    env = {'TEST_ONLY': 'value'}
+    assert _validated_command_line(command, cwd, env) == subprocess.list2cmdline(command)
+    for bad_command, bad_cwd, bad_env in (
+        ([command[0], 'bad\0arg'], cwd, env),
+        (command, 'C:\\bad\0dir', env),
+        (command, cwd, {'BAD': 'value\0'}),
+    ):
+        with pytest.raises(OSError, match='invalid process environment'):
+            _validated_command_line(bad_command, bad_cwd, bad_env)
+
+
 def test_job_spawn_sets_limits_and_atomic_ownership_before_resume():
     from agents.core.workspace.win_job_process import OwnedJobProcess
 

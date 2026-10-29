@@ -3,6 +3,68 @@
 import pytest
 
 
+@pytest.mark.asyncio
+async def test_snapshot_skips_failed_frame_and_keeps_later_grounded_ref(caplog):
+    from types import SimpleNamespace
+
+    from agents.core.browser_session import BrowserSession
+
+    class Handle:
+        async def is_visible(self):
+            return True
+
+        async def evaluate(self, _script):
+            return {'connected': True, 'hidden': False, 'disabled': False,
+                    'role': 'button', 'name': 'Continue', 'target': '', 'focus': False}
+
+    class Locator:
+        async def count(self):
+            return 1
+
+        def nth(self, _index):
+            return self
+
+        async def element_handle(self):
+            return Handle()
+
+    class Frame:
+        url = 'https://example.test/page'
+
+        def __init__(self, *, broken=False):
+            self.broken = broken
+
+        def locator(self, _selector):
+            if self.broken:
+                raise RuntimeError('private frame content')
+            return Locator()
+
+        async def frame_element(self):
+            return SimpleNamespace(is_visible=lambda: _true())
+
+    async def _true():
+        return True
+
+    main, child = Frame(broken=True), Frame()
+    page = SimpleNamespace(frames=[main, child], main_frame=main, on=lambda *_args: None)
+
+    class Driver:
+        async def _ensure_started(self):
+            return page
+
+        async def observe_snapshot(self):
+            return {'observation': 'structured_ui'}
+
+    session = BrowserSession('a' * 32, Driver(),
+                             SimpleNamespace(domain_allowed=lambda _url: (True, '')),
+                             SimpleNamespace(pinned_hosts=lambda: {'example.test'}),
+                             'agent', 'owner', None, 'head', 'registration')
+    with caplog.at_level('DEBUG', logger='jarvis.browser.session'):
+        result = await session.snapshot()
+    assert len(result['refs']) == 1 and result['refs'][0]['ref'] == '@e1'
+    assert 'browser snapshot skipped inspection failures count=1' in caplog.text
+    assert 'private frame content' not in caplog.text
+
+
 def test_session_request_requires_explicit_mode_and_bounded_actions():
     from agents.core.browser_runtime import BrowserPlanRefused, validate_browser_request
 

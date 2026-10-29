@@ -252,6 +252,32 @@ async def test_router_refresh_selects_keyless_custom_and_restores_generic(active
 
 
 @pytest.mark.asyncio
+async def test_router_failed_health_check_retires_previous_without_leaking_detail(active, monkeypatch, caplog):
+    from agents.core.llm.hybrid_router import HybridRouter
+
+    router = HybridRouter()
+    router._compatible_backend = SimpleNamespace(aclose=lambda: None)
+    router._compatible_model = 'generic-model'
+    router._compatible_provider_id = 'openrouter'
+    router._cloud_available = True
+    await router.refresh_custom(active)
+    previous = router._custom_endpoint_runtime
+    old_backend = router._compatible_backend
+
+    def broken_check():
+        raise RuntimeError('private endpoint detail')
+
+    monkeypatch.setattr(previous, 'check', broken_check)
+    await router.refresh_custom(active)
+    assert previous.active is False
+    assert router._custom_endpoint_runtime is not previous
+    assert router._compatible_backend is not old_backend
+    assert router._compatible_provider_id == 'custom:one'
+    assert 'owner custom endpoint health check unavailable' in caplog.text
+    assert 'private endpoint detail' not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_explicit_owner_validation_uses_bounded_guarded_models_request(active):
     seen = []
 

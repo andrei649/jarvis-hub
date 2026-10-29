@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import threading
 import time
 from contextlib import suppress
@@ -21,6 +22,8 @@ from .custom_endpoint_credentials import CustomCredentialBinding, CustomCredenti
 from .providers import ProviderProfile, selection_gates
 from .providers.install_service import _owner_current
 from .providers.packages import ProviderPackageError
+
+logger = logging.getLogger('jarvis.llm.custom_endpoint')
 
 
 def profile_for(endpoint: metadata.CustomEndpoint) -> ProviderProfile:
@@ -218,7 +221,8 @@ class CustomEndpointService:
                         eligible.append(item.identity)
                 legacy_candidate = next(iter(eligible), None)
         except Exception:
-            pass
+            # This is a display-only legacy hint; never leak setting values.
+            logger.warning('custom endpoint legacy hint unavailable')
         return {'endpoints': rows, 'choice_epoch': epoch,
                 'active': f'custom:{active}' if active else None,
                 'legacy_recovery_candidate': legacy_candidate,

@@ -270,6 +270,24 @@ async def test_host_driver_refuses_to_start_without_a_per_request_url_guard():
     assert manager.started == 0
 
 
+def test_execution_guard_exception_refuses_without_logging_untrusted_detail(caplog):
+    driver = PlaywrightBrowserDriver()
+    driver.set_execution_guard(lambda: True)
+    driver._assert_execution_current()
+    driver.set_execution_guard(lambda: False)
+    with pytest.raises(PlaywrightHostDisabled, match='approved browser task unavailable'):
+        driver._assert_execution_current()
+
+    def broken_guard():
+        raise RuntimeError('private page text')
+
+    driver.set_execution_guard(broken_guard)
+    with pytest.raises(PlaywrightHostDisabled, match='approved browser task unavailable'):
+        driver._assert_execution_current()
+    assert 'browser execution guard raised; refusing' in caplog.text
+    assert 'private page text' not in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_cleaned(
     tmp_path, monkeypatch

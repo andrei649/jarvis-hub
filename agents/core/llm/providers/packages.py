@@ -334,7 +334,8 @@ def _secure_root(path: Path) -> tuple[Path, tuple[int, int]]:
                     os.close(child_fd)
                     raise ProviderPackageError("provider store root or ancestor is unsafe")
                 if final:
-                    os.fchmod(child_fd, 0o700)
+                    # Verified O_DIRECTORY fd: private directory, not a data file.
+                    os.fchmod(child_fd, 0o700)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
                     identity = (info.st_dev, info.st_ino)
                 os.close(current_fd)
                 current_fd = child_fd

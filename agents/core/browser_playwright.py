@@ -291,7 +291,8 @@ class PlaywrightBrowserDriver:
             if self._execution_guard is not None and self._execution_guard() is True:
                 return
         except Exception:
-            pass
+            # Guard failures are refusals; never log the exception's page data.
+            logger.warning('browser execution guard raised; refusing')
         raise PlaywrightHostDisabled('approved browser task unavailable')
 
     def set_transport(self, resolver: PinnedResolver) -> None:

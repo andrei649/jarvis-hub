@@ -55,6 +55,59 @@ def _capture_owned(monkeypatch, script: str) -> tuple[dict, object, object]:
     return captured, command, spawn
 
 
+@pytest.mark.asyncio
+async def test_missing_owned_pipe_raises_explicit_runtime_error():
+    from agents.core.workspace import extract_process
+
+    with pytest.raises(OSError, match='owned extraction input pipe unavailable'):
+        await extract_process._send_owned_input(SimpleNamespace(stdin=None), b'data')
+    with pytest.raises(OSError, match='owned extraction output pipe unavailable'):
+        await extract_process._read_owned_line(SimpleNamespace(stdout=None), bytearray())
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX ps sampler')
+def test_ps_sampler_uses_fixed_absolute_executable_and_argv(monkeypatch):
+    from agents.core.workspace import extract_process
+
+    seen = []
+
+    def fake_run(argv, **kwargs):
+        seen.append((argv, kwargs))
+        return SimpleNamespace(returncode=0, stdout='')
+
+    monkeypatch.setattr(extract_process.subprocess, 'run', fake_run)
+    assert extract_process._session_members(1) == []
+    assert len(seen) == 1
+    argv, kwargs = seen[0]
+    assert argv[0] in {'/bin/ps', '/usr/bin/ps'} and os.path.isabs(argv[0])
+    assert argv[1:] == ['-A', '-o', 'pid=,rss=']
+    assert kwargs['timeout'] == 1 and kwargs.get('shell', False) is False
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX owned OCR launch')
+def test_owned_child_launch_is_fixed_argv_without_shell(monkeypatch):
+    from agents.core.workspace import extract_process
+
+    seen = []
+    process = object()
+
+    def fake_popen(argv, **kwargs):
+        seen.append((argv, kwargs))
+        return process
+
+    monkeypatch.setattr(extract_process.subprocess, 'Popen', fake_popen)
+    env = {'TEST_ONLY': 'value'}
+    assert extract_process._spawn_owned('pdf', 1.5, env) is process
+    argv, kwargs = seen[0]
+    assert argv == [*extract_process._owned_command(), 'pdf', '1.5', '--owned-ocr']
+    assert os.path.isabs(argv[0])
+    assert kwargs['cwd'] == extract_process._REPO and kwargs['env'] is env
+    assert kwargs['start_new_session'] is True and kwargs['close_fds'] is True
+    assert kwargs['shell'] is False
+    assert kwargs['stdin'] is subprocess.PIPE and kwargs['stdout'] is subprocess.PIPE
+    assert kwargs['stderr'] is subprocess.DEVNULL
+
+
 @pytest.fixture(autouse=True)
 def opt_in(monkeypatch):
     monkeypatch.setenv("NERVA_WORKSPACE_KILLABLE_EXTRACTION", "1")

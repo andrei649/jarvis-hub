@@ -581,3 +581,19 @@ def test_sticky_owned_temp_ancestor_remains_supported(tmp_path: Path):
     store = ProviderPackageStore(sticky / "store", signing=signing)
     assert store.root.is_dir()
     assert store.root.stat().st_mode & 0o777 == 0o700
+
+
+def test_secure_root_restricts_only_verified_directory_descriptor(tmp_path: Path):
+    from agents.core.llm.providers.packages import _secure_root
+
+    root = tmp_path / 'store'
+    root.mkdir(mode=0o755)
+    root.chmod(0o755)
+    sentinel = root / 'sentinel'
+    sentinel.write_bytes(b'public synthetic fixture')
+    sentinel.chmod(0o600)
+    path, identity = _secure_root(root)
+    info = root.stat()
+    assert path == root and identity == (info.st_dev, info.st_ino)
+    assert info.st_mode & 0o777 == 0o700
+    assert sentinel.stat().st_mode & 0o777 == 0o600

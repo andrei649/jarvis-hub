@@ -208,6 +208,23 @@ def test_legacy_bare_custom_reports_first_owner_authorized_candidate_only(servic
     assert metadata.read_choice().active_key is None
 
 
+def test_unreadable_legacy_hint_is_silent_about_values_and_cannot_activate(service, monkeypatch, caplog):
+    svc, _, _ = service
+    svc.create('one', 'One', 'http://127.0.0.1:1234/v1',
+               'm', 'none', 'local', actor=owner())
+
+    def unreadable(*_args):
+        raise RuntimeError('private setting value')
+
+    monkeypatch.setattr(settings_db, 'read_setting', unreadable)
+    status = svc.list(actor=owner())
+    assert status['legacy_recovery_candidate'] is None
+    assert status['active'] is None
+    assert metadata.read_choice().active_key is None
+    assert 'custom endpoint legacy hint unavailable' in caplog.text
+    assert 'private setting value' not in caplog.text
+
+
 def test_bare_custom_alias_of_proven_active_choice_self_heals_without_new_consent(service):
     svc, seen, events = service
     created = svc.create('one', 'One', 'http://127.0.0.1:1234/v1', 'm',

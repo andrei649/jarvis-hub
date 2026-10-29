@@ -12,7 +12,9 @@ import math
 import os
 import shutil
 import signal
-import subprocess
+
+# Fixed-argv owned extraction child and bounded system ps sampler only.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import threading
@@ -29,6 +31,7 @@ MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
 RSS_POLL_SECONDS = 0.1
 _SLOTS = threading.BoundedSemaphore(2)  # shared across request event loops
 _REPO = Path(__file__).resolve().parents[3]
+_PS_BINARIES = ('/bin/ps', '/usr/bin/ps') if sys.platform == 'darwin' else ('/usr/bin/ps', '/bin/ps')
 # 10 million permitted Unicode codepoints can expand to 120 MiB of ASCII JSON
 # when every codepoint needs a surrogate-pair escape.
 _MAX_FRAME_BYTES = 128 * 1024 * 1024
@@ -78,9 +81,14 @@ def _session_members(sid: int) -> list[tuple[int, int, int]] | None:
     or killing a recycled page group from an unrelated session.
     """
     try:
-        result = subprocess.run(
-            ["ps", "-A", "-o", "pid=,rss="], capture_output=True,
-            text=True, timeout=1, check=False)
+        ps = next((path for path in _PS_BINARIES if os.path.isfile(path)
+                   and os.access(path, os.X_OK)), None)
+        if ps is None:
+            return None
+        # Fixed absolute system executable and option-only argv; no shell.
+        result = subprocess.run(  # nosec B603
+            [ps, "-A", "-o", "pid=,rss="], capture_output=True,
+            text=True, timeout=1, check=False, shell=False)
         if result.returncode != 0:
             return None
         members = []
@@ -283,10 +291,12 @@ def _owned_command() -> list[str]:
 
 def _spawn_owned(kind: str, seconds: float, env: dict[str, str]) -> subprocess.Popen[bytes]:
     """Retain the isolated session leader until the owner signals its group."""
-    return subprocess.Popen(
+    # _owned_command supplies the current Python executable and fixed module;
+    # kind/deadline are separate argv elements, with owned cwd/env and no shell.
+    return subprocess.Popen(  # nosec B603
         [*_owned_command(), kind, str(seconds), "--owned-ocr"],
         cwd=_REPO, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+        stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True, shell=False)
 
 
 async def _fd_ready(fd: int, *, write: bool = False) -> None:
@@ -311,7 +321,8 @@ async def _fd_ready(fd: int, *, write: bool = False) -> None:
 
 
 async def _send_owned_input(process: subprocess.Popen[bytes], data: bytes) -> None:
-    assert process.stdin is not None
+    if process.stdin is None:
+        raise OSError('owned extraction input pipe unavailable')
     fd = process.stdin.fileno()
     os.set_blocking(fd, False)
     source = memoryview(data)
@@ -330,7 +341,8 @@ async def _send_owned_input(process: subprocess.Popen[bytes], data: bytes) -> No
 
 
 async def _read_owned_line(process: subprocess.Popen[bytes], buffer: bytearray) -> bytes | None:
-    assert process.stdout is not None
+    if process.stdout is None:
+        raise OSError('owned extraction output pipe unavailable')
     fd = process.stdout.fileno()
     os.set_blocking(fd, False)
     search_from = 0

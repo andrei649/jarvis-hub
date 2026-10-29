@@ -1394,7 +1394,8 @@ def _selected_turn_outcome(orchestrator, measured: dict | None, *, usage: dict |
             if 'battery' in fields:
                 result['battery'] = True  # selected client-owned PowerChip source
     except Exception:
-        pass
+        # Status preferences are optional; retain measured core fields only.
+        logger.warning('optional turn status selection unavailable')
     return result or None
 
 

@@ -10,7 +10,9 @@ import asyncio
 import ctypes
 import os
 import secrets
-import subprocess
+
+# Windows quoting only; process creation uses CreateProcessW with a Job list.
+import subprocess  # nosec B404
 import sys
 import time
 from contextlib import contextmanager, suppress
@@ -23,6 +25,14 @@ _UNVERIFIED_OWNERS = []  # Retain kill-on-close Jobs when cleanup cannot be prov
 _CHUNK = 65536
 _MAX_FRAME = 128 * 1024 * 1024
 _DRAIN_SECONDS = 5.0
+
+
+def _validated_command_line(command, cwd, env) -> str:
+    """Serialize an exact no-shell Windows argv after rejecting embedded NULs."""
+    values = (*command, cwd, *env.keys(), *env.values())
+    if (not command or any(type(part) is not str or '\0' in part for part in values)):
+        raise OSError('invalid process environment')
+    return subprocess.list2cmdline(command)
 
 
 class JobCleanupUnverified(OSError):
@@ -237,9 +247,7 @@ class _Win32Kernel:
             startup.StartupInfo.hStdError = stdio[2]
             startup.lpAttributeList = ctypes.cast(attributes, ctypes.c_void_p)
             info = self.ProcessInfo()
-            line = ctypes.create_unicode_buffer(subprocess.list2cmdline(command))
-            if any('\0' in str(part) for part in (*command, cwd, *env.keys(), *env.values())):
-                raise OSError('invalid process environment')
+            line = ctypes.create_unicode_buffer(_validated_command_line(command, cwd, env))
             block = ctypes.create_unicode_buffer(
                 ''.join(f'{key}={value}\0' for key, value in sorted(env.items())) + '\0')
             flags = 0x00080000 | 0x00000004 | 0x00000400 | 0x08000000

@@ -610,7 +610,9 @@ class HybridRouter(LLMRouter):
                 await asyncio.to_thread(previous.check)
                 return
             except Exception:
-                pass
+                # Failed health checks retire the old runtime; keep details out
+                # of logs because endpoint errors may contain credentials.
+                logger.warning('owner custom endpoint health check unavailable')
         previous_signed = getattr(self, '_selected_provider_runtime', None)
         if previous_signed is not None:
             previous_signed.retire()
