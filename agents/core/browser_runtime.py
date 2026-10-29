@@ -6,7 +6,6 @@ import contextlib
 import hashlib
 import importlib.util
 import json
-import os
 import re
 import secrets
 import shutil
@@ -14,6 +13,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from .env_config import env_str
 
 MAX_STEPS = 20
 MAX_PLAN_BYTES = 60_000
@@ -178,7 +179,7 @@ def validate_browser_request(args: dict) -> BrowserRequest:
 def _server_domains() -> tuple[str, ...]:
     from .browser_transport import is_private_host_literal
 
-    raw = os.getenv('JARVIS_BROWSER_ALLOWED_DOMAINS', '')
+    raw = env_str('JARVIS_BROWSER_ALLOWED_DOMAINS', '')
     domains = tuple(part.strip().lower() for part in raw.split(',') if part.strip())
     if not domains or len(domains) > 64 or any(
         len(domain) > 253 or is_private_host_literal(domain) or not re.fullmatch(
@@ -210,7 +211,7 @@ def local_browser_ready(*, kernel=None, queue=None, fixture_origin=None) -> bool
             return False
         if not kernel_enabled() or not callable(kernel) or getattr(queue, 'mediation_mode', None) != 'enforce':
             return False
-        if os.getenv('JARVIS_PLAYWRIGHT_BROWSER', 'chromium') != 'chromium':
+        if env_str('JARVIS_PLAYWRIGHT_BROWSER', 'chromium') != 'chromium':
             return False
         if fixture_origin is None:
             _server_domains()
@@ -226,7 +227,7 @@ class BrowserRuntime:
     def __init__(self, *, queue, approved_task, authorizer, enqueue,
                  execution_check, registration=None, fixture_origin=None,
                  driver_factory=None, control_current=None, revalidator=None):
-        if fixture_origin is not None and not os.getenv('PYTEST_CURRENT_TEST'):
+        if fixture_origin is not None and not env_str('PYTEST_CURRENT_TEST'):
             raise ValueError('browser fixture is test-only')
         self.queue, self.approved_task = queue, approved_task
         self.authorizer, self.enqueue = authorizer, enqueue
@@ -265,7 +266,7 @@ class BrowserRuntime:
                      'browser_playwright.py', 'browser_kernel.py', 'browser_session.py'):
             source.append(hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest())
         encoded = json.dumps([domains, source, _chrome_binary(),
-                              os.getenv('JARVIS_PLAYWRIGHT_BROWSER', 'chromium')],
+                              env_str('JARVIS_PLAYWRIGHT_BROWSER', 'chromium')],
                              separators=(',', ':')).encode()
         return hashlib.sha256(encoded).hexdigest()
 

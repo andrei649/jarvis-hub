@@ -20,7 +20,6 @@ import base64
 import contextlib
 import json
 import logging
-import os
 import re
 import shutil
 import tempfile
@@ -37,6 +36,7 @@ from agents.core.browser_transport import (
     PinnedResolver,
     is_private_host_literal,
 )
+from agents.core.env_config import env_str
 
 logger = logging.getLogger("jarvis.browser.playwright")
 
@@ -152,10 +152,10 @@ class PlaywrightBrowserDriver:
             )
         transport = kwargs.pop("transport", None)
         kwargs.setdefault("host_enabled", True)
-        kwargs.setdefault("browser", os.getenv("JARVIS_PLAYWRIGHT_BROWSER", "chromium"))
+        kwargs.setdefault("browser", env_str("JARVIS_PLAYWRIGHT_BROWSER", "chromium"))
         kwargs.setdefault("headless", env_flag("JARVIS_PLAYWRIGHT_HEADLESS", True))
         kwargs.setdefault("allow_private_urls", env_flag("JARVIS_BROWSER_ALLOW_PRIVATE_URLS"))
-        configured_downloads = os.getenv("JARVIS_PLAYWRIGHT_DOWNLOAD_DIR", "").strip()
+        configured_downloads = env_str("JARVIS_PLAYWRIGHT_DOWNLOAD_DIR", "").strip()
         if configured_downloads:
             kwargs.setdefault("download_dir", configured_downloads)
         driver = cls(**kwargs)
