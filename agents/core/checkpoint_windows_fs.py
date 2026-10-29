@@ -22,7 +22,8 @@ _FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
 
 class WindowsFsRefusal(OSError):
-    def __init__(self, reason: str, *, unverified_handles: tuple[_RawOwner, ...] = ()):
+    def __init__(self, reason: str, *,
+                 unverified_handles: tuple[HeldHandle | _RawOwner, ...] = ()):
         self.reason = reason
         self.unverified_handles = unverified_handles
         super().__init__(reason)
@@ -71,8 +72,8 @@ class HeldHandle:
             raise WindowsFsRefusal("handle_closed")
         return self
 
-    def __exit__(self, *_exc):
-        self.close()
+    def __exit__(self, _type, error, _traceback):
+        _close_owned(self, error)
 
 
 class _RawOwner:
@@ -86,6 +87,17 @@ class _RawOwner:
         if self.raw is not None:
             self._api.close(self.raw)
             self.raw = None
+
+
+def _close_owned(owner: HeldHandle | _RawOwner, cause: BaseException | None = None) -> None:
+    """Never lose an internal owner when its close result is uncertain."""
+    try:
+        owner.close()
+    except BaseException as close_error:
+        prior = cause.unverified_handles if isinstance(cause, WindowsFsRefusal) else ()
+        raise WindowsFsRefusal("handle_close_uncertain",
+                               unverified_handles=(*prior, owner)) from (
+                                   cause if cause is not None else close_error)
 
 
 def _component(name: str) -> str:
@@ -170,8 +182,8 @@ class WindowsHistoryFs:
         try:
             self.verify_mount(root)
             return root
-        except BaseException:
-            root.close()
+        except BaseException as error:
+            _close_owned(root, error)
             raise
 
     def verify_mount(self, root: HeldHandle) -> None:
@@ -192,12 +204,15 @@ class WindowsHistoryFs:
         raw = self.api.open_child(parent.raw, name, directory)
         if raw is None:
             return None
+        owner = _RawOwner(self.api, raw)
         try:
-            stamp = self._check(raw, directory=directory,
+            stamp = self._check(owner.raw, directory=directory,
                                 volume=parent.stamp.identity.volume_serial)
-            return HeldHandle(self.api, raw, stamp)
-        except BaseException:
-            self.api.close(raw)
+            result = HeldHandle(self.api, owner.raw, stamp)
+            owner.raw = None
+            return result
+        except BaseException as error:
+            _close_owned(owner, error)
             raise
 
     def verify_name(self, parent: HeldHandle, name: str, held: HeldHandle) -> WinStamp:
