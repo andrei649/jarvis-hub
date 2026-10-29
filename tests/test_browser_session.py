@@ -103,6 +103,201 @@ def test_console_event_ring_caps_text_records_and_bytes_without_retaining_argume
     assert not driver._console_records and driver._console_bytes == 0
 
 
+@pytest.mark.parametrize('navigated', [0, 1])
+def test_duplicate_url_child_console_event_is_not_retained_after_either_navigation(navigated):
+    from types import SimpleNamespace
+
+    from agents.core.browser_playwright import PlaywrightBrowserDriver
+
+    driver = PlaywrightBrowserDriver()
+    main = SimpleNamespace(url='https://example.test/main')
+    first = SimpleNamespace(url='https://example.test/child')
+    second = SimpleNamespace(url=first.url)
+    driver._page = SimpleNamespace(frames=[main, first, second], main_frame=main)
+    driver._on_console(SimpleNamespace(type='log', text='from-ambiguous-child',
+                                       location={'url': first.url}))
+    driver._on_console_navigation((first, second)[navigated])
+    assert not driver._console_records
+    assert driver._console_bytes == 0
+
+
+@pytest.mark.asyncio
+async def test_image_inventory_never_mints_ref_for_source_changed_during_observation():
+    from types import SimpleNamespace
+
+    from agents.core.browser_session import BrowserSession, SessionRefused
+
+    state = {'source': 'old', 'changed': False}
+
+    class Handle:
+        async def is_visible(self):
+            return True
+
+        async def evaluate(self, expression):
+            if 'src_truncated' in expression:
+                return {'connected': True, 'hidden': False, 'alt': 'Image',
+                        'src': 'https://example.test/old.png', 'src_truncated': False,
+                        'width': 10, 'height': 10,
+                        'semantics': {'connected': True, 'hidden': False, 'disabled': False,
+                                      'role': 'img', 'name': 'Image',
+                                      'target': 'old-source-semantics'}}
+            return {'connected': True, 'hidden': False, 'disabled': False,
+                    'role': 'img', 'name': 'Image',
+                    'target': state['source'] + '-source-semantics'}
+
+    handle = Handle()
+    class Locator:
+        async def count(self):
+            return 1
+
+        def nth(self, _index):
+            return self
+
+        async def element_handle(self):
+            return handle
+
+    class Frame:
+        url = 'https://example.test/page'
+
+        def locator(self, _selector):
+            return Locator()
+
+    frame = Frame()
+    page = SimpleNamespace(frames=[frame], main_frame=frame,
+                           on=lambda *_args: None)
+    driver = SimpleNamespace(_ensure_started=lambda: _ready(page),
+                             _assert_execution_current=lambda: None)
+    def allowed(url):
+        if url.endswith('/old.png'):
+            state['source'] = 'new'
+            state['changed'] = True
+        return True, ''
+
+    policy = SimpleNamespace(domain_allowed=allowed)
+    pins = SimpleNamespace(pinned_hosts=lambda: {'example.test'})
+    session = BrowserSession('a' * 32, driver, policy, pins, 'agent', 'owner',
+                             None, 'head', 'registration')
+    result = await session.get_images()
+    assert result['images'][0]['source_url'] == 'https://example.test/old.png'
+    assert state['changed']
+    ref = result['images'][0]['ref']
+    assert session.refs[ref].target == 'old-source-semantics'
+    with pytest.raises(SessionRefused, match='stale_browser_ref'):
+        await session.resolve_ref(ref, 'click')
+
+
+async def _ready(value):
+    return value
+
+
+@pytest.mark.asyncio
+async def test_image_inventory_exact_row_cap_reports_eligible_later_frame():
+    from types import SimpleNamespace
+
+    from agents.core.browser_session import MAX_IMAGES, BrowserSession
+
+    class Handle:
+        async def is_visible(self):
+            return True
+
+        async def evaluate(self, _expression):
+            return {'connected': True, 'hidden': False, 'alt': 'Image',
+                    'src': 'data:image/png;base64,AAA', 'src_truncated': False,
+                    'width': 1, 'height': 1}
+
+    class Locator:
+        def __init__(self, count):
+            self.total = count
+
+        async def count(self):
+            return self.total
+
+        def nth(self, _index):
+            return self
+
+        async def element_handle(self):
+            return Handle()
+
+    class Frame:
+        def __init__(self, count):
+            self.url = 'https://example.test/page'
+            self.images = Locator(count)
+
+        def locator(self, _selector):
+            return self.images
+
+        async def frame_element(self):
+            return SimpleNamespace(is_visible=lambda: _ready(True))
+
+    main, child = Frame(MAX_IMAGES), Frame(1)
+    page = SimpleNamespace(frames=[main, child], main_frame=main,
+                           on=lambda *_args: None)
+    driver = SimpleNamespace(_ensure_started=lambda: _ready(page),
+                             _assert_execution_current=lambda: None)
+    policy = SimpleNamespace(domain_allowed=lambda _url: (True, ''))
+    pins = SimpleNamespace(pinned_hosts=lambda: {'example.test'})
+    session = BrowserSession('a' * 32, driver, policy, pins, 'agent', 'owner',
+                             None, 'head', 'registration')
+    result = await session.get_images()
+    assert result['count'] == MAX_IMAGES
+    assert result['truncated'] is True
+    assert result['dropped'] >= 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('candidates', 'hidden'), [(25, False), (101, True)])
+async def test_image_inventory_byte_and_scan_limits_report_known_omissions(candidates, hidden):
+    import json
+    from types import SimpleNamespace
+
+    from agents.core.browser_session import MAX_IMAGE_BYTES, BrowserSession
+
+    class Handle:
+        async def is_visible(self):
+            return True
+
+        async def evaluate(self, _expression):
+            return {'connected': True, 'hidden': hidden, 'alt': 'A' * 128,
+                    'src': 'https://example.test/' + 'x' * 480,
+                    'src_truncated': False, 'width': 1, 'height': 1,
+                    'semantics': {'connected': True, 'hidden': hidden,
+                                  'disabled': False, 'role': 'img',
+                                  'name': 'A' * 128, 'target': 'same-source'}}
+
+    class Locator:
+        async def count(self):
+            return candidates
+
+        def nth(self, _index):
+            return self
+
+        async def element_handle(self):
+            return Handle()
+
+    class Frame:
+        url = 'https://example.test/page'
+
+        def locator(self, _selector):
+            return Locator()
+
+    frame = Frame()
+    page = SimpleNamespace(frames=[frame], main_frame=frame, on=lambda *_args: None)
+    driver = SimpleNamespace(_ensure_started=lambda: _ready(page),
+                             _assert_execution_current=lambda: None)
+    session = BrowserSession('a' * 32, driver,
+                             SimpleNamespace(domain_allowed=lambda _url: (True, '')),
+                             SimpleNamespace(pinned_hosts=lambda: {'example.test'}),
+                             'agent', 'owner', None, 'head', 'registration')
+    result = await session.get_images()
+    assert result['truncated'] is True
+    assert result['count'] < candidates
+    if hidden:
+        assert result['count'] == 0 and result['dropped'] == 1
+    else:
+        assert result['dropped'] == candidates - result['count']
+        assert len(json.dumps(result['images'], ensure_ascii=False).encode()) <= MAX_IMAGE_BYTES
+
+
 @pytest.mark.asyncio
 async def test_uncertain_native_close_still_removes_console_listener_and_buffer():
     from types import SimpleNamespace

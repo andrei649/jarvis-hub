@@ -57,13 +57,14 @@ _SEMANTICS = """(e) => {
     disabled: !!e.disabled, hidden: e.getAttribute('aria-hidden') === 'true'};
 }"""
 
-_IMAGE_OBSERVATION = """(e) => ({
+_IMAGE_OBSERVATION = "(e) => { const semantics = (" + _SEMANTICS + """)(e); return {
   connected: e.isConnected, hidden: e.getAttribute('aria-hidden') === 'true',
   alt: (e.getAttribute('alt') || '').slice(0, 129),
   src: (e.currentSrc || e.src || '').slice(0, 513),
   src_truncated: (e.currentSrc || e.src || '').length > 512,
   width: e.naturalWidth || e.width || 0, height: e.naturalHeight || e.height || 0,
-})"""
+  semantics,
+}; }"""
 
 
 @dataclass
@@ -204,10 +205,8 @@ class BrowserSession:
         dropped = 0
         truncated = len(page.frames) > MAX_FRAMES
         scanned = 0
+        budget_exhausted = False
         for frame in list(page.frames)[:MAX_FRAMES]:
-            if scanned >= MAX_IMAGE_SCAN or len(output) >= MAX_IMAGES:
-                truncated = True
-                break
             url = str(frame.url)
             parsed_frame = urlsplit(url)
             if (parsed_frame.scheme not in {'http', 'https'} or not parsed_frame.hostname
@@ -229,11 +228,17 @@ class BrowserSession:
                 locator = frame.locator('img')
                 count = await locator.count()
             except Exception:
+                truncated = True
                 continue
-            remaining = MAX_IMAGE_SCAN - scanned
+            remaining = max(0, MAX_IMAGE_SCAN - scanned)
             if count > remaining:
                 truncated = True
                 dropped += count - remaining
+            if budget_exhausted or len(output) >= MAX_IMAGES:
+                if min(count, remaining):
+                    truncated = True
+                    dropped += min(count, remaining)
+                continue
             for index in range(min(count, remaining)):
                 scanned += 1
                 if len(output) >= MAX_IMAGES:
@@ -278,8 +283,7 @@ class BrowserSession:
                            'height': height, 'fetchable': fetchable,
                            'frame_origin': f'{parsed_frame.scheme}://{parsed_frame.netloc}',
                            'document_epoch': self.frame_epochs.get(id(frame), 0)}
-                    semantics = await handle.evaluate(_SEMANTICS)
-                    self.driver._assert_execution_current()
+                    semantics = raw.get('semantics')
                     if (type(semantics) is dict and semantics.get('connected')
                             and not semantics.get('hidden') and not semantics.get('disabled')
                             and len(self.refs) < MAX_REFS):
@@ -297,14 +301,13 @@ class BrowserSession:
                         if 'ref' in row:
                             self.refs.pop(row['ref'], None)
                         truncated = True
-                        dropped += 1
+                        dropped += min(count, remaining) - index
+                        budget_exhausted = True
                         break
                     output.append(row)
                 except Exception:
                     dropped += 1
                     truncated = True
-            if len(output) >= MAX_IMAGES:
-                break
         return {'observation': 'images', 'images': output, 'count': len(output),
                 'dropped': dropped, 'truncated': truncated, 'untrusted': True,
                 'generation': self.generation}

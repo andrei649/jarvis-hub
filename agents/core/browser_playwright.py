@@ -174,8 +174,9 @@ class PlaywrightBrowserDriver:
             text = raw_text[:MAX_CONSOLE_TEXT]
             if len(raw_text) > MAX_CONSOLE_TEXT:
                 self._console_truncated += 1
-            frame_id = next((id(frame) for frame in getattr(self._page, 'frames', ())
-                             if str(frame.url) == raw_url), None)
+            # Playwright's console location is a source URL, not the execution
+            # frame. Keep identity unknown and discard on any child navigation.
+            frame_id = None
             record = {'level': level, 'text': text, 'source_origin': origin,
                       'document_epoch': self._console_epoch, '_frame_id': frame_id}
             size = len(json.dumps(record, ensure_ascii=False).encode('utf-8'))
@@ -193,8 +194,8 @@ class PlaywrightBrowserDriver:
             self._console_dropped += 1
 
     def _on_console_navigation(self, frame) -> None:
-        # A new child document discards only that frame's old events. Main
-        # navigation invalidates all frames. Unknown script sources are dropped.
+        # Console locations cannot identify an execution frame. Any frame
+        # navigation discards unknown-origin records; main navigation clears all.
         if self._page is None or frame is self._page.main_frame:
             self._clear_console()
             return

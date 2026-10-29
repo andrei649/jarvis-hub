@@ -313,6 +313,7 @@ async def test_owner_approved_console_and_image_inventory_use_live_pinned_frames
     session = rig.runtime.sessions[sid]
     profile = session.driver.profile_dir
     identity = session.driver.owned_browser_identity
+    await session.driver._page.evaluate("console.log('main-after-child')")
     with pytest.raises(PlaywrightHostDisabled):
         await session.driver.console()
     with pytest.raises(PlaywrightHostDisabled):
@@ -337,9 +338,11 @@ async def test_owner_approved_console_and_image_inventory_use_live_pinned_frames
     console = observed['trace'][0]['result']
     images = observed['trace'][1]['result']
     assert console['observation'] == 'console' and console['untrusted'] is True
-    assert {'main-observation', 'child-observation'} <= {
+    assert {'main-after-child', 'child-observation'} <= {
         item['text'] for item in console['records']}
-    assert all(item['source_origin'] in {rig.page.origin, child} for item in console['records'])
+    assert 'main-observation' not in {item['text'] for item in console['records']}
+    assert all(item['source_origin'] in {'', rig.page.origin, child}
+               for item in console['records'])
     assert images['observation'] == 'images' and images['untrusted'] is True
     by_alt = {item['alt']: item for item in images['images']}
     assert {'Visible image', 'Child image', 'Embedded image'} <= set(by_alt)
@@ -421,9 +424,10 @@ async def test_console_navigation_and_close_discard_prior_document_events(browse
     assert started['ok'] is True, started
     sid = started['session_id']
     driver = rig.runtime.sessions[sid].driver
+    await driver._page.evaluate("console.log('main-after-child')")
     first = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
                                                'steps': [{'action': 'console'}]})
-    assert any(item['text'] == 'main-observation'
+    assert any(item['text'] == 'main-after-child'
                for item in first['trace'][0]['result']['records'])
     navigated = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
         'steps': [{'action': 'navigate', 'url': rig.page.origin + '/'}]})
@@ -431,7 +435,7 @@ async def test_console_navigation_and_close_discard_prior_document_events(browse
     second = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
                                                 'steps': [{'action': 'console'}]})
     assert second['ok'] is True
-    assert not any(item['text'] in {'main-observation', 'child-observation'}
+    assert not any(item['text'] in {'main-after-child', 'child-observation'}
                    for item in second['trace'][0]['result']['records'])
     assert await rig.runtime.close_owner_session(sid)
     assert not driver._console_records and driver._console_page is None
