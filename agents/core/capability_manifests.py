@@ -97,6 +97,7 @@ def _action(
     rollback: RollbackContract,
     implementation: str,
     contract_ref: str | None = None,
+    verification: str | None = None,
 ) -> CapabilityManifest:
     return CapabilityManifest(
         id=f"action:{kind}",
@@ -105,7 +106,7 @@ def _action(
         risk=risk,
         requires=("action-kernel",),
         supports=supports,
-        verification=action_verification_ref(kind),
+        verification=verification or action_verification_ref(kind),
         rollback=rollback,
         confidence=0.0,
         implementation=implementation,
@@ -407,6 +408,7 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.llm.custom_endpoint_service:CustomEndpointService.activate",
         contract_ref="agents.core.llm.custom_endpoint_contract:CUSTOM_ENDPOINT_CONTRACT",
+        verification="reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable",
     ),
     "media.present": _action(
         "media.present",
