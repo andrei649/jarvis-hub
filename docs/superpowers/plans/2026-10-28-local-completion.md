@@ -257,3 +257,23 @@ semantically reread and citations resolved; only H396 gained equivalence, bringi
 recorded totals to 133 equivalent, 447 partial, 117 missing with no stale pins. The
 native/mobile footer gap remains separately documented; no full-backend/live claim
 is added. A fresh clean full backend milestone is the next integration check.
+
+
+### GitHub review checkpoint — 2026-10-29
+
+The complete backend milestone on unchanged source ae618ee871c57c5c2d42510edb19da1ead9c882c
+finished with 30,410 cases: 30,286 passed, 14 failed, 110 skipped and no errors
+(1106.359 seconds). All 8 prior browser-milestone failures and all 27 earlier
+failures passed in this run. This is a review checkpoint with open regressions.
+
+The 14 current failures group into four CLI/action-registry integration cases,
+two minimal-agent outcome compatibility cases, seven pending-input SSE cases
+that now see additive outcome_progress before end, and one client-protocol
+schema/discovery case. They remain open. Complete frontend is 2,689/2,689 passed;
+common backend regression is 741 passed; metadata is 258 passed with one optional
+skip. The new GitHub draft will expose this committed checkpoint for review.
+
+Separately reviewed H686 candidate 2b234223 and uncaught-page-error candidate
+f7c03e79 remain isolated pending integration. Their focused results do not change
+the full backend verdict above. All 39 backlog items and all 697 accepted
+contracts remain required; this checkpoint does not mark the overall goal done.
