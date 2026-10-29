@@ -209,6 +209,77 @@ async def browser_session_close(session_id: str):
                         status_code=200 if closed else 409)
 
 
+class BrowserDialogProposalBody(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    dialog_id: str = Field(min_length=32, max_length=32)
+    choice: Literal['accept', 'dismiss']
+    prompt_text: str | None = Field(default=None, max_length=1024)
+    prompt_ref: str | None = Field(default=None, min_length=32, max_length=32)
+
+
+class BrowserDialogTextBody(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    dialog_id: str = Field(min_length=32, max_length=32)
+    prompt_text: str = Field(max_length=1024)
+
+
+@router.get('/api/browser/dialogs/tasks/{task_id}/card',
+            dependencies=[Depends(owner_web_principal)])
+async def browser_dialog_card(task_id: int):
+    """Exact private choice/value for the authenticated owner's decision card."""
+    runtime = _session_runtime()
+    if runtime is None or task_id <= 0:
+        return nocache_json({'found': False}, status_code=404)
+    card = await runtime.owner_dialog_card('admin', task_id)
+    return nocache_json({'found': card is not None, **(card or {})},
+                        status_code=200 if card is not None else 404)
+
+
+@router.get('/api/browser/dialogs/{opener_task_id}',
+            dependencies=[Depends(owner_web_principal)])
+async def browser_dialog_pending(opener_task_id: int):
+    runtime = _session_runtime()
+    if runtime is None or opener_task_id <= 0:
+        return nocache_json({'status': 'unavailable'}, status_code=404)
+    return nocache_json(await runtime.owner_dialog_pending('admin', opener_task_id))
+
+
+@router.post('/api/browser/dialogs/{opener_task_id}/text',
+             dependencies=[Depends(owner_web_principal)])
+async def browser_dialog_stage_text(opener_task_id: int, body: BrowserDialogTextBody):
+    """Keep owner-entered text process-local before any model or generic queue path."""
+    runtime = _session_runtime()
+    if runtime is None or opener_task_id <= 0:
+        return nocache_json({'ok': False, 'reason': 'dialog_unavailable'}, status_code=404)
+    try:
+        ref = runtime.owner_stage_dialog_text(
+            'admin', opener_task_id, body.dialog_id, body.prompt_text)
+    except ValueError:
+        return nocache_json({'ok': False, 'reason': 'dialog_unavailable'}, status_code=409)
+    return nocache_json({'ok': True, 'prompt_ref': ref})
+
+
+@router.post('/api/browser/dialogs/{opener_task_id}/proposals',
+             dependencies=[Depends(owner_web_principal)])
+async def browser_dialog_owner_propose(opener_task_id: int,
+                                       body: BrowserDialogProposalBody):
+    runtime = _session_runtime()
+    if runtime is None or opener_task_id <= 0:
+        return nocache_json({'ok': False, 'reason': 'dialog_unavailable'}, status_code=404)
+    raw = {'opener_task_id': opener_task_id, 'dialog_id': body.dialog_id,
+           'choice': body.choice}
+    if 'prompt_text' in body.model_fields_set:
+        raw['prompt_text'] = body.prompt_text
+    if 'prompt_ref' in body.model_fields_set:
+        raw['prompt_ref'] = body.prompt_ref
+    try:
+        task_id = await runtime.owner_dialog_propose('admin', opener_task_id, raw)
+    except Exception:
+        return nocache_json({'ok': False, 'reason': 'dialog_unavailable'}, status_code=409)
+    return nocache_json({'ok': False, 'reason': 'approval_required', 'task_id': task_id},
+                        status_code=202)
+
+
 class _StrictBrowserBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 

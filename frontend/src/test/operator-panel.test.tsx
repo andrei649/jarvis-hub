@@ -72,6 +72,62 @@ async function previewDesktop(steps = 1) {
 }
 
 describe('OperatorPanel browser policy dry run', () => {
+  it('shows an owner-only exact native dialog card while keeping page text untrusted', async () => {
+    const dialogId = 'a'.repeat(32);
+    get.mockImplementation(async (path) => {
+      if (path === '/api/browser/sessions') return { available: true, sessions: [] };
+      if (path === '/api/browser/dialogs/87') return { status: 'pending', opener_task_id: 87,
+        dialog_id: dialogId, type: 'prompt', origin: 'https://example.com',
+        message: '<img src=x>', default_value: 'untrusted default',
+        remaining_seconds: 45, response_task_id: 91 };
+      if (path === '/api/browser/dialogs/tasks/91/card') return { found: true,
+        task_id: 91, choice: 'accept', prompt_text: 'exact owner value' };
+      return { available: true };
+    });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      status: 422, body: { ok: false, reason: 'approval_required',
+        tool: 'browser_run', task_id: 87 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Run with approval' }));
+    await waitFor(() => expect(screen.getByLabelText('pending native browser dialog')).toBeTruthy());
+    expect(screen.getByText('<img src=x>')).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText('exact dialog approval card').textContent)
+      .toContain('exact owner value'));
+    expect(get).toHaveBeenCalledWith('/api/browser/dialogs/87', { admin: true });
+    expect(get).toHaveBeenCalledWith('/api/browser/dialogs/tasks/91/card', { admin: true });
+  });
+
+  it('submits owner prompt text only to the private dialog proposal route', async () => {
+    const dialogId = 'b'.repeat(32);
+    get.mockImplementation(async (path) => {
+      if (path === '/api/browser/sessions') return { available: true, sessions: [] };
+      if (path === '/api/browser/dialogs/87') return { status: 'pending', opener_task_id: 87,
+        dialog_id: dialogId, type: 'prompt', origin: 'https://example.com',
+        message: 'Question', default_value: '', remaining_seconds: 45 };
+      return { available: true };
+    });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      status: 422, body: { ok: false, reason: 'approval_required',
+        tool: 'browser_run', task_id: 87 },
+    })).mockResolvedValueOnce({ ok: false, reason: 'approval_required', task_id: 91 });
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Run with approval' }));
+    await waitFor(() => expect(screen.getByLabelText('pending native browser dialog')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Proposed response'), { target: { value: 'accept' } });
+    fireEvent.change(screen.getByLabelText('Private prompt text'),
+      { target: { value: 'owner-only-value' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Propose dialog response for approval' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/browser/dialogs/87/proposals',
+      { dialog_id: dialogId, choice: 'accept', prompt_text: 'owner-only-value' },
+      { admin: true }));
+    expect(post.mock.calls.filter(([path]) => path === '/api/toolrpc/call')).toHaveLength(1);
+  });
+
   it('does not offer owner sessions when the owner-only projection rejects', async () => {
     get.mockImplementation(async (path) => {
       if (path === '/api/browser/sessions') throw new Error('admin token required');

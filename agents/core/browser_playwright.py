@@ -155,6 +155,7 @@ class PlaywrightBrowserDriver:
         self._dialog_observer = None
         self._dialog_handlers: list[tuple[object, str, object]] = []
         self._dialog_attempted = False
+        self._native_aborted = False
 
     def _clear_console(self) -> None:
         self._console_records.clear()
@@ -573,6 +574,13 @@ class PlaywrightBrowserDriver:
 
     async def _close_resources(self) -> None:
         failures = []
+        observer = self._dialog_observer
+        if (observer is not None and (observer.pending() is not None
+                                      or observer.refused_reason)):
+            try:
+                await self._abort_unresolved_modal()
+            except Exception:
+                failures.append('modal_native_exit_unverified')
         try:
             await self.stop_dialog_observer()
         except Exception:
@@ -605,7 +613,10 @@ class PlaywrightBrowserDriver:
             try:
                 await getattr(resource, method_name)()
             except Exception:
-                failures.append(f'{attr[1:]}_close_unverified')
+                if self._native_aborted and attr in {'_context', '_browser'}:
+                    setattr(self, attr, None)
+                else:
+                    failures.append(f'{attr[1:]}_close_unverified')
             else:
                 setattr(self, attr, None)
         if self._owned_child is not None:
@@ -638,6 +649,38 @@ class PlaywrightBrowserDriver:
         if failures:
             raise PlaywrightDriverError('browser_cleanup_unverified:' + ','.join(failures))
         self._launched_hosts = frozenset()
+
+    async def _abort_unresolved_modal(self) -> None:
+        """End only the verified owned Chrome root; never choose a dialog answer."""
+        import psutil
+
+        identity, profile = self._owned_browser_identity, self._profile_dir
+        if identity is None or profile is None or self._factory is not None:
+            raise PlaywrightDriverError('modal_owner_unverified')
+        pid, started = identity
+        marker = f'--user-data-dir={profile}'
+
+        def stop_owned():
+            try:
+                process = psutil.Process(pid)
+                if (process.create_time() != started
+                        or marker not in process.cmdline()):
+                    raise PlaywrightDriverError('modal_owner_unverified')
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except psutil.TimeoutExpired:
+                    if (process.create_time() != started
+                            or marker not in process.cmdline()):
+                        raise PlaywrightDriverError('modal_owner_unverified') from None
+                    process.kill()
+                    process.wait(timeout=2)
+            except psutil.NoSuchProcess:
+                return
+
+        await asyncio.to_thread(stop_owned)
+        await self._wait_owned_browser_exit()
+        self._native_aborted = True
 
     async def start_dialog_observer(self):
         """Observe owned-page dialogs through Chromium CDP; never respond via CDP."""
@@ -708,7 +751,8 @@ class PlaywrightBrowserDriver:
             try:
                 await cdp.detach()
             except Exception:
-                raise PlaywrightDriverError('browser_dialog_cleanup_unverified') from None
+                if not self._native_aborted:
+                    raise PlaywrightDriverError('browser_dialog_cleanup_unverified') from None
 
     async def arm_dialog_observer(self, *, document_epoch: int):
         """Capture the actual main-frame identity before one approved operation."""

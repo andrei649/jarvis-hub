@@ -125,6 +125,26 @@ async def local_page():
                         b'style="height:60px;overflow:auto">'
                         b'<div style="height:1200px">Tall content</div></div>')
                 status = '200 OK'
+            elif path in {'/dialog-alert', '/dialog-confirm', '/dialog-prompt'}:
+                script = {
+                    '/dialog-alert': "alert('fixture-alert'); this.dataset.after='yes'",
+                    '/dialog-confirm': "this.dataset.after=String(confirm('fixture-confirm'))",
+                    '/dialog-prompt': "this.dataset.after=prompt('fixture-prompt','default')",
+                }[path]
+                body = (f'<!doctype html><title>Dialog</title>'
+                        f'<button id="show" onclick="{script}">Open dialog</button>').encode()
+                status = '200 OK'
+            elif path == '/dialog-beforeunload':
+                body = (b'<!doctype html><title>Leave dialog</title>'
+                        b'<button id="arm" onclick="window.onbeforeunload=()=>true">'
+                        b'Arm beforeunload</button>')
+                status = '200 OK'
+            elif path == '/dialog-frame':
+                body = (b'<!doctype html><title>Same URL frames</title><body>'
+                        b'<script>if(window.top===window)document.body.innerHTML='
+                        b'"<iframe src=\'/dialog-frame\'></iframe>";else document.body.innerHTML='
+                        b'"<button id=\'show\' onclick=\'alert(&quot;same-message&quot;)\'>Child dialog</button>"</script>')
+                status = '200 OK'
             elif path == '/idle':
                 body = (b'<!doctype html><title>Idle egress</title>'
                         b'<script>setTimeout(() => fetch("/clicked"), 2000)</script>'
@@ -247,6 +267,162 @@ async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(brows
     assert rig.runtime.last_browser_identity is not None
     assert not browser_identity_alive(rig.runtime.last_browser_identity)
     assert browser_processes_for_profile(rig.runtime.last_profile) == []
+
+
+@pytest.mark.parametrize(('kind', 'choice', 'private_text', 'expected'), [
+    ('alert', 'dismiss', None, 'yes'),
+    ('confirm', 'accept', None, 'true'),
+    ('prompt', 'accept', 'owner-private-marker', 'owner-private-marker'),
+])
+async def test_main_frame_dialog_uses_separate_owner_decision(
+        browser_rig, kind, choice, private_text, expected):
+    rig = browser_rig
+    rig.web.ADMIN_TOKEN = 'browser-admin'
+    start = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + f'/dialog-{kind}'},
+        {'action': 'snapshot'},
+    ]}, owner='admin')
+    assert start['ok'] is True, start
+    sid = start['session_id']
+    ref = next(item['ref'] for item in start['trace'][1]['result']['refs']
+               if item['name'] == 'Open dialog')
+    opener = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': ref}]}})
+    assert opener['reason'] == 'approval_required'
+    await rig.worker.apply_decision(opener['task_id'], 'accept', decided_by='admin')
+    running = asyncio.create_task(rig.worker.tick())
+    pending = None
+    try:
+        for _ in range(100):
+            discovered = await rig.orch.tool_rpc.handle({'tool': 'browser_dialog_pending',
+                'args': {'opener_task_id': opener['task_id']}})
+            if discovered.get('result', {}).get('status') == 'pending':
+                pending = discovered['result']
+                break
+            await asyncio.sleep(.05)
+        assert pending is not None, discovered
+        assert pending['type'] == kind and pending['message'] == f'fixture-{kind}'
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                     base_url='http://testserver',
+                                     headers={'X-User-Token': 'browser-user'}) as user:
+            assert (await user.get(f"/api/browser/dialogs/{opener['task_id']}")).status_code == 401
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                     base_url='http://testserver',
+                                     headers={'X-Admin-Token': 'browser-admin'}) as owner:
+            shown = await owner.get(f"/api/browser/dialogs/{opener['task_id']}")
+            assert shown.status_code == 200 and shown.json()['dialog_id'] == pending['dialog_id']
+        args = {
+            'opener_task_id': opener['task_id'], 'dialog_id': pending['dialog_id'],
+            'choice': choice}
+        if private_text is not None:
+            args['prompt_text'] = private_text
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                         base_url='http://testserver',
+                                         headers={'X-Admin-Token': 'browser-admin'}) as owner:
+                submitted = await owner.post(
+                    f"/api/browser/dialogs/{opener['task_id']}/proposals",
+                    json={key: value for key, value in args.items()
+                          if key != 'opener_task_id'})
+                assert submitted.status_code == 202, submitted.json()
+                proposal = submitted.json()
+        else:
+            proposal = await rig.orch.tool_rpc.handle({'tool': 'browser_dialog', 'args': args})
+        assert proposal['reason'] == 'approval_required', proposal
+        assert rig.queue.get(proposal['task_id']).status == 'blocked'
+        assert 'owner-private-marker' not in repr(rig.queue.get(proposal['task_id']).payload)
+        assert rig.runtime._dialog_episodes[opener['task_id']].response_id == proposal['task_id']
+        assert rig.queue.get(proposal['task_id']).decided_by == 'policy'
+        assert await rig.runtime.owner_dialog_card('admin', proposal['task_id']) is not None
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                     base_url='http://testserver',
+                                     headers={'X-Admin-Token': 'browser-admin'}) as owner:
+            card = await owner.get(f"/api/browser/dialogs/tasks/{proposal['task_id']}/card")
+            assert card.status_code == 200 and card.json()['choice'] == choice
+            assert card.json()['prompt_text'] == private_text
+        await rig.worker.apply_decision(proposal['task_id'], 'accept', decided_by='admin')
+        await asyncio.wait_for(running, 10)
+        result = rig.queue.get(opener['task_id']).result['result']
+        assert result['ok'] is True, result
+        assert rig.queue.get(proposal['task_id']).status == 'done'
+        assert await rig.runtime.sessions[sid].driver._page.locator('#show').get_attribute(
+            'data-after') == expected
+        assert await rig.runtime.close_owner_session(sid)
+    finally:
+        if not running.done():
+            running.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await running
+
+
+async def test_main_frame_beforeunload_needs_separate_owner_decision(browser_rig):
+    rig = browser_rig
+    start = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/dialog-beforeunload'},
+        {'action': 'snapshot'},
+    ]})
+    assert start['ok'] is True
+    sid = start['session_id']
+    ref = next(item['ref'] for item in start['trace'][1]['result']['refs']
+               if item['name'] == 'Arm beforeunload')
+    armed = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': ref}]})
+    assert armed['ok'] is True, armed
+    opener = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'navigate', 'url': rig.page.origin + '/'}]}})
+    assert opener['reason'] == 'approval_required'
+    await rig.worker.apply_decision(opener['task_id'], 'accept', decided_by='andrei')
+    running = asyncio.create_task(rig.worker.tick())
+    try:
+        pending = None
+        for _ in range(100):
+            found = await rig.orch.tool_rpc.handle({'tool': 'browser_dialog_pending',
+                'args': {'opener_task_id': opener['task_id']}})
+            if found.get('result', {}).get('status') == 'pending':
+                pending = found['result']
+                break
+            await asyncio.sleep(.05)
+        assert pending is not None, found
+        assert pending['type'] == 'beforeunload'
+        response = await rig.orch.tool_rpc.handle({'tool': 'browser_dialog', 'args': {
+            'opener_task_id': opener['task_id'], 'dialog_id': pending['dialog_id'],
+            'choice': 'accept'}})
+        assert response['reason'] == 'approval_required', response
+        await rig.worker.apply_decision(response['task_id'], 'accept', decided_by='andrei')
+        await asyncio.wait_for(running, 10)
+        result = rig.queue.get(opener['task_id']).result['result']
+        assert result['ok'] is True, result
+        assert rig.queue.get(response['task_id']).status == 'done'
+        assert await rig.runtime.close_owner_session(sid)
+    finally:
+        if not running.done():
+            running.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await running
+
+
+async def test_same_url_child_dialog_refuses_and_closes_owned_native_browser(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/dialog-frame'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    session = rig.runtime.sessions[sid]
+    identity, profile = session.driver.owned_browser_identity, session.driver.profile_dir
+    ref = next(item['ref'] for item in started['trace'][1]['result']['refs']
+               if item['name'] == 'Child dialog')
+    proposed = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid, 'steps': [{'action': 'click', 'ref': ref}]}})
+    assert proposed['reason'] == 'approval_required'
+    await rig.worker.apply_decision(proposed['task_id'], 'accept', decided_by='andrei')
+    await asyncio.wait_for(rig.worker.tick(), 10)
+    result = rig.queue.get(proposed['task_id']).result['result']
+    assert result == {'ok': False, 'reason': 'dialog_unresolved'}
+    assert sid not in rig.runtime.sessions
+    assert not profile.exists() and not browser_identity_alive(identity)
 
 
 async def test_session_snapshot_ref_survives_separate_owner_approved_call(browser_rig, monkeypatch):

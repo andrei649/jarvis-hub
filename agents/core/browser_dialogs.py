@@ -44,8 +44,10 @@ class _PromptLease:
         task = self.store.task_lookup(task_id)
         if (type(task_id) is not int or task_id <= 0 or task is None
                 or task.kind != 'toolrpc.browser_dialog'
-                or task.status != 'proposed'
-                or task.payload != {'tool': 'browser_dialog', 'args': self.args}
+                or task.status not in {'proposed', 'blocked'}
+                or task.payload.get('tool') != 'browser_dialog'
+                or task.payload.get('target') != 'browser_dialog'
+                or task.payload.get('args') != self.args
                 or task.agent != self.agent):
             raise ValueError('dialog_task_changed')
         fingerprint = self.store.task_fingerprint(task)
@@ -59,6 +61,13 @@ class _PromptLease:
                     raise ValueError('dialog_task_changed')
                 entry.task_id = task_id
                 entry.fingerprint = fingerprint
+        try:
+            if self.store.on_bind is not None:
+                self.store.on_bind(self.args, task_id)
+        except Exception:
+            if self.ref is not None:
+                self.store.wipe(self.ref)
+            raise
         self.bound = True
 
     def release(self) -> None:
@@ -70,17 +79,44 @@ class DialogPromptStore:
     """Short-lived process-only prompt values bound to exact durable rows."""
 
     def __init__(self, *, task_lookup: Callable[[int], object],
-                 task_fingerprint: Callable[[object], str]) -> None:
+                 task_fingerprint: Callable[[object], str],
+                 on_bind: Callable[[dict, int], None] | None = None) -> None:
         self.task_lookup = task_lookup
         self.task_fingerprint = task_fingerprint
+        self.on_bind = on_bind
         self._key = secrets.token_bytes(32)
         self._entries: dict[str, _PromptEntry] = {}
         self._lock = threading.Lock()
 
-    def seal(self, agent: str, raw: dict) -> _PromptLease:
+    @staticmethod
+    def _encoded_text(value: object) -> bytes:
+        if (type(value) is not str or len(value) > _TEXT_LIMIT
+                or any(ord(char) < 32 or ord(char) == 127 for char in value)):
+            raise ValueError('invalid_dialog_prompt')
+        try:
+            return value.encode('utf-8')
+        except UnicodeError:
+            raise ValueError('invalid_dialog_prompt') from None
+
+    def stage_owner_text(self, agent: str, opener_task_id: int,
+                         dialog_id: str, text: str) -> str:
+        if (type(agent) is not str or not agent or type(opener_task_id) is not int
+                or opener_task_id <= 0 or type(dialog_id) is not str
+                or len(dialog_id) != 32 or any(c not in '0123456789abcdef' for c in dialog_id)):
+            raise ValueError('invalid_dialog_prompt')
+        self._encoded_text(text)
+        ref = secrets.token_hex(16)
+        with self._lock:
+            self._entries[ref] = _PromptEntry(text, agent,
+                {'opener_task_id': opener_task_id, 'dialog_id': dialog_id},
+                time.monotonic() + 60)
+        return ref
+
+    def seal(self, agent: str, raw: dict, *, binding: dict | None = None) -> _PromptLease:
         if (type(agent) is not str or not agent or type(raw) is not dict
                 or set(raw) not in ({'opener_task_id', 'dialog_id', 'choice'},
-                                    {'opener_task_id', 'dialog_id', 'choice', 'prompt_text'})
+                                    {'opener_task_id', 'dialog_id', 'choice', 'prompt_text'},
+                                    {'opener_task_id', 'dialog_id', 'choice', 'prompt_ref'})
                 or type(raw.get('opener_task_id')) is not int
                 or raw['opener_task_id'] <= 0 or type(raw.get('dialog_id')) is not str
                 or len(raw['dialog_id']) != 32
@@ -88,18 +124,30 @@ class DialogPromptStore:
                 or raw.get('choice') not in {'accept', 'dismiss'}):
             raise ValueError('invalid_dialog_proposal')
         safe = {key: raw[key] for key in ('opener_task_id', 'dialog_id', 'choice')}
-        if 'prompt_text' not in raw:
+        if binding is not None:
+            if type(binding) is not dict or set(safe) & set(binding):
+                raise ValueError('invalid_dialog_binding')
+            safe.update(binding)
+        if 'prompt_text' not in raw and 'prompt_ref' not in raw:
             return _PromptLease(self, agent, safe, None)
-        value = raw['prompt_text']
-        if (raw['choice'] != 'accept' or type(value) is not str
-                or len(value) > _TEXT_LIMIT
-                or any(ord(char) < 32 or ord(char) == 127 for char in value)):
+        if raw['choice'] != 'accept':
             raise ValueError('invalid_dialog_prompt')
-        try:
-            encoded = value.encode('utf-8')
-        except UnicodeError:
-            raise ValueError('invalid_dialog_prompt') from None
-        ref = secrets.token_hex(16)
+        if 'prompt_ref' in raw:
+            ref = raw['prompt_ref']
+            if type(ref) is not str or len(ref) != 32:
+                raise ValueError('invalid_dialog_prompt')
+            with self._lock:
+                entry = self._entries.get(ref)
+                if (entry is None or entry.task_id is not None
+                        or entry.agent != agent or entry.expires <= time.monotonic()
+                        or entry.args != {'opener_task_id': safe['opener_task_id'],
+                                          'dialog_id': safe['dialog_id']}):
+                    raise ValueError('invalid_dialog_prompt')
+                value = entry.text
+        else:
+            ref = secrets.token_hex(16)
+            value = raw['prompt_text']
+        encoded = self._encoded_text(value)
         proof = json.dumps([agent, safe['opener_task_id'], safe['dialog_id'],
                             safe['choice'], ref], separators=(',', ':')).encode() + encoded
         safe.update(prompt_ref=ref, prompt_digest=hmac.new(self._key, proof, hashlib.sha256).hexdigest(),
@@ -189,8 +237,18 @@ class DialogFrameObserver:
         self._paired = None
         self.ready.set()
 
+    def disarm(self) -> None:
+        self._armed = False
+        self._cdp = None
+        self._playwright = None
+        self._paired = None
+        self.ready.clear()
+
     def invalidate(self) -> None:
-        self.refuse('dialog_document_changed')
+        if self._cdp is None and self._playwright is None and self._paired is None:
+            self.disarm()
+        else:
+            self.refuse('dialog_document_changed')
 
     def on_cdp_open(self, event: object) -> None:
         if not self._armed or self._cdp is not None or self._paired is not None:
@@ -253,7 +311,8 @@ class DialogEpisode:
     def __init__(self, *, opener_task_id: int, opener_fingerprint: str,
                  agent: str, owner: str, session_id: str, generation: int,
                  plan_sha256: str, step_index: int, observer: DialogFrameObserver,
-                 expires_at: float) -> None:
+                 expires_at: float, dialog_registration_key: str | None = None,
+                 dialog_registration_epoch: str | None = None) -> None:
         self.opener_task_id = opener_task_id
         self.opener_fingerprint = opener_fingerprint
         self.agent = agent
@@ -264,6 +323,8 @@ class DialogEpisode:
         self.step_index = step_index
         self.observer = observer
         self.expires_at = expires_at
+        self.dialog_registration_key = dialog_registration_key
+        self.dialog_registration_epoch = dialog_registration_epoch
         self.observed: ObservedDialog | None = None
         self.dialog_id: str | None = None
         self.response_id: int | None = None
@@ -304,10 +365,13 @@ class DialogEpisode:
         self.response_id = task_id
         self.response_ready.set()
 
-    def close(self) -> None:
+    def close(self, reason: str = '') -> None:
         self.closed = True
         self.response_ready.set()
-        self.observer.refuse('dialog_closed')
+        if reason:
+            self.observer.refuse(reason)
+        else:
+            self.observer.disarm()
 
 
 async def run_with_dialog_supervisor[T](

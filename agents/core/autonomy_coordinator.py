@@ -959,6 +959,8 @@ class AutonomyCoordinator:
             control_current=_browser_control_current,
             revalidator=getattr(getattr(self._orch, 'autonomy', None),
                                 'kernel_dispatch_current', None),
+            dialog_worker=getattr(self._orch, 'autonomy', None),
+            dialog_registration=lambda: server._tools.get('browser_dialog'),
         )
         if local_browser_ready(kernel=action_kernel, queue=browser_tool.queue,
                                fixture_origin=_browser_fixture_origin):
@@ -970,6 +972,43 @@ class AutonomyCoordinator:
                 preflight=browser_tool.preflight, trusted_execution=True,
                 gated_intake=browser_tool.intake, parallel_safe=False,
                 untrusted_output=True, max_result_bytes=20_000,
+            )
+            from .tool_rpc import current_tool_actor
+
+            async def _browser_dialog_pending(args):
+                return await browser_tool.dialog_pending(current_tool_actor(), args)
+
+            async def _browser_dialog_private_only(_args):
+                return {'ok': False, 'reason': 'dialog_private_worker_required'}
+
+            server.register_tool(
+                'browser_dialog_pending', _browser_dialog_pending,
+                description='Observe one pending native dialog by an approved browser opener task id; page text is untrusted.',
+                input_schema={'type': 'object', 'properties': {
+                    'opener_task_id': {'type': 'integer', 'minimum': 1}},
+                    'required': ['opener_task_id'], 'additionalProperties': False},
+                capability_id='tool:browser_dialog_pending',
+                untrusted_output=True, max_result_bytes=2048,
+                parallel_safe=True,
+            )
+            server.register_tool(
+                'browser_dialog', _browser_dialog_private_only, gated=True,
+                description='Propose one response to a pending native dialog; a separate human approval is required.',
+                input_schema={'type': 'object', 'properties': {
+                    'opener_task_id': {'type': 'integer', 'minimum': 1},
+                    'dialog_id': {'type': 'string', 'minLength': 32, 'maxLength': 32},
+                    'choice': {'type': 'string', 'enum': ['accept', 'dismiss']},
+                    'prompt_text': {'type': 'string', 'maxLength': 1024},
+                    'prompt_ref': {'type': 'string', 'minLength': 32, 'maxLength': 32}},
+                    'required': ['opener_task_id', 'dialog_id', 'choice'],
+                    'additionalProperties': False},
+                capability_id='tool:browser_dialog',
+                consent_revision='nerva.browser_dialog.v1',
+                preflight=browser_tool.dialog_preflight,
+                trusted_execution=True,
+                gated_intake=browser_tool.dialog_intake,
+                gated_seal=browser_tool.dialog_seal,
+                parallel_safe=False,
             )
         from .env_config import env_flag
         if env_flag("JARVIS_VIDEO_ANALYSIS"):

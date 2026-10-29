@@ -878,6 +878,8 @@ class ToolRPCServer:
                     # Specialized intake finalization is not yet proven for this slice.
                     with tool_approval_scope(None):
                         task_id = intake(effective_actor, intake_args)
+                        if inspect.isawaitable(task_id):
+                            task_id = await task_id
                 except ToolRPCValidationError as exc:
                     return refused(exc.reason)
                 except Exception:

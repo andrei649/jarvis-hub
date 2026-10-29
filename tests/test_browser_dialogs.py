@@ -35,6 +35,15 @@ def test_same_url_child_dialog_is_not_admitted_as_main_frame():
     assert observer.refused_reason == 'dialog_frame_unknown'
 
 
+def test_navigation_without_modal_disarms_without_false_dialog_failure():
+    observer = DialogFrameObserver(page=object())
+    observer.arm(root_frame_id='root', loader_id='loader',
+                 frame_url='http://fixture.browser.test/old', document_epoch=1)
+    observer.invalidate()
+    assert observer.pending() is None and observer.refused_reason == ''
+    assert not observer.ready.is_set()
+
+
 def test_main_frame_alert_pairs_with_exact_playwright_object():
     page = object()
     dialog = SimpleNamespace(page=page, type='alert', message='hello', default_value='')
@@ -162,7 +171,8 @@ def test_prompt_store_binds_exact_sanitized_task_and_consumes_once():
     ref = safe['prompt_ref']
     tasks[23] = SimpleNamespace(kind='toolrpc.browser_dialog', agent='agent-a',
                                 status='proposed', fingerprint='fingerprint-a',
-                                payload={'tool': 'browser_dialog', 'args': safe})
+                                payload={'tool': 'browser_dialog', 'target': 'browser_dialog',
+                                         'args': safe})
     lease.bind(23)
     lease.release()
     assert store.peek(ref, task_id=23, fingerprint='fingerprint-a', agent='agent-b') is None
@@ -186,6 +196,47 @@ def test_prompt_store_wipes_failed_unbound_proposal_and_rejects_changed_row():
         lease.bind(23)
     lease.release()
     assert store.peek(ref, task_id=23, fingerprint='fingerprint-a', agent='agent-a') is None
+
+
+def test_prompt_store_binds_server_fields_and_notifies_exact_row():
+    tasks = {}
+    notified = []
+    store = DialogPromptStore(task_lookup=tasks.get,
+                              task_fingerprint=lambda task: task.fingerprint,
+                              on_bind=lambda args, task_id: notified.append((args, task_id)))
+    lease = store.seal('agent-a', {'opener_task_id': 11, 'dialog_id': 'a' * 32,
+                                   'choice': 'accept', 'prompt_text': 'private-marker'},
+                       binding={'opener_fingerprint': 'f' * 64, 'session_id': 's' * 32})
+    safe = lease.args
+    tasks[23] = SimpleNamespace(kind='toolrpc.browser_dialog', agent='agent-a',
+                                status='proposed', fingerprint='fingerprint-a',
+                                payload={'tool': 'browser_dialog', 'target': 'browser_dialog',
+                                         'args': safe})
+    lease.bind(23)
+    assert notified == [(safe, 23)]
+    assert store.consume(safe['prompt_ref'], task_id=23, fingerprint='fingerprint-a',
+                         agent='agent-a') == 'private-marker'
+
+
+def test_owner_staged_prompt_ref_can_be_proposed_once_without_raw_model_text():
+    tasks = {}
+    store = DialogPromptStore(task_lookup=tasks.get,
+                              task_fingerprint=lambda task: task.fingerprint)
+    ref = store.stage_owner_text('agent-a', 11, 'a' * 32, 'owner-only-marker')
+    lease = store.seal('agent-a', {'opener_task_id': 11, 'dialog_id': 'a' * 32,
+                                   'choice': 'accept', 'prompt_ref': ref})
+    safe = lease.args
+    assert 'owner-only-marker' not in repr(safe)
+    tasks[24] = SimpleNamespace(kind='toolrpc.browser_dialog', agent='agent-a',
+                                status='proposed', fingerprint='f' * 64,
+                                payload={'tool': 'browser_dialog', 'target': 'browser_dialog',
+                                         'args': safe})
+    lease.bind(24)
+    assert store.consume(ref, task_id=24, fingerprint='f' * 64,
+                         agent='agent-a') == 'owner-only-marker'
+    with pytest.raises(ValueError):
+        store.seal('agent-a', {'opener_task_id': 11, 'dialog_id': 'a' * 32,
+                               'choice': 'accept', 'prompt_ref': ref})
 
 
 @pytest.mark.asyncio

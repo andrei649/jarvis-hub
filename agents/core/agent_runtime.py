@@ -1471,7 +1471,11 @@ class AgentToolRuntime:
                 "tool": call.name,
                 "same_as": prior,
                 "notice": _DUPLICATE_NOTICE.format(call_id=prior),
-                "args_preview": safe_args_preview(call.arguments if isinstance(call.arguments, dict) else {}),
+                "args_preview": safe_args_preview(
+                    {**call.arguments, "prompt_text": "[owner approval required]"}
+                    if call.name == "browser_dialog" and isinstance(call.arguments, dict)
+                    and "prompt_text" in call.arguments else
+                    (call.arguments if isinstance(call.arguments, dict) else {})),
             },
             ensure_ascii=False,
         )

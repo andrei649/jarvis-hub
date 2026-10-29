@@ -394,7 +394,8 @@ def test_new_toolset_mappings_name_only_registered_tools(tmp_path, monkeypatch):
     for toolset in ("kanban", "memory", "skills", "computer_use", "coding"):
         assert set(visibility.TOOLSETS[toolset]) <= registered
     assert set(visibility.TOOLSETS["kanban"]) == set(registry.entries)
-    assert visibility.TOOLSETS["browser"] == ("browser_run",)
+    assert visibility.TOOLSETS["browser"] == (
+        "browser_run", "browser_dialog_pending", "browser_dialog")
     assert "homeassistant" not in visibility.TOOLSETS
     assert "delegation" not in visibility.TOOLSETS
 
@@ -422,8 +423,12 @@ def test_browser_toolset_uses_current_offer_and_preserves_explicit_soft_load(tmp
     for offer, visible in (
         (frozenset(), ["fallback"]),
         (frozenset({"web_extract"}), ["fallback"]),
+        (frozenset({"browser_dialog_pending"}), ["fallback", "required"]),
+        (frozenset({"browser_dialog"}), ["fallback", "required"]),
         (frozenset({"browser_run"}), ["required"]),
         (frozenset({"browser_run", "web_extract"}), ["required"]),
+        (frozenset({"browser_run", "browser_dialog_pending", "browser_dialog"}),
+         ["required"]),
     ):
         token = _TURN_TOOL_OFFER.set(offer)
         try:

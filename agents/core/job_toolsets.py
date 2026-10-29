@@ -10,6 +10,7 @@ CATALOG = MappingProxyType({
     'terminal': ('terminal_run',),
     'video': ('video_analyze',),
     'web': ('web_search', 'web_extract'),
+    'browser': ('browser_run', 'browser_dialog_pending', 'browser_dialog'),
     'recall': ('session_search', 'search_memory'),
     'code': ('execute_code',),
     'skills': ('skills_list', 'skill_view', 'skill_propose'),

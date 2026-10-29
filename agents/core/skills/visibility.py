@@ -56,7 +56,7 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     "code_execution": ("execute_code",),
     "coding": ("file_write", "terminal_run", "execute_code"),
     "computer_use": ("desktop_run",),
-    "browser": ("browser_run",),
+    "browser": ("browser_run", "browser_dialog_pending", "browser_dialog"),
     "image_gen": ("image_generate",),
     "memory": ("memory", "search_memory"),
     "todo": ("todo",),
@@ -217,7 +217,9 @@ def offer_gate(skill: Any, ctx: dict) -> str:
             return "tools"
         if any(tool in offered for tool in _names(skill, "fallback_for_tools")):
             return "tools"
-        if any(_toolset_offered(ts, offered) for ts in _names(skill, "fallback_for_toolsets")):
+        if any(("browser_run" in offered if ts == "browser" else
+                _toolset_offered(ts, offered))
+               for ts in _names(skill, "fallback_for_toolsets")):
             return "tools"
     return ""
 

@@ -50,6 +50,44 @@ interface BrowserTaskOutcome {
   observations_truncated?: boolean;
 }
 
+interface BrowserDialogView {
+  opener_task_id: number;
+  dialog_id: string;
+  type: 'alert' | 'confirm' | 'prompt' | 'beforeunload';
+  origin: string;
+  message: string;
+  default_value: string;
+  remaining_seconds: number;
+  response_task_id?: number;
+}
+
+interface BrowserDialogCard {
+  task_id: number;
+  choice: 'accept' | 'dismiss';
+  prompt_text: string | null;
+}
+
+function safeDialog(value: unknown): BrowserDialogView | null {
+  if (!isRecord(value) || value.status !== 'pending'
+    || !Number.isSafeInteger(value.opener_task_id) || Number(value.opener_task_id) <= 0
+    || typeof value.dialog_id !== 'string' || !/^[0-9a-f]{32}$/.test(value.dialog_id)
+    || !['alert', 'confirm', 'prompt', 'beforeunload'].includes(String(value.type))
+    || !safeBrowserOrigin(value.origin)
+    || typeof value.message !== 'string' || value.message.length > 256
+    || typeof value.default_value !== 'string' || value.default_value.length > 256
+    || !Number.isSafeInteger(value.remaining_seconds)
+    || Number(value.remaining_seconds) < 0 || Number(value.remaining_seconds) > 60) return null;
+  const response = value.response_task_id;
+  return { opener_task_id: Number(value.opener_task_id), dialog_id: value.dialog_id,
+    type: value.type as BrowserDialogView['type'], origin: value.origin,
+    message: value.message, default_value: value.default_value,
+    remaining_seconds: Number(value.remaining_seconds),
+    ...(Number.isSafeInteger(response) && Number(response) > 0 ? {
+      response_task_id: Number(response),
+    } : {}),
+  };
+}
+
 type BrowserObservation =
   | { action: 'console'; records: { level: string; text: string; source_origin: string }[];
       dropped?: number; truncated?: boolean }
@@ -372,6 +410,10 @@ export function OperatorPanel() {
   const [browserOwnerAvailable, setBrowserOwnerAvailable] = useState(false);
   const [browserRunTaskId, setBrowserRunTaskId] = useState<number | null>(null);
   const [browserTaskOutcome, setBrowserTaskOutcome] = useState<BrowserTaskOutcome | null>(null);
+  const [browserDialog, setBrowserDialog] = useState<BrowserDialogView | null>(null);
+  const [browserDialogCard, setBrowserDialogCard] = useState<BrowserDialogCard | null>(null);
+  const [browserDialogChoice, setBrowserDialogChoice] = useState<'accept' | 'dismiss'>('dismiss');
+  const [browserDialogText, setBrowserDialogText] = useState('');
   const [browserCheck, setBrowserCheck] = useState<BrowserCheckResult | null>(null);
   const [browserPreview, setBrowserPreview] = useState<BrowserPreviewRow[] | null>(null);
   const [browserSessions, setBrowserSessions] = useState<BrowserSessionView[]>([]);
@@ -425,6 +467,55 @@ export function OperatorPanel() {
     const timer = window.setInterval(() => { void refresh(); }, 5_000);
     return () => { live = false; window.clearInterval(timer); };
   }, [browserRunTaskId]);
+
+  useEffect(() => {
+    if (browserRunTaskId === null || !browserOwnerAvailable) return;
+    let live = true;
+    const refresh = async () => {
+      try {
+        const raw = await apiGet(`/api/browser/dialogs/${browserRunTaskId}`, { admin: true });
+        if (!live) return;
+        const pending = safeDialog(raw);
+        setBrowserDialog(pending);
+        if (!pending?.response_task_id) { setBrowserDialogCard(null); return; }
+        const card = await apiGet(`/api/browser/dialogs/tasks/${pending.response_task_id}/card`, { admin: true });
+        if (!live || !isRecord(card) || card.found !== true
+          || card.task_id !== pending.response_task_id
+          || !['accept', 'dismiss'].includes(String(card.choice))
+          || (card.prompt_text !== null && (typeof card.prompt_text !== 'string'
+            || card.prompt_text.length > 1024))) { setBrowserDialogCard(null); return; }
+        setBrowserDialogCard({ task_id: pending.response_task_id,
+          choice: card.choice as BrowserDialogCard['choice'], prompt_text: card.prompt_text as string | null });
+      } catch {
+        if (live) { setBrowserDialog(null); setBrowserDialogCard(null); }
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 1_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [browserRunTaskId, browserOwnerAvailable]);
+
+  const proposeBrowserDialog = async () => {
+    const dialog = browserDialog;
+    if (!dialog || dialog.response_task_id) return;
+    setBrowserError(null);
+    const raw: Record<string, unknown> = { dialog_id: dialog.dialog_id, choice: browserDialogChoice };
+    if (dialog.type === 'prompt' && browserDialogChoice === 'accept') {
+      raw.prompt_text = browserDialogText;
+    }
+    try {
+      const answer = await apiPost(`/api/browser/dialogs/${dialog.opener_task_id}/proposals`,
+        raw, { admin: true });
+      if (!isRecord(answer) || answer.reason !== 'approval_required'
+        || !Number.isSafeInteger(answer.task_id) || Number(answer.task_id) <= 0) {
+        throw new Error('Dialog proposal was not confirmed');
+      }
+      setBrowserDialogText('');
+      setBrowserDialog({ ...dialog, response_task_id: Number(answer.task_id) });
+    } catch {
+      setBrowserError('Dialog proposal was refused or expired');
+    }
+  };
 
   const [desktopAction, setDesktopAction] = useState<CanonicalDesktopAction>('read');
   const [desktopPrimary, setDesktopPrimary] = useState('');
@@ -897,6 +988,32 @@ export function OperatorPanel() {
             {browserTaskOutcome.ok === true ? ` · ${browserTaskOutcome.steps ?? 0} steps completed` : ''}
             {browserTaskOutcome.ok === false ? ` · ${browserTaskOutcome.reason || 'browser_failed'}` : ''}
           </p>}
+          {browserDialog && <section aria-label="pending native browser dialog" style={mono}>
+            <strong>Untrusted native browser dialog observed during this approved operation</strong>
+            <p>{browserDialog.type} · {browserDialog.origin} · {browserDialog.remaining_seconds}s remaining</p>
+            <p>{browserDialog.message}</p>
+            {browserDialog.type === 'prompt' && <p>Suggested default: {browserDialog.default_value}</p>}
+            {!browserDialog.response_task_id && <>
+              <label htmlFor="operator-dialog-choice">Proposed response</label>
+              <select id="operator-dialog-choice" value={browserDialogChoice}
+                onChange={(event) => setBrowserDialogChoice(event.target.value as 'accept' | 'dismiss')}>
+                <option value="dismiss">Dismiss</option><option value="accept">Accept</option>
+              </select>
+              {browserDialog.type === 'prompt' && browserDialogChoice === 'accept' && <>
+                <label htmlFor="operator-dialog-text">Private prompt text</label>
+                <input id="operator-dialog-text" type="password" autoComplete="off"
+                  value={browserDialogText} maxLength={1024}
+                  onChange={(event) => setBrowserDialogText(event.target.value)} />
+              </>}
+              <button className="tool-btn" type="button" onClick={() => { void proposeBrowserDialog(); }}>
+                Propose dialog response for approval</button>
+            </>}
+            {browserDialogCard && <p aria-label="exact dialog approval card">
+              Exact response task {browserDialogCard.task_id}: {browserDialogCard.choice}
+              {browserDialogCard.prompt_text !== null ? ` · exact prompt: ${browserDialogCard.prompt_text}` : ''}
+              {' · '}<a href={appUrl('/v2/console#decision-inbox')}>Decision Inbox</a>
+            </p>}
+          </section>}
           {browserTaskOutcome?.observations && browserTaskOutcome.observations.length > 0 &&
             <section aria-label="browser observations" style={mono}>
               <strong>Untrusted browser observations</strong>
