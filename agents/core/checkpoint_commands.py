@@ -90,8 +90,7 @@ def _parse(args: str, *, rollback: bool) -> dict:
             result["force"] = "--force" in seen
         else:
             raise ValueError("unknown option")
-    if (("--dry-run" in seen and "--execute" in seen)
-            or (action in _MAINTENANCE and "--force" in seen)):
+    if "--dry-run" in seen and "--execute" in seen:
         raise ValueError("conflicting maintenance options")
     CheckpointInventory._arguments(result["project"], result["limit"])
     return result
@@ -141,7 +140,8 @@ async def checkpoint_command(ctx: CommandContext) -> str:
                        "status|list [--project ROOT] [--limit 1..500], or "
                        "diff ID, restore ID [--path REL] [--force] [--dry-run|--execute], "
                        "or prune [--keep-last 1..5000] [--max-bytes 1..1099511627776] "
-                       "[--include-orphans] --dry-run|--execute, clear|clear-legacy --dry-run|--execute.")
+                       "[--include-orphans] [--force] --dry-run|--execute, "
+                       "clear|clear-legacy [--force] --dry-run|--execute.")
     if query["execute"]:
         from .checkpoint_controller import CheckpointController
         result = await CheckpointController(ctx.orch).request(ctx.principal, query)

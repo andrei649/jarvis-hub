@@ -297,9 +297,13 @@ def test_owner_command_retention_options_are_exact_and_bounded():
     query = _parse("prune --keep-last 2 --max-bytes 4096 --include-orphans --dry-run", rollback=False)
     assert query["keep_last"] == 2 and query["max_bytes"] == 4096
     assert query["include_orphans"] is True and query["execute"] is False
+    for action in ("prune", "clear", "clear-legacy"):
+        forced = _parse(f"{action} --execute --force", rollback=False)
+        assert forced["action"] == action and forced["execute"] is True
+        assert forced["force"] is True and forced["include_orphans"] is False
     for bad in ("prune --keep-last 0", "prune --max-bytes 1099511627777",
                 "prune --keep-last 2 --keep-last 3", "clear --include-orphans",
-                "prune --force --execute", "prune --keep-last nope"):
+                "prune --dry-run --execute --force", "prune --keep-last nope"):
         with pytest.raises(ValueError):
             _parse(bad, rollback=False)
 

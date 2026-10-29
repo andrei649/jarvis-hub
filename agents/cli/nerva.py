@@ -327,6 +327,8 @@ def build_parser() -> argparse.ArgumentParser:
         mode = change.add_mutually_exclusive_group()
         mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
         mode.add_argument("--execute", action="store_true", help="request governed approval")
+        change.add_argument("--force", action="store_true",
+                            help="bind the legacy owner intent; does not change selection or approval")
 
     backup = verbs.add_parser("backup", help="back up and restore the whole install (H010)")
     backup_verbs = backup.add_subparsers(dest="action", required=True, metavar="action")
@@ -2178,9 +2180,6 @@ def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_USAGE
     execute = bool(getattr(ns, "execute", False))
     force = bool(getattr(ns, "force", False))
-    if force and action != "restore":
-        ctx.err.write("--force applies only to restore; use --include-orphans for prune\n")
-        return EXIT_USAGE
     keep_last = getattr(ns, "keep_last", None)
     max_bytes = getattr(ns, "max_bytes", None)
     if keep_last is not None and not 1 <= keep_last <= 5_000:

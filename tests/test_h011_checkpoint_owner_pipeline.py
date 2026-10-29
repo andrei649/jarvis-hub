@@ -210,6 +210,39 @@ async def test_retention_policy_is_bound_through_real_owner_approval(pipeline):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("force", [False, True])
+async def test_legacy_maintenance_force_is_bound_without_changing_selection_or_authority(pipeline, force):
+    from agents.core.checkpoint_controller import CheckpointController
+    from agents.core.checkpoint_operations import CheckpointOperationStore
+
+    orch, root, snapshots, _sid = pipeline
+    _first_note, first_id = await checkpoint(root, snapshots, name="first.txt")
+    _second_note, second_id = await checkpoint(root, snapshots, name="second.txt")
+    suffix = " --force" if force else ""
+    task_id = await request(orch, "/checkpoints prune --keep-last 1 --execute" + suffix)
+    task = orch.autonomy_queue.get(task_id)
+    assert task.payload["preview"]["force"] is force
+    assert task.payload["preview"]["include_orphans"] is False
+    assert task.payload["preview"]["candidates"] == [first_id]
+    record = CheckpointOperationStore(snapshots).get(task.payload["request_id"])
+    assert record["intent"]["force"] is force
+    assert record["intent"]["preview"] == task.payload["preview"]
+    assert (await CheckpointController(orch).execute(task))["reason"] == "current_human_task_required"
+    assert len(FileCheckpointHistory(snapshots, FileScope([root])).list_entries()) == 2
+    await orch.autonomy.apply_decision(task_id, "accept", "user")
+    await orch.autonomy.tick()
+    result = orch.autonomy_queue.get(task_id).result
+    assert result["status"] == "ok" and result["filesystem"]["removed"] == [first_id]
+    assert ["file:" + str(row["id"]) for row in
+            FileCheckpointHistory(snapshots, FileScope([root])).list_entries()] == [second_id]
+    replay = CheckpointOperationStore(snapshots).claim(
+        task.payload["request_id"], task_id=task_id, intent_sha=task.payload["intent_sha"])
+    assert replay["ok"] is True and replay["replay"] is True
+    assert replay["intent"]["force"] is force
+    assert replay["result"] == result
+
+
+@pytest.mark.asyncio
 async def test_approved_post_row_gc_failure_keeps_outer_operation_uncertain(pipeline, monkeypatch):
     from agents.core.checkpoint_operations import CheckpointOperationStore
     from agents.core.checkpoint_payloads import CheckpointPayloadStore, PayloadRefusal

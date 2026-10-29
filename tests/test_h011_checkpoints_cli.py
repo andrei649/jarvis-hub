@@ -58,6 +58,10 @@ def notice(code, text="checkpoint result"):
      "/checkpoints prune --project /tmp/project --keep-last 2 --max-bytes 4096 --include-orphans --execute"),
     (["clear"], "/checkpoints clear --dry-run"),
     (["clear-legacy", "--execute"], "/checkpoints clear-legacy --execute"),
+    (["prune", "--execute", "--force"], "/checkpoints prune --execute --force"),
+    (["clear", "--execute", "--force"], "/checkpoints clear --execute --force"),
+    (["clear-legacy", "--execute", "--force"],
+     "/checkpoints clear-legacy --execute --force"),
 ])
 def test_exact_canonical_chat_request_and_authoritative_complete(args, expected):
     code, out, err, calls = run(args, notice("checkpoint.complete", "done"))
@@ -139,8 +143,7 @@ def test_non_success_notice_is_nonzero_and_never_prints_prose_as_success(status)
     ["clear", "--project", "/tmp/x"],
     ["clear-legacy", "--limit", "2"],
     ["status", "--execute"],
-    ["prune", "--force"],
-    ["prune", "--execute", "--force"],
+    ["prune", "--dry-run", "--execute", "--force"],
     ["prune", "--keep-last", "0"],
     ["prune", "--keep-last", "5001"],
     ["prune", "--max-bytes", "0"],

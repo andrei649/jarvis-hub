@@ -87,8 +87,6 @@ class CheckpointController:
             return _refused("invalid_action")
         if type(query.get("force")) is not bool:
             return _refused("invalid_force")
-        if query["action"] != "restore" and query["force"]:
-            return _refused("invalid_force")
         sid = getattr(self.orch, "session_id", None)
         if type(sid) is not str or not sid or len(sid) > 512:
             return _refused("session_unavailable")
@@ -141,6 +139,7 @@ class CheckpointController:
                     tier, kind = 3, "checkpoint.maintenance"
                     preview = {"action": query["action"], "generation": intent["generation"],
                                "candidates": intent["candidates"],
+                               "force": intent["force"],
                                "include_orphans": intent["include_orphans"],
                                "keep_last": intent["keep_last"], "max_bytes": intent["max_bytes"],
                                "owned_gc": plan["owned_gc"],
@@ -248,7 +247,10 @@ class CheckpointController:
                     or record["intent_sha"] != task.payload.get("intent_sha")):
                 return _refused("operation_identity_mismatch")
             intent = record["intent"]
-            if (intent["kind"] != task.kind or intent["risk_tier"] != task.payload.get("risk_tier")
+            if (type(intent.get("preview")) is not dict
+                    or type(intent.get("force")) is not bool
+                    or intent["preview"].get("force", False) is not intent["force"]
+                    or intent["kind"] != task.kind or intent["risk_tier"] != task.payload.get("risk_tier")
                     or intent["action"] != task.payload.get("action")
                     or intent["preview"] != task.payload.get("preview")
                     or task.payload.get("reversible") is not (intent["risk_tier"] == 1)

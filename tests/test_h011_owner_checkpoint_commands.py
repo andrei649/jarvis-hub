@@ -118,6 +118,17 @@ async def test_invalid_or_unavailable_effect_is_not_reported_as_completed(owner_
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["prune", "clear", "clear-legacy"])
+async def test_legacy_force_dry_run_is_a_preview_without_orphan_selection(owner_store, action):
+    orch, _root, snapshots = owner_store
+    ordinary, ordinary_notices = await command(orch, f"/checkpoints {action} --dry-run")
+    forced, forced_notices = await command(orch, f"/checkpoints {action} --dry-run --force")
+    assert json.loads(forced.reply) == json.loads(ordinary.reply)
+    assert [n["code"] for n in forced_notices] == [n["code"] for n in ordinary_notices]
+    assert not snapshots.directory.exists()
+
+
+@pytest.mark.asyncio
 async def test_registry_refuses_oversize_checkpoint_without_truncation(owner_store):
     orch, _root, snapshots = owner_store
     outcome, _ = await command(orch, "/checkpoints status --project " + "x" * 2000)
