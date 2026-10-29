@@ -147,6 +147,7 @@ def validate_browser_request(args: dict) -> BrowserRequest:
             'click': {'action', 'ref'}, 'type': {'action', 'ref', 'text'},
             'submit': {'action', 'ref'}, 'scroll': {'action', 'ref', 'direction', 'pixels'},
             'press': {'action', 'ref', 'key'}, 'back': {'action'},
+            'console': {'action'}, 'get_images': {'action'},
         }.get(action)
         optional = {'selector'} if action in {'snapshot', 'wait'} else set()
         if required is None or not required <= set(step) or set(step) - required - optional:
@@ -761,13 +762,20 @@ class BrowserRuntime:
                                          session_id=session.id,
                                          session_generation=session.generation):
                     async with asyncio.timeout(15 if step['action'] != 'wait' else 31):
-                        if step['action'] in {'navigate', 'extract', 'snapshot', 'wait'}:
+                        if step['action'] in {'navigate', 'extract', 'snapshot', 'wait',
+                                              'console', 'get_images'}:
                             read_gate = await executor.check_read(step)
                             if read_gate.status != 'completed':
                                 raise BrowserPlanRefused('browser_kernel_refused')
                         if step['action'] == 'snapshot':
                             outcome = {'action': 'snapshot', 'status': 'done',
                                        'result': await session.snapshot()}
+                        elif step['action'] == 'console':
+                            outcome = {'action': 'console', 'status': 'done',
+                                       'result': await session.driver.console()}
+                        elif step['action'] == 'get_images':
+                            outcome = {'action': 'get_images', 'status': 'done',
+                                       'result': await session.get_images()}
                         else:
                             outcome = await browser.run_step(step)
                 if outcome.get('status') != 'done':

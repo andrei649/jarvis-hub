@@ -147,6 +147,65 @@ describe('OperatorPanel browser policy dry run', () => {
       `/api/browser/sessions/${sid}/close`, {}, { admin: true }));
   });
 
+  it('queues console and image inventory as separate owner approved session reads', async () => {
+    const sid = 'b'.repeat(32);
+    get.mockImplementation(async (path) => path === '/api/browser/sessions'
+      ? { available: true, sessions: [{ id: sid, origin: 'https://example.com',
+        generation: 1, refs: [], active: false, expires_in: 60 }] }
+      : { available: true });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 93 },
+    })).mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 94 },
+    }));
+    render(<OperatorPanel />);
+    await waitFor(() => expect(screen.getByLabelText('Live fresh-profile session')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'console' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 93 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      mode: 'act', session_id: sid, steps: [{ action: 'console' }],
+    } });
+    fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'get_images' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 94 queued/)).toBeTruthy());
+    expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
+      mode: 'act', session_id: sid, steps: [{ action: 'get_images' }],
+    } });
+  });
+
+  it('renders only typed owner observations as escaped page text', async () => {
+    get.mockImplementation(async (path) => path === '/api/browser/tasks/95'
+      ? { found: true, status: 'done', ok: true, steps: 1,
+        observations: [
+          { action: 'console', records: [
+            { level: 'log', text: '<script>alert(1)</script>', source_origin: 'https://example.com' },
+          ], dropped: 2 },
+          { action: 'get_images', images: [
+            { alt: 'Owner image', source_url: 'https://example.com/a.png',
+              frame_origin: 'https://example.com', width: 12, height: 14,
+              fetchable: true, ref: '@e2' },
+          ] },
+          { action: 'console', records: [{ level: 'error', text: 'private',
+            source_origin: 'file:///private' }], cookie: 'private-cookie' },
+        ], trace: [{ result: { text: 'raw dump' } }] }
+      : { available: true, sessions: [] });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 95 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Start fresh session with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh session with approval' }));
+    await waitFor(() => expect(screen.getByLabelText('browser observations')).toBeTruthy());
+    const area = screen.getByLabelText('browser observations');
+    expect(area.textContent).toContain('<script>alert(1)</script>');
+    expect(area.querySelector('script')).toBeNull();
+    expect(area.textContent).toContain('Owner image');
+    expect(area.textContent).not.toContain('private-cookie');
+    expect(area.textContent).not.toContain('raw dump');
+  });
+
   it('shows a later bounded task outcome without rendering page content', async () => {
     get.mockImplementation(async (path) => path === '/api/browser/tasks/92'
       ? { found: true, status: 'completed', ok: true, steps: 2,

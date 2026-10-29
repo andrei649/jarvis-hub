@@ -40,6 +40,10 @@ from agents.core.env_config import env_str
 
 logger = logging.getLogger("jarvis.browser.playwright")
 
+MAX_CONSOLE_RECORDS = 32
+MAX_CONSOLE_BYTES = 8_000
+MAX_CONSOLE_TEXT = 512
+
 SUPPORTED_BROWSERS = frozenset({"chromium", "firefox", "webkit"})
 PROFILE_PREFIX = "nerva-browser-"
 MAX_SNAPSHOT_ELEMENTS = 500
@@ -140,6 +144,75 @@ class PlaywrightBrowserDriver:
         self._page = None
         self._owned_child = None
         self._owned_browser_identity: tuple[int, float] | None = None
+        self._console_records: deque[dict] = deque()
+        self._console_bytes = 0
+        self._console_dropped = 0
+        self._console_truncated = 0
+        self._console_epoch = 0
+        self._console_page = None
+
+    def _clear_console(self) -> None:
+        self._console_records.clear()
+        self._console_bytes = 0
+        self._console_dropped = 0
+        self._console_truncated = 0
+        self._console_epoch += 1
+
+    def _on_console(self, message) -> None:
+        """Playwright's fixed event fields only; never hold JSHandles or arguments."""
+        try:
+            raw_level = message.type
+            level = raw_level if raw_level in {'log', 'info', 'warning', 'error', 'debug'} else 'other'
+            raw_text = str(message.text)
+            raw_url = message.location.get('url', '')
+            parsed = urlparse(raw_url)
+            origin = (f'{parsed.scheme}://{parsed.netloc}'
+                      if parsed.scheme in {'http', 'https'} and parsed.hostname
+                      and parsed.username is None and parsed.password is None
+                      and (parsed.port is None or 1 <= parsed.port <= 65_535)
+                      and len(parsed.netloc) <= 253 else '')
+            text = raw_text[:MAX_CONSOLE_TEXT]
+            if len(raw_text) > MAX_CONSOLE_TEXT:
+                self._console_truncated += 1
+            frame_id = next((id(frame) for frame in getattr(self._page, 'frames', ())
+                             if str(frame.url) == raw_url), None)
+            record = {'level': level, 'text': text, 'source_origin': origin,
+                      'document_epoch': self._console_epoch, '_frame_id': frame_id}
+            size = len(json.dumps(record, ensure_ascii=False).encode('utf-8'))
+            while self._console_records and (len(self._console_records) >= MAX_CONSOLE_RECORDS
+                                             or self._console_bytes + size > MAX_CONSOLE_BYTES):
+                old = self._console_records.popleft()
+                self._console_bytes -= len(json.dumps(old, ensure_ascii=False).encode('utf-8'))
+                self._console_dropped += 1
+            if size <= MAX_CONSOLE_BYTES:
+                self._console_records.append(record)
+                self._console_bytes += size
+            else:
+                self._console_dropped += 1
+        except Exception:
+            self._console_dropped += 1
+
+    def _on_console_navigation(self, frame) -> None:
+        # A new child document discards only that frame's old events. Main
+        # navigation invalidates all frames. Unknown script sources are dropped.
+        if self._page is None or frame is self._page.main_frame:
+            self._clear_console()
+            return
+        self._console_epoch += 1
+        self._console_records = deque(record for record in self._console_records
+                                      if record['_frame_id'] not in {None, id(frame)})
+        self._console_bytes = sum(len(json.dumps(item, ensure_ascii=False).encode('utf-8'))
+                                  for item in self._console_records)
+
+    async def console(self) -> dict:
+        await self._ensure_started()
+        self._assert_execution_current()
+        return {'observation': 'console',
+                'records': [{key: value for key, value in record.items() if key != '_frame_id'}
+                            for record in self._console_records],
+                'dropped': self._console_dropped,
+                'truncated': self._console_truncated,
+                'document_epoch': self._console_epoch, 'untrusted': True}
 
     @classmethod
     def from_env(cls, **kwargs) -> PlaywrightBrowserDriver:
@@ -388,6 +461,13 @@ class PlaywrightBrowserDriver:
                     raise PlaywrightUnavailable('browser WebRTC guard unavailable')
                 self._page = await self._context.new_page()
                 self._page.set_default_timeout(self.timeout_ms)
+                if callable(getattr(self._page, 'on', None)):
+                    self._page.on('console', self._on_console)
+                    self._page.on('framenavigated', self._on_console_navigation)
+                    self._page.on('framedetached', self._on_console_navigation)
+                    self._console_page = self._page
+                elif self._factory is None:
+                    raise PlaywrightUnavailable('browser console event boundary unavailable')
                 return self._page
             except (PlaywrightHostDisabled, PlaywrightUnavailable, BrowserTransportRefused):
                 await self._close_resources()
@@ -469,6 +549,16 @@ class PlaywrightBrowserDriver:
             await self._close_resources()
 
     async def _close_resources(self) -> None:
+        if self._console_page is not None:
+            remove = getattr(self._console_page, 'remove_listener', None)
+            if callable(remove):
+                for event, handler in (('console', self._on_console),
+                                       ('framenavigated', self._on_console_navigation),
+                                       ('framedetached', self._on_console_navigation)):
+                    with contextlib.suppress(Exception):
+                        remove(event, handler)
+            self._console_page = None
+        self._clear_console()
         self._page = None
         failures = []
         for attr, method_name in (('_context', 'close'), ('_browser', 'close'),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import Mapping
 from typing import Annotated, Literal
@@ -37,6 +38,95 @@ class _BrowserValidationRoute(APIRoute):
 
 
 router = APIRouter(tags=["browser"], route_class=_BrowserValidationRoute)
+
+_OBSERVATION_BYTES = 16_000
+
+
+def _safe_origin(value) -> bool:
+    if type(value) is not str or len(value) > 253:
+        return False
+    try:
+        parsed = urlsplit(value)
+        return (parsed.scheme in {'http', 'https'} and bool(parsed.hostname)
+                and parsed.username is None and parsed.password is None
+                and (parsed.port is None or 1 <= parsed.port <= 65_535)
+                and not parsed.path and not parsed.query and not parsed.fragment
+                and not any(ord(char) <= 32 or ord(char) == 127 for char in value))
+    except ValueError:
+        return False
+
+
+def _safe_image_url(value) -> bool:
+    if type(value) is not str or len(value) > 512:
+        return False
+    if not value:
+        return True
+    try:
+        parsed = urlsplit(value)
+        return (parsed.scheme in {'http', 'https'} and bool(parsed.hostname)
+                and parsed.username is None and parsed.password is None
+                and (parsed.port is None or 1 <= parsed.port <= 65_535)
+                and not parsed.fragment
+                and not any(ord(char) <= 32 or ord(char) == 127 for char in value))
+    except ValueError:
+        return False
+
+
+def _project_browser_observations(trace) -> tuple[list[dict], bool]:
+    """Only expected typed browser observations reach the owner HUD."""
+    if type(trace) is not list:
+        return [], False
+    output: list[dict] = []
+    truncated = False
+    for step in trace[:20]:
+        if type(step) is not dict or step.get('status') != 'done':
+            continue
+        action, raw = step.get('action'), step.get('result')
+        if type(raw) is not dict or action not in {'console', 'get_images'}:
+            continue
+        if action == 'console' and raw.get('observation') == 'console':
+            records = []
+            for item in raw.get('records', [])[:32] if type(raw.get('records')) is list else []:
+                if (type(item) is dict and item.get('level') in {
+                        'log', 'info', 'warning', 'error', 'debug', 'other'}
+                        and type(item.get('text')) is str and len(item['text']) <= 512
+                        and _safe_origin(item.get('source_origin'))
+                        and type(item.get('document_epoch')) is int
+                        and item['document_epoch'] >= 0):
+                    records.append({key: item[key] for key in
+                                    ('level', 'text', 'source_origin', 'document_epoch')})
+            projected = {'action': 'console', 'records': records}
+        elif action == 'get_images' and raw.get('observation') == 'images':
+            images = []
+            for item in raw.get('images', [])[:24] if type(raw.get('images')) is list else []:
+                if (type(item) is dict and _safe_image_url(item.get('source_url'))
+                        and type(item.get('alt')) is str and len(item['alt']) <= 128
+                        and type(item.get('width')) is int and 0 <= item['width'] <= 100_000
+                        and type(item.get('height')) is int and 0 <= item['height'] <= 100_000
+                        and type(item.get('fetchable')) is bool
+                        and (not item['fetchable'] or bool(item['source_url']))
+                        and _safe_origin(item.get('frame_origin'))
+                        and type(item.get('document_epoch')) is int
+                        and item['document_epoch'] >= 0):
+                    row = {key: item[key] for key in ('source_url', 'alt', 'width', 'height',
+                                                       'fetchable', 'frame_origin', 'document_epoch')}
+                    ref = item.get('ref')
+                    if type(ref) is str and re.fullmatch(r'@e[1-9][0-9]{0,5}', ref):
+                        row['ref'] = ref
+                    images.append(row)
+            projected = {'action': 'get_images', 'images': images}
+        else:
+            continue
+        dropped = raw.get('dropped')
+        if type(dropped) is int and 0 <= dropped <= 1_000_000:
+            projected['dropped'] = dropped
+        if type(raw.get('truncated')) is bool:
+            projected['truncated'] = raw['truncated']
+        if len(json.dumps([*output, projected], ensure_ascii=False).encode()) > _OBSERVATION_BYTES:
+            truncated = True
+            break
+        output.append(projected)
+    return output, truncated
 
 
 @router.get('/api/browser/status', dependencies=[Depends(user_guard)])
@@ -97,6 +187,10 @@ async def browser_task_status(task_id: int):
         result['ok'] = outcome['ok']
         if type(outcome.get('trace')) is list:
             result['steps'] = min(len(outcome['trace']), 20)
+            observations, truncated = _project_browser_observations(outcome['trace'])
+            if observations or truncated:
+                result['observations'] = observations
+                result['observations_truncated'] = truncated
         reason = outcome.get('reason')
         if type(reason) is str and re.fullmatch('[a-z_]{1,64}', reason):
             result['reason'] = reason

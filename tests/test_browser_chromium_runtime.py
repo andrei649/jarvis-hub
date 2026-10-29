@@ -47,7 +47,8 @@ def browser_processes_for_profile(profile):
 
 @pytest.fixture
 async def local_page():
-    state = {'clicked': 0, 'hosts': [], 'websocket_handshakes': 0, 'form_submits': 0}
+    state = {'clicked': 0, 'hosts': [], 'paths': [], 'websocket_handshakes': 0,
+             'form_submits': 0}
 
     async def respond(reader, writer):
         try:
@@ -57,6 +58,7 @@ async def local_page():
                 state['websocket_handshakes'] += 1
             first = head.splitlines()[0].split()
             path = first[1] if len(first) >= 2 else '/'
+            state['paths'].append(path)
             state['hosts'].extend(line[6:] for line in head.splitlines()
                                   if line.lower().startswith('host: '))
             if path == '/clicked':
@@ -84,6 +86,31 @@ async def local_page():
                 body = (b'<!doctype html><title>Child frame</title>'
                         b'<button id="child-button" onclick="this.dataset.clicked = 1">'
                         b'Child click</button>')
+                status = '200 OK'
+            elif path == '/observation-child':
+                body = (b'<!doctype html><title>Child observations</title>'
+                        b'<script>console.log("child-observation")</script>'
+                        b'<img id="child-image" src="/pixel-child" alt="Child image" width="12" height="12">')
+                status = '200 OK'
+            elif path == '/observations':
+                body = (f'<!doctype html><title>Observations</title>'
+                        '<script>console.log("main-observation"); console.error("bounded-error")</script>'
+                        '<img id="visible-image" src="/pixel" alt="Visible image" width="10" height="10">'
+                        '<img style="display:none" src="/pixel-hidden" alt="Hidden image">'
+                        '<img src="data:image/png;base64,AAA" alt="Embedded image" width="10" height="10">'
+                        '<img src="http://unapproved.invalid/x" alt="Unpinned image" width="10" height="10">'
+                        '<img src="javascript:alert(1)" alt="Hostile image" width="10" height="10">'
+                        f'<iframe src="http://frame.other.test:{port}/observation-child"></iframe>').encode()
+                status = '200 OK'
+            elif path == '/observation-flood':
+                images = ''.join(f'<img src="data:image/png;base64,AAA" alt="Image {index}" '
+                                 'width="10" height="10">' for index in range(40))
+                body = ('<!doctype html><title>Bounded observations</title>'
+                        '<script>for(let i=0;i<80;i++) console.log(String(i)+":"+"x".repeat(1000))</script>'
+                        + images).encode()
+                status = '200 OK'
+            elif path in {'/pixel', '/pixel-child', '/pixel-hidden'}:
+                body = b'GIF89a'  # only request counting matters; dimensions are fixed in markup
                 status = '200 OK'
             elif path == '/actions':
                 body = (b'<!doctype html><title>Actions</title>'
@@ -268,6 +295,194 @@ async def test_session_snapshot_ref_survives_separate_owner_approved_call(browse
     assert rig.runtime.last_profile is not None and not rig.runtime.last_profile.exists()
     assert not browser_identity_alive(rig.runtime.last_browser_identity)
     assert not journal_path.exists()
+
+
+async def test_owner_approved_console_and_image_inventory_use_live_pinned_frames(browser_rig,
+                                                                                monkeypatch):
+    from agents.core.browser_playwright import PlaywrightHostDisabled
+
+    rig = browser_rig
+    child = rig.page.origin.replace('fixture.browser.test', 'frame.other.test')
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': child + '/observation-child'},
+        {'action': 'navigate', 'url': rig.page.origin + '/observations'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    session = rig.runtime.sessions[sid]
+    profile = session.driver.profile_dir
+    identity = session.driver.owned_browser_identity
+    with pytest.raises(PlaywrightHostDisabled):
+        await session.driver.console()
+    with pytest.raises(PlaywrightHostDisabled):
+        await session.get_images()
+    checked_hosts = []
+    original_policy = session.policy.domain_allowed
+
+    def checked_policy(url):
+        checked_hosts.append(url)
+        return original_policy(url)
+
+    session.policy.domain_allowed = checked_policy
+    before = list(rig.page.state['paths'])
+    proposed = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'console'}, {'action': 'get_images'}]}})
+    assert proposed['reason'] == 'approval_required', proposed
+    await rig.worker.apply_decision(proposed['task_id'], 'accept', decided_by='andrei')
+    await rig.worker.tick()
+    observed = rig.queue.get(proposed['task_id']).result['result']
+    assert observed['ok'] is True, observed
+    console = observed['trace'][0]['result']
+    images = observed['trace'][1]['result']
+    assert console['observation'] == 'console' and console['untrusted'] is True
+    assert {'main-observation', 'child-observation'} <= {
+        item['text'] for item in console['records']}
+    assert all(item['source_origin'] in {rig.page.origin, child} for item in console['records'])
+    assert images['observation'] == 'images' and images['untrusted'] is True
+    by_alt = {item['alt']: item for item in images['images']}
+    assert {'Visible image', 'Child image', 'Embedded image'} <= set(by_alt)
+    assert 'Hidden image' not in by_alt
+    assert by_alt['Visible image']['fetchable'] is True
+    assert by_alt['Child image']['fetchable'] is True
+    assert by_alt['Embedded image']['source_url'] == ''
+    assert by_alt['Embedded image']['fetchable'] is False
+    assert by_alt['Unpinned image']['fetchable'] is False
+    assert by_alt['Hostile image']['source_url'] == ''
+    assert rig.page.state['paths'] == before
+    assert not any('unapproved.invalid' in url for url in checked_hosts)
+    monkeypatch.setattr(rig.web, 'ADMIN_TOKEN', 'browser-admin')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                 base_url='http://testserver',
+                                 headers={'X-User-Token': 'browser-user'}) as user:
+        assert (await user.get(f"/api/browser/tasks/{proposed['task_id']}")).status_code == 401
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                 base_url='http://testserver',
+                                 headers={'X-Admin-Token': 'browser-admin'}) as owner:
+        projected = await owner.get(f"/api/browser/tasks/{proposed['task_id']}")
+        assert projected.status_code == 200
+        body = projected.json()
+        assert body['observations'][0]['records']
+        assert {item['alt'] for item in body['observations'][1]['images']} >= {
+            'Visible image', 'Child image'}
+        assert 'trace' not in body and 'payload' not in body
+    repeated = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'console'}, {'action': 'get_images'}]})
+    assert repeated['ok'] is True, repeated
+    assert repeated['trace'][0]['result']['records'] == console['records']
+    assert {item['alt'] for item in repeated['trace'][1]['result']['images']} == set(by_alt)
+    assert rig.page.state['paths'] == before
+    ref = by_alt['Visible image']['ref']
+    await session.driver._page.evaluate(
+        "document.querySelector('#visible-image').src = '/pixel-child'")
+    stale = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': ref}]})
+    assert stale['ok'] is False and stale['reason'] == 'stale_browser_ref'
+    assert sid not in rig.runtime.sessions
+    assert not profile.exists() and not browser_identity_alive(identity)
+
+
+async def test_console_and_image_inventory_report_honest_native_bounds(browser_rig):
+    from agents.core.browser_playwright import MAX_CONSOLE_BYTES, MAX_CONSOLE_RECORDS
+    from agents.core.browser_session import MAX_IMAGE_BYTES, MAX_IMAGES
+
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/observation-flood'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    try:
+        observed = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+            'steps': [{'action': 'console'}, {'action': 'get_images'}]})
+        assert observed['ok'] is True, observed
+        console = observed['trace'][0]['result']
+        images = observed['trace'][1]['result']
+        assert len(console['records']) <= MAX_CONSOLE_RECORDS
+        assert console['dropped'] > 0 and console['truncated'] > 0
+        assert len(json.dumps(console['records'], ensure_ascii=False).encode()) <= MAX_CONSOLE_BYTES
+        assert images['count'] <= MAX_IMAGES and images['truncated'] is True
+        assert images['dropped'] > 0
+        assert len(json.dumps(images['images'], ensure_ascii=False).encode()) <= MAX_IMAGE_BYTES
+        assert all(item['fetchable'] is False and item['source_url'] == ''
+                   for item in images['images'])
+    finally:
+        assert await rig.runtime.close_owner_session(sid)
+
+
+async def test_console_navigation_and_close_discard_prior_document_events(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/observations'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    driver = rig.runtime.sessions[sid].driver
+    first = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+                                               'steps': [{'action': 'console'}]})
+    assert any(item['text'] == 'main-observation'
+               for item in first['trace'][0]['result']['records'])
+    navigated = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'navigate', 'url': rig.page.origin + '/'}]})
+    assert navigated['ok'] is True, navigated
+    second = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+                                                'steps': [{'action': 'console'}]})
+    assert second['ok'] is True
+    assert not any(item['text'] in {'main-observation', 'child-observation'}
+                   for item in second['trace'][0]['result']['records'])
+    assert await rig.runtime.close_owner_session(sid)
+    assert not driver._console_records and driver._console_page is None
+
+
+async def test_image_ref_srcset_change_is_stale_even_before_current_src_reselects(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/observations'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    inventory = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'get_images'}]})
+    assert inventory['ok'] is True
+    ref = next(item['ref'] for item in inventory['trace'][0]['result']['images']
+               if item['alt'] == 'Visible image')
+    await rig.runtime.sessions[sid].driver._page.evaluate(
+        "document.querySelector('#visible-image').setAttribute('srcset','/pixel-child 2x')")
+    stale = await _approved_session_call(rig, {'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'click', 'ref': ref}]})
+    assert stale['ok'] is False and stale['reason'] == 'stale_browser_ref'
+    assert sid not in rig.runtime.sessions
+
+
+async def test_live_kernel_read_denial_blocks_console_and_images_before_observation(browser_rig):
+    from agents.core.kernel import Decision, Verdict
+
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/observations'},
+        {'action': 'snapshot'},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    driver = rig.runtime.sessions[sid].driver
+    profile = driver.profile_dir
+    proposed = await rig.orch.tool_rpc.handle({'tool': 'browser_run', 'args': {
+        'mode': 'act', 'session_id': sid,
+        'steps': [{'action': 'console'}, {'action': 'get_images'}]}})
+    assert proposed['reason'] == 'approval_required', proposed
+    await rig.worker.apply_decision(proposed['task_id'], 'accept', decided_by='andrei')
+    rig.runtime.revalidator = lambda *_args, **_kwargs: Decision(Verdict.DENY,
+                                                                  reason='test_denial')
+    await rig.worker.tick()
+    done = rig.queue.get(proposed['task_id'])
+    assert done.result['result']['ok'] is False
+    assert done.result['result']['reason'] == 'browser_kernel_refused'
+    assert sid not in rig.runtime.sessions
+    assert not profile.exists() and not driver._console_records
 
 
 async def test_unchanged_real_registration_survives_two_reaper_ticks_and_next_action(browser_rig,

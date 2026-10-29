@@ -46,6 +46,69 @@ interface BrowserTaskOutcome {
   ok?: boolean;
   steps?: number;
   reason?: string;
+  observations?: BrowserObservation[];
+  observations_truncated?: boolean;
+}
+
+type BrowserObservation =
+  | { action: 'console'; records: { level: string; text: string; source_origin: string }[];
+      dropped?: number; truncated?: boolean }
+  | { action: 'get_images'; images: { source_url: string; alt: string; width: number;
+      height: number; fetchable: boolean; frame_origin: string; ref?: string }[];
+      dropped?: number; truncated?: boolean };
+
+function safeBrowserOrigin(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 253 || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  try {
+    const parsed = new URL(value);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+      && !parsed.username && !parsed.password && parsed.pathname === '/' && !parsed.search && !parsed.hash;
+  } catch { return false; }
+}
+
+function safeBrowserImageUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 512 || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  if (!value) return true;
+  try {
+    const parsed = new URL(value);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+      && !parsed.username && !parsed.password && !parsed.hash;
+  } catch { return false; }
+}
+
+function safeBrowserObservations(value: unknown): BrowserObservation[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).flatMap((raw): BrowserObservation[] => {
+    if (!isRecord(raw)) return [];
+    const dropped = Number.isSafeInteger(raw.dropped) && Number(raw.dropped) >= 0
+      ? { dropped: Math.min(Number(raw.dropped), 1_000_000) } : {};
+    const truncated = typeof raw.truncated === 'boolean' ? { truncated: raw.truncated } : {};
+    if (raw.action === 'console' && Array.isArray(raw.records)) {
+      const records = raw.records.slice(0, 32).filter((item) => isRecord(item)
+        && ['log', 'info', 'warning', 'error', 'debug', 'other'].includes(String(item.level))
+        && typeof item.text === 'string' && item.text.length <= 512
+        && safeBrowserOrigin(item.source_origin))
+        .map((item) => ({ level: String(item.level), text: String(item.text),
+          source_origin: String(item.source_origin) }));
+      return [{ action: 'console', records, ...dropped, ...truncated }];
+    }
+    if (raw.action === 'get_images' && Array.isArray(raw.images)) {
+      const images = raw.images.slice(0, 24).filter((item) => isRecord(item)
+        && typeof item.alt === 'string' && item.alt.length <= 128
+        && safeBrowserImageUrl(item.source_url)
+        && safeBrowserOrigin(item.frame_origin)
+        && typeof item.fetchable === 'boolean'
+        && Number.isSafeInteger(item.width) && Number(item.width) >= 0 && Number(item.width) <= 100_000
+        && Number.isSafeInteger(item.height) && Number(item.height) >= 0 && Number(item.height) <= 100_000)
+        .map((item) => ({ alt: String(item.alt), source_url: String(item.source_url),
+          frame_origin: String(item.frame_origin), fetchable: item.fetchable === true,
+          width: Number(item.width), height: Number(item.height),
+          ...(typeof item.ref === 'string' && /^@e[1-9][0-9]{0,5}$/.test(item.ref)
+            ? { ref: item.ref } : {}) }));
+      return [{ action: 'get_images', images, ...dropped, ...truncated }];
+    }
+    return [];
+  });
 }
 
 interface DesktopPreviewRow {
@@ -313,7 +376,7 @@ export function OperatorPanel() {
   const [browserPreview, setBrowserPreview] = useState<BrowserPreviewRow[] | null>(null);
   const [browserSessions, setBrowserSessions] = useState<BrowserSessionView[]>([]);
   const [browserSessionId, setBrowserSessionId] = useState('');
-  const [browserSessionAction, setBrowserSessionAction] = useState<'snapshot' | 'click' | 'scroll' | 'back' | 'press'>('snapshot');
+  const [browserSessionAction, setBrowserSessionAction] = useState<'snapshot' | 'console' | 'get_images' | 'click' | 'scroll' | 'back' | 'press'>('snapshot');
   const [browserSessionRef, setBrowserSessionRef] = useState('');
   const [browserSessionKey, setBrowserSessionKey] = useState('Enter');
   const [browserSessionDirection, setBrowserSessionDirection] = useState<'up' | 'down'>('down');
@@ -353,6 +416,9 @@ export function OperatorPanel() {
         ...(typeof value.ok === 'boolean' ? { ok: value.ok } : {}),
         ...(Number.isSafeInteger(value.steps) && Number(value.steps) >= 0 ? { steps: Number(value.steps) } : {}),
         ...(typeof value.reason === 'string' ? { reason: value.reason.slice(0, MAX_REASON) } : {}),
+        ...(Array.isArray(value.observations) ? { observations: safeBrowserObservations(value.observations) } : {}),
+        ...(typeof value.observations_truncated === 'boolean'
+          ? { observations_truncated: value.observations_truncated } : {}),
       });
     }).catch(() => { /* A missing task never becomes a success claim. */ });
     void refresh();
@@ -593,10 +659,11 @@ export function OperatorPanel() {
   const actBrowserSession = () => {
     if (!browserSessionId) return setBrowserError('Select a live browser session');
     const action = browserSessionAction;
-    if (action !== 'snapshot' && action !== 'back' && !/^@e[1-9][0-9]{0,5}$/.test(browserSessionRef)) {
+    if (!['snapshot', 'console', 'get_images', 'back'].includes(action)
+        && !/^@e[1-9][0-9]{0,5}$/.test(browserSessionRef)) {
       return setBrowserError('Select a live element reference');
     }
-    const step = action === 'snapshot' || action === 'back' ? { action }
+    const step = ['snapshot', 'console', 'get_images', 'back'].includes(action) ? { action }
       : action === 'press' ? { action, ref: browserSessionRef, key: browserSessionKey }
       : action === 'scroll' ? { action, ref: browserSessionRef, direction: browserSessionDirection, pixels: 300 }
       : { action, ref: browserSessionRef };
@@ -830,6 +897,24 @@ export function OperatorPanel() {
             {browserTaskOutcome.ok === true ? ` · ${browserTaskOutcome.steps ?? 0} steps completed` : ''}
             {browserTaskOutcome.ok === false ? ` · ${browserTaskOutcome.reason || 'browser_failed'}` : ''}
           </p>}
+          {browserTaskOutcome?.observations && browserTaskOutcome.observations.length > 0 &&
+            <section aria-label="browser observations" style={mono}>
+              <strong>Untrusted browser observations</strong>
+              {browserTaskOutcome.observations.map((observation, index) =>
+                <div key={`${index}:${observation.action}`}>
+                  <div>{observation.action === 'console' ? 'Console' : 'Visible images'}
+                    {observation.dropped ? ` · ${observation.dropped} dropped` : ''}
+                    {observation.truncated ? ' · truncated' : ''}</div>
+                  {observation.action === 'console' ?
+                    <ol>{observation.records.map((record, row) =>
+                      <li key={row}>{record.level} · {record.source_origin} · {record.text}</li>)}</ol>
+                    : <ol>{observation.images.map((item, row) =>
+                      <li key={row}>{item.alt} · {item.frame_origin} · {item.width}×{item.height}
+                        {item.ref ? ` · ${item.ref}` : ''}
+                        {item.fetchable ? ` · ${item.source_url}` : ' · source not fetchable'}</li>)}</ol>}
+                </div>)}
+              {browserTaskOutcome.observations_truncated && <div>Observation projection truncated</div>}
+            </section>}
           {browserSessions.length > 0 && <div style={{ ...mono, marginTop: 8 }}>
             <label htmlFor="operator-browser-session">Live fresh-profile session</label>
             <select id="operator-browser-session" value={browserSessionId}
@@ -841,10 +926,10 @@ export function OperatorPanel() {
             <label htmlFor="operator-browser-session-action">Session action</label>
             <select id="operator-browser-session-action" value={browserSessionAction}
               onChange={(event) => setBrowserSessionAction(event.target.value as typeof browserSessionAction)}>
-              {(['snapshot', 'click', 'scroll', 'back', 'press'] as const).map((action) =>
+              {(['snapshot', 'console', 'get_images', 'click', 'scroll', 'back', 'press'] as const).map((action) =>
                 <option key={action} value={action}>{action}</option>)}
             </select>
-            {browserSessionAction !== 'snapshot' && browserSessionAction !== 'back' && <>
+            {!['snapshot', 'console', 'get_images', 'back'].includes(browserSessionAction) && <>
               <label htmlFor="operator-browser-session-ref">Observed element</label>
               <select id="operator-browser-session-ref" value={browserSessionRef}
                 onChange={(event) => setBrowserSessionRef(event.target.value)}>

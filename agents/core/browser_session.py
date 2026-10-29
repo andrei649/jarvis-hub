@@ -20,6 +20,10 @@ MAX_REFS = 100
 MAX_FRAMES = 16
 MAX_REF_TEXT = 128
 MAX_REF_TARGET = 1024
+MAX_IMAGE_SCAN = 100
+MAX_IMAGES = 24
+MAX_IMAGE_SRC = 512
+MAX_IMAGE_BYTES = 8_000
 IDLE_SECONDS = 60.0
 LIFETIME_SECONDS = 600.0
 
@@ -32,11 +36,14 @@ _SEMANTICS = """(e) => {
   const tag = e.tagName.toLowerCase();
   const role = e.getAttribute('role') || tag;
   const name = e.getAttribute('aria-label') || e.getAttribute('title') ||
-    (tag === 'input' ? (e.getAttribute('placeholder') || '') : (e.textContent || '').trim());
+    (tag === 'input' ? (e.getAttribute('placeholder') || '') :
+      tag === 'img' ? (e.getAttribute('alt') || '') : (e.textContent || '').trim());
   const form = e.form || (tag === 'form' ? e : null);
   const target = JSON.stringify({
     own: [e.getAttribute('href') || '', e.getAttribute('action') || '',
-      e.getAttribute('type') || '', e.getAttribute('form') || ''],
+      e.getAttribute('type') || '', e.getAttribute('form') || '',
+      tag === 'img' ? [e.getAttribute('src') || '', e.getAttribute('srcset') || '',
+        e.getAttribute('sizes') || '', e.currentSrc || ''] : ''],
     form: form ? [form.action, form.method, form.target, form.enctype, !!form.noValidate] : null,
     override: [e.getAttribute('formaction') || '', e.getAttribute('formmethod') || '',
       e.getAttribute('formtarget') || '', e.getAttribute('formenctype') || '',
@@ -49,6 +56,14 @@ _SEMANTICS = """(e) => {
     focus: e.ownerDocument.activeElement === e,
     disabled: !!e.disabled, hidden: e.getAttribute('aria-hidden') === 'true'};
 }"""
+
+_IMAGE_OBSERVATION = """(e) => ({
+  connected: e.isConnected, hidden: e.getAttribute('aria-hidden') === 'true',
+  alt: (e.getAttribute('alt') || '').slice(0, 129),
+  src: (e.currentSrc || e.src || '').slice(0, 513),
+  src_truncated: (e.currentSrc || e.src || '').length > 512,
+  width: e.naturalWidth || e.width || 0, height: e.naturalHeight || e.height || 0,
+})"""
 
 
 @dataclass
@@ -179,6 +194,120 @@ class BrowserSession:
         observation['refs'] = output
         observation['generation'] = self.generation
         return observation
+
+    async def get_images(self) -> dict:
+        """Inventory only visible live nodes; no request, download or new pin."""
+        page = await self.driver._ensure_started()
+        self.driver._assert_execution_current()
+        self.observe_page(page)
+        output: list[dict] = []
+        dropped = 0
+        truncated = len(page.frames) > MAX_FRAMES
+        scanned = 0
+        for frame in list(page.frames)[:MAX_FRAMES]:
+            if scanned >= MAX_IMAGE_SCAN or len(output) >= MAX_IMAGES:
+                truncated = True
+                break
+            url = str(frame.url)
+            parsed_frame = urlsplit(url)
+            if (parsed_frame.scheme not in {'http', 'https'} or not parsed_frame.hostname
+                    or len(parsed_frame.netloc) > 253
+                    or parsed_frame.hostname not in self.pins.pinned_hosts()):
+                continue
+            allowed, _ = await asyncio.to_thread(self.policy.domain_allowed, url)
+            self.driver._assert_execution_current()
+            if not allowed:
+                continue
+            if frame is not page.main_frame:
+                try:
+                    owner = await frame.frame_element()
+                    if not await owner.is_visible():
+                        continue
+                except Exception:
+                    continue
+            try:
+                locator = frame.locator('img')
+                count = await locator.count()
+            except Exception:
+                continue
+            remaining = MAX_IMAGE_SCAN - scanned
+            if count > remaining:
+                truncated = True
+                dropped += count - remaining
+            for index in range(min(count, remaining)):
+                scanned += 1
+                if len(output) >= MAX_IMAGES:
+                    truncated = True
+                    dropped += min(count, remaining) - index
+                    break
+                try:
+                    handle = await locator.nth(index).element_handle()
+                    if handle is None or not await handle.is_visible():
+                        continue
+                    raw = await handle.evaluate(_IMAGE_OBSERVATION)
+                    self.driver._assert_execution_current()
+                    if type(raw) is not dict or not raw.get('connected') or raw.get('hidden'):
+                        continue
+                    source = raw.get('src')
+                    alt = raw.get('alt')
+                    if type(source) is not str or type(alt) is not str:
+                        continue
+                    source = source if len(source) <= MAX_IMAGE_SRC and not raw.get('src_truncated') else ''
+                    alt = alt[:MAX_REF_TEXT]
+                    try:
+                        parsed = urlsplit(source)
+                        clean_http = (parsed.scheme in {'http', 'https'} and parsed.hostname
+                                      and parsed.username is None and parsed.password is None
+                                      and (parsed.port is None or 1 <= parsed.port <= 65_535)
+                                      and not parsed.fragment and not any(ord(char) <= 32 or ord(char) == 127
+                                                                          for char in source))
+                    except ValueError:
+                        clean_http = False
+                        parsed = None
+                    if not clean_http:
+                        source = ''
+                    pinned = bool(clean_http and parsed.hostname in self.pins.pinned_hosts())
+                    fetchable = False
+                    if pinned:
+                        fetchable, _ = await asyncio.to_thread(self.policy.domain_allowed, source)
+                        self.driver._assert_execution_current()
+                    width, height = raw.get('width'), raw.get('height')
+                    width = width if type(width) is int and 0 <= width <= 100_000 else 0
+                    height = height if type(height) is int and 0 <= height <= 100_000 else 0
+                    row = {'source_url': source, 'alt': alt, 'width': width,
+                           'height': height, 'fetchable': fetchable,
+                           'frame_origin': f'{parsed_frame.scheme}://{parsed_frame.netloc}',
+                           'document_epoch': self.frame_epochs.get(id(frame), 0)}
+                    semantics = await handle.evaluate(_SEMANTICS)
+                    self.driver._assert_execution_current()
+                    if (type(semantics) is dict and semantics.get('connected')
+                            and not semantics.get('hidden') and not semantics.get('disabled')
+                            and len(self.refs) < MAX_REFS):
+                        role = self._bounded(semantics.get('role'))
+                        name = self._bounded(semantics.get('name'))
+                        target = self._bounded(semantics.get('target'), MAX_REF_TARGET)
+                        if role == 'img' and name is not None and target is not None:
+                            ref = f'@e{self.next_ref}'
+                            row['ref'] = ref
+                            self.refs[ref] = LiveRef(handle, frame, url,
+                                                     self.frame_epochs.get(id(frame), 0),
+                                                     role, name, target, True, False)
+                            self.next_ref += 1
+                    if len(json.dumps([*output, row], ensure_ascii=False).encode()) > MAX_IMAGE_BYTES:
+                        if 'ref' in row:
+                            self.refs.pop(row['ref'], None)
+                        truncated = True
+                        dropped += 1
+                        break
+                    output.append(row)
+                except Exception:
+                    dropped += 1
+                    truncated = True
+            if len(output) >= MAX_IMAGES:
+                break
+        return {'observation': 'images', 'images': output, 'count': len(output),
+                'dropped': dropped, 'truncated': truncated, 'untrusted': True,
+                'generation': self.generation}
 
     async def resolve_ref(self, ref: str, action: str):
         entry = self.refs.get(ref)

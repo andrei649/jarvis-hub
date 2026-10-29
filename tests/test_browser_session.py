@@ -27,6 +27,106 @@ def test_session_request_requires_explicit_mode_and_bounded_actions():
             validate_browser_request(bad)
 
 
+def test_session_observations_are_exact_read_actions_without_extra_authority():
+    from agents.core.browser_runtime import BrowserPlanRefused, validate_browser_request
+
+    sid = 'a' * 32
+    request = validate_browser_request({'mode': 'act', 'session_id': sid,
+                                        'steps': [{'action': 'console'}, {'action': 'get_images'}]})
+    assert request.mode == 'act'
+    assert request.steps == ({'action': 'console'}, {'action': 'get_images'})
+    for action in ('console', 'get_images'):
+        for extra in ({'selector': 'img'}, {'url': 'https://example.com/x'}, {'ref': '@e1'}):
+            with pytest.raises(BrowserPlanRefused):
+                validate_browser_request({'mode': 'act', 'session_id': sid,
+                                          'steps': [{'action': action, **extra}]})
+
+
+def test_owner_observation_projection_is_typed_bounded_and_never_raw_task_data():
+    from agents.core.routers.browser import _project_browser_observations
+
+    observations, truncated = _project_browser_observations([
+        {'action': 'console', 'status': 'done', 'payload': 'private-task-payload',
+         'result': {'observation': 'console', 'cookie': 'private-cookie', 'dropped': 2,
+                    'records': [
+                        {'level': 'log', 'text': '<script>page text</script>',
+                         'source_origin': 'https://example.test', 'document_epoch': 1,
+                         'stack': '/private/home'},
+                        {'level': 'error', 'text': 'bad',
+                         'source_origin': 'file:///private/home', 'document_epoch': 1}]}},
+        {'action': 'get_images', 'status': 'done',
+         'result': {'observation': 'images', 'images': [
+             {'source_url': 'https://example.test/a.png', 'alt': 'Image',
+              'width': 10, 'height': 12, 'fetchable': True,
+              'frame_origin': 'https://example.test', 'document_epoch': 1,
+              'ref': '@e2', 'secret': 'private-secret'},
+             {'source_url': 'https://user:password@example.test/a', 'alt': 'Bad',
+              'width': 1, 'height': 1, 'fetchable': True,
+              'frame_origin': 'https://example.test', 'document_epoch': 1},
+         ]}},
+    ])
+    assert truncated is False
+    assert observations == [
+        {'action': 'console', 'records': [{'level': 'log',
+            'text': '<script>page text</script>', 'source_origin': 'https://example.test',
+            'document_epoch': 1}], 'dropped': 2},
+        {'action': 'get_images', 'images': [{'source_url': 'https://example.test/a.png',
+            'alt': 'Image', 'width': 10, 'height': 12, 'fetchable': True,
+            'frame_origin': 'https://example.test', 'document_epoch': 1, 'ref': '@e2'}]},
+    ]
+
+
+def test_console_event_ring_caps_text_records_and_bytes_without_retaining_arguments():
+    import json
+    from types import SimpleNamespace
+
+    from agents.core.browser_playwright import (
+        MAX_CONSOLE_BYTES,
+        MAX_CONSOLE_RECORDS,
+        MAX_CONSOLE_TEXT,
+        PlaywrightBrowserDriver,
+    )
+
+    driver = PlaywrightBrowserDriver()
+    frame = SimpleNamespace(url='https://example.test/page')
+    driver._page = SimpleNamespace(frames=[frame], main_frame=frame)
+    for index in range(80):
+        driver._on_console(SimpleNamespace(type='log', text=f'{index}:' + 'x' * 1000,
+                                           location={'url': frame.url}, args=['private-argument']))
+    assert len(driver._console_records) <= MAX_CONSOLE_RECORDS
+    assert driver._console_dropped > 0 and driver._console_truncated == 80
+    assert driver._console_bytes <= MAX_CONSOLE_BYTES
+    assert all(len(item['text']) <= MAX_CONSOLE_TEXT and 'args' not in item
+               for item in driver._console_records)
+    assert len(json.dumps(list(driver._console_records)).encode()) <= MAX_CONSOLE_BYTES
+    driver._on_console_navigation(frame)
+    assert not driver._console_records and driver._console_bytes == 0
+
+
+@pytest.mark.asyncio
+async def test_uncertain_native_close_still_removes_console_listener_and_buffer():
+    from types import SimpleNamespace
+
+    from agents.core.browser_playwright import PlaywrightBrowserDriver, PlaywrightDriverError
+
+    removed = []
+
+    async def fail_close():
+        raise OSError('synthetic close failure')
+
+    page = SimpleNamespace(remove_listener=lambda event, handler: removed.append(event))
+    driver = PlaywrightBrowserDriver()
+    driver._page = page
+    driver._console_page = page
+    driver._context = SimpleNamespace(close=fail_close)
+    driver._on_console(SimpleNamespace(type='log', text='synthetic', location={'url': ''}))
+    assert driver._console_records
+    with pytest.raises(PlaywrightDriverError):
+        await driver._close_resources()
+    assert driver._console_page is None and not driver._console_records
+    assert set(removed) == {'console', 'framenavigated', 'framedetached'}
+
+
 def test_actionable_refs_require_real_live_nodes_not_aria_ordinals():
     from agents.core.browser_session import BrowserSession
 

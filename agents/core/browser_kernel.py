@@ -58,7 +58,7 @@ MAX_ACTION_CHARS = 32
 MAX_ARG_CHARS = 2_000
 MAX_ARGS = 20
 APPROVED_MUTATIONS = frozenset({'click', 'type', 'submit', 'scroll', 'back', 'press'})
-APPROVED_READS = frozenset({'navigate', 'extract', 'snapshot', 'wait'})
+APPROVED_READS = frozenset({'navigate', 'extract', 'snapshot', 'wait', 'console', 'get_images'})
 
 
 @dataclass(frozen=True)
