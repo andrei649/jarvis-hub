@@ -1,6 +1,11 @@
 """Owner selected metadata uses a live signed record, vault HWM and real Kernel."""
+import asyncio
 import json
-from dataclasses import replace
+import os
+import sqlite3
+import stat
+import threading
+from dataclasses import asdict, replace
 from types import SimpleNamespace
 
 import pytest
@@ -308,6 +313,7 @@ def test_signed_training_guard_requires_audit_and_fails_closed(
             acknowledge_data_policy=True, actor=owner())
     assert provider_selection.current_revision() == before
     assert provider_selection.read_selection() is None
+    assert not (svc.root / 'selection-consent.key').exists()
     svc.audit = SimpleNamespace(log=events.append)
     chosen = svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
         expected_revision=before, acknowledge_unknown_price=True,
@@ -342,6 +348,396 @@ def test_registered_guard_denial_preserves_existing_signed_binding(
             acknowledge_data_policy=True, actor=owner())
     assert provider_selection.read_selection() == before
     assert provider_selection.current_revision() == saved['revision']
+
+
+def test_true_flag_raw_cas_without_owner_proof_cannot_construct_runtime(
+        service, tmp_path, selected_store):
+    from agents.core.llm.providers.credentials import credential_binding
+
+    svc, _, _, seen, events, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-unproved-key', actor=owner())
+    store = svc._store()
+    record = store.require_runnable('synthetic-addon',
+                                    expected_hash=artifact['package_hash'], home=svc.home)
+    scope = credential_binding(record, svc.home)
+    before_actions = len([action for action, _ in seen if action.kind == 'provider.selection'])
+    before_events = len([event for event in events if event.action_taken.startswith('provider_selection_')])
+    binding = provider_selection.SelectionBinding(
+        'local-owner-v1', svc.home, record.provider_id, 'synthetic-model',
+        record.source, record.artifact_id, record.package_hash, scope.endpoint,
+        scope.auth_type, svc._credentials().status(scope)['generation'],
+        unknown_price_ack=True, data_policy_ack=True)
+    saved = provider_selection.compare_and_swap(
+        selected_store, binding, expected_revision=provider_selection.current_revision())
+    assert saved.binding.unknown_price_ack and saved.binding.data_policy_ack
+    assert len([action for action, _ in seen if action.kind == 'provider.selection']) == before_actions
+    assert len([event for event in events if event.action_taken.startswith('provider_selection_')]) == before_events
+    with pytest.raises(ProviderPackageError, match='consent proof'):
+        svc.selected_runtime()
+    assert svc.selection_status(actor=owner())['status'] == 'stale'
+
+
+@pytest.mark.parametrize('operation', ['clear', 'reselect'])
+def test_legacy_true_flag_row_stays_inert_but_owner_can_recover(
+        service, tmp_path, selected_store, operation):
+    from agents.core.llm.providers.credentials import credential_binding
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-legacy-key', actor=owner())
+    record = svc._store().require_runnable('synthetic-addon',
+        expected_hash=artifact['package_hash'], home=svc.home)
+    scope = credential_binding(record, svc.home)
+    binding = provider_selection.SelectionBinding(
+        'local-owner-v1', svc.home, record.provider_id, 'synthetic-model',
+        record.source, record.artifact_id, record.package_hash, scope.endpoint,
+        scope.auth_type, svc._credentials().status(scope)['generation'],
+        unknown_price_ack=True, data_policy_ack=True)
+    old = provider_selection.compare_and_swap(
+        selected_store, binding, expected_revision=provider_selection.current_revision())
+    fields = asdict(binding)
+    fields.pop('consent_proof')
+    payload = json.dumps(fields, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    with sqlite3.connect(selected_store) as conn:
+        conn.execute('UPDATE signed_provider_selection SET record_json=?,record_hash=? '
+                     'WHERE singleton=1',
+                     (payload, provider_selection._digest(old.revision, payload)))
+    assert provider_selection.read_selection().binding.consent_proof == ''
+    assert svc.selection_status(actor=owner())['status'] == 'stale'
+    if operation == 'clear':
+        result = svc.clear_selection(expected_revision=old.revision, actor=owner())
+        assert result['revision'] == old.revision + 1
+        assert provider_selection.read_selection() is None
+    else:
+        result = svc.select_provider('synthetic-addon', artifact['package_hash'],
+            'synthetic-model', expected_revision=old.revision,
+            acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+        assert result['revision'] == old.revision + 1
+        assert svc.selected_runtime().selection.binding.consent_proof
+
+
+def test_owner_consent_proof_survives_restart_and_replay_fails(
+        service, tmp_path, selected_store):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    chosen = svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    saved = provider_selection.read_selection()
+    assert len(saved.binding.consent_proof) == 64
+    resumed = type(svc)(root=svc.root, signing=svc.signing, profile=svc.profile,
+                        kernel=svc.kernel, enabled=svc.enabled, home=svc.home,
+                        runner=svc.runner, audit=svc.audit)
+    assert resumed.selected_runtime().selection == saved
+    replayed = provider_selection.compare_and_swap(
+        selected_store, saved.binding, expected_revision=chosen['revision'])
+    assert replayed.revision == chosen['revision'] + 1
+    with pytest.raises(ProviderPackageError, match='consent proof'):
+        resumed.selected_runtime()
+
+
+def test_clear_and_owner_reselect_mints_new_revision_proof(
+        service, tmp_path, selected_store):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    first = svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    old_binding = provider_selection.read_selection().binding
+    cleared = svc.clear_selection(expected_revision=first['revision'], actor=owner())
+    assert provider_selection.read_selection() is None
+    replay = provider_selection.compare_and_swap(
+        selected_store, old_binding, expected_revision=cleared['revision'])
+    with pytest.raises(ProviderPackageError, match='consent proof'):
+        svc.selected_runtime()
+    second = svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=replay.revision,
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    assert second['revision'] == replay.revision + 1
+    assert provider_selection.read_selection().binding.consent_proof != old_binding.consent_proof
+    assert svc.selected_runtime().selection.revision == second['revision']
+
+
+@pytest.mark.parametrize(('field', 'value'), [
+    ('home', 'other-owner-home'),
+    ('provider_id', 'other-addon'),
+    ('source', 'legacy'),
+    ('artifact_id', 'f' * 32),
+    ('package_hash', '0' * 64),
+    ('endpoint', 'https://other.invalid/v1'),
+    ('auth_type', 'api-key'),
+    ('model', 'other-model'),
+    ('credential_generation', 2),
+    ('unknown_price_ack', False),
+    ('data_policy_ack', False),
+])
+def test_owner_proof_binds_each_signed_scope_field(
+        service, tmp_path, selected_store, field, value):
+    from agents.core.llm.providers.selection_consent import verify
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    saved = provider_selection.read_selection()
+    record = svc._store().require_runnable('synthetic-addon',
+        expected_hash=artifact['package_hash'], home=svc.home)
+    policy = record.profile.data_policy_for('synthetic-model')[0]
+    assert verify(svc.root, saved, record.profile, policy)
+    changed = provider_selection.SelectionRecord(
+        saved.revision, replace(saved.binding, **{field: value}))
+    assert not verify(svc.root, changed, record.profile, policy)
+    assert not verify(svc.root, saved, replace(record.profile, data_policy='trains-on-inputs'),
+                      'trains-on-inputs')
+
+
+def test_signed_revocation_refuses_even_with_durable_consent_proof(
+        service, tmp_path, selected_store):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    runtime = svc.selected_runtime()
+    svc.revoke('synthetic-addon', actor=owner())
+    with pytest.raises(ProviderPackageError):
+        runtime.check()
+
+
+def test_tampered_or_unavailable_owner_consent_proof_refuses(
+        service, tmp_path, selected_store):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    saved = provider_selection.read_selection()
+    key_path = svc.root / 'selection-consent.key'
+    assert key_path.is_file()
+    key_path.rename(svc.root / 'selection-consent.key.saved')
+    with pytest.raises(ProviderPackageError, match='consent proof'):
+        svc.selected_runtime()
+    (svc.root / 'selection-consent.key.saved').rename(key_path)
+    assert svc.selected_runtime().selection == saved
+    provider_selection.compare_and_swap(
+        selected_store, replace(saved.binding, consent_proof='0' * 64),
+        expected_revision=saved.revision)
+    with pytest.raises(ProviderPackageError, match='consent proof'):
+        svc.selected_runtime()
+
+
+def test_malformed_or_unsafe_consent_key_fails_closed(
+        service, tmp_path, selected_store):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    key_path = svc.root / 'selection-consent.key'
+    key_path.chmod(0o644)
+    with pytest.raises(ProviderPackageError, match='consent proof'):
+        svc.selected_runtime()
+    key_path.chmod(0o600)
+    saved = key_path.with_suffix('.saved')
+    key_path.rename(saved)
+    key_path.symlink_to(saved)
+    with pytest.raises(ProviderPackageError, match='consent proof'):
+        svc.selected_runtime()
+    key_path.unlink()
+    saved.rename(key_path)
+    assert svc.selected_runtime().selection == provider_selection.read_selection()
+    key_path.write_bytes(b'x' * 32)
+    with pytest.raises(ProviderPackageError, match='consent proof'):
+        svc.selected_runtime()
+
+
+def test_selection_cas_failure_cannot_publish_owner_consent(
+        service, tmp_path, selected_store, monkeypatch):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    before = provider_selection.current_revision()
+
+    def fail_cas(*_args, **_kwargs):
+        raise OSError('synthetic SQLite commit failure')
+
+    monkeypatch.setattr(provider_selection, 'compare_and_swap', fail_cas)
+    with pytest.raises(OSError, match='synthetic SQLite'):
+        svc.select_provider('synthetic-addon', artifact['package_hash'],
+            'synthetic-model', expected_revision=before,
+            acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+
+
+def test_required_owner_ack_audit_failure_precedes_proof_mint(
+        service, tmp_path, selected_store):
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    before = provider_selection.current_revision()
+    previous_log = svc.audit.log
+
+    def fail_owner_ack(event):
+        if event.action_taken == 'provider_selection_unknown_price_acknowledged':
+            raise OSError('synthetic owner audit failure')
+        previous_log(event)
+
+    svc.audit = SimpleNamespace(log=fail_owner_ack)
+    with pytest.raises(ProviderPackageError, match='selection consent audit unavailable'):
+        svc.select_provider('synthetic-addon', artifact['package_hash'],
+            'synthetic-model', expected_revision=before,
+            acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+    assert not (svc.root / 'selection-consent.key').exists()
+
+
+def test_private_consent_key_is_durable_before_selection_cas(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.llm.providers import selection_consent
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    synced = []
+    real_fsync = os.fsync
+    real_cas = provider_selection.compare_and_swap
+
+    def observed_fsync(fd):
+        info = os.fstat(fd)
+        if stat.S_ISDIR(info.st_mode) and (info.st_dev, info.st_ino) == (
+                svc.root.stat().st_dev, svc.root.stat().st_ino):
+            synced.append('root')
+        elif stat.S_ISREG(info.st_mode) and info.st_size == 32:
+            synced.append('key')
+        return real_fsync(fd)
+
+    def checked_cas(*args, **kwargs):
+        assert 'key' in synced and 'root' in synced
+        key_path = svc.root / 'selection-consent.key'
+        assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+        return real_cas(*args, **kwargs)
+
+    monkeypatch.setattr(selection_consent.os, 'fsync', observed_fsync)
+    monkeypatch.setattr(provider_selection, 'compare_and_swap', checked_cas)
+    svc.select_provider('synthetic-addon', artifact['package_hash'],
+        'synthetic-model', expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    assert svc.selected_runtime().selection == provider_selection.read_selection()
+
+
+def test_concurrent_selection_writer_cannot_mint_or_commit_proof(
+        service, tmp_path, selected_store):
+    from agents.core.llm.providers import selection_gates
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    before = provider_selection.current_revision()
+    entered, release = threading.Event(), threading.Event()
+
+    def hold_writer():
+        with selection_gates.exclusive(selected_store, signed=True):
+            entered.set()
+            assert release.wait(3)
+
+    holder = threading.Thread(target=hold_writer)
+    holder.start()
+    try:
+        assert entered.wait(3)
+        with pytest.raises(selection_gates.SelectionBusy):
+            svc.select_provider('synthetic-addon', artifact['package_hash'],
+                'synthetic-model', expected_revision=before,
+                acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    finally:
+        release.set()
+        holder.join(3)
+    assert not holder.is_alive()
+    assert provider_selection.current_revision() == before
+    assert provider_selection.read_selection() is None
+    assert not (svc.root / 'selection-consent.key').exists()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_owner_worker_drains_proof_and_cas_before_unwinding(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.routers.models_llm import _provider_install_worker
+
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    before = provider_selection.current_revision()
+    entered, release = threading.Event(), threading.Event()
+    real_cas = provider_selection.compare_and_swap
+
+    def paused_cas(*args, **kwargs):
+        entered.set()
+        if not release.wait(3):
+            raise AssertionError('CAS test barrier timed out')
+        return real_cas(*args, **kwargs)
+
+    monkeypatch.setattr(provider_selection, 'compare_and_swap', paused_cas)
+    worker = asyncio.create_task(_provider_install_worker(
+        lambda: svc.select_provider('synthetic-addon', artifact['package_hash'],
+            'synthetic-model', expected_revision=before,
+            acknowledge_unknown_price=True, acknowledge_data_policy=True,
+            actor=owner())))
+    try:
+        assert await asyncio.to_thread(entered.wait, 3)
+        worker.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await worker
+    finally:
+        release.set()
+        if not worker.done():
+            await asyncio.gather(worker, return_exceptions=True)
+    saved = provider_selection.read_selection()
+    assert saved.revision == before + 1
+    assert svc.selected_runtime().selection == saved
+
+
+def test_selected_h513_actual_use_rechecks_proof_and_credential_generation(
+        service, tmp_path, selected_store, monkeypatch):
+    from agents.core.commands import Principal
+    from agents.core.llm import data_handling
+
+    monkeypatch.setattr(data_handling, '_scope_key', lambda: b'synthetic-h513-scope-key')
+    svc, _, _, _, _, artifact = active(service, tmp_path)
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-proven-key', actor=owner())
+    svc.select_provider('synthetic-addon', artifact['package_hash'], 'synthetic-model',
+        expected_revision=provider_selection.current_revision(),
+        acknowledge_unknown_price=True, acknowledge_data_policy=True, actor=owner())
+    runtime = svc.selected_runtime()
+    backend = SimpleNamespace(profile=runtime.profile, _selected_provider_runtime=runtime)
+    router = SimpleNamespace(_compatible_backend=backend)
+    runtime.backend, runtime.router = backend, router
+    allowed = data_handling.authorize(
+        router, backend, 'synthetic-model', principal=Principal(), actual_use=True)
+    assert allowed['acknowledged'] is True
+    key_path = svc.root / 'selection-consent.key'
+    key_path.rename(svc.root / 'selection-consent.key.saved')
+    with pytest.raises(data_handling.DataHandlingRefused, match='consent scope'):
+        data_handling.authorize(router, backend, 'synthetic-model',
+                                principal=Principal(), actual_use=True)
+    (svc.root / 'selection-consent.key.saved').rename(key_path)
+    assert data_handling.authorize(router, backend, 'synthetic-model',
+                                   principal=Principal(), actual_use=False)['acknowledged']
+    svc.put_credential('synthetic-addon', artifact['package_hash'],
+                       'synthetic-rotated-key', actor=owner())
+    with pytest.raises(data_handling.DataHandlingRefused, match='consent scope'):
+        data_handling.authorize(router, backend, 'synthetic-model',
+                                principal=Principal(), actual_use=True)
 
 
 def test_owner_route_reports_bounded_guard_requirement_without_message_echo(

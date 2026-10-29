@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import multiprocessing as mp
 import os
 import sqlite3
 import threading
 import time
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,37 @@ def test_signed_selection_tamper_refuses_readback(store):
         provider_selection.read_selection(store)
     with pytest.raises(provider_selection.SelectionInvalid):
         provider_selection.compare_and_swap(store, _binding(store), expected_revision=first.revision)
+
+
+def test_legacy_selection_row_reads_with_empty_inert_proof(store):
+    first = provider_selection.compare_and_swap(
+        store, _binding(store), expected_revision=2)
+    fields = asdict(first.binding)
+    fields.pop('consent_proof')
+    payload = json.dumps(fields, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    with sqlite3.connect(store) as conn:
+        conn.execute('UPDATE signed_provider_selection SET record_json=?,record_hash=? '
+                     'WHERE singleton=1',
+                     (payload, provider_selection._digest(first.revision, payload)))
+    loaded = provider_selection.read_selection(store)
+    assert loaded == first
+    assert loaded.binding.consent_proof == ''
+    with pytest.raises(provider_selection.SelectionInvalid):
+        replace(loaded.binding, consent_proof='not-a-mac')
+
+
+def test_rehashed_malformed_consent_proof_is_not_a_valid_selection(store):
+    first = provider_selection.compare_and_swap(
+        store, _binding(store), expected_revision=2)
+    fields = asdict(first.binding)
+    fields['consent_proof'] = 'not-a-mac'
+    payload = json.dumps(fields, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    with sqlite3.connect(store) as conn:
+        conn.execute('UPDATE signed_provider_selection SET record_json=?,record_hash=? '
+                     'WHERE singleton=1',
+                     (payload, provider_selection._digest(first.revision, payload)))
+    with pytest.raises(provider_selection.SelectionInvalid):
+        provider_selection.read_selection(store)
 
 
 def test_selection_generation_matches_credential_vault_contract(store):

@@ -14,6 +14,7 @@ import threading
 import time
 from contextvars import ContextVar
 from copy import deepcopy
+from dataclasses import replace
 from urllib.parse import urlsplit
 
 from agents.core.autonomy.consent_types import OwnerConsentActor
@@ -508,6 +509,10 @@ class ProviderInstallService:
                 self._owner(actor)
                 if self._credential_record_locked(store, provider_id, package_hash) != record:
                     raise ProviderPackageError('signed provider changed before selection')
+                from .selection_consent import mint
+
+                binding = replace(binding, consent_proof=mint(
+                    self.root, binding, current + 1, record.profile, policy))
                 saved = provider_selection.compare_and_swap(
                     settings_db.DB_PATH, binding, expected_revision=current)
         return {'status': 'selected', 'provider': binding.provider_id, 'model': binding.model,

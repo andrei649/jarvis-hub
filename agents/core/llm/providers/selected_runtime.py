@@ -11,7 +11,7 @@ from agents.core.llm.provider_selection import SelectionRecord, read_selection
 from agents.core.security.ssrf import resolve_and_validate
 
 from .admitted_profiles import AdmittedProviderProfile
-from .credentials import credential_binding
+from .credentials import CredentialBinding, credential_binding
 from .packages import ProviderPackageError
 
 AUTH_MARKER = 'nerva-selected-host-credential'
@@ -67,6 +67,8 @@ class SelectedProviderRuntime:
         if (b.unknown_price_ack is not True
                 or policy in {'unknown', 'trains-on-inputs'} and b.data_policy_ack is not True):
             raise ProviderPackageError('signed selection risk consent unavailable')
+        if not self.proven_consent(record.profile, policy):
+            raise ProviderPackageError('signed selection consent proof unavailable')
         profile = self.service.registry().get(b.provider_id)
         if (type(profile) is not AdmittedProviderProfile
                 or profile._package_hash != b.package_hash
@@ -82,6 +84,23 @@ class SelectedProviderRuntime:
                 or profile.data_policy != self.profile.data_policy):
             raise ProviderPackageError('signed selected declaration changed')
         return self.profile
+
+    def proven_consent(self, profile, policy: str) -> bool:
+        """Check current revision, vault generation and proof without a package lock."""
+        from .selection_consent import verify
+
+        try:
+            b = self.binding
+            if (not self.active or read_selection() != self.selection
+                    or not verify(self.service.root, self.selection, profile, policy)):
+                return False
+            scope = CredentialBinding(b.authority, b.home, b.provider_id, b.source,
+                                      b.artifact_id, b.package_hash, b.endpoint, b.auth_type)
+            status = self.service._credentials().status(scope)
+            return (status['generation'] == b.credential_generation
+                    and (b.auth_type == 'none' or status['configured']))
+        except Exception:
+            return False
 
     def bind_backend(self, backend, router):
         if self.backend is not None or getattr(backend, '_selected_provider_runtime', None) is not self:

@@ -394,7 +394,9 @@ def posture(router, *, role_context=None):
         if (selected is not None and selected.active and selected.backend is
                 getattr(router, '_compatible_backend', None)
                 and resolved.provider == selected.binding.provider_id):
-            row = resolved.public(bool(resolved.scope) and selected.binding.data_policy_ack,
+            policy, _note = selected.profile.data_policy_for(selected.binding.model)
+            row = resolved.public(bool(resolved.scope) and selected.binding.data_policy_ack
+                                  and selected.proven_consent(selected.profile, policy),
                                   used.get(resolved.scope))
             row['can_acknowledge'] = False
             row['acknowledgment_unavailable'] = 'owner selection controls signed provider consent'
@@ -429,7 +431,9 @@ def authorize(router, backend, model, route="", *, principal=None, origin=None, 
     resolved = resolve(router, backend, model, route)
     selected = getattr(_unwrap(backend), '_selected_provider_runtime', None)
     if selected is not None:
-        if not resolved.scope or (resolved.warning and not selected.binding.data_policy_ack):
+        policy, _note = selected.profile.data_policy_for(model)
+        if (not resolved.scope or not selected.proven_consent(selected.profile, policy)
+                or resolved.warning and not selected.binding.data_policy_ack):
             raise DataHandlingRefused('selected provider consent scope unavailable')
         acknowledged = selected.binding.data_policy_ack
     else:

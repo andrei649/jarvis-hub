@@ -42,6 +42,7 @@ class SelectionBinding:
     credential_generation: int
     unknown_price_ack: bool = False
     data_policy_ack: bool = False
+    consent_proof: str = ''
 
     def __post_init__(self):
         try:
@@ -66,7 +67,9 @@ class SelectionBinding:
                 or not 0 <= self.credential_generation < 2**63 - 1
                 or (self.credential_generation == 0) != (self.auth_type == 'none')
                 or type(self.unknown_price_ack) is not bool
-                or type(self.data_policy_ack) is not bool):
+                or type(self.data_policy_ack) is not bool
+                or type(self.consent_proof) is not str
+                or self.consent_proof and not _HASH.fullmatch(self.consent_proof)):
             raise SelectionInvalid('invalid signed selection metadata')
 
 
@@ -97,10 +100,13 @@ def _row(conn) -> tuple[int, SelectionBinding | None]:
         raise SelectionInvalid('selection record unreadable')
     try:
         fields = json.loads(payload)
-        if type(fields) is not dict or set(fields) != set(SelectionBinding.__dataclass_fields__):
+        expected = set(SelectionBinding.__dataclass_fields__)
+        if (type(fields) is not dict
+                or set(fields) not in (expected, expected - {'consent_proof'})):
             raise ValueError('selection fields changed')
         binding = SelectionBinding(**fields)
-        if _json(binding) != payload or _digest(revision, payload) != digest:
+        canonical = json.dumps(fields, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+        if canonical != payload or _digest(revision, payload) != digest:
             raise ValueError('selection hash changed')
     except (TypeError, ValueError, SelectionInvalid) as exc:
         raise SelectionInvalid('selection readback failed') from exc
