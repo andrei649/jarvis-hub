@@ -137,6 +137,7 @@ class PlaywrightBrowserDriver:
         self._context = None
         self._page = None
         self._owned_child = None
+        self._owned_browser_identity: tuple[int, float] | None = None
 
     @classmethod
     def from_env(cls, **kwargs) -> PlaywrightBrowserDriver:
@@ -219,6 +220,78 @@ class PlaywrightBrowserDriver:
         return self._profile_dir
 
     @property
+    def owned_browser_identity(self) -> tuple[int, float] | None:
+        """PID and creation time of the native Chrome root for this fresh profile."""
+        return self._owned_browser_identity
+
+    def _profile_processes(self):
+        """Find processes with this exact random profile, even after reparenting."""
+        import psutil
+
+        if self._profile_dir is None:
+            return []
+        marker = f'--user-data-dir={self._profile_dir}'
+        found = []
+        for process in psutil.process_iter(['pid', 'create_time', 'cmdline']):
+            try:
+                if marker in (process.info.get('cmdline') or []):
+                    found.append(process)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return found
+
+    async def _capture_owned_browser(self):
+        import psutil
+
+        if self._owned_child is None or self._profile_dir is None:
+            raise PlaywrightUnavailable('native browser ownership unavailable')
+        marker = f'--user-data-dir={self._profile_dir}'
+        deadline = asyncio.get_running_loop().time() + 2
+        while True:
+            try:
+                descendants = psutil.Process(self._owned_child.pid).children(recursive=True)
+            except psutil.Error:
+                descendants = []
+            for process in descendants:
+                try:
+                    command = process.cmdline()
+                    binary = Path(process.exe()).name.lower()
+                    if (marker in command and not any(arg.startswith('--type=') for arg in command)
+                            and ('chrome' in binary or 'chromium' in binary)):
+                        self._owned_browser_identity = (process.pid, process.create_time())
+                        return
+                except psutil.Error:
+                    continue
+            if asyncio.get_running_loop().time() >= deadline:
+                raise PlaywrightUnavailable('native browser ownership unavailable')
+            await asyncio.sleep(0.05)
+
+    async def _wait_owned_browser_exit(self):
+        import psutil
+
+        if self._factory is not None or self._profile_dir is None:
+            return
+        deadline = asyncio.get_running_loop().time() + 5
+        while True:
+            try:
+                alive = bool(await asyncio.to_thread(self._profile_processes))
+                if self._owned_browser_identity is not None:
+                    pid, started = self._owned_browser_identity
+                    try:
+                        root = psutil.Process(pid)
+                        alive = alive or (root.create_time() == started and root.is_running()
+                                          and root.status() not in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD})
+                    except psutil.NoSuchProcess:
+                        pass
+            except psutil.Error:
+                raise PlaywrightDriverError('browser_lifetime_unverified') from None
+            if not alive:
+                return
+            if asyncio.get_running_loop().time() >= deadline:
+                raise PlaywrightDriverError('browser_lifetime_unverified')
+            await asyncio.sleep(0.05)
+
+    @property
     def launched_hosts(self) -> frozenset[str]:
         """Hosts the running browser can resolve (empty without a transport)."""
         return self._launched_hosts
@@ -278,6 +351,8 @@ class PlaywrightBrowserDriver:
                     accept_downloads=True,
                     service_workers="block",
                 )
+                if self._factory is None:
+                    await self._capture_owned_browser()
                 self._browser = getattr(self._context, "browser", None)
                 if self._url_guard is not None:
                     await self._context.route("**/*", self._route_request)
@@ -407,6 +482,11 @@ class PlaywrightBrowserDriver:
                 failures.append('child_exit_unverified')
             else:
                 self._owned_child = None
+        if not failures and self._profile_dir is not None:
+            try:
+                await self._wait_owned_browser_exit()
+            except Exception:
+                failures.append('browser_lifetime_unverified')
         if not failures and self._profile_dir is not None:
             directory = self._profile_dir
             if not directory.name.startswith(PROFILE_PREFIX):

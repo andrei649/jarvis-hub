@@ -355,17 +355,15 @@ def _desktop_visual_available() -> bool:
 
 
 def _browser_available(orch=None) -> bool:
-    from agents.core.browser_runtime import local_browser_ready
-
     server = getattr(orch, 'tool_rpc', None)
-    queue = getattr(orch, 'autonomy_queue', None)
-    worker = getattr(orch, 'autonomy', None)
     spec = getattr(server, '_tools', {}).get('browser_run') if server is not None else None
     runtime = getattr(spec.get('handler'), '__self__', None) if isinstance(spec, dict) else None
-    return (callable(getattr(server, 'handle', None))
-            and server.allows('browser_run')
-            and local_browser_ready(kernel=getattr(worker, 'kernel_gate', None), queue=queue,
-                                    fixture_origin=getattr(runtime, 'fixture_origin', None)))
+    try:
+        return (callable(getattr(server, 'handle', None))
+                and server.allows('browser_run')
+                and callable(getattr(runtime, 'ready', None)) and runtime.ready() is True)
+    except Exception:
+        return False
 
 
 def default_implementations(orch=None) -> list[OperatorImplementation]:

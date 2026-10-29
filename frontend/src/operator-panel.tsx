@@ -296,10 +296,12 @@ export function OperatorPanel() {
 
   useEffect(() => {
     let live = true;
-    apiGet('/api/browser/status').then((value) => {
+    const refresh = () => apiGet('/api/browser/status').then((value) => {
       if (live) setBrowserAvailable(isRecord(value) && value.available === true);
     }).catch(() => { if (live) setBrowserAvailable(false); });
-    return () => { live = false; };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 5_000);
+    return () => { live = false; window.clearInterval(timer); };
   }, []);
 
   const [desktopAction, setDesktopAction] = useState<CanonicalDesktopAction>('read');
@@ -467,6 +469,11 @@ export function OperatorPanel() {
     const revision = browserPreviewRevisionRef.current;
     setBrowserBusy('run');
     try {
+      const readiness = await apiGet('/api/browser/status');
+      if (!isRecord(readiness) || readiness.available !== true) {
+        setBrowserAvailable(false);
+        throw new Error('Browser execution is unavailable on this server');
+      }
       // Execution policy and pinned hosts are resolved by the server. The editable
       // dry-run allowlist is intentionally absent from this request.
       const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args: { steps: stored } });

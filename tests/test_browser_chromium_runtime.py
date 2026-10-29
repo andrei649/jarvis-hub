@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import psutil
 import pytest
 
 from agents.core.autonomy.executor import TaskExecutor
@@ -22,6 +23,22 @@ from agents.core.security.capability import KillSwitch
 from tests.test_task_mediation_evidence import _head_anchor, _signer
 
 pytestmark = pytest.mark.asyncio
+
+
+def browser_identity_alive(identity):
+    pid, started = identity
+    try:
+        process = psutil.Process(pid)
+        return (process.create_time() == started and process.is_running()
+                and process.status() not in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD})
+    except psutil.Error:
+        return False
+
+
+def browser_processes_for_profile(profile):
+    marker = f'--user-data-dir={profile}'
+    return [process.pid for process in psutil.process_iter(['pid', 'cmdline'])
+            if marker in (process.info.get('cmdline') or [])]
 
 
 @pytest.fixture
@@ -131,6 +148,7 @@ async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(brows
     assert proposal['reason'] == 'approval_required', proposal
     task = rig.queue.get(proposal['task_id'])
     assert task.status == 'blocked' and task.mediation_receipt is not None
+    assert rig.runtime.last_browser_identity is None
     assert rig.page.state['clicked'] == 0
     early = await rig.coordinator._approved_desktop_tool_rpc_execute(task)
     assert early['reason'] == 'trusted_execution_required'
@@ -147,6 +165,9 @@ async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(brows
     assert rig.runtime.last_profile.parent == Path(tempfile.gettempdir())
     assert rig.runtime.last_profile.name.startswith('nerva-browser-')
     assert not rig.runtime.last_profile.exists()
+    assert rig.runtime.last_browser_identity is not None
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
+    assert browser_processes_for_profile(rig.runtime.last_profile) == []
 
 
 async def test_kernel_kill_after_owner_acceptance_prevents_chromium_start(browser_rig):
@@ -163,6 +184,7 @@ async def test_kernel_kill_after_owner_acceptance_prevents_chromium_start(browse
     assert done.result['status'] != 'ok'
     assert rig.page.state['clicked'] == 0
     assert rig.runtime.last_profile is None
+    assert rig.runtime.last_browser_identity is None
 
 
 async def test_live_kernel_read_denial_prevents_chromium_start(browser_rig):
@@ -196,6 +218,9 @@ async def test_browser_timeout_cleans_fresh_profile_without_click(browser_rig):
     assert done.result['status'] != 'ok'
     assert rig.page.state['clicked'] == 0
     assert rig.runtime.last_profile is not None and not rig.runtime.last_profile.exists()
+    assert rig.runtime.last_browser_identity is not None
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
+    assert browser_processes_for_profile(rig.runtime.last_profile) == []
 
 
 async def test_cancelling_active_browser_step_drains_chromium_cleanup(browser_rig, monkeypatch):
@@ -222,6 +247,26 @@ async def test_cancelling_active_browser_step_drains_chromium_cleanup(browser_ri
         await asyncio.wait_for(running, 20)
     assert rig.page.state['clicked'] == 0
     assert rig.runtime.last_profile is not None and not rig.runtime.last_profile.exists()
+    assert rig.runtime.last_browser_identity is not None
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
+    assert browser_processes_for_profile(rig.runtime.last_profile) == []
+
+
+async def test_cleanup_uncertainty_changes_live_status_and_recovers(browser_rig):
+    from agents.core.operator_router import _browser_available
+
+    rig = browser_rig
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                 base_url='http://testserver',
+                                 headers={'X-User-Token': 'browser-user'}) as client:
+        assert (await client.get('/api/browser/status')).json() == {'available': True}
+        marker = object()
+        rig.runtime._uncertain_drivers.append(marker)
+        assert (await client.get('/api/browser/status')).json() == {'available': False}
+        assert _browser_available(rig.orch) is False
+        rig.runtime._uncertain_drivers.remove(marker)
+        assert (await client.get('/api/browser/status')).json() == {'available': True}
+        assert _browser_available(rig.orch) is True
 
 
 async def test_rejected_owner_and_changed_server_binding_never_start_browser(browser_rig, monkeypatch):
@@ -266,6 +311,9 @@ async def test_real_chromium_blocks_unpinned_subresource_and_redirect(browser_ri
     assert rig.queue.get(second['task_id']).result['status'] != 'ok'
     assert rig.page.state['clicked'] == 0
     assert rig.runtime.last_profile is not None and not rig.runtime.last_profile.exists()
+    assert rig.runtime.last_browser_identity is not None
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
+    assert browser_processes_for_profile(rig.runtime.last_profile) == []
 
 
 async def test_changed_tool_registration_after_acceptance_refuses_before_launch(browser_rig):
@@ -280,3 +328,4 @@ async def test_changed_tool_registration_after_acceptance_refuses_before_launch(
     await rig.worker.tick()
     assert rig.queue.get(proposed['task_id']).result['status'] != 'ok'
     assert rig.page.state['clicked'] == 0 and rig.runtime.last_profile is None
+    assert rig.runtime.last_browser_identity is None

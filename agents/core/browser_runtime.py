@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 
 MAX_STEPS = 20
 MAX_PLAN_BYTES = 60_000
+CLOSE_WAIT_SECONDS = 15.0
 TOOL = 'browser_run'
 KIND = 'toolrpc.browser_run'
 TITLE = 'Run approved browser plan'
@@ -138,7 +139,8 @@ def local_browser_ready(*, kernel=None, queue=None, fixture_origin=None) -> bool
             return False
         if fixture_origin is None:
             _server_domains()
-        return importlib.util.find_spec('playwright') is not None and bool(_chrome_binary())
+        return (importlib.util.find_spec('playwright') is not None
+                and importlib.util.find_spec('psutil') is not None and bool(_chrome_binary()))
     except (ImportError, ValueError, BrowserPlanRefused):
         return False
 
@@ -160,7 +162,15 @@ class BrowserRuntime:
         self.control_current = control_current or (lambda _task: True)
         self.revalidator = revalidator
         self.last_profile = None
+        self.last_browser_identity = None
         self._uncertain_drivers = []
+        self._close_tasks = {}
+        self._cleanup_lock = asyncio.Lock()
+
+    def ready(self):
+        return (not self._uncertain_drivers
+                and local_browser_ready(kernel=self.authorizer, queue=self.queue,
+                                        fixture_origin=self.fixture_origin))
 
     def _head(self):
         domains = ('fixture:' + self.fixture_origin,) if self.fixture_origin else _server_domains()
@@ -176,9 +186,45 @@ class BrowserRuntime:
     def _ready(self):
         if self._uncertain_drivers:
             raise BrowserPlanRefused('browser_cleanup_unverified')
-        if not local_browser_ready(kernel=self.authorizer, queue=self.queue,
-                                   fixture_origin=self.fixture_origin):
+        if not self.ready():
             raise BrowserPlanRefused('browser_unavailable')
+
+    def _settle_close(self, driver, task):
+        if self._close_tasks.get(driver) is not task or not task.done():
+            return False
+        try:
+            task.result()
+        except BaseException:
+            return False
+        self._close_tasks.pop(driver, None)
+        self._uncertain_drivers = [item for item in self._uncertain_drivers if item is not driver]
+        return True
+
+    def _start_close(self, driver):
+        task = self._close_tasks.get(driver)
+        if task is not None and not task.done():
+            return task
+        if all(item is not driver for item in self._uncertain_drivers):
+            self._uncertain_drivers.append(driver)
+        task = asyncio.create_task(driver.close())
+        self._close_tasks[driver] = task
+        task.add_done_callback(lambda finished: self._settle_close(driver, finished))
+        return task
+
+    async def _await_close(self, driver, task):
+        try:
+            await asyncio.wait_for(asyncio.shield(task), CLOSE_WAIT_SECONDS)
+        except TimeoutError:
+            task.cancel()
+            return False
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                raise
+            return False
+        except Exception:
+            return False
+        return self._settle_close(driver, task) or all(
+            item is not driver for item in self._uncertain_drivers)
 
     def preflight(self, args):
         from .tool_rpc import ToolRPCValidationError
@@ -357,30 +403,28 @@ class BrowserRuntime:
                 return {'ok': True, 'plan_sha256': plan.sha256, 'trace': trace}
             finally:
                 self.last_profile = driver.profile_dir
-                close_task = asyncio.create_task(driver.close())
-                try:
-                    await asyncio.shield(close_task)
-                except asyncio.CancelledError:
-                    try:
-                        await asyncio.shield(close_task)
-                    except Exception:
-                        self._uncertain_drivers.append(driver)
-                        raise BrowserPlanRefused('browser_cleanup_unverified') from None
-                    raise
-                except Exception:
-                    self._uncertain_drivers.append(driver)
+                self.last_browser_identity = getattr(driver, 'owned_browser_identity', None)
+                close_task = self._start_close(driver)
+                if not await self._await_close(driver, close_task):
                     raise BrowserPlanRefused('browser_cleanup_unverified') from None
         except (BrowserPlanRefused, TimeoutError) as exc:
             return {'ok': False, 'reason': 'browser_timeout' if isinstance(exc, TimeoutError) else str(exc)}
 
     async def reap_uncertain(self):
         """Bounded explicit retry of retained cleanup; never forget an uncertain owner."""
-        remaining = []
-        for driver in self._uncertain_drivers:
-            try:
-                async with asyncio.timeout(10):
-                    await driver.close()
-            except Exception:
-                remaining.append(driver)
-        self._uncertain_drivers = remaining
-        return not remaining
+        async with self._cleanup_lock:
+            for driver in list(self._uncertain_drivers):
+                task = self._close_tasks.get(driver)
+                if task is not None and task.done():
+                    if self._settle_close(driver, task):
+                        continue
+                    task = None
+                if task is None:
+                    task = self._start_close(driver)
+                if not await self._await_close(driver, task):
+                    if not task.done():
+                        return False
+                    task = self._start_close(driver)
+                    if not await self._await_close(driver, task):
+                        return False
+            return not self._uncertain_drivers

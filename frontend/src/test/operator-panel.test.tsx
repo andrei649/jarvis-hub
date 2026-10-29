@@ -72,6 +72,16 @@ async function previewDesktop(steps = 1) {
 }
 
 describe('OperatorPanel browser policy dry run', () => {
+  it('refuses a stale ready button when the server reports uncertain cleanup', async () => {
+    get.mockResolvedValueOnce({ available: true }).mockResolvedValueOnce({ available: false });
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/path');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Run with approval' }));
+    await waitFor(() => expect(screen.getByText('Browser execution unavailable')).toBeTruthy());
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('queues an exact plan through ToolRPC and links its durable approval task', async () => {
     get.mockResolvedValue({ available: true });
     post.mockRejectedValueOnce(Object.assign(new Error('422'), {

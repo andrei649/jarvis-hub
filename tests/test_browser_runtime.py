@@ -1,4 +1,5 @@
 """The selected browser plan is exact, bounded, and inert without owner authority."""
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -124,6 +125,72 @@ async def test_runtime_retains_uncertain_driver_and_blocks_next_proposal(tmp_pat
     driver.fails = False
     assert await runtime.reap_uncertain() is True
     assert runtime._uncertain_drivers == [] and not profile.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cancels', [1, 2])
+async def test_hanging_close_retains_owner_across_cancellation_and_bounded_reaper(
+    tmp_path, monkeypatch, cancels,
+):
+    from agents.core.browser_runtime import BrowserRuntime
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    profile = tmp_path / 'nerva-browser-retained'
+    profile.mkdir()
+
+    class Driver:
+        requires_kernel = False
+        profile_dir = profile
+        def set_transport(self, _resolver):
+            pass
+        def set_url_guard(self, _guard):
+            pass
+        async def navigate(self, *, url):
+            return {'url': url}
+        async def close(self):
+            entered.set()
+            await release.wait()
+            profile.rmdir()
+
+    driver = Driver()
+    runtime = BrowserRuntime(queue=None, approved_task=lambda: SimpleNamespace(agent='jarvis'),
+                             authorizer=None, enqueue=None, execution_check=lambda _: True,
+                             fixture_origin='http://fixture.browser.test:45678',
+                             driver_factory=lambda: driver)
+    monkeypatch.setattr(runtime, '_ready', lambda: None)
+    monkeypatch.setattr(runtime, '_current', lambda task, args: True)
+    monkeypatch.setattr(runtime, 'preflight', lambda args: args)
+    monkeypatch.setattr('agents.core.browser_runtime.CLOSE_WAIT_SECONDS', 0.05, raising=False)
+    running = asyncio.create_task(runtime.execute({'steps': [
+        {'action': 'navigate', 'url': 'http://fixture.browser.test:45678/'},
+    ]}))
+    await asyncio.wait_for(entered.wait(), 2)
+    try:
+        for _ in range(cancels):
+            running.cancel()
+            await asyncio.sleep(0)
+        done, _ = await asyncio.wait({running}, timeout=0.3)
+        assert running in done, 'cancelled browser run remained stuck in close'
+        with pytest.raises(asyncio.CancelledError):
+            await running
+        assert runtime._uncertain_drivers == [driver]
+        assert profile.exists()
+        assert await asyncio.wait_for(runtime.reap_uncertain(), 1) is False
+        assert runtime._uncertain_drivers == [driver]
+        release.set()
+        for _ in range(3):
+            if await asyncio.wait_for(runtime.reap_uncertain(), 1):
+                break
+            await asyncio.sleep(0.02)
+        else:
+            pytest.fail('bounded cleanup retry never settled')
+        assert runtime._uncertain_drivers == [] and not profile.exists()
+    finally:
+        release.set()
+        if not running.done():
+            running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
 
 
 @pytest.mark.parametrize('plan', [
