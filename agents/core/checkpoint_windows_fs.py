@@ -1,6 +1,7 @@
-"""Isolated, read-only native Windows H011 filesystem probes.
+"""Isolated native Windows H011 filesystem primitives.
 
-This module does not enable checkpoint history or perform any filesystem effect.
+The private-child and lock primitives are used only by the isolated store tests.
+This module does not enable checkpoint history or import a production caller.
 Native APIs load only when a WindowsHistoryFs is constructed without an injected API.
 """
 
@@ -240,12 +241,70 @@ class WindowsHistoryFs:
         try:
             stamp = self._check(owner.raw, directory=directory,
                                 volume=parent.stamp.identity.volume_serial)
-            result = HeldHandle(self.api, owner.raw, stamp)
+            result = HeldHandle(self.api, owner.raw, stamp, drive=parent.drive,
+                                guid=parent.guid,
+                                components=(*parent.components, name))
             owner.raw = None
             return result
         except BaseException as error:
             _close_owned(owner, error)
             raise
+
+    def create_private_child(self, parent: HeldHandle, name: str, *,
+                             directory: bool) -> HeldHandle | None:
+        _component(name)
+        if parent.raw is None or not parent.stamp.is_directory:
+            raise WindowsFsRefusal("handle_invalid")
+        raw = self.api.create_private_child(parent.raw, name, directory)
+        if raw is None:
+            return None
+        owner = _RawOwner(self.api, raw)
+        try:
+            stamp = self._check(owner.raw, directory=directory,
+                                volume=parent.stamp.identity.volume_serial)
+            result = HeldHandle(self.api, owner.raw, stamp, drive=parent.drive,
+                                guid=parent.guid,
+                                components=(*parent.components, name))
+            owner.raw = None
+            return result
+        except BaseException as error:
+            _close_owned(owner, error)
+            raise
+
+    def open_shared_child(self, parent: HeldHandle, name: str, *,
+                          directory: bool) -> HeldHandle | None:
+        """Inspect a named node while a lock or SQLite writer also holds it."""
+        _component(name)
+        if parent.raw is None or not parent.stamp.is_directory:
+            raise WindowsFsRefusal("handle_invalid")
+        raw = self.api.open_shared_child(parent.raw, name, directory)
+        if raw is None:
+            return None
+        owner = _RawOwner(self.api, raw)
+        try:
+            stamp = self._check(owner.raw, directory=directory,
+                                volume=parent.stamp.identity.volume_serial)
+            result = HeldHandle(self.api, owner.raw, stamp, drive=parent.drive,
+                                guid=parent.guid,
+                                components=(*parent.components, name))
+            owner.raw = None
+            return result
+        except BaseException as error:
+            _close_owned(owner, error)
+            raise
+
+    def verify_shared_name(self, parent: HeldHandle, name: str,
+                           held: HeldHandle) -> WinStamp:
+        if held.raw is None:
+            raise WindowsFsRefusal("handle_closed")
+        current = self.open_shared_child(parent, name,
+                                         directory=held.stamp.is_directory)
+        if current is None:
+            raise WindowsFsRefusal("name_changed")
+        with current:
+            if current.stamp != held.stamp:
+                raise WindowsFsRefusal("name_changed")
+            return current.stamp
 
     def verify_name(self, parent: HeldHandle, name: str, held: HeldHandle) -> WinStamp:
         if held.raw is None:
@@ -285,7 +344,7 @@ class WindowsHistoryFs:
 
 
 class _Win32Api:
-    """Explicit ctypes read-side API; no DLL is imported by this module on macOS."""
+    """Explicit ctypes API; no DLL is imported by this module on macOS."""
 
     def __init__(self):
         if sys.platform != "win32":
@@ -337,9 +396,14 @@ class _Win32Api:
             _fields_ = [("AceType", ctypes.c_ubyte), ("AceFlags", ctypes.c_ubyte),
                         ("AceSize", w.WORD)]
 
+        class Overlapped(ctypes.Structure):
+            _fields_ = [("Internal", ctypes.c_size_t), ("InternalHigh", ctypes.c_size_t),
+                        ("Offset", w.DWORD), ("OffsetHigh", w.DWORD), ("hEvent", w.HANDLE)]
+
         self.FileIdInfo, self.Basic, self.Standard, self.AttrTag = FileIdInfo, Basic, Standard, AttrTag
         self.Unicode, self.ObjAttr, self.IoStatus = Unicode, ObjAttr, IoStatus
         self.AclSize, self.AceHeader = AclSize, AceHeader
+        self.Overlapped = Overlapped
         self.k.GetVolumeNameForVolumeMountPointW.argtypes = (w.LPCWSTR, w.LPWSTR, w.DWORD)
         self.k.GetVolumeNameForVolumeMountPointW.restype = w.BOOL
         self.k.CreateFileW.argtypes = (w.LPCWSTR, w.DWORD, w.DWORD, ctypes.c_void_p,
@@ -393,6 +457,16 @@ class _Win32Api:
         self.a.GetTokenInformation.argtypes = (
             w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD, ctypes.POINTER(w.DWORD))
         self.a.GetTokenInformation.restype = w.BOOL
+        self.a.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = (
+            w.LPCWSTR, w.DWORD, ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(w.DWORD))
+        self.a.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = w.BOOL
+        self.k.LockFileEx.argtypes = (w.HANDLE, w.DWORD, w.DWORD, w.DWORD, w.DWORD,
+                                      ctypes.POINTER(Overlapped))
+        self.k.LockFileEx.restype = w.BOOL
+        self.k.UnlockFileEx.argtypes = (w.HANDLE, w.DWORD, w.DWORD, w.DWORD,
+                                        ctypes.POINTER(Overlapped))
+        self.k.UnlockFileEx.restype = w.BOOL
 
     @staticmethod
     def _fail(reason):
@@ -449,6 +523,71 @@ class _Win32Api:
                 raise WindowsFsRefusal("reparse_encountered")
             raise WindowsFsRefusal(f"open_failed:{error}")
         return result.value
+
+    def open_shared_child(self, parent, name, directory):
+        counted = _counted_name(name)
+        text = ctypes.create_unicode_buffer(name)
+        unicode = _marshal_counted_name(counted, text, self.Unicode, text)
+        attr = self.ObjAttr(ctypes.sizeof(self.ObjAttr), parent, ctypes.pointer(unicode),
+                            0x1000 | 0x40, None, None)
+        io = self.IoStatus()
+        result = self.w.HANDLE()
+        access = 0x80 | 0x20000 | 0x100000 | 0x1
+        options = 0x20 | (0x1 if directory else 0x40 | 0x00200000)
+        status = self.n.NtCreateFile(ctypes.byref(result), access, ctypes.byref(attr),
+                                     ctypes.byref(io), None, 0, 0x1 | 0x2 | 0x4,
+                                     1, options, None, 0)
+        if status < 0:
+            error = int(self.n.RtlNtStatusToDosError(status & 0xFFFFFFFF))
+            if error in (2, 3):
+                return None
+            if status & 0xFFFFFFFF == 0xC000050B:
+                raise WindowsFsRefusal("reparse_encountered")
+            raise WindowsFsRefusal(f"open_failed:{error}")
+        return result.value
+
+    def create_private_child(self, parent, name, directory):
+        counted = _counted_name(name)
+        text = ctypes.create_unicode_buffer(name)
+        unicode = _marshal_counted_name(counted, text, self.Unicode, text)
+        sid = self._current_sid()
+        sddl = (f"O:{sid}D:P(A;OICI;FA;;;{sid})"
+                "(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+        descriptor = ctypes.c_void_p()
+        if not self.a.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl, 1, ctypes.byref(descriptor), None):
+            self._fail("acl_unavailable")
+        try:
+            attr = self.ObjAttr(ctypes.sizeof(self.ObjAttr), parent,
+                                ctypes.pointer(unicode), 0x1000 | 0x40,
+                                descriptor, None)
+            io = self.IoStatus()
+            result = self.w.HANDLE()
+            # Existing names never open through FILE_CREATE. The returned handle
+            # can create children of a new private directory or lock a new file.
+            access = 0x80 | 0x20000 | 0x100000 | (0x7 if directory else 0x3)
+            options = 0x20 | (0x1 if directory else 0x40)
+            status = self.n.NtCreateFile(
+                ctypes.byref(result), access, ctypes.byref(attr), ctypes.byref(io),
+                None, 0, 0x1 | 0x2 | 0x4, 2, options, None, 0)
+            if status < 0:
+                if status & 0xFFFFFFFF == 0xC0000035:
+                    return None
+                error = int(self.n.RtlNtStatusToDosError(status & 0xFFFFFFFF))
+                raise WindowsFsRefusal(f"create_failed:{error}")
+            return result.value
+        finally:
+            self.k.LocalFree(descriptor)
+
+    def lock_exclusive(self, handle):
+        overlap = self.Overlapped()
+        if not self.k.LockFileEx(handle, 0x2, 0, 1, 0, ctypes.byref(overlap)):
+            self._fail("lock_failed")
+        return overlap
+
+    def unlock(self, handle, overlap):
+        if not self.k.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(overlap)):
+            self._fail("unlock_failed")
 
     def _info(self, handle, info_class, kind):
         value = kind()
@@ -514,7 +653,7 @@ class _Win32Api:
         finally:
             self.close(token)
 
-    def acl_info(self, handle):
+    def acl_info(self, handle, *, allow_inherited=False):
         owner, dacl, descriptor = ctypes.c_void_p(), ctypes.c_void_p(), ctypes.c_void_p()
         code = self.a.GetSecurityInfo(handle, 1, 0x1 | 0x4, ctypes.byref(owner),
                                        None, ctypes.byref(dacl), None,
@@ -538,7 +677,8 @@ class _Win32Api:
                 if not self.a.GetAce(dacl, index, ctypes.byref(ace)):
                     self._fail("acl_unavailable")
                 header = ctypes.cast(ace, ctypes.POINTER(self.AceHeader)).contents
-                if header.AceType != 0 or header.AceSize < 16 or header.AceFlags & 0x10:
+                if (header.AceType != 0 or header.AceSize < 16
+                        or (header.AceFlags & 0x10 and not allow_inherited)):
                     raise WindowsFsRefusal("acl_invalid")
                 if not self.a.IsValidSid(ace.value + 8):
                     raise WindowsFsRefusal("acl_invalid")

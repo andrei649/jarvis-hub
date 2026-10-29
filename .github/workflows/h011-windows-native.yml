@@ -1,4 +1,4 @@
-name: H011 Windows native read primitives
+name: H011 Windows native read and private store
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  native-read-primitives:
+  native-read-and-store:
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -26,10 +26,13 @@ jobs:
       - run: pip install --require-hashes -r requirements-beta.lock
       - run: pip install --require-hashes -r requirements-dev.lock
       - name: Ruff native primitive
-        run: ruff check agents/core/checkpoint_windows_fs.py tests/test_h011_windows_native_fs.py
+        run: >-
+          ruff check agents/core/checkpoint_windows_fs.py agents/core/checkpoint_windows_store.py
+          tests/test_h011_windows_native_fs.py tests/test_h011_windows_store.py
       - name: Native synthetic NTFS tests
         run: >-
-          python -m pytest tests/test_h011_windows_native_fs.py -v --tb=short -s
+          python -m pytest tests/test_h011_windows_native_fs.py tests/test_h011_windows_store.py
+          -v --tb=short -s
           --junitxml=h011-native-junit.xml
         env:
           JARVIS_TESTING: "1"
@@ -45,5 +48,5 @@ jobs:
           assert suite is not None
           counts = {key: int(suite.get(key, '-1')) for key in ('tests', 'failures', 'errors', 'skipped')}
           print('H011 native Windows JUnit:', counts)
-          assert counts['tests'] >= 17 and all(counts[key] == 0 for key in ('failures', 'errors', 'skipped'))
+          assert counts['tests'] >= 65 and all(counts[key] == 0 for key in ('failures', 'errors', 'skipped'))
           '@ | python -

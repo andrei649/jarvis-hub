@@ -7,7 +7,7 @@ FileTools, inventory or maintenance callers. `HISTORY_SUPPORTED` stays false on
 Windows. The Unit 1 native read suite passed on published `b5134e9a` in job
 `123389933746` (Windows 2025 Server build 10.0.26100, Python 3.12.10 x64,
 NTFS flags `65482495`): 40 passed, zero failures/errors/skips. Unit 2 source
-work starts only after this plan's independent fidelity review.
+work began after this plan's independent fidelity review approved it.
 
 ## Private store and lock
 
@@ -34,8 +34,14 @@ exclusive first creation under the held store, reopen, read-only inventory,
 `PRAGMA synchronous=FULL`, and committed `BEGIN IMMEDIATE` transactions. The
 store, DB and any `-journal`, `-wal` or `-shm` names are checked at available
 pre/post fences for regular local files, full IDs, private ACLs and containment
-under the held store. A pre-existing reparse/sidecar or ambiguous SQLite mode
-refuses before a write. Record the actual journal mode and sidecar outcomes.
+under the held store. The supported spike mode is SQLite's ordinary `DELETE`
+rollback journal. An unsafe reparse, hard-linked or broadly accessible sidecar
+refuses; an ordinary private hot journal is allowed so SQLite can recover it.
+Record the actual journal mode and sidecar outcomes. SQLite-created sidecars
+may inherit restricted ACEs from the protected store; require effective access
+only for the current user, SYSTEM and Administrators, without imposing Unit 1's
+explicit protected-DACL rule on those sidecars. The store, lock and precreated
+index retain that strict rule.
 
 Use synthetic rows and an operation journal to test a separately committed
 `running` claim before any synthetic asset effect, exact selected-row comparison
@@ -61,3 +67,9 @@ its report records Windows build, Python version, NTFS flags, exact commands,
 file IDs, ACLs, journal mode, rows, crash points and unsupported cases. Passing
 Unit 2 does not enable Windows capture, restore, effects, GC, schema migration or
 maintenance.
+
+The isolated implementation candidate uses `WindowsHistoryFs` for exclusive
+child creation and shared name probes, `WindowsPrivateStore` for the private
+store lease, and synthetic tests for ordinary SQLite `DELETE` journal
+recovery. Local fake and ABI checks cannot establish the native outcome;
+the expanded zero-skip Windows job is the acceptance gate.

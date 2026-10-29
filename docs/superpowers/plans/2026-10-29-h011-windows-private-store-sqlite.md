@@ -5,9 +5,10 @@ ordinary SQLite parity without Windows H011 product wiring.
 
 **Spec:** [private store and SQLite parity](../specs/2026-10-29-h011-windows-private-store-sqlite.md).
 **Freshness (generated 2026-10-29T10:25:16Z):** base and drafting head
-`b5134e9a3ce925699a3b3351caca85737f137744`; changed paths are this plan
-and its spec. Next action: independent fidelity review of these two documents
-before source implementation. Unit 1's published zero-skip Windows job is GREEN:
+`b5134e9a3ce925699a3b3351caca85737f137744`; the plan was independently
+approved before implementation. Unit 2 is now an isolated local candidate
+awaiting source/security review and native Windows execution. Unit 1's
+published zero-skip Windows job is GREEN:
 job `123389933746`, 40 passed, zero failures/errors/skips on Windows 2025
 Server build 10.0.26100, Python 3.12.10 x64, NTFS flags `65482495`.
 **Rollback:** revert the isolated Unit 2 source/workflow/test commit; no owner
@@ -55,9 +56,11 @@ store, SQLite schema, history caller or production gate is changed.
    sentinel. Under the lease, first-create the DB exclusively, recheck its
    regular identity and ACL, then use ordinary `sqlite3.connect(path)` for
    create/reopen/read-only URI, `synchronous=FULL`, claim commit, exact selected
-   rows and `BEGIN IMMEDIATE` guard. Probe journal/sidecar location, ACL,
-   pre-existing reparses, clean reopen, rollback and crash/restart with a
-   durable non-replayable `running` claim. Use deterministic barriers at
+   rows and `BEGIN IMMEDIATE` guard. Prove the `DELETE` rollback-journal mode,
+   sidecar location and effective restricted inherited ACL; refuse unsafe
+   reparses, hard links or broad access while admitting ordinary private hot
+   journals for recovery. Probe clean reopen, rollback and crash/restart with
+   a durable non-replayable `running` claim. Use deterministic barriers at
    precheck/connect/claim/guard for store/DB/sidecar swaps; assert outside
    sentinel bytes unchanged and classify each refusal or uncertainty. If an
    uncontained native result appears, stop and report its exact boundary for a
