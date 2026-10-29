@@ -126,7 +126,7 @@ Task9 is the broad integration/capability/TLS/Mac fixture repair, with separate 
 
 Task9 A/B/manual repair integrated locally through81431045 after scoped independent reviews. Integrated capability/owner/TLS/uninstall/log suites:287passed,0skips/failures. Trusted OpenSSL PEM retains AUX serverAuth/reject purposes; the deliberate runtime rejected CA remains untouched. All21affected claims source-reassessed;130equivalent/447partial/120missing, no new parity credit. Fresh backend collection29823/routes714; frontend2675unchanged/mobile 359reused. This focused result does not replace the failed29781-case broad milestone; OCR/native source remains isolated pending fix review.
 
-Task9 evidence checkpoint:287integrated source cases passed; metadata/status/context guards259total=258pass/1skip; all21affected claims re-read with no verdict upgrade. Fresh collection29823/2675/359(reused mobile),714routes; all 697accepted,130equivalent447partial120missing. OCRround3 and native-round1 peer review remain active; their isolated source is not credited as delivered.
+Task9 evidence checkpoint:287integrated source cases passed; metadata/status/context guards259total=258pass/1skip; all21affected claims re-read with no verdict upgrade. Fresh collection29823/2675/359(reused mobile),714routes; all 697accepted,130equivalent, 447partial120missing. OCRround3 and native-round1 peer review remain active; their isolated source is not credited as delivered.
 
 ## Task 11: Windows OCR resource ownership
 
@@ -144,7 +144,7 @@ Native/OCR evidence checkpoint2ba96cdc: Task8 fixture round3 adds only the real 
 
 Implement an inert CAS selection record and cross-process shared/exclusive selection gate, then fence every settings pair writer before SQLite: direct PUT/CLI, import, reset/undo, migration and initialization. Revalidate H378 effective choices after awaits and drain started offloaded writes on cancellation. Add invalidation triggers for strict readback, without treating them as a physical-send lease. Preserve ordinary settings on unsupported hosts while signed selection fails closed. No owner route/backend activation yet;10B2 still owns actual router/credentials/publicDNS-IP-SNI/common six-dialect guard and lifecycle drains. Work is isolated and does not overlap Task13 repair files.
 
-Reviewed local checkpoint2a0fd7a8: owner vault/HWM b459b86, typed context refusal0a719714, gated Windows OCR+finite parent clocks dd388fa, exact credential metadata manual ae788164/81731e75, and Task13 integration repairs through2a0fd7a8. Broad b11 milestone recorded29947total/29866pass/8fail/73skip; Task13 now passes229currentcanonical cases includingAPI10, while prior post-wave688cases had684pass/4nativeWindows-skips. GlobalRuffpasses. All178affected claim records were semantically re-read/citations resolved, no verdict upgrade; current130equivalent447partial120missing0stale642reviewed, all 697accepted. Fresh collection30020backend,2675frontend unchanged/359mobile reused,717routes. Metadataguards259cases258pass1skip. These scoped checks do not constitute a new full-suite pass; selected runtime, realengine/provider/container andnativeplatform gates remain open. B1 selectionfence201cases and two fixrounds are independently approved in isolation, nextintegration;10B2 physical routing remains required.
+Reviewed local checkpoint2a0fd7a8: owner vault/HWM b459b86, typed context refusal0a719714, gated Windows OCR+finite parent clocks dd388fa, exact credential metadata manual ae788164/81731e75, and Task13 integration repairs through2a0fd7a8. Broad b11 milestone recorded29947total/29866pass/8fail/73skip; Task13 now passes229currentcanonical cases includingAPI10, while prior post-wave688cases had684pass/4nativeWindows-skips. GlobalRuffpasses. All178affected claim records were semantically re-read/citations resolved, no verdict upgrade; current130equivalent, 447partial120missing0stale642reviewed, all 697accepted. Fresh collection30020backend,2675frontend unchanged/359mobile reused,717routes. Metadataguards259cases258pass1skip. These scoped checks do not constitute a new full-suite pass; selected runtime, realengine/provider/container andnativeplatform gates remain open. B1 selectionfence201cases and two fixrounds are independently approved in isolation, nextintegration;10B2 physical routing remains required.
 
 ## Task10B2: Owner-selected physical provider runtime
 
@@ -249,3 +249,11 @@ and one Workspace Reports initial-route failure; an earlier run failed Audit ins
 whose exact module rerun passed. Task35 diagnoses cold lazy-route loading before the
 one-second feature assertion and prepares a test-only separation of those concerns.
 No failed full run is counted as green. H686 Task33 remains isolated and uncredited.
+
+Task35 is integrated at 5a545215 after independent review. The complete native
+frontend JSON reports 2,689/2,689 passed. The targeted backend union passed 741 and
+metadata 258 passed with one optional skip. All 230 affected evidence rows were
+semantically reread and citations resolved; only H396 gained equivalence, bringing
+recorded totals to 133 equivalent, 447 partial, 117 missing with no stale pins. The
+native/mobile footer gap remains separately documented; no full-backend/live claim
+is added. A fresh clean full backend milestone is the next integration check.
