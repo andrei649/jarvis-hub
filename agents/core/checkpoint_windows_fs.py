@@ -143,9 +143,11 @@ def _marshal_counted_name(counted: tuple[bytes, int, int], buffer,
                           unicode_type, pointer):
     encoded, length, maximum = counted
     if (ctypes.sizeof(buffer) != maximum
-            or ctypes.string_at(ctypes.addressof(buffer), length) != encoded):
+            or ctypes.string_at(ctypes.addressof(buffer), length) != encoded
+            or ctypes.cast(pointer, ctypes.c_void_p).value != ctypes.addressof(buffer)):
         raise WindowsFsRefusal("name_encoding_unavailable")
-    return unicode_type(length, maximum, pointer)
+    # UNICODE_STRING.Buffer is LPWSTR; the caller retains the backing array.
+    return unicode_type(length, maximum, ctypes.cast(pointer, ctypes.c_wchar_p))
 
 
 class WindowsHistoryFs:

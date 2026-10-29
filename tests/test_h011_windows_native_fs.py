@@ -7,6 +7,7 @@ import os
 import platform
 import subprocess
 import sys
+from ctypes import wintypes as w
 
 import pytest
 
@@ -380,22 +381,30 @@ def test_fake_counted_unicode_name_uses_full_utf16_bytes(name, expected_bytes):
         assert encoded[:len(name) * 2].decode("utf-16-le") == "A😀"
 
 
-def test_fake_marshalled_unicode_structure_counts_exact_buffer_bytes():
+@pytest.mark.parametrize("name", ["A😀", "A😀B"])
+def test_fake_marshalled_unicode_structure_counts_exact_buffer_bytes(name):
     class Unicode(ctypes.Structure):
         _fields_ = [("Length", ctypes.c_ushort), ("MaximumLength", ctypes.c_ushort),
-                    ("Buffer", ctypes.c_void_p)]
+                    ("Buffer", w.LPWSTR)]
 
-    name_fields = windows_fs._counted_name("A😀B")
+    name_fields = windows_fs._counted_name(name)
     encoded, length, maximum = name_fields
     buffer = (ctypes.c_ubyte * maximum).from_buffer_copy(encoded + b"\0\0")
     counted = windows_fs._marshal_counted_name(name_fields, buffer, Unicode,
-                                               ctypes.addressof(buffer))
-    assert (counted.Length, counted.MaximumLength) == (8, 10)
-    assert ctypes.string_at(counted.Buffer, counted.Length) == encoded
-    assert counted.Length > len("A😀B") * 2
+                                               buffer)
+    assert (counted.Length, counted.MaximumLength) == (length, maximum)
+    pointer = ctypes.c_void_p.from_address(
+        ctypes.addressof(counted) + Unicode.Buffer.offset).value
+    assert pointer == ctypes.addressof(buffer)
+    assert ctypes.string_at(pointer, counted.MaximumLength) == encoded + b"\0\0"
+    if name == "A😀B":
+        assert counted.Length > len(name) * 2
     wrong = (ctypes.c_ubyte * maximum).from_buffer_copy(b"x" * maximum)
     with pytest.raises(WindowsFsRefusal, match="name_encoding_unavailable"):
         windows_fs._marshal_counted_name(name_fields, wrong, Unicode,
+                                         wrong)
+    with pytest.raises(WindowsFsRefusal, match="name_encoding_unavailable"):
+        windows_fs._marshal_counted_name(name_fields, buffer, Unicode,
                                          ctypes.addressof(wrong))
 
 
