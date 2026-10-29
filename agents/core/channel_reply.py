@@ -35,6 +35,11 @@ CHANNEL_REPLY_CONTRACT_KIND = "channel_reply"
 CHANNEL_REPLY_TASK_KIND = "channel.reply"
 _RISK_TIER = 2
 _TEXT_CAP = 4_000
+# STAB-4 (#933): governed email replies are capped per recipient. The cap is
+# enforced in ChannelReplyBroker.execute, immediately before SMTP, never at
+# request/queue time — a queued draft is not a send.
+_EMAIL_REPLY_WINDOW_SECONDS = 3600.0
+_EMAIL_REPLY_DEFAULT_MAX_PER_HOUR = 10
 _PROMPT_TEXT_CAP = 80_000
 _PROMPT_CONTENT_BYTES = 2 * 1024 * 1024
 _PROMPT_CONTENT_TOTAL = 32 * 1024 * 1024
@@ -137,12 +142,71 @@ def _contract_template() -> ContractTemplate:
 CHANNEL_REPLY_CONTRACT = _contract_template()
 
 
+def _normalize_email_address(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _email_reply_cap_from_env() -> int:
+    """Per-recipient hourly email-reply cap, operator-tunable, fail-safe.
+
+    JARVIS_EMAIL_REPLY_MAX_PER_HOUR, default 10. Unset / unparseable /
+    non-positive values fall back to the default rather than disabling the
+    cap — an operator typo must narrow, never remove, the STAB-4 limit.
+    """
+    import os
+
+    try:
+        cap = int(str(os.environ.get("JARVIS_EMAIL_REPLY_MAX_PER_HOUR", "")).strip())
+    except (TypeError, ValueError):
+        return _EMAIL_REPLY_DEFAULT_MAX_PER_HOUR
+    return cap if cap > 0 else _EMAIL_REPLY_DEFAULT_MAX_PER_HOUR
+
+
+class EmailReplyRateLimiter:
+    """Per-recipient sliding-window limiter for governed email replies.
+
+    Only successful sends are recorded (see ChannelReplyBroker.execute):
+    a blocked or failed attempt must not itself consume quota, and a
+    refusal must not be counted as a send.
+    """
+
+    def __init__(self, *, max_per_hour: int | None = None,
+                 window_seconds: float = _EMAIL_REPLY_WINDOW_SECONDS,
+                 now_fn=None) -> None:
+        self._cap = (max_per_hour if max_per_hour is not None
+                     else _email_reply_cap_from_env())
+        self._cap = self._cap if self._cap > 0 else _EMAIL_REPLY_DEFAULT_MAX_PER_HOUR
+        self._window = float(window_seconds)
+        self._now_fn = now_fn or time.monotonic
+        self._hits: dict[str, list[float]] = {}
+
+    @property
+    def cap(self) -> int:
+        return self._cap
+
+    def _live(self, recipient: str, now: float) -> list[float]:
+        hits = [t for t in self._hits.get(recipient, ()) if now - t < self._window]
+        self._hits[recipient] = hits
+        return hits
+
+    def blocked(self, recipient: str, *, now: float | None = None) -> bool:
+        return len(self._live(recipient, self._now_fn() if now is None else now)) >= self._cap
+
+    def record(self, recipient: str, *, now: float | None = None) -> None:
+        now = self._now_fn() if now is None else now
+        hits = self._live(recipient, now)
+        hits.append(now)
+        self._hits[recipient] = hits
+
+
 class ChannelReplyBroker:
     """Reply draft -> approval queue -> live channel send."""
 
     def __init__(self, *, inbox: ChannelInboxStore | None = None,
                  enqueue: Callable | None = None, channel_manager=None,
-                 agent: str = "veronica", audit=None, kernel=None, task_reader=None) -> None:
+                 agent: str = "veronica", audit=None, kernel=None, task_reader=None,
+                 email_allowlist=None, email_reply_max_per_hour: int | None = None,
+                 email_reply_limiter=None) -> None:
         self._inbox = inbox or ChannelInboxStore()
         self._enqueue = enqueue
         self._channel_manager = channel_manager
@@ -151,6 +215,16 @@ class ChannelReplyBroker:
         self._kernel = kernel
         self._task_reader = task_reader
         self._pending_prompts: dict[int, _PromptDelivery] = {}
+        # STAB-4 (#933) — email-only, enforced in execute() before SMTP.
+        # An explicit allowlist is an additional restriction on top of the
+        # inbound-sender binding: None means "no extra allowlist", a
+        # non-empty set means the recipient must be in it.
+        allowlist = {_normalize_email_address(a) for a in (email_allowlist or ())}
+        allowlist.discard("")
+        self._email_allowlist = frozenset(allowlist) or None
+        self._email_reply_limiter = (email_reply_limiter
+                                     or EmailReplyRateLimiter(
+                                         max_per_hour=email_reply_max_per_hour))
 
     async def deliver_prompt(self, message_id: str, text: str, *, channel: str,
                              sender: str, markup: dict | None, current: Callable,
@@ -379,6 +453,28 @@ class ChannelReplyBroker:
                     or message.get("channel") != channel or message.get("thread_id") != thread_id
                     or message.get("reply") != reply):
                 return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
+        if channel == "email":
+            # STAB-4 (#933), enforced here — the last step before SMTP.
+            # 1. The reply recipient must be exactly the inbound sender who
+            #    opened this thread (that sender already passed the gateway
+            #    pairing gate on arrival). A crafted task that redirects the
+            #    reply to any other address is blocked, as is a task whose
+            #    inbound binding is missing or has changed.
+            # 2. If an explicit allowlist was configured, it must also match.
+            # 3. Per-recipient hourly volume is capped before SMTP.
+            recipient = _normalize_email_address(reply.get("to"))
+            inbound = self._inbox.get_message(message_id) if message_id else None
+            if (not inbound or inbound.get("direction") != "in"
+                    or inbound.get("channel") != "email"
+                    or inbound.get("thread_id") != thread_id):
+                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
+            inbound_sender = _normalize_email_address(inbound.get("sender"))
+            if not recipient or not inbound_sender or recipient != inbound_sender:
+                return {"status": "blocked", "reason": "reply_recipient_mismatch", "channel": channel}
+            if self._email_allowlist is not None and recipient not in self._email_allowlist:
+                return {"status": "blocked", "reason": "sender_not_allowlisted", "channel": channel}
+            if self._email_reply_limiter.blocked(recipient):
+                return {"status": "blocked", "reason": "email_reply_rate_limited", "channel": channel}
         if self._channel_manager is None:
             return {"status": "failed", "reason": "channel_manager_unavailable",
                     "channel": channel}
@@ -393,6 +489,9 @@ class ChannelReplyBroker:
             return {"status": "failed", "reason": "send_failed", "channel": channel}
         if not sent:
             return {"status": "failed", "reason": "send_failed", "channel": channel}
+        if channel == "email":
+            # Only a successful send consumes rate-limit quota.
+            self._email_reply_limiter.record(_normalize_email_address(reply.get("to")))
         self._inbox.record_outbound(
             channel,
             text,
