@@ -15534,6 +15534,35 @@ export interface components {
             /** Target */
             target?: string | null;
         };
+        /** TurnCompletion */
+        TurnCompletion: {
+            /** Kind */
+            kind: string;
+            /** Explanation */
+            explanation: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "warning";
+            /** Unanswered Tool Results */
+            unanswered_tool_results: number;
+        };
+        /** TurnFileMutation */
+        TurnFileMutation: {
+            /** Attempt */
+            attempt: number;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "write" | "delete";
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "refused" | "unknown" | "applied_unverified";
+        };
         /** TurnNotice */
         TurnNotice: {
             /** Code */
@@ -15544,7 +15573,43 @@ export interface components {
         /** TurnOutcome */
         TurnOutcome: {
             /** Latency Ms */
-            latency_ms: number;
+            latency_ms?: number;
+            completion?: components["schemas"]["TurnCompletion"];
+            tools?: components["schemas"]["TurnToolAccounting"];
+            output?: components["schemas"]["TurnOutputFlow"];
+            /** File Mutations */
+            file_mutations?: components["schemas"]["TurnFileMutation"][];
+            /**
+             * File Mutation Attribution
+             * @constant
+             */
+            file_mutation_attribution?: "unknown";
+        };
+        /** TurnOutputFlow */
+        TurnOutputFlow: {
+            /** Tokens */
+            tokens: number | null;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "provider_complete" | "visible_estimate" | "unknown";
+        };
+        /** TurnToolAccounting */
+        TurnToolAccounting: {
+            /** Proposed */
+            proposed: number;
+            /** Queued */
+            queued: number;
+            /** Executed */
+            executed: number | null;
+            /** Failures */
+            failures: number | null;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "observed" | "unknown";
         };
         /** UninstallSkillBody */
         UninstallSkillBody: {

@@ -1032,3 +1032,17 @@ run 1's `/readyz` report; the live number depends on which agents the orchestrat
 read it from `/status` rather than trusting the 17. (vii) SHL-209's live reachability depends on what
 `/api/cognition` returns when cognition is disabled by posture; I confirmed the client-side fallback
 condition but did not observe a live payload lacking both `scoring` and `decision`.
+
+
+## Whole-turn outcome supplement — local source, 2026-10-29
+
+These are owner-run procedures for a separately authorized synthetic fixture. The
+local automated tests do not record a live provider, private-file or device run.
+
+| Check | Expected | Automated source coverage |
+| --- | --- | --- |
+| Normal answer, handled refusal, specialist timeout and synthesis failure | One consolidated source reason; normal answer means answered, not verified objective success | tests/test_h396_turn_outcome.py |
+| Stop after an accepted tool result without successful model consumption | One WARNING diagnostic and a pending-result explanation; successful later consumption clears that warning | tests/test_h396_turn_outcome.py |
+| Queue a tool, then approve a distinct execution | Proposed, queued and executed counts remain distinct; a closed earlier reply is immutable | tests/test_h396_turn_outcome.py |
+| Failed write followed by verified same-target retry, or an unverified/unknown retry | Only verified same-target retry supersedes failure; footer exposes operation and ordinal without path/content | tests/test_h396_turn_outcome.py |
+| Stream without intermediate provider counters, then receive complete usage | Visible-text estimate is labeled; observed provider count reconciles it; next turn/context clears prior strip | frontend/src/test/turn-outcome-app.test.tsx; tests/test_h396_turn_outcome.py |

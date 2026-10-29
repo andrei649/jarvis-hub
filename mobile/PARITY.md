@@ -549,3 +549,20 @@ The owner desktop HUD has Console → Admin → Custom Endpoints and the CLI has
 ## Governed fresh-profile browser sessions (2026-10-29)
 
 The desktop Operator exposes owner-approved start/act/close and grounded refs with bounded admin-only session/task projections. Native mobile has no equivalent browser session controls and no owner-profile access. The local Mac Chrome fixture verifies source behavior, not physical-device/live-Hub acceptance. Advanced browser/profile/engine requirements remain separate.
+
+
+H396 whole-turn outcome (2026-10-29 local source): browser cockpit/focus chat now reads
+one request-owned JSON/SSE outcome and live progress for consolidated source reasons,
+pending-tool WARNING, distinct proposal/queue/execution counts, observed or explicitly
+estimated output flow and path-free failed-unsuperseded file attempts. Signed task/turn
+origins and effect-boundary verification support the footer; late approvals cannot
+rewrite a closed turn. Native mobile retains its validated latency-only H18.33 strip.
+The new explanation, tool/output accounting and mutation footer are an explicit native
+surface gap; no physical-device/live-Hub acceptance is claimed.
+
+Browser observations (2026-10-29 local source): Operator queues separate approved
+console/get_images reads and renders bounded untrusted completed-task observations.
+The owner-only task projection retains strict session/registration/Kernel checks;
+reads do not fetch image bytes or authorize actions. Native mobile has no corresponding
+observation or session controls. Vision/dialog/JS/CDP, saved profiles and the other
+advanced browser requirements remain open.

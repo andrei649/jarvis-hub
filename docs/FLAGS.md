@@ -299,8 +299,10 @@ without browser launch or DNS lookup. Missing prerequisites or pending cleanup
 return `available:false`. Admin-only session/task projections and close controls
 use `/api/browser/sessions`, `/api/browser/tasks/{task_id}` and
 `/api/browser/sessions/{session_id}/close`. Strict session actions add grounded
-refs, scroll/back/press to the existing bounded plan. Advanced observation/vision/
-dialog tools, other engines, owner profiles and LAN routing remain open. Local Mac synthetic Chrome proof is separate from owner-host/live-site
+refs, scroll/back/press and no-argument console/get_images observations to the
+existing bounded plan. Console records and visible image metadata are bounded,
+untrusted and owner-only. Vision/dialog/JS/CDP tools, other engines, owner profiles
+and LAN routing remain open. Local Mac synthetic Chrome proof is separate from owner-host/live-site
 acceptance; see `docs/PLAYWRIGHT_OPERATOR.md`.
 
 **Revert:** unset the host flag and restart through the normal owner workflow. No

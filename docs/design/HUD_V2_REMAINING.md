@@ -711,20 +711,27 @@ A normally returned command or refusal may have a duration. Errors, cancellation
 uninstrumented turns have none. Selection is applied by the backend from the ordinary
 Admin Settings `display.status_bar_fields` list (default `latency`; empty hides it).
 The strip clears on new work or session/agent/demo changes and is not transcript history.
-TPS, model/context/cache/compression metrics and H396 whole-turn exit/accounting remain open;
-future work extends the same outcome. H18.33 adds a local native current-turn strip
+TPS and the complete H686 model/context/cache/compression vocabulary remain open;
+Task33 extends the same outcome after its own review. H396 now supplies the whole-turn
+completion/accounting fields described below. H18.33 adds a local native current-turn strip
 using the server-selected SSE outcome, with strict validation and ephemeral state.
 It clears on work/context changes and never enters stored history; physical-device
 and live-Hub acceptance remain open. See `mobile/docs/h1833-turn-duration.md`.
 
-H396's local runtime now retains a typed tool-loop exit and emits one bounded
-diagnostic attempt after a normal return, while its legacy caller receives the
-same reply text. This internal result is not a whole-turn completion claim or a
-new HTTP/SSE field. HUD explanations, pending-result severity and accounting still
-need defined cross-agent and non-loop semantics on the shared outcome.
-The local file mutation receipt describes returned approved-task attempts only;
-its scrubbed path and task status are insufficient for a same-turn mutation footer.
-Task/attempt correlation, missing/unknown effects and ordering remain open.
+H396 whole-turn outcome — current local source (2026-10-29): cockpit and focus chat
+consume one request-owned `outcome` on JSON replies, SSE progress and SSE end. The
+strip presents a consolidated source-assigned reason, proposed/queued/executed tool
+counts and observed provider output or an explicitly labeled visible-text estimate.
+Accepted tool results without a successful consuming model completion produce WARNING;
+a normal answer does not claim objective success. Approved file attempts carry a
+signed task/turn origin and physical-attempt identity. Bounded no-follow readback at
+the effect boundary distinguishes verified, unverified and unknown; only a later
+verified same-target attempt supersedes a failure. The footer uses ordinal/operation
+and disposition, never a path or file contents. Closed replies cannot be rewritten by
+later owner approvals. Native mobile currently reads latency only; the new completion,
+accounting, output-flow and file-footer counterpart remains a mobile surface gap.
+Synthetic source and mounted HUD tests are recorded separately from a live owner run.
+
 
 
 ### H444/H576 document input limit — 2026-10-09 local candidate
@@ -870,4 +877,4 @@ The new panel is a local implementation, with synthetic owner/Kernel/Vault/DNS/H
 
 ## Governed browser sessions — local integration (2026-10-29)
 
-Operator retains one-shot approval and adds fresh-profile start/act/close, bounded owner session/ref display and later browser-task outcome. The three session/task/close routes require the owner admin credential; generic availability remains user-tier. Grounded refs, scroll/back/press, frame/focus/native form semantics, current registration and exact per-step Kernel receipts are implemented. Local Chrome coverage includes unchanged-registration lifetime and changed-control native/journal cleanup. Console/images/vision/dialog/JS/CDP, other engines, real profiles, recording/spill, mobile controls and owner-host/live-platform acceptance remain required separately.
+Operator retains one-shot approval and adds fresh-profile start/act/close, bounded owner session/ref display and later browser-task outcome. The three session/task/close routes require the owner admin credential; generic availability remains user-tier. Grounded refs, scroll/back/press, frame/focus/native form semantics, current registration and exact per-step Kernel receipts are implemented. Local Chrome coverage includes unchanged-registration lifetime and changed-control native/journal cleanup. Console/get_images now add bounded completed-task untrusted observations through separate owner-approved reads, with conservative console invalidation and atomic image row/ref semantics. Vision/dialog/JS/CDP, other engines, real profiles, recording/spill, mobile controls and owner-host/live-platform acceptance remain required separately.
