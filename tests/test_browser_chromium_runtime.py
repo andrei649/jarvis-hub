@@ -47,12 +47,14 @@ def browser_processes_for_profile(profile):
 
 @pytest.fixture
 async def local_page():
-    state = {'clicked': 0, 'hosts': []}
+    state = {'clicked': 0, 'hosts': [], 'websocket_handshakes': 0}
 
     async def respond(reader, writer):
         try:
             request = await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), 5)
             head = request.decode('latin1')
+            if 'upgrade: websocket' in head.lower():
+                state['websocket_handshakes'] += 1
             first = head.splitlines()[0].split()
             path = first[1] if len(first) >= 2 else '/'
             state['hosts'].extend(line[6:] for line in head.splitlines()
@@ -87,6 +89,12 @@ async def local_page():
                 body = (b'<!doctype html><title>Idle egress</title>'
                         b'<script>setTimeout(() => fetch("/clicked"), 2000)</script>'
                         b'<button id="safe">Safe</button>')
+                status = '200 OK'
+            elif path == '/websocket':
+                body = (b'<!doctype html><title>Socket probe</title>'
+                        b'<script>document.documentElement.dataset.socketProbe = "started";'
+                        b'window.__socketProbe = new WebSocket("ws://fixture.browser.test:' + str(port).encode()
+                        + b'/echo")</script>')
                 status = '200 OK'
             elif path == '/escape':
                 body = (f'<!doctype html><title>Escape probe</title>'
@@ -238,6 +246,14 @@ async def test_session_snapshot_ref_survives_separate_owner_approved_call(browse
     result = rig.queue.get(act['task_id']).result['result']
     assert result['ok'] is True, (result, list(driver.blocked_requests), rig.page.state)
     assert rig.page.state['clicked'] == 1
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
+                                 base_url='http://testserver',
+                                 headers={'X-User-Token': 'browser-user'}) as client:
+        shown = await client.get(f"/api/browser/tasks/{act['task_id']}")
+        assert shown.status_code == 200
+        assert shown.json() == {'found': True, 'status': 'done', 'ok': True, 'steps': 2}
+        missing = await client.get('/api/browser/tasks/999999')
+        assert missing.status_code == 404 and missing.json() == {'found': False}
     assert await rig.runtime.close_owner_session(sid)
     assert rig.runtime.last_profile is not None and not rig.runtime.last_profile.exists()
     assert not browser_identity_alive(rig.runtime.last_browser_identity)
@@ -456,7 +472,7 @@ import json, os, psutil, subprocess, sys, tempfile
 from pathlib import Path
 from agents.core.browser_session import BrowserOwnershipJournal
 chrome, root, sid = sys.argv[1:]
-profile = Path(tempfile.mkdtemp(prefix='nerva-playwright-orphan-'))
+profile = Path(tempfile.mkdtemp(prefix='nerva-browser-orphan-'))
 journal = BrowserOwnershipJournal(Path(root))
 controller = psutil.Process(os.getpid())
 record = {'profile': str(profile), 'controller': [controller.pid, controller.create_time()],
@@ -718,6 +734,22 @@ async def test_real_chromium_blocks_unpinned_subresource_and_redirect(browser_ri
     assert rig.runtime.last_browser_identity is not None
     assert not browser_identity_alive(rig.runtime.last_browser_identity)
     assert browser_processes_for_profile(rig.runtime.last_profile) == []
+
+
+async def test_session_chromium_blocks_websocket_before_fixture_handshake(browser_rig):
+    rig = browser_rig
+    started = await _approved_session_call(rig, {'mode': 'start', 'steps': [
+        {'action': 'navigate', 'url': rig.page.origin + '/websocket'},
+        {'action': 'wait', 'timeout_ms': 500},
+    ]})
+    assert started['ok'] is True, started
+    sid = started['session_id']
+    driver = rig.runtime.sessions[sid].driver
+    assert await driver._page.evaluate('document.documentElement.dataset.socketProbe') == 'started'
+    assert await driver._page.evaluate('window.__socketProbe instanceof WebSocket') is True
+    assert rig.page.state['websocket_handshakes'] == 0
+    assert await rig.runtime.close_owner_session(sid)
+    assert not browser_identity_alive(rig.runtime.last_browser_identity)
 
 
 async def test_changed_tool_registration_after_acceptance_refuses_before_launch(browser_rig):

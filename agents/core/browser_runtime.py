@@ -6,6 +6,7 @@ import contextlib
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import secrets
 import shutil
@@ -246,7 +247,7 @@ class BrowserRuntime:
         from .browser_session import BrowserOwnershipJournal
         self.sessions = {}
         self.journal = BrowserOwnershipJournal(
-            Path(os.getenv('JARVIS_HOME', str(Path.home() / '.jarvis'))) / 'browser-ownership')
+            Path(env_str('JARVIS_HOME', str(Path.home() / '.jarvis'))) / 'browser-ownership')
         self._journal_uncertain = bool(self.journal.entries())
         self._reaper_task = None
         self._owner_close_tasks = {}

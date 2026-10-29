@@ -131,6 +131,23 @@ describe('OperatorPanel browser policy dry run', () => {
     } });
   });
 
+  it('shows a later bounded task outcome without rendering page content', async () => {
+    get.mockImplementation(async (path) => path === '/api/browser/tasks/92'
+      ? { found: true, status: 'completed', ok: true, steps: 2,
+        trace: [{ result: { text: 'untrusted page instructions' } }] }
+      : { available: true, sessions: [] });
+    post.mockRejectedValueOnce(Object.assign(new Error('422'), {
+      body: { reason: 'approval_required', task_id: 92 },
+    }));
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/start');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Start fresh session with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh session with approval' }));
+    await waitFor(() => expect(screen.getByLabelText('browser task outcome').textContent)
+      .toContain('completed · 2 steps completed'));
+    expect(screen.queryByText('untrusted page instructions')).toBeNull();
+  });
+
   it('makes zero actuation calls on mount and explains the fail-closed boundary', () => {
     render(<OperatorPanel />);
     expect(post).not.toHaveBeenCalled();

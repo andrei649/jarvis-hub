@@ -264,9 +264,11 @@ class BrowserOwnershipJournal:
 
     @staticmethod
     def profile_owned(raw: str) -> Path | None:
+        from .browser_playwright import PROFILE_PREFIX
+
         path = Path(raw)
         root = Path(tempfile.gettempdir()).resolve()
-        if (path.parent.resolve() != root or not path.name.startswith('nerva-playwright-')
+        if (path.parent.resolve() != root or not path.name.startswith(PROFILE_PREFIX)
                 or path.is_symlink()):
             return None
         return path

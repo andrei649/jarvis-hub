@@ -41,6 +41,13 @@ interface BrowserSessionView {
   expires_in: number;
 }
 
+interface BrowserTaskOutcome {
+  status: string;
+  ok?: boolean;
+  steps?: number;
+  reason?: string;
+}
+
 interface DesktopPreviewRow {
   action: string;
   decision: string;
@@ -300,6 +307,7 @@ export function OperatorPanel() {
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [browserAvailable, setBrowserAvailable] = useState(false);
   const [browserRunTaskId, setBrowserRunTaskId] = useState<number | null>(null);
+  const [browserTaskOutcome, setBrowserTaskOutcome] = useState<BrowserTaskOutcome | null>(null);
   const [browserCheck, setBrowserCheck] = useState<BrowserCheckResult | null>(null);
   const [browserPreview, setBrowserPreview] = useState<BrowserPreviewRow[] | null>(null);
   const [browserSessions, setBrowserSessions] = useState<BrowserSessionView[]>([]);
@@ -329,6 +337,22 @@ export function OperatorPanel() {
     const timer = window.setInterval(() => { void refresh(); void refreshSessions(); }, 5_000);
     return () => { live = false; window.clearInterval(timer); };
   }, []);
+
+  useEffect(() => {
+    if (browserRunTaskId === null) return;
+    let live = true;
+    const refresh = () => apiGet(`/api/browser/tasks/${browserRunTaskId}`).then((value) => {
+      if (!live || !isRecord(value) || value.found !== true || typeof value.status !== 'string') return;
+      setBrowserTaskOutcome({ status: value.status.slice(0, 32),
+        ...(typeof value.ok === 'boolean' ? { ok: value.ok } : {}),
+        ...(Number.isSafeInteger(value.steps) && Number(value.steps) >= 0 ? { steps: Number(value.steps) } : {}),
+        ...(typeof value.reason === 'string' ? { reason: value.reason.slice(0, MAX_REASON) } : {}),
+      });
+    }).catch(() => { /* A missing task never becomes a success claim. */ });
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 5_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [browserRunTaskId]);
 
   const [desktopAction, setDesktopAction] = useState<CanonicalDesktopAction>('read');
   const [desktopPrimary, setDesktopPrimary] = useState('');
@@ -487,6 +511,7 @@ export function OperatorPanel() {
   const runBrowserPlan = async () => {
     setBrowserError(null);
     setBrowserRunTaskId(null);
+    setBrowserTaskOutcome(null);
     if (!browserAvailable) return setBrowserError('Browser execution is unavailable on this server');
     const stored = cloneBrowserPlan(browserPlanRef.current);
     if (!stored.length || stored[0].action !== 'navigate') {
@@ -527,6 +552,7 @@ export function OperatorPanel() {
   const queueBrowserSession = async (args: Record<string, unknown>) => {
     setBrowserError(null);
     setBrowserRunTaskId(null);
+    setBrowserTaskOutcome(null);
     setBrowserBusy('session');
     try {
       const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args });
@@ -792,7 +818,12 @@ export function OperatorPanel() {
               onClick={startBrowserSession}>Start fresh session with approval</button>
           </div>
           <p style={mono}>{browserAvailable ? 'Browser execution available for server-approved domains' : 'Browser execution unavailable'}</p>
-          {browserRunTaskId && <p role="status">Browser task {browserRunTaskId} queued · <a href={appUrl('/v2/console#decision-inbox')}>Decision Inbox</a></p>}
+          {browserRunTaskId && <p role="status">Browser task {browserRunTaskId} {browserTaskOutcome?.status || 'queued'} · <a href={appUrl('/v2/console#decision-inbox')}>Decision Inbox</a></p>}
+          {browserRunTaskId && browserTaskOutcome && <p aria-label="browser task outcome" style={mono}>
+            Browser task {browserRunTaskId}: {browserTaskOutcome.status}
+            {browserTaskOutcome.ok === true ? ` · ${browserTaskOutcome.steps ?? 0} steps completed` : ''}
+            {browserTaskOutcome.ok === false ? ` · ${browserTaskOutcome.reason || 'browser_failed'}` : ''}
+          </p>}
           {browserSessions.length > 0 && <div style={{ ...mono, marginTop: 8 }}>
             <label htmlFor="operator-browser-session">Live fresh-profile session</label>
             <select id="operator-browser-session" value={browserSessionId}

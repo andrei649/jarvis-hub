@@ -80,6 +80,29 @@ async def browser_sessions():
                                                    or runtime._journal_uncertain)})
 
 
+@router.get('/api/browser/tasks/{task_id}', dependencies=[Depends(user_guard)])
+async def browser_task_status(task_id: int):
+    """Show the owner's browser outcome without exposing page text or raw task data."""
+    runtime = _session_runtime()
+    if runtime is None or runtime.queue is None or task_id < 1:
+        return nocache_json({'found': False}, status_code=404)
+    task = await asyncio.to_thread(runtime.queue.get, task_id)
+    if task is None or task.kind != 'toolrpc.browser_run':
+        return nocache_json({'found': False}, status_code=404)
+    outcome = task.result.get('result') if type(task.result) is dict else None
+    result = {'found': True, 'status': task.status if task.status in {
+        'proposed', 'approved', 'running', 'blocked', 'done', 'failed',
+        'rejected', 'deferred', 'quarantined', 'expired'} else 'unknown'}
+    if type(outcome) is dict and type(outcome.get('ok')) is bool:
+        result['ok'] = outcome['ok']
+        if type(outcome.get('trace')) is list:
+            result['steps'] = min(len(outcome['trace']), 20)
+        reason = outcome.get('reason')
+        if type(reason) is str and re.fullmatch('[a-z_]{1,64}', reason):
+            result['reason'] = reason
+    return nocache_json(result)
+
+
 @router.post('/api/browser/sessions/{session_id}/close', dependencies=[Depends(user_guard)])
 async def browser_session_close(session_id: str):
     """An authenticated owner may always stop a fresh-profile browser."""

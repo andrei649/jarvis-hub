@@ -45,7 +45,7 @@ async def test_ambiguous_journal_never_adopts_profile_or_reaps_live_controller(t
     from agents.core.browser_session import BrowserOwnershipJournal
 
     journal = BrowserOwnershipJournal(tmp_path / 'journal')
-    profile = Path(tempfile.mkdtemp(prefix='nerva-playwright-owner-test'))
+    profile = Path(tempfile.mkdtemp(prefix='nerva-browser-owner-test'))
     sid = 'a' * 32
     current = psutil.Process(os.getpid())
     try:
