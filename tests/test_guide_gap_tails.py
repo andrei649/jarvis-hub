@@ -40,7 +40,7 @@ def _post_stt(transcript: str, settings: dict):
 
     with (
         patch("core.voice.stt.HAS_WHISPER", True),
-        patch("core.settings_db.get_value", side_effect=fake_get_value),
+        patch("agents.core.settings_db.get_value", side_effect=fake_get_value),
         patch.object(voice_router, "_stt_engine", return_value=_fake_engine(transcript)),
         TestClient(web.app) as client,
     ):

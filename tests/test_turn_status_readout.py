@@ -253,6 +253,7 @@ async def test_real_public_wrapper_measures_after_cleanup_and_normal_refusal(mon
     from agents.core.conversation_clock import CONTEXT_REFUSED_REPLY, CompactionClockRefused
 
     instance = orchestrator.Orchestrator.__new__(orchestrator.Orchestrator)
+    instance._runtime_settings = {}
     instance._start_title_upgrades = lambda _titles: None
     cleanup = {"done": False}
     monkeypatch.setattr(orchestrator.power, "hold_for_turn", lambda _orch: True)
@@ -290,6 +291,7 @@ async def test_real_public_wrapper_measures_normal_command(monkeypatch, stream):
     from agents.core import orchestrator, turn_outcome
 
     instance = orchestrator.Orchestrator.__new__(orchestrator.Orchestrator)
+    instance._runtime_settings = {}
     instance._start_title_upgrades = lambda _titles: None
     monkeypatch.setattr(orchestrator.power, "hold_for_turn", lambda _orch: False)
     monkeypatch.setattr(orchestrator.power, "release_for_turn", lambda _held: None)
@@ -317,6 +319,7 @@ async def test_real_public_wrapper_errors_and_cancellation_do_not_publish(monkey
     from agents.core import orchestrator, turn_outcome
 
     instance = orchestrator.Orchestrator.__new__(orchestrator.Orchestrator)
+    instance._runtime_settings = {}
     instance._start_title_upgrades = lambda _titles: None
     monkeypatch.setattr(orchestrator.power, "hold_for_turn", lambda _orch: False)
     monkeypatch.setattr(orchestrator.power, "release_for_turn", lambda _held: None)

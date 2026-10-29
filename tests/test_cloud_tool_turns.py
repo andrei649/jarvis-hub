@@ -145,6 +145,7 @@ def _claude(*responses: Any, auth_pool=None) -> tuple[ClaudeBackend, _Client]:
     backend.api_key = "sk-ant-test"
     backend.model = "claude-test"
     backend.profile = DEFAULT_REGISTRY.get("anthropic")
+    backend._signed_base = ANTHROPIC_API_BASE
     backend.auth_pool = auth_pool
     # H364 — the fixture bypasses __init__, so it has to mirror it: no effort
     # asked for, no overrides. "claude-test" is not a known family either, so
