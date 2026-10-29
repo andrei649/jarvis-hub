@@ -15574,6 +15574,30 @@ export interface components {
         TurnOutcome: {
             /** Latency Ms */
             latency_ms?: number;
+            /** Duration Ms */
+            duration_ms?: number;
+            /** Prompt Elapsed Ms */
+            prompt_elapsed_ms?: number;
+            /** Model */
+            model?: string;
+            /** Context Detail */
+            context_detail?: {
+                [key: string]: number;
+            };
+            /** Context Pct */
+            context_pct?: number;
+            /** Cache Hit */
+            cache_hit?: number;
+            /** Tps */
+            tps?: number;
+            /** Compressions */
+            compressions?: number;
+            /** Total Tokens */
+            total_tokens?: number;
+            /** Title */
+            title?: string;
+            /** Battery */
+            battery?: boolean;
             completion?: components["schemas"]["TurnCompletion"];
             tools?: components["schemas"]["TurnToolAccounting"];
             output?: components["schemas"]["TurnOutputFlow"];

@@ -277,3 +277,37 @@ Separately reviewed H686 candidate 2b234223 and uncaught-page-error candidate
 f7c03e79 remain isolated pending integration. Their focused results do not change
 the full backend verdict above. All 39 backlog items and all 697 accepted
 contracts remain required; this checkpoint does not mark the overall goal done.
+
+### Reviewed follow-up batch — 2026-10-29
+
+Tasks39/40 repair all14 failures from the ae618ee8 full milestone without weakening
+owner authority, outcome ordering or readiness. All14 exact cases pass in the
+current1027-case integrated regression. Task41 repairs the new Bandit sites and the
+verified-private-directory Semgrep false positive without changing scanner rules,
+baselines or workflows. Its exact pinned local scanner commands pass. Task43 settles
+the SQLite test fixture timer before database close; the complete23-case selection
+module passes with thread warnings treated as errors. Remote CI must run on the new head.
+
+Task33 H686 and its four accounting/timing repairs are integrated after independent
+review. Optional metrics use the same request-owned H396 carrier; sources missing
+trusted attribution self-hide. Task44 fixes long-value wrapping and short-pane
+scroll containment. Independent compiled synthetic Chrome checks pass full/floating
+chat at390x600,390x900 and1280x900, with the final Battery row reachable and the composer
+visible, no horizontal overflow and no page errors. This is local source/UI evidence;
+live-Hub and physical-device acceptance remain separate. Task36 adds bounded uncaught
+page errors to approved console observations; advanced browser requirements stay open.
+
+Canonical combined post-security coverage passes1130 cases with4 native Windows skips;
+the local Chrome module passes36/36 using generated loopback pages and fresh profiles.
+API/route/authentication guards pass97, with734 routes and unchanged prior guard/operation
+IDs. Complete frontend passes2703/2703 after the layout fixes. Offline generated types,
+HUD/Workspace build, TypeScript and whole-source Ruff pass. Fresh backend collection is
+30457; mobile359 is reused unchanged. These results do not replace the failed ae618ee8
+full result. A new clean complete backend run is the next milestone.
+
+The279 affected Hermes records have separate semantic/citation reviews; only H686
+receives a new equivalent verdict, while the page-error subclauses and H220 current-turn
+context description are corrected without closing their remaining requirements.
+Task42 H011 retention/owned-payload GC is isolated under repair and receives no credit.
+All39 backlog items and all697 accepted contracts remain in the objective. The owner
+has now requested GitHub review checkpoints; publish reviewed batches to draftPR1321.

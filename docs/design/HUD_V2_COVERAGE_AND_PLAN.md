@@ -49,6 +49,7 @@ Legend: ✅ has a surface (needs wiring) · ⚠️ partial / adjacent only · �
 | Capability | v2 | Home → endpoints to wire |
 |---|---|---|
 | Chat + **SSE streaming** | ✅ | Cockpit/Chat → `POST /chat/stream`, `/chat` |
+| Request-owned turn outcome and selected H686 metrics | ✅ local source | Full/floating Chat share completion, tool/file accounting and optional attributable metrics on the existing JSON/SSE carrier; Display → `status_bar_fields` defaults to latency. Bounded wrapping/scrolling is verified with synthetic compiled UI at 390×600/900 and 1280×900. Live-Hub/device acceptance remains in the manual checklist. |
 | Cognition trace (classify→route→gather→synth) | ✅ | Cockpit → real orchestrator SSE (replace `setTimeout`) |
 | Situation ticker | ✅ | shell → `GET /ticker` |
 | Network brain / task fan | ✅ | Cockpit → `GET /tasks`, `/status` |
