@@ -375,3 +375,14 @@ Windows PR job requires zero skips/errors/failures and will establish its actual
 runner/build/NTFS result after publication. Fresh backend collection30542; frontend2703,
 mobile359 and734 routes are unchanged. Full green30503 belongs toe68 and is not
 reassigned to this newer source. Task37 dialog/model/owner/native work remains isolated.
+
+The first actual Windows Unit1 job on ec5f70b5 ran38 tests:32 passed and6 native
+cases failed before NtCreateFile because a ctypes counted-name buffer was passed
+where LPWSTR was required. A fresh author repaired the typed pointer conversion
+and added a real typed-structure regression in d92b63dc, independently approved and
+integrated as df291141. Exact UTF16 bytes and backing-buffer ownership remain
+checked. Canonical focused coverage passes161 with6 native skips on macOS; fresh
+backend collection is30543. Native acceptance awaits a new zero-skip Windows job.
+Task37's first independent reviews found three P1s: initial-navigation modal
+discovery, popup implicit dismissal, and post-validation durable authority revocation.
+Its isolated candidate is not approved and is returning to its original author.
