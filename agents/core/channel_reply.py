@@ -28,6 +28,7 @@ from .channels.pending_input_workspace import (
     unpack_markup,
     valid_markup,
 )
+from .env_config import env_int
 
 logger = logging.getLogger("jarvis.channel_reply")
 
@@ -152,14 +153,15 @@ def _email_reply_cap_from_env() -> int:
     JARVIS_EMAIL_REPLY_MAX_PER_HOUR, default 10. Unset / unparseable /
     non-positive values fall back to the default rather than disabling the
     cap — an operator typo must narrow, never remove, the STAB-4 limit.
+    Read via env_int (not a raw os.environ read) so the AUD-14 raw-env-read
+    ratchet in test_o26_p2_env_config.py does not grow: env_int with
+    minimum=1 returns the default for exactly the same junk inputs.
     """
-    import os
-
-    try:
-        cap = int(str(os.environ.get("JARVIS_EMAIL_REPLY_MAX_PER_HOUR", "")).strip())
-    except (TypeError, ValueError):
-        return _EMAIL_REPLY_DEFAULT_MAX_PER_HOUR
-    return cap if cap > 0 else _EMAIL_REPLY_DEFAULT_MAX_PER_HOUR
+    return env_int(
+        "JARVIS_EMAIL_REPLY_MAX_PER_HOUR",
+        _EMAIL_REPLY_DEFAULT_MAX_PER_HOUR,
+        minimum=1,
+    )
 
 
 class EmailReplyRateLimiter:
