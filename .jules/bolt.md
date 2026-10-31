@@ -67,3 +67,7 @@
 ## 2026-04-16 - Redundant Canvas Font and Alignment Property Assignments in NeuralMesh
 **Learning:** Re-assigning `ctx.font` and `ctx.textAlign` inside high-frequency 60 FPS canvas animation loops (such as node label loops in `NeuralMesh` in `frontend/src/mesh.tsx`) triggers native browser CSS font parsing and canvas context reconciliation ~1,200 times per second.
 **Action:** Move static `ctx.font` and `ctx.textAlign` property assignments outside of per-item loops so canvas context state is configured once per frame before batch rendering text elements.
+
+## 2026-04-17 - Redundant Canvas Text Alignment Property Assignments in NeuralBurst
+**Learning:** Setting constant canvas properties like `ctx.textAlign = 'left'` inside per-cluster drawing loops in Canvas 2D components (`NeuralBurst` in `frontend/src/burst.tsx`) triggers redundant native canvas state setter operations on every 60 FPS frame (~240-360 setter calls/sec).
+**Action:** Set constant canvas text alignment properties once outside the cluster render loop before drawing region plate labels.
