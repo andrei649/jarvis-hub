@@ -107,7 +107,14 @@ def profile_headers(profile, original=None):
     return result
 
 
-def prepare_profile_messages(profile, messages, *, preserve_replay=False, maximum=256 * 1024):
+# Built-in providers keep the request size the model window and the configured context
+# budget allow; a 256 KiB default refused valid prompts for 200K-token and 1M-token models
+# (Codex review, #1321). Isolated provider hooks pass their own tighter bound (512 KiB).
+BUILTIN_PROFILE_MESSAGE_BYTES = 16 * 1024 * 1024
+
+
+def prepare_profile_messages(profile, messages, *, preserve_replay=False,
+                             maximum=BUILTIN_PROFILE_MESSAGE_BYTES):
     """Sanitize donor chat sidecars, call the hook, then guard owned history.
 
     Codex's opaque replay is carried outside the hook and reattached unchanged.

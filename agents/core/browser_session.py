@@ -105,6 +105,10 @@ class BrowserSession:
     refs: dict[str, LiveRef] = field(default_factory=dict)
     frame_epochs: dict[int, int] = field(default_factory=dict)
     next_ref: int = 1
+    # Element refs minted by the latest snapshot(). A new snapshot supersedes them: without
+    # this, repeated snapshots of one document kept appending refs for the same elements
+    # until MAX_REFS stopped every later snapshot (Codex review, #1321).
+    snapshot_refs: set[str] = field(default_factory=set)
     _observed_page: object | None = None
 
     def current(self) -> bool:
@@ -142,6 +146,9 @@ class BrowserSession:
         page = await self.driver._ensure_started()
         self.observe_page(page)
         observation = await self.driver.observe_snapshot()
+        for stale in self.snapshot_refs:
+            self.refs.pop(stale, None)
+        self.snapshot_refs.clear()
         output = []
         skipped = 0
         for frame in list(page.frames)[:MAX_FRAMES]:
@@ -188,11 +195,13 @@ class BrowserSession:
                     self.refs[ref] = LiveRef(handle, frame, url,
                                              self.frame_epochs.get(id(frame), 0), role, name, target,
                                              True, bool(semantics.get('focus')))
+                    self.snapshot_refs.add(ref)
                     output.append({'ref': ref, 'role': role, 'name': name,
                                    'focused': bool(semantics.get('focus')),
                                    'frame_origin': urlsplit(url).scheme + '://' + urlsplit(url).netloc})
                     if len(json.dumps(output, ensure_ascii=False).encode()) > 8_000:
                         self.refs.pop(ref)
+                        self.snapshot_refs.discard(ref)
                         output.pop()
                         break
                 except Exception:

@@ -697,3 +697,72 @@ async def test_detached_or_replaced_same_semantics_never_retargets_old_ref():
     frame.url = 'https://other.example/'
     with pytest.raises(SessionRefused, match='stale_browser_ref'):
         await session.resolve_ref('@e1', 'click')
+
+
+@pytest.mark.asyncio
+async def test_repeated_snapshots_of_one_page_never_exhaust_the_ref_inventory():
+    """Codex review (#1321): each snapshot appended fresh refs for the same elements, so
+    100 visible buttons gave 74, then 73, then zero refs. A new snapshot supersedes the
+    previous snapshot's element refs; an old ref then refuses as stale."""
+    from types import SimpleNamespace
+
+    from agents.core.browser_session import MAX_REFS, BrowserSession, SessionRefused
+
+    class Handle:
+        def __init__(self, index):
+            self.index = index
+
+        async def is_visible(self):
+            return True
+
+        async def evaluate(self, _script):
+            return {'connected': True, 'hidden': False, 'disabled': False,
+                    'role': 'button', 'name': f'b{self.index}', 'target': '', 'focus': False}
+
+    class Locator:
+        def __init__(self, index=None):
+            self.index = index
+
+        async def count(self):
+            return MAX_REFS
+
+        def nth(self, index):
+            return Locator(index)
+
+        async def element_handle(self):
+            return Handle(self.index)
+
+    class Frame:
+        url = 'https://example.test/page'
+
+        def locator(self, _selector):
+            return Locator()
+
+    main = Frame()
+    page = SimpleNamespace(frames=[main], main_frame=main, on=lambda *_args: None)
+
+    class Driver:
+        async def _ensure_started(self):
+            return page
+
+        async def observe_snapshot(self):
+            return {'observation': 'structured_ui'}
+
+        def _assert_execution_current(self):
+            return None
+
+    session = BrowserSession('b' * 32, Driver(),
+                             SimpleNamespace(domain_allowed=lambda _url: (True, '')),
+                             SimpleNamespace(pinned_hosts=lambda: {'example.test'}),
+                             'agent', 'owner', None, 'head', 'registration')
+    counts = []
+    first = None
+    for _ in range(4):
+        result = await session.snapshot()
+        counts.append(len(result['refs']))
+        first = first or result['refs'][0]['ref']
+        assert len(session.refs) <= MAX_REFS
+    # The 8 KB output budget may drop one row as ref numbers grow a digit; never to zero.
+    assert counts[0] > 0 and min(counts) >= counts[0] - 2, counts
+    with pytest.raises(SessionRefused):
+        await session.resolve_ref(first, 'click')

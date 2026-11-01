@@ -191,6 +191,7 @@ class OpenRouterBackend(LLMBackend):
         """Add the per-request extras: reasoning / cache parameters, a delegated child's
         ``extra_body`` (H681, never over a key the hub owns), then routing."""
         from .provider_request import (
+            BUILTIN_PROFILE_MESSAGE_BYTES,
             apply_profile_request,
             compatible_parameters,
             prepare_profile_messages,
@@ -199,7 +200,8 @@ class OpenRouterBackend(LLMBackend):
         from .request_context import merge_extra_body, reconcile_payload
         profile = self.profile if profile is None else profile
         from .providers.admitted_profiles import AdmittedProviderProfile
-        maximum = 512 * 1024 if isinstance(self.profile, AdmittedProviderProfile) else 256 * 1024
+        maximum = (512 * 1024 if isinstance(self.profile, AdmittedProviderProfile)
+                   else BUILTIN_PROFILE_MESSAGE_BYTES)
         payload["messages"] = prepare_profile_messages(profile, payload["messages"], maximum=maximum)
         reasoning_config = profile_reasoning_config(
             profile, payload["model"], self.reasoning_effort,
