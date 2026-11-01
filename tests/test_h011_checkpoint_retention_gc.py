@@ -168,17 +168,41 @@ def test_unreferenced_owned_assets_need_fresh_manual_preview_and_authority(tmp_p
     assert payloads.load(orphan.ref) is not None
 
 
-def test_owned_gc_candidate_cap_refuses_incomplete_preview(tmp_path, monkeypatch):
-    roots, store, scope, _history, payloads = _setup(tmp_path)
+def test_owned_gc_over_the_candidate_cap_is_collected_in_prune_batches(tmp_path, monkeypatch):
+    """Review of #1321: a prune with more unreferenced owned assets than the cap was
+    refused outright, and only a clear of all complete history unblocked it. A prune now
+    collects one bounded batch, as clear does, and says what is left for a fresh approval;
+    the preview itself deletes nothing, and a kept checkpoint's payloads stay."""
+    roots, store, scope, history, payloads = _setup(tmp_path)
+    kept = _add(history, payloads, roots[0], 1)
     orphan = payloads.take_captured(roots[0] / "unused.txt", existed=True,
                                     data=b"orphan", mode=0o600, now=1)
     monkeypatch.setattr("agents.core.checkpoint_inventory.MAX_GC_CANDIDATES", 1)
-    preview = CheckpointInventory(store, scope).maintenance_preview(OWNER, "prune")
-    assert preview["ok"] is False and preview["complete"] is False
-    assert preview["owned_gc"]["complete"] is False
-    assert preview["owned_gc"]["omitted"] == 1
-    assert preview["reclaimable_bytes"] is None
+    inventory = CheckpointInventory(store, scope)
+    preview = inventory.maintenance_preview(OWNER, "prune", keep_last=1)
+    assert preview["ok"] is True and preview["complete"] is True
+    assert preview["candidates"] == []
+    assert preview["owned_gc"]["complete"] is True and preview["owned_gc"]["omitted"] == 0
+    assert preview["owned_gc"]["records"] == [orphan.ref] and preview["owned_gc"]["blobs"] == []
+    assert preview["batch"] == {"remaining_eligible_rows": 0, "remaining_eligible_assets": 1,
+                                "needs_fresh_approval": True}
+    assert preview["reclaimable_bytes"] is not None
     assert payloads.load(orphan.ref) is not None
+    for batch in (1, 2):
+        current = inventory.maintenance_preview(OWNER, "prune", keep_last=1)
+        assert current["ok"] is True and current["candidates"] == []
+        result = CheckpointMaintenance(store, scope).apply(
+            OWNER, action="prune", project=None, generation=current["generation"],
+            candidates=[], operation_key=_key(f"prune-batch-{batch}"), keep_last=1,
+            authority_check=lambda: True)
+        assert result["ok"] is True, result
+    assert payloads.load(orphan.ref) is None
+    assert payloads.blob(orphan.blob_sha, orphan.size) is None
+    assert payloads.load(kept.ref) is not None
+    assert payloads.blob(kept.blob_sha, kept.size) == b"shared"
+    final = inventory.maintenance_preview(OWNER, "prune", keep_last=1)
+    assert final["owned_gc"]["records"] == [] and final["owned_gc"]["blobs"] == []
+    assert final["batch"]["needs_fresh_approval"] is False
 
 
 def test_project_filter_cannot_collect_another_projects_shared_blob(tmp_path):

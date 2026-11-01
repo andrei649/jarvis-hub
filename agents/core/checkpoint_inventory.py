@@ -578,7 +578,11 @@ class CheckpointInventory:
         if budget_unknown:
             gc_records, gc_blobs, reclaimable = [], [], None
         remaining_eligible_assets = 0
-        if action == "clear" and len(gc_records) + len(gc_blobs) > MAX_GC_CANDIDATES:
+        # Every action collects owned assets in bounded batches. A prune once refused while
+        # more than MAX_GC_CANDIDATES owned assets were unreferenced (as main's maintenance
+        # left them), and only a clear of all complete history could unblock it (review
+        # of #1321); it now takes one batch and reports the rest for a fresh approval.
+        if len(gc_records) + len(gc_blobs) > MAX_GC_CANDIDATES:
             all_records, all_blobs = gc_records, gc_blobs
             gc_records = all_records[:MAX_GC_CANDIDATES]
             retained_owned_records = set(owned["records"]) - set(gc_records)
