@@ -766,3 +766,96 @@ async def test_repeated_snapshots_of_one_page_never_exhaust_the_ref_inventory():
     assert counts[0] > 0 and min(counts) >= counts[0] - 2, counts
     with pytest.raises(SessionRefused):
         await session.resolve_ref(first, 'click')
+
+
+def test_a_session_outlives_the_autonomy_tick_its_next_step_waits_for(monkeypatch):
+    """Review of #1321: an approved act runs on the next autonomy tick, at least one full
+    ``system.autonomy_tick`` (60 s by default) after the start step finished, and the 60 s
+    idle limit had expired the session by then. A session idle for a default tick plus an
+    owner's approval is still current; one idle past the limit, or past its lifetime, is not."""
+    import time
+    from types import SimpleNamespace
+
+    from agents.core import browser_session
+    from agents.core.autonomy_coordinator import autonomy_tick_seconds
+    from agents.core.browser_session import BrowserSession
+
+    tick = autonomy_tick_seconds(SimpleNamespace(get_setting=lambda _key, default: default))
+    session = BrowserSession('a' * 32, object(), object(), object(), 'agent', 'owner', None,
+                             'head', 'registration')
+    now = time.monotonic()
+    monkeypatch.setattr(browser_session.time, 'monotonic', lambda: now)
+    session.created = session.last_used = now - (2 * tick + 30)
+    assert session.current() is True
+    session.last_used = now - browser_session.IDLE_SECONDS - 1
+    assert session.current() is False
+    session.last_used = now
+    session.created = now - browser_session.LIFETIME_SECONDS - 1
+    assert session.current() is False
+
+
+async def _reap_with_native(tmp_path, native, *, helper_argv=None):
+    """Reap one journal entry whose owner and controller are provably gone."""
+    import os
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    from agents.core.browser_session import BrowserOwnershipJournal
+
+    journal = BrowserOwnershipJournal(tmp_path / 'journal')
+    profile = Path(tempfile.mkdtemp(prefix='nerva-browser-reuse-test'))
+    sid = 'd' * 32
+    gone = [os.getpid(), 1.0]                      # a live PID with another start time
+    unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    helper = None
+    if helper_argv is not None:
+        helper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)',
+                                   helper_argv(profile)])
+    try:
+        import psutil
+
+        record_native = native(psutil.Process(unrelated.pid)) if callable(native) else native
+        journal.write(sid, {'profile': str(profile), 'controller': gone,
+                            'owner_process': gone, 'native': record_native})
+        result = await journal.reap_entry(journal._file(sid))
+        return (result, profile.exists(), journal._file(sid).exists(),
+                unrelated.poll() is None, helper.poll() if helper else None)
+    finally:
+        for proc in (unrelated, helper):
+            if proc is not None and proc.poll() is None:
+                proc.kill()
+                proc.wait(5)
+        if profile.exists():
+            import shutil
+            shutil.rmtree(profile)
+
+
+@pytest.mark.asyncio
+async def test_a_reused_native_pid_is_gone_and_its_new_holder_untouched(tmp_path):
+    """Review of #1321: after a crash, the recorded Chrome PID can belong to an unrelated
+    process. Another start time proves the Chrome is gone; the reap used to refuse, so the
+    browser stayed locked out (browser_cleanup_unverified) for as long as that process
+    lived. It now cleans the profile and never touches the PID's new holder."""
+    result, profile_left, journal_left, unrelated_alive, _ = await _reap_with_native(
+        tmp_path, lambda proc: [proc.pid, proc.create_time() + 7.0])
+    assert result is True and not profile_left and not journal_left
+    assert unrelated_alive
+
+
+@pytest.mark.asyncio
+async def test_a_crash_while_chrome_launched_still_sweeps_its_profile(tmp_path):
+    """native=None: the owner died between the journal's 'profile' and 'native' writes.
+    Whatever names this exact profile is swept, and the entry no longer refuses forever."""
+    result, profile_left, journal_left, unrelated_alive, helper_code = await _reap_with_native(
+        tmp_path, None, helper_argv=lambda profile: f'--user-data-dir={profile}')
+    assert result is True and not profile_left and not journal_left
+    assert unrelated_alive and helper_code is not None    # the profile's process was ended
+
+
+@pytest.mark.asyncio
+async def test_a_native_pid_with_its_start_time_but_no_marker_still_refuses(tmp_path):
+    result, profile_left, journal_left, unrelated_alive, _ = await _reap_with_native(
+        tmp_path, lambda proc: [proc.pid, proc.create_time()])
+    assert result is False and profile_left and journal_left and unrelated_alive

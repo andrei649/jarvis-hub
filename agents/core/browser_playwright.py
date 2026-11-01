@@ -104,6 +104,7 @@ class PlaywrightBrowserDriver:
         playwright_factory: Callable[[], Any] | None = None,
         allow_private_urls: bool = False,
         channel: str | None = None,
+        executable_path: str | None = None,
     ) -> None:
         if browser not in SUPPORTED_BROWSERS:
             raise ValueError(f"unsupported Playwright browser: {browser}")
@@ -128,6 +129,7 @@ class PlaywrightBrowserDriver:
         self.download_dir = Path(download_dir).expanduser() if download_dir else None
         self.allow_private_urls = bool(allow_private_urls)
         self.channel = channel
+        self.executable_path = executable_path
         self._factory = playwright_factory
         self._url_guard: Callable[[str], tuple[bool, str] | bool] | None = None
         self._execution_guard: Callable[[], bool] | None = None
@@ -452,6 +454,8 @@ class PlaywrightBrowserDriver:
                     args=[*launch_args, '--no-proxy-server', '--disable-background-networking',
                           '--disable-features=WebRTC'],
                     **({'channel': self.channel} if self.channel else {}),
+                    **({'executable_path': self.executable_path}
+                       if self.executable_path else {}),
                     accept_downloads=True,
                     service_workers="block",
                 )

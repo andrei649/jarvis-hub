@@ -25,7 +25,11 @@ MAX_IMAGE_SCAN = 100
 MAX_IMAGES = 24
 MAX_IMAGE_SRC = 512
 MAX_IMAGE_BYTES = 8_000
-IDLE_SECONDS = 60.0
+# An approved follow-up (act, close) runs only on a later autonomy tick: the loop sleeps
+# system.autonomy_tick (60 s by default) before every tick and approval does not wake it.
+# A 60 s idle limit therefore expired every session before its next step could run (review
+# of #1321); five minutes leaves the owner time to approve within the 10-minute lifetime.
+IDLE_SECONDS = 300.0
 LIFETIME_SECONDS = 600.0
 logger = logging.getLogger('jarvis.browser.session')
 
@@ -100,6 +104,9 @@ class BrowserSession:
     active_task: object | None = None
     active_args: dict | None = None
     active_worker: asyncio.Task | None = None
+    # Set when an owner or reaper close cancels active_worker: that one cancellation ends
+    # the step, never the executor or autonomy loop that is running the task (#1321).
+    close_cancelled: bool = False
     closed: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     refs: dict[str, LiveRef] = field(default_factory=dict)
@@ -109,6 +116,9 @@ class BrowserSession:
     # this, repeated snapshots of one document kept appending refs for the same elements
     # until MAX_REFS stopped every later snapshot (Codex review, #1321).
     snapshot_refs: set[str] = field(default_factory=set)
+    # The same for get_images: each call supersedes the previous call's image refs, or a
+    # gallery polled a few times filled MAX_REFS and no later snapshot minted a ref.
+    image_refs: set[str] = field(default_factory=set)
     _observed_page: object | None = None
 
     def current(self) -> bool:
@@ -218,6 +228,9 @@ class BrowserSession:
         page = await self.driver._ensure_started()
         self.driver._assert_execution_current()
         self.observe_page(page)
+        for stale in self.image_refs:
+            self.refs.pop(stale, None)
+        self.image_refs.clear()
         output: list[dict] = []
         dropped = 0
         truncated = len(page.frames) > MAX_FRAMES
@@ -315,10 +328,12 @@ class BrowserSession:
                             self.refs[ref] = LiveRef(handle, frame, url,
                                                      self.frame_epochs.get(id(frame), 0),
                                                      role, name, target, True, False)
+                            self.image_refs.add(ref)
                             self.next_ref += 1
                     if len(json.dumps([*output, row], ensure_ascii=False).encode()) > MAX_IMAGE_BYTES:
                         if 'ref' in row:
                             self.refs.pop(row['ref'], None)
+                            self.image_refs.discard(row['ref'])
                         truncated = True
                         dropped += min(count, remaining) - index
                         budget_exhausted = True
@@ -453,11 +468,14 @@ class BrowserOwnershipJournal:
             if profile is None:
                 return self._refuse_reap(path, 'profile not owned')
             native = record['native']
-            if not (type(native) is list and len(native) == 2
-                    and type(native[0]) is int and type(native[1]) in {int, float}):
+            # None: the owner died between the 'profile' and 'native' journal writes, while
+            # Chrome was launching. Nothing native was recorded to verify; the profile sweep
+            # below still finds whatever names this profile (review of #1321).
+            if native is not None and not (type(native) is list and len(native) == 2
+                                           and type(native[0]) is int
+                                           and type(native[1]) in {int, float}):
                 return self._refuse_reap(path, 'native identity malformed')
             import psutil
-            pid, started = native
             marker = '--user-data-dir=' + str(profile)
             controller = record.get('controller')
             owner_process = record.get('owner_process')
@@ -487,26 +505,38 @@ class BrowserOwnershipJournal:
                 pass
             except psutil.Error:
                 return self._refuse_reap(path, 'controller probe failed')
-            try:
-                process = psutil.Process(pid)
-                if process.create_time() != started or marker not in process.cmdline():
-                    return self._refuse_reap(
-                        path, f'native identity changed (start {process.create_time()!r} vs '
-                              f'{started!r}, marker in argv: {marker in process.cmdline()})')
-                if not ('chrome' in Path(process.exe()).name.lower()
-                        or 'chromium' in Path(process.exe()).name.lower()):
-                    return self._refuse_reap(path, f'native is not chrome ({process.exe()})')
-                owned = [process, *process.children(recursive=True)]
-                for item in reversed(owned):
-                    item.terminate()
-                _gone, alive = await asyncio.to_thread(psutil.wait_procs, owned, timeout=3)
-                for item in alive:
-                    item.kill()
-                _gone, alive = await asyncio.to_thread(psutil.wait_procs, alive, timeout=2)
-                if alive:
-                    return self._refuse_reap(path, 'native tree survived kill')
-            except psutil.NoSuchProcess:
-                pass
+            process = None
+            if native is not None:
+                pid, started = native
+                try:
+                    candidate = psutil.Process(pid)
+                    # Another start time proves the recorded Chrome is gone and its PID was
+                    # reused, as for the controller above: that process is never touched, and
+                    # only the sweep of this exact profile below may terminate anything.
+                    # Refusing here locked the browser out for as long as the PID's new
+                    # holder lived (review of #1321).
+                    if candidate.create_time() == started:
+                        process = candidate
+                except psutil.NoSuchProcess:
+                    pass
+            if process is not None:
+                try:
+                    if marker not in process.cmdline():
+                        return self._refuse_reap(path, 'native identity changed (marker not in argv)')
+                    if not ('chrome' in Path(process.exe()).name.lower()
+                            or 'chromium' in Path(process.exe()).name.lower()):
+                        return self._refuse_reap(path, f'native is not chrome ({process.exe()})')
+                    owned = [process, *process.children(recursive=True)]
+                    for item in reversed(owned):
+                        item.terminate()
+                    _gone, alive = await asyncio.to_thread(psutil.wait_procs, owned, timeout=3)
+                    for item in alive:
+                        item.kill()
+                    _gone, alive = await asyncio.to_thread(psutil.wait_procs, alive, timeout=2)
+                    if alive:
+                        return self._refuse_reap(path, 'native tree survived kill')
+                except psutil.NoSuchProcess:
+                    pass
             if launch is not None:
                 with contextlib.suppress(psutil.NoSuchProcess):
                     launch.terminate()

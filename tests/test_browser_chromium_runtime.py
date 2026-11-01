@@ -1032,8 +1032,12 @@ async def test_owner_close_cancels_active_session_before_ref_dispatch(browser_ri
     running = asyncio.create_task(rig.worker.tick())
     await asyncio.wait_for(entered.wait(), 10)
     assert await asyncio.wait_for(rig.runtime.close_owner_session(sid), 15)
-    with contextlib.suppress(asyncio.CancelledError):
-        await running
+    # The close ends the step it cancelled, never the tick (in production, the executor and
+    # the autonomy loop) that was running it (review of #1321).
+    await asyncio.wait_for(running, 15)
+    assert not running.cancelled()
+    result = rig.queue.get(proposal['task_id']).result['result']
+    assert result == {'ok': False, 'reason': 'browser_session_closed'}, result
     assert rig.page.state['clicked'] == 0
     assert not browser_identity_alive(identity)
     assert not profile.exists() and not rig.runtime.journal._file(sid).exists()

@@ -178,6 +178,52 @@ def validate_browser_request(args: dict) -> BrowserRequest:
     return BrowserRequest(mode, tuple(canonical), hashlib.sha256(encoded).hexdigest(), sid)
 
 
+# browser_run declares this as its max_result_bytes; the whole trace stays inside it.
+_TRACE_BYTES = 20_000
+_FITTED_FIELDS = {'extract': 'text', 'snapshot': 'elements'}
+
+
+def _trace_bytes(trace: list) -> int:
+    return len(json.dumps(trace, ensure_ascii=False, default=str).encode())
+
+
+def _append_within_budget(trace: list, outcome: dict) -> None:
+    """Append one step outcome inside the tool's result budget.
+
+    The driver keeps 20,000 characters of page text and up to 500 snapshot elements, so
+    an ordinary page alone overran the 20,000-byte trace and the start step refused and
+    tore the session down (review of #1321). The newest step's page text or element list
+    is cut to what fits and marked truncated, as the driver marks its own cut; snapshot
+    refs and every other output are kept whole, and anything else over budget refuses.
+    """
+    trace.append(outcome)
+    if _trace_bytes(trace) <= _TRACE_BYTES:
+        return
+    key = _FITTED_FIELDS.get(outcome.get('action'))
+    result = outcome.get('result')
+    if key is None or type(result) is not dict or type(result.get(key)) not in (str, list):
+        raise BrowserPlanRefused('browser_output_too_large')
+    full = result[key]
+    result['truncated'] = True
+
+    def fits(size: int) -> bool:
+        result[key] = full[:size]
+        if key == 'elements':
+            result['count'] = size
+        return _trace_bytes(trace) <= _TRACE_BYTES
+
+    if not fits(0):
+        raise BrowserPlanRefused('browser_output_too_large')
+    low, high = 0, len(full)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if fits(middle):
+            low = middle
+        else:
+            high = middle - 1
+    fits(low)
+
+
 def _server_domains() -> tuple[str, ...]:
     from .browser_transport import is_private_host_literal
 
@@ -201,6 +247,22 @@ def _chrome_binary() -> str | None:
         if found:
             return found
     return None
+
+
+# Playwright resolves channel='chrome' to Google Chrome's fixed install only, never PATH.
+_CHROME_CHANNEL_LINUX = Path('/opt/google/chrome/chrome')
+
+
+def _launch_target() -> dict:
+    """What the driver launches: the Chrome channel, or the Chromium readiness found.
+
+    Readiness accepts distro Chromium (docs/PLAYWRIGHT_OPERATOR.md), but every launch asked
+    for channel='chrome', so on a Chromium-only Linux host each approved run failed at
+    startup after the owner had approved it (review of #1321)."""
+    if sys.platform != 'linux' or _CHROME_CHANNEL_LINUX.is_file():
+        return {'channel': 'chrome'}
+    binary = _chrome_binary()
+    return {'executable_path': binary} if binary else {'channel': 'chrome'}
 
 
 def local_browser_ready(*, kernel=None, queue=None, fixture_origin=None) -> bool:
@@ -503,7 +565,7 @@ class BrowserRuntime:
                 driver = self.driver_factory()
             else:
                 driver = PlaywrightBrowserDriver.from_env(
-                    browser='chromium', headless=True, channel='chrome',
+                    browser='chromium', headless=True, **_launch_target(),
                     allow_private_urls=bool(self.fixture_origin), transport=pins)
             driver.set_transport(pins)
             driver.set_url_guard(policy.domain_allowed)
@@ -537,9 +599,7 @@ class BrowserRuntime:
                                     outcome = await browser.run_step(step)
                         if outcome.get('status') != 'done':
                             raise BrowserPlanRefused('browser_step_refused')
-                        trace.append(outcome)
-                        if len(json.dumps(trace, ensure_ascii=False, default=str).encode()) > 20_000:
-                            raise BrowserPlanRefused('browser_output_too_large')
+                        _append_within_budget(trace, outcome)
                 return {'ok': True, 'plan_sha256': plan.sha256, 'trace': trace}
             finally:
                 self.last_profile = driver.profile_dir
@@ -708,6 +768,7 @@ class BrowserRuntime:
             session.closed = True
             worker = session.active_worker
             if worker is not None and worker is not asyncio.current_task():
+                session.close_cancelled = True
                 worker.cancel()
         if closing is None and session is not None:
             async def settle():
@@ -786,9 +847,7 @@ class BrowserRuntime:
                     raise BrowserPlanRefused('browser_approval_invalid')
                 if step['action'] in {'navigate', 'back'}:
                     session.invalidate()
-                trace.append(outcome)
-                if len(json.dumps(trace, ensure_ascii=False, default=str).encode()) > 20_000:
-                    raise BrowserPlanRefused('browser_output_too_large')
+                _append_within_budget(trace, outcome)
         session.last_used = __import__('time').monotonic()
         return {'ok': True, 'session_id': session.id, 'generation': session.generation,
                 'trace': trace}
@@ -833,7 +892,7 @@ class BrowserRuntime:
                                 raise BrowserPlanRefused('browser_egress_denied')
                             await pins.pin_async(step['url'])
                 driver = self.driver_factory() if self.driver_factory else PlaywrightBrowserDriver.from_env(
-                    browser='chromium', headless=True, channel='chrome',
+                    browser='chromium', headless=True, **_launch_target(),
                     allow_private_urls=bool(self.fixture_origin), transport=pins)
                 sid = secrets.token_hex(16)
                 session = BrowserSession(sid, driver, policy, pins, task.agent,
@@ -878,6 +937,14 @@ class BrowserRuntime:
                 await self._close_session(session)
             return {'ok': False, 'reason': 'browser_timeout' if isinstance(exc, TimeoutError) else str(exc)}
         except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if (session is not None and session.close_cancelled and current is not None
+                    and current.uncancel() == 0):
+                # An owner or reaper close cancelled the step it was running. That close
+                # settles the browser; the approved task ends refused, and the task running
+                # it (the executor's handler, the autonomy loop above it) carries on. Any
+                # other cancellation (budget, shutdown) still propagates.
+                return {'ok': False, 'reason': 'browser_session_closed'}
             if session is not None and not session.closed:
                 await self._close_session(session)
             raise

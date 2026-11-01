@@ -64,8 +64,11 @@ class BrowserPolicy:
             parsed = urlsplit(url)
             host = (parsed.hostname or "").lower().rstrip(".")
             port = parsed.port
+            # A fragment never leaves the browser, and a live page URL carries one after
+            # an in-page anchor or a hash route (review of #1321); intake still refuses
+            # one in a requested URL (_valid_url).
             if (parsed.scheme not in {'http', 'https'} or parsed.username is not None
-                    or parsed.password is not None or parsed.fragment
+                    or parsed.password is not None
                     or port is not None and not 1 <= port <= 65535):
                 return False, "invalid URL"
         except ValueError:
@@ -105,7 +108,7 @@ class FixtureBrowserPolicy(BrowserPolicy):
             if (parsed.scheme == 'http' and parsed.hostname in {'fixture.browser.test', 'frame.other.test'}
                     and parsed.port == self.port
                     and parsed.username is None and parsed.password is None
-                    and not parsed.fragment and len(url) <= 2000):
+                    and len(url) <= 2000):
                 return True, ''
         except ValueError:
             pass
