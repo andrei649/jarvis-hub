@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "c46d4a6124c8eb3318c5b792ada5dcc5ef8fc104",
-  "assessed_at": "2026-11-01T13:37:56Z",
+  "base_sha": "52af00854d0711b15e4d35bf582a80504efbcd11",
+  "assessed_at": "2026-11-01T14:04:40Z",
   "reviews": [
     {
       "id": "H001",
@@ -22570,7 +22570,7 @@
         },
         {
           "path": "tests/test_h487_inline_consent_outcomes.py",
-          "sha256": "32bddff493036f255d22c61506732f0d251326051315093268c3977861f054cf"
+          "sha256": "0f9a5d1917d02a2d2a04e7e7d1c782d9ec32dfde7136e8bb8d353c84f6e2b74f"
         },
         {
           "path": "docs/hermes/h487-inline-outcomes-plan-2026-10-04.md",

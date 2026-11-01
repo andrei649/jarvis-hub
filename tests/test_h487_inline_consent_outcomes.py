@@ -113,7 +113,18 @@ async def test_native_inline_timeout_and_withdrawal_are_distinct_from_denial(con
         assert reply['approval_outcome'] == expected
         assert 'denial_reason' not in reply, 'silence or withdrawal must not fabricate human denial'
         assert h.effects == [] and runtime.q.get(task.id).human_decision is None
-        assert not runtime.worker._consent_prompts._pending
+        prompts = runtime.worker._consent_prompts
+        # The native request's own prompt is retired at once ...
+        assert not [p for p in prompts._pending.values()
+                    if p.request_task is not None or p.source is not None]
+        # ... while the still-pending task may get its unsolicited owner-chat card
+        # (notify), which keeps its own short deadline. Asserting an empty map at once
+        # raced that card on main and on #1321; nothing may outlive its deadline.
+        import time
+        latest = max((p.deadline for p in prompts._pending.values()), default=0.0)
+        await asyncio.sleep(max(0.0, latest - time.monotonic()) + 0.05)
+        prompts._prune_dead()
+        assert not prompts._pending
     finally:
         await h.channel.stop()
 
