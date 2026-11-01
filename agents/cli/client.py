@@ -48,6 +48,17 @@ class HubUnavailable(HubError):
 WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # nosec B104 — compared against, never bound
 
 
+def carries_secrets(url: str) -> bool:
+    """Whether a secret may travel to the hub at *url*: one on this machine, or https.
+    Plain http to another host is read by every hop (and proxy) on the way."""
+    if is_loopback_url(url):
+        return True
+    try:
+        return urllib.parse.urlsplit(url).scheme.lower() == "https"
+    except ValueError:
+        return False
+
+
 def hub_url(environ: Mapping[str, str] | None = None) -> str:
     """The hub's base URL: ``NERVA_HUB_URL``, else the hub's own bind
     (``JARVIS_HOST``/``JARVIS_PORT``). ``scripts/doctor.py`` mirrors this (stdlib-only,
@@ -157,12 +168,7 @@ class HubClient:
         """The admin token goes to a hub on this machine, or over https to one the owner
         named. Never in clear text off this machine: plain http to another host is read
         by every hop (and proxy) on the way."""
-        if is_loopback_url(self.base_url):
-            return True
-        try:
-            return urllib.parse.urlsplit(self.base_url).scheme.lower() == "https"
-        except ValueError:
-            return False
+        return carries_secrets(self.base_url)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json", "Content-Type": "application/json"}

@@ -55,3 +55,24 @@ def test_cli_credential_stdin_is_not_echoed_and_missing_secret_refuses():
     code, calls, output, err = _run(['credential-set', 'office'])
     assert code == 2 and calls == []
     assert secret not in output + err
+
+
+def _run_against(hub_url: str, secret: str):
+    hub = FakeHub()
+    out, err = io.StringIO(), io.StringIO()
+    ctx = Context(environ={'NERVA_HUB_URL': hub_url}, out=out, err=err,
+                  inp=io.StringIO(secret + '\n'), client_factory=lambda _env: hub)
+    code = main(['provider', 'custom', 'credential-set', 'office'], context=ctx)
+    return code, hub.calls, out.getvalue() + err.getvalue()
+
+
+def test_cli_never_sends_a_provider_key_to_a_plain_http_hub_on_another_host():
+    """Review of #1321: the admin token was held back from such a hub, but the provider
+    key in the body still crossed every hop (and proxy) in clear text."""
+    secret = 'synthetic-very-private-value'
+    code, calls, output = _run_against('http://nerva-box.lan:8080', secret)
+    assert code == 4 and calls == [] and secret not in output
+    assert 'local hub or over https' in output
+    for allowed in ('https://nerva-box.lan', 'http://127.0.0.1:8080', 'http://localhost:8080'):
+        code, calls, output = _run_against(allowed, secret)
+        assert code == 0 and calls[0][2] == {'secret': secret}, allowed

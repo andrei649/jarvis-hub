@@ -112,6 +112,14 @@ def run(ns: argparse.Namespace, ctx) -> int:
         elif op == 'credential-delete':
             method, path = 'DELETE', path + '/credential'
         elif op == 'credential-set':
+            from .client import carries_secrets, hub_url
+            from .nerva import EXIT_AUTH
+
+            # The admin token is already held back from a plain-http hub on another host;
+            # the provider key in the body must not travel there either (review of #1321).
+            if not carries_secrets(hub_url(ctx.environ)):
+                ctx.err.write('a provider credential is sent only to a local hub or over https\n')
+                return EXIT_AUTH
             method, path = 'PUT', path + '/credential'
             secret = ctx.inp.readline().rstrip('\r\n')
             if not secret:
