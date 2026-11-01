@@ -421,6 +421,11 @@ DEFAULTS: list[dict[str, Any]] = [
     # H433 — rewrite the message into one grounded retrieval question with the
     # strict-local model before recall. Off by default: it costs a model call.
     dict(category="memory",  key="recall_query_rewrite", value=False,              label="Rewrite the recall query with the local model", kind="toggle"),
+    # H422 — the owner's switch for the curated memory (the agent notes and the user profile):
+    # off, no prompt carries the core block and the memory tool refuses; the rings stay on
+    # disk. Its own row, so no product posture overrides it (the wave-1 postures force
+    # cognition.memory_enabled on); only POST /api/memory/switch writes it (ROUTE_ONLY).
+    dict(category="memory",  key="core_enabled",     value=True,                  label="Curated memory in prompts: the agent notes and the user profile (nerva memory off|on)", kind="toggle"),
     # O26-P0.3 (F2): the H21 cognition subsystem read cognition.* flags that were
     # never seeded — un-toggleable from the product. Master OFF (default-off
     # discipline); sub-flags ON so flipping the single master wakes the layer
@@ -1233,6 +1238,9 @@ ROUTE_ONLY: dict[tuple[str, str], str] = {
     # sends the request to the approval queue's irreversible tier (voice/command_settings.py).
     ("voice", "tts_command"): "Console → Admin → Settings → Voice → Command providers (POST /api/admin/voice/commands)",
     ("voice", "stt_command"): "Console → Admin → Settings → Voice → Command providers (POST /api/admin/voice/commands)",
+    # H422 — the curated memory's owner switch: its route records it in the intent log and
+    # applies it to the running hub at once, and reports whether memory is then on.
+    ("memory", "core_enabled"): "Console → Memory → Long-Term Memory, or nerva memory off|on (POST /api/memory/switch)",
 }
 
 

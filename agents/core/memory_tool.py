@@ -16,7 +16,12 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
 * every fact is one line of at most :data:`MAX_FACT_CHARS` characters (the core block's
   own cut), free of control and invisible characters, and scanned for injection with the
   normalised scanner; a full ring refuses an add instead of silently dropping the oldest
-  fact (replace or remove one first). The budget is checked on the batch's final state, so
+  fact (replace or remove one first). H422: each ring also has its character budget
+  (Hermes's 2200 for the agent notes, 1375 for the user profile: ``core_block.CHAR_BUDGETS``,
+  counted as the prompt block counts them), and a write that would take a ring past it is
+  refused with the ring's usage and its limit, so a ring the tool wrote renders whole (the
+  block's own cut stays as the backstop for the other writers). The budget is checked on
+  the batch's final state, so
   an add listed before the remove that makes room is kept (H423); a turn that keeps
   hitting a full ring gets a terminal refusal after :data:`FULL_ATTEMPTS_PER_TURN` tries,
   so it stops retrying (the refusal sticks: the tool itself refuses every later write of
@@ -50,7 +55,12 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   (``POST /api/memory/reset``, ``nerva memory reset``);
 * a write leaves a ``memory_updated`` row in the tool trail (targets and actions, never
   text); a call that changes nothing leaves none;
-* in safe mode (H490) memory reads as switched off: the tool refuses and says so.
+* in safe mode (H490) memory reads as switched off: the tool refuses and says so;
+* H422: the owner's own switch, ``memory.core_enabled`` (:data:`SWITCH_SETTING`), takes the
+  curated memory out of every prompt and makes this tool refuse, whatever the product
+  posture says (the wave-1 postures force ``cognition.memory_enabled`` on, never this row).
+  Only ``POST /api/memory/switch`` (``nerva memory off|on``) writes it; the rings stay on
+  disk while it is off.
 
 The prompt's core block is frozen per session (it keeps the prompt cache), so a write
 reaches the system prompt at the next session; the tool answers with both rings as they
@@ -72,6 +82,8 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
+
+from .learning.core_block import CHAR_BUDGETS
 
 logger = logging.getLogger("jarvis.memory_tool")
 
@@ -120,18 +132,65 @@ DESCRIPTION = (
     "replace the one fact old_text matches with text, or remove the one fact old_text matches. "
     "Each fact is one short line. Save what will still matter next time; do not save what "
     "belongs to this task only. A call with no operations reads both. Every change is "
-    "recorded and the owner can undo it."
+    "recorded and the owner can undo it. Each target has a character budget (memory "
+    f"{CHAR_BUDGETS['memory']:,}, user {CHAR_BUDGETS['user']:,}); a write that would go past it is "
+    "refused with the target's usage, so keep facts short and replace or remove stale ones."
 )
-OFF_DESCRIPTION = DESCRIPTION + " Memory is switched off on this hub (cognition memory), so every call is refused."
+OFF_DESCRIPTION = DESCRIPTION + (" Memory is switched off on this hub (the owner's memory switch, or cognition "
+                                  "memory), so every call is refused.")
+
+#: H422 — the owner's switch for the curated memory (the core block in the prompt and this
+#: tool): a settings row of its own that no product posture sets, written only by its route.
+SWITCH_CATEGORY = "memory"
+SWITCH_KEY = "core_enabled"
+SWITCH_SETTING = f"{SWITCH_CATEGORY}.{SWITCH_KEY}"
+
+
+def switched_on(get_setting: Any) -> bool:
+    """H422 — the owner's memory switch as the runtime settings hold it. A caller with no
+    settings at all (a bare test double) reads the shipped default, on; a settings read that
+    fails reads off, so an owner's ``off`` is never lost to an error."""
+    if not callable(get_setting):
+        return True
+    try:
+        return get_setting(SWITCH_SETTING, True) is not False
+    except Exception:
+        logger.warning("memory: the owner's memory switch could not be read; memory stays out", exc_info=True)
+        return False
+
+
+def set_switch(enabled: bool, *, audit: Any, actor: str = "owner") -> dict:
+    """H422 — the owner turns the curated memory on or off (Hermes's ``memory off``: the
+    stores stay, the prompt stops carrying them). Writes :data:`SWITCH_SETTING` and records
+    ``memory.switch`` in the intent log (the new and the old value, never a fact). The
+    write stands when the record cannot be saved (an ``off`` must never wait on the log);
+    ``audited`` says so. Blocking: the caller runs it off the event loop."""
+    from .settings_db import get_value, put_category
+
+    if not isinstance(enabled, bool):
+        raise MemoryToolError("memory_bad_switch", "enabled must be true or false")
+    was = get_value(SWITCH_CATEGORY, SWITCH_KEY, True) is not False
+    put_category(SWITCH_CATEGORY, {SWITCH_KEY: enabled})
+    audited = True
+    try:
+        _record(audit, actor, "memory.switch",
+                "the owner switched the curated memory " + ("on" if enabled else "off"), "",
+                {"enabled": enabled, "was": was})
+    except Exception:
+        logger.warning("memory switch: the intent log could not record it", exc_info=True)
+        audited = False
+    return {"enabled": enabled, "changed": was != enabled, "audited": audited}
 
 
 class MemoryToolError(ValueError):
     """A refused call: a named reason and a sentence the model can act on."""
 
-    def __init__(self, reason: str, detail: str) -> None:
+    def __init__(self, reason: str, detail: str, info: Mapping[str, Any] | None = None) -> None:
         super().__init__(detail)
         self.reason = reason
         self.detail = detail
+        #: H422 — fields the refusal carries besides its sentence (a budget's usage).
+        self.info = dict(info or {})
 
 
 # ── the facts ────────────────────────────────────────────────────────────────
@@ -180,11 +239,39 @@ def _match(facts: list[str], old_text: str, index: int) -> int:
     return hits[0]
 
 
-def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]) -> tuple[dict, list[dict]]:
+def usage(facts: list[str], target: str) -> str:
+    """H422 — ring *target*'s characters against its budget, Hermes's ``"1,234/2,200"``."""
+    from .learning.core_block import section_chars
+
+    return f"{section_chars(facts, target):,}/{CHAR_BUDGETS[target]:,}"
+
+
+def _check_budget(target: str, before: list[str], after: list[str], budget: int) -> None:
+    """H422 — refuse a final state that takes ring *target* past its character *budget*
+    (counted as the prompt block counts it). A ring already over it (written before the
+    budget, or by another writer) may still shrink: only a call that leaves it over the
+    budget *and* larger than it was is refused."""
+    from .learning.core_block import section_chars
+
+    now, then = section_chars(before, target), section_chars(after, target)
+    if then <= budget or then <= now:
+        return
+    raise MemoryToolError(
+        "memory_over_budget",
+        f"{target} would take {then:,} of its {budget:,} characters after this call (it holds "
+        f"{now:,}/{budget:,} now); replace or remove facts first (in this call or before it), or "
+        "save a shorter fact",
+        {"target": target, "usage": f"{now:,}/{budget:,}", "chars": now, "chars_after": then,
+         "char_budget": budget})
+
+
+def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int],
+         budgets: Mapping[str, int] | None = None) -> tuple[dict, list[dict]]:
     """The rings after *operations*, checked in full before anything is written, and one
     row per applied operation (``action``, ``target``: no digest of the fact, which the
     intent log would keep past a forget). Raises :class:`MemoryToolError`; an add that is
-    already saved is recorded as ``unchanged``."""
+    already saved is recorded as ``unchanged``. H422: *budgets* are the rings' character
+    budgets, by target (default ``core_block.CHAR_BUDGETS``)."""
     if not isinstance(operations, list):
         raise MemoryToolError("memory_bad_operations", "operations must be a list")
     if len(operations) > MAX_OPERATIONS:
@@ -234,6 +321,10 @@ def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]
             raise MemoryToolError("memory_full",
                                   f"{target} would hold {len(after[target])} facts after this call, over its "
                                   f"{cap[target]}; replace or remove one first (in this call or before it)")
+    budgets = CHAR_BUDGETS if budgets is None else budgets
+    for target in sorted(after):
+        if target in budgets and after[target] != rings[target]:
+            _check_budget(target, list(rings[target]), after[target], int(budgets[target]))
     return after, rows
 
 
@@ -660,12 +751,15 @@ def register_memory_tool(
     posture: Callable[[], str] | None = None,
     origin: Callable[[], str] = _turn_origin,
     store: UndoStore | None = None,
+    switch: Callable[[], bool] | None = None,
 ) -> str:
     """Expose ``memory`` on a ToolRPC server (ungated, audited, undoable). ``living``
     returns the LivingMemory module, or None when cognition memory is off; ``audit`` the
     intent log; ``posture`` the turn's posture key (only ``operator/owner`` writes);
-    ``origin`` the turn's action origin (an untrusted one is refused). Every getter is
-    read per call and a getter that fails refuses the call."""
+    ``origin`` the turn's action origin (an untrusted one is refused); ``switch`` the
+    owner's memory switch (H422, :func:`switched_on`): off, the tool reads as switched off,
+    whatever cognition memory says. Every getter is read per call and a getter that fails
+    refuses the call."""
     from .security.taint import is_untrusted_source
 
     def _living() -> Any:
@@ -675,6 +769,14 @@ def register_memory_tool(
             # H490: no memory reaches a turn in safe mode, through the prompt or this tool.
             safe_mode.note("memory_injection")
             return None
+        if switch is not None:
+            try:
+                on = switch() is True
+            except Exception:
+                logger.warning("memory: the owner's memory switch could not be read; refused", exc_info=True)
+                on = False
+            if not on:
+                return None              # H422: the owner switched the curated memory off
         try:
             return living()
         except Exception:
@@ -791,15 +893,17 @@ def register_memory_tool(
         try:
             after, rows, changed, ref = await asyncio.to_thread(_write)
         except MemoryToolError as exc:
-            if exc.reason == "memory_full" and _count_full(turn):
+            # H422: a ring over its character budget is as full as one at its fact cap.
+            if exc.reason in ("memory_full", "memory_over_budget") and _count_full(turn):
                 return _terminal()
-            return {"ok": False, "reason": exc.reason, "detail": exc.detail}
+            return {"ok": False, "reason": exc.reason, "detail": exc.detail, **exc.info}
         except Exception:
             logger.warning("memory: the write failed", exc_info=True)
             return {"ok": False, "reason": "memory_write_failed", "detail": "the memory could not be saved"}
         if changed:
             _record_event(rows, changed)
-        reply: dict[str, Any] = {"ok": True, "changed": changed, "memory": after["memory"], "user": after["user"]}
+        reply: dict[str, Any] = {"ok": True, "changed": changed, "memory": after["memory"], "user": after["user"],
+                                 "usage": {target: usage(after[target], target) for target in TARGETS}}
         if ref:
             reply["undo_ref"] = ref
             reply["note"] = "saved; your prompt shows it from the next conversation"
@@ -822,7 +926,7 @@ def register_memory_tool(
 __all__ = [
     "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LOCK_TIMEOUT_S",
     "MAX_FACT_CHARS", "MAX_OPERATIONS",
-    "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "TARGETS",
-    "TOOL_NAME", "UNDO", "UndoStore", "plan", "register_memory_tool", "reset", "reset_targets",
-    "store_sizes", "undo",
+    "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "SWITCH_CATEGORY",
+    "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan", "register_memory_tool",
+    "reset", "reset_targets", "set_switch", "store_sizes", "switched_on", "undo", "usage",
 ]

@@ -561,6 +561,7 @@
   "POST /api/memory/spaces": "define_data_space_api_memory_spaces_post",
   "POST /api/memory/spaces/assign": "assign_data_space_api_memory_spaces_assign_post",
   "POST /api/memory/spaces/unassign": "unassign_data_space_api_memory_spaces_unassign_post",
+  "POST /api/memory/switch": "memory_switch_api_memory_switch_post",
   "POST /api/missions": "missions_create_api_missions_post",
   "POST /api/missions/{mission_id}/cancel": "mission_cancel_api_missions__mission_id__cancel_post",
   "POST /api/missions/{mission_id}/complete": "mission_complete_api_missions__mission_id__complete_post",

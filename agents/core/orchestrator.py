@@ -3913,9 +3913,17 @@ class Orchestrator:
         ``freeze=False`` (H227, the inspector) answers what the next turn would send
         without being what freezes it: the frozen block when a turn already froze
         one, else a fresh render that is not kept.
+
+        H422: the owner's memory switch (``memory.core_enabled``, which no product
+        posture sets) keeps the block out from the next turn on, a conversation under
+        way included; switched back on, the session's frozen block returns.
         """
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
+            return ""
+        from .memory_tool import switched_on
+
+        if not switched_on(getattr(self, "get_setting", None)):
             return ""
         from . import safe_mode
 
@@ -3953,6 +3961,10 @@ class Orchestrator:
         cog = getattr(self, "cognition", None)
         try:
             if cog is None or not cog.sub_enabled("memory_enabled"):
+                return
+            from .memory_tool import switched_on
+
+            if not switched_on(getattr(self, "get_setting", None)):
                 return
             from . import safe_mode
 

@@ -46,6 +46,9 @@ _SECTIONS: tuple[tuple[str, str, str, int], ...] = (
     ("user", "user_core", "user profile", USER_CHAR_BUDGET),
 )
 _RING_LABELS = tuple((attr, label) for _target, attr, label, _budget in _SECTIONS)
+#: H422 — each section's budget by the memory tool's target: the memory tool refuses a write
+#: that would take a ring past it (``memory_tool.plan``), and the block cuts to it.
+CHAR_BUDGETS: dict[str, int] = {target: budget for target, _attr, _label, budget in _SECTIONS}
 
 #: H422 — the longest block :func:`with_core_notes` (and so :func:`render_core_block`) can
 #: return: the three header lines, both full sections, the four newlines between them and
@@ -120,6 +123,15 @@ def _fit(entries: list[str], label: str, budget: int) -> tuple[list[str], int]:
         used += len(line) + 1
     omitted = len(lines) - len(kept)
     return [_omitted_line(omitted, label, budget), *kept], omitted
+
+
+def section_chars(facts: list, target: str = "memory", detect: Callable[[str], list] | None = None) -> int:
+    """H422 — the characters ring *target*'s facts take in the block uncut, counted as the
+    block counts them: each entry cleaned and cut as the prompt shows it, a flagged one as
+    its [BLOCKED] stub, ``- `` before it and a newline between lines. What the memory tool
+    holds against :data:`CHAR_BUDGETS` on a write, so a ring it wrote renders whole."""
+    entries, _blocked = _clean_facts(facts, detect or _default_detect, target)
+    return _chars([f"- {entry}" for entry in entries])
 
 
 def _facts_of(living, attr: str) -> list:
@@ -213,5 +225,5 @@ def with_core_notes(block: str, notes: list[str]) -> str:
     return "\n".join([block or _HEADER, *kept])
 
 
-__all__ = ["CORE_BLOCK_MAX_CHARS", "MEMORY_CHAR_BUDGET", "USER_CHAR_BUDGET", "blocked_stub",
-           "core_block_usage", "render_core_block", "reread_core_rings", "with_core_notes"]
+__all__ = ["CHAR_BUDGETS", "CORE_BLOCK_MAX_CHARS", "MEMORY_CHAR_BUDGET", "USER_CHAR_BUDGET", "blocked_stub",
+           "core_block_usage", "render_core_block", "reread_core_rings", "section_chars", "with_core_notes"]

@@ -464,8 +464,11 @@ def build_parser() -> argparse.ArgumentParser:
     memory_reset.add_argument("--yes", "-y", action="store_true", help="skip the typed confirmation")
     memory_reset.add_argument("--json", action="store_true")
     memory_off = memory_verbs.add_parser(
-        "off", help="switch memory off (cognition.memory_enabled); nothing is erased (admin)")
+        "off", help="take the curated memory out of every prompt, whatever the posture; nothing is erased (admin)")
     memory_off.add_argument("--json", action="store_true")
+    memory_on = memory_verbs.add_parser(
+        "on", help="bring the curated memory back into the prompt after `nerva memory off` (admin)")
+    memory_on.add_argument("--json", action="store_true")
 
     webhook = verbs.add_parser("webhook", help="inbound webhooks: subscribe an external system's events to an agent (admin, H039)")
     webhook_verbs = webhook.add_subparsers(dest="action", required=True, metavar="action")
@@ -3045,6 +3048,40 @@ def _memory_holds(store: Any) -> bool:
         int(store.get(key) or 0) for key in ("entries", "copies", "undo_writes"))
 
 
+def _memory_switch(client: Any, ctx: Context, on: bool, as_json: bool) -> int:
+    """H422 — ``nerva memory off|on``: post the switch, then reread the status, and claim
+    only what the hub reports."""
+    reply = client.post("/api/memory/switch", {"enabled": on})
+    status = client.get("/api/memory")
+    status = status if isinstance(status, dict) else {}
+    enabled = status.get("enabled") is True
+    if as_json:
+        ctx.dump({"switch": reply, "status": status})
+        return EXIT_OK if enabled is on else EXIT_FAILED
+    if not on:
+        if enabled:
+            ctx.err.write("memory is still on: the hub saved the switch but still reads it as on; "
+                          "check again with `nerva memory` in 30 s\n")
+            return EXIT_FAILED
+        ctx.say("memory off: from the next turn no prompt carries the agent notes or the user profile, "
+                "and the memory tool refuses; nothing was erased (the stores stay on disk). "
+                "Turn it back on with: nerva memory on")
+        return EXIT_OK
+    if enabled:
+        tail = ", but safe mode leaves it out of every prompt" if status.get("safe_mode") else ""
+        ctx.say(f"memory on: the next turn's prompt carries the agent notes and the user profile{tail}")
+        return EXIT_OK
+    if status.get("switch") is True and status.get("cognition") is False:
+        ctx.err.write("the switch is on, but memory stays off: cognition.enabled and cognition.memory_enabled "
+                      "must be on too (nerva config set, or a product posture that sets them)\n")
+    elif status.get("available") is False:
+        ctx.err.write("memory is not available on this hub (no cognition module)\n")
+    else:
+        ctx.err.write("memory is still off: the hub saved the switch but still reads it as off; "
+                      "check again with `nerva memory` in 30 s\n")
+    return EXIT_FAILED
+
+
 def cmd_memory(ns: argparse.Namespace, ctx: Context) -> int:
     """H422 — the long-term memory every prompt carries (the agent notes and the user
     profile: LivingMemory's core rings), over the hub's routes.
@@ -3053,21 +3090,16 @@ def cmd_memory(ns: argparse.Namespace, ctx: Context) -> int:
     prompt and the memory tool can write, and per store its entries, characters against
     the section budget and bytes on disk. ``reset`` shows what it would erase, asks for a
     typed ``yes`` unless ``--yes``, and posts ``POST /api/memory/reset`` (admin; the hub
-    records it in the intent log). ``off`` switches ``cognition.memory_enabled`` off
-    through the settings route the HUD uses (``PUT /api/admin/settings/cognition``, admin):
-    nothing is erased, and ``nerva config set cognition.memory_enabled true`` turns it on.
+    records it in the intent log). ``off`` / ``on`` post the owner's memory switch
+    (``POST /api/memory/switch``, admin), which no product posture overrides; nothing is
+    erased. Each then rereads ``GET /api/memory`` and says what the hub really does: it
+    fails when memory is not in the state asked for.
     """
     client = ctx.client()
     action = ns.action or "status"
     as_json = bool(getattr(ns, "json", False))
-    if action == "off":
-        reply = client.request("PUT", "/api/admin/settings/cognition", {"values": {"memory_enabled": False}})
-        if as_json:
-            ctx.dump(reply)
-        else:
-            ctx.say("memory off: no prompt carries the core block now, and the memory tool refuses; "
-                    "nothing was erased. Turn it back on with: nerva config set cognition.memory_enabled true")
-        return EXIT_OK
+    if action in ("off", "on"):
+        return _memory_switch(client, ctx, action == "on", as_json)
     status = client.get("/api/memory")
     stores = status.get("stores") if isinstance(status, dict) else None
     if not isinstance(stores, dict):
@@ -3081,7 +3113,9 @@ def cmd_memory(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say("memory: not available on this hub (no cognition module)")
             return EXIT_OK
         if not status.get("enabled"):
-            state = "off (cognition.enabled and cognition.memory_enabled must both be on); the stores stay on disk"
+            why = ("switched off by the owner (nerva memory on brings it back)" if status.get("switch") is False
+                   else "cognition.enabled and cognition.memory_enabled must both be on")
+            state = f"off ({why}); the stores stay on disk"
         elif status.get("safe_mode"):
             state = "on, but safe mode leaves it out of every prompt and the memory tool refuses"
         else:

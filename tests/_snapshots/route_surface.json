@@ -561,6 +561,7 @@
   "POST /api/memory/spaces",
   "POST /api/memory/spaces/assign",
   "POST /api/memory/spaces/unassign",
+  "POST /api/memory/switch",
   "POST /api/missions",
   "POST /api/missions/{mission_id}/cancel",
   "POST /api/missions/{mission_id}/complete",

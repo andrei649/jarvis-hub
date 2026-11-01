@@ -100,7 +100,7 @@ RULES = [
     ("/api/osint/", "knowledge"),  # P2 OSINT pack — the Knowledge/"Vision · OSINT" surface (modes4)
     ("/api/kg/", "memory"),
     ("/api/memory/", "memory"),
-    ("/api/memory", "memory"),  # H422 the curated memory's status (sizes, budgets), read by `nerva memory`
+    ("/api/memory", "memory"),  # H422 the curated memory's status: the Long-Term Memory panel and `nerva memory`
     ("/memory/stats", "memory"),
     ("/memory", "memory"),
     ("/api/local-docs", "memory"),
@@ -533,10 +533,6 @@ MACHINE_FACING: dict[str, str] = {
     "/api/admin/backup/restore":
         "H010: queued by `nerva backup restore` (agents/cli/nerva.py) as an irreversible-tier "
         "card; the HUD accepts it in the decision inbox like any other approval",
-    "/api/memory/reset":
-        "H422: the owner erases the core memory rings with `nerva memory reset` "
-        "(agents/cli/nerva.py), after it states the sizes and takes a typed yes; Hermes's "
-        "dashboard reset is the contract's API half, and a HUD reset button is not part of the row",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",
@@ -978,6 +974,21 @@ def test_computed_url_callers_stay_real():
         elif _has_caller(path, blob):
             problems.append(f"{path}: now written literally — delete the entry")
     assert not problems, "COMPUTED_URL_CALLERS has rotted:\n  " + "\n  ".join(problems)
+
+
+def test_the_curated_memory_routes_are_called_by_their_panel_not_by_a_longer_path():
+    """H422 review — ``GET /api/memory`` passed this gate before any client called it:
+    a route with no path parameter matches as a substring, and ``/api/memory`` is inside
+    ``/api/memory/core``. The Long-Term Memory panel now calls the status, the switch and
+    the reset by their own paths; pin that the panel names each one whole, so the next
+    time the gate's verdict for them is not the accident again."""
+    source = (REPO / "frontend/src/panels/long-term-memory.tsx").read_text(encoding="utf-8")
+    for path in ("/api/memory", "/api/memory/switch", "/api/memory/reset"):
+        assert re.search(re.escape(f"'{path}'"), source), f"the Long-Term Memory panel does not call {path}"
+        assert path not in MACHINE_FACING, f"{path} has a HUD caller; it is not machine-facing"
+    # The hole itself, for this route: without that literal the substring rule still says yes.
+    blob = _client_blob().replace("'/api/memory'", "'/api/elsewhere'")
+    assert "/api/memory/core" in blob and _has_caller("/api/memory", blob)
 
 
 def test_a_sub_route_cannot_ride_in_on_a_called_prefix():

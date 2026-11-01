@@ -565,6 +565,7 @@
   "POST /api/memory/spaces": "admin",
   "POST /api/memory/spaces/assign": "admin",
   "POST /api/memory/spaces/unassign": "admin",
+  "POST /api/memory/switch": "admin",
   "POST /api/missions": "user",
   "POST /api/missions/{mission_id}/cancel": "user",
   "POST /api/missions/{mission_id}/complete": "user",
