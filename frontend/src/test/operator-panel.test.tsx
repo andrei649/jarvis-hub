@@ -108,9 +108,24 @@ describe('OperatorPanel browser policy dry run', () => {
     expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
       steps: [{ action: 'navigate', url: 'https://example.com/path' },
         { action: 'click', selector: '#go' }],
-    } });
+    } }, { accept: expect.any(Function) });
     expect((screen.getByRole('link', { name: 'Decision Inbox' }) as HTMLAnchorElement).getAttribute('href'))
       .toContain('#decision-inbox');
+  });
+
+  it('treats only a queued approval as the expected answer, never as a failed action', async () => {
+    get.mockResolvedValue({ available: true });
+    post.mockResolvedValueOnce({ ok: false, reason: 'approval_required', task_id: 88 });
+    render(<OperatorPanel />);
+    addBrowserStep('navigate', 'https://example.com/path');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run with approval' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Run with approval' }));
+    await waitFor(() => expect(screen.getByText(/Browser task 88 queued/)).toBeTruthy());
+    const accept = post.mock.calls[0][2].accept;
+    expect(accept(422, { reason: 'approval_required', task_id: 88 })).toBe(true);
+    expect(accept(422, { reason: 'approval_required', task_id: 0 })).toBe(false);
+    expect(accept(422, { reason: 'browser_unavailable' })).toBe(false);
+    expect(accept(403, { reason: 'approval_required', task_id: 88 })).toBe(false);
   });
 
   it('queues a fresh session and a later grounded press as distinct approvals', async () => {
@@ -134,14 +149,14 @@ describe('OperatorPanel browser policy dry run', () => {
     expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
       mode: 'start', steps: [{ action: 'navigate', url: 'https://example.com/start' },
         { action: 'snapshot' }],
-    } });
+    } }, { accept: expect.any(Function) });
     fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'press' } });
     fireEvent.change(screen.getByLabelText('Observed element'), { target: { value: '@e1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
     await waitFor(() => expect(screen.getByText(/Browser task 91 queued/)).toBeTruthy());
     expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
       mode: 'act', session_id: sid, steps: [{ action: 'press', ref: '@e1', key: 'Enter' }],
-    } });
+    } }, { accept: expect.any(Function) });
     fireEvent.click(screen.getByRole('button', { name: 'Close fresh session' }));
     await waitFor(() => expect(post).toHaveBeenCalledWith(
       `/api/browser/sessions/${sid}/close`, {}, { admin: true }));
@@ -165,13 +180,13 @@ describe('OperatorPanel browser policy dry run', () => {
     await waitFor(() => expect(screen.getByText(/Browser task 93 queued/)).toBeTruthy());
     expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
       mode: 'act', session_id: sid, steps: [{ action: 'console' }],
-    } });
+    } }, { accept: expect.any(Function) });
     fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'get_images' } });
     fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
     await waitFor(() => expect(screen.getByText(/Browser task 94 queued/)).toBeTruthy());
     expect(post).toHaveBeenCalledWith('/api/toolrpc/call', { tool: 'browser_run', args: {
       mode: 'act', session_id: sid, steps: [{ action: 'get_images' }],
-    } });
+    } }, { accept: expect.any(Function) });
   });
 
   it('renders only typed owner observations as escaped page text', async () => {

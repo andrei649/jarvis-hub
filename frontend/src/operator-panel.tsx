@@ -132,6 +132,12 @@ const MAX_URL = 2_000;
 const MAX_DOMAIN = 253;
 const MAX_SELECTOR = 512;
 const MAX_TYPE_TEXT = 4_000;
+
+/** ToolRPC answers a queued browser approval with 422 approval_required and the task id:
+    the task was created, so it is the expected answer, not a failed action (#1321 review). */
+const approvalQueued = (status: number, body: unknown): boolean =>
+  status === 422 && isRecord(body) && body.reason === 'approval_required'
+  && Number.isSafeInteger(body.task_id) && Number(body.task_id) > 0;
 const MAX_REASON = 240;
 const BROWSER_DECISIONS = new Set(['run', 'approve', 'block']);
 
@@ -599,7 +605,8 @@ export function OperatorPanel() {
       }
       // Execution policy and pinned hosts are resolved by the server. The editable
       // dry-run allowlist is intentionally absent from this request.
-      const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args: { steps: stored } });
+      const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args: { steps: stored } },
+        { accept: approvalQueued });
       if (revision !== browserPreviewRevisionRef.current) return;
       if (!isRecord(raw) || raw.reason !== 'approval_required'
           || !Number.isSafeInteger(raw.task_id) || Number(raw.task_id) <= 0) {
@@ -627,7 +634,7 @@ export function OperatorPanel() {
     setBrowserTaskOutcome(null);
     setBrowserBusy('session');
     try {
-      const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args });
+      const raw = await apiPost('/api/toolrpc/call', { tool: 'browser_run', args }, { accept: approvalQueued });
       if (!isRecord(raw) || raw.reason !== 'approval_required'
           || !Number.isSafeInteger(raw.task_id) || Number(raw.task_id) <= 0) {
         throw new Error('Browser approval task was not confirmed');

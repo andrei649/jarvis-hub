@@ -114,12 +114,22 @@ function reportActionFailure(method: string, path: string, status: number, messa
    remove. `message` and `status` are untouched, so existing callers are unaffected;
    a non-JSON or empty error body simply leaves `body` undefined. */
 async function failMutation(method: string, path: string, res: Response): Promise<never> {
-  const message = `${method} ${path} -> ${res.status}`;
-  reportActionFailure(method, path, res.status, message);
   let body: unknown;
   try { body = await res.json(); } catch { /* non-JSON, empty, or already-consumed body */ }
-  throw Object.assign(new Error(message), { status: res.status, body });
+  return failWithBody(method, path, res.status, body);
 }
+
+function failWithBody(method: string, path: string, status: number, body: unknown): never {
+  const message = `${method} ${path} -> ${status}`;
+  reportActionFailure(method, path, status, message);
+  throw Object.assign(new Error(message), { status, body });
+}
+
+/** A refusal the caller names as its expected answer. ToolRPC queues a gated tool's
+    owner-approval task and answers 422 `approval_required` with its task id: that is the
+    task being created, not a failed action, and the Console banner must not call it one
+    (review of #1321). Every other refusal is still recorded and thrown. */
+export type AcceptRefusal = (status: number, body: unknown) => boolean;
 
 export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('GET', path, undefined, opts);
@@ -133,9 +143,16 @@ export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean
   return res.json() as Promise<T>;
 }
 
-export async function apiPost<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
-  const res = await request('POST', path, body, opts);
-  if (!res.ok) await failMutation('POST', path, res);
+export async function apiPost<T = unknown>(path: string, body?: unknown,
+  opts?: { admin?: boolean; accept?: AcceptRefusal }): Promise<T> {
+  const res = await request('POST', path, body, opts?.admin === undefined ? undefined : { admin: opts.admin });
+  if (!res.ok) {
+    if (!opts?.accept) await failMutation('POST', path, res);
+    let refusal: unknown;
+    try { refusal = await res.json(); } catch { /* non-JSON, empty, or already-consumed body */ }
+    if (opts?.accept?.(res.status, refusal)) return refusal as T;
+    failWithBody('POST', path, res.status, refusal);
+  }
   return res.json() as Promise<T>;
 }
 
