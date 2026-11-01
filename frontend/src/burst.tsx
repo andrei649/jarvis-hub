@@ -342,6 +342,9 @@ export function NeuralBurst({ agents = [], tasks = [], voice = null, motion = 'l
     // figures we can prove: the real agent count and the real executing share.
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
+    // Bolt Optimization: Set textAlign once before the region chips loop
+    // to avoid redundant Canvas 2D alignment setter calls per cluster at 60 FPS.
+    ctx.textAlign = 'left';
     for (let ci = 0; ci < numClusters; ci++) {
       const c = clusters[ci];
       // Bolt Optimization: Cache nodes, firing, and task state on cluster object c to avoid
@@ -379,7 +382,6 @@ export function NeuralBurst({ agents = [], tasks = [], voice = null, motion = 'l
       ctx.globalAlpha = 1;
       ctx.fillStyle = c.color;
       ctx.fillRect(x, y, 3.5, h);                       // thick coloured edge bar
-      ctx.textAlign = 'left';
       ctx.font = '700 10px "JetBrains Mono",monospace';
       ctx.fillText(label, x + 10, y + 13);
       ctx.globalAlpha = 0.78;
