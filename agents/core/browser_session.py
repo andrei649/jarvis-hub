@@ -430,17 +430,23 @@ class BrowserOwnershipJournal:
             return None
         return path
 
+    @staticmethod
+    def _refuse_reap(path: Path, reason: str) -> bool:
+        """Every refusal says why: a silent False left a CI-only failure undiagnosable."""
+        logger.warning('browser orphan reap of %s refused: %s', path.name, reason)
+        return False
+
     async def reap_entry(self, path: Path) -> bool:
         """Only verified native PID/start/profile tuples may be terminated."""
         try:
             record = self.read(path)
             profile = self.profile_owned(record['profile'])
             if profile is None:
-                return False
+                return self._refuse_reap(path, 'profile not owned')
             native = record['native']
             if not (type(native) is list and len(native) == 2
                     and type(native[0]) is int and type(native[1]) in {int, float}):
-                return False
+                return self._refuse_reap(path, 'native identity malformed')
             import psutil
             pid, started = native
             marker = '--user-data-dir=' + str(profile)
@@ -449,36 +455,38 @@ class BrowserOwnershipJournal:
             if not (type(owner_process) is list and len(owner_process) == 2
                     and type(owner_process[0]) is int
                     and type(owner_process[1]) in {int, float}):
-                return False
+                return self._refuse_reap(path, 'owner identity malformed')
             if not (type(controller) is list and len(controller) == 2
                     and type(controller[0]) is int and type(controller[1]) in {int, float}):
-                return False
+                return self._refuse_reap(path, 'controller identity malformed')
             try:
                 owner = psutil.Process(owner_process[0])
                 if owner.create_time() == owner_process[1] and owner.is_running():
-                    return False
+                    return self._refuse_reap(path, 'owner still running')
             except psutil.NoSuchProcess:
                 pass
             except psutil.Error:
-                return False
+                return self._refuse_reap(path, 'owner probe failed')
             launch = None
             try:
                 launch = psutil.Process(controller[0])
                 if launch.create_time() != controller[1] or not launch.is_running():
                     launch = None
                 elif not any('playwright/driver' in arg for arg in launch.cmdline()):
-                    return False
+                    return self._refuse_reap(path, 'controller is not a playwright driver')
             except psutil.NoSuchProcess:
                 pass
             except psutil.Error:
-                return False
+                return self._refuse_reap(path, 'controller probe failed')
             try:
                 process = psutil.Process(pid)
                 if process.create_time() != started or marker not in process.cmdline():
-                    return False
+                    return self._refuse_reap(
+                        path, f'native identity changed (start {process.create_time()!r} vs '
+                              f'{started!r}, marker in argv: {marker in process.cmdline()})')
                 if not ('chrome' in Path(process.exe()).name.lower()
                         or 'chromium' in Path(process.exe()).name.lower()):
-                    return False
+                    return self._refuse_reap(path, f'native is not chrome ({process.exe()})')
                 owned = [process, *process.children(recursive=True)]
                 for item in reversed(owned):
                     item.terminate()
@@ -487,7 +495,7 @@ class BrowserOwnershipJournal:
                     item.kill()
                 _gone, alive = await asyncio.to_thread(psutil.wait_procs, alive, timeout=2)
                 if alive:
-                    return False
+                    return self._refuse_reap(path, 'native tree survived kill')
             except psutil.NoSuchProcess:
                 pass
             if launch is not None:
@@ -513,7 +521,7 @@ class BrowserOwnershipJournal:
                     except psutil.NoSuchProcess:
                         continue
                     except psutil.Error:
-                        return False
+                        return self._refuse_reap(path, 'process scan failed')
                 if not stragglers:
                     break
                 for item in stragglers:
@@ -525,7 +533,7 @@ class BrowserOwnershipJournal:
                         item.kill()
                 await asyncio.to_thread(psutil.wait_procs, alive, timeout=2)
             else:
-                return False
+                return self._refuse_reap(path, 'profile-referencing process survived')
             for attempt in range(3):
                 if not profile.exists():
                     break
@@ -533,9 +541,11 @@ class BrowserOwnershipJournal:
                     await asyncio.to_thread(shutil.rmtree, profile)
                 except OSError:
                     if attempt == 2:
-                        return False
+                        return self._refuse_reap(path, 'profile removal failed')
                     await asyncio.sleep(0.2)
             self.remove(path.stem)
             return True
         except Exception:
+            logger.warning('browser orphan reap of %s refused: unexpected error', path.name,
+                           exc_info=True)
             return False
