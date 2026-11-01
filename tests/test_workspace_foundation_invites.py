@@ -279,3 +279,24 @@ def test_a_used_reset_link_is_invalid_on_lookup_and_accept(admin_session):
         r = guest.post(path, json=body)
         assert (r.status_code, r.json()["error"]) == (404, "invite_invalid"), path
     login(_client(), company.member_a.email, NEW_PASSWORD)
+
+
+async def test_a_burst_of_guessed_tokens_on_accept_stays_inside_the_ip_budget(admin_session):
+    """Review of #1321: accept checked the invite budget in one offload and recorded the
+    failure in another, so 200 concurrent guesses from one address all passed the check
+    (110 recorded failures against a limit of 30). Accept now checks and records under the
+    same lock as lookup, so no more than the budget is ever looked up."""
+    transport = httpx.ASGITransport(app=make_app(workspace_auth.router),
+                                    client=("198.51.100.77", 1))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        answers = await asyncio.gather(*(
+            client.post("/api/workspace/invites/accept",
+                        json={"token": f"guess-{n:04d}-" + "x" * 40, "password": "Parola-1"})
+            for n in range(120)))
+    codes = [a.status_code for a in answers]
+    assert codes.count(404) == auth.INVITE_IP_LIMIT and codes.count(429) == 120 - auth.INVITE_IP_LIMIT
+    conn = db()
+    recorded = conn.execute(
+        "SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND kind = 'invite_lookup'",
+        ("198.51.100.77",)).fetchone()[0]
+    assert recorded == auth.INVITE_IP_LIMIT

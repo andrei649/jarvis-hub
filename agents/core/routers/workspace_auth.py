@@ -363,15 +363,21 @@ async def invite_accept(request: Request, conn: Db, _on: Enabled) -> JSONRespons
     ip = auth.client_ip(request)
 
     def _sync_1():
-        auth.check_invite_throttle(conn, ip=ip)
-        invite = auth.find_invite(conn, body.get("token"))
-        email = invite["email"] if invite is not None else ""
-        return email, invite
+        # As in invite_lookup, a guessed token's failure is recorded under the lock that
+        # checked the budget: with the record in a later offload a burst of guesses all
+        # passed the check before any failure was written (review of #1321).
+        with _THROTTLE_LOCK:
+            auth.check_invite_throttle(conn, ip=ip)
+            invite = auth.find_invite(conn, body.get("token"))
+            if invite is None:
+                auth.record_attempt(conn, ip=ip, email="", ok=False, kind="invite_lookup")
+        return invite
 
-    email, invite = await offload(_sync_1)
+    invite = await offload(_sync_1)
+    if invite is None:
+        raise WorkspaceError("invite_invalid", "this link is invalid, used or expired", 404)
+    email = invite["email"]
     try:
-        if invite is None:
-            raise WorkspaceError("invite_invalid", "this link is invalid, used or expired", 404)
         password = require_str(body, "password", max_len=MAX_PASSWORD_INPUT, min_len=1, strip=False)
         name = optional_str(body, "name", max_len=200, min_len=1)
         identity.validate_password(password, email=invite["email"])
