@@ -7,7 +7,10 @@ NSSM service, is the unit installed and active, its pid and uptime) and nothing 
 concurrency (turns holding a session's lease, a channel's chat lanes against their cap,
 sub-agents against theirs). `GET /status` now carries a `service` block
 (`agents.core.service_status`) and a `slots` block, and the CLI prints both; a fact the
-hub could not read is unknown, never ok.
+hub could not read is unknown, never ok. Who holds the turn slots (surface, session id,
+age) is the user-guarded `GET /api/status/slots`, printed under `slots:`; an engaged
+e-stop is a banner right under the header. The service manager's binary is never
+looked up on PATH or in the current directory.
 
 Hermetic: every OS read is a parameter or a monkeypatched seam; no systemctl, no network.
 """
@@ -16,6 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
+import os
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,7 +40,8 @@ from agents.core import service_status  # noqa: E402
 from agents.core.channels.chat_lanes import ChatLanes  # noqa: E402
 from agents.core.channels.manager import ChannelManager  # noqa: E402
 from agents.core.channels.telegram import TelegramChannel  # noqa: E402
-from agents.core.orchestrator import Orchestrator  # noqa: E402
+from agents.core.commands import Principal  # noqa: E402
+from agents.core.orchestrator import Orchestrator, bind_turn_principal, reset_turn_principal  # noqa: E402
 
 # ── the service block ────────────────────────────────────────────────────────
 
@@ -56,7 +63,7 @@ def _stat(present=(), unreadable=()):
 
 
 def _probe(ident, *, platform="linux", env=None, present=(), unreadable=(), answer=None,
-           cgroup=SYSTEMD_CGROUP, registry=None, which=lambda name: f"/usr/bin/{name}"):
+           cgroup=SYSTEMD_CGROUP, registry=None, isfile=lambda path: True):
     calls = []
 
     def run(argv):
@@ -65,7 +72,7 @@ def _probe(ident, *, platform="linux", env=None, present=(), unreadable=(), answ
 
     row = service_status.probe(
         env or {}, identity=ident, platform=platform, read_text=lambda path: cgroup,
-        stat=_stat(present, unreadable), which=which, run=run,
+        stat=_stat(present, unreadable), isfile=isfile, run=run,
         registry=registry or (lambda name: None), expanduser=lambda p: p.replace("~", "/home/u"))
     return row, calls
 
@@ -141,12 +148,105 @@ def test_windows_nssm_marker_and_the_service_registry():
     stopped, calls = _probe(_ident(), platform="win32", registry=lambda name: name == "JarvisHub",
                             answer="SERVICE_NAME: JarvisHub\n        STATE              : 1  STOPPED\n")
     assert (stopped["state"], stopped["unit"]) == ("installed_stopped", "JarvisHub")
-    assert calls == [["/usr/bin/sc.exe", "query", "JarvisHub"]]
+    assert calls == [["C:\\Windows\\System32\\sc.exe", "query", "JarvisHub"]]
 
     absent, _ = _probe(_ident(), platform="win32", registry=lambda name: False)
     assert absent["state"] == "not_installed"
     unknown, _ = _probe(_ident(), platform="win32", registry=lambda name: None)
     assert unknown["state"] == "unknown"
+
+
+# ── the service manager's binary is never searched for ───────────────────────
+
+SC_EXE = "C:\\Windows\\System32\\sc.exe"
+
+
+def _never_which(*_args, **_kwargs):
+    raise AssertionError("shutil.which searched PATH (and, on Windows, the current directory)")
+
+
+def test_systemctl_comes_only_from_the_fixed_system_folders(monkeypatch, tmp_path):
+    planted = tmp_path / "systemctl"
+    planted.write_text("#!/bin/sh\necho active\n")
+    planted.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}.")
+    monkeypatch.setattr(shutil, "which", _never_which)
+    asked = []
+
+    def isfile(path):
+        asked.append(path)
+        return path == "/usr/sbin/systemctl"
+
+    assert service_status.systemctl_path(isfile=isfile) == "/usr/sbin/systemctl"
+    assert asked == ["/usr/bin/systemctl", "/bin/systemctl", "/usr/sbin/systemctl"]
+    assert service_status.systemctl_path(isfile=lambda path: False) is None
+
+
+def test_a_planted_systemctl_on_path_or_in_the_cwd_is_never_run(monkeypatch, tmp_path):
+    """The real lookup (no isfile seam): a systemctl planted in the current directory and
+    on PATH is never what runs; only one in a system folder may be."""
+    planted = tmp_path / "systemctl"
+    planted.write_text("#!/bin/sh\necho active\n")
+    planted.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}.")
+    unit = "/etc/systemd/system/jarvis-hub.service"
+    ran = []
+    service_status.shipped_unit(platform="linux", stat=_stat({service_status.SD_BOOTED, unit}),
+                                run=lambda argv: ran.append(argv) or "active\n")
+    fixed = {f"{folder}/systemctl" for folder in service_status.POSIX_SYSTEM_BIN_DIRS}
+    assert all(argv[0] in fixed for argv in ran), ran
+
+
+def test_without_systemctl_in_a_system_folder_nothing_runs_and_the_state_is_unknown():
+    unit = "/etc/systemd/system/jarvis-hub.service"
+    row, calls = _probe(_ident(), present={service_status.SD_BOOTED, unit}, answer="active\n",
+                        isfile=lambda path: path == "/home/u/bin/systemctl")
+    assert calls == []
+    assert (row["state"], row["installed"], row["active"]) == ("installed_not_managing", True, None)
+
+
+def test_sc_exe_comes_only_from_system32():
+    present = {"D:\\WinNT\\System32\\sc.exe", SC_EXE}
+    asked = []
+
+    def isfile(path):
+        asked.append(path)
+        return path in present
+
+    assert service_status.sc_path({"SystemRoot": "D:\\WinNT"}, isfile=isfile) == "D:\\WinNT\\System32\\sc.exe"
+    assert service_status.sc_path({}, isfile=isfile) == SC_EXE
+    # A SystemRoot that is not an absolute drive path would point the lookup back at the
+    # current directory (or a share): it is skipped for the C:\\Windows fallback.
+    for root in (".", "Windows", "..\\x", "C:relative", "\\\\host\\share\\Windows", "\\Windows"):
+        asked.clear()
+        assert service_status.sc_path({"SystemRoot": root}, isfile=isfile) == SC_EXE, root
+        assert asked == [SC_EXE], root
+    # Named but missing there: the fallback is the only other place asked; then nothing.
+    asked.clear()
+    assert service_status.sc_path({"SystemRoot": "D:\\WinNT"}, isfile=lambda p: asked.append(p) and False) is None
+    assert asked == ["D:\\WinNT\\System32\\sc.exe", SC_EXE]
+
+
+def test_a_planted_sc_in_the_cwd_is_never_run_on_windows(monkeypatch):
+    """review-H019 B1: `which("sc.exe")` on Windows finds a planted sc.exe/sc.bat in the
+    folder `nerva status` runs from before System32's."""
+    monkeypatch.setattr(shutil, "which", _never_which)
+    ran = []
+
+    def run(argv):
+        ran.append(argv)
+        return "SERVICE_NAME: JarvisHub\n        STATE              : 4  RUNNING\n"
+
+    row = service_status.shipped_unit(platform="win32", env={"SystemRoot": "C:\\Windows"},
+                                      registry=lambda name: True, isfile=lambda path: path == SC_EXE, run=run)
+    assert ran == [[SC_EXE, "query", "JarvisHub"]] and row["active"] is True
+
+    ran.clear()
+    row = service_status.shipped_unit(platform="win32", env={}, registry=lambda name: True,
+                                      isfile=lambda path: False, run=run)
+    assert ran == [] and (row["installed"], row["active"]) == (True, None)
 
 
 @pytest.mark.parametrize("text, unit", [
@@ -269,6 +369,59 @@ async def test_chat_lanes_report_running_queued_and_cap():
     assert lanes.usage() == {"running": 0, "queued": 0, "lanes": 0, "cap": 2}
 
 
+async def test_each_running_turn_is_a_holder_with_its_surface_session_and_age():
+    orch = _bare_orch()
+    gate = asyncio.Event()
+
+    async def turn(principal, outer, inner=None):
+        token = bind_turn_principal(principal) if principal is not None else None
+        try:
+            async with orch.turn_lease(outer):
+                if inner is not None:
+                    async with orch.turn_lease(inner):   # the channel turn's session lease
+                        await gate.wait()
+                else:
+                    await gate.wait()
+        finally:
+            if token is not None:
+                reset_turn_principal(token)
+
+    assert orch.turn_holders() == []
+    tasks = [asyncio.ensure_future(turn(Principal(channel="telegram", sender="42"),
+                                        "ch_telegram_dm_abc", "ch_telegram_dm_abc_g1"))]
+    await asyncio.sleep(0.01)
+    tasks.append(asyncio.ensure_future(turn(Principal(channel="web", admin=True), "session-b")))
+    await asyncio.sleep(0.01)
+    tasks.append(asyncio.ensure_future(turn(None, "kanban-worker-7")))   # no channel bound
+    await asyncio.sleep(0.01)
+    rows = orch.turn_holders(now=orch.turn_holders()[0]["started_at"] + 65)
+    assert [(row["surface"], row["session_id"]) for row in rows] == [
+        ("telegram", "ch_telegram_dm_abc_g1"), ("web", "session-b"), ("unknown", "kanban-worker-7")]
+    assert rows[0]["age_s"] == 65 and all(row["age_s"] >= 0 for row in rows)
+    assert orch.turn_slots()["running"] == 3 == len(rows)
+    gate.set()
+    await asyncio.gather(*tasks)
+    assert orch.turn_holders() == [] and orch.turn_slots()["running"] == 0
+
+
+async def test_a_turn_refused_as_busy_is_not_listed_as_a_holder():
+    orch = _bare_orch()
+    orch._turn_lease_max_wait = 0.01
+    gate = asyncio.Event()
+
+    async def hold():
+        async with orch.turn_lease("s"):
+            await gate.wait()
+
+    task = asyncio.ensure_future(hold())
+    await asyncio.sleep(0.01)
+    async with orch.turn_lease("s") as acquired:
+        assert acquired is False
+        assert [row["session_id"] for row in orch.turn_holders()] == ["s"]
+    gate.set()
+    await task
+
+
 def test_telegram_reports_lanes_only_while_polling():
     channel = TelegramChannel("test-token")
     assert channel.lane_usage() is None
@@ -285,6 +438,10 @@ def _inventory():
 
 
 def _status(orch, monkeypatch, probe_row=None):
+    return _get(orch, monkeypatch, "/status", probe_row=probe_row).json()
+
+
+def _get(orch, monkeypatch, path, *, probe_row=None, headers=None):
     import agents.web as web
 
     service_status.reset_cache()
@@ -300,7 +457,7 @@ def _status(orch, monkeypatch, probe_row=None):
             patch.object(web, "_sys_info", return_value={}),
             patch("agents.core.routers.status.get_gateway", return_value=None),
         ):
-            return client.get("/status").json()
+            return client.get(path, headers=headers or {})
     finally:
         service_status.reset_cache()
 
@@ -354,6 +511,131 @@ def test_status_reads_the_real_orchestrator_counters(monkeypatch):
     assert slots["turns"] == {"running": 0, "per_session": 1, "cap": None}
 
 
+HOLDER_ROWS = [
+    {"surface": "telegram", "session_id": "ch_telegram_dm_abc", "started_at": 1_000.0, "age_s": 65},
+    {"surface": "web", "session_id": "../../etc/passwd", "started_at": 1_100.0, "age_s": 3},
+    {"surface": "\x1b[2Jevil", "session_id": "s2", "started_at": None, "age_s": -1},
+    "junk",
+]
+
+
+def _holder_orch(rows=HOLDER_ROWS):
+    return _orch(turn_holders=lambda: list(rows),
+                 turn_slots=lambda: {"running": 3, "per_session": 1, "cap": None})
+
+
+def test_the_public_status_never_carries_a_holder(monkeypatch):
+    body = _status(_holder_orch(), monkeypatch)
+    assert body["slots"]["turns"] == {"running": 3, "per_session": 1, "cap": None}
+    text = json.dumps(body)
+    assert "ch_telegram_dm_abc" not in text and "holders" not in text
+
+
+def test_the_slot_holders_route_lists_one_row_per_holder(monkeypatch):
+    response = _get(_holder_orch(), monkeypatch, "/api/status/slots")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["holders"] == [
+        {"surface": "telegram", "session_id": "ch_telegram_dm_abc", "started_at": "1970-01-01T00:16:40Z", "age_s": 65},
+        # an id the session store would refuse is not sent, nor a surface that is no channel id
+        {"surface": "web", "session_id": None, "started_at": "1970-01-01T00:18:20Z", "age_s": 3},
+        {"surface": "unknown", "session_id": "s2", "started_at": None, "age_s": None},
+    ]
+    assert body["holders_total"] == 3
+    assert body["slots"]["turns"] == {"running": 3, "per_session": 1, "cap": None}
+    assert "no-store" in response.headers["cache-control"]
+
+
+def test_the_slot_holders_route_is_bounded_and_honest_when_it_cannot_list(monkeypatch):
+    from agents.core.routers import status as status_router
+
+    many = [{"surface": "web", "session_id": f"s{i}", "started_at": 1_000.0 + i, "age_s": 1}
+            for i in range(status_router.SLOT_HOLDERS_LIMIT + 50)]
+    body = _get(_holder_orch(many), monkeypatch, "/api/status/slots").json()
+    assert len(body["holders"]) == status_router.SLOT_HOLDERS_LIMIT
+    assert body["holders_total"] == status_router.SLOT_HOLDERS_LIMIT + 50
+
+    body = _get(_orch(), monkeypatch, "/api/status/slots").json()   # an orchestrator that cannot list
+    assert body["holders"] is None and body["holders_total"] is None
+
+    broken = _orch(turn_holders=lambda: (_ for _ in ()).throw(RuntimeError("bug")))
+    assert _get(broken, monkeypatch, "/api/status/slots").json()["holders"] is None
+
+    odd = [{"surface": "web", "session_id": "s1", "started_at": start, "age_s": 1}
+           for start in (float("inf"), float("nan"), 1e20, True, "1000")]
+    rows = _get(_holder_orch(odd), monkeypatch, "/api/status/slots").json()["holders"]
+    assert [row["started_at"] for row in rows] == [None] * len(odd), "a start that is no instant is unknown"
+
+
+def test_the_slot_holders_route_needs_the_user_guard(monkeypatch):
+    import agents.web as web
+    from agents.core.routers._deps import user_guard
+
+    web.app.dependency_overrides.pop(user_guard, None)     # the real guard, not conftest's bypass
+    monkeypatch.setattr(web, "_user_credential_required", lambda: True)
+    monkeypatch.setattr(web, "_user_credential_ok",
+                        lambda user_supplied="", admin_supplied="": user_supplied == "user-test-token")
+    refused = _get(_holder_orch(), monkeypatch, "/api/status/slots")
+    assert refused.status_code == 401 and "ch_telegram_dm_abc" not in refused.text
+    wrong = _get(_holder_orch(), monkeypatch, "/api/status/slots", headers={"X-User-Token": "nope"})
+    assert wrong.status_code == 401
+    allowed = _get(_holder_orch(), monkeypatch, "/api/status/slots", headers={"X-User-Token": "user-test-token"})
+    assert allowed.status_code == 200 and allowed.json()["holders"][0]["session_id"] == "ch_telegram_dm_abc"
+    # the public /status stays open and counts-only under the same posture
+    public = _get(_holder_orch(), monkeypatch, "/status")
+    assert public.status_code == 200 and "ch_telegram_dm_abc" not in public.text
+
+
+def test_the_slot_holders_route_is_pinned_to_the_user_tier():
+    import agents.web as web
+    from agents.core.routers._deps import admin_guard, user_guard
+    from tests._route_introspect import iter_effective_routes
+
+    routes = [r for r in iter_effective_routes(web.app) if getattr(r, "path", "") == "/api/status/slots"]
+    assert len(routes) == 1 and routes[0].methods == {"GET"}
+    calls = {dep.call for dep in routes[0].dependant.dependencies}
+    assert user_guard in calls and admin_guard not in calls
+    assert "/api/status/slots" in web._NO_STORE_PATHS
+
+
+async def test_the_slot_holders_route_reads_a_real_turn_lease(monkeypatch):
+    orch = _bare_orch()
+    orch.channel_manager = ChannelManager()
+    orch.channels = {}
+    orch.running_channels = []
+    orch.subagents = None
+    gate, held = asyncio.Event(), asyncio.Event()
+
+    async def turn():
+        token = bind_turn_principal(Principal(channel="telegram"))
+        try:
+            async with orch.turn_lease("ch_telegram_dm_abc"):
+                held.set()
+                await gate.wait()
+        finally:
+            reset_turn_principal(token)
+
+    from agents.core.routers import status as status_router
+
+    task = asyncio.ensure_future(turn())
+    await held.wait()
+    monkeypatch.setattr(status_router, "get_orch", lambda: orch)
+    response = await status_router.status_slots()
+    body = json.loads(response.body)
+    gate.set()
+    await task
+    assert [(row["surface"], row["session_id"]) for row in body["holders"]] == [("telegram", "ch_telegram_dm_abc")]
+    assert body["slots"]["turns"]["running"] == 1
+
+
+async def test_the_slot_holders_route_is_503_before_the_hub_is_up(monkeypatch):
+    from agents.core.routers import status as status_router
+
+    monkeypatch.setattr(status_router, "get_orch", lambda: None)
+    response = await status_router.status_slots()
+    assert response.status_code == 503
+
+
 # ── nerva status ─────────────────────────────────────────────────────────────
 
 
@@ -368,7 +650,10 @@ class _Hub:
             raise HubUnavailable(self.base_url, "connection refused")
         if path not in self.routes:
             raise HubError(404, f"no fake route {path}")
-        return self.routes[path]
+        answer = self.routes[path]
+        if isinstance(answer, HubError):
+            raise answer
+        return answer
 
 
 def _cli(argv, hub):
@@ -381,13 +666,16 @@ STATUS = {"version": "1.0.0", "llm_backend": "lm-studio", "loaded_model": "gemma
           "agents": [], "agents_online": 0, "agents_total": 18, "channels": [{"id": "telegram"}]}
 
 
-def _status_out(service=None, slots=None, **extra):
+def _status_out(service=None, slots=None, *, holders=None, estop=None, **extra):
     body = dict(STATUS, **extra)
     if service is not None:
         body["service"] = service
     if slots is not None:
         body["slots"] = slots
-    code, out, _err = _cli(["status"], _Hub({"/status": body, "/api/ops/estop": {"engaged": False}}))
+    routes = {"/status": body, "/api/ops/estop": estop if estop is not None else {"engaged": False}}
+    if holders is not None:
+        routes["/api/status/slots"] = holders
+    code, out, _err = _cli(["status"], _Hub(routes))
     assert code == EXIT_OK
     return out
 
@@ -477,3 +765,89 @@ def test_status_with_no_hub_stays_quiet_off_this_machine_or_in_json(monkeypatch)
     monkeypatch.setattr(service_status, "shipped_unit", lambda: {"applicable": False})
     code, out, _err = _cli(["status"], _Hub(down=True))
     assert code == EXIT_NO_HUB and out == ""
+
+
+# ── nerva status: the slot holders ───────────────────────────────────────────
+
+SLOTS = {"turns": {"running": 2, "per_session": 1, "cap": None}, "lanes": [], "subagents": {"running": 0, "cap": 3}}
+INDENT = " " * 15
+
+
+def _lines_after(out, prefix):
+    lines = out.splitlines()
+    index = next(i for i, line in enumerate(lines) if line.startswith(prefix))
+    return lines[index + 1:]
+
+
+def test_status_prints_one_row_per_slot_holder_under_slots():
+    out = _status_out(slots=SLOTS, holders={"slots": SLOTS, "holders_total": 3, "holders": [
+        {"surface": "telegram", "session_id": "ch_telegram_dm_abc", "started_at": "x", "age_s": 65},
+        {"surface": "web", "session_id": None, "started_at": "x", "age_s": 3},
+    ]})
+    after = _lines_after(out, "  slots:       ")
+    assert after[0] == f"{INDENT}{'telegram':<17} {'ch_telegram_dm_abc':<24} held 0:01:05"
+    assert after[1] == f"{INDENT}{'web':<17} {'?':<24} held 0:00:03"
+    assert after[2] == f"{INDENT}… and 1 more"
+    assert after[3].startswith("  e-stop:")
+
+
+def test_status_holder_rows_never_print_a_control_sequence():
+    out = _status_out(slots=SLOTS, holders={"holders": [
+        {"surface": "\x1b]0;pwned\x07", "session_id": "s\x1b[2J", "age_s": None}], "holders_total": 1})
+    assert "\x1b" not in out
+    assert f"{INDENT}{'unknown':<17} {'?':<24} held unknown" in out
+
+
+def test_status_without_the_holders_route_prints_no_rows():
+    out = _status_out(slots=SLOTS)                       # an older hub: 404
+    assert _lines_after(out, "  slots:       ")[0].startswith("  e-stop:")
+
+
+def test_status_says_why_holders_are_missing_when_the_hub_refuses_them():
+    out = _status_out(slots=SLOTS, holders=HubError(401, "user token required"))
+    assert f"{INDENT}holders (needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)" in out
+    idle = dict(SLOTS, turns={"running": 0, "per_session": 1, "cap": None})
+    out = _status_out(slots=idle, holders=HubError(401, "user token required"))
+    assert "holders (" not in out, "nothing is held, so nothing is hidden"
+
+
+def test_status_json_carries_the_slot_holders():
+    detail = {"slots": SLOTS, "holders": [], "holders_total": 0}
+    code, out, _err = _cli(["status", "--json"], _Hub({"/status": STATUS, "/api/ops/estop": {"engaged": False},
+                                                        "/api/status/slots": detail}))
+    assert code == EXIT_OK and json.loads(out)["slot_holders"] == detail
+    code, out, _err = _cli(["status", "--json"], _Hub({"/status": STATUS, "/api/ops/estop": {"engaged": False}}))
+    assert code == EXIT_OK and json.loads(out)["slot_holders"] is None
+
+
+# ── nerva status: the e-stop banner ──────────────────────────────────────────
+
+ENGAGED = {"engaged": True, "state": {"engaged_at": "2026-11-01T09:00:00Z", "reason": "smoke"}}
+
+
+def test_an_engaged_estop_is_a_banner_right_under_the_header():
+    lines = _status_out(estop=ENGAGED).splitlines()
+    assert lines[0] == "nerva 1.0.0 — http://127.0.0.1:8080"
+    assert lines[1] == ("  PAUSED — emergency stop ENGAGED since 2026-11-01T09:00:00Z — smoke; "
+                        "`nerva estop resume` lifts it")
+    assert lines[2].startswith("  backend:")
+    # the e-stop line keeps its place and wording
+    assert lines[-1] == "  e-stop:      ENGAGED since 2026-11-01T09:00:00Z — smoke"
+
+
+def test_no_banner_when_the_estop_is_off_or_unreadable():
+    lines = _status_out().splitlines()
+    assert lines[1].startswith("  backend:") and not any("PAUSED" in line for line in lines)
+    assert lines[-1] == "  e-stop:      not engaged"
+    code, out, _err = _cli(["status"], _Hub({"/status": STATUS,
+                                             "/api/ops/estop": HubError(401, "user token required")}))
+    assert code == EXIT_OK and "PAUSED" not in out and out.splitlines()[1].startswith("  backend:")
+
+
+def test_the_banner_never_prints_a_control_sequence_from_the_hub():
+    hostile = {"engaged": True, "state": {"engaged_at": "t0\x1b[2J", "reason": "x\x1b]0;pwned\x07"}}
+    out = _status_out(estop=hostile)
+    assert "\x1b" not in out and "\x07" not in out
+    assert out.splitlines()[1].startswith("  PAUSED — emergency stop ENGAGED since t0 [2J — x ]0;pwned ;")
+    no_reason = _status_out(estop={"engaged": True, "state": None}).splitlines()
+    assert no_reason[1] == "  PAUSED — emergency stop ENGAGED since ? — no reason given; `nerva estop resume` lifts it"

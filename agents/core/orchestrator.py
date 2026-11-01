@@ -297,6 +297,8 @@ NO_MODEL_REPLY = (
 _held_turn_leases: contextvars.ContextVar = contextvars.ContextVar(
     "nerva_held_turn_leases", default=frozenset()
 )
+#: H019: this turn's row in ``Orchestrator._turn_holders`` (surface, session, start).
+_turn_holder: contextvars.ContextVar = contextvars.ContextVar("nerva_turn_holder", default=None)
 # Hermes absorption, wave 1 — who is speaking in this turn (channel, sender, owner?),
 # established by the channel or the web endpoint and read by the slash-command plane.
 _turn_principal: contextvars.ContextVar = contextvars.ContextVar(
@@ -799,8 +801,8 @@ class Orchestrator:
         self._pending_inputs = None
         self._turn_leases: dict[str, asyncio.Lock] = {}
         self._turn_lease_max_wait: float = _TURN_LEASE_MAX_WAIT_SECONDS
-        # H019: async contexts holding a turn lease right now (see turn_slots).
-        self._turns_running: int = 0
+        # H019: one row per turn holding a session's turn lease (turn_slots/turn_holders).
+        self._turn_holders: dict[int, dict] = {}
         self.commands = build_default_registry()
         self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
@@ -2225,16 +2227,25 @@ class Orchestrator:
             yield False
             return
         token = _held_turn_leases.set(held | {key})
-        # H019: count the turn once — a lease taken inside one already held (a channel
-        # turn holds its base key and its session's) is the same turn, not another slot.
-        outermost = not held
-        if outermost:
-            self.__dict__["_turns_running"] = self.__dict__.get("_turns_running", 0) + 1
+        # H019: one slot per turn — a lease taken inside one already held (a channel turn
+        # holds its base key, then its session's) is the same turn, not another slot; its
+        # holder row follows it to the session it takes last (the one it runs on).
+        holders = self.__dict__.setdefault("_turn_holders", {})
+        holder = _turn_holder.get() if held else None
+        holder_token = None
+        if not held:
+            holder = {"surface": current_principal().channel, "session_id": key,
+                      "started_at": time.time()}
+            holders[id(holder)] = holder
+            holder_token = _turn_holder.set(holder)
+        elif holder is not None:
+            holder["session_id"] = key
         try:
             yield True
         finally:
-            if outermost:
-                self.__dict__["_turns_running"] = max(0, self.__dict__.get("_turns_running", 1) - 1)
+            if holder_token is not None:
+                holders.pop(id(holder), None)
+                _turn_holder.reset(holder_token)
             _held_turn_leases.reset(token)
             lock.release()
 
@@ -2242,8 +2253,21 @@ class Orchestrator:
         """H019 — turn slots in use, for ``nerva status``: how many turns (or session
         changes made under a lease) hold a session's turn lease right now. The lease allows
         one per session; nothing caps them hub-wide, so ``cap`` is None."""
-        running = self.__dict__.get("_turns_running", 0)
-        return {"running": max(0, int(running)), "per_session": 1, "cap": None}
+        running = len(self.__dict__.get("_turn_holders", {}))
+        return {"running": running, "per_session": 1, "cap": None}
+
+    def turn_holders(self, *, now: Optional[float] = None) -> list[dict]:
+        """H019 — who holds the turn slots (Hermes' one row per slot holder): for each
+        running turn the surface it came from (its principal's channel; ``unknown`` for a
+        turn no channel bound, such as a background worker's), the session its lease is on,
+        when it took the slot (epoch seconds) and its age in whole seconds; oldest first.
+        Raw values: ``GET /api/status/slots`` (user-guarded) filters them for the wire."""
+        current = time.time() if now is None else now
+        rows = [dict(row) for row in list(self.__dict__.get("_turn_holders", {}).values())]
+        rows.sort(key=lambda row: row["started_at"])
+        for row in rows:
+            row["age_s"] = max(0, int(current - row["started_at"]))
+        return rows
 
     @staticmethod
     def _command_cognition(outcome) -> dict:

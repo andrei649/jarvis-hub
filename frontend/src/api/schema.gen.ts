@@ -3853,6 +3853,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/status/slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status Slots
+         * @description H019 — who holds the slots ``GET /status`` counts (Hermes ``hermes status`` →
+         *     Slots, one row per holder: surface, session id, age). User-guarded like
+         *     ``GET /sessions``: session ids never leave the public ``/status``. Read-only.
+         */
+        get: operations["status_slots_api_status_slots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -21898,6 +21920,26 @@ export interface operations {
         };
     };
     status_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    status_slots_api_status_slots_get: {
         parameters: {
             query?: never;
             header?: never;

@@ -1212,6 +1212,40 @@ def _slots_line(slots: Any) -> str:
     return " · ".join(parts)
 
 
+#: The status lines' value column: holder rows sit under the `slots:` value.
+_STATUS_INDENT = " " * 15
+
+
+def _holder_rows(detail: Any) -> list[str]:
+    """H019 — one row per slot holder under `slots:` (Hermes' Slots rows: surface, session
+    id, age), from `GET /api/status/slots`; nothing when the hub did not return them."""
+    holders = detail.get("holders") if isinstance(detail, dict) else None
+    if not isinstance(holders, list):
+        return []
+    rows = []
+    for row in holders:
+        if not isinstance(row, dict):
+            continue
+        surface = _printable(row.get("surface")) or "unknown"
+        session = _printable(row.get("session_id")) or "?"
+        rows.append(f"{_STATUS_INDENT}{surface:<17} {session:<24} held {_uptime_words(row.get('age_s'))}")
+    total = _count_value(detail.get("holders_total"))
+    if total is not None and total > len(rows):
+        rows.append(f"{_STATUS_INDENT}… and {total - len(rows)} more")
+    return rows
+
+
+def _estop_banner(estop: Any) -> str | None:
+    """H019 — the e-stop announced at the top of `nerva status` while it is engaged
+    (Hermes' pause banner under the status header); None when it is not engaged."""
+    if not isinstance(estop, dict) or not estop.get("engaged"):
+        return None
+    state = estop.get("state") if isinstance(estop.get("state"), dict) else {}
+    since = _plain(state.get("engaged_at") or "?", 64)
+    reason = _plain(state.get("reason") or "no reason given")
+    return f"  PAUSED — emergency stop ENGAGED since {since} — {reason}; `nerva estop resume` lifts it"
+
+
 def _local_service_line() -> str | None:
     """H019 — no hub answered on this machine: the unit Nerva ships, as this box sees it
     (Hermes' "stopped" / "installed but stopped"). None where no unit is shipped."""
@@ -1258,12 +1292,27 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         if exc.status not in (401, 403):
             raise
         estop_refused = exc.reason
+    # H019: who holds the slots (a user-tier read). A hub without the route, or one that
+    # refuses it, leaves the rows out; only a hub gone away mid-way ends the verb.
+    slot_holders, holders_refused = None, None
+    try:
+        slot_holders = client.get("/api/status/slots")
+    except HubUnavailable:
+        raise
+    except HubError as exc:
+        if exc.status in (401, 403):
+            holders_refused = exc.reason
+    if not isinstance(slot_holders, dict):
+        slot_holders = None
     runnable = _runnable(client)
     if ns.json:
-        ctx.dump({"status": status, "estop": estop, "runnable": runnable})
+        ctx.dump({"status": status, "estop": estop, "runnable": runnable, "slot_holders": slot_holders})
         return EXIT_OK
     agents = status.get("agents") or []
     ctx.say(f"nerva {status.get('version', '?')} — {client.base_url}")
+    banner = _estop_banner(estop)
+    if banner:   # H019: a paused hub says so at the top (Hermes' pause banner)
+        ctx.say(banner)
     ctx.say(f"  backend:     {status.get('llm_backend', 'none')}")
     state = str(status.get("model_state", "unknown"))
     ctx.say(
@@ -1278,11 +1327,18 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
     )
     ctx.say(f"  channels:    {names or '—'}")
     ctx.say(f"  service:     {_service_line(status.get('service'))}")
-    ctx.say(f"  slots:       {_slots_line(status.get('slots'))}")
+    slots = status.get("slots")
+    ctx.say(f"  slots:       {_slots_line(slots)}")
+    for row in _holder_rows(slot_holders):
+        ctx.say(row)
+    turns = slots.get("turns") if isinstance(slots, dict) else None
+    if holders_refused is not None and isinstance(turns, dict) and _count_value(turns.get("running")):
+        ctx.say(f"{_STATUS_INDENT}holders {_read_hint(client, holders_refused)}")
     if isinstance(estop, dict):
         if estop.get("engaged"):
-            state = estop.get("state") or {}
-            ctx.say(f"  e-stop:      ENGAGED since {state.get('engaged_at') or '?'} — {state.get('reason') or 'no reason given'}")
+            state = estop.get("state") if isinstance(estop.get("state"), dict) else {}
+            ctx.say(f"  e-stop:      ENGAGED since {_plain(state.get('engaged_at') or '?', 64)}"
+                    f" — {_plain(state.get('reason') or 'no reason given')}")
         else:
             ctx.say("  e-stop:      not engaged")
     else:

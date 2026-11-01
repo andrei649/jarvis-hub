@@ -20,6 +20,11 @@ the unit Nerva ships is installed on this host and active, and the hub's pid and
   shipped unit is looked for (systemd's unit directories when systemd is the init, the
   Windows service registry) and, when it is installed, its state is asked once
   (``systemctl is-active`` / ``sc query``, read-only, bounded by ``QUERY_TIMEOUT_S``).
+  Neither binary is looked up on ``PATH`` or in the current directory (on Windows
+  ``shutil.which`` searches the current directory first, so a planted ``sc.bat`` in the
+  folder ``nerva status`` runs from would run): ``systemctl`` is taken only from
+  :data:`POSIX_SYSTEM_BIN_DIRS` and ``sc.exe`` only from ``%SystemRoot%\\System32``
+  (``C:\\Windows`` when that is unset or not an absolute drive path); each must exist.
 - **state** — one of :data:`STATES`: ``managed``, ``unconfirmed`` (a weak signal names a
   manager), ``installed_not_managing``, ``installed_stopped`` (Hermes keeps these two
   apart: they need different fixes), ``not_installed``, ``unsupported`` (no unit is
@@ -34,10 +39,11 @@ from __future__ import annotations
 
 import logging
 import math
+import ntpath
 import os
+import posixpath
 import re
-import shutil
-import subprocess  # nosec B404 - fixed argv (a resolved systemctl/sc and a constant unit), read-only
+import subprocess  # nosec B404 - fixed argv (systemctl/sc from a fixed system folder, a constant unit), read-only
 import sys
 import threading
 import time
@@ -62,6 +68,10 @@ SYSTEM_UNIT_DIRS = ("/etc/systemd/system", "/run/systemd/system", "/usr/local/li
 USER_UNIT_DIRS = ("~/.config/systemd/user", "/etc/systemd/user", "/usr/lib/systemd/user")
 PROC_CGROUP = "/proc/self/cgroup"
 WINDOWS_SERVICES_KEY = "SYSTEM\\CurrentControlSet\\Services"
+#: The only folders ``systemctl`` is taken from: never ``PATH``, never the current directory.
+POSIX_SYSTEM_BIN_DIRS = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
+#: ``%SystemRoot%`` when the environment does not name an absolute drive path.
+WINDOWS_ROOT_FALLBACK = "C:\\Windows"
 
 MANAGERS = ("systemd", "launchd", "s6", "nssm", "none", "unknown")
 STATES = ("managed", "unconfirmed", "installed_not_managing", "installed_stopped", "not_installed",
@@ -79,6 +89,7 @@ _SYSTEMD_ACTIVE = {"active": True, "reloading": True, "refreshing": True, "activ
 #: (the process runs); 1 STOPPED, 3 STOP_PENDING.
 _SC_STATES = {1: False, 2: True, 3: False, 4: True, 5: True, 6: True, 7: True}
 _SC_STATE_LINE = re.compile(r"^\s*STATE\s*:\s*(\d+)\b", re.MULTILINE)
+_WINDOWS_DRIVE = re.compile(r"[A-Za-z]:")
 
 
 # ── the parts ────────────────────────────────────────────────────────────────
@@ -124,6 +135,38 @@ def _windows_service_present(name: str) -> bool | None:
         return False
     except OSError:
         return None
+
+
+def _first_file(candidates: list[str], isfile: Callable[[str], bool]) -> str | None:
+    for candidate in candidates:
+        try:
+            if isfile(candidate):
+                return candidate
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def systemctl_path(*, isfile: Callable[[str], bool] = os.path.isfile) -> str | None:
+    """``systemctl`` from the first of :data:`POSIX_SYSTEM_BIN_DIRS` that holds it, or None.
+    ``PATH`` is never searched: a relative or user-writable entry in it would decide what
+    the hub's ``/status`` probe and ``nerva status`` run."""
+    return _first_file([posixpath.join(folder, "systemctl") for folder in POSIX_SYSTEM_BIN_DIRS], isfile)
+
+
+def sc_path(env: Mapping[str, str] | None = None, *,
+            isfile: Callable[[str], bool] = os.path.isfile) -> str | None:
+    """``%SystemRoot%\\System32\\sc.exe``, else ``C:\\Windows\\System32\\sc.exe``, when it
+    exists; None otherwise. Never ``shutil.which``: on Windows it searches the current
+    directory before ``PATH``. A ``SystemRoot`` that is not an absolute drive path (``.``,
+    ``Windows``, a UNC share) is skipped, so the lookup cannot be pointed at the current
+    directory or the network."""
+    env = os.environ if env is None else env
+    root = str(env.get("SystemRoot") or env.get("SYSTEMROOT") or "").strip()
+    roots = [root] if _WINDOWS_DRIVE.fullmatch(ntpath.splitdrive(root)[0]) and ntpath.isabs(root) else []
+    if WINDOWS_ROOT_FALLBACK not in roots:
+        roots.append(WINDOWS_ROOT_FALLBACK)
+    return _first_file([ntpath.join(folder, "System32", "sc.exe") for folder in roots], isfile)
 
 
 def cgroup_unit(text: str) -> str | None:
@@ -176,14 +219,18 @@ def _manager(ident: Any, env: Mapping[str, str], platform: str) -> tuple[str, bo
     return supervisor, bool(getattr(ident, "supervisor_confirmed", False))
 
 
-def shipped_unit(*, platform: str = sys.platform, stat: Callable[[str], Any] = os.stat,
-                 which: Callable[[str], str | None] = shutil.which,
+def shipped_unit(*, platform: str = sys.platform, env: Mapping[str, str] | None = None,
+                 stat: Callable[[str], Any] = os.stat,
+                 isfile: Callable[[str], bool] = os.path.isfile,
                  run: Callable[[list[str]], str | None] = _run,
                  registry: Callable[[str], bool | None] = _windows_service_present,
                  expanduser: Callable[[str], str] = os.path.expanduser) -> dict:
     """The unit Nerva ships for this platform, on this host: ``applicable`` (a unit is
     shipped and its manager is here), ``unit``, ``installed`` and ``active`` (tri-state).
-    ``nerva status`` also reads it on the box when no hub answers."""
+    ``nerva status`` also reads it on the box when no hub answers. The manager's binary
+    comes from :func:`systemctl_path` / :func:`sc_path` (fixed system folders, each
+    candidate checked with *isfile*); when it is not there nothing runs and ``active``
+    is unknown."""
     if platform.startswith("linux"):
         booted = _present(stat, SD_BOOTED)
         if booted is False:
@@ -203,7 +250,7 @@ def shipped_unit(*, platform: str = sys.platform, stat: Callable[[str], Any] = o
         if scope is None:
             return {"applicable": True, "unit": SYSTEMD_UNIT, "installed": None if unreadable else False,
                     "active": None if unreadable else False}
-        binary = which("systemctl")
+        binary = systemctl_path(isfile=isfile)
         argv = [binary, *(["--user"] if scope == "user" else []), "is-active", SYSTEMD_UNIT] if binary else None
         return {"applicable": True, "unit": SYSTEMD_UNIT, "installed": True,
                 "active": systemd_state(run(argv)) if argv else None}
@@ -211,7 +258,7 @@ def shipped_unit(*, platform: str = sys.platform, stat: Callable[[str], Any] = o
         installed = registry(WINDOWS_SERVICE)
         active: bool | None = False if installed is False else None
         if installed:
-            binary = which("sc.exe") or which("sc")
+            binary = sc_path(env, isfile=isfile)
             active = windows_state(run([binary, "query", WINDOWS_SERVICE])) if binary else None
         return {"applicable": True, "unit": WINDOWS_SERVICE, "installed": installed, "active": active}
     # macOS (launchd) and the rest: Nerva ships no unit there, so there is nothing to look for.
@@ -227,7 +274,7 @@ def _row(manager: str, confirmed: bool, unit: str | None, installed: bool | None
 def probe(env: Mapping[str, str] | None = None, *, identity: Any = None, platform: str = sys.platform,
           read_text: Callable[[str], str] = _read_text, **unit_probes: Any) -> dict:
     """The manager half of the block (no pid or uptime); ``unit_probes`` go to
-    :func:`shipped_unit` (``stat``, ``which``, ``run``, ``registry``, ``expanduser``)."""
+    :func:`shipped_unit` (``stat``, ``isfile``, ``run``, ``registry``, ``expanduser``)."""
     env = os.environ if env is None else env
     ident = host_identity.identity() if identity is None else identity
     manager, confirmed = _manager(ident, env, platform)
@@ -238,7 +285,7 @@ def probe(env: Mapping[str, str] | None = None, *, identity: Any = None, platfor
         if confirmed:
             return _row(manager, True, unit, True, True, True, "managed")
         return _row(manager, False, unit, None, None, None, "unconfirmed")
-    shipped = shipped_unit(platform=platform, **unit_probes)
+    shipped = shipped_unit(platform=platform, env=env, **unit_probes)
     installed, active = shipped["installed"], shipped["active"]
     if not shipped["applicable"]:
         state = "unsupported"
@@ -300,5 +347,6 @@ def snapshot(*, started_at: float | None, now: Callable[[], float] = time.time,
     return block
 
 
-__all__ = ["MANAGERS", "STATES", "SYSTEMD_UNIT", "WINDOWS_SERVICE", "cached_probe", "cgroup_unit",
-           "probe", "reset_cache", "shipped_unit", "snapshot", "systemd_state", "windows_state"]
+__all__ = ["MANAGERS", "POSIX_SYSTEM_BIN_DIRS", "STATES", "SYSTEMD_UNIT", "WINDOWS_ROOT_FALLBACK",
+           "WINDOWS_SERVICE", "cached_probe", "cgroup_unit", "probe", "reset_cache", "sc_path",
+           "shipped_unit", "snapshot", "systemctl_path", "systemd_state", "windows_state"]

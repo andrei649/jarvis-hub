@@ -20,10 +20,14 @@ whether the shipped unit is installed and active, the pid and uptime
 (`agents.core.service_status`); `slots` says how many turns hold a session's turn lease
 (one per session, no hub-wide cap), each running channel's chat lanes against their cap,
 and the sub-agents against theirs. Counts only — no session id or sender leaves this
-public read — and a count the hub cannot read is `None`, never a guessed zero.
+public read — and a count the hub cannot read is `None`, never a guessed zero. Who holds
+the slots (Hermes' one row per holder: surface, session id, age) is
+`GET /api/status/slots`, behind the user guard like `GET /sessions`; `nerva status`
+prints its rows under `slots:` when the hub returns them.
 """
 
 import asyncio
+import re
 import sys
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -33,13 +37,18 @@ from fastapi import APIRouter, Depends, Query
 from agents.core import service_status
 from agents.core.app_state import get_gateway, get_orch
 from agents.core.llm.local_model_inventory import project_llm_status
-from agents.core.routers._deps import admin_guard
+from agents.core.routers._deps import admin_guard, user_guard
+from agents.core.validation import is_valid_session_id
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["status"])
 
 #: H133 — a session counts as active when its last turn (or keep) is this recent.
 ACTIVE_SESSION_WINDOW_S = 900
+#: H019 — at most this many holder rows leave ``GET /api/status/slots`` (the total is sent).
+SLOT_HOLDERS_LIMIT = 200
+#: A holder's surface is a channel id; anything else is sent as ``unknown``.
+_SURFACE = re.compile(r"[a-z0-9][a-z0-9_.\-]{0,31}")
 
 
 def _web():
@@ -156,6 +165,43 @@ def _slot_usage(orch) -> dict:
     return {"turns": _turn_slots(orch), "lanes": _lane_slots(orch), "subagents": _subagent_slots(orch)}
 
 
+def _iso_instant(value) -> str | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not value > 0:
+        return None
+    try:
+        return datetime.fromtimestamp(value, UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _holder_row(row) -> dict | None:
+    if not isinstance(row, dict):
+        return None
+    surface, session_id = row.get("surface"), row.get("session_id")
+    return {
+        "surface": surface if isinstance(surface, str) and _SURFACE.fullmatch(surface) else "unknown",
+        "session_id": session_id if is_valid_session_id(session_id) else None,
+        "started_at": _iso_instant(row.get("started_at")),
+        "age_s": _count(row.get("age_s")),
+    }
+
+
+def _slot_holders(orch) -> list[dict] | None:
+    """H019 — one row per turn holding a slot, oldest first (``Orchestrator.turn_holders``):
+    the surface, the session id (only an id the session store would accept; else None),
+    when it took the slot and its age. None when the hub cannot list them."""
+    reader = getattr(orch, "turn_holders", None)
+    if not callable(reader):
+        return None
+    try:
+        rows = reader()
+    except Exception:
+        return None
+    if not isinstance(rows, list):
+        return None
+    return [row for row in (_holder_row(item) for item in rows) if row is not None]
+
+
 async def _service_block() -> dict:
     """H019 — the service block (``service_status.snapshot``) off the event loop: its unit
     probe reads files and may ask the service manager once per ``PROBE_TTL_S``."""
@@ -223,6 +269,22 @@ async def status():
         "slots": _slot_usage(orch),                   # H019: turns / lanes / sub-agents in use
         # H275: the HUD shows a banner while the hub runs in safe mode.
         "safe_mode": _safe_mode_status(),
+    })
+
+
+@router.get("/api/status/slots", dependencies=[Depends(user_guard)])
+async def status_slots():
+    """H019 — who holds the slots ``GET /status`` counts (Hermes ``hermes status`` →
+    Slots, one row per holder: surface, session id, age). User-guarded like
+    ``GET /sessions``: session ids never leave the public ``/status``. Read-only."""
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    holders = _slot_holders(orch)
+    return nocache_json({
+        "slots": _slot_usage(orch),
+        "holders": holders[:SLOT_HOLDERS_LIMIT] if holders is not None else None,
+        "holders_total": len(holders) if holders is not None else None,
     })
 
 

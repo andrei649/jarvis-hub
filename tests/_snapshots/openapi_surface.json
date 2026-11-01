@@ -277,6 +277,7 @@
   "GET /api/skills/pending/{name}": "pending_skill_detail_api_skills_pending__name__get",
   "GET /api/skills/proposals": "skill_proposals_api_skills_proposals_get",
   "GET /api/status": "api_status_api_status_get",
+  "GET /api/status/slots": "status_slots_api_status_slots_get",
   "GET /api/subagents": "subagents_list_api_subagents_get",
   "GET /api/support/bundle": "support_bundle_api_support_bundle_get",
   "GET /api/swarm/summary": "swarm_summary_api_swarm_summary_get",
