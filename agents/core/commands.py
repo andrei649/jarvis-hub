@@ -162,6 +162,11 @@ class CommandRegistry:
         name, args = parsed
         if name == "kanban" and len(text.strip()) > _MAX_ARGS:
             return self._observed(CommandOutcome(name, "refused", "Kanban command is too long; nothing changed."))
+        if name in {"goal", "subgoal"} and len(text.strip()) > _MAX_ARGS:
+            # H462: a goal cut short is a different goal — a dropped "must not" line
+            # would reach the approval card looking complete.
+            return self._observed(CommandOutcome(
+                name, "refused", f"/{name} is longer than {_MAX_ARGS} characters; nothing was proposed or added."))
         command = self.get(name)
         if command is None:
             from .quick_commands import dispatch_quick
@@ -642,6 +647,7 @@ def _personality_refusal(preset, wanted: str, usage: str) -> str:
 
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
+    from .goal_commands import goal_command, subgoal_command
 
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
@@ -672,6 +678,10 @@ def build_default_registry() -> CommandRegistry:
                                    tier=ADMIN, usage="<action> [arguments]"))
     registry.register(SlashCommand("project", "manage your projects and folders", _project,
                                    tier=ADMIN, usage="<action> [arguments]"))
+    registry.register(SlashCommand("goal", "propose a goal for a work run; it waits for your approval",
+                                   goal_command, tier=ADMIN, usage="<text>"))
+    registry.register(SlashCommand("subgoal", "add an acceptance criterion to the running goal",
+                                   subgoal_command, tier=ADMIN, usage="[run id] <criterion>"))
     return registry
 
 

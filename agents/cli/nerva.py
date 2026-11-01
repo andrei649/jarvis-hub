@@ -431,6 +431,21 @@ def build_parser() -> argparse.ArgumentParser:
     clear_wait.add_argument("run_id")
     clear_wait.add_argument("--json", action="store_true")
 
+    goal = verbs.add_parser("goal", help="propose a goal for a work run, or add a criterion to one (H462)")
+    goal_verbs = goal.add_subparsers(dest="action", required=True, metavar="action")
+    goal_propose = goal_verbs.add_parser(
+        "propose", help="send a goal to the decision inbox; nothing runs until you approve it (admin)")
+    goal_propose.add_argument(
+        "lines", nargs="+", metavar="line",
+        help="the goal: a headline, then optional 'verify: ...', 'scope: ...', 'step: <kind>: ...', "
+             "'must not: ...', 'stop when: ...' lines, one per argument; '-' reads them from stdin")
+    goal_propose.add_argument("--json", action="store_true")
+    goal_subgoal = goal_verbs.add_parser(
+        "subgoal", help="add an acceptance criterion to a running goal; it resets nothing (user)")
+    goal_subgoal.add_argument("run_id")
+    goal_subgoal.add_argument("criterion", nargs="+")
+    goal_subgoal.add_argument("--json", action="store_true")
+
     pairing = verbs.add_parser("pairing", help="who may talk to the agent over a DM channel (admin, H051)")
     pairing_verbs = pairing.add_subparsers(dest="action", required=True, metavar="action")
     pairing_list = pairing_verbs.add_parser("list", help="every sender the pairing store knows, and its status")
@@ -2877,8 +2892,9 @@ def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
     """H464 — read the work runs, and let a parked one go.
 
     There is no verb that starts a run, for the same reason there is no route: a run
-    opens only on a goal the owner approved in the decision inbox. ``clear-wait``
-    grants nothing — the run goes back to the cadence it was already approved for.
+    opens only on a goal the owner approved in the decision inbox (``nerva goal
+    propose`` only asks for one, H462). ``clear-wait`` grants nothing — the run goes
+    back to the cadence it was already approved for.
     """
     client = ctx.client()
     if ns.action == "list":
@@ -2911,6 +2927,47 @@ def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say(f"not cleared: it is now waiting on {reply['waiting_on']}")
         else:
             ctx.say("no barrier")
+    return EXIT_OK
+
+
+def cmd_goal(ns: argparse.Namespace, ctx: Context) -> int:
+    """H462 — say "goal: ..." from the shell.
+
+    ``propose`` sends the goal to the hub's one front door (``POST
+    /api/company/goals``, the same as ``/goal`` in chat): the card crosses the Action
+    Kernel and waits in the decision inbox, and a run opens only when it is accepted
+    there. ``subgoal`` adds a criterion to a running goal, which only narrows it.
+    """
+    client = ctx.client()
+    if ns.action == "propose":
+        lines = list(ns.lines)
+        if lines == ["-"]:
+            lines = ctx.inp.read().splitlines()
+        text = "\n".join(line for line in lines if line.strip())
+        if not text.strip():
+            ctx.err.write("no goal given\n")
+            return EXIT_USAGE
+        reply = client.post("/api/company/goals", {"text": text})
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        reply = reply if isinstance(reply, dict) else {}
+        ctx.say(f"proposed as task {reply.get('task_id')}: decide it in the decision inbox "
+                "(nerva approvals list); nothing runs until you accept it")
+        for line in reply.get("card") or ():
+            ctx.say(f"  {line}")
+        return EXIT_OK
+    if not _RUN_ID.match(ns.run_id or ""):
+        ctx.err.write(f"not a run id: {ns.run_id!r} (letters, digits, _ and -)\n")
+        return EXIT_USAGE
+    criterion = " ".join(ns.criterion).strip()
+    reply = client.post(f"/api/company/runs/{ns.run_id}/subgoals", {"text": criterion})
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    added = reply.get("subgoal") if isinstance(reply, dict) else None
+    added = added if isinstance(added, dict) else {}
+    ctx.say(f"added {added.get('id')}: {added.get('describe')}")
     return EXIT_OK
 
 
@@ -4975,6 +5032,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "skills": cmd_skills,
     "estop": cmd_estop,
     "company": cmd_company,
+    "goal": cmd_goal,
     "pairing": cmd_pairing,
     "provider": cmd_custom_provider,
     "webhook": cmd_webhook,

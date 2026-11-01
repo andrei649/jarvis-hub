@@ -149,6 +149,15 @@ BARRIER_CLEAR_REASONS = (
 )
 BARRIER_CLEARED_BY = ("check", "owner", "ledger", "scheduler")
 
+# H462 — acceptance criteria the owner adds to a running goal (``/subgoal``). An
+# event on the run, never a field of the row: adding one changes neither the run's
+# fingerprint, nor its status, nor its budget, so the run is not reset. Only an
+# open run takes one, and only before grading started: once a verdict is written
+# the criteria it was graded against are fixed.
+MAX_SUBGOALS = 10
+_MAX_SUBGOAL_CHARS = 500
+SUBGOAL_OPEN_STATUSES = frozenset({"planning", "working", "blocked"})
+
 # H464c — an approval ref as the goal contract writes it (``task:<id>:<decider>``):
 # one durable human decision on one task. Such an approval opens ONE run, ever.
 _APPROVAL_TASK_REF = re.compile(r"^task:(\d+):")
@@ -1718,6 +1727,62 @@ class WorkRunLedger:
             return None
         return {"reason": str(_load(last["detail"]).get("reason") or ""), "since": last["at"]}
 
+    # ── acceptance criteria added mid-run (H462) ────────────────────────
+
+    def add_subgoal(self, run_id: str, describe: str, *, by: str = "owner") -> dict[str, Any]:
+        """Add one acceptance criterion to a running goal, without resetting it.
+
+        Narrowing only: a criterion can make the run harder to pass, never easier,
+        and it widens nothing the owner approved (scope, budget, plan). So, like a
+        stop, it needs no approval. It is a ``subgoal.added`` event, outside the run
+        row and its fingerprint: the status, the budget and the steps are left as
+        they were. Refused on a run that is not open (``run_<status>``), on one
+        that grading already started on (``run_already_graded``: the criteria a
+        verdict was given against are fixed), and past :data:`MAX_SUBGOALS`.
+        Returns the criterion as recorded: ``id`` (``subgoal:<n>``), ``describe``,
+        ``by`` and ``at``.
+        """
+        text = " ".join(_text(describe, "subgoal", max_chars=_MAX_SUBGOAL_CHARS).split())
+        who = _text(by, "by", max_chars=128, required=False) or "owner"
+        with self._lock:
+            run = self._run_locked(run_id)
+            if run.status not in SUBGOAL_OPEN_STATUSES:
+                raise WorkRunError(f"run_{run.status}")
+            graded = self._conn.execute(
+                "SELECT 1 FROM verdicts WHERE run_id = ? LIMIT 1", (run_id,)
+            ).fetchone()
+            if graded is not None:
+                raise WorkRunError("run_already_graded")
+            count = self._conn.execute(
+                "SELECT COUNT(*) FROM run_events WHERE run_id = ? AND kind = 'subgoal.added'",
+                (run_id,),
+            ).fetchone()[0]
+            if int(count) >= MAX_SUBGOALS:
+                raise WorkRunError("too_many_subgoals")
+            record = {"id": f"subgoal:{int(count) + 1}", "describe": text, "by": who}
+            now = self._now()
+            self._event_locked(run_id, "subgoal.added", now, record)
+            self._conn.commit()
+        logger.info("criterion %s added to run %s by %s", record["id"], run_id, who)
+        return {**record, "at": now}
+
+    def subgoals(self, run_id: str) -> list[dict[str, Any]]:
+        """The criteria the owner added to this run, oldest first (H462). Read from
+        the append-only audit, so they survive a restart with the run."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT at, detail FROM run_events WHERE run_id = ? AND kind = 'subgoal.added' "
+                "ORDER BY seq",
+                (run_id,),
+            ).fetchall()
+        out = []
+        for row in rows:
+            detail = _load(row["detail"])
+            if detail.get("id") and detail.get("describe"):
+                out.append({"id": str(detail["id"]), "describe": str(detail["describe"]),
+                            "by": str(detail.get("by") or ""), "at": row["at"]})
+        return out
+
     def events(self, run_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
         """The run's audit — barrier sets and clears, and holds (H464d) — newest
         first. Append-only: there is no API to rewrite or delete an event."""
@@ -1851,6 +1916,9 @@ class WorkRunLedger:
             # H464d: the hold the run is in, if any — its plan cannot be read just
             # now — so the brief can say it is held and why.
             "hold": self.hold_state(run_id),
+            # H462: the acceptance criteria the owner added mid-run. The verifier
+            # folds every one of them in as a required check.
+            "subgoals": self.subgoals(run_id),
             # A run is only "authorised throughout" when every step that changed
             # something names the durable task that was approved to change it.
             "unauthorised_steps": [
@@ -1864,6 +1932,8 @@ __all__ = [
     "FLAG",
     "KIND",
     "MAX_BARRIERS_PER_RUN",
+    "MAX_SUBGOALS",
+    "SUBGOAL_OPEN_STATUSES",
     "MIGRATIONS",
     "RUN_STATUSES",
     "STEP_OUTCOMES",

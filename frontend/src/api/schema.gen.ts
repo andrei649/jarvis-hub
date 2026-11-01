@@ -11811,6 +11811,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/company/goals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Company Goal Propose
+         * @description Propose a goal for the owner's approval (H462). Opens nothing.
+         *
+         *     The card crosses the Action Kernel and waits in the decision inbox; the run
+         *     opens only when the owner accepts it there. Answers the card as the owner will
+         *     read it and the durable task id — never the task payload.
+         */
+        post: operations["company_goal_propose_api_company_goals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/company/runs/{run_id}/subgoals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Company Run Subgoal
+         * @description Add an acceptance criterion to a running goal (H462 ``/subgoal``).
+         *
+         *     Narrowing only, so it needs no approval: the run is not reset (its status,
+         *     budget, steps and fingerprint are untouched), and the verifier will not pass it
+         *     until this criterion holds too. Refused once grading started on the run.
+         */
+        post: operations["company_run_subgoal_api_company_runs__run_id__subgoals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operator/benchmark": {
         parameters: {
             query?: never;
@@ -14271,6 +14319,14 @@ export interface components {
             /** Description */
             description: string;
         };
+        /**
+         * GoalProposalBody
+         * @description The goal, as ``/goal`` takes it: a headline and optional field lines.
+         */
+        GoalProposalBody: {
+            /** Text */
+            text: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -15456,6 +15512,14 @@ export interface components {
         SubAgentSteerBody: {
             /** Message */
             message: string;
+        };
+        /**
+         * SubgoalBody
+         * @description One acceptance criterion to add to a running goal.
+         */
+        SubgoalBody: {
+            /** Text */
+            text: string;
         };
         /** SyncPullBody */
         SyncPullBody: {
@@ -34057,6 +34121,74 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_goal_propose_api_company_goals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalProposalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_run_subgoal_api_company_runs__run_id__subgoals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubgoalBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -325,6 +325,16 @@ lands in the decision inbox as an ask-tier task — the contract's authority is
 step that changed something with no durable task id fails verification, and only
 the judge (after the verifier) can mark a run succeeded.
 
+**Asking for a goal (H462).** The owner proposes one with `/goal <text>` in chat,
+`POST /api/company/goals` (admin), `nerva goal propose` or the Company room's
+"propose a goal" form — all the same front door (`autonomy/goal_intake.py`). With
+the flag off it refuses (`company_mode_off`): an approved goal would open a run that
+nothing works. With it on, the `goal.approve` card crosses the Action Kernel and
+waits in the decision inbox; nothing opens until the owner accepts it there.
+`/subgoal <criterion>` (or `POST /api/company/runs/{run_id}/subgoals`, `nerva goal
+subgoal`) adds an acceptance criterion to a running goal — an event on the run that
+resets nothing, which the verifier then requires.
+
 **What it takes to actually run.** As of `company_runtime.py`, the flag being set
 **at boot** is what registers the `company-mode-sweep` job
 (`scheduler_service.schedule_company_mode`, every `autonomy.company_tick_seconds`,

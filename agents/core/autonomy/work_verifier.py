@@ -25,6 +25,9 @@ that leap. Its rules are deliberately boring and mechanical:
   naming the durable approved task that authorised it fails verification
   outright, whatever the probes say: work Nerva was not authorised to do cannot
   be laundered into a passing result.
+* **A criterion the owner added mid-run is a required check (H462).** Every
+  ``/subgoal`` on the run's record is checked with the goal's own checks; one
+  nobody can probe is ``unverifiable``, so the run is not done until each holds.
 * **The verdict is written once, through the ledger.** The verifier has no
   durable state of its own.
 
@@ -161,6 +164,29 @@ async def _run_probe(check: Check) -> CheckOutcome:
     )
 
 
+def _added_criteria(snapshot: Mapping[str, Any], checks: Sequence[Check]) -> list[Check]:
+    """The criteria the owner added mid-run (H462 ``/subgoal``) that ``checks`` does
+    not already cover, as REQUIRED checks with no probe.
+
+    Folded in here, at the grader, rather than left to whoever builds ``checks``: a
+    wiring that forgot them would otherwise pass a run the owner said was not done
+    yet. A caller that can look for one passes a :class:`Check` with the criterion's
+    id and its own probe; one nobody can look for grades ``unverifiable``, which is
+    never a pass — words added in a chat are not evidence either.
+    """
+    covered = {str(check.id) for check in checks}
+    added = []
+    for row in snapshot.get("subgoals") or ():
+        if not isinstance(row, Mapping):
+            continue
+        check_id = _text(row.get("id"), 64)
+        describe = _text(row.get("describe"))
+        if check_id and describe and check_id not in covered:
+            covered.add(check_id)
+            added.append(Check(id=check_id, describe=describe, probe=None, required=True))
+    return added
+
+
 class WorkVerifier:
     """Grades the evidence of one run. Stateless; safe to construct per verification."""
 
@@ -181,6 +207,7 @@ class WorkVerifier:
         """
         snapshot = self._ledger.snapshot(run_id)
         unauthorised = tuple(int(seq) for seq in snapshot.get("unauthorised_steps", ()))
+        checks = [*checks, *_added_criteria(snapshot, checks)]
         outcomes = tuple([await _run_probe(check) for check in checks])
         report = self._grade(outcomes, unauthorised, snapshot)
         if record:
