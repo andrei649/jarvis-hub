@@ -425,7 +425,8 @@ def build_parser() -> argparse.ArgumentParser:
                        "from --skill, or are asked for one a line on a terminal when there is none")
     bundle_create.add_argument("name", help="the bundle's name (/<its slug> loads it in chat)")
     bundle_create.add_argument("--skill", "-s", action="append", default=[], metavar="SKILL",
-                               help="an installed skill's name or folder (repeat for each)")
+                               help="an installed skill's name or folder, or its path below the skills "
+                                    "folder as Hermes writes one (productivity/maps); repeat for each")
     bundle_create.add_argument("--description", "-d", default="")
     bundle_create.add_argument("--instruction", "-i", default=None,
                                help="extra guidance put before the skills when the bundle is loaded; "

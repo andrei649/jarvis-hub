@@ -108,8 +108,9 @@ async def switch_skill(body: SkillSwitchBody):
 
     H026 — ``bundle`` switches the installed members of one named bundle the same way,
     through the same exact-target approval for on, so a bundle grants nothing that
-    switching each member would not. Members that are not installed come back under
-    ``missing``."""
+    switching each member would not. A member is a skill's name, or its path matched
+    exactly as Hermes writes one (``bundles.find_member``); members that name no
+    installed skill come back under ``missing``."""
     import asyncio
 
     from agents.core.skills import switches
@@ -147,7 +148,8 @@ async def switch_skill(body: SkillSwitchBody):
             return JSONResponse({"error": f"no bundle named {body.bundle!r}", "reason": "not_found"},
                                 status_code=404)
         bundle_slug = named.slug
-        targets, missing = bundles.resolve(named.skills, loaded.values())
+        # A member is a name, or a path matched exactly (bundles.find_member).
+        targets, missing = await asyncio.to_thread(bundles.resolve, named.skills, list(loaded.values()))
         if not targets:
             return JSONResponse({"error": f"no skill of bundle {named.name!r} is installed",
                                  "reason": "not_found", "missing": missing}, status_code=404)
@@ -256,7 +258,8 @@ async def list_skill_bundles():
     except OSError:
         return _bundles_unavailable()
     loaded = _installed_skills(orch)
-    return {"bundles": [bundles.describe(row, loaded) for row in rows], "problems": skipped,
+    described = await asyncio.to_thread(lambda: [bundles.describe(row, loaded) for row in rows])
+    return {"bundles": described, "problems": skipped,
             "directory": str(bundles.bundles_dir()), "limits": {"bundles": bundles.MAX_BUNDLES,
                                                                  "skills": bundles.MAX_MEMBERS}}
 
@@ -277,7 +280,7 @@ async def show_skill_bundle(name: str = PathParam(..., min_length=1, max_length=
         return _bundles_unavailable()
     if bundle is None:
         return JSONResponse({"error": f"no bundle named {name!r}", "reason": "not_found"}, status_code=404)
-    return {"bundle": bundles.describe(bundle, _installed_skills(orch))}
+    return {"bundle": await asyncio.to_thread(bundles.describe, bundle, _installed_skills(orch))}
 
 
 class SkillBundleBody(BaseModel):
@@ -293,27 +296,32 @@ class SkillBundleBody(BaseModel):
 @router.post("/api/skills/bundles", dependencies=[Depends(admin_guard)])
 async def create_skill_bundle(body: SkillBundleBody):
     """H026 — create a bundle, or replace one with ``overwrite``. Every member must be an
-    installed skill (its name or folder); the bundle stores the skill's name. Creating a
-    bundle switches nothing. Only the bundle's own file is ever replaced (``replaced``
-    says so); a new bundle whose file name another file holds is written beside it."""
+    installed skill: its name or folder, or (Hermes' other form) its path relative to the
+    skills folder, or an absolute path that is exactly its folder inside the skills
+    folder, matched exactly and never through ``..`` or a link out of it. The bundle
+    stores the skill's name. Creating a bundle switches nothing. Only the bundle's own
+    file is ever replaced (``replaced`` says so); a new bundle whose file name another
+    file holds is written beside it."""
     import asyncio
 
-    from agents.core.skills import bundles, switches
+    from agents.core.skills import bundles
 
     orch = get_orch()
     if not orch or getattr(orch, "skills", None) is None:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     loaded = _installed_skills(orch)
-    members, unknown = [], []
+    members, unknown, why = [], [], {}
     for member in (m for m in body.skills if m.strip()):
-        skill = switches.find(loaded, member)
+        skill, reason = await asyncio.to_thread(bundles.find_member, loaded, member)
         if skill is None:
             unknown.append(member)
+            why[member] = reason
         else:
             members.append(skill.name)
     if unknown:
-        return JSONResponse({"error": f"not installed: {', '.join(unknown)}", "reason": "unknown_skill",
-                             "unknown": unknown}, status_code=422)
+        named = ", ".join(m if why[m] == bundles.NOT_INSTALLED else f"{m} ({why[m]})" for m in unknown)
+        return JSONResponse({"error": f"not installed: {named}", "reason": "unknown_skill",
+                             "unknown": unknown, "why": why}, status_code=422)
     try:
         bundle, replaced = await asyncio.to_thread(
             bundles.save, body.name, members, description=body.description, instruction=body.instruction,

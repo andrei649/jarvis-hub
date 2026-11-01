@@ -3367,8 +3367,9 @@ export interface paths {
          *
          *     H026 — ``bundle`` switches the installed members of one named bundle the same way,
          *     through the same exact-target approval for on, so a bundle grants nothing that
-         *     switching each member would not. Members that are not installed come back under
-         *     ``missing``.
+         *     switching each member would not. A member is a skill's name, or its path matched
+         *     exactly as Hermes writes one (``bundles.find_member``); members that name no
+         *     installed skill come back under ``missing``.
          */
         post: operations["switch_skill_api_skills_switch_post"];
         delete?: never;
@@ -3394,9 +3395,12 @@ export interface paths {
         /**
          * Create Skill Bundle
          * @description H026 — create a bundle, or replace one with ``overwrite``. Every member must be an
-         *     installed skill (its name or folder); the bundle stores the skill's name. Creating a
-         *     bundle switches nothing. Only the bundle's own file is ever replaced (``replaced``
-         *     says so); a new bundle whose file name another file holds is written beside it.
+         *     installed skill: its name or folder, or (Hermes' other form) its path relative to the
+         *     skills folder, or an absolute path that is exactly its folder inside the skills
+         *     folder, matched exactly and never through ``..`` or a link out of it. The bundle
+         *     stores the skill's name. Creating a bundle switches nothing. Only the bundle's own
+         *     file is ever replaced (``replaced`` says so); a new bundle whose file name another
+         *     file holds is written beside it.
          */
         post: operations["create_skill_bundle_api_skills_bundles_post"];
         delete?: never;

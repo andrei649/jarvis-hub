@@ -24,10 +24,15 @@ grants nothing. It does two things, each through the path one skill already take
 So a bundle never reaches further than switching or reading each of its skills one by
 one would.
 
-Members are skill names. Creating a bundle through the hub resolves each one against
-the installed skills (a name or a folder, the manifest name winning, as the switch
-does) and stores the name; a member that is not installed later is reported as
-missing and skipped by a switch, never matched loosely.
+Members are skill names or, as in Hermes, paths relative to the skills folder
+(``productivity/maps``). A name resolves as the switch resolves one skill (the manifest
+name or the folder, the manifest name winning); a path only by exact match: the skill
+folder at exactly that path below a skills folder, or the skill imported from exactly
+that path below Hermes' skills folder, and an absolute path only when it is inside a
+skills folder and is exactly a skill's folder (:func:`find_member`). Creating a bundle
+through the hub resolves each member against the installed skills and stores the name;
+a member that names no installed skill later is reported as missing and skipped by a
+switch and a load, never matched loosely.
 
 Reads re-scan the folder when a file in it changed (a stat per file); ``reload``
 re-reads every file whatever the stat says and reports what was added, removed or
@@ -168,17 +173,22 @@ def clean_instruction(value: Any) -> str:
 
 # ── reading the folder ───────────────────────────────────────────────────────────
 
-def _entries(directory: Path) -> list[tuple[str, os.stat_result]]:
+def _entries(directory: Path) -> list[tuple[str, os.stat_result | OSError]]:
+    """The bundle files of ``directory`` with their ``lstat`` (or the error one gave).
+    Only the folder itself failing to list raises (an absent folder holds none); one
+    file that cannot be looked at is that file's problem, never the folder's."""
     try:
         names = sorted(n for n in os.listdir(directory) if n.endswith(SUFFIXES) and not n.startswith("."))
     except FileNotFoundError:
         return []
-    out = []
+    out: list[tuple[str, os.stat_result | OSError]] = []
     for name in names:
         try:
             out.append((name, os.lstat(directory / name)))
         except FileNotFoundError:
             continue
+        except OSError as exc:
+            out.append((name, exc))
     return out
 
 
@@ -187,10 +197,13 @@ def _signature(directory: Path) -> tuple:
         top = os.stat(directory).st_mtime_ns
     except FileNotFoundError:
         return ("absent",)
-    return (top, tuple((n, s.st_mtime_ns, s.st_size, s.st_ino) for n, s in _entries(directory)))
+    return (top, tuple((n, "unreadable") if isinstance(s, OSError) else (n, s.st_mtime_ns, s.st_size, s.st_ino)
+                       for n, s in _entries(directory)))
 
 
-def _parse(path: Path, info: os.stat_result) -> Bundle:
+def _parse(path: Path, info: os.stat_result | OSError) -> Bundle:
+    if isinstance(info, OSError):
+        raise BundleError("unreadable", f"cannot be looked at ({info.strerror or info})")
     if not stat.S_ISREG(info.st_mode):
         raise BundleError("not_a_file", "not a regular file (a link or a folder is not read)")
     if info.st_size > MAX_FILE_BYTES:
@@ -202,8 +215,11 @@ def _parse(path: Path, info: os.stat_result) -> Bundle:
         fd = os.open(path, flags)
     except OSError as exc:
         raise BundleError("unreadable", f"cannot be read ({exc.strerror or exc})") from None
-    with os.fdopen(fd, "rb") as handle:
-        raw = handle.read(MAX_FILE_BYTES + 1)
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            raw = handle.read(MAX_FILE_BYTES + 1)
+    except OSError as exc:
+        raise BundleError("unreadable", f"cannot be read ({exc.strerror or exc})") from None
     if len(raw) > MAX_FILE_BYTES:
         raise BundleError("too_large", f"more than {MAX_FILE_BYTES:,} bytes")
     try:
@@ -397,22 +413,239 @@ def delete(name: Any) -> Bundle:
 
 
 # ── members against the installed skills ─────────────────────────────────────────
+#
+# Hermes' ``skills:`` holds "skill names or paths relative to your skills directory". A
+# member with no ``/`` is a name, resolved as ``POST /api/skills/switch`` resolves one
+# skill (:func:`switches.find`: the manifest name or the folder, any casing). A member
+# with a ``/`` in it, or an absolute one, is a path, and a path resolves only by exact
+# match, never by its last component alone (``productivity/maps`` never means some other
+# folder ``maps``):
+#
+# * relative (``productivity/maps``, ``maps/``): the installed skill whose folder is at
+#   exactly that path below a skills folder (the owner's folder first, then the shipped
+#   one: the order in which discovery lets the owner's copy win); else the skill imported
+#   from Hermes whose import record says it came from exactly that path below Hermes'
+#   skills folder (``<home>/.hermes/skills/productivity/maps``, or
+#   ``skills/productivity/maps`` of the pinned Hermes repository), which is where a path
+#   in a bundle copied from Hermes points. Two imports from one path are ambiguous: none.
+# * absolute: only a path inside a skills folder that is exactly an installed skill's
+#   folder.
+#
+# No component may be empty, ``.`` or ``..``, and a link below the skills folder never
+# leads a path out of it (the real path must be the folder's real path plus exactly the
+# components typed). A path that matches nothing is missing, as a name is.
 
-def resolve(members: Iterable[str], loaded: Iterable[Any]) -> tuple[list[Any], list[str]]:
-    """``(installed skills, member names not installed)`` for a bundle's members, each
-    resolved as ``POST /api/skills/switch`` resolves one skill (:func:`switches.find`)."""
+#: Why a member names no installed skill, in the owner's words.
+NOT_INSTALLED = "not installed"
+PATH_NOT_FOUND = "no installed skill at that path"
+PATH_OUTSIDE = "not a path inside the skills folder"
+PATH_AMBIGUOUS = "more than one imported skill came from that path"
+_RECORD_MAX_BYTES = 64 * 1024
+_RECORD_CACHE_MAX = 1024
+_RECORDS: dict[str, tuple[tuple, tuple[str, ...] | None]] = {}
+
+
+def is_path(member: Any) -> bool:
+    """Whether a bundle member is a path (Hermes' other form) rather than a skill name."""
+    text = member.strip() if isinstance(member, str) else ""
+    return bool(text) and ("/" in text or "\\" in text or os.path.isabs(text))
+
+
+def _split_path(text: str) -> tuple[str, tuple[str, ...]] | None:
+    """``(anchor, components)`` of a member path (anchor ``""`` when relative), or None
+    when a component is empty, ``.`` or ``..``, or the text holds a NUL or, off Windows,
+    a backslash. A trailing ``/`` (a folder) is allowed."""
+    if "\0" in text:
+        return None
+    if os.sep == "\\":
+        text = text.replace("\\", "/")
+    elif "\\" in text:
+        return None
+    drive, rest = os.path.splitdrive(text)
+    anchor = ""
+    if os.path.isabs(text):
+        if not rest.startswith("/"):
+            return None
+        anchor, rest = drive + "/", rest[1:]
+    elif drive:
+        return None                                   # "C:x": relative to a drive's cwd
+    rest = rest[:-1] if rest.endswith("/") else rest
+    parts = tuple(rest.split("/")) if rest else ()
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        return None
+    return anchor, parts
+
+
+def _skill_roots() -> list[Path]:
+    """The skills folders discovery reads, the owner's first (its copy wins there too)."""
+    from . import loader as skill_loader
+
+    roots: list[Path] = []
+    for root in (skill_loader._user_skills_dir(), skill_loader.SKILLS_DIR):
+        if root is not None and Path(root) not in roots:
+            roots.append(Path(root))
+    return roots
+
+
+def _below(path: Any, base: Any) -> tuple[str, ...] | None:
+    """The components of ``path`` below ``base``, lexically (no link is followed)."""
+    if not path or not base:
+        return None
+    try:
+        rel = Path(os.path.abspath(path)).relative_to(os.path.abspath(base))
+    except (ValueError, TypeError, OSError):
+        return None
+    return rel.parts or None
+
+
+def _no_link_below(base: Any, parts: tuple[str, ...]) -> bool:
+    """``base/parts`` is reached through no link: its real path is ``base``'s real path
+    plus exactly these components, so nothing below ``base`` leads out of it."""
+    try:
+        real = os.path.realpath(os.path.join(base, *parts))
+        return real == os.path.join(os.path.realpath(base), *parts)
+    except (OSError, ValueError):
+        return False
+
+
+def _hermes_parts(record: Any) -> tuple[str, ...] | None:
+    """The path below Hermes' skills folder an import record says a skill came from: a
+    local import of ``<home>/.hermes/skills/<path>/SKILL.md`` (``nerva import --from
+    hermes``), or ``skills/<path>/SKILL.md`` of the pinned Hermes repository."""
+    from pathlib import PurePath, PurePosixPath
+
+    from .importer import HERMES_REPO
+
+    if not isinstance(record, Mapping):
+        return None
+    source = record.get("source_path")
+    if not isinstance(source, str) or not source or "\0" in source or len(source) > 4096:
+        return None
+    if record.get("source_install") == "hermes":
+        path = PurePath(source)
+        if not path.is_absolute():
+            return None
+        parts = path.parts
+        starts = [i for i in range(len(parts) - 1) if parts[i] == ".hermes" and parts[i + 1] == "skills"]
+        if not starts:
+            return None
+        parts = parts[starts[-1] + 2:]
+    elif record.get("source_repository") == HERMES_REPO:
+        parts = PurePosixPath(source).parts
+        if not parts or parts[0] != "skills":
+            return None
+        parts = parts[1:]
+    else:
+        return None
+    if len(parts) < 2 or parts[-1] != "SKILL.md":
+        return None
+    parts = parts[:-1]
+    if any(part in ("", ".", "..") or "/" in part or "\\" in part for part in parts):
+        return None
+    return tuple(parts)
+
+
+def hermes_path(skill: Any) -> tuple[str, ...] | None:
+    """The path below Hermes' skills folder ``skill`` was imported from, as the import
+    record the importer wrote beside it (``manifest.json``, a regular file) states; None
+    for a skill that was not imported from Hermes. Cached by the record's stat."""
+    folder = getattr(skill, "path", None)
+    if folder is None:
+        return None
+    record = os.path.join(folder, "manifest.json")
+    try:
+        info = os.lstat(record)
+    except (OSError, ValueError):
+        return None
+    if not stat.S_ISREG(info.st_mode) or info.st_size > _RECORD_MAX_BYTES:
+        return None
+    key = (info.st_ino, info.st_mtime_ns, info.st_size)
+    with _LOCK:
+        cached = _RECORDS.get(record)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    parts = None
+    try:
+        fd = os.open(record, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, "rb") as handle:
+            raw = handle.read(_RECORD_MAX_BYTES + 1)
+        if len(raw) <= _RECORD_MAX_BYTES:
+            parts = _hermes_parts(json.loads(raw.decode("utf-8")))
+    except (OSError, UnicodeDecodeError, ValueError):
+        parts = None
+    with _LOCK:
+        if len(_RECORDS) >= _RECORD_CACHE_MAX:
+            _RECORDS.clear()
+        _RECORDS[record] = (key, parts)
+    return parts
+
+
+def _find_by_path(pool: list[Any], member: str) -> tuple[Any | None, str]:
+    split = _split_path(member.strip())
+    if split is None:
+        return None, PATH_OUTSIDE
+    anchor, parts = split
+    roots = _skill_roots()
+    if anchor:
+        typed = os.path.join(anchor, *parts)
+        for root in roots:
+            # The folder as discovery spells it, or its real path (/var vs /private/var).
+            for base in dict.fromkeys((os.path.abspath(root), os.path.realpath(root))):
+                rel = _below(typed, base)
+                if rel is None:
+                    continue
+                if not _no_link_below(base, rel):
+                    return None, PATH_OUTSIDE
+                hits = [s for s in pool if _below(getattr(s, "path", ""), root) == rel]
+                return (hits[0], "") if hits else (None, PATH_NOT_FOUND)
+        return None, PATH_OUTSIDE
+    for root in roots:
+        hits = [s for s in pool if _below(getattr(s, "path", ""), root) == parts]
+        if hits:
+            return (hits[0], "") if _no_link_below(root, parts) else (None, PATH_OUTSIDE)
+    imported = {id(s): s for s in pool if hermes_path(s) == parts}
+    if len(imported) > 1:
+        return None, PATH_AMBIGUOUS
+    if imported:
+        return next(iter(imported.values())), ""
+    return None, PATH_NOT_FOUND
+
+
+def find_member(loaded: Iterable[Any], member: Any) -> tuple[Any | None, str]:
+    """``(skill, "")`` for the installed skill one bundle member names, else ``(None,
+    why)``: a name as one skill switch resolves it, a path by exact match (above)."""
+    pool = list(loaded)
+    if not isinstance(member, str) or not member.strip():
+        return None, NOT_INSTALLED
+    if is_path(member):
+        return _find_by_path(pool, member)
+    skill = switches.find(pool, member)
+    return (skill, "") if skill is not None else (None, NOT_INSTALLED)
+
+
+def resolve_reasons(members: Iterable[str], loaded: Iterable[Any]) -> tuple[list[Any], list[tuple[str, str]]]:
+    """``(installed skills, [(member, why it names none)])`` for a bundle's members, each
+    resolved by :func:`find_member`; a skill two members name is listed once."""
     pool = list(loaded)
     targets: list[Any] = []
-    missing: list[str] = []
+    missing: list[tuple[str, str]] = []
     seen: set[str] = set()
     for member in members:
-        skill = switches.find(pool, member)
+        skill, why = find_member(pool, member)
         if skill is None:
-            missing.append(member)
+            missing.append((member, why))
         elif skill.name.casefold() not in seen:
             seen.add(skill.name.casefold())
             targets.append(skill)
     return targets, missing
+
+
+def resolve(members: Iterable[str], loaded: Iterable[Any]) -> tuple[list[Any], list[str]]:
+    """``(installed skills, members that name none)`` for a bundle's members: a name as
+    ``POST /api/skills/switch`` resolves one skill (:func:`switches.find`), a path by
+    exact match (:func:`find_member`)."""
+    targets, missing = resolve_reasons(members, loaded)
+    return targets, [member for member, _why in missing]
 
 
 def describe(bundle: Bundle, loaded: Iterable[Any]) -> dict:
@@ -562,9 +795,9 @@ def begin_load(inv: Invocation, loader: Any, *, session: str, template_vars: Any
     bundle = inv.bundle
     if holder is None or bundle is None:
         return "A skill bundle loads into a conversation turn; nothing was loaded."
-    installed, missing = resolve(bundle.skills, list((getattr(loader, "skills", None) or {}).values()))
+    installed, missing = resolve_reasons(bundle.skills, list((getattr(loader, "skills", None) or {}).values()))
     readable: list[str] = []
-    skipped: list[tuple[str, str]] = [(name, "not installed") for name in missing]
+    skipped: list[tuple[str, str]] = list(missing)
     tainted = False
     for skill in installed:
         reply, read, _rendered = tools.read_skill(loader, skill.name, session=session, template_vars=template_vars)
@@ -716,6 +949,7 @@ def list_reply(loaded: Iterable[Any] = ()) -> str:
 __all__ = [
     "Bundle", "BundleError", "EXPLICIT_COMMAND", "Invocation", "LIST_COMMAND", "MAX_BUNDLES",
     "MAX_MEMBERS", "begin_load", "bind_turn", "bundles_dir", "clean_instruction", "commit_turn",
-    "current_load", "delete", "describe", "get", "invocation", "list_bundles", "list_reply",
-    "load_budget", "reload", "reset_turn", "resolve", "save", "slugify", "snapshot", "turn_block",
+    "current_load", "delete", "describe", "find_member", "get", "hermes_path", "invocation", "is_path",
+    "list_bundles", "list_reply", "load_budget", "reload", "reset_turn", "resolve", "resolve_reasons",
+    "save", "slugify", "snapshot", "turn_block",
 ]

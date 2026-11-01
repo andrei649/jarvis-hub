@@ -1980,9 +1980,13 @@ class Orchestrator:
         try:
             inv = await asyncio.to_thread(skill_bundles.invocation, text, taken=taken)
         except OSError:
+            # Only the bundles folder itself failing to list gets here: a file in it that
+            # cannot be read is that file's problem (skipped and named), never this answer.
             logger.warning("skill bundles unreadable; nothing loaded", exc_info=True)
+            word = text.strip().split(None, 1)[0][:65]
             return CommandOutcome(skill_bundles.EXPLICIT_COMMAND, "failed",
-                                  "The skill bundles could not be read; nothing was loaded."), False
+                                  f"The skill bundles folder could not be read, so {word} could not be "
+                                  "looked up as a bundle; nothing was loaded."), False
         if inv is None:
             return None, False
         if inv.bundle is None:

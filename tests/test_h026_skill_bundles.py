@@ -42,6 +42,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_db, "_initialized", False)
     monkeypatch.setattr(settings_db, "_wal_set", False)
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path / "skills")
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: tmp_path / "home" / "skills")
     monkeypatch.setattr(bundles, "bundles_dir", lambda: tmp_path / "skill-bundles")
     monkeypatch.setattr(bundles, "_CACHE", {"dir": None, "key": None, "bundles": {}, "problems": []})
     yield
@@ -259,6 +260,100 @@ def test_members_resolve_like_one_skill_switch_and_missing_ones_are_named(tmp_pa
     assert switches.find(loaded, "weather") is other and switches.find(loaded, "  ") is None
 
 
+# ── members as paths (Hermes: "skill names or paths relative to your skills directory") ──
+
+def _folder(path, name):
+    """An installed skill at ``path`` (the folder is made, as discovery would find it)."""
+    from types import SimpleNamespace
+
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
+    return SimpleNamespace(name=name, path=path)
+
+
+def _imported(path, name, record):
+    import json
+
+    skill = _folder(path, name)
+    (path / "manifest.json").write_text(json.dumps(record), encoding="utf-8")
+    return skill
+
+
+def test_a_path_member_names_exactly_one_skill_folder_and_never_its_basename(tmp_path):
+    shipped, owner = tmp_path / "skills", tmp_path / "home" / "skills"
+    weather = _folder(shipped / "weather", "Weather Intel")
+    news_shipped = _folder(shipped / "news", "News")
+    news_owner = _folder(owner / "news", "My News")                 # the owner's folder of the same name
+    loaded = [weather, news_shipped, news_owner]
+    hit = {m: bundles.find_member(loaded, m) for m in (
+        "weather/", str(shipped / "weather"), str(shipped / "weather") + "/", "news/",
+        str(shipped / "news"), str(owner / "news"))}
+    assert hit["weather/"] == (weather, "")                          # relative to the skills folder
+    assert hit[str(shipped / "weather")] == (weather, "") == hit[str(shipped / "weather") + "/"]
+    assert hit["news/"] == (news_owner, "")                          # the owner's folder first, as discovery
+    assert hit[str(shipped / "news")] == (news_shipped, "") and hit[str(owner / "news")] == (news_owner, "")
+    # Exact or nothing: no basename guess, no other casing, nothing that is not a skill folder.
+    (shipped / "empty").mkdir()
+    for member in ("productivity/weather", "Weather/", "skills/weather", str(shipped / "empty"),
+                   str(shipped / "weather" / "SKILL.md"), str(shipped / "weather" / "sub")):
+        assert bundles.find_member(loaded, member) == (None, bundles.PATH_NOT_FOUND), member
+    targets, missing = bundles.resolve(["weather/", str(shipped / "weather"), "weather", "productivity/weather"], loaded)
+    assert targets == [weather] and missing == ["productivity/weather"]     # one skill, listed once
+
+
+def test_a_path_member_never_traverses_out_of_the_skills_folder(tmp_path):
+    shipped = tmp_path / "skills"
+    weather = _folder(shipped / "weather", "Weather Intel")
+    outside = _folder(tmp_path / "elsewhere" / "weather", "Elsewhere")
+    escape_target = _folder(tmp_path / "outside" / "esc", "Escape")
+    os.symlink(tmp_path / "outside" / "esc", shipped / "escape")         # a folder linked in from outside
+    os.symlink(shipped / "weather", shipped / "alias")                    # a link inside the folder
+    escaped = type(escape_target)(name="Escape", path=shipped / "escape")  # discovery loads it as linked
+    loaded = [weather, outside, escaped]
+    for member in ("../skills/weather", "./weather", "weather/./", "weather/..", "a//b", "weather\\",
+                   str(shipped) + "/../skills/weather", str(shipped) + "/./weather",
+                   str(tmp_path / "elsewhere" / "weather"), "/etc/passwd", "/", "escape/",
+                   str(shipped / "escape"), str(shipped / "alias"), "weather/\0"):
+        assert bundles.find_member(loaded, member) == (None, bundles.PATH_OUTSIDE), member
+    # The skill linked in is still the installed skill its name or folder names, as before.
+    assert bundles.find_member(loaded, "escape") == (escaped, "")
+    assert bundles.resolve(["../skills/weather", "weather/"], loaded) == ([weather], ["../skills/weather"])
+
+
+def test_a_hermes_path_names_the_skill_imported_from_exactly_that_path(tmp_path):
+    owner = tmp_path / "home" / "skills"
+    hermes = tmp_path / "me" / ".hermes" / "skills"
+    maps = _imported(owner / "maps", "maps", {           # `nerva import --from hermes`
+        "source_install": "hermes", "source_path": str(hermes / "productivity" / "maps" / "SKILL.md"),
+        "content_sha256": "0" * 64})
+    notes = _imported(tmp_path / "skills" / "apple-notes", "apple-notes", {   # the pinned Hermes repo
+        "source": "hermes", "source_repository": "NousResearch/hermes-agent",
+        "source_path": "skills/apple/apple-notes/SKILL.md"})
+    forged = _imported(owner / "forged", "forged", {
+        "source_install": "hermes", "source_path": str(hermes) + "/../../../etc/x/SKILL.md"})
+    other = _imported(owner / "claw", "claw", {
+        "source_install": "openclaw", "source_path": str(tmp_path / ".openclaw" / "skills" / "x" / "claw" / "SKILL.md")})
+    linked = _folder(owner / "linked", "linked")
+    (tmp_path / "rec.json").write_text('{"source_install": "hermes", "source_path": "'
+                                       + str(hermes / "dev" / "linked" / "SKILL.md") + '"}', encoding="utf-8")
+    os.symlink(tmp_path / "rec.json", owner / "linked" / "manifest.json")    # a record that is a link
+    loaded = [maps, notes, forged, other, linked]
+    assert bundles.hermes_path(maps) == ("productivity", "maps")
+    assert bundles.hermes_path(notes) == ("apple", "apple-notes")
+    assert [bundles.hermes_path(s) for s in (forged, other, linked)] == [None, None, None]
+    for member in ("productivity/maps", "productivity/maps/"):
+        assert bundles.find_member(loaded, member) == (maps, ""), member
+    assert bundles.find_member(loaded, "apple/apple-notes") == (notes, "")
+    assert bundles.find_member(loaded, "maps") == (maps, "")             # the name, as before
+    for member in ("Productivity/Maps", "travel/maps", "productivity/", "x/claw", "dev/linked", "etc/x"):
+        assert bundles.find_member(loaded, member) == (None, bundles.PATH_NOT_FOUND), member
+    # Two imports from one Hermes path: neither is chosen.
+    twin = _imported(owner / "maps2", "maps2", {
+        "source_install": "hermes", "source_path": str(tmp_path / "old" / ".hermes" / "skills" / "productivity"
+                                                       / "maps" / "SKILL.md")})
+    assert bundles.find_member([*loaded, twin], "productivity/maps") == (None, bundles.PATH_AMBIGUOUS)
+
+
 # ── the routes ───────────────────────────────────────────────────────────────────
 
 def test_the_routes_keep_bundles_with_installed_members(monkeypatch, tmp_path):
@@ -319,6 +414,36 @@ def test_the_create_route_keeps_the_instruction_and_never_replaces_another_bundl
     assert held.read_text(encoding="utf-8") == "name: Evening Wind-down\nskills: [Spotify]\n"
     assert {r["slug"] for r in client.get("/api/skills/bundles").json()["bundles"]} == {
         "evening-wind-down", "focus", "morning"}
+
+
+def test_the_routes_take_path_members_exactly_and_refuse_a_traversal(monkeypatch, tmp_path):
+    client, _orch = _client(monkeypatch, tmp_path)
+    shipped = tmp_path / "skills"
+    resp = _admin(client, "POST", "/api/skills/bundles",
+                  {"name": "Paths", "skills": ["weather/", str(shipped / "news"), "spotify"]})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["bundle"]["skills"] == ["Weather Intel", "News", "Spotify"]   # the names are stored
+    for member, why in (("../skills/weather", bundles.PATH_OUTSIDE), ("/etc/passwd", bundles.PATH_OUTSIDE),
+                        (str(shipped) + "/../skills/news", bundles.PATH_OUTSIDE),
+                        ("info/weather", bundles.PATH_NOT_FOUND), ("ghost", bundles.NOT_INSTALLED)):
+        resp = _admin(client, "POST", "/api/skills/bundles", {"name": "Bad", "skills": ["news", member]})
+        assert resp.status_code == 422 and resp.json()["reason"] == "unknown_skill", member
+        assert resp.json()["unknown"] == [member] and resp.json()["why"] == {member: why}
+        assert resp.json()["error"] == (f"not installed: {member}" if why == bundles.NOT_INSTALLED
+                                        else f"not installed: {member} ({why})")
+        assert bundles.get("bad") is None
+    # A file written by hand (or copied from Hermes) with path members: listed, shown and
+    # switched as one unit through the same resolution.
+    _write(tmp_path, "hermes.yaml", "skills:\n- weather/\n- " + str(shipped / "news") + "\n- ../news\n"
+                                    "- info/spotify\n")
+    row = client.get("/api/skills/bundles/hermes").json()["bundle"]
+    assert row["installed"] == ["Weather Intel", "News"] and row["missing"] == ["../news", "info/spotify"]
+    listed = {r["slug"]: r for r in client.get("/api/skills/bundles").json()["bundles"]}
+    assert listed["hermes"]["installed"] == ["Weather Intel", "News"]
+    resp = _switch(client, {"bundle": "hermes", "enabled": False})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["changed"] == ["Weather Intel", "News"] and resp.json()["missing"] == ["../news", "info/spotify"]
+    assert switches.state()["disabled"] == ["Weather Intel", "News"]
 
 
 def test_the_bundle_writes_are_admin_only_and_the_reads_are_not_open(monkeypatch, tmp_path):
@@ -753,6 +878,52 @@ def test_the_cli_drives_the_real_routes_end_to_end(monkeypatch, tmp_path):
     assert switches.state()["disabled"] == ["Weather Intel", "News"]       # deleting switches nothing
 
 
+def test_the_cli_takes_path_members_through_the_real_routes(monkeypatch, tmp_path):
+    """``nerva skills bundles create -s <path>``, ``show`` and ``off --bundle`` over a
+    bundle with path members, against the mounted app (the hub resolves them)."""
+    import io
+
+    from agents.cli.client import HubError
+    from agents.cli.nerva import Context, main
+
+    client, _orch = _client(monkeypatch, tmp_path)
+    shipped = tmp_path / "skills"
+
+    class _AppHub:
+        base_url = "http://127.0.0.1:8080"
+
+        def request(self, method, path, body=None):
+            resp = client.request(method, path, json=body, headers={"X-Admin-Token": _TOKEN})
+            if resp.status_code >= 400:
+                raise HubError(resp.status_code, resp.json().get("error", ""))
+            return resp.json()
+
+        def get(self, path):
+            return self.request("GET", path)
+
+        def post(self, path, body=None):
+            return self.request("POST", path, body if body is not None else {})
+
+    def run(*argv):
+        out, err = io.StringIO(), io.StringIO()
+        ctx = Context(environ={}, out=out, err=err, inp=io.StringIO(""), client_factory=lambda env: _AppHub())
+        return main(list(argv), context=ctx), out.getvalue(), err.getvalue()
+
+    code, out, _err = run("skills", "bundles", "create", "Paths", "-s", "weather/", "-s", str(shipped / "news"))
+    assert code == 0 and out.startswith("created bundle Paths (2 skills)")
+    assert bundles.get("paths").skills == ("Weather Intel", "News")
+    code, _out, err = run("skills", "bundles", "create", "Escape", "-s", "../skills/weather", "-s", "info/news")
+    assert code == 1 and bundles.get("escape") is None
+    assert ("not installed: ../skills/weather (not a path inside the skills folder), "
+            "info/news (no installed skill at that path)") in err
+    _write(tmp_path, "copied.yaml", "skills: [weather/, ../spotify]\n")      # as copied from Hermes
+    code, out, _err = run("skills", "bundles", "show", "copied")
+    assert code == 0 and "    - weather/\n" in out and "    - ../spotify (not installed)\n" in out
+    code, out, _err = run("skills", "off", "--bundle", "copied")
+    assert code == 0 and out.startswith("switched off everywhere: Weather Intel")
+    assert switches.state()["disabled"] == ["Weather Intel"]
+
+
 # ── /<bundle>: every member loaded into one turn ────────────────────────────────
 #
 # Hermes' `/<bundle> [instruction]` (05-cli-e.md cli-e.bundles, 25-skills-core.md
@@ -769,11 +940,11 @@ _BODIES = {"weather": "Read the forecast for today and say if an umbrella is nee
            "athena only": "Only for Athena."}
 
 
-def _md_skill(name, *, vouched=True, pending=False, agents=()):
+def _md_skill(name, *, vouched=True, pending=False, agents=(), path=None):
     from agents.core.skills.loader import Skill
 
     body = _BODIES[name]
-    skill = Skill(name, Path("/nonexistent") / name.replace(" ", "_"),
+    skill = Skill(name, path or Path("/nonexistent") / name.replace(" ", "_"),
                   {"name": name, "description": f"{name} helper", "agents": list(agents), "commands": []})
     skill.trusted = True
     skill.signature_reason = "verified"
@@ -1101,4 +1272,101 @@ async def test_the_hud_chat_route_loads_a_bundle_for_the_owner_only(tmp_path, mo
         guest = await client.post("/chat", json={"message": "/morning plan my day"})
         assert guest.status_code == 200 and guest.json()["reply"] == "Unknown command /morning. Try /help."
         assert len(seen.sent) == 1
+    orch.checkpoints.close()
+
+
+@pytest.mark.asyncio
+async def test_a_hermes_bundle_with_path_members_loads_them_into_the_turn(tmp_path, monkeypatch):
+    """A bundle file as Hermes writes it, members given as paths relative to the skills
+    folder: a folder path, an absolute path, and the path a skill was imported from under
+    Hermes' skills folder all load; a traversal and a path matching nothing are skipped
+    and named."""
+    import json
+
+    shipped, owner = tmp_path / "skills", tmp_path / "home" / "skills"
+    for folder in (shipped / "weather", owner / "news"):
+        folder.mkdir(parents=True)
+    (owner / "news" / "manifest.json").write_text(json.dumps({
+        "source_install": "hermes", "content_sha256": "0" * 64,
+        "source_path": str(tmp_path / "me" / ".hermes" / "skills" / "media" / "news" / "SKILL.md")}),
+        encoding="utf-8")
+    orch, seen = _hub(tmp_path, monkeypatch, _md_skill("weather", path=shipped / "weather"),
+                      _md_skill("news", path=owner / "news"), _md_skill("notes"))
+    _write(tmp_path, "morning.yaml", "\n".join([
+        "skills:", "- weather/", "- media/news", f"- {shipped / 'weather'}", "- ../../etc/notes",
+        "- productivity/notes", "instruction: Weather first.", ""]))
+    reply, notices = await _say(orch, "/morning what now")
+    assert _answered(reply) and len(seen.sent) == 1
+    prompt = seen.sent[0]
+    assert '[The owner invoked the "morning" skill bundle, loading 2 skills together.' in prompt
+    assert "Skills loaded: weather, news" in prompt and _BODIES["weather"] in prompt and _BODIES["news"] in prompt
+    assert _BODIES["notes"] not in prompt                                # never by its basename
+    skipped = ("../../etc/notes (not a path inside the skills folder); "
+               "productivity/notes (no installed skill at that path)")
+    assert f"Skills skipped: {skipped}" in prompt and "Bundle instruction: Weather first." in prompt
+    assert notices == [f"Bundle morning: loaded weather, news; skipped {skipped}."]
+    orch.checkpoints.close()
+
+
+# ── a file that cannot be read is that file's problem, never the folder's ──────────
+
+def test_a_bundle_file_that_cannot_be_read_hides_no_other_bundle(tmp_path, monkeypatch):
+    """review-H026 (minor): one file whose lstat or read failed raised out of the scan, so
+    every list read 503 and every unknown /word answered 'could not be read'."""
+    _write(tmp_path, "a.yaml", "name: Alpha\nskills: [x]\n")
+    _write(tmp_path, "b.yaml", "name: Beta\nskills: [y]\n")
+    _write(tmp_path, "c.yaml", "name: Gamma\nskills: [z]\n")
+    real_lstat, real_open = os.lstat, os.open
+
+    def lstat(path, *args, **kwargs):
+        if str(path).endswith("b.yaml"):
+            raise PermissionError(13, "Permission denied")
+        return real_lstat(path, *args, **kwargs)
+
+    def opener(path, flags, *args, **kwargs):
+        if str(path).endswith("c.yaml"):           # a descriptor whose read fails (EISDIR)
+            return real_open(tmp_path, os.O_RDONLY)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+    monkeypatch.setattr(os, "open", opener)
+    rows, skipped = bundles.snapshot()
+    assert [b.slug for b in rows] == ["alpha"]
+    assert {p["file"]: p["reason"] for p in skipped} == {"b.yaml": "unreadable", "c.yaml": "unreadable"}
+    assert bundles.get("alpha").skills == ("x",) and bundles.get("beta") is None
+    assert bundles.invocation("/typo", taken=lambda word: False) is None
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_word_says_bundles_are_unreadable_only_when_the_folder_is(tmp_path, monkeypatch):
+    orch, seen = _hub(tmp_path, monkeypatch, _md_skill("weather"))
+    _morning(tmp_path, members=("weather",))
+    _write(tmp_path, "broken.yaml", "name: Broken\nskills: [weather]\n")
+    real_open = os.open
+
+    def opener(path, flags, *args, **kwargs):
+        if str(path).endswith("broken.yaml"):
+            return real_open(tmp_path, os.O_RDONLY)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", opener)
+    reply, _ = await _say(orch, "/nothing-here")                          # one file unreadable: not the folder
+    assert _answered(reply) and "[The owner invoked" not in seen.sent[-1]
+    reply, notices = await _say(orch, "/morning")                       # the other bundles still load
+    assert _answered(reply) and notices == ["Bundle Morning: loaded weather."]
+    sent = len(seen.sent)
+    real_listdir = os.listdir
+
+    def listdir(path="."):
+        if str(path) == str(_dir(tmp_path)):
+            raise PermissionError(13, "Permission denied")
+        return real_listdir(path)
+
+    monkeypatch.setattr(os, "listdir", listdir)
+    bundles._CACHE.update({"dir": None, "key": None})
+    reply, _ = await _say(orch, "/nothing-here")                          # the folder itself failed
+    assert reply == ("The skill bundles folder could not be read, so /nothing-here could not be looked up "
+                     "as a bundle; nothing was loaded.") and len(seen.sent) == sent
+    reply, _ = await _say(orch, "/status")                               # a command keeps its name
+    assert reply.startswith("Nerva ") and len(seen.sent) == sent
     orch.checkpoints.close()
