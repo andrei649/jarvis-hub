@@ -27,7 +27,6 @@ class CacheEpochs:
         self._max_scopes = max(1, min(max_scopes, 256))
         self._entries: OrderedDict[tuple, _Counts] = OrderedDict()
         self._poisoned: OrderedDict[tuple, bool] = OrderedDict()
-        self._overflowed = False
 
     def _entry(self, key: tuple) -> _Counts:
         entry = self._entries.get(key)
@@ -38,8 +37,10 @@ class CacheEpochs:
                 if prior[:4] == key[:4] and prior[4:] != key[4:]:
                     del self._entries[prior]
             if len(self._entries) >= self._max_scopes:
+                # Only the evicted scope forgets its counters; if it returns it starts from
+                # zero, as every scope does after a restart. A process-wide flag here hid
+                # cache_hit for every conversation until a provider change (review of #1321).
                 self._entries.popitem(last=False)
-                self._overflowed = True
             entry = _Counts()
             if key[:3] in self._poisoned:
                 entry.unknown = True
@@ -60,7 +61,7 @@ class CacheEpochs:
                 item.write += write
                 if item.uncached + item.read + item.write > _MAX_TOKENS:
                     item.unknown = True
-            return None if self._overflowed else self._value(item)
+            return self._value(item)
 
     def contaminate(self, key: tuple) -> None:
         with self._lock:
@@ -69,8 +70,12 @@ class CacheEpochs:
     def contaminate_conversation(self, conversation: tuple) -> None:
         with self._lock:
             if conversation not in self._poisoned and len(self._poisoned) >= self._max_scopes:
-                self._poisoned.popitem(last=False)
-                self._overflowed = True
+                # A conversation whose poison is forgotten also loses its counters, so no
+                # ratio mixes turns from before the unknown dispatch with later ones.
+                forgotten, _ = self._poisoned.popitem(last=False)
+                for key in tuple(self._entries):
+                    if key[:3] == forgotten:
+                        del self._entries[key]
             self._poisoned[conversation] = True
             self._poisoned.move_to_end(conversation)
             for key, item in self._entries.items():
@@ -86,7 +91,7 @@ class CacheEpochs:
 
     def value(self, key: tuple) -> float | None:
         with self._lock:
-            return None if self._overflowed else self._value(self._entries.get(key))
+            return self._value(self._entries.get(key))
 
     def invalidate_conversation(self, conversation: tuple) -> None:
         with self._lock:
@@ -109,7 +114,6 @@ class CacheEpochs:
         with self._lock:
             self._entries.clear()
             self._poisoned.clear()
-            self._overflowed = False
 
 
 EPOCHS = CacheEpochs()

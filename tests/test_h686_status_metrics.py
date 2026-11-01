@@ -159,17 +159,41 @@ def test_unknown_model_poison_survives_until_conversation_invalidation():
     assert epochs.observe(key, 100, 300, 100) == 60.0
 
 
-def test_bounded_cache_eviction_fails_closed_until_selection_invalidation():
+def test_bounded_cache_eviction_forgets_only_the_evicted_scope():
+    """Review of #1321: one eviction set a process-wide flag that hid cache_hit for every
+    conversation, evicted or not, until a provider change. Only the evicted scope loses
+    its counters now; when it returns it starts from zero, as after a restart."""
+    from agents.core.status_cache_epoch import CacheEpochs
+
+    epochs = CacheEpochs(max_scopes=2)
+    first = ("owner", "session-a", "instance-a", "jarvis", "cloud", "provider", "model")
+    second = ("owner", "session-b", "instance-b", "jarvis", "cloud", "provider", "model")
+    third = ("owner", "session-c", "instance-c", "jarvis", "cloud", "provider", "model")
+    assert epochs.observe(first, 100, 300, 100) == 60.0
+    assert epochs.observe(second, 100, 300, 100) == 60.0
+    assert epochs.observe(third, 100, 0, 100) is None           # evicts first; no reads yet
+    assert epochs.value(second) == 60.0                          # never evicted: still shown
+    assert epochs.value(first) is None                           # evicted: forgotten
+    assert epochs.observe(first, 300, 100, 100) == 20.0          # back from zero
+    epochs.invalidate_selection()
+    assert epochs.value(second) is None and epochs.value(first) is None
+
+
+def test_a_forgotten_poison_takes_its_conversation_counters_with_it():
     from agents.core.status_cache_epoch import CacheEpochs
 
     epochs = CacheEpochs(max_scopes=1)
-    first = ("owner", "session-a", "instance-a", "jarvis", "cloud", "provider", "model")
-    second = ("owner", "session-b", "instance-b", "jarvis", "cloud", "provider", "model")
-    assert epochs.observe(first, 100, 300, 100) == 60.0
-    assert epochs.observe(second, 100, 300, 100) is None
-    assert epochs.observe(first, 100, 300, 100) is None
-    epochs.invalidate_selection()
-    assert epochs.observe(first, 100, 300, 100) == 60.0
+    a = ("owner", "session-a", "instance-a")
+    b = ("owner", "session-b", "instance-b")
+    key_a = a + ("jarvis", "cloud", "provider", "model")
+    key_b = b + ("jarvis", "cloud", "provider", "model")
+    epochs.observe(key_a, 100, 300, 100)
+    epochs.contaminate_conversation(a)
+    assert epochs.value(key_a) is None                           # poisoned
+    epochs.contaminate_conversation(b)                           # a's poison is forgotten ...
+    assert epochs.value(key_a) is None                           # ... with its old counters
+    assert epochs.observe(key_a, 300, 100, 100) == 20.0          # only turns after the poison
+    assert epochs.observe(key_b, 100, 300, 100) is None          # b is still poisoned
 
 
 def test_accepted_compaction_invalidates_same_instance_across_principals_only():
