@@ -150,7 +150,12 @@ this order — the first ones are the most common and the cheapest to rule out:
     oldest fact), or by the per-turn review (`cognition.review_enabled`, off by default).
     The rings a turn sees are frozen for the session and the day, so a fact written now
     reaches the prompt at the next session (`/new`) or the next day. `GET /api/memory/core`
-    lists both rings — check the fact is there. A turn that has read untrusted content (an
+    lists both rings — check the fact is there. The prompt shows at most 2,200 characters of
+    the agent's notes and 1,375 of your profile: `nerva memory status` says how many
+    characters each holds and whether older entries are left out over that budget (the
+    newest are kept), and how many are `[BLOCKED]` as prompt-injection. `nerva memory reset
+    [--target memory|user]` erases a store for good after a typed `yes`; `nerva memory off`
+    switches memory off without erasing anything. A turn that has read untrusted content (an
     inbound message, web text, a tainted recall) cannot write memory: the tool refuses with
     `memory_untrusted_turn`, so tell it the fact again in a fresh turn of your own. Older conversations are a separate,
     searched store: `memory.recall_enabled` (off by default) adds the

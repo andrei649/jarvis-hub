@@ -100,6 +100,7 @@ RULES = [
     ("/api/osint/", "knowledge"),  # P2 OSINT pack — the Knowledge/"Vision · OSINT" surface (modes4)
     ("/api/kg/", "memory"),
     ("/api/memory/", "memory"),
+    ("/api/memory", "memory"),  # H422 the curated memory's status (sizes, budgets), read by `nerva memory`
     ("/memory/stats", "memory"),
     ("/memory", "memory"),
     ("/api/local-docs", "memory"),
@@ -532,6 +533,10 @@ MACHINE_FACING: dict[str, str] = {
     "/api/admin/backup/restore":
         "H010: queued by `nerva backup restore` (agents/cli/nerva.py) as an irreversible-tier "
         "card; the HUD accepts it in the decision inbox like any other approval",
+    "/api/memory/reset":
+        "H422: the owner erases the core memory rings with `nerva memory reset` "
+        "(agents/cli/nerva.py), after it states the sizes and takes a typed yes; Hermes's "
+        "dashboard reset is the contract's API half, and a HUD reset button is not part of the row",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",

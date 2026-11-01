@@ -7561,6 +7561,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Status
+         * @description H422 — the long-term memory's status (Hermes's ``GET /api/memory``): whether the
+         *     core block reaches the prompt (``injected``) and the model's memory tool can write
+         *     (``tool``), and per ring (``memory``: the agent's notes, ``user``: the user profile)
+         *     the bytes its file holds, its entries, the characters they take against the section's
+         *     budget, what the next block shows, leaves out and blocks, and what else a reset
+         *     erases with it (``copies``: hand-edit ``.bak`` files, ``undo_writes``). Reported with
+         *     memory switched off too; ``builtin_files`` is Hermes's bytes-per-store shape.
+         */
+        get: operations["memory_status_api_memory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Reset
+         * @description H422 — erase the agent's notes, the user profile or both, for good (Hermes's
+         *     ``POST /api/memory/reset``). Body ``{"target": "all"|"memory"|"user", "confirm":
+         *     "RESET"}``: the target defaults to ``all``, and the word is required like the
+         *     forget's ``FORGET``; without it nothing is erased and the reply says what would be
+         *     (``would_erase``). Admin-only, an owner act on the owner's own memory: recorded in the
+         *     intent log as ``memory.reset`` (no intent log, nothing erased). A conversation under
+         *     way keeps its frozen prompt snapshot; the next one starts without the facts.
+         */
+        post: operations["memory_reset_api_memory_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/remember": {
         parameters: {
             query?: never;
@@ -28213,6 +28265,61 @@ export interface operations {
         };
     };
     memory_core_undo_api_memory_core_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_status_api_memory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_reset_api_memory_reset_post: {
         parameters: {
             query?: never;
             header?: never;

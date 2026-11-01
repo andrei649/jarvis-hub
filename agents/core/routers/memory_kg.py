@@ -6,7 +6,9 @@ spaces:
 * `/api/memory/*` — sleep-time consolidation (H14.3), fused recall / search
   (H5.14), the named-entity store (H8.1b), the LLM-callable search_memory tool
   (H8.3b), decay-based forgetting (H14.4), the memory-eval corpus + harness
-  (H14.2), remember/recall, and the machine-facing tool-spec/search-tool.
+  (H14.2), remember/recall, the machine-facing tool-spec/search-tool, the core rings
+  the model writes and their undo (H314), and the curated memory's status (`GET
+  /api/memory`) and reset (`POST /api/memory/reset`, admin) (H422).
 * `/api/kg/*` — the knowledge-graph editor (H12.3), bi-temporal facts (H14.1),
   and incremental triple ingest (H12.6).
 
@@ -1024,6 +1026,125 @@ async def memory_core_undo(body: dict):
     except MemoryToolError as exc:
         status = 404 if exc.reason == "memory_undo_unknown" else 409
         return nocache_json({"ok": False, "reason": exc.reason, "detail": exc.detail}, status_code=status)
+    return nocache_json(result)
+
+
+def _memory_module(orch):
+    """H422 — the LivingMemory module whatever ``cognition.memory_enabled`` says: its files
+    are there with memory switched off too, so the status reports them and the owner may
+    erase them."""
+    cog = getattr(orch, "cognition", None) if orch else None
+    return cog.module("memory") if cog is not None else None
+
+
+def _memory_view(living) -> dict:
+    """The rings reread from their files, then each one's size on disk and its cost in
+    the next prompt block, by target. Blocking file reads: run off the event loop."""
+    from agents.core.learning.core_block import core_block_usage
+    from agents.core.memory_tool import MemoryToolError, _read_rings, store_sizes
+
+    drift = None
+    try:
+        _read_rings(living)
+    except MemoryToolError as exc:
+        drift = exc.detail
+    sizes, usage = store_sizes(living), core_block_usage(living)
+    view = {"stores": {target: {**sizes[target], **usage.get(target, {})} for target in sizes}}
+    if drift:
+        view["drift"] = drift
+    return view
+
+
+def _memory_tool_offered(orch) -> bool:
+    """The model's ``memory`` tool is registered and the tool loop that offers it is on."""
+    from agents.core.memory_tool import TOOL_NAME
+
+    getter = getattr(orch, "get_setting", None)
+    server = getattr(orch, "tool_rpc", None)
+    try:
+        loop_on = callable(getter) and getter("llm.tool_loop_enabled", False) is True
+        return bool(loop_on and server is not None and server.allows(TOOL_NAME))
+    except Exception:
+        return False
+
+
+@router.get("/api/memory", dependencies=[Depends(user_guard)])
+async def memory_status():
+    """H422 — the long-term memory's status (Hermes's ``GET /api/memory``): whether the
+    core block reaches the prompt (``injected``) and the model's memory tool can write
+    (``tool``), and per ring (``memory``: the agent's notes, ``user``: the user profile)
+    the bytes its file holds, its entries, the characters they take against the section's
+    budget, what the next block shows, leaves out and blocks, and what else a reset
+    erases with it (``copies``: hand-edit ``.bak`` files, ``undo_writes``). Reported with
+    memory switched off too; ``builtin_files`` is Hermes's bytes-per-store shape."""
+    from agents.core import safe_mode
+    from agents.core.learning.core_block import CORE_BLOCK_MAX_CHARS
+
+    orch = get_orch()
+    living = _memory_module(orch)
+    if living is None:
+        return nocache_json({"available": False, "enabled": False, "injected": False, "tool": False,
+                             "stores": {}, "builtin_files": {}})
+    cog = getattr(orch, "cognition", None)
+    enabled = bool(cog.sub_enabled("memory_enabled"))
+    safe = bool(safe_mode.enabled())
+    view = await asyncio.to_thread(_memory_view, living)
+    stores = view["stores"]
+    body = {
+        "available": True, "enabled": enabled, "safe_mode": safe,
+        "injected": enabled and not safe,
+        "tool": enabled and not safe and _memory_tool_offered(orch),
+        "stores": stores,
+        "builtin_files": {target: stores[target]["bytes"] for target in stores},
+        "block_max_chars": CORE_BLOCK_MAX_CHARS,
+    }
+    if "drift" in view:
+        body["drift"] = view["drift"]
+    return nocache_json(body)
+
+
+@router.post("/api/memory/reset", dependencies=[Depends(admin_guard)])
+async def memory_reset(body: dict):
+    """H422 — erase the agent's notes, the user profile or both, for good (Hermes's
+    ``POST /api/memory/reset``). Body ``{"target": "all"|"memory"|"user", "confirm":
+    "RESET"}``: the target defaults to ``all``, and the word is required like the
+    forget's ``FORGET``; without it nothing is erased and the reply says what would be
+    (``would_erase``). Admin-only, an owner act on the owner's own memory: recorded in the
+    intent log as ``memory.reset`` (no intent log, nothing erased). A conversation under
+    way keeps its frozen prompt snapshot; the next one starts without the facts."""
+    from agents.core.memory_tool import RESET_CONFIRM, MemoryToolError, reset, reset_targets
+
+    body = body or {}
+    try:
+        targets = reset_targets(body.get("target", "all"))
+    except MemoryToolError as exc:
+        return nocache_json({"ok": False, "reason": exc.reason, "error": exc.detail}, status_code=400)
+    orch = get_orch()
+    living = _memory_module(orch)
+    if orch is None or living is None:
+        return nocache_json({"ok": False, "reason": "memory_unavailable",
+                             "error": "this hub has no long-term memory module"}, status_code=503)
+    if body.get("confirm") != RESET_CONFIRM:
+        stores = (await asyncio.to_thread(_memory_view, living))["stores"]
+        return nocache_json({"ok": False, "reason": "memory_reset_unconfirmed",
+                             "error": f'a reset erases memory for good — send {{"confirm": "{RESET_CONFIRM}"}}',
+                             "would_erase": {target: stores[target] for target in targets}}, status_code=400)
+    try:
+        # Each ring's clear waits for its cross-process file lock: off the event loop.
+        result = await asyncio.to_thread(reset, body.get("target", "all"), living=living,
+                                         audit=getattr(orch, "intent_log", None))
+    except MemoryToolError as exc:
+        return nocache_json({"ok": False, "reason": exc.reason, "error": exc.detail}, status_code=503)
+    # A reread a turn made before the reset (with notes on the files as they were) must
+    # not reach a block rendered after it; the frozen block itself is left alone.
+    if getattr(orch, "_core_rings_reread", None) is not None:
+        orch._core_rings_reread = None
+    result["note"] = ("a conversation under way keeps the memory it started with; "
+                      "the next one (or /new) starts without the erased facts")
+    if not result["ok"]:
+        result["error"] = (f"{', '.join(result['not_erased'])} could not be erased (another writer holds "
+                           "it, or it cannot be saved); the rest was; run the reset again")
+        return nocache_json(result, status_code=409)
     return nocache_json(result)
 
 

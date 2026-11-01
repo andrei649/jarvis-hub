@@ -45,6 +45,9 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   beside the rings (:class:`UndoStore`), so a forget deletes them too. :func:`undo`
   restores a write while nothing has changed since, and is recorded the same way;
   ``POST /api/memory/core/undo`` is the owner's door;
+* H422: :func:`store_sizes` says what each ring holds on disk (``GET /api/memory``) and
+  :func:`reset` erases one ring or both for good, recorded as ``memory.reset``
+  (``POST /api/memory/reset``, ``nerva memory reset``);
 * a write leaves a ``memory_updated`` row in the tool trail (targets and actions, never
   text); a call that changes nothing leaves none;
 * in safe mode (H490) memory reads as switched off: the tool refuses and says so.
@@ -318,6 +321,25 @@ class UndoStore:
             atomic_write_json(self.path(), [])
             return True
 
+    def holding(self, target: str) -> int:
+        """H422 — how many kept writes hold an earlier copy of ring *target*."""
+        with self._lock:
+            return sum(1 for row in self._load() if target in (row.get("before") or {}))
+
+    def drop_targets(self, targets: list[str]) -> int:
+        """H422 — drop every kept write that holds an earlier copy of one of *targets* (a
+        reset): no copy of the erased facts stays here, and none of those writes could be
+        undone over the emptied ring anyway. The number dropped."""
+        from .persistence.json_store import atomic_write_json
+
+        wanted = set(targets)
+        with self._lock:
+            rows = self._load()
+            kept = [row for row in rows if not wanted & set(row.get("before") or {})]
+            if len(kept) != len(rows):
+                atomic_write_json(self.path(), kept)
+            return len(rows) - len(kept)
+
 
 UNDO = UndoStore()
 _WRITE_LOCK = threading.Lock()
@@ -517,6 +539,98 @@ def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: Undo
     return {"ok": True, "ref": str(ref), "memory": before["memory"], "user": before["user"]}
 
 
+# ── H422: what the owner can see and erase ───────────────────────────────────
+
+#: A reset's ``target`` → the rings it erases (Hermes's ``--target {all,memory,user}``).
+RESET_TARGETS: dict[str, tuple[str, ...]] = {"all": ("memory", "user"), "memory": ("memory",), "user": ("user",)}
+#: The word ``POST /api/memory/reset`` must carry, as ``POST /api/admin/forget`` needs ``FORGET``.
+RESET_CONFIRM = "RESET"
+#: Each ring in the owner's words.
+STORE_LABELS: dict[str, str] = {"memory": "agent notes", "user": "user profile"}
+
+
+def reset_targets(target: Any) -> tuple[str, ...]:
+    """The rings *target* names; :class:`MemoryToolError` for anything else."""
+    rings = RESET_TARGETS.get(target.strip().lower()) if isinstance(target, str) else None
+    if rings is None:
+        raise MemoryToolError("memory_bad_target", "target must be all, memory, or user")
+    return rings
+
+
+def _size(path: Any) -> int:
+    try:
+        return int(path.stat().st_size) if path is not None else 0
+    except OSError:
+        return 0
+
+
+def store_sizes(living: Any, store: UndoStore | None = None) -> dict:
+    """H422 — what a reset of each ring would erase, by target: its file and the bytes it
+    holds on disk (0 when there is none, as Hermes's ``builtin_files``), its entries and
+    cap, the hand-edit ``.bak`` copies kept beside it, and the kept writes that hold an
+    earlier copy of it (a reset drops those too). Read-only; reread the rings first."""
+    store = UNDO if store is None else store
+    out: dict[str, dict] = {}
+    for target, attr in TARGETS.items():
+        ring = getattr(living, attr, None)
+        path = getattr(ring, "path", None)
+        copies = sorted(path.parent.glob(f"{path.name}.*.bak")) if isinstance(path, Path) else []
+        out[target] = {
+            "label": STORE_LABELS[target],
+            "file": path.name if isinstance(path, Path) else None,
+            "bytes": _size(path) if isinstance(path, Path) else 0,
+            "entries": len(ring.list()) if callable(getattr(ring, "list", None)) else 0,
+            "cap": int(getattr(ring, "cap", 0) or 0),
+            "copies": len(copies),
+            "copies_bytes": sum(_size(copy) for copy in copies),
+            "undo_writes": store.holding(target),
+        }
+    return out
+
+
+def reset(target: str, *, living: Any, audit: Any, actor: str = "owner", store: UndoStore | None = None) -> dict:
+    """H422 — the owner erases the agent's notes, the user profile, or both (Hermes's
+    ``memory reset``). Permanent, with no undo: each ring is emptied by its forget path
+    (``CoreMemory.clear``: under the ring's file lock, its hand-edit ``.bak`` copies
+    deleted too) and every kept write holding an earlier copy of it is dropped, so no copy
+    of the erased facts stays beside the rings. Recorded in the intent log as
+    ``memory.reset`` (targets and counts, never text); with no intent log nothing is
+    erased. A ring that cannot be erased (its lock stays held, its file cannot be saved)
+    is named in ``not_erased`` and ``ok`` is False; the others are erased.
+
+    The prompt's frozen block is left alone: a conversation under way keeps its snapshot
+    (the prefix cache), and the next one starts without the erased facts."""
+    rings = reset_targets(target)
+    if living is None:
+        raise MemoryToolError("memory_unavailable", "this hub has no long-term memory module")
+    if audit is None or not callable(getattr(audit, "record", None)):
+        raise MemoryToolError("memory_audit_unavailable",
+                              "a memory reset is recorded in the intent log, which is not available; "
+                              "nothing was erased")
+    store = UNDO if store is None else store
+    erased: dict[str, int] = {}
+    not_erased: list[str] = []
+    with _WRITE_LOCK:
+        for ring in rings:
+            try:
+                erased[ring] = int(getattr(living, TARGETS[ring]).clear())
+            except Exception:
+                logger.warning("memory reset: the %s ring could not be erased", ring, exc_info=True)
+                not_erased.append(ring)
+        dropped = store.drop_targets(sorted(erased))
+    audited = True
+    try:
+        _record(audit, actor, "memory.reset", "the owner erased long-term memory", "",
+                {"targets": sorted(erased), "erased": erased, "not_erased": not_erased,
+                 "undo_dropped": dropped})
+    except Exception:
+        # The facts are gone either way (the owner asked for that); the reply says so.
+        logger.warning("memory reset: the intent log could not record it", exc_info=True)
+        audited = False
+    return {"ok": not not_erased, "targets": list(rings), "erased": erased, "not_erased": not_erased,
+            "undo_dropped": dropped, "audited": audited}
+
+
 # ── the tool ─────────────────────────────────────────────────────────────────
 
 def _record_event(rows: list[dict], changed: list[str]) -> None:
@@ -708,6 +822,7 @@ def register_memory_tool(
 __all__ = [
     "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LOCK_TIMEOUT_S",
     "MAX_FACT_CHARS", "MAX_OPERATIONS",
-    "MemoryToolError", "OFF_DESCRIPTION", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan",
-    "register_memory_tool", "undo",
+    "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "TARGETS",
+    "TOOL_NAME", "UNDO", "UndoStore", "plan", "register_memory_tool", "reset", "reset_targets",
+    "store_sizes", "undo",
 ]
