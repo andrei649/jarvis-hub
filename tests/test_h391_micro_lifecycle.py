@@ -347,3 +347,47 @@ async def test_micro_uses_existing_strict_local_summarizer_when_enabled(tmp_path
     assert cp.load_micro_view("s")["summary"] == "locally compressed exchange"
     assert "ask 0" in prompts[0]
     cp.close()
+
+
+async def test_micro_view_is_not_committed_once_the_session_reaches_max_turns(tmp_path, monkeypatch):
+    """Review of #1321: at memory.max_turns every append drops the oldest turn, so a view
+    committed then never validated when the next prompt was built, yet each turn still
+    bumped the session clock and counted a compression. Below the cap the view is used;
+    at the cap nothing is committed."""
+    from agents.core.memory.conversation import ConversationMemory
+    from agents.core.memory.manager import MemoryManager
+
+    monkeypatch.setattr(persistence, "_memory_dir", lambda: tmp_path / "memory")
+    monkeypatch.setattr("agents.core.settings_db.get_value",
+                        lambda category, key, default=None: default)
+    cp = CheckpointManager(str(tmp_path / "clock.db"))
+    cp.initialize()
+    cp.create_session_record("s")
+    clock = cp.clock_snapshot("s")
+    conversation = ConversationMemory(max_turns=8, persist=True)
+    await conversation.new_session("s")
+    conversation.instances["s"] = clock.instance_id
+    memory = MemoryManager()
+    memory.conversation = conversation
+    memory.set_checkpoint_manager(cp)
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.session_id = "s"
+    orch.checkpoints = cp
+    orch.memory = memory
+    orch.get_setting = lambda key, default=None: {
+        "memory.context_compression": True,
+        "memory.compression_micro_compact": True,
+    }.get(key, default)
+    committed, loaded_at_prompt = [], []
+    for index in range(6):
+        await memory.add_turn("s", "user", f"ask {index}")
+        loaded_at_prompt.append(cp.load_micro_view("s") is not None)
+        receipt = await memory.add_turn("s", "assistant", f"answer {index}")
+        before = cp.clock_snapshot("s").revision
+        committed.append(await orch._maybe_micro_compact(f"answer {index}", append_receipt=receipt))
+        assert (cp.clock_snapshot("s").revision > before) is committed[-1]
+    # Exchanges 2 and 3 (4 and 6 turns) commit and their views load at the next prompt; from
+    # exchange 4 the session holds 8 turns and nothing is committed any more.
+    assert committed == [False, True, True, False, False, False]
+    assert loaded_at_prompt[2:4] == [True, True]
+    cp.close()

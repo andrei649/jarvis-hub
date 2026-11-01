@@ -4572,6 +4572,12 @@ class Orchestrator:
                     or len(turns) < 4 or len(turns) % 2
                     or (len(turns) // 2) % cadence):
                 return False
+            # A session at memory.max_turns drops its oldest turn on the next append, so a
+            # view committed now never loads: every turn bumped the clock, counted a
+            # compression and invalidated the cache epochs for nothing (review of #1321).
+            cap = getattr(getattr(self.memory, "conversation", None), "max_turns", None)
+            if type(cap) is int and 0 < cap <= len(turns):
+                return False
             if any(type(turn) is not dict or turn.get("media") for turn in turns):
                 return False
             if any(turns[i].get("role") != "user" or turns[i + 1].get("role") != "assistant"
