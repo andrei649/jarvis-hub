@@ -85,6 +85,15 @@ def root(tmp_path, monkeypatch):
 
 # ── /proc helpers ────────────────────────────────────────────────────────────────
 
+def _sole_child(pid: int) -> int | None:
+    """The supervisor's only child, read from /proc once, or None while there is not exactly one.
+
+    A predicate that lists the children several times races the supervisor's respawn: the
+    list can change between calls (IndexError on a child that just exited)."""
+    kids = _children(pid)
+    return kids[0] if len(kids) == 1 else None
+
+
 def _children(pid: int) -> list[int]:
     found = []
     for entry in os.listdir("/proc"):
@@ -181,6 +190,10 @@ def _events(log: Path) -> list[dict]:
 
 # ── 1. the real coordinator releases the root and reopens the restored files ─────
 
+# Boots the real orchestrator twice with several 90 s waits: the per-test backstop must be
+# longer than their sum, or a slow CI runner's timeout kills the xdist worker mid-file and
+# the whole run hangs instead of reporting this test's own assertion (PR #1321).
+@pytest.mark.timeout(400)
 @pytest.mark.skipif(not _LINUX_PROC, reason="reads open files from /proc")
 def test_the_real_coordinator_holds_nothing_under_the_root_and_reopens_the_restored_files(
         root, tmp_path):
@@ -194,7 +207,7 @@ def test_the_real_coordinator_holds_nothing_under_the_root_and_reopens_the_resto
         env=env, cwd=str(tmp_path))
     try:
         # The real orchestrator is up: its stores hold the root's DBs open.
-        _wait_for(lambda: len(_children(sup.pid)) == 1 and _db_fds(_children(sup.pid)[0], root),
+        _wait_for(lambda: (c := _sole_child(sup.pid)) is not None and _db_fds(c, root),
                   what="the coordinator opening its stores")
         first = _children(sup.pid)[0]
         assert bk.runtime_running_elsewhere(root) is True
@@ -213,8 +226,8 @@ def test_the_real_coordinator_holds_nothing_under_the_root_and_reopens_the_resto
         assert _rows(root / "h010probe.db") == 1
 
         # A fresh process rebuilds the orchestrator on the restored files.
-        _wait_for(lambda: len(_children(sup.pid)) == 1 and _children(sup.pid)[0] != first
-                  and _db_fds(_children(sup.pid)[0], root), what="the respawned coordinator")
+        _wait_for(lambda: (c := _sole_child(sup.pid)) is not None and c != first
+                  and _db_fds(c, root), what="the respawned coordinator")
         second = _children(sup.pid)[0]
         assert not Path(f"/proc/{first}").exists()                      # the old one is gone
         fds = _root_fds(second, root)
@@ -272,6 +285,7 @@ def _probe_pids(db: Path) -> set[int]:
 
 
 @pytest.mark.skipif(not _LINUX_PROC, reason="reads open files from /proc")
+@pytest.mark.timeout(400)  # the real supervisor, as above
 def test_an_analytics_write_after_the_restore_lands_in_the_restored_file(root, tmp_path):
     """The module-global analytics connection (analytics_store._db) is the one round 2 never
     reopened: every analytics write after the restore went to the unlinked pre-restore
@@ -293,8 +307,8 @@ def test_an_analytics_write_after_the_restore_lands_in_the_restored_file(root, t
     sup = subprocess.Popen([sys.executable, str(sup_script)], env=env,  # nosec B603
                            cwd=str(tmp_path))
     try:
-        _wait_for(lambda: len(_children(sup.pid)) == 1
-                  and _children(sup.pid)[0] in _probe_pids(analytics_db),
+        _wait_for(lambda: (c := _sole_child(sup.pid)) is not None
+                  and c in _probe_pids(analytics_db),
                   what="the coordinator writing analytics events")
         first = _children(sup.pid)[0]
         name = Path(bk.create_backup(source_root=str(root))["archive"]).name

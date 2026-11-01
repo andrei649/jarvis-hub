@@ -113,6 +113,16 @@ _APPLY_LOCK = "restore.lock"               # held while a restore is checked and
 # coordinator) that deferred every later restore (H010 review r2). They are never
 # archived, and a restore keeps what the live root held instead of an archive's copy.
 _PROCESS_MARKS = frozenset({_RUNTIME_PID, "hub.lock"})
+# Lease files beside a provider-selection store (``.settings.db.selection.lock``, any
+# depth) carry no data either: they exist only to be flock()ed, and the selection gate
+# refuses one that is not 0600. An archived copy came back from a restore as 0644, so
+# every respawned coordinator refused to boot (PR #1321). They are never archived and a
+# restore drops any an older archive carries; the next acquire recreates them 0600.
+_SELECTION_LEASE_SUFFIX = ".selection.lock"
+
+
+def _is_selection_lease(name: str) -> bool:
+    return name.startswith(".") and name.endswith(_SELECTION_LEASE_SUFFIX)
 _ROLLBACK_TAG = "prerestore-"  # automatic rollback points: jarvis-backup-[quick-]prerestore-*
 # State DBs are SQLite files under these suffixes (settings.db, channel_routes.sqlite,
 # checkpoints' history.sqlite3 ...). A ``*.db`` has always been treated as SQLite; the
@@ -501,11 +511,14 @@ def _in_exec_cache(path: Path, root: Path, owner_root: tuple[str, ...] | None = 
 
 
 def _is_process_mark(path: Path, root: Path) -> bool:
-    """A process mark at the top of the data root (``hub.lock``, ``runtime.pid``)."""
+    """A process mark at the top of the data root (``hub.lock``, ``runtime.pid``), or a
+    provider-selection lease file at any depth."""
     try:
         parts = Path(path).relative_to(root).parts
     except ValueError:
         return False
+    if parts and _is_selection_lease(parts[-1]):
+        return True
     return len(parts) == 1 and parts[0] in _PROCESS_MARKS
 
 
@@ -898,6 +911,11 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
             (target / mark).unlink(missing_ok=True)
         else:
             (target / mark).write_bytes(before)
+    # An older archive may carry a selection lease file with its archived mode; the gate
+    # refuses it. It holds no data, so it is dropped and recreated 0600 on first use.
+    for parts in written:
+        if parts and _is_selection_lease(parts[-1]):
+            target.joinpath(*parts).unlink(missing_ok=True)
     # A restored DB is a consistent snapshot; a -wal/-shm/-journal left beside it by the
     # state it replaced would be replayed over it on the next open (the drill below
     # included). They are dropped before anything opens the DB.
