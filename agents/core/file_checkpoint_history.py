@@ -694,6 +694,7 @@ class FileCheckpointHistory:
                     post = observed.pop(rel, None)
                     if not item["pre_existed"]:
                         if post is None:
+                            self._put_blob(b"")  # as every other deletion branch does
                             db.execute("""UPDATE group_files SET post_existed=0,
                                 post_sha=?, post_size=0, post_mode=0,
                                 change_kind='unchanged' WHERE group_id=? AND path=?""",

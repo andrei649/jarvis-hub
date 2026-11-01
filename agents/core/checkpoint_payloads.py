@@ -42,6 +42,13 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# The empty blob's bytes are known without a stored copy. A finished group recorded a
+# created-then-deleted file with this hash and never stored it (main did too), and one
+# such row made the whole inventory incomplete, refusing every restore, diff and
+# maintenance call (review of #1321).
+EMPTY_BLOB_SHA = _sha(b"")
+
+
 def _ref(value: object) -> bool:
     return type(value) is str and len(value) == 64 and all(
         char in "0123456789abcdef" for char in value
@@ -424,6 +431,8 @@ class CheckpointPayloadStore:
     def blob(self, sha: str, size: int) -> bytes | None:
         if not _ref(sha) or type(size) is not int or not 0 <= size <= MAX_CAPTURE_BYTES:
             raise PayloadRefusal("invalid_blob_ref")
+        if sha == EMPTY_BLOB_SHA and size == 0:
+            return b""
         with self._read() as handles:
             if handles is None:
                 return None

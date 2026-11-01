@@ -14,7 +14,7 @@ import stat
 from pathlib import Path
 from urllib.parse import quote
 
-from .checkpoint_payloads import CheckpointPayloadStore, PayloadRefusal, _ref
+from .checkpoint_payloads import EMPTY_BLOB_SHA, CheckpointPayloadStore, PayloadRefusal, _ref
 from .commands import Principal
 from .file_tools import FileScope, SnapshotStore
 
@@ -255,6 +255,7 @@ class CheckpointInventory:
                 members = row["_generation"].get("files", []) if row["type"] == "group" else [row]
                 if any((post := member.get("post_sha")) is not None and
                        (not _ref(post) or post not in owned["blobs"])
+                       and post != EMPTY_BLOB_SHA
                        for member in members):
                     complete = False
                     break
