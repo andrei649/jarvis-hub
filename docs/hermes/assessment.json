@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "22fcac3f71953f94289b2048b3c58a0fd76d77c2",
-  "assessed_at": "2026-11-01T11:19:20Z",
+  "base_sha": "7bcdc97cbb73bb3dc6f962c1d0d00be6e50b2611",
+  "assessed_at": "2026-11-01T11:49:32Z",
   "reviews": [
     {
       "id": "H001",
@@ -8245,7 +8245,7 @@
         },
         {
           "path": "tests/test_browser_chromium_runtime.py",
-          "sha256": "57863783d2b848a8592684e7acddf3083aec4824655f5d65e7ee9e1da5bd2d11"
+          "sha256": "c165a9c127bed5cc01060c799c265811e496a134de73010b9d381e838f8578e4"
         }
       ]
     },
@@ -12914,7 +12914,7 @@
         },
         {
           "path": "tests/test_browser_chromium_runtime.py",
-          "sha256": "57863783d2b848a8592684e7acddf3083aec4824655f5d65e7ee9e1da5bd2d11"
+          "sha256": "c165a9c127bed5cc01060c799c265811e496a134de73010b9d381e838f8578e4"
         },
         {
           "path": "frontend/src/operator-panel.tsx",
@@ -12930,7 +12930,7 @@
         },
         {
           "path": "agents/core/browser_session.py",
-          "sha256": "7af1176873f22bdaa8a263a7a57843d0a82fa07c1200d346f17738e4885a4763"
+          "sha256": "ef7d25d9ddf09765fac4a96cc2bd56e45ee6c793e66ebda2ac629439f328eaed"
         },
         {
           "path": "tests/test_browser_session.py",
@@ -25870,7 +25870,7 @@
         },
         {
           "path": "tests/test_browser_chromium_runtime.py",
-          "sha256": "57863783d2b848a8592684e7acddf3083aec4824655f5d65e7ee9e1da5bd2d11"
+          "sha256": "c165a9c127bed5cc01060c799c265811e496a134de73010b9d381e838f8578e4"
         },
         {
           "path": "frontend/src/operator-panel.tsx",
@@ -25886,7 +25886,7 @@
         },
         {
           "path": "agents/core/browser_session.py",
-          "sha256": "7af1176873f22bdaa8a263a7a57843d0a82fa07c1200d346f17738e4885a4763"
+          "sha256": "ef7d25d9ddf09765fac4a96cc2bd56e45ee6c793e66ebda2ac629439f328eaed"
         },
         {
           "path": "tests/test_browser_session.py",
@@ -29191,7 +29191,7 @@
         },
         {
           "path": "tests/test_browser_chromium_runtime.py",
-          "sha256": "57863783d2b848a8592684e7acddf3083aec4824655f5d65e7ee9e1da5bd2d11"
+          "sha256": "c165a9c127bed5cc01060c799c265811e496a134de73010b9d381e838f8578e4"
         },
         {
           "path": "frontend/src/operator-panel.tsx",
@@ -29207,7 +29207,7 @@
         },
         {
           "path": "agents/core/browser_session.py",
-          "sha256": "7af1176873f22bdaa8a263a7a57843d0a82fa07c1200d346f17738e4885a4763"
+          "sha256": "ef7d25d9ddf09765fac4a96cc2bd56e45ee6c793e66ebda2ac629439f328eaed"
         },
         {
           "path": "tests/test_browser_session.py",

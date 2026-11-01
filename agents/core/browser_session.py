@@ -494,19 +494,47 @@ class BrowserOwnershipJournal:
                 with contextlib.suppress(psutil.NoSuchProcess):
                     launch.terminate()
                     await asyncio.to_thread(launch.wait, timeout=2)
-            remaining = []
-            for item in psutil.process_iter(['pid', 'cmdline']):
-                try:
-                    if marker in (item.info.get('cmdline') or []):
-                        remaining.append(item.pid)
-                except psutil.NoSuchProcess:
-                    continue
-                except psutil.Error:
-                    return False
-            if remaining:
+            # Chrome double-forks helpers (chrome_crashpad_handler) outside the native
+            # process tree; they survive the tree's termination and keep writing under
+            # the profile (--database=<profile>/Crashpad), so the profile could not be
+            # removed and the reap failed on a CI runner's Google Chrome. Only processes
+            # naming this exact owned profile are swept, never any other Chrome.
+            prefix = str(profile) + os.sep
+
+            def _references(cmdline) -> bool:
+                return any(arg == marker or prefix in arg for arg in cmdline or [])
+
+            for _round in range(3):  # the last round must find none
+                stragglers = []
+                for item in psutil.process_iter(['pid', 'cmdline']):
+                    try:
+                        if item.pid != os.getpid() and _references(item.info.get('cmdline')):
+                            stragglers.append(item)
+                    except psutil.NoSuchProcess:
+                        continue
+                    except psutil.Error:
+                        return False
+                if not stragglers:
+                    break
+                for item in stragglers:
+                    with contextlib.suppress(psutil.NoSuchProcess):
+                        item.terminate()
+                _gone, alive = await asyncio.to_thread(psutil.wait_procs, stragglers, timeout=3)
+                for item in alive:
+                    with contextlib.suppress(psutil.NoSuchProcess):
+                        item.kill()
+                await asyncio.to_thread(psutil.wait_procs, alive, timeout=2)
+            else:
                 return False
-            if profile.exists():
-                await asyncio.to_thread(shutil.rmtree, profile)
+            for attempt in range(3):
+                if not profile.exists():
+                    break
+                try:
+                    await asyncio.to_thread(shutil.rmtree, profile)
+                except OSError:
+                    if attempt == 2:
+                        return False
+                    await asyncio.sleep(0.2)
             self.remove(path.stem)
             return True
         except Exception:

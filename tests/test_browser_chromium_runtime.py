@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -886,6 +887,48 @@ os._exit(0)
         with contextlib.suppress(OSError):
             import shutil
             shutil.rmtree(record['profile'])
+        journal.remove(sid)
+
+
+async def test_orphan_reap_sweeps_a_detached_helper_still_writing_under_the_profile(tmp_path):
+    """Google Chrome double-forks chrome_crashpad_handler outside the native process tree
+    with ``--database=<profile>/Crashpad``. The reap must stop it too, or the profile cannot
+    be removed and the orphan is never reaped (PR #1321 CI)."""
+    chrome = _chrome_binary()
+    if not chrome:
+        pytest.skip('installed local Chrome required')
+
+    from agents.core.browser_session import BrowserOwnershipJournal
+
+    journal = BrowserOwnershipJournal(tmp_path / 'journal')
+    sid = 'e' * 32
+    profile = Path(tempfile.mkdtemp(prefix='nerva-browser-orphan-'))
+    native_proc = subprocess.Popen([chrome, '--headless=new', '--no-sandbox', '--no-first-run',
+        '--no-default-browser-check', '--disable-background-networking', '--no-proxy-server',
+        '--host-resolver-rules=MAP * ~NOTFOUND', '--remote-debugging-port=0',
+        '--user-data-dir=' + str(profile), 'about:blank'], start_new_session=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    helper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)',
+        '--database=' + str(profile / 'Crashpad')], start_new_session=True)
+    gone = psutil.Process(os.getpid())  # an owner/controller that is no longer the one recorded
+    native = psutil.Process(native_proc.pid)
+    journal.write(sid, {'profile': str(profile),
+        'controller': [gone.pid, gone.create_time() - 1000.0],
+        'owner_process': [gone.pid, gone.create_time() - 1000.0],
+        'native': [native.pid, native.create_time()]})
+    try:
+        assert await journal.reap_entry(journal._file(sid)) is True
+        assert helper.wait(timeout=10) is not None
+        assert not Path(profile).exists()
+        assert not journal._file(sid).exists()
+    finally:
+        for proc in (helper, native_proc):
+            with contextlib.suppress(OSError):
+                proc.kill()
+            with contextlib.suppress(Exception):
+                proc.wait(timeout=5)
+        with contextlib.suppress(OSError):
+            shutil.rmtree(profile)
         journal.remove(sid)
 
 
