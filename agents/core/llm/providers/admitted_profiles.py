@@ -13,6 +13,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, fields
 
 from ..provider_request import (
+    HOOK_PROFILE_MESSAGE_ROWS,
     ProfileRequestRefused,
     _owned_json,
     prepare_profile_messages,
@@ -113,7 +114,8 @@ async def prepare_admitted_profile(profile, *, model, messages, reasoning_config
     if not isinstance(profile, AdmittedProviderProfile):
         return profile
     static = ProviderProfile(**_metadata(profile))
-    sanitized = prepare_profile_messages(static, messages, maximum=512 * 1024)
+    sanitized = prepare_profile_messages(static, messages, maximum=512 * 1024,
+                                         rows=HOOK_PROFILE_MESSAGE_ROWS)
     original = _json(sanitized)
     context = {'model': model, 'session_id': session_id,
                'reasoning_config': _owned_json(reasoning_config)}
@@ -135,7 +137,8 @@ async def prepare_admitted_profile(profile, *, model, messages, reasoning_config
     prepared = _PreparedProfile(**_metadata(static), _model=model,
                                 _messages_json=original, _context_json=frozen_context,
                                 _result_json=_json(result, maximum=768 * 1024))
-    prepare_profile_messages(prepared, sanitized, maximum=512 * 1024)
+    prepare_profile_messages(prepared, sanitized, maximum=512 * 1024,
+                             rows=HOOK_PROFILE_MESSAGE_ROWS)
     profile_request_defaults(prepared, model, session_id=session_id,
                              context={'reasoning_config': reasoning_config})
     _CURRENT_PREPARED.set((weakref.ref(asyncio.current_task()), weakref.ref(profile),

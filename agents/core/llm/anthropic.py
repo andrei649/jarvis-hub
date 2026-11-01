@@ -16,6 +16,8 @@ from .egress import llm_async_client
 from .model_config import DEFAULT_CLAUDE_MODEL
 from .provider_errors import note_provider_failure
 from .provider_request import (
+    BUILTIN_PROFILE_MESSAGE_ROWS,
+    HOOK_PROFILE_MESSAGE_ROWS,
     ProfileRequestRefused,
     apply_profile_request,
     prepare_profile_messages,
@@ -248,10 +250,11 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
 
     async def _tool_payload(self, model, messages, tools, max_tokens, temperature):
         profile = await self._request_profile(model, messages)
-        maximum = (512 * 1024 if isinstance(self.profile, AdmittedProviderProfile)
-                   else _builtin_tool_history_limit(messages))
+        hooked = isinstance(self.profile, AdmittedProviderProfile)
+        maximum = 512 * 1024 if hooked else _builtin_tool_history_limit(messages)
+        rows = HOOK_PROFILE_MESSAGE_ROWS if hooked else BUILTIN_PROFILE_MESSAGE_ROWS
         system, converted = anthropic_messages(
-            prepare_profile_messages(profile, messages, maximum=maximum))
+            prepare_profile_messages(profile, messages, maximum=maximum, rows=rows))
         payload: dict[str, Any] = {
             "model": model,
             "max_tokens": cloud_cap(max_tokens),

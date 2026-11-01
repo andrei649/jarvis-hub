@@ -111,10 +111,16 @@ def profile_headers(profile, original=None):
 # budget allow; a 256 KiB default refused valid prompts for 200K-token and 1M-token models
 # (Codex review, #1321). Isolated provider hooks pass their own tighter bound (512 KiB).
 BUILTIN_PROFILE_MESSAGE_BYTES = 16 * 1024 * 1024
+# The same holds for the row count: a tool loop raised to its 32-round cap adds up to ten
+# rows a round, and 256 refused round 27 where main sent it (review of #1321). Built-ins
+# keep the 4096 rows the Responses wire always allowed; isolated hooks pass their 256.
+BUILTIN_PROFILE_MESSAGE_ROWS = 4096
+HOOK_PROFILE_MESSAGE_ROWS = 256
 
 
 def prepare_profile_messages(profile, messages, *, preserve_replay=False,
-                             maximum=BUILTIN_PROFILE_MESSAGE_BYTES):
+                             maximum=BUILTIN_PROFILE_MESSAGE_BYTES,
+                             rows=BUILTIN_PROFILE_MESSAGE_ROWS):
     """Sanitize donor chat sidecars, call the hook, then guard owned history.
 
     Codex's opaque replay is carried outside the hook and reattached unchanged.
@@ -123,7 +129,7 @@ def prepare_profile_messages(profile, messages, *, preserve_replay=False,
     from .provider_replay import KEY
     if preserve_replay and getattr(profile, "id", None) != "openai-codex":
         raise ProfileRequestRefused("only Codex can preserve model replay")
-    if type(messages) is not list or len(messages) > 256 or any(type(row) is not dict for row in messages):
+    if type(messages) is not list or len(messages) > rows or any(type(row) is not dict for row in messages):
         raise ProfileRequestRefused("invalid profile messages")
     replay = []
     sanitized = []
@@ -151,7 +157,7 @@ def prepare_profile_messages(profile, messages, *, preserve_replay=False,
     if preserve_replay:
         replay = _owned_json(replay, maximum=256 * 1024)
     original = _owned_json(sanitized, maximum=maximum)
-    if type(original) is not list or len(original) > 256 or any(type(row) is not dict for row in original):
+    if type(original) is not list or len(original) > rows or any(type(row) is not dict for row in original):
         raise ProfileRequestRefused("invalid profile messages")
     prepared = _owned_json(profile.prepare_messages(_owned_json(original, maximum=maximum)),
                            maximum=maximum)

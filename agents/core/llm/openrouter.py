@@ -192,6 +192,8 @@ class OpenRouterBackend(LLMBackend):
         ``extra_body`` (H681, never over a key the hub owns), then routing."""
         from .provider_request import (
             BUILTIN_PROFILE_MESSAGE_BYTES,
+            BUILTIN_PROFILE_MESSAGE_ROWS,
+            HOOK_PROFILE_MESSAGE_ROWS,
             apply_profile_request,
             compatible_parameters,
             prepare_profile_messages,
@@ -200,9 +202,11 @@ class OpenRouterBackend(LLMBackend):
         from .request_context import merge_extra_body, reconcile_payload
         profile = self.profile if profile is None else profile
         from .providers.admitted_profiles import AdmittedProviderProfile
-        maximum = (512 * 1024 if isinstance(self.profile, AdmittedProviderProfile)
-                   else BUILTIN_PROFILE_MESSAGE_BYTES)
-        payload["messages"] = prepare_profile_messages(profile, payload["messages"], maximum=maximum)
+        hooked = isinstance(self.profile, AdmittedProviderProfile)
+        maximum = 512 * 1024 if hooked else BUILTIN_PROFILE_MESSAGE_BYTES
+        rows = HOOK_PROFILE_MESSAGE_ROWS if hooked else BUILTIN_PROFILE_MESSAGE_ROWS
+        payload["messages"] = prepare_profile_messages(profile, payload["messages"],
+                                                       maximum=maximum, rows=rows)
         reasoning_config = profile_reasoning_config(
             profile, payload["model"], self.reasoning_effort,
             supports_wire="reasoning-effort" in profile.capabilities)
