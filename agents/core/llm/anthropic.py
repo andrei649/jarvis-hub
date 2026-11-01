@@ -16,7 +16,6 @@ from .egress import llm_async_client
 from .model_config import DEFAULT_CLAUDE_MODEL
 from .provider_errors import note_provider_failure
 from .provider_request import (
-    BUILTIN_PROFILE_MESSAGE_BYTES,
     ProfileRequestRefused,
     apply_profile_request,
     prepare_profile_messages,
@@ -56,7 +55,9 @@ ANTHROPIC_VERSION = "2023-06-01"
 #: (``invalid_request_error``, ``request_too_large``): the only failures the tool loop
 #: answers by resending without the images the request carried.
 _REJECTED_REQUEST_STATUSES = frozenset({400, 413})
-_TOOL_HISTORY_TEXT_BYTES = BUILTIN_PROFILE_MESSAGE_BYTES  # same bound as the text path
+# Tool-loop text history keeps its own 256 KiB bound (H297 review round 4); only plain
+# text prompts use BUILTIN_PROFILE_MESSAGE_BYTES.
+_TOOL_HISTORY_TEXT_BYTES = 256 * 1024
 _BUILTIN_REQUEST_IMAGE_B64_CHARS = 20_000_000  # AgentToolRuntime's request image ceiling.
 _BUILTIN_REQUEST_IMAGES = 8
 _BUILTIN_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
