@@ -676,7 +676,18 @@ def _ensure_init():
         return
     with _init_lock:
         if not _initialized or _initialized_for_path != path_key:
-            init_db()
+            from agents.core.llm.providers.selection_gates import SelectionBusy
+
+            try:
+                init_db()
+            except SelectionBusy:
+                # Another process holds the selection lease across a signed or custom
+                # stream. init_db only creates, seeds and migrates; an existing store is
+                # read as it is and init runs again on the next access, so a process that
+                # starts mid-stream reads its settings instead of failing (review of #1321).
+                if not DB_PATH.exists():
+                    raise
+                return
             _initialized = True
             _initialized_for_path = path_key
 

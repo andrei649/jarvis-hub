@@ -32,6 +32,13 @@ class _Unsupported(SelectionUnavailable):
     pass
 
 
+class SelectionNotPrivate(_Unsupported):
+    """The store's directory or file is not private to this user (a umask-002 install, a
+    root owned by another account). No signed lease can be proven there, so signed readers
+    and writers refuse, and with no signed reader able to hold a lease, built-in settings
+    continue unfenced as on a host without flock (review of #1321: main read them)."""
+
+
 _LOCAL = threading.local()
 
 
@@ -78,12 +85,23 @@ def _validate_store(path: Path, root_fd: int, *, allow_missing: bool) -> None:
     try:
         opened = os.fstat(store_fd)
         named = os.stat(path.name, dir_fd=root_fd, follow_symlinks=False)
-        if (not stat.S_ISREG(opened.st_mode) or opened.st_uid != os.getuid()
-                or opened.st_mode & 0o022 or opened.st_nlink != 1
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
                 or (opened.st_dev, opened.st_ino) != (named.st_dev, named.st_ino)):
             raise SelectionUnavailable('selection store has an unsafe or aliased identity')
+        if opened.st_uid != os.getuid() or opened.st_mode & 0o022:
+            raise SelectionNotPrivate('selection store is not privately owned')
     finally:
         os.close(store_fd)
+
+
+def _refuse_aliased_store(path: Path, root_fd: int) -> None:
+    """Even unfenced, a built-in writer never writes through a second name of a store."""
+    try:
+        named = os.stat(path.name, dir_fd=root_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(named.st_mode) or named.st_nlink != 1:
+        raise SelectionUnavailable('selection store has an unsafe or aliased identity')
 
 
 def _acquire(path: Path, *, exclusive: bool, allow_missing: bool = False) -> SelectionLease:
@@ -97,9 +115,11 @@ def _acquire(path: Path, *, exclusive: bool, allow_missing: bool = False) -> Sel
     root_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         root = os.fstat(root_fd)
-        if (not stat.S_ISDIR(root.st_mode) or root.st_uid != os.getuid()
-                or root.st_mode & 0o022):
-            raise SelectionUnavailable('selection store directory is not privately owned')
+        if not stat.S_ISDIR(root.st_mode):
+            raise SelectionUnavailable('selection store directory is not a directory')
+        if root.st_uid != os.getuid() or root.st_mode & 0o022:
+            _refuse_aliased_store(path, root_fd)
+            raise SelectionNotPrivate('selection store directory is not privately owned')
         name = f'.{path.name}.selection.lock'
         fd = os.open(name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600,
                      dir_fd=root_fd)

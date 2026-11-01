@@ -37,6 +37,25 @@ from .tokenizer import estimate_tokens
 
 logger = logging.getLogger("jarvis.llm.hybrid")
 
+# A settings writer's exclusive lease lasts one SQLite transaction (an admin save, a reset,
+# a fresh process's init): a cloud route waits that out instead of refusing the turn
+# (review of #1321). The wait is bounded; a lease held longer still refuses.
+_SELECTION_BUSY_WAIT_SECONDS = 0.5
+_SELECTION_BUSY_POLL_SECONDS = 0.02
+
+
+def _read_selection_settled(read_selection, selection_gates):
+    import time
+
+    deadline = time.monotonic() + _SELECTION_BUSY_WAIT_SECONDS
+    while True:
+        try:
+            return read_selection()
+        except selection_gates.SelectionBusy:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_SELECTION_BUSY_POLL_SECONDS)
+
 # Token thresholds
 LOCAL_MAX_TOKENS = 8_000
 FLASH_MAX_TOKENS = 128_000
@@ -771,7 +790,11 @@ class HybridRouter(LLMRouter):
         if not Path(settings_db.DB_PATH).exists() and runtime is None:
             return
         try:
-            selected = read_selection()
+            selected = _read_selection_settled(read_selection, selection_gates)
+        except selection_gates.SelectionNotPrivate as exc:
+            if runtime is None:
+                return  # Nor in a store that is not private: no signed CAS can land there.
+            raise LocalBackendUnavailableError('selected signed provider state is unreadable') from exc
         except Exception as exc:
             raise LocalBackendUnavailableError('selected signed provider state is unreadable') from exc
         if selected is None:
