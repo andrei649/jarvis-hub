@@ -3395,7 +3395,8 @@ export interface paths {
          * Create Skill Bundle
          * @description H026 — create a bundle, or replace one with ``overwrite``. Every member must be an
          *     installed skill (its name or folder); the bundle stores the skill's name. Creating a
-         *     bundle switches nothing.
+         *     bundle switches nothing. Only the bundle's own file is ever replaced (``replaced``
+         *     says so); a new bundle whose file name another file holds is written beside it.
          */
         post: operations["create_skill_bundle_api_skills_bundles_post"];
         delete?: never;
@@ -15433,6 +15434,8 @@ export interface components {
              * @default
              */
             description: string;
+            /** Instruction */
+            instruction?: string | null;
             /**
              * Overwrite
              * @default false

@@ -288,6 +288,7 @@ def test_the_default_registry_names_the_first_wave():
     assert {c.name for c in build_default_registry().visible(OWNER)} == {
         "help", "status", "sessions", "new", "reset", "undo", "recap", "btw", "pause", "stop", "resume", "jobs", "remind", "voice", "refine", "usage", "personality",
         "checkpoints", "rollback", "kanban", "project",
+        "bundles", "bundle",   # H026: owner commands; a guest's set below is unchanged
     }
     assert {c.name for c in build_default_registry().visible(GUEST)} == {
         "help", "status", "sessions", "recap", "btw", "jobs", "voice",

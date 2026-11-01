@@ -7,7 +7,9 @@
    it; the list is re-read whatever the hub answered. A skill
    for another operating system is marked unsupported (H328).
    H026 — a named bundle (`GET /api/skills/bundles`) is switched as one unit with the same
-   route ({bundle}); its members that are not installed are named, never matched. */
+   route ({bundle}); its members that are not installed are named, never matched. Its chat
+   command is shown too: the owner's `/<slug> [instruction]` in the chat loads every member
+   into that turn (the hub does it; this panel only names the command). */
 import React, { useState } from 'react';
 import { Card, Row, State, Tag, actA, arr, asLive, inpS, mono, refusalReason, useApi } from '../panel-kit';
 
@@ -125,6 +127,8 @@ export function SkillSwitchesPanel() {
                 <span style={{ ...mono }} title={b.description || undefined}>{b.name}</span>
                 <Tag>{arr(b, 'skills').length} skills</Tag>
                 {missing.length > 0 && <Tag c="var(--amber)">{missing.length} not installed</Tag>}
+                <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}
+                  title="send it in the chat to load every skill of the bundle into that turn">/{b.slug}</span>
                 <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!channelOk || busy !== null}
                   aria-label={`switch off bundle ${b.name}`} onClick={() => flip({ bundle: b.slug }, false)}>all off</button>
                 <button className="tool-btn" disabled={!channelOk || busy !== null}
@@ -137,6 +141,7 @@ export function SkillSwitchesPanel() {
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.5 }}>
         A switched-off skill stays installed, signed and approved; the model is not told about it and a command
         naming it is refused. Switching back on requires owner approval; the switch changes after the task runs.
+        {bundles.length > 0 && ' The owner sends /<bundle> [instruction] in the chat to load a bundle\'s skills into that turn.'}
       </div>
       {msg && <div role="status" style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     </Card>

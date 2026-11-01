@@ -412,20 +412,26 @@ def build_parser() -> argparse.ArgumentParser:
         switch.add_argument("--json", action="store_true")
     # H026 — named groups of skills, switched off/on as one unit with --bundle.
     bundles = skills_verbs.add_parser(
-        "bundles", help="named groups of skills, switched as one unit (`nerva skills off|on --bundle`)")
-    bundle_verbs = bundles.add_subparsers(dest="bundle_action", required=True, metavar="action")
+        "bundles", help="named groups of skills, switched as one unit (`nerva skills off|on --bundle`) "
+                        "or loaded into a chat turn with /<bundle>; with no action, the list")
+    bundle_verbs = bundles.add_subparsers(dest="bundle_action", required=False, metavar="action")
     bundle_verbs.add_parser("list", help="every bundle, its skills and which are not installed").add_argument(
         "--json", action="store_true")
     bundle_show = bundle_verbs.add_parser("show", help="one bundle's skills")
     bundle_show.add_argument("name", help="the bundle's name (any casing; spaces and _ read as -)")
     bundle_show.add_argument("--json", action="store_true")
     bundle_create = bundle_verbs.add_parser(
-        "create", help="create a bundle of installed skills; it switches nothing (admin)")
-    bundle_create.add_argument("name", help="the bundle's name")
+        "create", help="create a bundle of installed skills; it switches nothing (admin). Skills come "
+                       "from --skill, or are asked for one a line on a terminal when there is none")
+    bundle_create.add_argument("name", help="the bundle's name (/<its slug> loads it in chat)")
     bundle_create.add_argument("--skill", "-s", action="append", default=[], metavar="SKILL",
                                help="an installed skill's name or folder (repeat for each)")
     bundle_create.add_argument("--description", "-d", default="")
-    bundle_create.add_argument("--force", "-f", action="store_true", help="replace a bundle of that name")
+    bundle_create.add_argument("--instruction", "-i", default=None,
+                               help="extra guidance put before the skills when the bundle is loaded; "
+                                    "omitted, a replaced bundle keeps its own (\"\" drops it)")
+    bundle_create.add_argument("--force", "-f", action="store_true",
+                               help="replace the bundle of that name (only its own file is replaced)")
     bundle_create.add_argument("--json", action="store_true")
     bundle_delete = bundle_verbs.add_parser(
         "delete", help="delete a bundle; its skills and their switches are untouched (admin)")
@@ -2762,33 +2768,70 @@ def _bundle_line(row: Mapping[str, Any]) -> str:
     return text + (f"  {_plain(row.get('description'), 120)}" if row.get("description") else "")
 
 
+def _ask_bundle_skills(ctx: Context) -> list[str] | None:
+    """Hermes' interactive fallback: one skill a line at ``skill> ``, an empty line ends;
+    None when the owner cancels (end of input or Ctrl-C)."""
+    ctx.say("No skills passed via --skill. Enter one skill name per line.")
+    ctx.say("Submit an empty line to finish.")
+    members: list[str] = []
+    try:
+        while len(members) < 64:
+            ctx.out.write("skill> ")
+            flush = getattr(ctx.out, "flush", None)
+            if callable(flush):
+                flush()
+            line = ctx.inp.readline()
+            if not line:
+                return None
+            name = line.strip()
+            if not name:
+                break
+            members.append(name)
+    except KeyboardInterrupt:
+        return None
+    return members
+
+
 def _skill_bundles(ns: argparse.Namespace, ctx: Context) -> int:
-    """H026 — ``nerva skills bundles``: keep named skill bundles on the hub. A bundle is
-    switched off or on as one unit with ``nerva skills off|on --bundle NAME`` (on waits
-    for the owner's approval, as for one skill)."""
+    """H026 — ``nerva skills bundles``: keep named skill bundles on the hub (no action
+    lists them, as Hermes' ``bundles`` does). A bundle is switched off or on as one unit
+    with ``nerva skills off|on --bundle NAME`` (on waits for the owner's approval, as for
+    one skill), and loaded into a chat turn with ``/<bundle> [instruction]``."""
     from urllib.parse import quote
 
-    client = ctx.client()
-    action = ns.bundle_action
+    action = ns.bundle_action or "list"       # Hermes: `bundles` alone lists them
+    as_json = bool(getattr(ns, "json", False))
     if action == "create":
         members = [s for s in ns.skill if s.strip()]
         if not members:
-            ctx.err.write("a bundle must name at least one skill: --skill NAME (repeat for each)\n")
-            return EXIT_USAGE
-        reply = client.post(_BUNDLES_PATH, {"name": ns.name, "skills": members,
-                                            "description": ns.description, "overwrite": ns.force})
+            if not _is_tty(ctx.inp):
+                ctx.err.write("a bundle must name at least one skill: pass --skill NAME (repeat for each); "
+                              "without one, skills are asked for only on an interactive terminal\n")
+                return EXIT_USAGE
+            asked = _ask_bundle_skills(ctx)
+            if asked is None:
+                ctx.err.write("Cancelled.\n")
+                return EXIT_FAILED
+            members = asked
+            if not members:
+                ctx.err.write("A bundle must reference at least one skill.\n")
+                return EXIT_USAGE
+        body = {"name": ns.name, "skills": members, "description": ns.description, "overwrite": ns.force}
+        if ns.instruction is not None:
+            body["instruction"] = ns.instruction
+        reply = ctx.client().post(_BUNDLES_PATH, body)
     elif action == "delete":
-        reply = client.request("DELETE", f"{_BUNDLES_PATH}/{quote(ns.name, safe='')}")
+        reply = ctx.client().request("DELETE", f"{_BUNDLES_PATH}/{quote(ns.name, safe='')}")
     elif action == "reload":
-        reply = client.post(f"{_BUNDLES_PATH}/reload", {})
+        reply = ctx.client().post(f"{_BUNDLES_PATH}/reload", {})
     elif action == "show":
-        reply = client.get(f"{_BUNDLES_PATH}/{quote(ns.name, safe='')}")
+        reply = ctx.client().get(f"{_BUNDLES_PATH}/{quote(ns.name, safe='')}")
     else:
-        reply = client.get(_BUNDLES_PATH)
+        reply = ctx.client().get(_BUNDLES_PATH)
     if not isinstance(reply, dict):
         ctx.err.write("unexpected reply from the hub\n")
         return EXIT_FAILED
-    if ns.json:
+    if as_json:
         ctx.dump(reply)
         return EXIT_OK
     if action == "list":
@@ -2818,6 +2861,10 @@ def _skill_bundles(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"  skills ({len(skills)}):")
         for name in skills:
             ctx.say(f"    - {_plain(name, 130)}{' (not installed)' if str(name).casefold() in missing else ''}")
+        if row.get("instruction"):
+            ctx.say("  Instruction:")
+            for line in str(row["instruction"]).splitlines() or [""]:
+                ctx.say(f"    {_plain(line, 300)}")
         return EXIT_OK
     if action == "create":
         row = reply.get("bundle") if isinstance(reply.get("bundle"), Mapping) else {}

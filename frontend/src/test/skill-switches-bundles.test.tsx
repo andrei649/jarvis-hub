@@ -45,6 +45,8 @@ describe('SkillSwitchesPanel — H026 bundles', () => {
     await waitFor(() => expect(screen.getByLabelText('switch off bundle Morning')).toBeTruthy());
     expect(screen.getByText('3 skills')).toBeTruthy();
     expect(screen.getByText('1 not installed')).toBeTruthy();
+    expect(screen.getByText('/morning')).toBeTruthy();                 // its chat command (H026 load)
+    expect(screen.getByText(/sends \/<bundle> \[instruction\] in the chat/)).toBeTruthy();
     fireEvent.click(screen.getByLabelText('switch off bundle Morning'));
     await waitFor(() => expect(screen.getByRole('status').textContent)
       .toBe('switched off everywhere · Weather Intel, News · not installed: Gone'));

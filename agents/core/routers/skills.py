@@ -222,7 +222,7 @@ async def switch_skill(body: SkillSwitchBody):
 # `GET /skills`; writes are admin routes like the switch.
 
 _BUNDLE_STATUS = {"not_found": 404, "exists": 409, "too_many_bundles": 409, "not_a_file": 409,
-                  "write_failed": 503}
+                  "no_free_file": 409, "write_failed": 503}
 
 
 def _bundle_refusal(exc) -> JSONResponse:
@@ -284,6 +284,9 @@ class SkillBundleBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     skills: list[Annotated[str, Field(max_length=128)]] = Field(..., min_length=1, max_length=64)
     description: str = Field("", max_length=200)
+    # Hermes' `instruction`: guidance put before the skills when the bundle is loaded into a
+    # turn. Left out (null), a replaced bundle keeps its own; "" drops it.
+    instruction: str | None = Field(None, max_length=2000)
     overwrite: bool = False
 
 
@@ -291,7 +294,8 @@ class SkillBundleBody(BaseModel):
 async def create_skill_bundle(body: SkillBundleBody):
     """H026 — create a bundle, or replace one with ``overwrite``. Every member must be an
     installed skill (its name or folder); the bundle stores the skill's name. Creating a
-    bundle switches nothing."""
+    bundle switches nothing. Only the bundle's own file is ever replaced (``replaced``
+    says so); a new bundle whose file name another file holds is written beside it."""
     import asyncio
 
     from agents.core.skills import bundles, switches
@@ -312,7 +316,8 @@ async def create_skill_bundle(body: SkillBundleBody):
                              "unknown": unknown}, status_code=422)
     try:
         bundle, replaced = await asyncio.to_thread(
-            bundles.save, body.name, members, description=body.description, overwrite=body.overwrite)
+            bundles.save, body.name, members, description=body.description, instruction=body.instruction,
+            overwrite=body.overwrite)
     except bundles.BundleError as exc:
         return _bundle_refusal(exc)
     except OSError:
