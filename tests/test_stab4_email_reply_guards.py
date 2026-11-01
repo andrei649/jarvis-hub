@@ -162,3 +162,22 @@ def test_email_reply_to_another_recipient_has_its_own_budget(tmp_path):
     assert asyncio.run(broker.execute(_FakeTask(_payload(ana))))["reason"] == "email_reply_rate_limited"
     assert asyncio.run(broker.execute(_FakeTask(_payload(bob))))["status"] == "ok"
     assert len(manager.sends) == 2
+
+
+def test_a_thread_follow_up_after_a_sent_reply_still_binds_to_the_inbound_email(tmp_path):
+    # A sent reply becomes the thread's latest message. A second reply queued from the
+    # thread (POST /api/channels/inbox/{thread_id}/reply) must still bind to the inbound
+    # email that opened it, not to our own outbound, or execute() refuses it.
+    store = ChannelInboxStore(tmp_path / "inbox.json")
+    rec = _inbound(store)
+    manager = _FakeManager()
+    broker = ChannelReplyBroker(inbox=store, channel_manager=manager)
+    for text in ("first", "second"):
+        queued = broker.request(rec["thread_id"], text)
+        assert queued["ok"] is True, queued
+        assert queued["payload"]["message_id"] == rec["id"]
+        assert queued["payload"]["reply"] == rec["reply"]
+        result = asyncio.run(broker.execute(_FakeTask(queued["payload"])))
+        assert result["status"] == "ok", result
+    assert [send[1] for send in manager.sends] == ["first", "second"]
+    assert [m["direction"] for m in store.messages(rec["thread_id"])] == ["in", "out", "out"]
