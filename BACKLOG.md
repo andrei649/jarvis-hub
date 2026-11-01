@@ -223,7 +223,7 @@
 - [ ] ⬜ **NWS-9 — MCP-first business connectors.** Knowledge comes only from uploaded documents. ERP, CRM,
   accounting and e-Factura through MCP servers are the next slice (spec §0, D4); gated on the owner's answers
   to D1–D4.
-- [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** Delivered locally 2026-10-28: default-off
+- [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** On `main` via #1321 (967bcaba, 2026-11-01); built 2026-10-28: default-off
   `NERVA_WORKSPACE_OCR=1`, together with killable extraction, lazily uses local PDFium/Tesseract
   for a PDF with no readable text layer. The POSIX parent owns the process group, enforces a
   20 s page deadline and the 60 s document deadline, and kills the group before reaping/releasing
@@ -243,7 +243,7 @@
   through `React.lazy`/`Suspense`, with unchanged admin guards, deep-link/focus behavior and an
   accessible localized retry screen for a failed chunk. Initial Workspace JS falls from 618,604
   to 551,049 raw bytes (172,863 to 156,990 bytes with gzip -9); admin/reports are deferred chunks.
-  Delivered locally 2026-10-28: current HUD/Workspace builds, 2,675 frontend tests and the 31-case
+  On `main` via #1321 (967bcaba, 2026-11-01); built 2026-10-28: current HUD/Workspace builds, 2,675 frontend tests and the 31-case
   isolated browser journey pass. The initial chunk remains above Vite's 500 kB advisory threshold.
 - [ ] ⬜ **NWS-21 — the pilot tag (owner).** No release tag holds the workspace yet (`v1.0.0` is older);
   pilot guide §2 installs from `<eticheta-pilotului>` (§15 upgrades from tag to tag) and says the
@@ -251,8 +251,8 @@
   and give the tag's name to the installer — the row „NWS-21 — merge the Nerva Workspace pilot PR
   (#1256) and cut the pilot tag" in `docs/OWNER_TASKS.md` (owner gates).
   Remaining (recounted 2026-10-26): the tag only — PR #1256 merged as `ed95528`; the owner cuts the tag and names it to the installer (`docs/OWNER_TASKS.md`).
-- [x] ✅ **NWS-23 — round-3 residual minors.** All five original residuals are fixed locally
-  (2026-10-28), with the affected Hermes evidence re-read without adding equivalence credit:
+- [x] ✅ **NWS-23 — round-3 residual minors.** All five original residuals are fixed (2026-10-28; on
+  `main` via #1321, 967bcaba, 2026-11-01), with the affected Hermes evidence re-read without adding equivalence credit:
   - Reports use compact spacing and accessible icon-only run controls at 768–1180 px; read-only
     populated lists receive the same layout. Browser checks prove no internal horizontal scroll
     at 768, 1024 and 1180 px for runnable and read-only rows.
@@ -269,7 +269,7 @@
   frontend passes; 31 isolated browser journey passes plus a targeted read-only table probe.
   The browser journey also exposed/fixed transient usage-chart resize overflow. A real macOS
   coordinator-yield regression exposed/fixed native zombie-state detection, without timeout changes.
-- [x] ✅ **NWS-13 — synchronous SQLite work off the event loop.** Delivered locally 2026-10-28
+- [x] ✅ **NWS-13 — synchronous SQLite work off the event loop.** On `main` via #1321 (967bcaba, 2026-11-01); built 2026-10-28
   (`4c6ce595`, `c6a30304`): async Workspace handlers and report coroutines offload complete synchronous
   transactions, reads and FTS units through `http.offload`; the five-second busy timeout and
   `BEGIN IMMEDIATE`/audit chain remain. Request-owned connections stay sequential and workers drain
