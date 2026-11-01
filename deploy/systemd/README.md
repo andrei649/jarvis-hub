@@ -36,7 +36,14 @@ systemctl status jarvis-hub
 journalctl -u jarvis-hub -f          # live logs
 sudo systemctl restart jarvis-hub
 sudo systemctl stop jarvis-hub       # graceful: drains, then exits
+nerva status                         # its service: line names systemd, the unit, pid and uptime
 ```
+
+`nerva status` tells a hub this unit runs (`systemd — running as jarvis-hub.service`)
+from one started by hand while the unit is installed (`… is installed but stopped; this
+hub runs outside it`, or `… installed and active but not managing this hub` when the unit
+runs another one). With no hub answering on this machine it still says whether the unit
+is installed and stopped.
 
 ## Uninstall
 

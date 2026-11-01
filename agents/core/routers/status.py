@@ -13,14 +13,24 @@ H133 — the live status chrome: `/status` also answers `gateway` (which channel
 the HUD can light a gateway dot even on the collapsed rail) and `sessions` (how many
 unarchived sessions saw activity in the last `ACTIVE_SESSION_WINDOW_S`; `None` with
 `state: "unknown"` when the session store cannot answer — never a guessed zero).
+
+H019 — `nerva status`'s service block and slot usage (Hermes `hermes status` → Gateway
+Service, Sessions → Slots): `service` says which service manager runs this hub, the unit,
+whether the shipped unit is installed and active, the pid and uptime
+(`agents.core.service_status`); `slots` says how many turns hold a session's turn lease
+(one per session, no hub-wide cap), each running channel's chat lanes against their cap,
+and the sub-agents against theirs. Counts only — no session id or sender leaves this
+public read — and a count the hub cannot read is `None`, never a guessed zero.
 """
 
+import asyncio
 import sys
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
+from agents.core import service_status
 from agents.core.app_state import get_gateway, get_orch
 from agents.core.llm.local_model_inventory import project_llm_status
 from agents.core.routers._deps import admin_guard
@@ -39,9 +49,13 @@ def _web():
     return sys.modules.get("agents.web")
 
 
-def _channel_rows(orch):
+def _channels(orch) -> dict:
     manager = getattr(orch, "channel_manager", None)
-    channels = getattr(manager, "channels", None) or getattr(orch, "channels", None) or {}
+    return getattr(manager, "channels", None) or getattr(orch, "channels", None) or {}
+
+
+def _channel_rows(orch):
+    channels = _channels(orch)
     running = set(getattr(orch, "running_channels", []) or [])
     gateway = get_gateway()
     rows = []
@@ -83,6 +97,71 @@ def _session_counts(orch) -> dict:
             active = None
     return {"active": active, "window_s": ACTIVE_SESSION_WINDOW_S,
             "state": "known" if active is not None else "unknown"}
+
+
+def _count(value) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _turn_slots(orch) -> dict | None:
+    reader = getattr(orch, "turn_slots", None)
+    if not callable(reader):
+        return None
+    try:
+        row = reader()
+    except Exception:
+        return None
+    running = _count(row.get("running")) if isinstance(row, dict) else None
+    if running is None:
+        return None
+    return {"running": running, "per_session": _count(row.get("per_session")), "cap": _count(row.get("cap"))}
+
+
+def _lane_slots(orch) -> list[dict]:
+    rows = []
+    for channel_id, channel in _channels(orch).items():
+        reader = getattr(channel, "lane_usage", None)
+        if not callable(reader):
+            continue
+        try:
+            usage = reader()
+        except Exception:
+            usage = None
+        if usage is None:
+            continue   # no poll loop runs: the channel holds no lane
+        counts = {key: _count(usage.get(key)) if isinstance(usage, dict) else None
+                  for key in ("running", "queued", "lanes", "cap")}
+        rows.append({"channel": str(channel_id), **counts})
+    return sorted(rows, key=lambda row: row["channel"])
+
+
+def _subagent_slots(orch) -> dict | None:
+    stats = getattr(getattr(orch, "subagents", None), "stats", None)
+    if not callable(stats):
+        return None
+    try:
+        row = stats()
+    except Exception:
+        return None
+    if not isinstance(row, dict):
+        return None
+    running, cap = _count(row.get("active")), _count(row.get("cap"))
+    return {"running": running, "cap": cap} if running is not None and cap is not None else None
+
+
+def _slot_usage(orch) -> dict:
+    """H019 — concurrency in use against what is allowed: turns holding a session's lease,
+    each running channel's chat lanes, the sub-agents. ``None`` is a count the hub could
+    not read (an old or stand-in orchestrator, no sub-agent manager wired)."""
+    return {"turns": _turn_slots(orch), "lanes": _lane_slots(orch), "subagents": _subagent_slots(orch)}
+
+
+async def _service_block() -> dict:
+    """H019 — the service block (``service_status.snapshot``) off the event loop: its unit
+    probe reads files and may ask the service manager once per ``PROBE_TTL_S``."""
+    web = _web()
+    started = getattr(web, "_start_time", None) if web is not None else None
+    return await asyncio.to_thread(service_status.snapshot, started_at=started)
 
 
 def _held_count(gateway, channel_id: str) -> int:
@@ -140,6 +219,8 @@ async def status():
         "channels": channels,
         "gateway": _gateway_state(channels),          # H133: the chrome's gateway dot
         "sessions": _session_counts(orch),            # H133: the status strip's count
+        "service": await _service_block(),            # H019: service manager, unit, pid, uptime
+        "slots": _slot_usage(orch),                   # H019: turns / lanes / sub-agents in use
         # H275: the HUD shows a banner while the hub runs in safe mode.
         "safe_mode": _safe_mode_status(),
     })

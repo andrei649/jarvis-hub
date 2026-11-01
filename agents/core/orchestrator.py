@@ -799,6 +799,8 @@ class Orchestrator:
         self._pending_inputs = None
         self._turn_leases: dict[str, asyncio.Lock] = {}
         self._turn_lease_max_wait: float = _TURN_LEASE_MAX_WAIT_SECONDS
+        # H019: async contexts holding a turn lease right now (see turn_slots).
+        self._turns_running: int = 0
         self.commands = build_default_registry()
         self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
@@ -2223,11 +2225,25 @@ class Orchestrator:
             yield False
             return
         token = _held_turn_leases.set(held | {key})
+        # H019: count the turn once — a lease taken inside one already held (a channel
+        # turn holds its base key and its session's) is the same turn, not another slot.
+        outermost = not held
+        if outermost:
+            self.__dict__["_turns_running"] = self.__dict__.get("_turns_running", 0) + 1
         try:
             yield True
         finally:
+            if outermost:
+                self.__dict__["_turns_running"] = max(0, self.__dict__.get("_turns_running", 1) - 1)
             _held_turn_leases.reset(token)
             lock.release()
+
+    def turn_slots(self) -> dict:
+        """H019 — turn slots in use, for ``nerva status``: how many turns (or session
+        changes made under a lease) hold a session's turn lease right now. The lease allows
+        one per session; nothing caps them hub-wide, so ``cap`` is None."""
+        running = self.__dict__.get("_turns_running", 0)
+        return {"running": max(0, int(running)), "per_session": 1, "cap": None}
 
     @staticmethod
     def _command_cognition(outcome) -> dict:

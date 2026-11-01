@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from .client import HubClient, HubError, HubUnavailable, hub_url
+from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1121,9 +1121,133 @@ def _runnable_line(verdict: Mapping[str, Any], client: Any = None) -> str:
     return f"{word} — {reason}: {target}"
 
 
+#: H019 — a name from the hub (a unit, a channel) is printed only in systemd's characters;
+#: anything else (a control sequence from a hub at a wrong address) reads as unknown.
+_PRINTABLE_NAME = re.compile(r"[A-Za-z0-9:_.@\-]{1,128}")
+_SERVICE_MANAGERS = frozenset({"systemd", "launchd", "s6", "nssm", "none", "unknown"})
+
+
+def _count_value(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _printable(value: Any) -> str | None:
+    return value if isinstance(value, str) and _PRINTABLE_NAME.fullmatch(value) else None
+
+
+def _uptime_words(seconds: Any) -> str:
+    whole = _count_value(seconds)
+    if whole is None:
+        return "unknown"
+    hours, rest = divmod(whole, 3600)
+    return f"{hours}:{rest // 60:02d}:{rest % 60:02d}"
+
+
+def _service_line(block: Any) -> str:
+    """H019 — the hub's service block in one line (Hermes' Gateway Service: manager,
+    running, installed-but-not-managing vs installed-but-stopped, pid). A fact the hub could
+    not read says unknown; an older hub that sends no block says so."""
+    if not isinstance(block, dict):
+        return "unknown (this hub does not report it)"
+    manager = block.get("manager") if block.get("manager") in _SERVICE_MANAGERS else "unknown"
+    unit = _printable(block.get("unit"))
+    shipped = unit or "the shipped unit"
+    state, active = block.get("state"), block.get("active")
+    if state == "managed" and manager not in ("none", "unknown"):
+        head = f"{manager} — running as {unit}" if unit else f"{manager} — running (unit name unknown)"
+    elif state == "unconfirmed" and manager not in ("none", "unknown"):
+        head = f"{manager}? — not confirmed that it runs this hub" + (f" (unit {unit})" if unit else "")
+    elif state == "installed_not_managing":
+        how = " and active" if active is True else (" (state unknown)" if active is None else "")
+        head = f"none detected — {shipped} is installed{how} but not managing this hub"
+    elif state == "installed_stopped":
+        head = f"none detected — {shipped} is installed but stopped; this hub runs outside it"
+    elif state == "not_installed":
+        head = f"none detected — {shipped} is not installed"
+    elif state == "unsupported":
+        head = "none detected — no service unit Nerva ships applies on this host"
+    else:
+        head = "unknown — the service manager could not be read"
+    pid = _count_value(block.get("pid"))
+    return f"{head} · pid {pid if pid is not None else 'unknown'} · up {_uptime_words(block.get('uptime_s'))}"
+
+
+def _in_use(running: Any, cap: Any) -> str:
+    held, limit = _count_value(running), _count_value(cap)
+    text = f"{held if held is not None else '?'}/{limit if limit is not None else '?'} in use"
+    return text + (" (full)" if held is not None and limit is not None and held >= limit else "")
+
+
+def _slots_line(slots: Any) -> str:
+    """H019 — concurrency in use against what is allowed (Hermes' Sessions → Slots): turns
+    holding a session's lease, each running channel's chat lanes, the sub-agents."""
+    if not isinstance(slots, dict):
+        return "unknown (this hub does not report it)"
+    parts = []
+    turns = slots.get("turns")
+    running = _count_value(turns.get("running")) if isinstance(turns, dict) else None
+    if running is None:
+        parts.append("turns unknown")
+    elif _count_value(turns.get("cap")) is not None:
+        parts.append(f"turns {_in_use(running, turns.get('cap'))}")
+    else:
+        per = _count_value(turns.get("per_session"))
+        bound = f"{per} per session" if per is not None else "per-session bound unknown"
+        parts.append(f"turns {running} running ({bound}, no hub-wide cap)")
+    lanes = slots.get("lanes")
+    if isinstance(lanes, list):
+        for row in lanes:
+            if not isinstance(row, dict):
+                continue
+            text = f"{_printable(row.get('channel')) or '?'} lanes {_in_use(row.get('running'), row.get('cap'))}"
+            queued = _count_value(row.get("queued"))
+            parts.append(text + (f", {queued} queued" if queued else ("" if queued == 0 else ", queued unknown")))
+    else:
+        parts.append("chat lanes unknown")
+    sub = slots.get("subagents")
+    if isinstance(sub, dict) and _count_value(sub.get("running")) is not None and _count_value(sub.get("cap")) is not None:
+        parts.append(f"sub-agents {_in_use(sub['running'], sub['cap'])}")
+    else:
+        parts.append("sub-agents unknown")
+    return " · ".join(parts)
+
+
+def _local_service_line() -> str | None:
+    """H019 — no hub answered on this machine: the unit Nerva ships, as this box sees it
+    (Hermes' "stopped" / "installed but stopped"). None where no unit is shipped."""
+    from agents.core import service_status
+
+    try:
+        unit = service_status.shipped_unit()
+    except Exception:
+        return None
+    if not isinstance(unit, dict) or not unit.get("applicable"):
+        return None
+    name = _printable(unit.get("unit")) or "the service unit"
+    installed, active = unit.get("installed"), unit.get("active")
+    if installed is None:
+        return f"{name}: could not tell whether it is installed"
+    if installed is False:
+        return f"{name} is not installed"
+    if active is False:
+        return f"{name} is installed but stopped"
+    if active is True:
+        return f"{name} is active, yet no hub answers at this address (still starting, or another port)"
+    return f"{name} is installed; its state is unknown"
+
+
 def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
-    status = client.get("/status")
+    try:
+        status = client.get("/status")
+    except HubUnavailable:
+        # H019: say what this box's service unit is doing; the no-hub error follows (exit 3).
+        line = (None if ns.json or not is_loopback_url(str(getattr(client, "base_url", "")))
+                else _local_service_line())
+        if line:
+            ctx.say(f"nerva — no hub answered at {client.base_url}")
+            ctx.say(f"  service:     {line}")
+        raise
     if not isinstance(status, dict):
         raise HubError(0, "malformed /status reply")
     estop = None
@@ -1153,6 +1277,8 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         str(c.get("id") or c.get("channel") or c) if isinstance(c, dict) else str(c) for c in channels
     )
     ctx.say(f"  channels:    {names or '—'}")
+    ctx.say(f"  service:     {_service_line(status.get('service'))}")
+    ctx.say(f"  slots:       {_slots_line(status.get('slots'))}")
     if isinstance(estop, dict):
         if estop.get("engaged"):
             state = estop.get("state") or {}
