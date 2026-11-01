@@ -3202,7 +3202,14 @@ class Orchestrator:
                     effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
                     guarded_backend = bind_guardrails(self.security, backend)
                     from .turn_usage import model_usage_scope
-                    with model_usage_scope(model=model, route=route_name):
+                    # The agent and its window, as Agent.process passes them: without them
+                    # the default stream path showed no context or cache metric and poisoned
+                    # the conversation's cache epoch (review of #1321).
+                    with model_usage_scope(
+                            model=model, route=route_name,
+                            agent_id=getattr(agent, "id", None) or agent_id,
+                            context_window=(effective_window.authoritative_tokens()
+                                            if effective_window is not None else None)):
                         response = await agent.generate_response(
                             backend=guarded_backend,
                             effective_window=effective_window,
