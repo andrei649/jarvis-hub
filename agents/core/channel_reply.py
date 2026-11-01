@@ -293,6 +293,17 @@ class ChannelReplyBroker:
         thread = self._inbox.thread(thread_id)
         if thread is None:
             return {"ok": False, "reason": "unknown_thread"}
+        if thread.get("channel") == "email":
+            # STAB-4: execute() binds an email reply to the inbound message it answers.
+            # Once a reply is sent, the thread's latest message is our own outbound, so
+            # a follow-up from the thread binds to the latest inbound email instead.
+            inbound = next((m for m in reversed(self._inbox.messages(
+                thread_id, limit=getattr(self._inbox, "max_messages", 500)))
+                if m.get("direction") == "in" and m.get("channel") == "email"), None)
+            if inbound is None:
+                return {"ok": False, "reason": "unknown_inbound_message"}
+            thread = {**thread, "last_message_id": inbound["id"],
+                      "reply": dict(inbound.get("reply") or {})}
         return self._request(thread, text, agent=agent, source=source)
 
     def request_for_message(self, message_id: str, text: str, *, channel: str,
