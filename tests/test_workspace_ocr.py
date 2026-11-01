@@ -836,3 +836,32 @@ def test_scanned_pdf_upload_retrieval_original_and_reindex(ws, monkeypatch):
         assert not conn.execute("SELECT 1 FROM chunks WHERE text = 'stale'").fetchone()
     finally:
         conn.close()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc")
+def test_a_linux_host_without_ps_reads_session_memory_from_proc(monkeypatch):
+    """Review of #1321: python:3.12-slim ships no procps. The sampler returned None there,
+    and the watcher refused every PDF as invalid_file. It now reads /proc."""
+    from agents.core.workspace import extract_process
+
+    monkeypatch.setattr(extract_process, "_PS_BINARIES", ("/nonexistent/ps",))
+    members = extract_process._session_members(os.getsid(0))
+    assert members is not None
+    mine = [rss for pid, pgid, rss in members if pid == os.getpid()]
+    assert mine and mine[0] > 0
+    assert all(os.getsid(pid) == os.getsid(0) for pid, _, _ in members)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc")
+async def test_a_text_pdf_with_ocr_on_and_no_ps_is_still_read(monkeypatch):
+    from agents.core.workspace import extract_process
+
+    monkeypatch.setattr(extract_process, "_PS_BINARIES", ("/nonexistent/ps",))
+    script = (
+        "from agents.core.workspace import extract; "
+        "extract._ocr_engine = lambda: (_ for _ in ()).throw(AssertionError('OCR called')); "
+        "from agents.core.workspace.extract_process import _worker; _worker()"
+    )
+    _owned_script(monkeypatch, script)
+    result = await extract.extract_document(samples.build_pdf(), "pdf")
+    assert result.char_count > 0 and "ocr" not in result.limits

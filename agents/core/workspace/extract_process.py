@@ -84,7 +84,7 @@ def _session_members(sid: int) -> list[tuple[int, int, int]] | None:
         ps = next((path for path in _PS_BINARIES if os.path.isfile(path)
                    and os.access(path, os.X_OK)), None)
         if ps is None:
-            return None
+            return _proc_session_members(sid) if sys.platform.startswith("linux") else None
         # Fixed absolute system executable and option-only argv; no shell.
         result = subprocess.run(  # nosec B603
             [ps, "-A", "-o", "pid=,rss="], capture_output=True,
@@ -102,6 +102,33 @@ def _session_members(sid: int) -> list[tuple[int, int, int]] | None:
                 continue
         return members
     except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def _proc_session_members(sid: int) -> list[tuple[int, int, int]] | None:
+    """Linux without ps: (pid, pgid, RSS bytes) of the session, read from /proc.
+
+    The published image (python:3.12-slim) ships no procps, so with OCR on every PDF,
+    text layer or not, failed its memory monitor as invalid_file (review of #1321).
+    Each PID is checked against the kernel's session and group, as with ps.
+    """
+    try:
+        page = os.sysconf("SC_PAGE_SIZE")
+        members = []
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            pid = int(entry)
+            try:
+                if os.getsid(pid) != sid:
+                    continue
+                with open(f"/proc/{pid}/statm", encoding="ascii") as handle:
+                    resident = int(handle.read().split()[1])
+                members.append((pid, os.getpgid(pid), resident * page))
+            except (ProcessLookupError, PermissionError, FileNotFoundError):
+                continue
+        return members
+    except (OSError, ValueError, IndexError):
         return None
 
 
