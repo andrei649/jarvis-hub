@@ -860,6 +860,15 @@ proc = subprocess.Popen([chrome, '--headless=new', '--no-sandbox', '--no-first-r
     '--user-data-dir=' + str(profile), 'about:blank'], start_new_session=True,
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 native = psutil.Process(proc.pid)
+# google-chrome on Linux is a bash wrapper that exec()s the real binary: record the
+# identity only once this pid is Chrome, as a real launch is by the time anything reaps it.
+import time
+deadline = time.monotonic() + 15
+while not any(n in Path(psutil.Process(proc.pid).exe()).name.lower()  # exe() is cached
+              for n in ('chrome', 'chromium')):
+    if time.monotonic() > deadline:
+        raise SystemExit('chrome never exec()ed')
+    time.sleep(0.05)
 record['native'] = [native.pid, native.create_time()]
 journal.write(sid, record)
 print(json.dumps(record), flush=True)
@@ -912,6 +921,12 @@ async def test_orphan_reap_sweeps_a_detached_helper_still_writing_under_the_prof
         '--database=' + str(profile / 'Crashpad')], start_new_session=True)
     gone = psutil.Process(os.getpid())  # an owner/controller that is no longer the one recorded
     native = psutil.Process(native_proc.pid)
+    # The google-chrome bash wrapper exec()s the real binary; wait until this pid is Chrome.
+    deadline = asyncio.get_running_loop().time() + 15
+    while not any(n in Path(psutil.Process(native.pid).exe()).name.lower()  # exe() is cached
+                  for n in ('chrome', 'chromium')):
+        assert asyncio.get_running_loop().time() < deadline, 'chrome never exec()ed'
+        await asyncio.sleep(0.05)
     journal.write(sid, {'profile': str(profile),
         'controller': [gone.pid, gone.create_time() - 1000.0],
         'owner_process': [gone.pid, gone.create_time() - 1000.0],
