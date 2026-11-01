@@ -16,11 +16,14 @@ The properties pinned:
   · a kernel DENY refuses the goal before the inbox ever sees a card;
   · a policy decision on the card opens nothing (``not_decided_by_a_human``);
   · ``/subgoal`` then narrows the running goal without resetting it, and the
-    verifier will not pass the run until that criterion holds.
+    verifier will not pass the run until that criterion holds;
+  · the card is an interrupt, and it is PUSHED to the owner from both ``/goal`` and
+    ``POST /api/company/goals`` although the intake runs in a worker thread.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import sys
@@ -266,3 +269,74 @@ async def test_the_route_reaches_the_same_front_door(governed, monkeypatch):
     assert any(a.kind == "goal.approve" for a, _v in kernel_calls)
     result = await _approve_and_run(worker, queue, body["task_id"])
     assert ledger.get(result["run_id"]).title == "Prepare the quarterly brief"
+
+
+# ── round 2: the interrupt card reaches the owner ───────────────────────────
+
+def _recording_notifier(worker):
+    pushed = []
+
+    async def notifier(task, *_args, **_kwargs):
+        pushed.append(task.id)
+        return True
+
+    worker.notifier = notifier
+    return pushed
+
+
+async def _settle_pushes(worker):
+    """Wait for every push the worker has in flight (none is left pending)."""
+    for _ in range(20):
+        pending = [t for t in list(worker._bg_tasks) if not t.done()]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def test_an_interrupt_goal_card_from_chat_is_pushed_to_the_owner(governed):
+    orch, queue, worker, _ledger, _kernel_calls = governed
+    pushed = _recording_notifier(worker)
+    outcome = await orch.commands.dispatch(f"/goal {GOAL}", orch=orch, principal=OWNER)
+    task_id = _task_id(outcome.reply)
+    await _settle_pushes(worker)
+    task = queue.get(task_id)
+    assert task.attention_mode == "interrupt" and task.status == "blocked"
+    assert pushed == [task_id]
+    assert bool(task.pushed) is True
+
+
+async def test_an_interrupt_goal_card_from_the_route_is_pushed_to_the_owner(governed,
+                                                                             monkeypatch):
+    import httpx
+    from fastapi import FastAPI
+
+    from agents.core.routers import company as company_routes
+    from agents.core.routers._deps import admin_guard
+
+    orch, queue, worker, _ledger, _kernel_calls = governed
+    pushed = _recording_notifier(worker)
+    monkeypatch.setattr(company_routes, "get_orch", lambda: orch)
+    app = FastAPI()
+    app.include_router(company_routes.router)
+    app.dependency_overrides[admin_guard] = lambda: None
+    # In this test's own event loop, like the hub's server: the route leaves the loop
+    # for the intake and must still push the card on it.
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://hub") as client:
+        reply = await client.post("/api/company/goals", json={"text": GOAL})
+    assert reply.status_code == 200, reply.text
+    task_id = reply.json()["task_id"]
+    await _settle_pushes(worker)
+    assert pushed == [task_id]
+    assert bool(queue.get(task_id).pushed) is True
+
+
+async def test_an_intake_in_a_thread_with_no_loop_named_still_only_waits_in_the_inbox(governed):
+    from agents.core.autonomy.goal_intake import propose_goal
+
+    orch, queue, worker, _ledger, _kernel_calls = governed
+    pushed = _recording_notifier(worker)
+    result = await asyncio.to_thread(propose_goal, orch, GOAL, requested_by="owner:test")
+    await _settle_pushes(worker)
+    assert pushed == []
+    assert queue.get(result["task_id"]).status == "blocked"

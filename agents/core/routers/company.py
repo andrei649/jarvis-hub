@@ -49,7 +49,7 @@ from agents.core.autonomy.company_report import build_company_brief
 from agents.core.autonomy.goal_contract import GoalContractError
 from agents.core.autonomy.goal_intake import MAX_TEXT, propose_goal, refusal_text
 from agents.core.autonomy.run_barriers import RunBarriers, describe
-from agents.core.autonomy.work_runs import FLAG, WorkRunError, WorkRunLedger
+from agents.core.autonomy.work_runs import FLAG, MAX_SUBGOAL_CHARS, WorkRunError, WorkRunLedger
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
@@ -67,7 +67,7 @@ class GoalProposalBody(BaseModel):
 class SubgoalBody(BaseModel):
     """One acceptance criterion to add to a running goal."""
 
-    text: str = Field(..., min_length=1, max_length=500)
+    text: str = Field(..., min_length=1, max_length=MAX_SUBGOAL_CHARS)
 
 _default: WorkRunLedger | None = None
 _build_lock = threading.Lock()
@@ -249,7 +249,10 @@ async def company_goal_propose(body: GoalProposalBody):
     if orch is None:
         return nocache_json({"ok": False, "reason": "orchestrator_unavailable"}, status_code=503)
     try:
-        result = await asyncio.to_thread(propose_goal, orch, body.text, requested_by="owner:api")
+        # The card is an interrupt: the intake runs off the loop, and pushes the
+        # card on it (captured here, before to_thread).
+        result = await asyncio.to_thread(propose_goal, orch, body.text, requested_by="owner:api",
+                                         push_loop=asyncio.get_running_loop())
     except GoalContractError as exc:
         return nocache_json(
             {"ok": False, "reason": exc.reason, "detail": refusal_text(exc.reason)},
@@ -273,14 +276,17 @@ async def company_run_subgoal(run_id: str, body: SubgoalBody):
 
     Narrowing only, so it needs no approval: the run is not reset (its status,
     budget, steps and fingerprint are untouched), and the verifier will not pass it
-    until this criterion holds too. Refused once grading started on the run."""
+    until this criterion holds too. Refused once a verdict is written on the run;
+    one that arrives while the verifier is still probing is graded too (the ledger
+    refuses a pass that misses it, and the verifier grades again)."""
     if not _valid(run_id):
         return nocache_json({"ok": False, "reason": "invalid_run_id"}, status_code=400)
     ledger = await _get_ledger()
     try:
         record = await asyncio.to_thread(ledger.add_subgoal, run_id, body.text, by="owner")
     except WorkRunError as exc:
-        status = {"unknown_run": 404, "missing_subgoal": 400}.get(exc.reason, 409)
+        status = {"unknown_run": 404, "missing_subgoal": 400,
+                  "subgoal_too_long": 400}.get(exc.reason, 409)
         return nocache_json({"ok": False, "reason": exc.reason}, status_code=status)
     subgoals = await asyncio.to_thread(ledger.subgoals, run_id)
     return nocache_json({"ok": True, "subgoal": record, "subgoals": subgoals})

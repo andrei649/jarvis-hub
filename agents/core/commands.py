@@ -679,9 +679,11 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("project", "manage your projects and folders", _project,
                                    tier=ADMIN, usage="<action> [arguments]"))
     registry.register(SlashCommand("goal", "propose a goal for a work run; it waits for your approval",
-                                   goal_command, tier=ADMIN, usage="<text>"))
+                                   goal_command, tier=ADMIN,
+                                   usage="<text> | status | pause | resume | stop [run id]"))
     registry.register(SlashCommand("subgoal", "add an acceptance criterion to the running goal",
-                                   subgoal_command, tier=ADMIN, usage="[run id] <criterion>"))
+                                   subgoal_command, tier=ADMIN,
+                                   usage="[run id] <criterion> | remove <N> | clear"))
     return registry
 
 

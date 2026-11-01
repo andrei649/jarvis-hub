@@ -23,14 +23,26 @@ requires, so nothing here widens or loosens it:
   grades ``unverifiable``, never ``passed``; with none given, the outcome itself is
   the one check (still unprobed: words are not evidence);
 * each stop-when line is a stop condition, and so is each constraint ("continuing
-  would break a constraint: …"); with neither, the run stops when it is blocked and
-  needs the owner — Hermes' own default;
-* boundaries are the step kinds the run may use, or the explicit word
-  ``unrestricted``. With none given, the scope is exactly the kinds the plan's own
-  steps name; with no plan either, the goal is refused — an unlimited scope is a
-  choice, never a default (goal_contract);
+  would break a constraint: …") and each boundary ("continuing would leave a
+  boundary: …"); with none of them, the run stops when it is blocked and needs the
+  owner — Hermes' own default;
+* **boundaries** are Hermes' limits in words or paths (``boundaries:``,
+  ``files:``, ``allowed:`` — "only docs/", "agents/core/x.py"): carried into the
+  contract as stop conditions, in the owner's words, never read as step kinds;
+* the **scope** is Nerva's own syntax and stays explicit: a ``scope:`` line that
+  is a comma list of step kinds (``scope: research, file.write``) or the word
+  ``unrestricted``. A ``scope:`` line in words ("only the docs folder") is a
+  boundary, not four step kinds. With no scope given, the scope is exactly the
+  kinds the plan's own steps name; with no plan either, the goal is refused — an
+  unlimited scope is a choice, never a default (goal_contract);
 * the budget is Hermes' 20 turns as 20 steps (more if the plan is longer), the
   ledger's default wall clock and interrupts, and a deadline a day out.
+
+**Nothing is cut short.** The headline, every field, every constraint and every
+boundary must fit the contract's own bound as it will appear on the card (prefix
+included); one that does not refuses the WHOLE goal with a code that says which
+and how long it may be. A goal cut short is a different goal — a dropped "NEVER
+delete the production database" would reach the card looking complete.
 
 **What it grants: nothing.** :func:`propose_goal` refuses while company mode is
 off (an approved goal would open a run nothing works), then calls
@@ -55,7 +67,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agents.core.autonomy import goal_contract
-from agents.core.autonomy.goal_contract import GoalContractError, GoalDraft, SuccessCheck
+from agents.core.autonomy.goal_contract import (
+    MAX_SENTENCE,
+    MAX_STOP_CONDITIONS,
+    MAX_TITLE,
+    GoalContractError,
+    GoalDraft,
+    SuccessCheck,
+)
 from agents.core.autonomy.work_runs import FLAG, SUBGOAL_OPEN_STATUSES, Budget
 
 logger = logging.getLogger("jarvis.goal_intake")
@@ -87,6 +106,16 @@ DEFAULT_STOP = "it is blocked and needs the owner's input"
 UNRESTRICTED = "unrestricted"
 MAX_TEXT = 4_000
 
+#: The alias that carries Nerva's explicit step-kind scope. Every other boundaries
+#: alias (Hermes' ``boundaries``/``files``/``allowed``) is a limit in words.
+SCOPE_ALIAS = "scope"
+
+#: How a constraint, a boundary and the default check read on the card.
+CONSTRAINT_PREFIX = "continuing would break a constraint: "
+BOUNDARY_PREFIX = "continuing would leave a boundary: "
+OUTCOME_CHECK_PREFIX = "the outcome is met: "
+TOWARD = " — toward the goal: "
+
 _FIELD_LINE = re.compile(r"^\s*(?:[-*]\s+)?([A-Za-z][A-Za-z_ ]{0,23}?)\s*:\s*(.*)$")
 _KIND = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$")
 _STEP = re.compile(r"^([A-Za-z][A-Za-z0-9_.]*)\s*:\s*(.+)$")
@@ -101,15 +130,44 @@ REFUSALS: Mapping[str, str] = {
     "goal_text_too_long": f"the goal text is longer than {MAX_TEXT} characters",
     "scope_required_or_declare_unrestricted": (
         "say what the run may do: a `scope:` line naming step kinds (e.g. `scope: research, "
-        "write`), `scope: unrestricted`, or `step: <kind>: <what>` lines"),
-    "invalid_scope_kind": "a scope names step kinds such as `research` or `file.write`",
+        "write`), `scope: unrestricted`, or `step: <kind>: <what>` lines (a limit in words, "
+        "like `boundaries: only docs/`, is kept as a boundary but is not a scope)"),
     "invalid_plan_step": "a step names its kind first: `step: research: read the Q3 figures`",
-    "plan_step_out_of_scope": "a step's kind is not in the goal's scope",
+    "plan_step_out_of_scope": (
+        "a step's kind is not in the goal's scope (`scope:` names step kinds; say a limit in "
+        "words with `boundaries:` or `files:`)"),
     "scope_and_unrestricted_conflict": "a scope is either step kinds or `unrestricted`, not both",
     "too_many_scope_kinds": "the scope names too many step kinds",
     "too_many_checks": "the goal names too many verification lines",
-    "too_many_stop_conditions": "the goal names too many stop conditions",
+    "too_many_stop_conditions": (
+        f"the goal names more than {MAX_STOP_CONDITIONS} stop-when, constraint and boundary "
+        "lines together"),
     "plan_too_long": "the plan has too many steps",
+    # Over a cap: the whole goal is refused, never cut (a goal cut short is a
+    # different goal).
+    "title_too_long": (
+        f"the goal's title — its headline (every line that is not a field), or the outcome "
+        f"when there is no headline — is longer than {MAX_TITLE} characters; keep it short and "
+        "put the detail in `outcome:` or `verify:` lines. Nothing was cut, and nothing was "
+        "proposed"),
+    "outcome_too_long": (
+        f"the outcome is longer than {MAX_SENTENCE - len(OUTCOME_CHECK_PREFIX)} characters; "
+        "nothing was cut, and nothing was proposed"),
+    "verification_too_long": (
+        f"a `verify:` line is longer than {MAX_SENTENCE} characters; nothing was cut, and "
+        "nothing was proposed"),
+    "stop_condition_too_long": (
+        f"a `stop when:` line is longer than {MAX_SENTENCE} characters; nothing was cut, and "
+        "nothing was proposed"),
+    "constraint_too_long": (
+        f"a constraint is longer than {MAX_SENTENCE - len(CONSTRAINT_PREFIX)} characters; "
+        "nothing was cut, and nothing was proposed"),
+    "boundary_too_long": (
+        f"a boundary is longer than {MAX_SENTENCE - len(BOUNDARY_PREFIX)} characters; "
+        "nothing was cut, and nothing was proposed"),
+    "plan_step_too_long": (
+        f"a `step:` line is longer than {MAX_SENTENCE} characters; nothing was cut, and "
+        "nothing was proposed"),
 }
 
 
@@ -123,26 +181,46 @@ def refusal_text(reason: str) -> str:
 
 @dataclass(frozen=True)
 class ParsedGoal:
-    """The goal text, split into its headline, contract fields and plan rows."""
+    """The goal text, split into its headline, contract fields and plan rows.
+
+    ``fields["boundaries"]`` holds the limits in words; ``scope`` the step kinds an
+    explicit ``scope:`` line named, and ``unrestricted`` whether one said so.
+    """
 
     headline: str
     fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     steps: tuple[tuple[str, str], ...] = ()
+    scope: tuple[str, ...] = ()
+    unrestricted: bool = False
 
     def get(self, name: str) -> tuple[str, ...]:
         return tuple(self.fields.get(name, ()))
 
 
+def _alias_key(key: str) -> str:
+    return " ".join(key.lower().split())
+
+
 def _alias(key: str) -> str | None:
-    return CONTRACT_ALIASES.get(" ".join(key.lower().split()))
+    return CONTRACT_ALIASES.get(_alias_key(key))
+
+
+def _kind_list(value: str) -> list[str] | None:
+    """The step kinds a ``scope:`` value names — a comma list of kind tokens, or
+    ``unrestricted`` — or None when it is a limit in words or paths."""
+    items = [item.strip().lower() for item in value.split(",")]
+    if not items or any(not item or not _KIND.match(item) for item in items):
+        return None
+    return items
 
 
 def parse_goal_text(text: str) -> ParsedGoal:
-    """Split goal text into headline, contract fields and ``step:`` rows.
+    """Split goal text into headline, contract fields, scope and ``step:`` rows.
 
     One field per line: a line whose prefix is in :data:`CONTRACT_ALIASES` (or is
     ``step``) is a field; every other line is headline text. Repeated fields add
-    up; empty values are dropped.
+    up; empty values are dropped. A ``scope:`` line that is a comma list of step
+    kinds is the scope; any other boundaries line is a boundary in words.
     """
     raw = str(text or "")
     if len(raw) > MAX_TEXT:
@@ -150,13 +228,14 @@ def parse_goal_text(text: str) -> ParsedGoal:
     headline: list[str] = []
     fields: dict[str, list[str]] = {}
     steps: list[tuple[str, str]] = []
+    scope: list[str] = []
     for line in raw.splitlines():
         if not line.strip():
             continue
         match = _FIELD_LINE.match(line)
         key = match.group(1) if match else ""
         value = " ".join(match.group(2).split()) if match else ""
-        if match and " ".join(key.lower().split()) == STEP_PREFIX:
+        if match and _alias_key(key) == STEP_PREFIX:
             row = _STEP.match(value)
             if row is None:
                 raise GoalContractError("invalid_plan_step")
@@ -166,27 +245,42 @@ def parse_goal_text(text: str) -> ParsedGoal:
         if name is None:
             headline.append(" ".join(line.split()))
             continue
-        if value:
-            fields.setdefault(name, []).append(value)
+        if not value:
+            continue
+        kinds = _kind_list(value) if _alias_key(key) == SCOPE_ALIAS else None
+        if kinds is not None:
+            scope.extend(kinds)
+            continue
+        fields.setdefault(name, []).append(value)
+    unrestricted = UNRESTRICTED in scope
+    kinds = tuple(dict.fromkeys(kind for kind in scope if kind != UNRESTRICTED))
     return ParsedGoal(
         headline=" ".join(headline).strip(),
         fields={name: tuple(values) for name, values in fields.items()},
         steps=tuple(steps),
+        scope=kinds,
+        unrestricted=unrestricted,
     )
 
 
 def _scope(parsed: ParsedGoal) -> tuple[tuple[str, ...], bool]:
-    tokens: list[str] = []
-    for value in parsed.get("boundaries"):
-        tokens.extend(t for t in re.split(r"[,\s]+", value.lower()) if t)
-    if not tokens:
+    if not parsed.scope and not parsed.unrestricted:
         return tuple(dict.fromkeys(kind for kind, _ in parsed.steps)), False
-    unrestricted = UNRESTRICTED in tokens
-    kinds = [t for t in tokens if t != UNRESTRICTED]
-    for kind in kinds:
-        if not _KIND.match(kind):
-            raise GoalContractError("invalid_scope_kind")
-    return tuple(dict.fromkeys(kinds)), unrestricted
+    return parsed.scope, parsed.unrestricted
+
+
+def _fits(value: str, limit: int, code: str) -> str:
+    """*value* when it fits *limit*; otherwise the whole goal is refused — never cut."""
+    if len(value) > limit:
+        raise GoalContractError(code)
+    return value
+
+
+def _step_label(summary: str, title: str) -> str:
+    """The queued task's title: the step toward the goal, or the step alone when
+    both do not fit a title — never a cut sentence."""
+    label = f"{summary}{TOWARD}{title}"
+    return label if len(label) <= MAX_TITLE else summary
 
 
 def draft_from_text(
@@ -195,30 +289,40 @@ def draft_from_text(
     """The :class:`GoalDraft` the owner's goal text describes, or a refusal.
 
     Every refusal is a ``GoalContractError`` with a bounded code; the draft's own
-    validation (scope, checks, stop conditions, plan in scope) runs unchanged.
+    validation (scope, checks, stop conditions, plan in scope) runs unchanged. A
+    headline, field, constraint or boundary over its bound refuses the whole goal
+    (``*_too_long``): the draft is never built from a cut version of the text.
     """
     moment = time.time() if now is None else float(now)
     parsed = parse_goal_text(text)
     outcome = "; ".join(parsed.get("outcome"))
-    title = parsed.headline or outcome
+    _fits(outcome, MAX_SENTENCE - len(OUTCOME_CHECK_PREFIX), "outcome_too_long")
+    title = _fits(parsed.headline or outcome, MAX_TITLE, "title_too_long")
     if not title:
         raise GoalContractError("missing_title")
     scope, unrestricted = _scope(parsed)
-    for kind, _summary in parsed.steps:
+    for kind, summary in parsed.steps:
         if not _KIND.match(kind):
             raise GoalContractError("invalid_plan_step")
+        _fits(summary, MAX_SENTENCE, "plan_step_too_long")
 
     verification = parsed.get("verification")
     if verification:
         checks = tuple(
-            SuccessCheck(id=f"verify-{n}", describe=line)
+            SuccessCheck(id=f"verify-{n}",
+                         describe=_fits(line, MAX_SENTENCE, "verification_too_long"))
             for n, line in enumerate(verification, start=1)
         )
     else:
-        checks = (SuccessCheck(id="outcome", describe=f"the outcome is met: {outcome or title}"),)
+        checks = (SuccessCheck(id="outcome", describe=f"{OUTCOME_CHECK_PREFIX}{outcome or title}"),)
 
-    stops = [*parsed.get("stop_when"),
-             *(f"continuing would break a constraint: {c}" for c in parsed.get("constraints"))]
+    stops = [
+        *(_fits(s, MAX_SENTENCE, "stop_condition_too_long") for s in parsed.get("stop_when")),
+        *(_fits(f"{CONSTRAINT_PREFIX}{c}", MAX_SENTENCE, "constraint_too_long")
+          for c in parsed.get("constraints")),
+        *(_fits(f"{BOUNDARY_PREFIX}{b}", MAX_SENTENCE, "boundary_too_long")
+          for b in parsed.get("boundaries")),
+    ]
     plan = tuple(
         {
             "kind": kind,
@@ -226,8 +330,7 @@ def draft_from_text(
             # Flat on purpose: the card is a signed, mediated task whose canonical
             # JSON is depth-bounded (mediation._MAX_JSON_DEPTH), and a nested task
             # payload inside a plan row would exceed it — the card would be refused.
-            "task": {"agent": "jarvis", "kind": kind,
-                     "title": f"{summary} — toward the goal: {title}"[:200]},
+            "task": {"agent": "jarvis", "kind": kind, "title": _step_label(summary, title)},
         }
         for kind, summary in parsed.steps
     )
@@ -278,6 +381,7 @@ def propose_goal(
     requested_by: str = "owner",
     agent: str = "jarvis",
     now: float | None = None,
+    push_loop: Any = None,
 ) -> dict[str, Any]:
     """Propose the goal *text* describes for the owner's approval. Grants nothing.
 
@@ -285,6 +389,12 @@ def propose_goal(
     ``GoalContractError``: ``company_mode_off``, a draft refusal,
     ``intake_unavailable``, or ``kernel_denied:<why>`` when the Action Kernel denies
     ``goal.approve``. An error from the governed intake itself propagates.
+
+    ``push_loop`` is the hub's event loop when this runs in a worker thread
+    (``asyncio.to_thread`` — every async entry point does, to keep the loop free):
+    the card is an interrupt, and its push must still reach the owner — scheduled
+    on that loop, thread-safely (``worker.decision_push_loop``). It changes nothing
+    else about the card.
     """
     if not _company_mode_on():
         raise GoalContractError("company_mode_off")
@@ -295,10 +405,13 @@ def propose_goal(
     intake = _governed_intake(orch, None) if orch is not None else None
     if intake is None:
         raise GoalContractError("intake_unavailable")
+    from agents.core.autonomy.worker import decision_push_loop
     from agents.core.kernel.binding import make_action_kernel
 
     authorizer = make_action_kernel(orch)
-    task_id = goal_contract.propose(draft, intake, agent=agent, authorizer=authorizer, now=moment)
+    with decision_push_loop(push_loop):
+        task_id = goal_contract.propose(draft, intake, agent=agent, authorizer=authorizer,
+                                        now=moment)
     logger.info("goal proposed by %s: task %s", requested_by, task_id)
     return {"task_id": task_id, "title": draft.title, "card": card_lines(draft),
             "draft": draft.as_payload()}
@@ -322,10 +435,14 @@ def subgoal_target(runs: Sequence[Any], args: str) -> tuple[Any | None, str]:
 
 
 __all__ = [
+    "BOUNDARY_PREFIX",
+    "CONSTRAINT_PREFIX",
     "CONTRACT_ALIASES",
     "CONTRACT_FIELDS",
     "DEFAULT_MAX_STEPS",
     "DEFAULT_STOP",
+    "OUTCOME_CHECK_PREFIX",
+    "SCOPE_ALIAS",
     "ParsedGoal",
     "card_lines",
     "draft_from_text",

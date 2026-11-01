@@ -11850,7 +11850,9 @@ export interface paths {
          *
          *     Narrowing only, so it needs no approval: the run is not reset (its status,
          *     budget, steps and fingerprint are untouched), and the verifier will not pass it
-         *     until this criterion holds too. Refused once grading started on the run.
+         *     until this criterion holds too. Refused once a verdict is written on the run;
+         *     one that arrives while the verifier is still probing is graded too (the ledger
+         *     refuses a pass that misses it, and the verifier grades again).
          */
         post: operations["company_run_subgoal_api_company_runs__run_id__subgoals_post"];
         delete?: never;

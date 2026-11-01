@@ -333,7 +333,16 @@ nothing works. With it on, the `goal.approve` card crosses the Action Kernel and
 waits in the decision inbox; nothing opens until the owner accepts it there.
 `/subgoal <criterion>` (or `POST /api/company/runs/{run_id}/subgoals`, `nerva goal
 subgoal`) adds an acceptance criterion to a running goal — an event on the run that
-resets nothing, which the verifier then requires.
+resets nothing, which the verifier then requires; one that arrives while the verifier
+is probing is graded too (the ledger refuses a pass that misses it). A headline,
+field, constraint or boundary over its cap refuses the whole goal, never a cut one.
+`boundaries:` / `files:` / `allowed:` are limits in words carried onto the card as
+stop conditions; only a `scope:` comma list of step kinds (or `unrestricted`) is a
+scope. From chat the owner also intervenes through the HUD's own paths:
+`/goal status`, `/goal stop` (the stop route), `/goal pause` (an owner barrier that
+still ends at the run's deadline) and `/goal resume` (the HUD's "stop waiting"), and
+`/subgoal remove <N>` / `/subgoal clear` take back the owner's own criteria — never
+the checks approved on the card.
 
 **What it takes to actually run.** As of `company_runtime.py`, the flag being set
 **at boot** is what registers the `company-mode-sweep` job

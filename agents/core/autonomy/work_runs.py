@@ -142,7 +142,9 @@ BARRIER_KINDS = ("pid", "trigger", "deadline")
 MAX_BARRIERS_PER_RUN = 50            # barrier.set events per run, then refuse
 _MAX_BARRIER_BYTES = 2_048
 _PARKABLE = frozenset({"planning", "working"})
-BARRIER_SOURCES = ("planner", "judge", "hub")
+# "owner" (H462): ``/goal pause`` — the owner parks the run until ``/goal resume``
+# (the same owner clear as the HUD's "stop waiting"). Narrowing only, like a stop.
+BARRIER_SOURCES = ("planner", "judge", "hub", "owner")
 BARRIER_CLEAR_REASONS = (
     "elapsed", "exited", "pid_reused", "ns_mismatch", "fired", "vanished", "cap",
     "probe_error", "owner", "replaced", "budget_spent",
@@ -152,10 +154,14 @@ BARRIER_CLEARED_BY = ("check", "owner", "ledger", "scheduler")
 # H462 — acceptance criteria the owner adds to a running goal (``/subgoal``). An
 # event on the run, never a field of the row: adding one changes neither the run's
 # fingerprint, nor its status, nor its budget, so the run is not reset. Only an
-# open run takes one, and only before grading started: once a verdict is written
-# the criteria it was graded against are fixed.
+# open run takes one, and only before a verdict is written: the criteria a verdict
+# was graded against are fixed. One added while the verifier is still probing makes
+# ``record_verdict`` refuse that pass (``subgoals_changed``), so it is re-graded.
 MAX_SUBGOALS = 10
-_MAX_SUBGOAL_CHARS = 500
+# Ever added to one run, removals included: ids are never reused, and an add/remove
+# loop must not grow a run's audit without bound.
+MAX_SUBGOAL_EVENTS = 5 * MAX_SUBGOALS
+MAX_SUBGOAL_CHARS = 500
 SUBGOAL_OPEN_STATUSES = frozenset({"planning", "working", "blocked"})
 
 # H464c — an approval ref as the goal contract writes it (``task:<id>:<decider>``):
@@ -1465,6 +1471,7 @@ class WorkRunLedger:
         passed: bool,
         reason: str = "",
         evidence: tuple[str, ...] | list[str] = (),
+        subgoals_seen: tuple[str, ...] | list[str] | None = None,
     ) -> Verdict:
         """Write the verifier's or the judge's verdict, and settle the run on the judge's.
 
@@ -1472,6 +1479,14 @@ class WorkRunLedger:
         statement about the evidence, not about the goal. A judge pass on a run
         the verifier failed is refused — a run cannot be graded good on evidence
         that did not hold.
+
+        ``subgoals_seen`` (H462) names the criteria the owner added that a
+        verifier's verdict was graded against. A verifier PASS that leaves out a
+        criterion on the run now is refused (``subgoals_changed``) — checked under
+        the same lock that writes the verdict, so a ``/subgoal`` that arrived while
+        the probes ran can never be missing from a pass. ``None`` means none were
+        seen. A failing verdict needs no such check: a criterion more cannot turn
+        a fail into a pass.
         """
         role = str(role or "").strip().lower()
         if role not in VERDICT_ROLES:
@@ -1491,6 +1506,10 @@ class WorkRunLedger:
             ).fetchone()
             if existing is not None:
                 raise WorkRunError("verdict_already_recorded")
+            if role == "verifier" and passed:
+                seen = {str(item) for item in (subgoals_seen or ())}
+                if any(row["id"] not in seen for row in self._subgoals_locked(run_id)):
+                    raise WorkRunError("subgoals_changed")
             if role == "judge" and passed:
                 verifier = self._conn.execute(
                     "SELECT passed FROM verdicts WHERE run_id = ? AND role = 'verifier'",
@@ -1729,6 +1748,40 @@ class WorkRunLedger:
 
     # ── acceptance criteria added mid-run (H462) ────────────────────────
 
+    def _subgoals_locked(self, run_id: str) -> list[dict[str, Any]]:
+        """The run's live criteria, oldest first: every ``subgoal.added`` the owner
+        has not since removed (``subgoal.removed``). Caller holds the lock."""
+        rows = self._conn.execute(
+            "SELECT kind, at, detail FROM run_events WHERE run_id = ? "
+            "AND kind IN ('subgoal.added', 'subgoal.removed') ORDER BY seq",
+            (run_id,),
+        ).fetchall()
+        live: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            detail = _load(row["detail"])
+            ident = str(detail.get("id") or "")
+            if not ident:
+                continue
+            if row["kind"] == "subgoal.removed":
+                live.pop(ident, None)
+            elif detail.get("describe"):
+                live[ident] = {"id": ident, "describe": str(detail["describe"]),
+                               "by": str(detail.get("by") or ""), "at": row["at"]}
+        return list(live.values())
+
+    def _subgoal_open_locked(self, run_id: str) -> WorkRun:
+        """The run, when its criteria may still change: open, and with no verdict
+        written yet (the criteria a verdict was given against are fixed)."""
+        run = self._run_locked(run_id)
+        if run.status not in SUBGOAL_OPEN_STATUSES:
+            raise WorkRunError(f"run_{run.status}")
+        graded = self._conn.execute(
+            "SELECT 1 FROM verdicts WHERE run_id = ? LIMIT 1", (run_id,)
+        ).fetchone()
+        if graded is not None:
+            raise WorkRunError("run_already_graded")
+        return run
+
     def add_subgoal(self, run_id: str, describe: str, *, by: str = "owner") -> dict[str, Any]:
         """Add one acceptance criterion to a running goal, without resetting it.
 
@@ -1737,51 +1790,91 @@ class WorkRunLedger:
         stop, it needs no approval. It is a ``subgoal.added`` event, outside the run
         row and its fingerprint: the status, the budget and the steps are left as
         they were. Refused on a run that is not open (``run_<status>``), on one
-        that grading already started on (``run_already_graded``: the criteria a
-        verdict was given against are fixed), and past :data:`MAX_SUBGOALS`.
-        Returns the criterion as recorded: ``id`` (``subgoal:<n>``), ``describe``,
-        ``by`` and ``at``.
+        that already has a verdict (``run_already_graded``: the criteria a verdict
+        was given against are fixed), past :data:`MAX_SUBGOALS` live criteria or
+        :data:`MAX_SUBGOAL_EVENTS` ever added, and on a criterion longer than
+        :data:`MAX_SUBGOAL_CHARS` (``subgoal_too_long`` — refused whole, never cut:
+        a criterion cut short is a different criterion).
+
+        One that arrives while the verifier is still probing is not lost: the
+        verifier names the criteria it graded against, and :meth:`record_verdict`
+        refuses a pass that leaves out one on the run now (``subgoals_changed``),
+        so the verifier grades again with it folded in.
+
+        Returns the criterion as recorded: ``id`` (``subgoal:<n>``, never reused),
+        ``describe``, ``by`` and ``at``.
         """
-        text = " ".join(_text(describe, "subgoal", max_chars=_MAX_SUBGOAL_CHARS).split())
+        raw = " ".join(str(describe or "").split())
+        if not raw:
+            raise WorkRunError("missing_subgoal")
+        if len(raw) > MAX_SUBGOAL_CHARS:
+            raise WorkRunError("subgoal_too_long")
         who = _text(by, "by", max_chars=128, required=False) or "owner"
         with self._lock:
-            run = self._run_locked(run_id)
-            if run.status not in SUBGOAL_OPEN_STATUSES:
-                raise WorkRunError(f"run_{run.status}")
-            graded = self._conn.execute(
-                "SELECT 1 FROM verdicts WHERE run_id = ? LIMIT 1", (run_id,)
-            ).fetchone()
-            if graded is not None:
-                raise WorkRunError("run_already_graded")
-            count = self._conn.execute(
+            self._subgoal_open_locked(run_id)
+            if len(self._subgoals_locked(run_id)) >= MAX_SUBGOALS:
+                raise WorkRunError("too_many_subgoals")
+            ever = int(self._conn.execute(
                 "SELECT COUNT(*) FROM run_events WHERE run_id = ? AND kind = 'subgoal.added'",
                 (run_id,),
-            ).fetchone()[0]
-            if int(count) >= MAX_SUBGOALS:
+            ).fetchone()[0])
+            if ever >= MAX_SUBGOAL_EVENTS:
                 raise WorkRunError("too_many_subgoals")
-            record = {"id": f"subgoal:{int(count) + 1}", "describe": text, "by": who}
+            record = {"id": f"subgoal:{ever + 1}", "describe": raw, "by": who}
             now = self._now()
             self._event_locked(run_id, "subgoal.added", now, record)
             self._conn.commit()
         logger.info("criterion %s added to run %s by %s", record["id"], run_id, who)
         return {**record, "at": now}
 
-    def subgoals(self, run_id: str) -> list[dict[str, Any]]:
-        """The criteria the owner added to this run, oldest first (H462). Read from
-        the append-only audit, so they survive a restart with the run."""
+    def remove_subgoal(self, run_id: str, subgoal_id: str, *, by: str = "owner") -> dict[str, Any]:
+        """Take back one criterion the owner added (Hermes ``/subgoal remove <N>``).
+
+        Only ever one of the owner's own additions: the checks the owner approved on
+        the goal card are not criteria here and cannot be removed, so this returns
+        the run to — never below — the contract that was approved. Same refusals as
+        :meth:`add_subgoal` (an open run, no verdict yet), plus ``unknown_subgoal``.
+        A ``subgoal.removed`` event: the audit keeps both the addition and the
+        removal. ``subgoal_id`` is ``subgoal:<n>`` or ``<n>``. Returns the removed
+        criterion.
+        """
+        ident = str(subgoal_id or "").strip()
+        if ident.isdigit():
+            ident = f"subgoal:{int(ident)}"
+        who = _text(by, "by", max_chars=128, required=False) or "owner"
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT at, detail FROM run_events WHERE run_id = ? AND kind = 'subgoal.added' "
-                "ORDER BY seq",
-                (run_id,),
-            ).fetchall()
-        out = []
-        for row in rows:
-            detail = _load(row["detail"])
-            if detail.get("id") and detail.get("describe"):
-                out.append({"id": str(detail["id"]), "describe": str(detail["describe"]),
-                            "by": str(detail.get("by") or ""), "at": row["at"]})
-        return out
+            self._subgoal_open_locked(run_id)
+            live = {row["id"]: row for row in self._subgoals_locked(run_id)}
+            if ident not in live:
+                raise WorkRunError("unknown_subgoal")
+            self._event_locked(run_id, "subgoal.removed", self._now(), {"id": ident, "by": who})
+            self._conn.commit()
+        logger.info("criterion %s removed from run %s by %s", ident, run_id, who)
+        return live[ident]
+
+    def clear_subgoals(self, run_id: str, *, by: str = "owner") -> list[dict[str, Any]]:
+        """Take back every criterion the owner added (Hermes ``/subgoal clear``); the
+        approved goal is untouched. Same refusals as :meth:`remove_subgoal`. Returns
+        the criteria removed — empty when there were none."""
+        who = _text(by, "by", max_chars=128, required=False) or "owner"
+        with self._lock:
+            self._subgoal_open_locked(run_id)
+            live = self._subgoals_locked(run_id)
+            now = self._now()
+            for row in live:
+                self._event_locked(run_id, "subgoal.removed", now, {"id": row["id"], "by": who})
+            if live:
+                self._conn.commit()
+        if live:
+            logger.info("%d criteria cleared from run %s by %s", len(live), run_id, who)
+        return live
+
+    def subgoals(self, run_id: str) -> list[dict[str, Any]]:
+        """The criteria the owner added to this run and has not taken back, oldest
+        first (H462). Read from the append-only audit, so they survive a restart
+        with the run."""
+        with self._lock:
+            return self._subgoals_locked(run_id)
 
     def events(self, run_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
         """The run's audit — barrier sets and clears, and holds (H464d) — newest
@@ -1933,6 +2026,8 @@ __all__ = [
     "KIND",
     "MAX_BARRIERS_PER_RUN",
     "MAX_SUBGOALS",
+    "MAX_SUBGOAL_CHARS",
+    "MAX_SUBGOAL_EVENTS",
     "SUBGOAL_OPEN_STATUSES",
     "MIGRATIONS",
     "RUN_STATUSES",

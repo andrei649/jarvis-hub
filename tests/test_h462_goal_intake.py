@@ -11,8 +11,14 @@ owner can add to a running goal:
   · the budget defaults to Hermes' 20 turns, as 20 steps;
   · proposing refuses with company mode off and on a kernel DENY, and enqueues nothing;
   · ``/goal`` and ``/subgoal`` answer only the owner;
-  · a criterion added mid-run resets nothing, is refused once grading started, and
-    the verifier (and the judge's rubric) see it;
+  · a criterion added mid-run resets nothing, is refused once a verdict is written,
+    is never left out of a verifier pass even when it arrives mid-probe, and the
+    verifier (and the judge's rubric) see it; the owner can take back his own;
+  · a headline, field, constraint or boundary over its cap refuses the whole goal;
+  · ``boundaries:``/``files:``/``allowed:`` are limits in words carried into the
+    contract; only a ``scope:`` comma list of step kinds is a scope;
+  · ``/goal status|stop|pause|resume`` and ``/subgoal remove|clear`` intervene
+    through the same governed paths as the HUD and the routes;
   · ``POST /api/company/goals`` is admin-guarded and opens no run;
     ``POST /api/company/runs/{id}/subgoals`` is user-guarded like stop;
   · ``nerva goal propose`` / ``nerva goal subgoal`` post exactly that.
@@ -124,7 +130,8 @@ def test_with_no_scope_the_scope_is_exactly_the_plan_s_own_kinds():
     ("Prepare the brief", "scope_required_or_declare_unrestricted"),
     ("", "missing_title"),
     ("verify: x\nscope: research", "missing_title"),
-    ("Brief\nscope: src/parser.py", "invalid_scope_kind"),
+    # A path in a scope line is a boundary in words, not a step kind: no plan, no scope.
+    ("Brief\nscope: src/parser.py", "scope_required_or_declare_unrestricted"),
     ("Brief\nstep: read the figures", "invalid_plan_step"),
     ("Brief\nscope: research\nstep: write: draft", "plan_step_out_of_scope"),
     ("Brief\nscope: research, unrestricted", "scope_and_unrestricted_conflict"),
@@ -385,7 +392,8 @@ async def test_the_judge_rubric_sees_the_criteria_added(ledger):
     run = _open(ledger)
     ledger.record_step(run.id, kind="research", summary="read", outcome="ok", task_id=5)
     ledger.add_subgoal(run.id, "a summary")
-    ledger.record_verdict(run.id, role="verifier", passed=True, reason="ok")
+    ledger.record_verdict(run.id, role="verifier", passed=True, reason="ok",
+                          subgoals_seen=["subgoal:1"])
     seen = []
 
     def rubric(view):
@@ -540,3 +548,345 @@ def test_nerva_goal_subgoal_posts_the_criterion():
     assert out.strip() == "added subgoal:1: the brief has a summary"
     code, _out, err, _hub = _cli(["goal", "subgoal", "../x", "c"], {})
     assert code == 2 and "not a run id" in err
+
+
+# ── round 2: a criterion added mid-probe is graded, never skipped ────────────
+
+async def test_a_criterion_added_while_the_verifier_probes_is_never_left_out(ledger):
+    """The race: the owner's /subgoal lands between the verifier's read and its
+    verdict. The pass computed without it must not be recorded, and the run must not
+    settle as succeeded on it."""
+    from agents.core.autonomy.work_judge import GoalTerms, WorkJudge
+    from agents.core.autonomy.work_verifier import Check, WorkVerifier
+
+    run = _open(ledger)
+    ledger.record_step(run.id, kind="research", summary="read", outcome="ok", task_id=5)
+    added = []
+
+    def probe():
+        if not added:   # exactly once, inside the probe window
+            added.append(ledger.add_subgoal(run.id, "the brief has a summary"))
+        return True
+
+    report = await WorkVerifier(ledger).verify(
+        run.id, [Check(id="brief", describe="a brief", probe=probe)])
+    assert added[0]["id"] == "subgoal:1"
+    assert report.passed is False
+    assert report.reason == "1 required check(s) had no probe: subgoal:1"
+    [verdict] = ledger.verdicts(run.id)
+    assert (verdict.role, verdict.passed) == ("verifier", False)
+    judgement = await WorkJudge(ledger).judge(run.id, GoalTerms(goal_id="g-1",
+                                                                title="Prepare the brief"))
+    assert judgement.passed is False
+    assert ledger.get(run.id).status == "failed"
+
+
+async def test_the_verifier_grades_again_with_the_late_criterion_folded_in(ledger):
+    from agents.core.autonomy.work_verifier import Check, WorkVerifier
+
+    run = _open(ledger)
+    ledger.record_step(run.id, kind="research", summary="read", outcome="ok", task_id=5)
+    calls = []
+
+    def probe():
+        calls.append(1)
+        if len(calls) == 1:
+            ledger.add_subgoal(run.id, "a summary")
+        return True
+
+    checks = [Check(id="brief", describe="a brief", probe=probe),
+              Check(id="subgoal:1", describe="a summary", probe=lambda: True)]
+    report = await WorkVerifier(ledger).verify(run.id, checks)
+    assert report.passed is True and len(calls) == 2
+    [verdict] = ledger.verdicts(run.id)
+    assert verdict.passed is True
+    assert any(line.startswith("subgoal:1: passed") for line in verdict.evidence)
+
+
+async def test_criteria_that_keep_changing_mid_grade_write_no_verdict(ledger):
+    from agents.core.autonomy import work_verifier
+    from agents.core.autonomy.work_verifier import Check, WorkVerifier
+
+    run = _open(ledger)
+    ledger.record_step(run.id, kind="research", summary="read", outcome="ok", task_id=5)
+    calls = []
+
+    def adder():
+        calls.append(1)
+        ledger.add_subgoal(run.id, f"criterion {len(calls)}")
+        return True
+
+    checks = [Check(id="brief", describe="b", probe=adder),
+              *(Check(id=f"subgoal:{n}", describe="c", probe=lambda: True) for n in range(1, 8))]
+    with pytest.raises(WorkRunError) as exc:
+        await WorkVerifier(ledger).verify(run.id, checks)
+    assert exc.value.reason == "subgoals_changed"
+    assert ledger.verdicts(run.id) == []
+    assert len(calls) == work_verifier._MAX_REGRADES + 1
+    assert ledger.get(run.id).status == "working"     # nothing settled; next sweep grades
+
+
+def test_the_ledger_refuses_a_verifier_pass_that_misses_a_criterion(ledger):
+    run = _open(ledger)
+    ledger.add_subgoal(run.id, "a summary")
+    for seen in (None, [], ["subgoal:2"]):
+        with pytest.raises(WorkRunError) as exc:
+            ledger.record_verdict(run.id, role="verifier", passed=True, subgoals_seen=seen)
+        assert exc.value.reason == "subgoals_changed"
+    assert ledger.verdicts(run.id) == []
+    ledger.record_verdict(run.id, role="verifier", passed=True, subgoals_seen=["subgoal:1"])
+    assert [v.passed for v in ledger.verdicts(run.id)] == [True]
+
+
+def test_a_failing_verifier_verdict_needs_no_criteria_list(ledger):
+    run = _open(ledger)
+    ledger.add_subgoal(run.id, "a summary")
+    ledger.record_verdict(run.id, role="verifier", passed=False, reason="no probe")
+    assert [v.passed for v in ledger.verdicts(run.id)] == [False]
+
+
+# ── round 2: refused whole, never cut ───────────────────────────────────────
+
+_SCOPED = "scope: research\n"
+
+
+@pytest.mark.parametrize("text,reason", [
+    ("H" * 201 + "\n" + _SCOPED, "title_too_long"),
+    ("A brief\n" + "line of detail " * 14 + "\n" + _SCOPED, "title_too_long"),
+    ("outcome: " + "o" * 201 + "\n" + _SCOPED, "title_too_long"),
+    ("Brief\noutcome: " + "o" * (500 - len(goal_intake.OUTCOME_CHECK_PREFIX) + 1) + "\n"
+     + _SCOPED, "outcome_too_long"),
+    ("Brief\nverify: " + "v" * 501 + "\n" + _SCOPED, "verification_too_long"),
+    ("Brief\nstop when: " + "s" * 501 + "\n" + _SCOPED, "stop_condition_too_long"),
+    ("Brief\nmust not: " + "c" * (500 - len(goal_intake.CONSTRAINT_PREFIX) + 1) + "\n"
+     + _SCOPED, "constraint_too_long"),
+    ("Brief\nboundaries: " + "b" * (500 - len(goal_intake.BOUNDARY_PREFIX) + 1) + "\n"
+     + _SCOPED, "boundary_too_long"),
+    ("Brief\nstep: research: " + "r" * 501, "plan_step_too_long"),
+])
+def test_a_field_over_its_cap_refuses_the_whole_goal(text, reason):
+    with pytest.raises(GoalContractError) as exc:
+        draft_from_text(text, now=NOW)
+    assert exc.value.reason == reason
+    assert "nothing was proposed" in goal_intake.refusal_text(reason)
+
+
+def test_the_reviewers_constraint_is_refused_not_cut_and_one_that_fits_is_carried_whole():
+    tail = " and NEVER delete the production database"
+    room = 500 - len(goal_intake.CONSTRAINT_PREFIX)
+    too_long = "x" * (room + 1 - len(tail)) + tail
+    with pytest.raises(GoalContractError) as exc:
+        draft_from_text(f"Brief\nmust not: {too_long}\n{_SCOPED}", now=NOW)
+    assert exc.value.reason == "constraint_too_long"
+    fits = "x" * (room - len(tail)) + tail
+    draft = draft_from_text(f"Brief\nmust not: {fits}\n{_SCOPED}", now=NOW)
+    assert draft.stop_conditions == (f"{goal_intake.CONSTRAINT_PREFIX}{fits}",)
+    assert draft.stop_conditions[0].endswith("NEVER delete the production database")
+
+
+def test_a_long_step_keeps_its_whole_summary_as_the_task_title():
+    long = "r" * 300
+    draft = draft_from_text(f"Brief\nstep: research: {long}\nstep: write: draft it", now=NOW)
+    assert draft.plan[0]["task"]["title"] == long
+    assert draft.plan[1]["task"]["title"] == "draft it — toward the goal: Brief"
+
+
+async def test_an_over_cap_goal_reaches_no_intake_from_chat(monkeypatch, ledger):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    intake = _Intake()
+    orch = _orch(intake, ledger)
+    outcome = await orch.commands.dispatch(
+        "/goal Brief\nscope: research\nmust not: " + "c" * 470, orch=orch, principal=OWNER)
+    assert outcome.reply.startswith("Not proposed: a constraint is longer than")
+    assert intake.calls == []
+
+
+async def test_an_over_cap_criterion_is_refused_not_cut(ledger):
+    run = _open(ledger)
+    with pytest.raises(WorkRunError) as exc:
+        ledger.add_subgoal(run.id, "c" * 501)
+    assert exc.value.reason == "subgoal_too_long"
+    orch = _orch(None, ledger)
+    outcome = await orch.commands.dispatch("/subgoal " + "c" * 501, orch=orch, principal=OWNER)
+    assert outcome.reply.startswith("Not added: a criterion is at most 500 characters")
+    assert ledger.subgoals(run.id) == []
+    assert ledger.add_subgoal(run.id, "c" * 500)["describe"] == "c" * 500
+
+
+# ── round 2: boundaries in words, scope in step kinds ───────────────────────
+
+@pytest.mark.parametrize("line,boundary", [
+    ("files: docs/", "docs/"),
+    ("boundaries: agents/core/x.py", "agents/core/x.py"),
+    ("allowed: only the docs folder", "only the docs folder"),
+    ("allowed: research, write", "research, write"),
+    ("scope: only the docs folder", "only the docs folder"),
+    ("scope: src/parser.py", "src/parser.py"),
+])
+def test_a_hermes_boundary_is_a_limit_carried_into_the_contract(line, boundary):
+    draft = draft_from_text(f"Brief\n{line}\nstep: write: draft the brief", now=NOW)
+    assert draft.scope_kinds == ("write",) and draft.unrestricted is False
+    assert draft.stop_conditions == (f"{goal_intake.BOUNDARY_PREFIX}{boundary}",)
+    assert parse_goal_text(f"Brief\n{line}").get("boundaries") == (boundary,)
+
+
+def test_a_scope_line_of_step_kinds_stays_an_explicit_scope():
+    parsed = parse_goal_text("Brief\nscope: Research, file.write\nscope: write")
+    assert parsed.scope == ("research", "file.write", "write")
+    assert parsed.get("boundaries") == ()
+    draft = draft_from_text("Brief\nscope: research, file.write\nfiles: docs/", now=NOW)
+    assert draft.scope_kinds == ("research", "file.write")
+    assert draft.stop_conditions == (f"{goal_intake.BOUNDARY_PREFIX}docs/",)
+    assert draft_from_text("Brief\nscope: unrestricted", now=NOW).unrestricted is True
+
+
+def test_a_boundary_alone_is_not_a_scope():
+    with pytest.raises(GoalContractError) as exc:
+        draft_from_text("Brief\nfiles: docs/", now=NOW)
+    assert exc.value.reason == "scope_required_or_declare_unrestricted"
+
+
+def test_the_card_shows_each_boundary_in_the_owner_s_words():
+    draft = draft_from_text("Brief\nboundaries: only docs/\nstep: write: draft", now=NOW)
+    assert "stop when: continuing would leave a boundary: only docs/" in goal_intake.card_lines(draft)
+
+
+# ── round 2: the owner intervenes from the chat ─────────────────────────────
+
+async def _say(orch, text):
+    return (await orch.commands.dispatch(text, orch=orch, principal=OWNER)).reply
+
+
+async def test_goal_status_says_what_each_running_goal_is_doing(ledger):
+    run = _open(ledger)
+    ledger.add_subgoal(run.id, "a summary")
+    orch = _orch(None, ledger)
+    reply = await _say(orch, "/goal status")
+    assert reply.splitlines() == [
+        "Running goals:",
+        f"  {run.id} · planning · Prepare the brief — 0/50 steps; 1 criteria added",
+    ]
+    assert "Prepare the brief" in await _say(orch, f"/goal status {run.id}")
+
+
+async def test_goal_stop_is_the_route_s_stop(ledger):
+    run = _open(ledger)
+    orch = _orch(None, ledger)
+    reply = await _say(orch, "/goal stop")
+    # A run with no step taken yet settles straight to stopping → the next stop to
+    # stopped, exactly like POST /api/company/runs/{id}/stop (request_stop).
+    assert reply.startswith(f"Stopping “Prepare the brief” ({run.id})"), reply
+    after = ledger.get(run.id)
+    assert (after.status, after.stop_reason) == ("stopping", "owner")
+    assert (await _say(orch, "/goal stop")).startswith("Stopped “Prepare the brief”")
+    assert ledger.get(run.id).status == "stopped"
+    assert (await _say(orch, "/goal stop")).startswith("Nothing changed: no goal is running")
+
+
+async def test_goal_clear_stops_too_and_a_goal_text_starting_with_stop_is_a_goal(monkeypatch,
+                                                                                 ledger):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    run = _open(ledger)
+    intake = _Intake()
+    orch = _orch(intake, ledger)
+    reply = await _say(orch, "/goal stop the leaking tap\nscope: research")
+    assert "as task 41" in reply and intake.calls
+    assert ledger.get(run.id).status == "planning"
+    await _say(orch, f"/goal clear {run.id}")
+    assert ledger.get(run.id).status in {"stopping", "stopped"}
+
+
+async def test_goal_pause_parks_the_run_and_resume_is_the_owner_s_clear(ledger):
+    from agents.core.autonomy.run_barriers import RunBarriers
+
+    run = _open(ledger)
+    orch = _orch(None, ledger)
+    reply = await _say(orch, "/goal pause")
+    assert reply.startswith(f"Paused “Prepare the brief” ({run.id})"), reply
+    paused = ledger.get(run.id)
+    assert paused.status == "planning"            # a pause changes no status
+    assert paused.barrier["source"] == "owner" and paused.barrier["kind"] == "deadline"
+    assert RunBarriers(ledger).active(run.id) is True
+    assert "waiting on the owner to resume it" in await _say(orch, "/goal status")
+    assert "already paused" in await _say(orch, "/goal pause")
+    reply = await _say(orch, "/goal resume")
+    assert reply.startswith("Resumed “Prepare the brief”"), reply
+    assert ledger.get(run.id).barrier is None
+    assert ledger.owner_cleared(run.id)            # on the audit as the owner's clear
+    assert "was not paused" in await _say(orch, "/goal resume")
+
+
+async def test_goal_pause_refuses_a_run_waiting_on_the_owner(ledger):
+    run = _open(ledger)
+    ledger.record_step(run.id, kind="research", summary="ask", outcome="queued", task_id=7)
+    assert ledger.get(run.id).status == "blocked"
+    orch = _orch(None, ledger)
+    reply = await _say(orch, "/goal pause")
+    assert "waiting on your decision" in reply
+    assert ledger.get(run.id).barrier is None
+
+
+async def test_goal_controls_with_several_runs_ask_which_and_change_nothing(ledger):
+    one, two = _open(ledger, "g-1"), _open(ledger, "g-2", "Another")
+    orch = _orch(None, ledger)
+    for verb in ("stop", "pause"):
+        reply = await _say(orch, f"/goal {verb}")
+        assert reply.startswith("Nothing changed: several goals are running")
+    assert {ledger.get(one.id).status, ledger.get(two.id).status} == {"planning"}
+    assert ledger.get(one.id).barrier is None and ledger.get(two.id).barrier is None
+    await _say(orch, f"/goal pause {two.id}")
+    assert ledger.get(two.id).barrier is not None and ledger.get(one.id).barrier is None
+    # The only paused run is the one /goal resume means.
+    assert (await _say(orch, "/goal resume")).startswith("Resumed “Another”")
+
+
+async def test_goal_controls_with_nothing_running_say_so(ledger):
+    orch = _orch(None, ledger)
+    assert (await _say(orch, "/goal stop")).startswith("Nothing changed: no goal is running")
+    assert (await _say(orch, "/goal status")).startswith("No goal is running")
+
+
+async def test_subgoal_remove_and_clear_take_back_the_owner_s_own(ledger):
+    run = _open(ledger)
+    orch = _orch(None, ledger)
+    for text in ("a summary", "a chart", "a glossary"):
+        await _say(orch, f"/subgoal {text}")
+    reply = await _say(orch, "/subgoal remove 2")
+    assert reply.startswith("Removed subgoal:2 from “Prepare the brief”: a chart.")
+    assert [s["id"] for s in ledger.subgoals(run.id)] == ["subgoal:1", "subgoal:3"]
+    assert "no such criterion" in await _say(orch, "/subgoal remove 2")
+    # "remove" followed by words is a criterion, never a removal.
+    assert "as subgoal:4" in await _say(orch, "/subgoal remove the debug logging")
+    reply = await _say(orch, "/subgoal clear")
+    assert reply.startswith("Cleared 3 criteria from “Prepare the brief”")
+    assert ledger.subgoals(run.id) == []
+    assert "nothing to clear" in await _say(orch, "/subgoal clear")
+    # Ids are never reused, and the audit keeps every addition and removal.
+    assert "as subgoal:5" in await _say(orch, "/subgoal a summary")
+    kinds = [e["kind"] for e in ledger.events(run.id, limit=50)]
+    assert kinds.count("subgoal.added") == 5 and kinds.count("subgoal.removed") == 4
+
+
+def test_criteria_are_fixed_once_a_verdict_is_written(ledger):
+    run = _open(ledger)
+    ledger.add_subgoal(run.id, "a summary")
+    ledger.record_verdict(run.id, role="verifier", passed=False, reason="no probe")
+    for change in (lambda: ledger.remove_subgoal(run.id, "1"),
+                   lambda: ledger.clear_subgoals(run.id)):
+        with pytest.raises(WorkRunError) as exc:
+            change()
+        assert exc.value.reason == "run_already_graded"
+    assert [s["id"] for s in ledger.subgoals(run.id)] == ["subgoal:1"]
+
+
+def test_removed_criteria_free_room_but_the_audit_stays_bounded(ledger):
+    from agents.core.autonomy.work_runs import MAX_SUBGOAL_EVENTS
+
+    run = _open(ledger)
+    for n in range(MAX_SUBGOAL_EVENTS):
+        ledger.add_subgoal(run.id, f"c{n}")
+        ledger.remove_subgoal(run.id, f"subgoal:{n + 1}")
+    with pytest.raises(WorkRunError) as exc:
+        ledger.add_subgoal(run.id, "one more")
+    assert exc.value.reason == "too_many_subgoals"
+    assert ledger.subgoals(run.id) == []

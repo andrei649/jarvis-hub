@@ -28,6 +28,9 @@ that leap. Its rules are deliberately boring and mechanical:
 * **A criterion the owner added mid-run is a required check (H462).** Every
   ``/subgoal`` on the run's record is checked with the goal's own checks; one
   nobody can probe is ``unverifiable``, so the run is not done until each holds.
+  The verdict names the criteria it was graded against, and the ledger refuses a
+  pass that misses one added while the probes ran — the verifier then grades
+  again from a fresh read, so no criterion the owner was told about is skipped.
 * **The verdict is written once, through the ledger.** The verifier has no
   durable state of its own.
 
@@ -52,6 +55,12 @@ logger = logging.getLogger("jarvis.work_verifier")
 CHECK_RESULTS = ("passed", "failed", "unverifiable")
 
 _MAX_TEXT = 500
+
+# How many times one ``verify`` grades again because the owner's criteria changed
+# while its probes ran (H462). Each retry needs a fresh ``/subgoal`` in that exact
+# window, so this is never reached in practice; past it the verdict is NOT written
+# (``subgoals_changed`` is raised) and the next sweep grades from scratch.
+_MAX_REGRADES = 3
 
 
 @dataclass(frozen=True)
@@ -205,20 +214,41 @@ class WorkVerifier:
         ``record=False`` returns the report without writing it — used by the
         supervisor to look ahead mid-run without spending the run's one verdict.
         """
-        snapshot = self._ledger.snapshot(run_id)
-        unauthorised = tuple(int(seq) for seq in snapshot.get("unauthorised_steps", ()))
-        checks = [*checks, *_added_criteria(snapshot, checks)]
-        outcomes = tuple([await _run_probe(check) for check in checks])
-        report = self._grade(outcomes, unauthorised, snapshot)
-        if record:
-            self._ledger.record_verdict(
-                run_id,
-                role="verifier",
-                passed=report.passed,
-                reason=report.reason,
-                evidence=report.evidence,
-            )
-        return report
+        from agents.core.autonomy.work_runs import WorkRunError
+
+        declared = list(checks)
+        for attempt in range(_MAX_REGRADES + 1):
+            snapshot = self._ledger.snapshot(run_id)
+            unauthorised = tuple(int(seq) for seq in snapshot.get("unauthorised_steps", ()))
+            graded = [*declared, *_added_criteria(snapshot, declared)]
+            outcomes = tuple([await _run_probe(check) for check in graded])
+            report = self._grade(outcomes, unauthorised, snapshot)
+            if not record:
+                return report
+            seen = [
+                str(row.get("id")) for row in snapshot.get("subgoals") or ()
+                if isinstance(row, Mapping) and row.get("id")
+            ]
+            try:
+                self._ledger.record_verdict(
+                    run_id,
+                    role="verifier",
+                    passed=report.passed,
+                    reason=report.reason,
+                    evidence=report.evidence,
+                    subgoals_seen=seen,
+                )
+            except WorkRunError as exc:
+                # The owner added a criterion while the probes ran: this pass was
+                # graded without it. Grade again from a fresh read — never record a
+                # pass the owner was told it would not get.
+                if exc.reason != "subgoals_changed" or attempt >= _MAX_REGRADES:
+                    raise
+                logger.info("run %s: the criteria changed while it was graded; "
+                            "grading again", run_id)
+                continue
+            return report
+        raise WorkRunError("subgoals_changed")  # pragma: no cover - loop always returns or raises
 
     def _grade(
         self,
