@@ -407,8 +407,33 @@ def build_parser() -> argparse.ArgumentParser:
         switch = skills_verbs.add_parser(verb, help=text)
         switch.add_argument("name", nargs="?", help="the skill's name or folder")
         switch.add_argument("--category", help="every skill of this category instead of one skill")
+        switch.add_argument("--bundle", help="every installed skill of this bundle instead of one skill")
         switch.add_argument("--channel", help="only on this channel (telegram, voice, web, ...)")
         switch.add_argument("--json", action="store_true")
+    # H026 — named groups of skills, switched off/on as one unit with --bundle.
+    bundles = skills_verbs.add_parser(
+        "bundles", help="named groups of skills, switched as one unit (`nerva skills off|on --bundle`)")
+    bundle_verbs = bundles.add_subparsers(dest="bundle_action", required=True, metavar="action")
+    bundle_verbs.add_parser("list", help="every bundle, its skills and which are not installed").add_argument(
+        "--json", action="store_true")
+    bundle_show = bundle_verbs.add_parser("show", help="one bundle's skills")
+    bundle_show.add_argument("name", help="the bundle's name (any casing; spaces and _ read as -)")
+    bundle_show.add_argument("--json", action="store_true")
+    bundle_create = bundle_verbs.add_parser(
+        "create", help="create a bundle of installed skills; it switches nothing (admin)")
+    bundle_create.add_argument("name", help="the bundle's name")
+    bundle_create.add_argument("--skill", "-s", action="append", default=[], metavar="SKILL",
+                               help="an installed skill's name or folder (repeat for each)")
+    bundle_create.add_argument("--description", "-d", default="")
+    bundle_create.add_argument("--force", "-f", action="store_true", help="replace a bundle of that name")
+    bundle_create.add_argument("--json", action="store_true")
+    bundle_delete = bundle_verbs.add_parser(
+        "delete", help="delete a bundle; its skills and their switches are untouched (admin)")
+    bundle_delete.add_argument("name", help="the bundle's name")
+    bundle_delete.add_argument("--json", action="store_true")
+    bundle_verbs.add_parser(
+        "reload", help="re-read the bundle files and report what changed (admin)").add_argument(
+        "--json", action="store_true")
     # H354 — the owner's trigger for one skill's reality-harness case.
     verify = skills_verbs.add_parser(
         "verify", help="run the reality harness's case for one loaded skill on the hub, now (admin)")
@@ -2557,11 +2582,14 @@ def _skill_files(raw: str) -> list[Path] | None:
 def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
     H329 — ``nerva skills list | off | on | config``: running-hub skill switches.
-    H354 — ``nerva skills verify``: run one skill's reality-harness case on the hub."""
+    H354 — ``nerva skills verify``: run one skill's reality-harness case on the hub.
+    H026 — ``nerva skills bundles list|show|create|delete|reload``: named skill bundles."""
     if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
     if ns.action == "verify":
         return _skill_verify(ns, ctx)
+    if ns.action == "bundles":
+        return _skill_bundles(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
         Problem,
@@ -2722,6 +2750,111 @@ def _skill_verify(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK if passed else EXIT_FAILED
 
 
+_BUNDLES_PATH = "/api/skills/bundles"
+
+
+def _bundle_line(row: Mapping[str, Any]) -> str:
+    skills = row.get("skills") if isinstance(row.get("skills"), list) else []
+    missing = row.get("missing") if isinstance(row.get("missing"), list) else []
+    text = f"{_plain(row.get('slug'), 70)}  {_plain(row.get('name'), 70)}  {len(skills)} skill{'s' if len(skills) != 1 else ''}"
+    if missing:
+        text += f" ({len(missing)} not installed)"
+    return text + (f"  {_plain(row.get('description'), 120)}" if row.get("description") else "")
+
+
+def _skill_bundles(ns: argparse.Namespace, ctx: Context) -> int:
+    """H026 — ``nerva skills bundles``: keep named skill bundles on the hub. A bundle is
+    switched off or on as one unit with ``nerva skills off|on --bundle NAME`` (on waits
+    for the owner's approval, as for one skill)."""
+    from urllib.parse import quote
+
+    client = ctx.client()
+    action = ns.bundle_action
+    if action == "create":
+        members = [s for s in ns.skill if s.strip()]
+        if not members:
+            ctx.err.write("a bundle must name at least one skill: --skill NAME (repeat for each)\n")
+            return EXIT_USAGE
+        reply = client.post(_BUNDLES_PATH, {"name": ns.name, "skills": members,
+                                            "description": ns.description, "overwrite": ns.force})
+    elif action == "delete":
+        reply = client.request("DELETE", f"{_BUNDLES_PATH}/{quote(ns.name, safe='')}")
+    elif action == "reload":
+        reply = client.post(f"{_BUNDLES_PATH}/reload", {})
+    elif action == "show":
+        reply = client.get(f"{_BUNDLES_PATH}/{quote(ns.name, safe='')}")
+    else:
+        reply = client.get(_BUNDLES_PATH)
+    if not isinstance(reply, dict):
+        ctx.err.write("unexpected reply from the hub\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    if action == "list":
+        rows = reply.get("bundles")
+        if not isinstance(rows, list):
+            ctx.err.write("unexpected reply from the hub: no bundles in it\n")
+            return EXIT_FAILED
+        if not rows:
+            ctx.say("no bundles yet; create one with: nerva skills bundles create NAME --skill A --skill B")
+        for row in rows:
+            if isinstance(row, Mapping):
+                ctx.say(_bundle_line(row))
+        for problem in reply.get("problems") or []:
+            if isinstance(problem, Mapping):
+                ctx.say(f"skipped {_plain(problem.get('file'), 120)}: {_plain(problem.get('detail'), 200)}")
+        if reply.get("directory"):
+            ctx.say(f"bundles folder: {_plain(reply['directory'], 300, keep_tail=True)}")
+        return EXIT_OK
+    if action == "show":
+        row = reply.get("bundle") if isinstance(reply.get("bundle"), Mapping) else {}
+        missing = {str(m).casefold() for m in row.get("missing") or []}
+        ctx.say(f"{_plain(row.get('slug'), 70)}  {_plain(row.get('name'), 70)}")
+        if row.get("description"):
+            ctx.say(f"  {_plain(row['description'], 200)}")
+        ctx.say(f"  file: {_plain(row.get('file'), 300, keep_tail=True)}")
+        skills = row.get("skills") if isinstance(row.get("skills"), list) else []
+        ctx.say(f"  skills ({len(skills)}):")
+        for name in skills:
+            ctx.say(f"    - {_plain(name, 130)}{' (not installed)' if str(name).casefold() in missing else ''}")
+        return EXIT_OK
+    if action == "create":
+        row = reply.get("bundle") if isinstance(reply.get("bundle"), Mapping) else {}
+        skills = row.get("skills") if isinstance(row.get("skills"), list) else []
+        ctx.say(f"{'replaced' if reply.get('replaced') else 'created'} bundle {_plain(row.get('name'), 70)} "
+                f"({len(skills)} skill{'s' if len(skills) != 1 else ''}): {_plain(row.get('file'), 300, keep_tail=True)}")
+        ctx.say(f"  switch it as one unit: nerva skills off|on --bundle {_plain(row.get('slug'), 70)}")
+        return EXIT_OK
+    if action == "delete":
+        row = reply.get("deleted") if isinstance(reply.get("deleted"), Mapping) else {}
+        ctx.say(f"deleted bundle {_plain(row.get('name'), 70)}: {_plain(row.get('file'), 300, keep_tail=True)}; "
+                "its skills and their switches are untouched")
+        return EXIT_OK
+    added = [r for r in reply.get("added") or [] if isinstance(r, Mapping)]
+    removed = [r for r in reply.get("removed") or [] if isinstance(r, Mapping)]
+    changed = [str(s) for s in reply.get("changed") or []]
+    if not (added or removed or changed):
+        ctx.say(f"no changes; {reply.get('total', 0)} bundle(s) loaded")
+    if added:
+        ctx.say(f"added ({len(added)}):")
+        for row in added:
+            text = f" — {_plain(row['description'], 120)}" if row.get("description") else ""
+            ctx.say(f"  + {_plain(row.get('name'), 70)}{text}")
+    if removed:
+        ctx.say(f"removed ({len(removed)}):")
+        for row in removed:
+            ctx.say(f"  - {_plain(row.get('name'), 70)}")
+    if changed:
+        ctx.say(f"changed ({len(changed)}): {', '.join(_plain(s, 70) for s in changed)}")
+    if added or removed or changed:
+        ctx.say(f"total bundles now: {reply.get('total', 0)}")
+    for problem in reply.get("problems") or []:
+        if isinstance(problem, Mapping):
+            ctx.say(f"skipped {_plain(problem.get('file'), 120)}: {_plain(problem.get('detail'), 200)}")
+    return EXIT_OK
+
+
 def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
     if ns.action == "config":
@@ -2742,22 +2875,28 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say(f"{name}: {where}{' (essential)' if row.get('essential') else ''}"
                     f"{_skill_usage_suffix(row.get('usage'))}")
         return EXIT_OK
-    if bool(ns.name) == bool(ns.category):
-        ctx.err.write("name one skill, or one --category\n")
+    bundle = getattr(ns, "bundle", None)
+    if sum(1 for target in (ns.name, ns.category, bundle) if target) != 1:
+        ctx.err.write("name one skill, or one --category, or one --bundle\n")
         return EXIT_USAGE
     body = {"enabled": ns.action == "on"}
-    body.update({"skill": ns.name} if ns.name else {"category": ns.category})
+    body.update({"skill": ns.name} if ns.name else {"category": ns.category} if ns.category
+                else {"bundle": bundle})
     if ns.channel:
         body["channel"] = ns.channel
     reply = client.post("/api/skills/switch", body)
     if ns.json:
         ctx.dump(reply)
         return EXIT_OK
+    # H026: a bundle member that is not installed is skipped, and said so.
+    missing = (reply.get("missing") or []) if isinstance(reply, dict) else []
     if isinstance(reply, dict) and reply.get("status") == "pending":
         ctx.say(f"pending owner approval: task {reply.get('task_id')} · "
                 f"{', '.join(reply.get('pending') or [])}")
         for name in reply.get("off_everywhere") or []:
             ctx.say(f"{name}: still off everywhere after a channel-only approval")
+        for name in missing:
+            ctx.say(f"{_plain(str(name), 130)}: in the bundle but not installed, skipped")
         return EXIT_OK
     changed = reply.get("changed") or [] if isinstance(reply, dict) else []
     where = f"on {ns.channel}" if ns.channel else "everywhere"
@@ -2771,6 +2910,8 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"{name}: not switched off; the switch could not be stored")
     for name in (reply.get("essential") or []) if isinstance(reply, dict) else []:
         ctx.say(f"{name}: essential, stays on")
+    for name in missing:
+        ctx.say(f"{_plain(str(name), 130)}: in the bundle but not installed, skipped")
     if changed and isinstance(reply, dict) and not reply.get("audited"):
         ctx.say("note: the intent log could not record this switch")
     return EXIT_OK

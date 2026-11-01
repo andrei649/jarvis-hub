@@ -212,6 +212,17 @@ def identities(skill: Any) -> set[str]:
     return keys
 
 
+def find(loaded: Iterable[Any], name: Any) -> Any | None:
+    """The installed skill *name* names at the route or the CLI: its manifest name or its
+    folder, ignoring case; a manifest name wins over another skill's folder of the same
+    spelling. None when nothing installed answers to it."""
+    wanted = _key(name)
+    if not wanted:
+        return None
+    hits = sorted((s for s in loaded if wanted in identities(s)), key=lambda s: _entry(s) != wanted)
+    return hits[0] if hits else None
+
+
 def _entry(skill: Any) -> str:
     """The key a stored entry must have to name ``skill``: its name, ignoring case."""
     return _key(getattr(skill, "name", ""))
@@ -361,6 +372,6 @@ def restore(before: dict, expected: dict) -> bool:
 __all__ = [
     "CATEGORY", "CHANNEL_KEY", "ESSENTIAL_SKILLS", "GLOBAL_KEY", "apply", "bind_turn_channel",
     "channel_map_problem", "clean_channel", "clean_channel_map", "clean_names", "current_channel",
-    "identities", "is_essential", "off_reason", "refusal", "reset_turn_channel", "restore", "state",
+    "find", "identities", "is_essential", "off_reason", "refusal", "reset_turn_channel", "restore", "state",
     "strict_state",
 ]

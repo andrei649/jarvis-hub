@@ -3364,8 +3364,86 @@ export interface paths {
          *     on one channel. Nothing is uninstalled. Off applies at once; on creates an
          *     exact once-scoped human approval task and stays pending until its worker runs.
          *     An essential skill is never switched off.
+         *
+         *     H026 — ``bundle`` switches the installed members of one named bundle the same way,
+         *     through the same exact-target approval for on, so a bundle grants nothing that
+         *     switching each member would not. Members that are not installed come back under
+         *     ``missing``.
          */
         post: operations["switch_skill_api_skills_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Skill Bundles
+         * @description H026 — every bundle with its skills, which of them are installed, and the files
+         *     the folder holds that do not load (each with its reason).
+         */
+        get: operations["list_skill_bundles_api_skills_bundles_get"];
+        put?: never;
+        /**
+         * Create Skill Bundle
+         * @description H026 — create a bundle, or replace one with ``overwrite``. Every member must be an
+         *     installed skill (its name or folder); the bundle stores the skill's name. Creating a
+         *     bundle switches nothing.
+         */
+        post: operations["create_skill_bundle_api_skills_bundles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/bundles/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show Skill Bundle
+         * @description H026 — one bundle; any casing, spaces or underscores name it (the slug decides).
+         */
+        get: operations["show_skill_bundle_api_skills_bundles__name__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Skill Bundle
+         * @description H026 — delete a bundle's file. Its skills, and whether each is switched on or off,
+         *     are not touched.
+         */
+        delete: operations["delete_skill_bundle_api_skills_bundles__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/bundles/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reload Skill Bundles
+         * @description H026 — re-read every bundle file and report what was added, removed or changed
+         *     since the hub last looked, and which files do not load.
+         */
+        post: operations["reload_skill_bundles_api_skills_bundles_reload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15344,12 +15422,31 @@ export interface components {
              */
             dry_run: boolean;
         };
+        /** SkillBundleBody */
+        SkillBundleBody: {
+            /** Name */
+            name: string;
+            /** Skills */
+            skills: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Overwrite
+             * @default false
+             */
+            overwrite: boolean;
+        };
         /** SkillSwitchBody */
         SkillSwitchBody: {
             /** Skill */
             skill?: string | null;
             /** Category */
             category?: string | null;
+            /** Bundle */
+            bundle?: string | null;
             /** Enabled */
             enabled: boolean;
             /** Channel */
@@ -21274,6 +21371,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_skill_bundles_api_skills_bundles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_skill_bundle_api_skills_bundles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillBundleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    show_skill_bundle_api_skills_bundles__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_skill_bundle_api_skills_bundles__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_skill_bundles_api_skills_bundles_reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

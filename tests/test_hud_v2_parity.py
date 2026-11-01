@@ -527,6 +527,10 @@ MACHINE_FACING: dict[str, str] = {
         "H652: training-data export read by `nerva sessions export ID --sharegpt` and by "
         "trainers/scripts; JSONL for a fine-tune, not a HUD view",
     "/sessions/resolve": "Owner CLI resolves -c/-r selectors and retrieves a free recap (agents/cli/nerva.py)",
+    "/api/skills/bundles/reload":
+        "H026: `nerva skills bundles reload` (agents/cli/nerva.py) re-reads hand-edited bundle "
+        "files and reports the changes; the HUD's GET /api/skills/bundles already re-scans a "
+        "changed file on every read",
     "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
     "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",
     "/api/admin/backup/restore":
