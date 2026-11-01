@@ -462,7 +462,7 @@ class CheckpointPayloadStore:
                         "identity": {}}
             record_rows = {}
             blob_rows = {}
-            record_bytes = blob_bytes = 0
+            record_bytes = blob_bytes = hashed_bytes = unverified = 0
             for name in record_names:
                 ref = name[:-5] if name.endswith(".json") else None
                 if not _ref(ref):
@@ -489,13 +489,20 @@ class CheckpointPayloadStore:
                 info = os.stat(name, dir_fd=blobs_dir, follow_symlinks=False)
                 if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_CAPTURE_BYTES:
                     raise PayloadRefusal("blob_invalid")
-                if record_bytes + blob_bytes + info.st_size > MAX_INVENTORY_READ_BYTES:
-                    return {"complete": False, "state": "limit_exceeded",
-                            "physical_bytes": None, "records": {}, "blobs": {},
-                            "identity": {}}
+                if record_bytes + hashed_bytes + info.st_size > MAX_INVENTORY_READ_BYTES:
+                    # Past the read budget a blob is accounted by its identity alone; blob()
+                    # still checks its hash on every read. Refusing here locked restore,
+                    # diff and the prune/clear that would shrink the store, for good
+                    # (review of #1321).
+                    blob_bytes += info.st_size
+                    unverified += 1
+                    blob_rows[name] = {"physical_size": info.st_size,
+                                       "fingerprint": _fingerprint(info)}
+                    continue
                 found = _read_file(blobs_dir, name, cap=MAX_CAPTURE_BYTES)
                 if found is None or _sha(found[0]) != name:
                     raise PayloadRefusal("blob_invalid")
+                hashed_bytes += found[1].st_size
                 blob_bytes += found[1].st_size
                 blob_rows[name] = {"physical_size": found[1].st_size,
                                    "fingerprint": _fingerprint(found[1])}
@@ -514,6 +521,7 @@ class CheckpointPayloadStore:
                     "state": "ready", "physical_bytes": marker[1].st_size
                     + record_bytes + blob_bytes,
                     "record_bytes": record_bytes, "blob_bytes": blob_bytes,
+                    "unverified_blobs": unverified,
                     "marker_bytes": marker[1].st_size, "records": record_rows,
                     "blobs": blob_rows,
                     "identity": {"generic": _fingerprint(os.fstat(generic)),
