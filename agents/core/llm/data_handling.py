@@ -321,6 +321,41 @@ class Resolved:
 def resolve(router, backend, model, route="") -> Resolved:
     """Resolve actual profile/account/endpoint without a request or usage side effects."""
     backend, profile = _provider(router, backend)
+    custom = getattr(backend, '_custom_endpoint_runtime', None)
+    if custom is not None:
+        from .providers.custom_runtime import CustomEndpointRuntime
+
+        if (type(custom) is not CustomEndpointRuntime or not custom.active
+                or custom.backend is not backend or custom.router is not router
+                or custom.profile is not profile or custom.endpoint.model != model
+                or not custom.proven_consent()):
+            raise DataHandlingRefused('custom endpoint scope changed')
+        policy = custom.endpoint.data_policy
+        try:
+            scope = hmac.new(_scope_key(), json.dumps(custom.scope_material(), sort_keys=True).encode(),
+                             hashlib.sha256).hexdigest()
+        except Exception:
+            scope = ''
+        return Resolved(profile.id, policy, 'Owner named custom endpoint declaration.', scope)
+    selected = getattr(backend, '_selected_provider_runtime', None)
+    if selected is not None:
+        from .providers.selected_runtime import SelectedProviderRuntime
+
+        if (type(selected) is not SelectedProviderRuntime or not selected.active
+                or selected.profile is not profile or selected.binding.model != model
+                or selected.backend is not backend or selected.router is not router):
+            raise DataHandlingRefused('selected provider scope changed')
+        policy, _note = profile.data_policy_for(model)
+        if policy not in DATA_POLICIES:
+            raise DataHandlingRefused('selected provider data policy unavailable')
+        try:
+            material = [*selected.scope_material(), policy, profile.data_policy,
+                        profile.data_policy_models]
+            scope = hmac.new(_scope_key(), json.dumps(material, sort_keys=True).encode(),
+                             hashlib.sha256).hexdigest()
+        except Exception:
+            scope = ''
+        return Resolved(profile.id, policy, 'Signed selected provider declaration.', scope)
     policy, note = profile.data_policy_for(model)
     endpoint = getattr(backend, "endpoint", None) or getattr(backend, "base_url", None) or profile.default_base_url
     if policy == "local":
@@ -369,14 +404,34 @@ def posture(router, *, role_context=None):
     configured = list(_configured(router))
     registered = {p.id for p in list_profiles()}
     rows = []
+    selected = getattr(router, '_selected_provider_runtime', None)
+    custom = getattr(router, '_custom_endpoint_runtime', None)
     for resolved in configured:
         unique = sum(r.provider == resolved.provider for r in configured) == 1
-        row = resolved.public(bool(resolved.scope) and acks.get(resolved.provider) == resolved.scope, used.get(resolved.scope))
-        row["can_acknowledge"] = unique and resolved.provider in registered and bool(resolved.scope) and readable
-        row["acknowledgment_unavailable"] = ("" if row["can_acknowledge"] else
-                                             "provider has multiple configured accounts" if not unique else
-                                             "provider is not registered" if resolved.provider not in registered else
-                                             "consent settings or configuration scope unavailable")
+        if (custom is not None and custom.active and custom.backend is
+                getattr(router, '_compatible_backend', None)
+                and resolved.provider == custom.endpoint.identity):
+            row = resolved.public(bool(resolved.scope) and custom.proven_consent()
+                                  and (not resolved.warning or custom.choice.data_policy_ack),
+                                  used.get(resolved.scope))
+            row['can_acknowledge'] = False
+            row['acknowledgment_unavailable'] = 'owner activation controls custom endpoint consent'
+        elif (selected is not None and selected.active and selected.backend is
+                getattr(router, '_compatible_backend', None)
+                and resolved.provider == selected.binding.provider_id):
+            policy, _note = selected.profile.data_policy_for(selected.binding.model)
+            row = resolved.public(bool(resolved.scope) and selected.binding.data_policy_ack
+                                  and selected.proven_consent(selected.profile, policy),
+                                  used.get(resolved.scope))
+            row['can_acknowledge'] = False
+            row['acknowledgment_unavailable'] = 'owner selection controls signed provider consent'
+        else:
+            row = resolved.public(bool(resolved.scope) and acks.get(resolved.provider) == resolved.scope, used.get(resolved.scope))
+            row["can_acknowledge"] = unique and resolved.provider in registered and bool(resolved.scope) and readable
+            row["acknowledgment_unavailable"] = ("" if row["can_acknowledge"] else
+                                                 "provider has multiple configured accounts" if not unique else
+                                                 "provider is not registered" if resolved.provider not in registered else
+                                                 "consent settings or configuration scope unavailable")
         rows.append(row)
     role_acks, role_readable = _read_role_ack()
     targets = []
@@ -399,8 +454,22 @@ def authorize(router, backend, model, route="", *, principal=None, origin=None, 
         from agents.core.orchestrator import current_principal
         principal = current_principal()
     resolved = resolve(router, backend, model, route)
-    acks, readable = _read_ack()
-    acknowledged = readable and acks.get(resolved.provider) == resolved.scope
+    selected = getattr(_unwrap(backend), '_selected_provider_runtime', None)
+    custom = getattr(_unwrap(backend), '_custom_endpoint_runtime', None)
+    if custom is not None:
+        if (not resolved.scope or not custom.proven_consent()
+                or resolved.warning and not custom.choice.data_policy_ack):
+            raise DataHandlingRefused('custom endpoint consent scope unavailable')
+        acknowledged = custom.choice.data_policy_ack
+    elif selected is not None:
+        policy, _note = selected.profile.data_policy_for(model)
+        if (not resolved.scope or not selected.proven_consent(selected.profile, policy)
+                or resolved.warning and not selected.binding.data_policy_ack):
+            raise DataHandlingRefused('selected provider consent scope unavailable')
+        acknowledged = selected.binding.data_policy_ack
+    else:
+        acks, readable = _read_ack()
+        acknowledged = readable and acks.get(resolved.provider) == resolved.scope
     surface = classify_turn(principal, current_action_origin() if origin is None else origin).surface
     channel = str(getattr(principal, "channel", "") or "").strip().lower()
     unattended = surface == SURFACE_INTERNAL or channel in {"", "unknown"}

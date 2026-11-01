@@ -68,15 +68,25 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
     assert stream["request"] == chat["request"]
     assert stream["response"]["media_type"] == "text/event-stream"
     assert stream["response"]["source"] == "handler"
-    assert set(stream["stream_events"]) == {"start", "token", "end"}
+    assert stream["stream_events"] == {
+        "start": ["type", "agent"],
+        "token": ["type", "text"],
+        "outcome_progress": ["type", "outcome"],
+        "end": ["type", "agent", "text", "session_id", "pending_approvals", "warming", "notices", "outcome"],
+    }
     assert {"text", "session_id", "pending_approvals", "warming", "notices"}.issubset(
         stream["stream_events"]["end"]
     )
     schemas = payload["components"]["schemas"]
-    assert set(schemas) == {"ChatRequest", "ChatResponse", "TurnNotice", "TurnOutcome"}
+    assert set(schemas) == {
+        "ChatRequest", "ChatResponse", "TurnNotice", "TurnOutcome", "TurnCompletion",
+        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation",
+    }
     assert schemas["ChatRequest"] == source["components"]["schemas"]["ChatRequest"]
     assert schemas["ChatResponse"] == source["components"]["schemas"]["ChatResponse"]
     assert schemas["TurnNotice"] == source["components"]["schemas"]["TurnNotice"]
+    for name in ("TurnOutcome", "TurnCompletion", "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation"):
+        assert schemas[name] == source["components"]["schemas"][name]
     assert schemas["ChatRequest"]["additionalProperties"] is False
     assert "model" not in schemas["ChatRequest"]["properties"]
     assert "provider" not in schemas["ChatRequest"]["properties"]

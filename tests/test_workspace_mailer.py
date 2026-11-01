@@ -15,7 +15,7 @@ import pytest
 from agents.core.secrets import SecretStoreError
 from agents.core.workspace import audit, mailer
 from agents.core.workspace.errors import WorkspaceError
-from tests.support.ports import closed_port
+from tests.support.ports import closed_port, refused_smtp_connection
 from tests.support.smtp_sink import SmtpSink
 from tests.support.workspace_fixtures import (  # noqa: F401  (ws is a fixture)
     db,
@@ -273,8 +273,9 @@ async def test_starttls_uses_the_trust_context_and_fails_honestly_without_tls(co
 
 
 async def test_unreachable_and_silent_servers(conn, monkeypatch):
-    configure_smtp(conn, _closed_port())
-    with pytest.raises(WorkspaceError) as caught:
+    port = _closed_port()
+    configure_smtp(conn, port)
+    with refused_smtp_connection(monkeypatch, port), pytest.raises(WorkspaceError) as caught:
         await mailer.send_mail(to=["a@client.ro"], subject="S", text="x")
     assert caught.value.extra["reason"] == "connection_failed"
     listener = socket.socket()
@@ -318,15 +319,17 @@ async def test_clear_text_credentials_off_loopback_are_never_sent(conn, monkeypa
     assert caught.value.extra["reason"] == "insecure_transport"
 
 
-async def test_send_test_reports_success_and_failure(conn, sink):
+async def test_send_test_reports_success_and_failure(conn, sink, monkeypatch):
     assert await mailer.send_test("admin@acme.test", locale="ro") == {
         "ok": False, "error": "smtp_not_configured"}
     configure_smtp(conn, sink.port)
     assert await mailer.send_test("admin@acme.test", locale="en") == {"ok": True}
     assert sink.wait_for(1)[0].subject == "Nerva Workspace — test email"
-    configure_smtp(conn, _closed_port())
-    assert await mailer.send_test("admin@acme.test", locale="ro") == {
-        "ok": False, "error": "smtp_failed", "reason": "connection_failed"}
+    port = _closed_port()
+    configure_smtp(conn, port)
+    with refused_smtp_connection(monkeypatch, port):
+        assert await mailer.send_test("admin@acme.test", locale="ro") == {
+            "ok": False, "error": "smtp_failed", "reason": "connection_failed"}
 
 
 # ── routes ───────────────────────────────────────────────────────────────────────────

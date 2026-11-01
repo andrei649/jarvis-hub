@@ -1,0 +1,4 @@
+# Optional governed browser runtime. Install only into an isolated local venv.
+# Uses an already installed Google Chrome; no browser download is required.
+playwright==1.64.1
+psutil==7.2.2

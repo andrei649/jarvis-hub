@@ -118,6 +118,8 @@ def test_entries_only_index_is_read_only_and_refused_as_incomplete(tmp_path):
     root, store, _scope, selection = selector(tmp_path)
     with legacy_db(store.directory) as db:
         add_file(db, root)
+        db.execute("UPDATE entries SET post_existed=0,post_sha=NULL,post_size=0 WHERE id=1")
+        db.commit()
     with sqlite3.connect(store.directory / "history.sqlite3") as db:
         before = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert selection.plan(ADMIN, "file:1")["reason"] == "index_incomplete"

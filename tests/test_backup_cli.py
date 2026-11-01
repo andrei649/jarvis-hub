@@ -183,6 +183,27 @@ def test_a_target_that_is_a_file_is_one_line(live, tmp_path, capsys):
     assert _one_line(capsys).startswith("restore failed:")
 
 
+@pytest.mark.parametrize("force", [False, True])
+def test_a_dangling_restore_target_names_the_link_and_changes_nothing(
+        live, tmp_path, capsys, force):
+    archive = _archive(live)
+    original = archive.read_bytes()
+    absent = tmp_path / "missing-destination"
+    target = tmp_path / "dangling-target"
+    target.symlink_to(absent, target_is_directory=True)
+    args = ["restore", archive.name, str(target)] + (["--force"] if force else [])
+
+    assert bk._main(args) == 1
+
+    line = _one_line(capsys)
+    assert "dangling symlink" in line
+    assert "nothing restored" in line
+    assert "not empty" not in line
+    assert target.is_symlink() and target.readlink() == absent
+    assert not absent.exists()
+    assert archive.read_bytes() == original
+
+
 
 # ── the key a failed decryption names is the key it used (REV-POLISH-04) ─────────────
 

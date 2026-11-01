@@ -24,7 +24,7 @@ import httpx
 import pytest
 from PIL import Image
 
-from agents.core import agent_runtime
+from agents.core import agent_runtime, turn_outcome
 from agents.core.agent import Agent
 from agents.core.agent_runtime import AgentToolRuntime
 from agents.core.file_tools import (
@@ -36,6 +36,7 @@ from agents.core.file_tools import (
 )
 from agents.core.llm import job_selection
 from agents.core.llm.anthropic import ClaudeBackend
+from agents.core.llm.provider_request import ProfileRequestRefused
 from agents.core.llm.tool_protocol import PROVIDER_REJECTED_FINISH, ToolSpec, ToolTurn
 from agents.core.security import bind_guardrails
 from agents.core.security.guardrails import GuardrailsEngine, RedactionMode
@@ -63,6 +64,26 @@ def _file_server(tmp_path, name: str, data: bytes):
     tools = FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"))
     assert "file_read" in register_file_tools(server, tools, enabled=True)
     return server, root / name
+
+
+@pytest.mark.asyncio
+async def test_registered_image_file_read_records_known_tool_success(tmp_path):
+    server, path = _file_server(tmp_path, 'image.png', _png(2, 2))
+    sink, token = turn_outcome.open_turn_outcome()
+    try:
+        turn_outcome.record_tool_proposed()
+        result = await server.handle({'tool': 'file_read', 'args': {'path': str(path)}})
+        assert result['ok'] is True
+        assert result['result']['ok'] is True
+        assert result['result']['image'] is True
+        assert any(part['type'] == 'image' for part in result['content'])
+        turn_outcome.record_turn_completion('answered')
+        turn_outcome.record_turn_latency(1)
+        assert sink.close()['tools'] == {
+            'proposed': 1, 'queued': 0, 'executed': 1,
+            'failures': 0, 'basis': 'observed'}
+    finally:
+        turn_outcome.reset_turn_outcome(token)
 
 
 def _claude(monkeypatch, replies: list) -> tuple[ClaudeBackend, list[dict]]:
@@ -384,6 +405,49 @@ def _noise_png(target: int) -> bytes:
         if out.tell() >= target:
             return out.getvalue()
         side += 32
+
+
+@pytest.mark.asyncio
+async def test_builtin_tool_image_history_is_owned_without_widening_text_only_history():
+    image = base64.b64encode(_noise_png(300_000)).decode("ascii")
+    rows = [{"role": "user", "content": "inspect"},
+            {"role": "tool", "tool_call_id": "toolu_1", "content": "shot.png",
+             "images": [{"media_type": "image/png", "data": image}]}]
+    original = json.loads(json.dumps(rows))
+    backend = ClaudeBackend("synthetic-key", model=MODEL)
+    payload, _ = await backend._tool_payload(MODEL, rows, [], 64, 0.0)
+    assert rows == original
+    assert image in json.dumps(payload)
+    with pytest.raises(ProfileRequestRefused, match="declaration too large"):
+        await backend._tool_payload(MODEL, [{"role": "user", "content": "x" * 300_000}],
+                                    [], 64, 0.0)
+    malformed = [{"role": "tool", "content": "shot.png",
+                  "images": [{"media_type": "image/png", "data": "not-base64" * 40_000}]}]
+    with pytest.raises(ProfileRequestRefused, match="invalid tool image"):
+        await backend._tool_payload(MODEL, malformed, [], 64, 0.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("image_data", [
+    "not-base64",
+    base64.b64encode(b"not a PNG image").decode("ascii"),
+])
+async def test_builtin_tool_payload_refuses_short_invalid_images(image_data):
+    rows = [{"role": "tool", "content": "shot.png", "images": [
+        {"media_type": "image/png", "data": image_data}]}]
+    backend = ClaudeBackend("synthetic-key", model=MODEL)
+    with pytest.raises(ProfileRequestRefused, match="invalid tool image"):
+        await backend._tool_payload(MODEL, rows, [], 64, 0.0)
+
+
+@pytest.mark.asyncio
+async def test_builtin_tool_payload_refuses_ninth_small_image():
+    tiny_png = base64.b64encode(_png(1, 1)).decode("ascii")
+    rows = [{"role": "tool", "content": "nine shots", "images": [
+        {"media_type": "image/png", "data": tiny_png} for _ in range(9)]}]
+    backend = ClaudeBackend("synthetic-key", model=MODEL)
+    with pytest.raises(ProfileRequestRefused, match="too many tool images"):
+        await backend._tool_payload(MODEL, rows, [], 64, 0.0)
 
 
 @pytest.mark.asyncio

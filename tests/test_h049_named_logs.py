@@ -122,7 +122,7 @@ def test_selected_rotation_disappearing_or_becoming_symlink_fails_closed(
     rotation = tmp_path / "jarvis.log.1"
     rotation.write_text("old\n")
     neighbor = tmp_path / "neighbor.log"
-    neighbor.write_text("private\n")
+    neighbor.write_text("neighbor-secret-payload-049\n")
     original = log_tail.list_files
 
     def changed(path):
@@ -135,7 +135,7 @@ def test_selected_rotation_disappearing_or_becoming_symlink_fails_closed(
     monkeypatch.setattr(log_tail, "list_files", changed)
     code, out, err = _run([rotation.name], primary)
     assert code == nerva.EXIT_FAILED and out == "" and err
-    assert "private" not in err
+    assert "neighbor-secret-payload-049" not in err
 
 
 def test_list_does_not_emit_controls_in_configured_filename(tmp_path):

@@ -22,6 +22,8 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -118,6 +120,37 @@ def _usd(amount: float) -> str:
 
 Guard = Callable[[Choice], "Finding | None"]
 GUARDS: list[Guard] = []
+_SIGNED_CANDIDATE: ContextVar[tuple | None] = ContextVar('signed_guard_candidate', default=None)
+_CUSTOM_CANDIDATE: ContextVar[tuple | None] = ContextVar('custom_guard_candidate', default=None)
+
+
+@contextmanager
+def _signed_candidate(profile, provider: str, model: str):
+    """Use the already verified signed declaration while its owner choice is checked.
+
+    The current selection may be absent or stale, and looking it up while the
+    selection/package leases are held would reacquire a nonreentrant lock.
+    """
+    if profile.id != provider or model not in profile.fallback_models:
+        raise ValueError('signed guard candidate changed')
+    token = _SIGNED_CANDIDATE.set((provider, model, profile))
+    try:
+        yield
+    finally:
+        _SIGNED_CANDIDATE.reset(token)
+
+
+@contextmanager
+def _custom_candidate(profile, provider: str, model: str):
+    """Check the exact owner custom declaration without borrowing built-in rows."""
+    if (profile.id != provider or model not in profile.fallback_models
+            or not provider.startswith('custom:') or not profile.is_user_defined):
+        raise ValueError('custom guard candidate changed')
+    token = _CUSTOM_CANDIDATE.set((provider, model, profile))
+    try:
+        yield
+    finally:
+        _CUSTOM_CANDIDATE.reset(token)
 
 
 def register(guard: Guard) -> Guard:
@@ -130,6 +163,11 @@ def register(guard: Guard) -> Guard:
 def cost_guard(choice: Choice) -> Finding | None:
     if not choice.model:
         return None
+    if _current_signed_choice(choice):
+        # The static table describes built-in billing only. Selection already
+        # required an audited unknown-price acknowledgement for this exact
+        # signed binding; a matching model name does not supply vendor pricing.
+        return None
     line = _cost_line()
     price = price_of(choice.model)
     if line <= 0 or price is None or price["output"] < line:
@@ -140,12 +178,55 @@ def cost_guard(choice: Choice) -> Finding | None:
                    {"input": price["input"], "output": price["output"], "threshold": line})
 
 
-def _profiles_for(provider: str):
+def _current_signed_choice(choice: Choice) -> bool:
+    if not choice.provider or not choice.model:
+        return False
+    candidate = _SIGNED_CANDIDATE.get()
+    if candidate is not None and (choice.provider, choice.model) == candidate[:2]:
+        return True
+    candidate = _CUSTOM_CANDIDATE.get()
+    if candidate is not None and (choice.provider, choice.model) == candidate[:2]:
+        return True
+    _service, selected = _selected_service_record()
+    return (selected is not None and selected.binding.provider_id == choice.provider
+            and selected.binding.model == choice.model)
+
+
+def _selected_service_record():
+    from agents.core.app_state import get_orch
+
+    from .provider_selection import read_selection
+    from .providers.install_service import get_install_service
+
+    orch = get_orch()
+    if get_install_service(orch) is None:
+        return None, None
+    runtime = getattr(getattr(orch, 'llm_router', None), '_selected_provider_runtime', None)
+    return runtime, read_selection()
+
+
+def _profiles_for(provider: str, model: str | None = None):
     if provider:
+        candidate = _CUSTOM_CANDIDATE.get()
+        if candidate is not None and (provider, model) == candidate[:2]:
+            return [candidate[2]]
+        candidate = _SIGNED_CANDIDATE.get()
+        if candidate is not None and (provider, model) == candidate[:2]:
+            return [candidate[2]]
+        runtime, selected = _selected_service_record()
+        if selected is not None and selected.binding.provider_id == provider:
+            # A signed replacement can use a built-in identity. The signed
+            # declaration wins over the name in the built-in profile table.
+            from .providers.selected_runtime import SelectedProviderRuntime
+
+            return ([runtime.profile] if type(runtime) is SelectedProviderRuntime
+                    and runtime.active and runtime.selection == selected else [])
         try:
             return [get_profile(provider)]
         except KeyError:
-            pass
+            # An explicit unknown provider never inherits another vendor's
+            # declaration just because no signed runtime is currently ready.
+            return []
     return list_profiles()
 
 
@@ -160,7 +241,7 @@ def data_policy_guard(choice: Choice) -> Finding | None:
         return None
     # An unknown provider (a job pin without one) is checked against every profile's
     # model rows: the stricter answer, since the pin may be served by any of them.
-    for profile in _profiles_for(choice.provider):
+    for profile in _profiles_for(choice.provider, choice.model):
         policy, note = profile.data_policy_for(choice.model)
         if policy == "trains-on-inputs":
             return Finding("data_policy", ACKNOWLEDGE_TRAINING, choice,

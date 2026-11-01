@@ -52,6 +52,14 @@ sys.stdin.read()
 """
 
 
+def test_session_kernel_import_succeeds_in_a_fresh_interpreter():
+    child = subprocess.run(
+        [sys.executable, "-c", "from agents.core.session_kernels import SessionKernelManager"],
+        cwd=ROOT, text=True, capture_output=True, timeout=30,
+    )
+    assert child.returncode == 0, child.stderr
+
+
 def _dead_pid():
     proc = subprocess.Popen([sys.executable, "-c", "pass"])
     proc.wait()
@@ -65,9 +73,13 @@ def _dead_pid():
 def test_a_live_owner_keeps_its_mounts_whatever_its_pid_says_and_loses_them_when_it_ends(tmp_path):
     root = tmp_path / "kernel-rpc"
     child = subprocess.Popen([sys.executable, "-c", CHILD, str(root)], cwd=ROOT, text=True,
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        mount = Path(child.stdout.readline().strip())
+        mount_line = child.stdout.readline().strip()
+        if not mount_line:
+            child.wait(30)
+            pytest.fail(f"kernel owner child exited {child.returncode}: {child.stderr.read()}")
+        mount = Path(mount_line)
         assert mount.is_dir()
         # Seen from another pid namespace, the owner's pid names no process here.
         seen = mount.parent.with_name(f"p{_dead_pid()}-{mount.parent.name.split('-')[1]}")

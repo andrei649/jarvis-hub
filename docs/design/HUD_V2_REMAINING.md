@@ -657,6 +657,18 @@ selections remain visible as unavailable. Image and speech dispatch now use the
 common registry. Full vendor/plugin/setup breadth remains open under H517/H613;
 native mobile provider configuration is still a gap.
 
+Task 10A/10B (2026-10-28/29) provides owner-only encrypted credential management
+at GET/PUT/DELETE `/api/admin/llm/provider-credentials`, and explicit signed-model
+selection at GET/PUT/DELETE `/api/admin/llm/provider-selection`. Responses expose
+only configuration, revision and generation metadata. The selected runtime now
+covers all six declared cloud dialects through guarded DNS/IP/Host/SNI sends and
+body-lifetime mutation fences, with local synthetic owner/Kernel/Vault evidence.
+HUD package review, key entry, risk acknowledgements, select/status/clear and
+lifecycle controls remain open. A package-status `selects_model: false` means that
+installation itself makes no selection; read the separate selection API for the
+current binding. No live provider, billing, Docker or native-device readiness is
+claimed by these API controls. H361 remains partial.
+
 H512 authentication audit continuation (2026-10-09): the existing admin audit reader
 shows typed HTTP guard and managed token lifecycle events through `GET /api/admin/audit`.
 No new route or dashboard control is added. The native audit reader remains open
@@ -699,20 +711,27 @@ A normally returned command or refusal may have a duration. Errors, cancellation
 uninstrumented turns have none. Selection is applied by the backend from the ordinary
 Admin Settings `display.status_bar_fields` list (default `latency`; empty hides it).
 The strip clears on new work or session/agent/demo changes and is not transcript history.
-TPS, model/context/cache/compression metrics and H396 whole-turn exit/accounting remain open;
-future work extends the same outcome. H18.33 adds a local native current-turn strip
+TPS and the complete H686 model/context/cache/compression vocabulary remain open;
+Task33 extends the same outcome after its own review. H396 now supplies the whole-turn
+completion/accounting fields described below. H18.33 adds a local native current-turn strip
 using the server-selected SSE outcome, with strict validation and ephemeral state.
 It clears on work/context changes and never enters stored history; physical-device
 and live-Hub acceptance remain open. See `mobile/docs/h1833-turn-duration.md`.
 
-H396's local runtime now retains a typed tool-loop exit and emits one bounded
-diagnostic attempt after a normal return, while its legacy caller receives the
-same reply text. This internal result is not a whole-turn completion claim or a
-new HTTP/SSE field. HUD explanations, pending-result severity and accounting still
-need defined cross-agent and non-loop semantics on the shared outcome.
-The local file mutation receipt describes returned approved-task attempts only;
-its scrubbed path and task status are insufficient for a same-turn mutation footer.
-Task/attempt correlation, missing/unknown effects and ordering remain open.
+H396 whole-turn outcome — current local source (2026-10-29): cockpit and focus chat
+consume one request-owned `outcome` on JSON replies, SSE progress and SSE end. The
+strip presents a consolidated source-assigned reason, proposed/queued/executed tool
+counts and observed provider output or an explicitly labeled visible-text estimate.
+Accepted tool results without a successful consuming model completion produce WARNING;
+a normal answer does not claim objective success. Approved file attempts carry a
+signed task/turn origin and physical-attempt identity. Bounded no-follow readback at
+the effect boundary distinguishes verified, unverified and unknown; only a later
+verified same-target attempt supersedes a failure. The footer uses ordinal/operation
+and disposition, never a path or file contents. Closed replies cannot be rewritten by
+later owner approvals. Native mobile currently reads latency only; the new completion,
+accounting, output-flow and file-footer counterpart remains a mobile surface gap.
+Synthetic source and mounted HUD tests are recorded separately from a live owner run.
+
 
 
 ### H444/H576 document input limit — 2026-10-09 local candidate
@@ -841,3 +860,21 @@ connected through a separate immutable source approval, 4K pixel/proof-bound
 download/gallery/export and GET-only job continuation; original preview cleanup
 and ambiguous submission are covered locally. Other donor
 catalogs, FAL upload/Clarity, managed OAuth and native/mobile acceptance remain open.
+
+## Signed model-provider installation (H361 source candidate)
+
+The default-off owner API can stage a server-managed candidate, show a redacted
+signed summary, record an exact permanent owner decision, promote and revoke it.
+No dedicated HUD install/review flow is present yet. Package installation alone
+does not change the active model or make another native dialect available; owner
+selection, credential controls and live runtime/provider acceptance remain open.
+
+## Named compatible endpoints — local integration (2026-10-29)
+
+Console → Admin → Custom Endpoints now provides durable named `custom:<key>` entries, display-name aliases, create/rename/delete, exact revision/choice-epoch activation and clear, endpoint-scoped credential metadata/set/rotate/delete, and an explicit bounded `/models` validation. All ten routes under `/api/admin/llm/custom-endpoints` require the admin owner credential. Creation does not probe the destination; LAN/public creation and activation require an explicit destination grant. Validation displays a negative outcome as failure. A valid old signed selection is authenticated and rebound during upgrade; raw or stale selections remain inert. The CLI mirrors these operations under `nerva provider custom`; secret input uses stdin.
+
+The new panel is a local implementation, with synthetic owner/Kernel/Vault/DNS/HTTP and mounted frontend checks. It does not close the separate signed-package HUD controls above, native-mobile configuration, live endpoint/device acceptance or the broader H361/H633 requirements. Capability proof classification and complete batch integration remain explicit gates.
+
+## Governed browser sessions — local integration (2026-10-29)
+
+Operator retains one-shot approval and adds fresh-profile start/act/close, bounded owner session/ref display and later browser-task outcome. The three session/task/close routes require the owner admin credential; generic availability remains user-tier. Grounded refs, scroll/back/press, frame/focus/native form semantics, current registration and exact per-step Kernel receipts are implemented. Local Chrome coverage includes unchanged-registration lifetime and changed-control native/journal cleanup. Console/get_images now add bounded completed-task untrusted observations through separate owner-approved reads, with conservative console invalidation and atomic image row/ref semantics. Vision/dialog/JS/CDP, other engines, real profiles, recording/spill, mobile controls and owner-host/live-platform acceptance remain required separately.

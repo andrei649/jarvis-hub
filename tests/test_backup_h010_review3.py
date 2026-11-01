@@ -85,6 +85,15 @@ def root(tmp_path, monkeypatch):
 
 # ── /proc helpers ────────────────────────────────────────────────────────────────
 
+def _sole_child(pid: int) -> int | None:
+    """The supervisor's only child, read from /proc once, or None while there is not exactly one.
+
+    A predicate that lists the children several times races the supervisor's respawn: the
+    list can change between calls (IndexError on a child that just exited)."""
+    kids = _children(pid)
+    return kids[0] if len(kids) == 1 else None
+
+
 def _children(pid: int) -> list[int]:
     found = []
     for entry in os.listdir("/proc"):
@@ -118,8 +127,11 @@ def _root_fds(pid: int, root: Path) -> dict[str, str]:
     return out
 
 
-def _assert_open_files_current(pid: int, fds: dict[str, str]) -> None:
-    """Check live descriptors; a transient file may close after /proc was listed."""
+def _verified_open_files(pid: int, fds: dict[str, str]) -> int:
+    """Check live descriptors and return how many were verified.
+
+    A transient file may close after /proc was listed; a live descriptor that is not the
+    file on disk fails at once."""
     checked = 0
     for fd, target in fds.items():
         proc_fd = f"/proc/{pid}/fd/{fd}"
@@ -135,7 +147,21 @@ def _assert_open_files_current(pid: int, fds: dict[str, str]) -> None:
             raise
         assert (held.st_dev, held.st_ino) == (current.st_dev, current.st_ino), target
         checked += 1
-    assert checked, "no live file descriptor was verified"
+    return checked
+
+
+def _assert_open_files_current(pid: int, fds: dict[str, str]) -> None:
+    assert _verified_open_files(pid, fds), "no live file descriptor was verified"
+
+
+def _holds_only_current_files(pid: int, root: Path) -> bool:
+    """One full snapshot of *pid*'s files under *root*, held to the restore invariant.
+
+    Fails at once on a deleted inode or a live descriptor that is not the file on disk;
+    returns False only while no descriptor stayed open long enough to be verified."""
+    fds = _root_fds(pid, root)
+    assert not [t for t in fds.values() if t.endswith("(deleted)")], fds
+    return _verified_open_files(pid, fds) > 0
 
 
 @pytest.mark.parametrize("defect", [None, "wrong_inode", "missing_target"])
@@ -167,6 +193,19 @@ def test_proc_snapshot_tolerates_closed_fds_but_rejects_stale_live_files(monkeyp
         _assert_open_files_current(123, fds)
 
 
+def test_a_snapshot_of_only_closed_descriptors_waits_but_a_deleted_inode_fails(monkeypatch):
+    """The respawned coordinator's first opens can all close before stat() (PR #1321 CI):
+    such a snapshot proves nothing either way and is taken again, while a deleted inode in
+    any snapshot fails the restore invariant at once."""
+    snapshots = iter([{"16": "/root/settings.db"},
+                      {"17": "/root/missions.db", "18": "/root/old.db (deleted)"}])
+    monkeypatch.setattr(sys.modules[__name__], "_root_fds", lambda pid, root: next(snapshots))
+    monkeypatch.setattr(sys.modules[__name__], "_verified_open_files", lambda pid, fds: 0)
+    assert _holds_only_current_files(123, Path("/root")) is False
+    with pytest.raises(AssertionError, match="deleted"):
+        _holds_only_current_files(123, Path("/root"))
+
+
 def _db_fds(pid: int, root: Path) -> dict[str, str]:
     return {fd: t for fd, t in _root_fds(pid, root).items()
             if t.removesuffix(" (deleted)").endswith((".db", ".db-wal", ".db-shm"))}
@@ -181,6 +220,10 @@ def _events(log: Path) -> list[dict]:
 
 # ── 1. the real coordinator releases the root and reopens the restored files ─────
 
+# Boots the real orchestrator twice with several 90 s waits: the per-test backstop must be
+# longer than their sum, or a slow CI runner's timeout kills the xdist worker mid-file and
+# the whole run hangs instead of reporting this test's own assertion (PR #1321).
+@pytest.mark.timeout(400)
 @pytest.mark.skipif(not _LINUX_PROC, reason="reads open files from /proc")
 def test_the_real_coordinator_holds_nothing_under_the_root_and_reopens_the_restored_files(
         root, tmp_path):
@@ -194,7 +237,7 @@ def test_the_real_coordinator_holds_nothing_under_the_root_and_reopens_the_resto
         env=env, cwd=str(tmp_path))
     try:
         # The real orchestrator is up: its stores hold the root's DBs open.
-        _wait_for(lambda: len(_children(sup.pid)) == 1 and _db_fds(_children(sup.pid)[0], root),
+        _wait_for(lambda: (c := _sole_child(sup.pid)) is not None and _db_fds(c, root),
                   what="the coordinator opening its stores")
         first = _children(sup.pid)[0]
         assert bk.runtime_running_elsewhere(root) is True
@@ -213,15 +256,16 @@ def test_the_real_coordinator_holds_nothing_under_the_root_and_reopens_the_resto
         assert _rows(root / "h010probe.db") == 1
 
         # A fresh process rebuilds the orchestrator on the restored files.
-        _wait_for(lambda: len(_children(sup.pid)) == 1 and _children(sup.pid)[0] != first
-                  and _db_fds(_children(sup.pid)[0], root), what="the respawned coordinator")
+        _wait_for(lambda: (c := _sole_child(sup.pid)) is not None and c != first
+                  and _db_fds(c, root), what="the respawned coordinator")
         second = _children(sup.pid)[0]
         assert not Path(f"/proc/{first}").exists()                      # the old one is gone
-        fds = _root_fds(second, root)
-        assert not [t for t in fds.values() if t.endswith("(deleted)")], fds
-        # Every still-open file IS the file on disk now. Short-lived atomic-write
-        # descriptors can legitimately close between listing /proc and stat().
-        _assert_open_files_current(second, fds)
+        # Every still-open file IS the file on disk now. The respawned coordinator's first
+        # opens can all be short-lived (settings, checkpoint restore, atomic writes) and close
+        # between listing /proc and stat(), so snapshot until one descriptor is still open
+        # when checked; every snapshot is held to the invariant in full (PR #1321 CI).
+        _wait_for(lambda: _holds_only_current_files(second, root),
+                  what="a verified live descriptor of the respawned coordinator")
         kinds = [(e.get("supervisor_event"), e.get("exit_code")) for e in _events(run_log)]
         assert ("child_exited", coordinator.RESTORE_YIELD_EXIT) in kinds, kinds
         assert ("respawned", None) in kinds
@@ -272,6 +316,7 @@ def _probe_pids(db: Path) -> set[int]:
 
 
 @pytest.mark.skipif(not _LINUX_PROC, reason="reads open files from /proc")
+@pytest.mark.timeout(400)  # the real supervisor, as above
 def test_an_analytics_write_after_the_restore_lands_in_the_restored_file(root, tmp_path):
     """The module-global analytics connection (analytics_store._db) is the one round 2 never
     reopened: every analytics write after the restore went to the unlinked pre-restore
@@ -293,8 +338,8 @@ def test_an_analytics_write_after_the_restore_lands_in_the_restored_file(root, t
     sup = subprocess.Popen([sys.executable, str(sup_script)], env=env,  # nosec B603
                            cwd=str(tmp_path))
     try:
-        _wait_for(lambda: len(_children(sup.pid)) == 1
-                  and _children(sup.pid)[0] in _probe_pids(analytics_db),
+        _wait_for(lambda: (c := _sole_child(sup.pid)) is not None
+                  and c in _probe_pids(analytics_db),
                   what="the coordinator writing analytics events")
         first = _children(sup.pid)[0]
         name = Path(bk.create_backup(source_root=str(root))["archive"]).name
@@ -542,15 +587,46 @@ def test_the_grace_comes_from_the_environment(monkeypatch):
     assert bk.runtime_restore_grace_seconds() == bk.RUNTIME_RESTORE_GRACE_DEFAULT
 
 
-@pytest.mark.skipif(not _LINUX_PROC, reason="reads the process state from /proc")
+@pytest.mark.skipif(os.name != "posix", reason="POSIX unreaped child process")
 def test_an_exited_coordinator_not_yet_reaped_no_longer_holds_the_root(root):
     """The yield leaves the mark to a pid that is dead; before its parent reaps it the pid
     is a zombie, which holds no file, so the restore must not wait for it."""
+    import psutil
+
     child = subprocess.Popen([sys.executable, "-c", "pass"])  # nosec B603
     (root / "runtime.pid").write_text(str(child.pid), encoding="ascii")
     try:
-        _wait_for(lambda: Path(f"/proc/{child.pid}/stat").read_text().rsplit(")", 1)[-1].split()[0]
-                  == "Z", timeout=10, what="the zombie state")
+        _wait_for(lambda: psutil.Process(child.pid).status() == psutil.STATUS_ZOMBIE,
+                  timeout=10, what="the zombie state")
         assert bk.runtime_running_elsewhere(root) is False
     finally:
         child.wait()
+
+
+@pytest.mark.parametrize("denied", [False, True])
+def test_a_live_runtime_still_holds_the_root_when_proc_is_unavailable(root, monkeypatch, denied):
+    import psutil
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])  # nosec B603
+    (root / "runtime.pid").write_text(str(child.pid), encoding="ascii")
+    read_text = Path.read_text
+
+    def without_proc(path, *args, **kwargs):
+        if str(path).startswith("/proc/"):
+            raise FileNotFoundError(str(path))
+        return read_text(path, *args, **kwargs)
+
+    class NativeProcess:
+        def status(self):
+            if denied:
+                raise psutil.AccessDenied(child.pid)
+            return psutil.STATUS_RUNNING
+
+    monkeypatch.setattr(Path, "read_text", without_proc)
+    monkeypatch.setattr(psutil, "Process", lambda pid: NativeProcess())
+    try:
+        assert bk.runtime_running_elsewhere(root) is True
+        assert bk.wait_for_runtime_yield(root, timeout=0) is False
+    finally:
+        child.terminate()
+        child.wait(timeout=5)

@@ -98,6 +98,26 @@ EXPECT_OVERRIDES = {
     ),
 }
 
+PROBE_OVERRIDES = {
+    "GET /api/admin/llm/provider-credentials": (
+        '`curl -sS -G -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" '
+        '--data-urlencode "provider=$INSTALLED_SIGNED_PROVIDER" '
+        '--data-urlencode "package_hash=$APPROVED_PROVIDER_PACKAGE_HASH" '
+        '"$B/api/admin/llm/provider-credentials"` — set both query values from an '
+        'explicitly installed provider and its exact approved package hash',
+        "**200** metadata only for that runnable signed target (never the secret value) · "
+        "**409** `provider_credential_refused` for a synthetic, unknown or unapproved target · "
+        "**422** `invalid_provider_credential_request` for a bare GET without both required "
+        "query fields or malformed input",
+    ),
+    "GET /api/llm/provider-packages/{artifact_id}": (
+        "`GET $B/api/llm/provider-packages/{artifact_id}` with the artifact_id "
+        "from a successful owner stage receipt",
+        "**200** for that signed staged artifact · **409** `provider_install_refused` "
+        "for an unknown id — no package list route exists",
+    ),
+}
+
 
 def group_of(path: str) -> str:
     parts = [p for p in path.split("/") if p]
@@ -108,6 +128,9 @@ def group_of(path: str) -> str:
 
 def probe(method: str, path: str, tier: str) -> tuple[str, str]:
     """Return (how to hit it, what proves it healthy)."""
+    override = PROBE_OVERRIDES.get(f"{method} {path}")
+    if override is not None:
+        return override
     templated = "{" in path
     if method in READ_METHODS and not templated:
         cmd = f'`curl -sS {HEADER[tier]}-o /dev/null -w "%{{http_code}}\\n" $B{path}`'

@@ -351,6 +351,20 @@ class ContextCompressor:
             lines.append(f"- {t.get('role', '')}: {first[:160]}")
         return "[summary of earlier conversation]\n" + "\n".join(lines)
 
+    def micro_summary(self, covered: "list[dict]", *, prior: str,
+                      new_turns: "list[dict]", defrag_threshold_tokens: int) -> str:
+        """Absorb one completed exchange; rebuild from source when the marker grows."""
+        threshold = (defrag_threshold_tokens if type(defrag_threshold_tokens) is int
+                     and defrag_threshold_tokens >= 1 else 2000)
+        if not prior:
+            return self._fallback_digest(new_turns)
+        lines = [f"- {row.get('role', '')}: {str(row.get('content', ''))[:160]}"
+                 for row in new_turns]
+        candidate = prior.rstrip() + "\n" + "\n".join(lines)
+        if self.estimate_tokens(candidate) >= threshold or len(candidate.encode("utf-8")) > 8192:
+            return self._fallback_digest(covered)
+        return candidate
+
     def _block(self, turns: "list[dict]") -> str:
         if self.untrusted_history:
             from .foreign_history import render_turn
@@ -429,6 +443,7 @@ class ContextCompressor:
         prior: Optional[dict] = None,
         sink: Callable[[dict], Any] | None = None,
         anchor: "UsageAnchor | None" = None,
+        force_target_tokens: int | None = None,
     ) -> dict:
         """Fit a transcript into a model's window, giving up the cheapest thing first.
 
@@ -444,6 +459,9 @@ class ContextCompressor:
         pol = policy or CompactionPolicy()
         used = self._used(rows, anchor)
         tier = pol.tier(used, model)
+        forced = type(force_target_tokens) is int and force_target_tokens > 0
+        if forced:
+            tier = "summarize"
         # The tighter of the two bounds wins. ``max_tokens`` is the owner's own
         # budget (``memory.compression_max_tokens``) and predates this policy;
         # letting the model's window silently override it would make a shipped
@@ -482,7 +500,7 @@ class ContextCompressor:
         used_after = self._used(working, anchor, dropped_in_prefix=dropped_in_prefix)
 
         under_budget = not self.max_tokens or used_after <= self.max_tokens
-        if tier == "images" or (under_budget and pol.tier(used_after, model) == "none"):
+        if not forced and (tier == "images" or (under_budget and pol.tier(used_after, model) == "none")):
             row = lineage_row(
                 session_id=session_id, summary="", evicted=0,
                 images_dropped=dropped, tier="images", model=model,
@@ -508,6 +526,8 @@ class ContextCompressor:
                      math.ceil(float(pol.hard) * window) - 1)
         if self.max_tokens:
             target = min(target, self.max_tokens)
+        if forced:
+            target = min(target, force_target_tokens)
         previous = (self.keep_first, self.keep_recent, self.max_tokens)
         self.keep_first, self.keep_recent = head, max(1, tail)
         self.max_tokens = max(1, target)

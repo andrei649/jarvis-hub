@@ -9,6 +9,9 @@ from agents.core.observability import reality_harness as rh
 from agents.core.observability.reality_harness import (
     ACTION_CAPABILITY_CASES,
     CASES,
+    CREDENTIAL_ACTION_CASES,
+    CUSTOM_ENDPOINT_ACTION_CASES,
+    SELECTION_ACTION_CASES,
     TOOL_CAPABILITY_CASES,
     RealityCase,
     all_reality_cases,
@@ -113,8 +116,24 @@ def test_reality_coverage_gate_explains_every_invalid_proof_binding():
 
 
 def test_every_action_and_live_tool_verification_ref_matches_a_real_case():
-    cases = {case.ref: case for case in ACTION_CAPABILITY_CASES + TOOL_CAPABILITY_CASES}
-    assert len(cases) == len(ACTION_CAPABILITY_CASES) + len(TOOL_CAPABILITY_CASES)
+    cases = {case.ref: case for case in ACTION_CAPABILITY_CASES + CREDENTIAL_ACTION_CASES + SELECTION_ACTION_CASES
+             + CUSTOM_ENDPOINT_ACTION_CASES
+             + TOOL_CAPABILITY_CASES}
+    assert len(cases) == (len(ACTION_CAPABILITY_CASES) + len(CREDENTIAL_ACTION_CASES)
+                          + len(SELECTION_ACTION_CASES) + len(CUSTOM_ENDPOINT_ACTION_CASES)
+                          + len(TOOL_CAPABILITY_CASES))
+    assert not any(case.capability_id == "action:provider.credential" for case in ACTION_CAPABILITY_CASES)
+    assert not any(case.capability_id == "action:provider.selection" for case in ACTION_CAPABILITY_CASES)
+    assert not any(case.capability_id == "action:provider.custom_endpoint" for case in ACTION_CAPABILITY_CASES)
+    assert CREDENTIAL_ACTION_CASES[0].metadata["promotable"] is False
+    assert SELECTION_ACTION_CASES[0].metadata["promotable"] is False
+    assert CUSTOM_ENDPOINT_ACTION_CASES[0].metadata["promotable"] is False
+    assert ACTION_CAPABILITY_MANIFESTS["provider.custom_endpoint"].verification == (
+        "reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable")
+    from agents.core.capability_verification import action_verification_ref
+    assert action_verification_ref("provider.custom_endpoint") == (
+        "reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable")
+    assert action_verification_ref("plugin.load") == "reality-v1:action-plugin-load-kernel-halt"
 
     for manifest in ACTION_CAPABILITY_MANIFESTS.values():
         assert manifest.verification in cases
@@ -146,8 +165,10 @@ async def test_all_executable_capability_cases_pass_hermetically_without_flag_le
             "action:research"}.issubset(
         {case.capability_id for case in ACTION_CAPABILITY_CASES}
     )
-    assert result["total"] == 36
-    assert result["passed"] == 36
+    assert {case.capability_id for case in ACTION_CAPABILITY_CASES if
+            case.capability_id == "action:plugin.load"} == {"action:plugin.load"}
+    assert result["total"] == 37
+    assert result["passed"] == 37
     assert result["skipped"] == 0
     assert result["promoted"] == []
     assert all(item["passed"] for item in result["results"])
@@ -167,6 +188,68 @@ async def test_green_action_case_promotes_only_through_reality_runner():
     after = {record.id: record for record in cr.build_records()}[case.capability_id]
     assert after.state == cr.VERIFIED
     assert after.harness_id == "reality-v1"
+
+
+@pytest.mark.asyncio
+async def test_owner_credential_negative_case_cannot_verify_or_use_generic_facade(monkeypatch):
+    from agents.core.capability_actions import CapabilityActionAPI
+
+    case = CREDENTIAL_ACTION_CASES[0]
+    before = {record.id: record for record in cr.build_records()}[case.capability_id]
+    assert before.state == cr.WIRED
+    result = await run_reality([case], promote=True, now="2026-07-12T00:00:00+00:00")
+    assert result["passed"] == 1 and result["promoted"] == []
+    after = {record.id: record for record in cr.build_records()}[case.capability_id]
+    assert after.state == cr.WIRED and after.harness_id is None
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    generic = await CapabilityActionAPI().perform(case.capability_id, {
+        "provider_id": "synthetic", "artifact_id": "a" * 32,
+        "package_hash": "b" * 64, "operation": "write"})
+    assert generic.status == "refused" and generic.reason == "implementation_unbound"
+
+
+@pytest.mark.asyncio
+async def test_owner_selection_negative_case_cannot_verify_or_use_generic_facade(monkeypatch):
+    from agents.core.capability_actions import CapabilityActionAPI
+    from agents.core.kernel import Action
+    from agents.core.llm.providers.install_service import selection_receipt_matches
+
+    case = SELECTION_ACTION_CASES[0]
+    before = {record.id: record for record in cr.build_records()}[case.capability_id]
+    assert before.state == cr.WIRED
+    fabricated = Action(kind="provider.selection", agent="jarvis", scope="provider:synthetic",
+                        payload={"schema": "provider-selection-v1", "risk_tier": 3})
+    assert selection_receipt_matches(fabricated) is False
+    result = await run_reality([case], promote=True, now="2026-07-12T00:00:00+00:00")
+    assert result["passed"] == 1 and result["promoted"] == []
+    after = {record.id: record for record in cr.build_records()}[case.capability_id]
+    assert after.state == cr.WIRED and after.harness_id is None
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    generic = await CapabilityActionAPI().perform(case.capability_id, {
+        "provider_id": "synthetic", "artifact_id": "a" * 32,
+        "package_hash": "b" * 64, "model": "synthetic-model", "operation": "select"})
+    assert generic.status == "refused" and generic.reason == "implementation_unbound"
+
+
+@pytest.mark.asyncio
+async def test_custom_endpoint_owner_receipt_negative_cannot_promote(monkeypatch):
+    from agents.core.capability_actions import CapabilityActionAPI
+
+    case = CUSTOM_ENDPOINT_ACTION_CASES[0]
+    before = {record.id: record for record in cr.build_records()}[case.capability_id]
+    assert before.state == cr.WIRED
+    result = await run_reality([case], promote=True, now="2026-07-12T00:00:00+00:00")
+    assert result["passed"] == 1 and result["promoted"] == []
+    after = {record.id: record for record in cr.build_records()}[case.capability_id]
+    assert after.state == cr.WIRED and after.harness_id is None
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    generic = await CapabilityActionAPI().perform(case.capability_id, {
+        "key": "synthetic", "base_url": "http://127.0.0.1:1234/v1",
+        "model": "synthetic-model", "operation": "create"})
+    assert generic.status == "refused" and generic.reason == "implementation_unbound"
 
 
 def test_every_boot_registry_verification_ref_matches_one_real_case():
@@ -207,7 +290,12 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     verification_pairs = [
         (manifest.verification, manifest.id) for manifest in ACTION_CAPABILITY_MANIFESTS.values()
     ] + [(record.verification, record.id) for record in [*tool_records, *records]]
-    assert len(verification_pairs) == 120
+    assert ("reality-v1:action-plugin-load-kernel-halt", "action:plugin.load") in verification_pairs
+    assert ("reality-v1:action-provider-credential-kernel-halt", "action:provider.credential") in verification_pairs
+    assert ("reality-v1:action-provider-selection-kernel-halt", "action:provider.selection") in verification_pairs
+    assert ("reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable",
+            "action:provider.custom_endpoint") in verification_pairs
+    assert len(verification_pairs) == 124
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1

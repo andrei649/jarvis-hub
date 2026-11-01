@@ -2,6 +2,8 @@
 import json
 from dataclasses import replace
 
+import httpx
+
 from .base import cloud_cap
 from .egress import llm_async_client
 from .provider_replay import (
@@ -12,10 +14,23 @@ from .provider_replay import (
     remember,
     validate_history,
 )
-from .provider_request import profile_with_declarations
+from .provider_request import (
+    apply_profile_request,
+    prepare_profile_messages,
+    profile_reasoning_config,
+    profile_with_declarations,
+    require_profile_base,
+    require_profile_kind,
+)
 from .providers import DEFAULT_REGISTRY
-from .reasoning_effort import ReasoningEffortRefused
-from .request_context import current_session, ensure_reasoning_active, selected_reasoning
+from .providers.admitted_profiles import AdmittedProviderProfile, prepare_admitted_profile
+from .providers.native_transport import native_admitted_client
+from .reasoning_effort import ReasoningEffortRefused, clamp_vocabulary
+from .request_context import (
+    current_session,
+    ensure_reasoning_active,
+    selected_reasoning,
+)
 from .responses import TIMEOUT, ResponsesBackend
 from .responses_dialect import (
     MAX_TEXT,
@@ -40,22 +55,50 @@ class XAIBackend(ResponsesBackend):
         active_replay()
     endpoint = 'https://api.x.ai/v1/responses'
 
-    def __init__(self, api_key, *, reasoning_effort='', effort_declarations=None, transport=None):
+    def __init__(self, api_key, *, reasoning_effort='', effort_declarations=None,
+                 transport=None, profile=None, model=None):
         self.api_key = api_key
         self.reasoning_effort = reasoning_effort
-        self.profile = profile_with_declarations(XAI_PROFILE, effort_declarations, defaults=GROK_LEVELS)
+        self.profile = (profile if isinstance(profile, AdmittedProviderProfile) else
+                        profile_with_declarations(
+                            profile or XAI_PROFILE, effort_declarations, defaults=GROK_LEVELS))
+        require_profile_kind(self.profile, 'xai-responses', 'responses')
+        from .providers.selected_runtime import current_construction
+        selected = current_construction()
+        if selected is None:
+            require_profile_base(self.profile, self.endpoint.rsplit('/', 1)[0])
+        else:
+            self.endpoint = str(self.profile.default_base_url).rstrip('/') + '/responses'
         self._replay_owner = object()
-        self.client = llm_async_client('xai', timeout=TIMEOUT, transport=transport,
-                                      follow_redirects=False, trust_env=False)
+        if isinstance(self.profile, AdmittedProviderProfile):
+            if (model not in (self.profile.fallback_models if selected is not None
+                              else XAI_PROFILE.fallback_models)
+                    or transport is not None and type(transport) is not httpx.MockTransport):
+                raise ResponsesRefused()
+            self.client = native_admitted_client(
+                self.profile, api_key, model or self.profile.fallback_models[0],
+                timeout=TIMEOUT, inner=transport)
+        else:
+            self.client = llm_async_client('xai', timeout=TIMEOUT, transport=transport,
+                                          follow_redirects=False, trust_env=False)
 
     def context_window(self, model):
         # Only the currently documented exact model window is asserted.
         return 500000 if model == 'grok-4.6' else None
 
-    def _payload(self, model, messages, max_tokens, temperature, tools=()):
+    def _payload(self, model, messages, max_tokens, temperature, tools=(), *, profile=None):
+        profile = profile or self.profile
         ensure_reasoning_active()
-        if not isinstance(model, str) or model not in XAI_PROFILE.fallback_models:
+
+        if not isinstance(model, str) or model not in profile.fallback_models:
             raise ResponsesRefused()
+        if isinstance(self.profile, AdmittedProviderProfile):
+            plain_messages = [{key: value for key, value in message.items() if key != KEY}
+                              for message in messages]
+            prepared = prepare_profile_messages(profile, plain_messages)
+            messages = [{**row, **({KEY: original[KEY]} if KEY in original else {})}
+                        for row, original in zip(prepared, messages, strict=True)]
+
         validate_history(messages, owner=self._replay_owner, provider='xai', model=model)
         plain = input_items(messages, allow_provider_replay=True)
         native, offset = [], 0
@@ -70,7 +113,16 @@ class XAIBackend(ResponsesBackend):
         payload = {'model': model, 'input': native, 'store': False,
                    'include': ['reasoning.encrypted_content'],
                    'max_output_tokens': min(cloud_cap(max_tokens), 32768), 'temperature': temperature}
-        level, reason = self.profile.clamp_reasoning_effort(model, selected_reasoning(self.reasoning_effort))
+
+        apply_profile_request(
+            profile, payload, cap_key="max_output_tokens",
+            context={"reasoning_config": profile_reasoning_config(
+                profile, model, self.reasoning_effort)},
+        )
+        level, reason = clamp_vocabulary(
+            profile.supported_reasoning_efforts(model),
+            selected_reasoning(self.reasoning_effort))
+
         if reason == 'below-minimum':
             raise ReasoningEffortRefused()
         if level is not None:
@@ -81,6 +133,20 @@ class XAIBackend(ResponsesBackend):
             payload['tool_choice'] = 'auto'
         encoded(payload)
         return payload
+
+    async def _prepared_payload(self, model, messages, max_tokens, temperature, tools=()):
+        if not isinstance(model, str) or model not in self.profile.fallback_models:
+            raise ResponsesRefused()
+        plain = [{key: value for key, value in message.items() if key != KEY}
+                 for message in messages]
+        profile = await prepare_admitted_profile(
+            self.profile, model=model, messages=plain,
+            reasoning_config=profile_reasoning_config(
+                self.profile, model, self.reasoning_effort),
+            session_id=current_session() or None,
+        )
+        return self._payload(model, messages, max_tokens, temperature, tools,
+                             profile=profile), profile
 
     def _parse_response(self, value, model):
         encoded(value)
@@ -149,8 +215,8 @@ class XAIBackend(ResponsesBackend):
             remember(turn.provider_replay)
         return turn
 
-    async def _request(self, payload):
+    async def _request(self, payload, *, profile=None):
         active_replay()
-        turn = await super()._request(payload)
+        turn = await super()._request(payload, profile=profile)
         self._accept_completion()
         return turn

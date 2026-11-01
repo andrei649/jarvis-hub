@@ -32,6 +32,7 @@ import asyncio
 import json
 import logging
 import os
+import sqlite3
 import statistics
 import sys
 import time
@@ -167,8 +168,47 @@ async def _audit_settings_change(category: str, keys: list, values: dict | None 
     await _audit_row(preview, "settings_update", category)
 
 
+def _selection_write_refusal(exc: Exception) -> JSONResponse:
+    from agents.core.llm.provider_selection import SelectionConflict
+    from agents.core.llm.providers.selection_gates import SelectionBusy, SelectionUnavailable
+
+    if isinstance(exc, SelectionConflict):
+        return nocache_json({'error': 'selection_stale', 'detail': 'retry the changed provider/model choice'},
+                            status_code=409)
+    if isinstance(exc, SelectionBusy):
+        return nocache_json({'error': 'selection_busy'}, status_code=409)
+    if isinstance(exc, SelectionUnavailable):
+        return nocache_json({'error': 'selection_unavailable'}, status_code=503)
+    if (isinstance(exc, sqlite3.OperationalError)
+            and getattr(exc, 'sqlite_errorcode', None) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}):
+        return nocache_json({'error': 'settings_busy'}, status_code=409)
+    raise exc
+
+
+async def _drain_settings_write(fn, *args, **kwargs):
+    """A cancelled request waits for its already-started durable write outcome."""
+    task = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    result = task.result()
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+async def _pair_snapshot(changes: dict):
+    from agents.core import settings_db
+
+    return (await asyncio.to_thread(settings_db.compatible_pair_state)
+            if settings_db._touches_selection(changes) else None)
+
+
 async def _guard_selection(changes: dict, *, confirm_expensive: bool,
-                           acknowledge_training: bool, surface: str):
+                           acknowledge_training: bool, surface: str, pair_state=None):
     """H378 — run the model-selection guards over the choices a settings write makes
     (*changes*: ``{category: values}``). Returns the cleared findings (their confirmation
     and consent rows already written), or the response to send instead: 409 naming what
@@ -176,7 +216,15 @@ async def _guard_selection(changes: dict, *, confirm_expensive: bool,
     from agents.core import settings_db
     from agents.core.llm import selection_guards as sg
 
-    choices = sg.choices_from_changes(changes, settings_db.get_value)
+    def current(category, key):
+        if pair_state is not None and category == 'llm':
+            if key == 'compatible_provider':
+                return pair_state[1]
+            if key == 'compatible_model':
+                return pair_state[2]
+        return settings_db.get_value(category, key)
+
+    choices = sg.choices_from_changes(changes, current)
     if not choices:
         return []
     try:
@@ -199,8 +247,13 @@ async def admin_put_category(category: str, body: AdminPutBody):
     errors = validate_category(category, body.values) + route_only_problems(category, body.values)
     if errors:
         return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
+    try:
+        pair_state = await _pair_snapshot({category: body.values})
+    except Exception as exc:
+        return _selection_write_refusal(exc)
     guarded = await _guard_selection({category: body.values}, confirm_expensive=body.confirm_expensive,
-                                     acknowledge_training=body.acknowledge_training, surface="settings")
+                                     acknowledge_training=body.acknowledge_training, surface="settings",
+                                     pair_state=pair_state)
     if isinstance(guarded, JSONResponse):
         return guarded
     # H262 — a write that makes retention delete deeper than approved goes to the approval
@@ -223,7 +276,13 @@ async def admin_put_category(category: str, body: AdminPutBody):
             await _audit_row(f"settings.{category} retention change sent to approval (task {pending['pending']}): "
                              f"{gated}", "settings_retention_requested", category)
         values = {k: v for k, v in body.values.items() if f"{category}.{k}" not in gated}
-    updated, skipped = put_category(category, values) if values else (0, [])
+    try:
+        updated, skipped = (await _drain_settings_write(
+            put_category, category, values,
+            expected_pair_revision=pair_state[0] if pair_state else None)
+                            if values else (0, []))
+    except Exception as exc:
+        return _selection_write_refusal(exc)
     changed = [k for k in values if k not in skipped]
     if changed:
         await _audit_settings_change(category, changed, values)
@@ -362,11 +421,21 @@ async def admin_import_settings(request: Request):
                              "retention_needs_approval": gated})
     if gated:
         return _retention_refusal(gated)
+    try:
+        pair_state = await _pair_snapshot(changes)
+    except Exception as exc:
+        return _selection_write_refusal(exc)
     guarded = await _guard_selection(changes, confirm_expensive=confirm_expensive,
-                                     acknowledge_training=acknowledge_training, surface="settings import")
+                                     acknowledge_training=acknowledge_training, surface="settings import",
+                                     pair_state=pair_state)
     if isinstance(guarded, JSONResponse):
         return guarded
-    written = await asyncio.to_thread(settings_db.apply_import, changes) if changes else 0
+    try:
+        written = (await _drain_settings_write(
+            settings_db.apply_import, changes,
+            expected_pair_revision=pair_state[0] if pair_state else None) if changes else 0)
+    except Exception as exc:
+        return _selection_write_refusal(exc)
     if written:
         await _lower_approval()
         names = [f"{cat}.{key}" for cat in sorted(changes) for key in sorted(changes[cat])]
@@ -415,7 +484,10 @@ async def admin_reset_category(category: str, request: Request):
                              "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
                              "kept": settings_db.reset_kept(category), "retention_kept": sorted(held),
                              "overridden": settings_db.posture_overridden(category)})
-    done = await asyncio.to_thread(settings_db.reset_settings, category, held)
+    try:
+        done = await _drain_settings_write(settings_db.reset_settings, category, held)
+    except Exception as exc:
+        return _selection_write_refusal(exc)
     if done is None:
         return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
     moved = sorted(done[0].get(category, {}))
@@ -448,7 +520,10 @@ async def admin_reseed(request: Request):
         plan = await asyncio.to_thread(settings_db.plan_reset, None, held)
         return nocache_json({"dry_run": True, "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
                              "kept": kept, "retention_kept": sorted(held), "overridden": forced})
-    moved, snap = await asyncio.to_thread(settings_db.reset_settings, None, held)
+    try:
+        moved, snap = await _drain_settings_write(settings_db.reset_settings, None, held)
+    except Exception as exc:
+        return _selection_write_refusal(exc)
     names = [f"{cat}.{key}" for cat in sorted(moved) for key in sorted(moved[cat])]
     if names:
         await _lower_approval()
@@ -471,8 +546,12 @@ async def admin_undo_reset(request: Request):
     if refused is not None:
         return refused
     _gated, stored, approved = await _retention_gate({})
-    undone = await asyncio.to_thread(settings_db.undo_last_reset,
-                                     lambda restore: retention.needs_approval(restore, stored, approved))
+    try:
+        undone = await _drain_settings_write(
+            settings_db.undo_last_reset,
+            lambda restore: retention.needs_approval(restore, stored, approved))
+    except Exception as exc:
+        return _selection_write_refusal(exc)
     if undone is None:
         return nocache_json({"error": "nothing to undo"}, status_code=404)
     if undone.get("refused"):

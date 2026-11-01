@@ -18,10 +18,29 @@ from .data_handling import DataHandlingRefused
 from .direct_transport import require_direct_async_transport
 from .egress import llm_async_client
 from .provider_errors import note_provider_failure
-from .provider_request import compatible_parameters, profile_with_declarations
+from .provider_request import (
+    apply_profile_request,
+    compatible_parameters,
+    prepare_profile_messages,
+    profile_headers,
+    profile_reasoning_config,
+    profile_with_declarations,
+    require_profile_kind,
+)
 from .providers import DEFAULT_REGISTRY
+from .providers.admitted_profiles import AdmittedProviderProfile, prepare_admitted_profile
+from .providers.native_transport import (
+    AdmittedClientMixin,
+    native_admitted_client,
+    native_post,
+    native_stream,
+)
 from .repetition_guard import RepetitionStreamGuard
-from .request_context import merge_extra_body, reconcile_payload
+from .request_context import (
+    current_session,
+    merge_extra_body,
+    reconcile_payload,
+)
 from .tool_dialects import compatible_usage
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
@@ -50,29 +69,44 @@ def validated_main_base(raw: str) -> str:
     return DEEPINFRA_VISION_BASE
 
 
-class DeepInfraBackend(LLMBackend):
+class DeepInfraBackend(AdmittedClientMixin, LLMBackend):
     """One physical DeepInfra identity; no OpenRouter routing object or key."""
 
     supports_tools = True
 
     def __init__(self, api_key: str, base_url: str = DEEPINFRA_VISION_BASE,
-                 client=None, *, reasoning_effort="", effort_declarations=None) -> None:
-        base = validated_main_base(base_url)
+                 client=None, *, profile=None, model=None, reasoning_effort="", effort_declarations=None) -> None:
+        from .providers.selected_runtime import current_construction
+        selected = current_construction()
+        base = str(base_url).rstrip('/') if selected is not None else validated_main_base(base_url)
         if (not isinstance(api_key, str) or not api_key or len(api_key) > 4096
                 or any(ord(char) < 33 or ord(char) > 126 for char in api_key)):
             raise ValueError("invalid DeepInfra main key")
-        self.profile = profile_with_declarations(
-            DEFAULT_REGISTRY.get("deepinfra"), effort_declarations)
+        self.profile = (profile if isinstance(profile, AdmittedProviderProfile) else
+                        profile_with_declarations(
+                            profile or DEFAULT_REGISTRY.get("deepinfra"), effort_declarations))
+        if isinstance(self.profile, AdmittedProviderProfile):
+            require_profile_kind(self.profile, "deepinfra-chat", "chat_completions")
+            if (str(self.profile.default_base_url).rstrip('/') if selected is not None
+                    else validated_main_base(self.profile.default_base_url)) != base:
+                raise ValueError("profile destination differs from DeepInfra adapter")
+            if client is not None:
+                raise ValueError("admitted DeepInfra client injection is unavailable")
         self.api_key = api_key
         self.base_url = base
         self.reasoning_effort = reasoning_effort
-        self.client = client or llm_async_client(
-            "deepinfra", base_url=base, timeout=120.0, trust_env=False)
+        self.client = (native_admitted_client(self.profile, api_key,
+                       model or self.profile.fallback_models[0])
+                       if isinstance(self.profile, AdmittedProviderProfile)
+                       else client or llm_async_client(
+                           "deepinfra", base_url=base, timeout=120.0, trust_env=False))
         if isinstance(self.client, httpx.AsyncClient):
             hooks = self.client.event_hooks["request"]
             if not hooks or not getattr(hooks[-1], "_nerva_egress_recorder", False):
                 raise ValueError("DeepInfra main egress guard unavailable")
             hooks.insert(-1, self._check_request)
+            if isinstance(self.profile, AdmittedProviderProfile):
+                self._client._transport.seal_hooks()
 
     async def aclose(self) -> None:
         await self.client.aclose()
@@ -81,7 +115,8 @@ class DeepInfraBackend(LLMBackend):
         expected = _expected_request.get()
         if expected is None:
             raise DataHandlingRefused("DeepInfra physical request is unbound")
-        require_direct_async_transport(self.client, request.url)
+        if not isinstance(self.profile, AdmittedProviderProfile):
+            require_direct_async_transport(self.client, request.url)
         try:
             def unique_pairs(pairs):
                 row = {}
@@ -101,8 +136,17 @@ class DeepInfraBackend(LLMBackend):
                 or "provider" in body):
             raise DataHandlingRefused("DeepInfra physical request changed")
 
-    def _shape(self, payload: dict) -> dict:
-        payload.update(compatible_parameters(self.profile, payload["model"], self.reasoning_effort))
+
+    def _shape(self, payload: dict, *, profile=None) -> dict:
+        profile = profile or self.profile
+        payload["messages"] = prepare_profile_messages(profile, payload["messages"])
+        reasoning_config = profile_reasoning_config(
+            profile, payload["model"], self.reasoning_effort,
+            supports_wire="reasoning-effort" in profile.capabilities)
+        apply_profile_request(profile, payload,
+                              context={"reasoning_config": reasoning_config})
+        payload.update(compatible_parameters(profile, payload["model"], self.reasoning_effort))
+
         merge_extra_body(payload)
         reconcile_payload(payload)
         # DeepInfra's compatible schema has no OpenRouter upstream-provider object.
@@ -110,21 +154,36 @@ class DeepInfraBackend(LLMBackend):
             raise ValueError("foreign provider routing is not supported")
         return payload
 
+    async def _prepared_profile(self, payload: dict):
+        config = profile_reasoning_config(
+            self.profile, payload["model"], self.reasoning_effort,
+            supports_wire="reasoning-effort" in self.profile.capabilities)
+        return await prepare_admitted_profile(
+            self.profile, model=payload["model"], messages=payload["messages"],
+            reasoning_config=config, session_id=current_session() or None,
+        )
+
     async def _send(self, payload: dict) -> dict:
-        url = validated_main_base(self.base_url) + "/chat/completions"
-        require_direct_async_transport(self.client, url)
+        url = (self.base_url if isinstance(self.profile, AdmittedProviderProfile)
+               else validated_main_base(self.base_url)) + "/chat/completions"
+        if not isinstance(self.profile, AdmittedProviderProfile):
+            require_direct_async_transport(self.client, url)
         hooks = self.client.event_hooks["request"]
         if (len(hooks) < 2 or hooks[-2] != self._check_request
                 or not getattr(hooks[-1], "_nerva_egress_recorder", False)):
             raise DataHandlingRefused("DeepInfra physical guard changed")
-        shaped = self._shape(payload)
+        profile = await self._prepared_profile(payload)
+        shaped = self._shape(payload, profile=profile)
         expected = {"url": url, "authorization": f"Bearer {self.api_key}",
                     "body": json.loads(json.dumps(shaped))}
         token = _expected_request.set(expected)
         try:
-            response = await self.client.post(
+            response = await native_post(self.profile, profile, self.client,
                 "/chat/completions", json=shaped,
-                headers={"Content-Type": "application/json", "Authorization": expected["authorization"]},
+
+                headers=profile_headers(profile, {"Content-Type": "application/json",
+                                                      "Authorization": expected["authorization"]}),
+
             )
         finally:
             _expected_request.reset(token)
@@ -180,22 +239,27 @@ class DeepInfraBackend(LLMBackend):
         completed = False
         usage = None
         try:
-            url = validated_main_base(self.base_url) + "/chat/completions"
-            require_direct_async_transport(self.client, url)
+            url = (self.base_url if isinstance(self.profile, AdmittedProviderProfile)
+                   else validated_main_base(self.base_url)) + "/chat/completions"
+            if not isinstance(self.profile, AdmittedProviderProfile):
+                require_direct_async_transport(self.client, url)
             hooks = self.client.event_hooks["request"]
             if (len(hooks) < 2 or hooks[-2] != self._check_request
                     or not getattr(hooks[-1], "_nerva_egress_recorder", False)):
                 raise DataHandlingRefused("DeepInfra physical guard changed")
-            shaped = self._shape(payload)
+            profile = await self._prepared_profile(payload)
+            shaped = self._shape(payload, profile=profile)
             expected = {"url": url, "authorization": f"Bearer {self.api_key}",
                         "body": json.loads(json.dumps(shaped))}
             token = _expected_request.set(expected)
             try:
                 async with asyncio.timeout(120):
-                    async with self.client.stream(
+                    async with native_stream(self.profile, profile, self.client,
                         "POST", "/chat/completions", json=shaped,
-                        headers={"Content-Type": "application/json",
-                                 "Authorization": expected["authorization"]},
+
+                        headers=profile_headers(profile, {"Content-Type": "application/json",
+                                                              "Authorization": expected["authorization"]}),
+
                     ) as response:
                         response.raise_for_status()
                         if "text/event-stream" not in response.headers.get("content-type", ""):

@@ -56,6 +56,7 @@ from agents.core.workspace.db import Db, tx
 from agents.core.workspace.errors import WorkspaceError
 from agents.core.workspace.http import (
     MAX_ID,
+    offload,
     read_json,
     require_int,
     require_str,
@@ -261,15 +262,19 @@ async def create_conversation(request: Request, user: WsUser, conn: Db) -> JSONR
     department_id = require_int(body, "department_id", minimum=1)
     title = require_str(body, "title", max_len=MAX_TITLE, required=False)
     stamp = db.now()
-    with tx(conn):
-        _usable_department(conn, user, department_id)
-        conversation_id = int(conn.execute(
-            "INSERT INTO conversations (user_id, department_id, title, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (user.id, department_id, title or assistant.default_title(user.locale), stamp, stamp),
-        ).lastrowid)
-    return ws_json(conversation_json(conn, _own_conversation(conn, user, conversation_id)),
-                   status=201)
+
+    def _sync_1():
+        with tx(conn):
+            _usable_department(conn, user, department_id)
+            conversation_id = int(conn.execute(
+                "INSERT INTO conversations (user_id, department_id, title, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user.id, department_id, title or assistant.default_title(user.locale), stamp, stamp),
+            ).lastrowid)
+        return ws_json(conversation_json(conn, _own_conversation(conn, user, conversation_id)),
+                       status=201)
+
+    return await offload(_sync_1)
 
 
 @router.get("/conversations/{conversation_id}")
@@ -298,13 +303,17 @@ async def rename_conversation(conversation_id: ConversationId, request: Request,
     """``{title}`` → the conversation (the same shape ``POST /conversations`` answers)."""
     body = await read_json(request)
     title = require_str(body, "title", max_len=MAX_TITLE, min_len=1)
-    with tx(conn):
-        _own_conversation(conn, user, conversation_id)
-        conn.execute("UPDATE conversations SET title = ?, updated_at = ? "
-                     "WHERE id = ? AND user_id = ?",
-                     (title, db.now(), conversation_id, user.id))
-        renamed = _own_conversation(conn, user, conversation_id)
-    return ws_json(conversation_json(conn, renamed))
+
+    def _sync_1():
+        with tx(conn):
+            _own_conversation(conn, user, conversation_id)
+            conn.execute("UPDATE conversations SET title = ?, updated_at = ? "
+                         "WHERE id = ? AND user_id = ?",
+                         (title, db.now(), conversation_id, user.id))
+            renamed = _own_conversation(conn, user, conversation_id)
+        return ws_json(conversation_json(conn, renamed))
+
+    return await offload(_sync_1)
 
 
 @router.delete("/conversations/{conversation_id}")
@@ -533,20 +542,23 @@ async def produce_answer(turn: Turn, plan: AnswerPlan, policy: str,
                 on_token=on_token, timeout_seconds=ANSWER_TIMEOUT_SECONDS,
             )
         except asyncio.CancelledError:
-            _stored(turn, None, status="error", error_code="cancelled")
+            try:
+                await offload(_stored, turn, None, status="error", error_code="cancelled")
+            finally:
+                _release(turn)
             raise
         except WorkspaceError as error:
             logger.info("workspace answer failed: %s", error.code)
-            return _stored(turn, error, status="error", error_code=error.code,
-                           meta=_failure_meta(error))
+            return await offload(_stored, turn, error, status="error", error_code=error.code,
+                                 meta=_failure_meta(error))
         except Exception:
             logger.exception("workspace answer failed unexpectedly (conversation %s)",
                              turn.conversation_id)
             error = WorkspaceError("internal_error", "the answer could not be produced", 500)
-            return _stored(turn, error, status="error", error_code=error.code)
+            return await offload(_stored, turn, error, status="error", error_code=error.code)
         content = result.text.strip()
-        return _stored(
-            turn, None, status="complete", content=content,
+        return await offload(
+            _stored, turn, None, status="complete", content=content,
             citations=assistant.filter_citations(content, plan.citations),
             meta={"model": result.model, "route": result.route, "locality": result.locality,
                   "latency_ms": result.latency_ms},
@@ -683,12 +695,29 @@ async def post_message(conversation_id: ConversationId, request: Request, user: 
     """
     body = await read_json(request, max_bytes=MAX_MESSAGE_BODY_BYTES)
     content = require_str(body, "content", max_len=MAX_CONTENT, min_len=1, multiline=True)
-    conversation = _own_conversation(conn, user, conversation_id)
-    if conversation["department_archived"]:
-        raise WorkspaceError("department_archived", "this department is archived", 409)
-    policy = _org_policy(conn)
-    turn = open_turn(conn, user, conversation, content, ip=auth.client_ip(request))
-    plan = _plan(conn, turn, content)
+    ip = auth.client_ip(request)
+    opened: list[Turn] = []
+
+    def prepare() -> tuple[str, Turn, AnswerPlan]:
+        conversation = _own_conversation(conn, user, conversation_id)
+        if conversation["department_archived"]:
+            raise WorkspaceError("department_archived", "this department is archived", 409)
+        policy = _org_policy(conn)
+        turn = open_turn(conn, user, conversation, content, ip=ip)
+        opened.append(turn)
+        return policy, turn, _plan(conn, turn, content)
+
+    try:
+        policy, turn, plan = await offload(prepare)
+    except asyncio.CancelledError:
+        # The worker has drained, so a committed turn is available for exact-key
+        # settlement even when cancellation prevented its return to this coroutine.
+        if opened:
+            try:
+                await offload(_stored, opened[0], None, status="error", error_code="cancelled")
+            finally:
+                _release(opened[0])
+        raise
     if _wants_stream(request):
         return stream_answer(turn, plan, policy)
     return await answer_json(turn, plan, policy)
@@ -722,18 +751,22 @@ async def message_feedback(message_id: MessageId, request: Request, user: WsUser
     value = require_int(body, "value", minimum=-1, maximum=1)
     note = require_str(body, "note", max_len=MAX_NOTE, required=False, multiline=True)
     stored_note = note if value != 0 and note else None
-    with tx(conn):
-        row = _rateable_message(conn, user, message_id)
-        conn.execute("UPDATE messages SET feedback = ?, feedback_note = ? "
-                     "WHERE id = ? AND role = 'assistant' AND status = 'complete'",
-                     (value or None, stored_note, message_id))
-        audit.record(conn, actor=user, action="message.feedback", target_type="message",
-                     target_id=message_id, department_id=int(row["department_id"]),
-                     ip=auth.client_ip(request),
-                     details={"value": value, "has_note": stored_note is not None})
-        rated = _message(conn, message_id)
-        openable = openable_documents(conn, user, [rated])
-    return ws_json({"message": message_json(rated, openable)})
+
+    def _sync_1():
+        with tx(conn):
+            row = _rateable_message(conn, user, message_id)
+            conn.execute("UPDATE messages SET feedback = ?, feedback_note = ? "
+                         "WHERE id = ? AND role = 'assistant' AND status = 'complete'",
+                         (value or None, stored_note, message_id))
+            audit.record(conn, actor=user, action="message.feedback", target_type="message",
+                         target_id=message_id, department_id=int(row["department_id"]),
+                         ip=auth.client_ip(request),
+                         details={"value": value, "has_note": stored_note is not None})
+            rated = _message(conn, message_id)
+            openable = openable_documents(conn, user, [rated])
+        return ws_json({"message": message_json(rated, openable)})
+
+    return await offload(_sync_1)
 
 
 # ── model status ─────────────────────────────────────────────────────────────────────
@@ -741,7 +774,7 @@ async def message_feedback(message_id: MessageId, request: Request, user: WsUser
 @router.get("/model")
 async def model_posture(user: WsUser, conn: Db) -> JSONResponse:
     """What the assistant would use now, under the organisation's model policy."""
-    return ws_json(await llm.posture(_org_policy(conn)))
+    return ws_json(await llm.posture(await offload(_org_policy, conn)))
 
 
 def _model_test_outcome(error: WorkspaceError, started: float) -> dict:
@@ -766,7 +799,7 @@ async def test_model(request: Request, admin: WsAdmin, conn: Db) -> JSONResponse
     started = time.monotonic()
     try:
         result = await llm.complete(system=MODEL_TEST_SYSTEM, prompt=MODEL_TEST_PROMPT,
-                                    policy=_org_policy(conn), max_tokens=MODEL_TEST_MAX_TOKENS,
+                                    policy=await offload(_org_policy, conn), max_tokens=MODEL_TEST_MAX_TOKENS,
                                     temperature=0.0, timeout_seconds=MODEL_TEST_TIMEOUT_SECONDS)
         outcome: dict = {"ok": True, "latency_ms": result.latency_ms, "model": result.model,
                          "locality": result.locality, "route": result.route}
@@ -777,10 +810,14 @@ async def test_model(request: Request, admin: WsAdmin, conn: Db) -> JSONResponse
         logger.exception("workspace model test failed unexpectedly")
         outcome = _model_test_outcome(
             WorkspaceError("internal_error", "the model test failed unexpectedly", 500), started)
-    with tx(conn):
-        audit.record(conn, actor=admin, action="model.tested", target_type="model",
-                     target_id=str(outcome.get("model") or ""), ip=auth.client_ip(request),
-                     details={"ok": outcome["ok"], "error": outcome.get("error", ""),
-                              "route": outcome.get("route") or "",
-                              "locality": outcome.get("locality") or ""})
-    return ws_json(outcome)
+
+    def _sync_1():
+        with tx(conn):
+            audit.record(conn, actor=admin, action="model.tested", target_type="model",
+                         target_id=str(outcome.get("model") or ""), ip=auth.client_ip(request),
+                         details={"ok": outcome["ok"], "error": outcome.get("error", ""),
+                                  "route": outcome.get("route") or "",
+                                  "locality": outcome.get("locality") or ""})
+        return ws_json(outcome)
+
+    return await offload(_sync_1)

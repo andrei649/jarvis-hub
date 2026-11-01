@@ -10,6 +10,7 @@ lives in the session row's metadata and ``GET /sessions`` returns it.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -342,6 +343,26 @@ async def test_a_first_message_titles_the_session_then_the_model_names_it():
     assert not orch._title_tasks                   # the finished task is not kept
 
 
+async def test_cancelling_the_upgrade_keeps_the_instant_title():
+    started = asyncio.Event()
+
+    async def slow_generate(*, system, prompt):
+        started.set()
+        await asyncio.Future()
+
+    cp = _Checkpoints()
+    orch = _orch(cp, slow_generate)
+    orch._title_session("Plan the trip")
+    assert cp.titles["s-1"] == {"title": "Plan the trip", "source": "first_words"}
+    (task,) = orch._title_tasks
+    await started.wait()
+    task.cancel()
+    assert isinstance((await asyncio.gather(task, return_exceptions=True))[0], asyncio.CancelledError)
+    await asyncio.sleep(0)  # let the done callback release the task reference
+    assert cp.titles["s-1"] == {"title": "Plan the trip", "source": "first_words"}
+    assert not orch._title_tasks
+
+
 async def test_a_titled_session_is_left_alone():
     cp, gen = _Checkpoints(title="Earlier"), _Gen()
     orch = _orch(cp, gen)
@@ -448,12 +469,26 @@ async def test_no_session_or_no_store_means_no_title():
     assert orch.checkpoints.writes == [] and gen.calls == []
 
 
-def test_without_a_running_loop_the_instant_title_still_lands():
+def test_without_a_running_loop_the_instant_title_still_lands(monkeypatch):
     cp, gen = _Checkpoints(), _Gen()
     orch = _orch(cp, gen)
-    orch._title_session("Plan the trip")          # outside any event loop: no upgrade task
-    assert cp.titles["s-1"] == {"title": "Plan the trip", "source": "first_words"}
-    assert gen.calls == [] and not getattr(orch, "_title_tasks", None)
+    created = []
+    real_create_task = asyncio.create_task
+
+    def observe_create_task(coroutine):
+        created.append(coroutine)
+        return real_create_task(coroutine)
+
+    monkeypatch.setattr(asyncio, "create_task", observe_create_task)
+    try:
+        orch._title_session("Plan the trip")      # outside any event loop: no upgrade task
+        assert cp.titles["s-1"] == {"title": "Plan the trip", "source": "first_words"}
+        assert gen.calls == [] and not getattr(orch, "_title_tasks", None)
+        assert all(inspect.getcoroutinestate(coroutine) == inspect.CORO_CLOSED
+                   for coroutine in created)
+    finally:
+        for coroutine in created:
+            coroutine.close()  # keep the RED run from leaking the captured coroutine
 
 
 async def test_inside_a_turn_the_upgrade_waits_for_the_reply():

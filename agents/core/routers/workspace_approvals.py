@@ -28,6 +28,7 @@ from agents.core.workspace.auth import WsAdmin, WsUser
 from agents.core.workspace.db import Db, tx
 from agents.core.workspace.http import (
     MAX_ID,
+    offload,
     optional_str,
     read_json,
     require_choice,
@@ -115,17 +116,21 @@ async def put_smtp(request: Request, admin: WsAdmin, conn: Db) -> JSONResponse:
     settings, password, password_given = mailer.parse_update(body, password_stored=stored)
     if password_given:
         await asyncio.to_thread(mailer.set_password, password or None)
-    with tx(conn):
-        mailer.save_settings(conn, settings)
-        audit.record(conn, actor=admin, action="smtp.updated", target_type="org", target_id=1,
-                     ip=auth.client_ip(request),
-                     details={"host": settings["host"], "port": settings["port"],
-                              "security": settings["security"],
-                              "has_username": bool(settings["username"]),
-                              "credential": ("replaced" if password else "cleared")
-                              if password_given else "kept",
-                              "allowed_domains": settings["allowed_domains"]})
-    return ws_json(await asyncio.to_thread(mailer.smtp_settings, conn))
+
+    def _sync_1():
+        with tx(conn):
+            mailer.save_settings(conn, settings)
+            audit.record(conn, actor=admin, action="smtp.updated", target_type="org", target_id=1,
+                         ip=auth.client_ip(request),
+                         details={"host": settings["host"], "port": settings["port"],
+                                  "security": settings["security"],
+                                  "has_username": bool(settings["username"]),
+                                  "credential": ("replaced" if password else "cleared")
+                                  if password_given else "kept",
+                                  "allowed_domains": settings["allowed_domains"]})
+
+    await offload(_sync_1)
+    return ws_json(await offload(mailer.smtp_settings, conn))
 
 
 @router.post("/admin/smtp/test")
@@ -134,9 +139,13 @@ async def test_smtp(request: Request, admin: WsAdmin, conn: Db) -> JSONResponse:
     body = await read_json(request, max_bytes=4096)
     to = require_email(body, "to")
     outcome = await mailer.send_test(to, locale=admin.locale)
-    with tx(conn):
-        audit.record(conn, actor=admin, action="smtp.tested", target_type="org", target_id=1,
-                     ip=auth.client_ip(request),
-                     details={"ok": outcome["ok"], **({"error_code": outcome["error"]}
-                                                      if not outcome["ok"] else {})})
-    return ws_json(outcome)
+
+    def _sync_1():
+        with tx(conn):
+            audit.record(conn, actor=admin, action="smtp.tested", target_type="org", target_id=1,
+                         ip=auth.client_ip(request),
+                         details={"ok": outcome["ok"], **({"error_code": outcome["error"]}
+                                                          if not outcome["ok"] else {})})
+        return ws_json(outcome)
+
+    return await offload(_sync_1)

@@ -273,11 +273,40 @@ RFC1918 / loopback literals, so the governed browser can reach house devices.
 `BrowserPolicy` lan mode — not shipped in this wave.
 **Revert:** unset + restart; unpinned hosts fail at name resolution again.
 
-*Related, unchanged default:* `JARVIS_PLAYWRIGHT_HOST` (default off, no section of its
-own on this page) still decides whether a real browser runtime may start at all. With
-`chromium`, `PlaywrightBrowserDriver.from_env()` now binds the IP-pinned transport
-(`agents/core/browser_transport.py`) so navigation **can** start; `firefox`/`webkit`
-stay transport-less and refuse `pinned_transport_requires_chromium`.
+The owner-reachable `browser_run` path retains public-only policy and does not
+enable LAN browsing through this library flag. Its separate prerequisites follow.
+
+### `JARVIS_PLAYWRIGHT_HOST`
+
+**Default: OFF.** The governed owner runtime also requires
+`JARVIS_UNIFIED_ACTION_API=1`, the enabled Action Kernel, task mediation in `enforce`
+mode, a current registered worker, optional `requirements-browser.txt` dependencies,
+an installed Chrome/Chromium engine and a nonempty server-owned
+`JARVIS_BROWSER_ALLOWED_DOMAINS` list. `JARVIS_PLAYWRIGHT_BROWSER` remains `chromium`;
+Firefox/WebKit pinned transports are not supported by this path.
+
+**ON with every prerequisite:** Operator **Run with approval** proposes an exact
+durable `browser_run` task through authenticated ToolRPC. The owner must accept it;
+each mutating step then needs its exact Kernel receipt. The server domain list,
+public DNS/IP pins and current task/worker/configuration remain authoritative.
+Check/Preview's editable allowlist cannot widen execution. One-shot plans use a fresh temporary profile; separately approved session calls
+may retain one fresh profile within one-owner/agent, four-global, 60-second idle
+and ten-minute absolute bounds. Native process/profile/journal cleanup is verified;
+uncertainty retains its owner and makes readiness false.
+
+**Status:** user-guarded `GET /api/browser/status` returns read-only availability,
+without browser launch or DNS lookup. Missing prerequisites or pending cleanup
+return `available:false`. Admin-only session/task projections and close controls
+use `/api/browser/sessions`, `/api/browser/tasks/{task_id}` and
+`/api/browser/sessions/{session_id}/close`. Strict session actions add grounded
+refs, scroll/back/press and no-argument console/get_images observations to the
+existing bounded plan. Console records and visible image metadata are bounded,
+untrusted and owner-only. Vision/dialog/JS/CDP tools, other engines, owner profiles
+and LAN routing remain open. Local Mac synthetic Chrome proof is separate from owner-host/live-site
+acceptance; see `docs/PLAYWRIGHT_OPERATOR.md`.
+
+**Revert:** unset the host flag and restart through the normal owner workflow. No
+host flag, service or owner browser profile is activated by the local implementation.
 
 ### `JARVIS_COMPANY_MODE`
 
@@ -1339,6 +1368,33 @@ copy — up to twice the file while it is received), at most 3 uploads in flight
 process-wide cap, so size RAM for `2 × cap × concurrent uploads`. A reverse proxy in front must allow
 a slightly larger body, or users see the proxy's error instead of the translated one.
 
+### `NERVA_WORKSPACE_KILLABLE_EXTRACTION`
+
+**Default: OFF.** Runs Workspace PDF/DOCX extraction in at most two owned child processes.
+The 60 s document deadline includes waiting for a slot and process startup. Timeout and
+cancellation drain child cleanup before scratch space and the slot are released. Linux
+applies a 512 MiB per-process `RLIMIT_AS`; macOS monitors aggregate RSS when the kernel
+refuses that limit. Sampled RSS is not a hard memory ceiling. Windows ordinary PDF/DOCX
+extraction enforces time only and reports `memory_unavailable`. **Revert:** unset and
+restart; new requests use the ordinary extractor. Originals and indexed documents remain.
+
+### `NERVA_WORKSPACE_OCR` · `NERVA_WORKSPACE_OCR_LANG`
+
+**Defaults: OFF · `eng`.** With killable extraction enabled, OCR may read a PDF that has
+no readable text layer using optional local `pypdfium2`, `pytesseract` and a Tesseract binary.
+These dependencies are loaded only inside the extraction child; they are not installed or
+downloaded automatically. `NERVA_WORKSPACE_OCR_LANG` selects installed Tesseract languages.
+Missing engines retain the `no_text` refusal. No cloud fallback exists.
+
+The POSIX parent enforces a 20 s page deadline and the whole-document deadline outside
+native OCR, owns the process group until cleanup, and samples aggregate memory. OCR is
+capped at 50 pages and the existing extracted-text budget; every page must yield readable
+text or the whole document fails. The synchronous extractor, mixed text/scanned PDFs and
+the owner's separate `file_read` path are unchanged. Windows native OCR remains disabled
+pending Job Object containment. Synthetic subprocess verification does not establish
+real-engine quality or Windows/Linux runtime acceptance. **Revert:** unset OCR and restart;
+scanned uploads return `no_text`, while originals remain available for re-indexing.
+
 ### `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS`
 
 **Defaults: 12 (1..168; above 168 → 168, below 1 → 12) · 7 (1..90; above 90 → 90, below 1 → 7).** Idle and absolute lifetime of a
@@ -1440,6 +1496,8 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `NERVA_WORKSPACE_COOKIE_SECURE` | `auto` (Secure on https) | `1` forces `Secure` on `nerva_ws_session`; `0` never | `0` behind TLS sends the session cookie over plain http if anything ever serves it | Unset: `auto`; junk values log one warning and act as `auto` |
 | `NERVA_WORKSPACE_SSO_HEADER` + `NERVA_WORKSPACE_SSO_SECRET` | unset · unset | Both set: `POST /api/workspace/login/sso` signs in the active user named by the trusted proxy's email header + matching `X-Nerva-Proxy-Secret` | Anyone reaching the hub from a trusted peer with the secret can be any active user — loopback proxy, strip client copies of both headers | Unset either + restart: `sso_disabled`, password sign-in unchanged |
 | `NERVA_WORKSPACE_MAX_UPLOAD_MB` | 25 (MiB, capped 200) | Larger documents accepted (streamed, early `413 file_too_large`) | Each in-flight upload is held in memory (≤ 3 per user); the proxy body limit must follow | Unset: 25 MiB |
+| `NERVA_WORKSPACE_KILLABLE_EXTRACTION` | off | PDF/DOCX extraction in at most two child processes; 60 s includes queue/startup | macOS RSS is sampled; Windows ordinary extraction has no memory ceiling | Unset + restart: ordinary extractor for new requests; originals stay |
+| `NERVA_WORKSPACE_OCR` + `NERVA_WORKSPACE_OCR_LANG` | off · `eng` | Optional local OCR for all-scanned PDFs, only with killable extraction; 50 pages, 20 s/page, whole-document bound | Requires separately installed local engine/language data; Windows native OCR is disabled; real-engine quality still unverified | Unset OCR + restart: scanned uploads refuse as `no_text`; originals remain re-indexable |
 | `NERVA_WORKSPACE_SESSION_IDLE_HOURS` · `NERVA_WORKSPACE_SESSION_MAX_DAYS` | 12 (1..168) · 7 (1..90) | Longer idle / absolute session lifetime | A stolen cookie stays useful longer | Unset + restart: 12 h idle on the next request; 7 days for sessions issued afterwards |
 | `NERVA_WORKSPACE_MAX_CONCURRENT_LLM` | 2 (1..16) | More simultaneous model calls (chat + reports + model test share it) | Overcommits a model server that cannot run them in parallel → timeouts instead of `model_busy` | Unset + restart: 2 for new callers |
 | `NERVA_WORKSPACE_SCHEDULER` | **on** | Scheduled reports, approval expiry, stale-run, interrupted-delivery, pending-answer and interrupted-extraction sweeps, retention deletes every 30 s (the audited steps pause, with one warning, while the audit key is not the trail's) | Off: scheduled reports never run, pending approvals never expire, interrupted documents stay `processing`, a delivery a crash left `pending` stays so, old rows are never deleted | Unset + restart: on again |
@@ -1502,3 +1560,33 @@ spawn tool, and the only callers of `spawn`/`spawn_batch` are the
 turn and are limited by `autonomy.max_subagent_spawns_per_boot` and the
 concurrency/depth caps instead. The guard starts to matter if a model-facing spawn
 tool is ever added.
+
+## `JARVIS_PROVIDER_PLUGINS` — signed model-provider installation
+
+**Default: OFF.** The admin `GET /api/llm/provider-packages/status` reports the
+flag without creating an install store. With it off, lifecycle writes refuse.
+With it on, a live authenticated owner may stage a server-managed candidate,
+inspect its redacted signed summary, propose and decide on an exact artifact
+and hash, promote, or revoke it. `JARVIS_ACTION_KERNEL=1` and a current tier-3
+Action Kernel grant are also required for promotion and execution.
+
+Package installation does not select a model or call a provider. The package-status
+field `selects_model: false` describes that installation operation. Explicit selection
+is a separate owner API: GET/PUT/DELETE `/api/admin/llm/provider-selection`.
+The owner supplies the exact signed provider/hash/model and expected revision,
+acknowledges unknown pricing and any required data policy, and receives metadata
+only. Credentials are managed separately at `/api/admin/llm/provider-credentials`.
+
+Selected OpenAI-compatible, Anthropic, Gemini, DeepInfra, Responses and xAI requests
+share the signed preparation/Kernel guard. The host reads the exact credential
+generation only into the verified public-IP/Host/SNI wire request; the backend and
+worker retain nonsecret markers. Selection and lifecycle leases cover response
+bodies. Rotation, revoke and clear drain known readers and refuse busy or stale
+mutations without reporting completion. Local-only roles and model/job pins remain
+in force; a failed signed selection does not silently choose another cloud provider.
+
+Unset the flag to refuse new lifecycle work and selected physical attempts; retained
+signed state remains available for explicit owner review. Local synthetic Kernel,
+Vault, DNS and TLS tests establish this source behavior. Live provider availability,
+billing, Docker worker, native platform and HUD/mobile controls remain separate
+acceptance requirements; the production flag remains off by default.

@@ -52,6 +52,7 @@ _SESSION_DELETE_RESPONSE = {
 _STREAM_EVENTS = {
     "start": ["type", "agent"],
     "token": ["type", "text"],
+    "outcome_progress": ["type", "outcome"],
     "end": ["type", "agent", "text", "session_id", "pending_approvals", "warming", "notices", "outcome"],
 }
 

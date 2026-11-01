@@ -44,7 +44,7 @@ from typing import Any
 from agents.core.workspace import audit, db, effects_api, identity, notifications
 from agents.core.workspace.effects_api import EffectSpec, ValidatedRequest
 from agents.core.workspace.errors import WorkspaceError
-from agents.core.workspace.http import invalid
+from agents.core.workspace.http import drain_on_cancel, invalid, offload
 from agents.core.workspace.identity import WorkspaceUser
 
 logger = logging.getLogger("nerva.workspace.approvals")
@@ -411,10 +411,15 @@ def create_request(conn: sqlite3.Connection, requester: WorkspaceUser, kind: str
 async def request(conn: sqlite3.Connection, requester: WorkspaceUser, kind: str, payload: object,
                   *, ip: str = "") -> dict:
     """``POST /approvals``: store the request (and carry it out at once when immediate)."""
-    approval_id, immediate = create_request(conn, requester, kind, payload, ip=ip)
-    if immediate:
-        await _carry_out(conn, approval_id, decider=requester, ip=ip)
-    return _item(conn, requester, approval_id)
+    async def complete() -> dict:
+        approval_id, immediate = await offload(create_request, conn, requester, kind, payload, ip=ip)
+        if immediate:
+            await _carry_out(conn, approval_id, decider=requester, ip=ip)
+        return await offload(_item, conn, requester, approval_id)
+
+    # An immediate request has already committed `executing` before its effect runs.
+    # Draining the whole sequence on disconnect avoids a stranded effect or a retry.
+    return await drain_on_cancel(complete())
 
 
 # ── deciding ─────────────────────────────────────────────────────────────────────────
@@ -434,54 +439,68 @@ async def decide(conn: sqlite3.Connection, user: WorkspaceUser, approval_id: int
     """Approve (and carry out) or reject a pending request *user* may decide."""
     if decision not in DECISIONS:
         raise invalid("decision", "invalid_choice")
-    row = visible_row(conn, user, approval_id)
-    spec = _spec(row["kind"])
-    if spec is None:
-        raise WorkspaceError("unknown_kind", "this kind of approval does not exist", 400,
-                             kind=row["kind"])
-    if not effects_api.can_decide(user, spec, row["department_id"], int(row["requester_id"])):
-        raise WorkspaceError("forbidden", "you may not decide this request", 403)
-    stamp = db.now()
     approve = decision == "approve"
-    with db.tx(conn):
-        cursor = conn.execute(
-            "UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? "
-            "WHERE id = ? AND status = 'pending' AND expires_at > ?",
-            ("executing" if approve else "rejected", user.id, stamp, note or None, approval_id,
-             stamp),
-        )
-        if cursor.rowcount != 1:
-            raise _already_decided(conn, approval_id, stamp)
-        audit.record(conn, actor=user, action="approval.approved" if approve else "approval.rejected",
-                     target_type="approval", target_id=approval_id,
-                     department_id=row["department_id"], ip=ip,
-                     details={"kind": row["kind"], "requester_id": row["requester_id"],
-                              "has_note": bool(note)})
-        if not approve:
-            _closed(conn, row, "rejected")
-            body = row["summary"] + (f"\n{user.name}: {note}" if note else "")
-            notify_localized(conn, [row["requester_id"]], kind="approval.rejected",
-                             titles=_TITLES["rejected"], body=body, link=_link(approval_id))
-    if approve:
-        await _carry_out(conn, approval_id, decider=user, ip=ip)
-    return _item(conn, user, approval_id)
+
+    def settle() -> None:
+        row = visible_row(conn, user, approval_id)
+        spec = _spec(row["kind"])
+        if spec is None:
+            raise WorkspaceError("unknown_kind", "this kind of approval does not exist", 400,
+                                 kind=row["kind"])
+        if not effects_api.can_decide(user, spec, row["department_id"], int(row["requester_id"])):
+            raise WorkspaceError("forbidden", "you may not decide this request", 403)
+        stamp = db.now()
+        with db.tx(conn):
+            cursor = conn.execute(
+                "UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? "
+                "WHERE id = ? AND status = 'pending' AND expires_at > ?",
+                ("executing" if approve else "rejected", user.id, stamp, note or None, approval_id,
+                 stamp),
+            )
+            if cursor.rowcount != 1:
+                raise _already_decided(conn, approval_id, stamp)
+            audit.record(conn, actor=user, action="approval.approved" if approve else "approval.rejected",
+                         target_type="approval", target_id=approval_id,
+                         department_id=row["department_id"], ip=ip,
+                         details={"kind": row["kind"], "requester_id": row["requester_id"],
+                                  "has_note": bool(note)})
+            if not approve:
+                _closed(conn, row, "rejected")
+                body = row["summary"] + (f"\n{user.name}: {note}" if note else "")
+                notify_localized(conn, [row["requester_id"]], kind="approval.rejected",
+                                 titles=_TITLES["rejected"], body=body, link=_link(approval_id))
+
+    async def complete() -> dict:
+        await offload(settle)
+        if approve:
+            await _carry_out(conn, approval_id, decider=user, ip=ip)
+        return await offload(_item, conn, user, approval_id)
+
+    # Approval is durable before execution; keep the same request connection alive
+    # until the effect outcome is recorded even when the HTTP caller disconnects.
+    return await drain_on_cancel(complete())
 
 
 async def _carry_out(conn: sqlite3.Connection, approval_id: int, *, decider: WorkspaceUser,
                      ip: str) -> None:
     """Re-validate and execute an ``executing`` approval, then record the outcome."""
-    row = get_row(conn, approval_id)
+    row = await offload(get_row, conn, approval_id)
     if row is None:
         return
     payload = _loads(row["payload_json"], {})
     result: dict | None = None
     error_code: str | None = None
-    try:
+
+    def prepare() -> tuple[effects_api.EffectSpec, WorkspaceUser]:
         spec = effects_api.get_effect(row["kind"])
         requester = identity.get_user(conn, int(row["requester_id"]))
         if requester is None or requester.status != "active":
             raise WorkspaceError("requester_inactive", "the requester's account is not active", 409)
         spec.validate(conn, requester, payload)
+        return spec, requester
+
+    try:
+        spec, requester = await offload(prepare)
         outcome = await spec.execute({**dict(row), "payload": payload}, requester, decider)
         result = outcome if isinstance(outcome, dict) else {"value": outcome}
     except WorkspaceError as exc:
@@ -489,7 +508,8 @@ async def _carry_out(conn: sqlite3.Connection, approval_id: int, *, decider: Wor
     except Exception:  # an effect bug must end as a failed approval, never a stuck one
         logger.exception("approval %s: the %s effect raised", approval_id, row["kind"])
         error_code = "execution_failed"
-    _record_outcome(conn, row, decider=decider, result=result, error_code=error_code, ip=ip)
+    await offload(_record_outcome, conn, row, decider=decider, result=result,
+                  error_code=error_code, ip=ip)
 
 
 def _record_outcome(conn: sqlite3.Connection, row: sqlite3.Row, *, decider: WorkspaceUser,

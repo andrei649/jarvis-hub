@@ -43,6 +43,7 @@ import { SignalGovernancePanel } from './panels/signals-governance';
 import { AutonomyControlPanel } from './panels/autonomy-legacy';
 import { DesktopAllowlistPanel } from './panels/desktop-allowlist';
 import { LlmRoutingPanel } from './panels/llm-routing';
+import { CustomEndpointsPanel } from './panels/custom-endpoints';
 import { WorkflowTracesPanel } from './panels/workflows-advanced';
 import { PresenceInboxPanel } from './panels/presence-inbox';
 import { ReviewQualityPanel } from './panels/review-quality';
@@ -5435,6 +5436,7 @@ const PANEL_COMPONENTS = {
   SkillSwitchesPanel,
   ProviderCheckPanel,
   ProviderQuotaPanel,
+  CustomEndpointsPanel,
   InspectorPanel,
   MemoryHygienePanel,
   MemoryConsolidatePanel,

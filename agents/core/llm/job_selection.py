@@ -37,8 +37,15 @@ def validate_pins(options):
         model = options['model']
         if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,255}', model):
             raise ValueError('model must be a bounded model identifier')
-    if 'provider' in options and (not isinstance(options['provider'], str) or options['provider'] not in PROVIDERS):
-        raise ValueError('provider must name a configured model adapter')
+    if 'provider' in options:
+        provider = options['provider']
+        if not isinstance(provider, str):
+            raise ValueError('provider must name a configured model adapter')
+        if provider not in PROVIDERS:
+            from .provider_selection import read_selection
+            selected = read_selection()
+            if selected is None or selected.binding.provider_id != provider:
+                raise ValueError('provider must name a configured model adapter')
     if options.get('no_agent') and ('model' in options or 'provider' in options):
         raise ValueError('model/provider pins require an agent')
 
@@ -159,6 +166,9 @@ def apply_selection(router, agent_id, backend, model, route):
             raise SelectionError('requested provider is unavailable or not selected by agent policy')
     if selection.model:
         model = selection.model
+        selected = getattr(backend, '_selected_provider_runtime', None)
+        if selected is not None and model != selected.binding.model:
+            raise SelectionError('pinned signed model differs from owner selection')
         # Gemini swaps any model with a "/" for its own default. A pin must not be
         # swapped silently: "google/x" is Gemini's "x", any other vendor is refused.
         if '/' in model and type(backend).__name__ == 'GeminiBackend':

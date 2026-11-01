@@ -63,6 +63,7 @@ from agents.core.workspace.effects_api import EffectSpec, ValidatedRequest, regi
 from agents.core.workspace.errors import WorkspaceError
 from agents.core.workspace.http import (
     invalid,
+    offload,
     optional_id_list,
     optional_int,
     optional_str,
@@ -1345,21 +1346,20 @@ async def _deliver(job: _Job, text: str, recipients: list[str]) -> None:
         accepted = await mailer.send_mail(to=recipients, subject=subject,
                                           text=f"{text}\n\n---\n{footer}\n", html=page)
     except WorkspaceError as exc:
-        await asyncio.to_thread(_record_delivery, job, [], exc.code, attempted,
-                                failure_reason(exc))
+        await offload(_record_delivery, job, [], exc.code, attempted, failure_reason(exc))
         return
     except asyncio.CancelledError:
         try:
-            _record_delivery(job, [], DELIVERY_INTERRUPTED, attempted)
+            await offload(_record_delivery, job, [], DELIVERY_INTERRUPTED, attempted)
         except (sqlite3.Error, OSError):   # the next start's sweep resolves it
             logger.warning("report run %s: the interrupted delivery could not be recorded",
                            job.run_id)
         raise
     except Exception:  # a crash must resolve the delivery, never leave it pending
         logger.exception("report run %s: delivery crashed", job.run_id)
-        await asyncio.to_thread(_record_delivery, job, [], "internal_error", attempted)
+        await offload(_record_delivery, job, [], "internal_error", attempted)
         return
-    await asyncio.to_thread(_record_delivery, job, accepted, None, attempted)
+    await offload(_record_delivery, job, accepted, None, attempted)
 
 
 def _record_delivery(job: _Job, accepted: list[str], error_code: str | None, attempted: int,
@@ -1421,7 +1421,7 @@ def _resolve_delivery(conn: sqlite3.Connection, row: sqlite3.Row, accepted: list
 
 
 async def _execute(run_id: int) -> None:
-    job = await asyncio.to_thread(_start, run_id)
+    job = await offload(_start, run_id)
     if job is None:
         return
     try:
@@ -1429,12 +1429,12 @@ async def _execute(run_id: int) -> None:
                                     max_tokens=REPORT_MAX_TOKENS, temperature=0.2,
                                     timeout_seconds=REPORT_TIMEOUT_SECONDS)
     except WorkspaceError as exc:
-        await asyncio.to_thread(_fail_run, run_id, exc.code, failure_reason(exc))
+        await offload(_fail_run, run_id, exc.code, failure_reason(exc))
         return
     # llm.complete never returns an empty or failure answer (it raises instead).
     text = result.text.strip()
-    recipients = await asyncio.to_thread(_store_success, job, result, text,
-                                         assistant.filter_citations(text, job.citations))
+    recipients = await offload(_store_success, job, result, text,
+                               assistant.filter_citations(text, job.citations))
     if recipients:
         await _deliver(job, text, recipients)
 
@@ -1449,11 +1449,11 @@ async def execute_run(run_id: int) -> None:
         async with _run_slots():
             await _execute(run_id)
     except asyncio.CancelledError:
-        _fail_run(run_id, "interrupted")
+        await offload(_fail_run, run_id, "interrupted")
         raise
     except Exception:  # a crash must end as a failed run, never a stuck one
         logger.exception("report run %s crashed", run_id)
-        _fail_run(run_id, "internal_error")
+        await offload(_fail_run, run_id, "internal_error")
 
 
 def _task_done(task: asyncio.Task) -> None:
@@ -1870,8 +1870,7 @@ def _validate_delivery(conn: sqlite3.Connection, requester: WorkspaceUser,
                             payload={"report_id": report_id, "emails": sorted(emails)})
 
 
-async def _execute_delivery(approval: dict, requester: WorkspaceUser,
-                            decider: WorkspaceUser) -> dict:
+def _apply_delivery(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
     """Approved: snapshot the recipients; every later successful run is mailed to them."""
     payload = approval["payload"]
     report_id = require_int(payload, "report_id", minimum=1)
@@ -1891,6 +1890,11 @@ async def _execute_delivery(approval: dict, requester: WorkspaceUser,
     finally:
         conn.close()
     return {"report_id": report_id, "approved_recipients": emails}
+
+
+async def _execute_delivery(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
+    """Run :func:`_apply_delivery` off the event loop (a write transaction may wait for the lock)."""
+    return await offload(_apply_delivery, approval, requester, decider)
 
 
 # ── effect: report.share_company (admins) ────────────────────────────────────────────
@@ -1913,7 +1917,7 @@ def _validate_share(conn: sqlite3.Connection, requester: WorkspaceUser,
                             payload={"run_id": run_id})
 
 
-async def _execute_share(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
+def _apply_share(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
     """Approved: everyone in the company can read this run from now on."""
     run_id = require_int(approval["payload"], "run_id", minimum=1)
     conn = db.connect()
@@ -1931,6 +1935,11 @@ async def _execute_share(approval: dict, requester: WorkspaceUser, decider: Work
     finally:
         conn.close()
     return {"run_id": run_id, "shared_company": True}
+
+
+async def _execute_share(approval: dict, requester: WorkspaceUser, decider: WorkspaceUser) -> dict:
+    """Run :func:`_apply_share` off the event loop (a write transaction may wait for the lock)."""
+    return await offload(_apply_share, approval, requester, decider)
 
 
 # ── effect: email.send (department approvers) ────────────────────────────────────────
@@ -2014,11 +2023,11 @@ async def _execute_email(approval: dict, requester: WorkspaceUser, decider: Work
                                           text=f"{payload['body_markdown']}\n\n---\n{footer}\n",
                                           html=page, reply_to=requester.email)
     except WorkspaceError as exc:
-        await asyncio.to_thread(_audit_email, approval, decider, "email.failed",
-                                {"error_code": exc.code, "recipient_count": len(payload["to"])})
+        await offload(_audit_email, approval, decider, "email.failed",
+                      {"error_code": exc.code, "recipient_count": len(payload["to"])})
         raise
-    await asyncio.to_thread(_audit_email, approval, decider, "email.sent",
-                            {"to": accepted, "refused": len(payload["to"]) - len(accepted)})
+    await offload(_audit_email, approval, decider, "email.sent",
+                  {"to": accepted, "refused": len(payload["to"]) - len(accepted)})
     return {"sent_to": accepted}
 
 

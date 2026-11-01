@@ -1,0 +1,39 @@
+{
+  "counts": {
+    "tests": 30503,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 111,
+    "seconds": 1115.705,
+    "passed": 30392
+  },
+  "exit_code": 0,
+  "source_unchanged": true,
+  "prior_failure_checks": {
+    "all8_prior_failed_nodes_pass": {
+      "expected": 8,
+      "passed": 8,
+      "all_pass": true
+    },
+    "all27_e186_failed_nodes_pass": {
+      "expected": 27,
+      "passed": 27,
+      "all_pass": true
+    },
+    "all14_ae618_failed_nodes_pass": {
+      "expected": 14,
+      "passed": 14,
+      "all_pass": true
+    },
+    "all4_443607_failed_nodes_pass": {
+      "expected": 4,
+      "passed": 4,
+      "all_pass": true
+    }
+  },
+  "finished_at": "2026-10-29T08:58:55.096296+00:00",
+  "source_head": "e68eb272d8bb42e8f84a1e7e197b9470e9414a1f",
+  "scope": "Complete collected backend on unchanged committed source. Local macOS/Python3.12, two xdist loadfile workers, per-test90s bound; no added deselections. Skips and platform/provider acceptance remain explicit.",
+  "failures": [],
+  "warnings_note": "Passing is not warning-free: existing Starlette/httpx, async-mark, two pre-existing coroutine warnings and synthetic temporary-directory cleanup warnings remain. No new live-provider/device/profile/native-Windows acceptance is inferred."
+}

@@ -21,17 +21,17 @@ it in this module's namespace. The LM Studio lifecycle helpers `_lmstudio_or_503
 """
 
 import asyncio
-import os
 import sys
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from core.settings_db import get_value, put_category
+from core.settings_db import defer_model_epoch_invalidation, get_value, put_category
 
 from agents.core.app_state import get_orch
+from agents.core.env_config import env_flag, env_str
 from agents.core.llm.local_model_inventory import invalidate_local_model_inventory_cache
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import logger, nocache_json
@@ -86,7 +86,7 @@ async def llm_openrouter_swap(body: ModelSwapBody):
     if parsed is None:
         return nocache_json({"ok": False, "reason": "not_a_model_command"}, status_code=422)
     return nocache_json({"ok": True, "parsed": parsed, "base": OPENROUTER_BASE,
-                         "configured": bool(os.environ.get("OPENROUTER_API_KEY", ""))})
+                         "configured": bool(env_str("OPENROUTER_API_KEY"))})
 
 
 class MoERouteBody(BaseModel):
@@ -237,9 +237,10 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> dict[s
     old_default_model = get_value("llm", "default_model", "")
 
     try:
-        updated, skipped = put_category(
-            "llm", {"backend_type": provider, "default_model": model}
-        )
+        with defer_model_epoch_invalidation():
+            updated, skipped = put_category(
+                "llm", {"backend_type": provider, "default_model": model}
+            )
         if updated != 2 or skipped:
             raise RuntimeError("provider selection was not fully persisted")
         # Base LLMRouter instances honor this directly; HybridRouter.detect()
@@ -250,13 +251,14 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> dict[s
             raise RuntimeError("provider adoption did not take effect")
         router_.set_active_model(model)
     except asyncio.CancelledError:
-        rollback, _ = await _finish_local_provider_restore(
-            router_,
-            provider=old_provider,
-            backend_type=old_backend_type,
-            default_model=old_default_model,
-            runtime_model=old_runtime_model,
-        )
+        with defer_model_epoch_invalidation():
+            rollback, _ = await _finish_local_provider_restore(
+                router_,
+                provider=old_provider,
+                backend_type=old_backend_type,
+                default_model=old_default_model,
+                runtime_model=old_runtime_model,
+            )
         if not rollback["ok"]:
             logger.critical(
                 "local provider rollback incomplete after cancelled adoption to %s",
@@ -264,13 +266,14 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> dict[s
             )
         raise
     except Exception:
-        rollback, cancelled_during_restore = await _finish_local_provider_restore(
-            router_,
-            provider=old_provider,
-            backend_type=old_backend_type,
-            default_model=old_default_model,
-            runtime_model=old_runtime_model,
-        )
+        with defer_model_epoch_invalidation():
+            rollback, cancelled_during_restore = await _finish_local_provider_restore(
+                router_,
+                provider=old_provider,
+                backend_type=old_backend_type,
+                default_model=old_default_model,
+                runtime_model=old_runtime_model,
+            )
         if cancelled_during_restore:
             if not rollback["ok"]:
                 logger.critical(
@@ -326,6 +329,7 @@ async def _switch_local_model_locked(
 
     target_provider = provider or providers[0]
     current_provider = _local_provider_name(router_)
+    previous_model = getattr(router_, "active_model", None)
     if target_provider != current_provider:
         if target_provider not in {"lm-studio", "ollama"}:
             return nocache_json(
@@ -358,11 +362,18 @@ async def _switch_local_model_locked(
                 },
                 status_code=409,
             )
+        from agents.core.status_cache_epoch import EPOCHS
+
+        EPOCHS.invalidate_selection()
         return nocache_json(
             {"ok": True, "active": model_id, "provider": target_provider}
         )
 
     router_.set_active_model(model_id)
+    if previous_model != model_id:
+        from agents.core.status_cache_epoch import EPOCHS
+
+        EPOCHS.invalidate_selection()
     try:
         put_category("llm", {"default_model": model_id})
     except Exception:
@@ -549,3 +560,147 @@ async def llm_unload(body: LMUnload):
                     status_code=500,
                 )
         return nocache_json(result, status_code=_llm_status_code(result))
+
+
+# Owner package installation is inert: none of these routes selects a model.
+class ProviderPackageStage(BaseModel):
+    model_config = {"extra": "forbid"}
+    candidate: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    source: Literal["user", "legacy", "bundled"] = "user"
+    profile: dict = Field(max_length=64)
+    hooks: list[str] = Field(min_length=1, max_length=16)
+    replacement_target: str | None = Field(default=None, max_length=128)
+
+
+class ProviderPackageDecision(BaseModel):
+    model_config = {"extra": "forbid", "strict": True}
+    artifact_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    package_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    approved: bool
+    permanent: Literal[True]
+
+
+def _provider_install_context(request: Request):
+    from agents.core.autonomy.consent_types import OwnerConsentActor
+    from agents.core.llm.providers.install_service import get_install_service
+    from agents.core.routers.autonomy import _consent_admin_current
+
+    orch = get_orch()
+    service = get_install_service(orch)
+    if service is None:
+        raise HTTPException(status_code=409, detail="provider_install_unavailable")
+    actor = OwnerConsentActor("owner", "admin", lambda: _consent_admin_current(request, orch))
+    return service, actor
+
+
+def _provider_install_sync(request: Request, method: str, args: tuple, kwargs: dict):
+    # The owner predicate is evaluated by the service inside this worker, at
+    # the actual file-lock/signature/decision boundary.
+    service, actor = _provider_install_context(request)
+    return getattr(service, method)(*args, actor=actor, **kwargs)
+
+
+async def _provider_install_worker(fn, *args):
+    """Drain a started install operation even if its HTTP caller disconnects."""
+    worker = asyncio.create_task(asyncio.to_thread(fn, *args))
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(worker)
+            break
+        except asyncio.CancelledError:
+            cancelled = True
+            if worker.done():
+                result = worker.result()
+                break
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+async def _provider_install_call(request: Request, method: str, *args, **kwargs):
+    from agents.core.llm.providers.packages import ProviderPackageError
+
+    try:
+        result = await _provider_install_worker(_provider_install_sync,
+                                                request, method, args, kwargs)
+        return nocache_json(result)
+    except HTTPException:
+        raise
+    except (ProviderPackageError, ValueError, TypeError, KeyError, OSError):
+        raise HTTPException(status_code=409, detail="provider_install_refused") from None
+
+
+@router.get("/api/llm/provider-packages/status", dependencies=[Depends(admin_guard)])
+async def provider_packages_status():
+    enabled = env_flag("JARVIS_PROVIDER_PLUGINS")
+    return nocache_json({"enabled": enabled, "runtime_present": get_orch() is not None,
+                         "selects_model": False})
+
+
+@router.post("/api/llm/provider-packages/stage", dependencies=[Depends(admin_guard)])
+async def provider_packages_stage(body: ProviderPackageStage, request: Request):
+    from agents.core.llm.providers import ProviderProfile
+
+    try:
+        profile = ProviderProfile(**body.profile)
+    except (TypeError, ValueError, KeyError):
+        raise HTTPException(status_code=422, detail="invalid_provider_profile") from None
+    return await _provider_install_call(request, "stage", body.candidate, profile=profile,
+                                        hooks=body.hooks, source=body.source,
+                                        replacement_target=body.replacement_target)
+
+
+@router.get("/api/llm/provider-packages/{artifact_id}", dependencies=[Depends(admin_guard)])
+async def provider_packages_inspect(artifact_id: str, request: Request):
+    return await _provider_install_call(request, "inspect", artifact_id)
+
+
+@router.post("/api/llm/provider-packages/{artifact_id}/propose", dependencies=[Depends(admin_guard)])
+async def provider_packages_propose(artifact_id: str, request: Request):
+    return await _provider_install_call(request, "propose", artifact_id)
+
+
+@router.post("/api/llm/provider-packages/proposals/{proposal_id}/decision",
+             dependencies=[Depends(admin_guard)])
+async def provider_packages_decision(proposal_id: str, body: ProviderPackageDecision,
+                                     request: Request):
+    return await _provider_install_call(request, "decide", proposal_id,
+                                        artifact_id=body.artifact_id,
+                                        package_hash=body.package_hash,
+                                        approved=body.approved, permanent=body.permanent)
+
+
+@router.post("/api/llm/provider-packages/proposals/{proposal_id}/promote",
+             dependencies=[Depends(admin_guard)])
+async def provider_packages_promote(proposal_id: str, request: Request):
+    from agents.core.llm.providers import lifecycle_gates
+    from agents.core.llm.providers.packages import ProviderPackageError
+
+    try:
+        service, actor = await _provider_install_worker(_provider_install_context, request)
+        provider = await _provider_install_worker(
+            lambda: service.promotion_target(proposal_id, actor=actor))
+        store = await _provider_install_worker(lambda: service._store(actor=actor))
+        await lifecycle_gates.quiesce(service.root, provider, store)
+        result = await _provider_install_worker(lambda: service.promote(proposal_id, actor=actor))
+        return nocache_json(result)
+    except HTTPException:
+        raise
+    except (ProviderPackageError, ValueError, TypeError, KeyError, OSError):
+        raise HTTPException(status_code=409, detail="provider_install_refused") from None
+
+
+@router.post("/api/llm/provider-packages/{provider_id}/revoke",
+             dependencies=[Depends(admin_guard)])
+async def provider_packages_revoke(provider_id: str, request: Request):
+    from agents.core.llm.providers.packages import ProviderPackageError
+
+    try:
+        service, actor = await _provider_install_worker(_provider_install_context, request)
+        result = await service.revoke_async(provider_id, actor=actor)
+        return nocache_json(result)
+    except HTTPException:
+        raise
+    except (ProviderPackageError, ValueError, TypeError, KeyError, OSError):
+        raise HTTPException(status_code=409, detail="provider_install_refused") from None

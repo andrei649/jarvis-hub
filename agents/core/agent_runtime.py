@@ -586,6 +586,18 @@ class AgentToolRuntime:
             logger.info("tool_loop_exit agent=%r reason=%s", _bounded_identity(agent_id), result.exit_reason.value)
         from .turn_stops import record_runtime_stop
         record_runtime_stop(result.exit_reason)
+        if result.exit_reason is not ToolLoopExitReason.MODEL_RESPONSE:
+            from .turn_outcome import record_agent_observation
+
+            kind = ('pending_approval' if result.exit_reason is ToolLoopExitReason.APPROVAL_REQUIRED
+                    else 'timeout' if result.exit_reason is ToolLoopExitReason.DEADLINE
+                    else 'refused' if result.exit_reason in {
+                        ToolLoopExitReason.WINDOW_INVALID, ToolLoopExitReason.CONTEXT_REFUSED,
+                        ToolLoopExitReason.TURN_REVOKED, ToolLoopExitReason.REPLAY_REFUSED,
+                        ToolLoopExitReason.NO_CAPABILITY, ToolLoopExitReason.NO_TOOLS,
+                        ToolLoopExitReason.TOOLS_WITHDRAWN, ToolLoopExitReason.GUARDIAN_DENIED,
+                    } else 'failed')
+            record_agent_observation(agent_id, kind)
         from . import trajectory  # H652: the turn's own exit, for its saved trajectory
         trajectory.note_exit(result.exit_reason)
         return result
@@ -668,6 +680,17 @@ class AgentToolRuntime:
         if usage is not None:
             from .turn_usage import record_usage
             record_usage(usage)
+            from .turn_compaction import active_compaction
+            state = active_compaction()
+            if state is not None:
+                from .llm.base import is_degraded_reply
+                from .llm.tool_protocol import PROVIDER_REJECTED_FINISH
+
+                state.observe_usage(
+                    usage,
+                    provider_succeeded=(getattr(turn, "finish_reason", None) != PROVIDER_REJECTED_FINISH
+                                        and not is_degraded_reply(getattr(turn, "content", ""))),
+                )
         if usage_sink is None or usage is None:
             return
         complete = getattr(usage, "counts_complete", None)
@@ -793,6 +816,7 @@ class AgentToolRuntime:
         # shared between concurrent runs and the model is known only here.
         from .llm.job_selection import selected_window
         known_window = effective_window.tokens if effective_window is not None else selected_window(model)
+        status_window = effective_window.authoritative_tokens() if effective_window is not None else None
         # H297: "attachments" holds each call's image parts (by call id) between the
         # call and its tool message.
         spent: dict[str, Any] = {"bytes": 0, "window": known_window or max(0, int(window_for(model) or 0)),
@@ -879,7 +903,7 @@ class AgentToolRuntime:
                         agent_id=agent_id, event_sink=event_sink,
                         output_risks=output_risks,
                     ):
-                        return _CONTEXT_REPLY
+                        return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
             # H513: every round rechecks revocation after tool/profile awaits.
             # Errors propagate before provider I/O; an unreadable gate never widens.
             if before_model_call is not None:
@@ -892,7 +916,8 @@ class AgentToolRuntime:
                 from .approval_outcomes import mark_invocation_outcomes_visible
                 mark_invocation_outcomes_visible(messages)
                 from .turn_usage import model_usage_scope
-                with model_usage_scope(model=model, route=""):
+                with model_usage_scope(model=model, route="", context_window=status_window,
+                                       agent_id=agent_id):
                     # H297: image parts reach only a backend whose tool-result
                     # channel carries images; every other one reads the descriptors.
                     # One request carries at most the newest _MAX_REQUEST_IMAGES images
@@ -934,6 +959,14 @@ class AgentToolRuntime:
             steering.acknowledge()
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
+                from .llm.base import is_backend_failure_reply
+                from .turn_outcome import record_agent_observation, record_model_completion
+                if (turn.finish_reason == PROVIDER_REJECTED_FINISH
+                        or not (turn.content or '').strip()
+                        or is_backend_failure_reply(turn.content.lstrip())):
+                    record_agent_observation(agent_id, 'failed')
+                else:
+                    record_model_completion(agent_id)
                 return ToolLoopResult(turn.content, ToolLoopExitReason.MODEL_RESPONSE)
             if guardian_stopped:
                 from .approval_outcomes import DENIAL_BREAKER_NOTICE
@@ -943,6 +976,12 @@ class AgentToolRuntime:
             # fan-out plus one representative overflow call so both scheduling
             # and the next-turn context stay O(configured cap), not O(provider N).
             bounded_calls = turn.tool_calls[: self._max_tool_calls_per_turn + 1]
+            from .turn_outcome import record_tool_proposed
+
+            # The provider proposed every parsed call, even though execution
+            # deliberately retains only the bounded fan-out and one overflow.
+            for _call in turn.tool_calls:
+                record_tool_proposed()
             if turn.provider_replay is not None:
                 from .llm.provider_replay import replay_size
                 if len(turn.tool_calls) > self._max_tool_calls_per_turn:
@@ -1043,6 +1082,9 @@ class AgentToolRuntime:
                         "suspicious": False,
                     })
                 messages.append(message)
+                from .turn_outcome import record_accepted_tool_result
+
+                record_accepted_tool_result(agent_id)
                 trajectory.note_message(message)
                 if risk.external_untrusted:
                     output_risks[id(message)] = risk
@@ -1242,6 +1284,8 @@ class AgentToolRuntime:
                 if committed is None:
                     return False
                 _active_clock.set(replace(binding, snapshot=committed))
+                from .turn_outcome import record_accepted_compression
+                record_accepted_compression(committed.session_id, committed.instance_id)
             original_messages[:] = messages
             original_compacted.update(compacted)
             from .skills.tools import note_compacted

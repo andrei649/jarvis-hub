@@ -10,6 +10,7 @@ import io
 import json
 import os
 import shutil
+import site
 import subprocess
 import sys
 from pathlib import Path
@@ -451,7 +452,9 @@ def test_uninstall_sh_dry_run_passes_through(tmp_path):
     assert res.returncode == 0, res.stdout + res.stderr
     plan = json.loads(res.stdout[res.stdout.index("{"):res.stdout.rindex("}") + 1])
     assert plan["dry_run"] is True and plan["purge_data"] is True and "desktop" in plan
-    assert all(r["path"].startswith(str(home)) or r["path"].startswith("/usr/bin/")
+    system_app = ({"/Applications/Jarvis Hub.app"} if sys.platform == "darwin"
+                  else {"/usr/bin/jarvis-hub-desktop"})
+    assert all(Path(r["path"]).is_relative_to(home) or r["path"] in system_app
                or r["role"] == "source_build" for r in plan["desktop"])
     assert {r["path"] for r in plan["desktop"] if r["role"] == "source_build"} == {
         str(REPO_ROOT / "desktop" / "src-tauri" / "target")}
@@ -1072,7 +1075,19 @@ def test_wrapper_failure_message_does_not_promise_a_json_report():
 def _make_real_venv(root: Path) -> Path:
     subprocess.run([sys.executable, "-m", "venv", "--system-site-packages", "--without-pip",
                     str(root / ".venv")], check=True, capture_output=True, timeout=180)
-    return root / ".venv" / "bin" / "python"
+    vpy = root / ".venv" / "bin" / "python"
+    # A venv made from the base interpreter does not inherit this project's
+    # installed dependencies. Supply only its test-local import path; the
+    # parent shim still simulates a dependency-free system interpreter.
+    dependency_dir = next(Path(p) for p in site.getsitepackages()
+                          if (Path(p) / "httpx").is_dir()
+                          and (Path(p) / "cryptography").is_dir())
+    venv_site = Path(subprocess.check_output(
+        [str(vpy), "-c", "import site; print(site.getsitepackages()[0])"],
+        text=True, timeout=30).strip())
+    (venv_site / "nerva-test-dependencies.pth").write_text(
+        str(dependency_dir) + "\n", encoding="utf-8")
+    return vpy
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX symlinked venv layout")

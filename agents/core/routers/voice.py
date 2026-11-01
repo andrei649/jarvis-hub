@@ -69,7 +69,7 @@ async def tts_endpoint(req: TTSRequest):
         from core.voice.tts import TTSEngine, tts_available
         if not await asyncio.to_thread(tts_available):
             return JSONResponse({"error": NO_TTS}, status_code=503)
-        from core.settings_db import get_value
+        from agents.core.settings_db import get_value
         engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
         # H526: a reply with nothing worth saying (all code, emoji or reasoning) is an
         # answer — 204 with the reason — not a synthesis failure for the client to retry.
@@ -106,7 +106,7 @@ async def tts_endpoint(req: TTSRequest):
 
 def _tts_stream_enabled() -> bool:
     """Whether sentence-level streaming TTS is turned on (default off)."""
-    from core.settings_db import get_value
+    from agents.core.settings_db import get_value
     return bool(get_value("voice", "sentence_streaming", False))
 
 
@@ -126,7 +126,7 @@ async def tts_stream_endpoint(req: TTSRequest):
         )
     if not await asyncio.to_thread(tts_available):
         return JSONResponse({"error": NO_TTS}, status_code=503)
-    from core.settings_db import get_value
+    from agents.core.settings_db import get_value
     engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
 
     async def _gen():
@@ -197,8 +197,9 @@ def _stt_engine():
         return _STT_ENGINE
     with _STT_ENGINE_LOCK:
         if _STT_ENGINE is None:
-            from core.settings_db import get_value
             from core.voice.stt import STTEngine
+
+            from agents.core.settings_db import get_value
             _STT_ENGINE = STTEngine(model_size=get_value("voice", "stt_model_size", "medium"))
     return _STT_ENGINE
 
@@ -224,7 +225,7 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
             {"error": "faster-whisper not installed. Run: pip install faster-whisper", "stt": False},
             status_code=503,
         )
-    from core.settings_db import get_value
+    from agents.core.settings_db import get_value
     lang = lang or get_value("voice", "stt_language", "ro")
     tmp = None
     try:

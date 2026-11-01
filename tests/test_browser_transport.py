@@ -282,13 +282,13 @@ def test_lan_mode_admits_house_lan_only_after_public_validation_fails():
 def test_launch_args_pin_every_host_and_deny_everything_else():
     pinned = PinnedResolver(resolver=RecordingResolver({
         ("b.example", "public"): [PUBLIC_IP],
-        ("a.example", "public"): ["2001:db8::1"],
+        ("a.example", "public"): ["2606:4700:4700::1111"],
     }))
     assert pinned.launch_args() == ["--host-resolver-rules=MAP * ~NOTFOUND"]
     pinned.pin("https://b.example/")
     pinned.pin("https://a.example/")
     assert pinned.launch_args("chromium") == [
-        "--host-resolver-rules=MAP a.example [2001:db8::1], MAP b.example "
+        "--host-resolver-rules=MAP a.example [2606:4700:4700::1111], MAP b.example "
         f"{PUBLIC_IP}, MAP * ~NOTFOUND"
     ]
     for browser in ("firefox", "webkit"):
@@ -358,7 +358,8 @@ async def test_navigate_pins_before_launch_and_dials_only_the_validated_ip(monke
     assert resolver.calls == [("example.com", "public")]
     [(user_data_dir, launch_kwargs)] = manager.playwright.chromium.launches
     assert launch_kwargs["args"] == [
-        f"--host-resolver-rules=MAP example.com {PUBLIC_IP}, MAP * ~NOTFOUND"
+        f"--host-resolver-rules=MAP example.com {PUBLIC_IP}, MAP * ~NOTFOUND",
+        "--no-proxy-server", "--disable-background-networking", "--disable-features=WebRTC",
     ]
     assert launch_kwargs["headless"] is True and launch_kwargs["service_workers"] == "block"
     profile = Path(user_data_dir)
@@ -507,7 +508,8 @@ async def test_new_host_relaunches_the_browser_with_the_enlarged_pin_table():
     assert len(launches) == 2 and launches[1][0] != launches[0][0]
     assert launches[1][1]["args"] == [
         f"--host-resolver-rules=MAP example.com {PUBLIC_IP}, "
-        f"MAP www.example.com {PUBLIC_IP}, MAP * ~NOTFOUND"
+        f"MAP www.example.com {PUBLIC_IP}, MAP * ~NOTFOUND",
+        "--no-proxy-server", "--disable-background-networking", "--disable-features=WebRTC",
     ]
     assert driver.launched_hosts == frozenset({"example.com", "www.example.com"})
     await driver.close()

@@ -143,6 +143,7 @@ async def test_turn_without_a_caller_sink_collects_into_its_own(entry):
     one: otherwise the ids would either vanish or land in whatever ambient
     context happened to be bound — a neighbouring turn's collector included."""
     orch = Orchestrator.__new__(Orchestrator)
+    orch._runtime_settings = {}
     inner = {}
 
     async def _turn(*args, **kwargs):

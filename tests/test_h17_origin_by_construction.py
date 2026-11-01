@@ -55,6 +55,7 @@ def test_public_turn_entrypoints_bind_origin_at_the_chokepoint():
 
 def test_handle_input_binds_direct_external_channel_and_resets():
     orch = Orchestrator.__new__(Orchestrator)
+    orch._runtime_settings = {}
     seen = []
 
     async def fake_handle_input(text, channel="voice", agent_override=None, session_id=None):
@@ -76,6 +77,7 @@ def test_handle_input_binds_direct_external_channel_and_resets():
 
 def test_handle_input_never_downgrades_upstream_inbound_context():
     orch = Orchestrator.__new__(Orchestrator)
+    orch._runtime_settings = {}
     seen = []
 
     async def fake_handle_input(text, channel="voice", agent_override=None, session_id=None):
@@ -97,6 +99,7 @@ def test_handle_input_never_downgrades_upstream_inbound_context():
 
 def test_handle_input_stream_binds_direct_external_channel_and_resets():
     orch = Orchestrator.__new__(Orchestrator)
+    orch._runtime_settings = {}
     seen = []
     tokens = []
 

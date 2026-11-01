@@ -270,6 +270,24 @@ async def test_host_driver_refuses_to_start_without_a_per_request_url_guard():
     assert manager.started == 0
 
 
+def test_execution_guard_exception_refuses_without_logging_untrusted_detail(caplog):
+    driver = PlaywrightBrowserDriver()
+    driver.set_execution_guard(lambda: True)
+    driver._assert_execution_current()
+    driver.set_execution_guard(lambda: False)
+    with pytest.raises(PlaywrightHostDisabled, match='approved browser task unavailable'):
+        driver._assert_execution_current()
+
+    def broken_guard():
+        raise RuntimeError('private page text')
+
+    driver.set_execution_guard(broken_guard)
+    with pytest.raises(PlaywrightHostDisabled, match='approved browser task unavailable'):
+        driver._assert_execution_current()
+    assert 'browser execution guard raised; refusing' in caplog.text
+    assert 'private page text' not in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_cleaned(
     tmp_path, monkeypatch
@@ -284,17 +302,21 @@ async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_clean
     monkeypatch.setattr(builtins, "__import__", _without_playwright)
     driver = PlaywrightBrowserDriver(host_enabled=True)
     driver.set_url_guard(lambda _url: True)
-    with pytest.raises(PlaywrightTransportUnavailable, match="transport unavailable"):
-        await driver.navigate(url="https://example.com")
+    with pytest.raises(PlaywrightUnavailable, match="Playwright is unavailable"):
+        driver._runtime_factory()
+    assert driver.profile_dir is None
 
     manager = FakeManager(error=RuntimeError("raw host detail"))
     broken = PlaywrightBrowserDriver(
         host_enabled=True, playwright_factory=lambda: manager, download_dir=tmp_path
     )
     broken.set_url_guard(lambda _url: True)
-    with pytest.raises(PlaywrightTransportUnavailable) as exc:
-        await broken.navigate(url="https://example.com")
+    with pytest.raises(PlaywrightUnavailable) as exc:
+        await broken.extract(selector="body")
     assert "raw host detail" not in str(exc.value)
+    assert manager.started == 1
+    assert manager.playwright.stopped == 0
+    assert broken.profile_dir is None
     await broken.close()
 
     partial_manager = FakeManager()
@@ -305,9 +327,12 @@ async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_clean
         host_enabled=True, playwright_factory=lambda: partial_manager
     )
     partial.set_url_guard(lambda _url: True)
-    with pytest.raises(PlaywrightTransportUnavailable):
-        await partial.navigate(url="https://example.com")
-    assert partial_manager.playwright.stopped == 0
+    with pytest.raises(PlaywrightUnavailable) as exc:
+        await partial.extract(selector="body")
+    assert "binary failed" not in str(exc.value)
+    assert partial_manager.playwright.stopped == 1
+    assert partial.profile_dir is None
+    assert not Path(partial_manager.playwright.chromium.user_data_dir).exists()
 
 
 @pytest.mark.asyncio
@@ -328,7 +353,8 @@ async def test_lazy_fresh_context_navigation_extract_screenshot_wait_and_close(t
     # Isolated per-run profile: a throw-away temp dir, never the owner's profile.
     assert chromium.persistent_kwargs == {
         "headless": True,
-        "args": [],
+        "args": ["--no-proxy-server", "--disable-background-networking",
+                 "--disable-features=WebRTC"],
         "accept_downloads": True,
         "service_workers": "block",
     }
@@ -356,9 +382,11 @@ async def test_output_and_wait_budgets_fail_closed(tmp_path):
         await driver.screenshot()
     with pytest.raises(ValueError, match="wait exceeds"):
         await driver.wait(timeout_ms=501)
-    manager.playwright.page.evaluate_result = "too large"
-    with pytest.raises(PlaywrightOutputTooLarge):
+    with pytest.raises(PlaywrightHostDisabled, match="approved browser step required"):
         await driver.execute_js(script="'too large'")
+    assert not any(call[0] == "evaluate" for call in manager.playwright.page.calls)
+    with pytest.raises(PlaywrightOutputTooLarge, match="character budget"):
+        driver._assert_result_budget("too large")
     assert not any(call[0] == "wait_for_timeout" for call in manager.playwright.page.calls)
     await driver.close()
 
@@ -368,29 +396,37 @@ async def test_mutating_primitives_and_file_boundaries(tmp_path):
     upload = tmp_path / "upload.txt"
     upload.write_text("safe")
     driver, manager = _driver(tmp_path)
+    calls = (
+        driver.click(selector="#go"),
+        driver.type(selector="#q", text="hello"),
+        driver.type(selector="#q", text="!", clear=False),
+        driver.submit(selector="form"),
+        driver.execute_js(script="arg => arg", arg={"x": 1}),
+        driver.upload(selector="input", paths=[str(upload)]),
+        driver.upload(selector="input", paths=[str(tmp_path / "missing")]),
+        driver.download(selector="#download"),
+    )
+    for call in calls:
+        with pytest.raises(PlaywrightHostDisabled, match="approved browser step required"):
+            await call
+    assert manager.started == 0
+    assert manager.playwright.page.calls == []
+    assert driver.profile_dir is None
 
-    assert await driver.click(selector="#go") == {"clicked": "#go"}
-    assert await driver.type(selector="#q", text="hello") == {"typed": "#q"}
-    assert await driver.type(selector="#q", text="!", clear=False) == {"typed": "#q"}
-    assert await driver.submit(selector="form") == {"submitted": "form"}
-    assert await driver.execute_js(script="arg => arg", arg={"x": 1}) == {
-        "value": {"value": 7}
-    }
-    assert await driver.upload(selector="input", paths=[str(upload)]) == {
-        "uploaded": 1, "selector": "input"
-    }
-    downloaded = await driver.download(selector="#download")
-
-    page = manager.playwright.page
-    assert ("fill", "#q", "hello") in page.calls
-    assert ("type", "#q", "!") in page.calls
-    assert page.download.saved_as == (tmp_path / "downloads" / "report.txt").resolve()
-    assert downloaded == {
-        "saved_to": str(page.download.saved_as), "filename": "report.txt"
-    }
-
-    with pytest.raises(ValueError, match="upload path"):
-        await driver.upload(selector="input", paths=[str(tmp_path / "missing")])
+    assert driver._safe_filename("../../report.txt") == "report.txt"
+    assert driver._safe_filename(r"..\..\report.txt") == "report.txt"
+    root = (tmp_path / "downloads").resolve()
+    root.mkdir()
+    assert driver._unique_destination(root, "report.txt") == root / "report.txt"
+    (root / "report.txt").write_text("original")
+    assert driver._unique_destination(root, "report.txt") == root / "report-1.txt"
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside")
+    (root / "escape.txt").symlink_to(outside)
+    with pytest.raises(ValueError, match="escaped configured directory"):
+        driver._unique_destination(root, "escape.txt")
+    with pytest.raises(ValueError, match="escaped configured directory"):
+        driver._unique_destination(root, "../outside.txt")
     await driver.close()
 
 
@@ -403,7 +439,7 @@ async def test_governed_browser_blocks_before_real_driver_and_null_default_is_un
     denied = await governed.run_step({"action": "click", "selector": "#buy"})
 
     assert offlist["status"] == "blocked"
-    assert denied["status"] == "denied"
+    assert denied == {"action": "click", "status": "blocked", "reason": "kernel_required"}
     assert manager.started == 0
 
     allowed = await governed.run_step({
@@ -454,7 +490,8 @@ async def test_live_setting_does_not_claim_navigation_without_a_transport_proxy(
     driver = PlaywrightBrowserDriver(host_enabled=True)
     driver.set_url_guard(lambda url: str(url).startswith("data:text/html,"))
     try:
-        with pytest.raises(PlaywrightTransportUnavailable, match="transport unavailable"):
+        with pytest.raises(PlaywrightHostDisabled, match="approved browser task unavailable"):
             await driver.navigate(url="data:text/html,<main>Jarvis Playwright</main>")
+        assert driver.profile_dir is None
     finally:
         await driver.close()

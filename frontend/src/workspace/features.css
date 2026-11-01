@@ -335,3 +335,14 @@
 @media (forced-colors: active) {
   .ws-cite, .ws-locality, .ws-source, .ws-prompt { border: 1px solid CanvasText; }
 }
+
+/* The reports list between a tablet and the side-column layout (768–1180 px): the run button
+   keeps only its icon (its accessible name is the full "Run <report>"), and the cells get less
+   padding, so the five columns fit the frame instead of scrolling sideways (NWS-23). */
+@media (min-width: 768px) and (max-width: 1180px) {
+  .ws-reports-list .ws-table th, .ws-reports-list .ws-table td { padding-inline: var(--ws-s2); }
+  .ws-reports-list .ws-table .is-actions { width: auto; }
+  .ws-run-label {
+    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}

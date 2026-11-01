@@ -60,7 +60,7 @@ from starlette.requests import ClientDisconnect
 from agents.core.workspace import audit, config, db, extract, notifications, retrieval
 from agents.core.workspace.effects_api import EffectSpec, ValidatedRequest, register_effect
 from agents.core.workspace.errors import WorkspaceError
-from agents.core.workspace.http import MAX_ID, invalid, require_int, require_str
+from agents.core.workspace.http import MAX_ID, invalid, offload, require_int, require_str
 from agents.core.workspace.identity import COMPANY, WorkspaceUser
 
 logger = logging.getLogger("nerva.workspace.documents")
@@ -925,9 +925,14 @@ async def upload_document(conn: sqlite3.Connection, request: Request, user: Work
     kind = extract.kind_for_filename(name)
     if kind is None:
         raise _unsupported("extension")
-    department_id, visibility = upload_target(conn, user, scope)
+
+    def admit() -> tuple[int | None, str]:
+        target = upload_target(conn, user, scope)
+        check_upload_rate(conn, user.id)
+        return target
+
+    department_id, visibility = await offload(admit)
     document_title = clean_title(title, name)
-    check_upload_rate(conn, user.id)
     with _upload_slot(user.id):
         data = await read_upload(request, config.max_upload_bytes())
         if not data:
@@ -939,10 +944,14 @@ async def upload_document(conn: sqlite3.Connection, request: Request, user: Work
         upload = _Upload(department_id=department_id, visibility=visibility,
                          title=document_title, filename=name, kind=kind, size=len(data),
                          sha256=digest)
-        document_id, claimed_at = _reserve(conn, user, upload, temp, ip)
+        document_id, claimed_at = await offload(_reserve, conn, user, upload, temp, ip)
         await process_document(document_id, data, kind, claimed_at=claimed_at)
-    # The upload's claim stamp is also its created_at.
-    return document_json(_same_document(conn, document_id, claimed_at), user)
+
+    def finish() -> dict:
+        # The upload's claim stamp is also its created_at.
+        return document_json(_same_document(conn, document_id, claimed_at), user)
+
+    return await offload(finish)
 
 
 # ── delete, re-index, download ───────────────────────────────────────────────────────
@@ -1025,10 +1034,14 @@ def _claim_for_reindex(conn: sqlite3.Connection, user: WorkspaceUser, row: sqlit
 async def reindex_document(conn: sqlite3.Connection, user: WorkspaceUser, document_id: int, *,
                            ip: str) -> dict:
     """Extract and index the stored original again (after a failure or an upgrade)."""
-    row = visible_document(conn, user, document_id)
-    if not can_manage(user, row):
-        raise _forbidden()
-    claimed_at = _claim_for_reindex(conn, user, row, ip)
+
+    def claim() -> tuple[sqlite3.Row, float]:
+        found = visible_document(conn, user, document_id)
+        if not can_manage(user, found):
+            raise _forbidden()
+        return found, _claim_for_reindex(conn, user, found, ip)
+
+    row, claimed_at = await offload(claim)
     # The filename passed the allow-list at upload; an edited row reads as invalid_file.
     kind = extract.kind_for_filename(row["filename"]) or ""
     try:
@@ -1039,8 +1052,13 @@ async def reindex_document(conn: sqlite3.Connection, user: WorkspaceUser, docume
         await asyncio.to_thread(_store_failure, document_id, claimed_at, "file_missing", None)
     else:
         await process_document(document_id, data, kind, claimed_at=claimed_at)
-    row = _same_document(conn, document_id, row["created_at"])
-    return document_json(row, user, publish_pending=_publish_pending(row, _pending_publish(conn)))
+
+    def finish() -> dict:
+        fresh = _same_document(conn, document_id, row["created_at"])
+        return document_json(fresh, user,
+                             publish_pending=_publish_pending(fresh, _pending_publish(conn)))
+
+    return await offload(finish)
 
 
 def open_original(conn: sqlite3.Connection, user: WorkspaceUser,
@@ -1136,24 +1154,29 @@ async def execute_publish(approval: dict, requester: WorkspaceUser,
     """Approved: make the document company-wide, audit it and notify the people involved."""
     payload = _approval_payload(approval)
     document_id = require_int(payload, "document_id", minimum=1)
-    conn = db.connect()
-    try:
-        with db.tx(conn):
-            row = conn.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
-            if row is None or not _names_document(payload, row):
-                raise _not_found()
-            _check_publishable(row)
-            conn.execute("UPDATE documents SET visibility = 'company', updated_at = ? WHERE id = ?",
-                         (db.now(), document_id))
-            audit.record(conn, actor=decider, action="document.published",
-                         target_type="document", target_id=document_id,
-                         department_id=row["department_id"],
-                         details={"approval_id": approval.get("id"),
-                                  "requester_id": requester.id, "title": row["title"]})
-            _notify_published(conn, row, requester, decider)
-    finally:
-        conn.close()
-    return {"document_id": document_id, "visibility": "company", "title": row["title"]}
+
+    def publish() -> dict:
+        conn = db.connect()
+        try:
+            with db.tx(conn):
+                row = conn.execute("SELECT * FROM documents WHERE id = ?",
+                                   (document_id,)).fetchone()
+                if row is None or not _names_document(payload, row):
+                    raise _not_found()
+                _check_publishable(row)
+                conn.execute("UPDATE documents SET visibility = 'company', updated_at = ? "
+                             "WHERE id = ?", (db.now(), document_id))
+                audit.record(conn, actor=decider, action="document.published",
+                             target_type="document", target_id=document_id,
+                             department_id=row["department_id"],
+                             details={"approval_id": approval.get("id"),
+                                      "requester_id": requester.id, "title": row["title"]})
+                _notify_published(conn, row, requester, decider)
+        finally:
+            conn.close()
+        return {"document_id": document_id, "visibility": "company", "title": row["title"]}
+
+    return await offload(publish)
 
 
 register_effect(EffectSpec(kind=PUBLISH_KIND, validate=validate_publish,

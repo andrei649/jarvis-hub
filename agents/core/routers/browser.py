@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from collections.abc import Mapping
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field
 
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import owner_web_principal, user_guard
 
 from agents.core.web_helpers import nocache_json
 
@@ -35,6 +38,175 @@ class _BrowserValidationRoute(APIRoute):
 
 
 router = APIRouter(tags=["browser"], route_class=_BrowserValidationRoute)
+
+_OBSERVATION_BYTES = 16_000
+
+
+def _safe_origin(value) -> bool:
+    if type(value) is not str or len(value) > 253:
+        return False
+    try:
+        parsed = urlsplit(value)
+        return (parsed.scheme in {'http', 'https'} and bool(parsed.hostname)
+                and parsed.username is None and parsed.password is None
+                and (parsed.port is None or 1 <= parsed.port <= 65_535)
+                and not parsed.path and not parsed.query and not parsed.fragment
+                and not any(ord(char) <= 32 or ord(char) == 127 for char in value))
+    except ValueError:
+        return False
+
+
+def _safe_image_url(value) -> bool:
+    if type(value) is not str or len(value) > 512:
+        return False
+    if not value:
+        return True
+    try:
+        parsed = urlsplit(value)
+        return (parsed.scheme in {'http', 'https'} and bool(parsed.hostname)
+                and parsed.username is None and parsed.password is None
+                and (parsed.port is None or 1 <= parsed.port <= 65_535)
+                and not parsed.fragment
+                and not any(ord(char) <= 32 or ord(char) == 127 for char in value))
+    except ValueError:
+        return False
+
+
+def _project_browser_observations(trace) -> tuple[list[dict], bool]:
+    """Only expected typed browser observations reach the owner HUD."""
+    if type(trace) is not list:
+        return [], False
+    output: list[dict] = []
+    truncated = False
+    for step in trace[:20]:
+        if type(step) is not dict or step.get('status') != 'done':
+            continue
+        action, raw = step.get('action'), step.get('result')
+        if type(raw) is not dict or action not in {'console', 'get_images'}:
+            continue
+        if action == 'console' and raw.get('observation') == 'console':
+            records = []
+            for item in raw.get('records', [])[:32] if type(raw.get('records')) is list else []:
+                if (type(item) is dict and item.get('level') in {
+                        'log', 'info', 'warning', 'error', 'debug', 'other'}
+                        and type(item.get('text')) is str and len(item['text']) <= 512
+                        and (item.get('source_origin') == ''
+                             or _safe_origin(item.get('source_origin')))
+                        and type(item.get('document_epoch')) is int
+                        and item['document_epoch'] >= 0):
+                    records.append({key: item[key] for key in
+                                    ('level', 'text', 'source_origin', 'document_epoch')})
+            projected = {'action': 'console', 'records': records}
+        elif action == 'get_images' and raw.get('observation') == 'images':
+            images = []
+            for item in raw.get('images', [])[:24] if type(raw.get('images')) is list else []:
+                if (type(item) is dict and _safe_image_url(item.get('source_url'))
+                        and type(item.get('alt')) is str and len(item['alt']) <= 128
+                        and type(item.get('width')) is int and 0 <= item['width'] <= 100_000
+                        and type(item.get('height')) is int and 0 <= item['height'] <= 100_000
+                        and type(item.get('fetchable')) is bool
+                        and (not item['fetchable'] or bool(item['source_url']))
+                        and _safe_origin(item.get('frame_origin'))
+                        and type(item.get('document_epoch')) is int
+                        and item['document_epoch'] >= 0):
+                    row = {key: item[key] for key in ('source_url', 'alt', 'width', 'height',
+                                                       'fetchable', 'frame_origin', 'document_epoch')}
+                    ref = item.get('ref')
+                    if type(ref) is str and re.fullmatch(r'@e[1-9][0-9]{0,5}', ref):
+                        row['ref'] = ref
+                    images.append(row)
+            projected = {'action': 'get_images', 'images': images}
+        else:
+            continue
+        dropped = raw.get('dropped')
+        if type(dropped) is int and 0 <= dropped <= 1_000_000:
+            projected['dropped'] = dropped
+        if type(raw.get('truncated')) is bool:
+            projected['truncated'] = raw['truncated']
+        if len(json.dumps([*output, projected], ensure_ascii=False).encode()) > _OBSERVATION_BYTES:
+            truncated = True
+            break
+        output.append(projected)
+    return output, truncated
+
+
+@router.get('/api/browser/status', dependencies=[Depends(user_guard)])
+async def browser_status():
+    """Read-only server execution readiness; the preview allowlist is unrelated."""
+    from agents.core.app_state import get_orch
+    from agents.core.operator_router import _browser_available
+
+    return nocache_json({'available': _browser_available(get_orch())})
+
+
+def _session_runtime():
+    from agents.core.app_state import get_orch
+
+    server = getattr(get_orch(), 'tool_rpc', None)
+    spec = getattr(server, '_tools', {}).get('browser_run') if server is not None else None
+    runtime = getattr(spec.get('handler'), '__self__', None) if isinstance(spec, dict) else None
+    return runtime if callable(getattr(runtime, 'close_owner_session', None)) else None
+
+
+@router.get('/api/browser/sessions', dependencies=[Depends(owner_web_principal)])
+async def browser_sessions():
+    """Authenticated owner projection; no profile paths or page text authority."""
+    runtime = _session_runtime()
+    if runtime is None:
+        return nocache_json({'available': False, 'sessions': []})
+    rows = []
+    for session in list(runtime.sessions.values())[:4]:
+        page = getattr(session.driver, '_page', None)
+        url = str(getattr(page, 'url', ''))
+        parsed = urlsplit(url)
+        origin = f'{parsed.scheme}://{parsed.netloc}' if parsed.scheme in {'http', 'https'} else ''
+        rows.append({'id': session.id, 'origin': origin[:253],
+                     'generation': session.generation,
+                     'refs': [{'ref': key, 'role': value.role[:64], 'name': value.name[:128]}
+                              for key, value in list(session.refs.items())[:100]],
+                     'active': session.active_task is not None,
+                     'expires_in': max(0, int(600 - (__import__('time').monotonic() - session.created)))})
+    return nocache_json({'available': runtime.ready(), 'sessions': rows,
+                         'cleanup_uncertain': bool(runtime._uncertain_drivers
+                                                   or runtime._journal_uncertain)})
+
+
+@router.get('/api/browser/tasks/{task_id}', dependencies=[Depends(owner_web_principal)])
+async def browser_task_status(task_id: int):
+    """Show the owner's browser outcome without exposing page text or raw task data."""
+    runtime = _session_runtime()
+    if runtime is None or runtime.queue is None or task_id < 1:
+        return nocache_json({'found': False}, status_code=404)
+    task = await asyncio.to_thread(runtime.queue.get, task_id)
+    if task is None or task.kind != 'toolrpc.browser_run':
+        return nocache_json({'found': False}, status_code=404)
+    outcome = task.result.get('result') if type(task.result) is dict else None
+    result = {'found': True, 'status': task.status if task.status in {
+        'proposed', 'approved', 'running', 'blocked', 'done', 'failed',
+        'rejected', 'deferred', 'quarantined', 'expired'} else 'unknown'}
+    if type(outcome) is dict and type(outcome.get('ok')) is bool:
+        result['ok'] = outcome['ok']
+        if type(outcome.get('trace')) is list:
+            result['steps'] = min(len(outcome['trace']), 20)
+            observations, truncated = _project_browser_observations(outcome['trace'])
+            if observations or truncated:
+                result['observations'] = observations
+                result['observations_truncated'] = truncated
+        reason = outcome.get('reason')
+        if type(reason) is str and re.fullmatch('[a-z_]{1,64}', reason):
+            result['reason'] = reason
+    return nocache_json(result)
+
+
+@router.post('/api/browser/sessions/{session_id}/close', dependencies=[Depends(owner_web_principal)])
+async def browser_session_close(session_id: str):
+    """An authenticated owner may always stop a fresh-profile browser."""
+    runtime = _session_runtime()
+    if runtime is None or re.fullmatch('[0-9a-f]{32}', session_id) is None:
+        return nocache_json({'closed': False, 'reason': 'browser_session_unavailable'}, status_code=404)
+    closed = await runtime.close_owner_session(session_id)
+    return nocache_json({'closed': closed, 'reason': '' if closed else 'browser_session_unavailable'},
+                        status_code=200 if closed else 409)
 
 
 class _StrictBrowserBody(BaseModel):

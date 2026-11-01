@@ -311,11 +311,13 @@ class MemoryManager:
             self._check_rewind_head_before_append(session_id)
             try:
                 if tools or media is not None:
-                    await self.conversation.add_turn(session_id, role, content, agent_id,
-                                                     **({"tools": tools} if tools else {}),
-                                                     **({"media": media} if media is not None else {}))
+                    append_receipt = await self.conversation.add_turn(
+                        session_id, role, content, agent_id,
+                        **({"tools": tools} if tools else {}),
+                        **({"media": media} if media is not None else {}))
                 else:
-                    await self.conversation.add_turn(session_id, role, content, agent_id)
+                    append_receipt = await self.conversation.add_turn(
+                        session_id, role, content, agent_id)
             except persistence.RewindPersistenceError as exc:
                 if exc.inconsistent:
                     self._quarantine_rewind(session_id)
@@ -344,6 +346,7 @@ class MemoryManager:
                 # image is attacker-controllable), so recalling it later taints the turn.
                 metadata = taint.mark(metadata, source="external:image")
             self._queue_turn_embedding(content, metadata)
+        return append_receipt
 
     async def prepare_rollback_rewind(self, session_id: str, expected_instance_id: str,
                                       expected_clock) -> RollbackRewindTicket:

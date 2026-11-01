@@ -16,6 +16,7 @@ Three halves, each against the real thing where it can be:
 from __future__ import annotations
 
 import asyncio
+import base64
 import inspect
 import logging
 import os
@@ -133,6 +134,20 @@ def _crl_only(tmp_path):
     return path
 
 
+def _trusted_pem(tmp_path, cert, *, reject_server=False, duplicate=False):
+    """X509_CERT_AUX with serverAuth trust/reject, generated entirely in the test."""
+    _x509, _hashes, serialization, _ec, _NameOID = _crypto()
+    server_auth_oid = bytes.fromhex("06082b06010505070301")
+    purpose = (b"\xa0\x0a" if reject_server else b"\x30\x0a") + server_auth_oid
+    aux = b"\x30" + bytes([len(purpose)]) + purpose
+    encoded = base64.encodebytes(cert.public_bytes(serialization.Encoding.DER) + aux)
+    block = (b"-----BEGIN TRUSTED CERTIFICATE-----\n" + encoded
+             + b"-----END TRUSTED CERTIFICATE-----\n")
+    path = tmp_path / ("rejected-trusted.pem" if reject_server else "server-trusted.pem")
+    path.write_bytes(block * (2 if duplicate else 1))
+    return path
+
+
 def _subjects(context: ssl.SSLContext) -> set[str]:
     return {value for cert in context.get_ca_certs() for rdn in cert.get("subject", ()) for _k, value in rdn}
 
@@ -156,6 +171,55 @@ def test_nothing_set_is_fine_and_a_good_value_in_every_variable_is_fine(tmp_path
 def test_a_pinned_self_signed_server_certificate_counts_as_an_anchor(tmp_path):
     """No CA flag, still a certificate OpenSSL will trust: never refuse the start for it."""
     assert tls_trust.validate_ca_environment({"JARVIS_CA_BUNDLE": str(_self_signed_leaf(tmp_path))}) == []
+
+
+def test_crl_only_input_is_not_a_certificate_despite_runtime_preload(tmp_path):
+    crl = _crl_only(tmp_path)
+    baseline = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).cert_store_stats()["x509"]
+    assert tls_trust._check_file(str(crl)) == "holds no certificate", baseline
+
+
+def test_duplicate_valid_anchor_in_one_bundle_is_accepted(tmp_path):
+    ca, _key, _cert = _make_ca(tmp_path)
+    ca.write_bytes(ca.read_bytes() * 2)
+    assert tls_trust._check_file(str(ca)) is None
+
+
+def test_trusted_pem_certificate_is_accepted_with_preloaded_root_and_duplicate(tmp_path):
+    _ca, _key, cert = _make_ca(tmp_path)
+    trusted = _trusted_pem(tmp_path, cert, duplicate=True)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    baseline = context.cert_store_stats()["x509"]
+    context.load_verify_locations(cafile=str(trusted))
+    assert context.cert_store_stats()["x509"] >= baseline
+    assert "nerva-h504-ca" in _subjects(context)
+    assert tls_trust._check_file(str(trusted)) is None
+    assert tls_trust.validate_ca_environment({"JARVIS_CA_BUNDLE": str(trusted)}) == []
+
+
+def test_malformed_trusted_pem_and_crl_only_file_are_refused(tmp_path):
+    malformed = tmp_path / "malformed-trusted.pem"
+    malformed.write_bytes(b"-----BEGIN TRUSTED CERTIFICATE-----\n!!!\n"
+                          b"-----END TRUSTED CERTIFICATE-----\n")
+    assert tls_trust._check_file(str(malformed)) is not None
+    assert tls_trust._check_file(str(_crl_only(tmp_path))) == "holds no certificate"
+
+
+def test_trusted_pem_server_auth_and_reject_purposes_survive_validation(
+    monkeypatch, tmp_path, https_server,
+):
+    url, ca = https_server
+    x509, _hashes, _serialization, _ec, _NameOID = _crypto()
+    cert = x509.load_pem_x509_certificate(ca.read_bytes())
+    trusted = _trusted_pem(tmp_path, cert)
+    rejected = _trusted_pem(tmp_path, cert, reject_server=True)
+    assert tls_trust._check_file(str(trusted)) is None
+    monkeypatch.setenv("JARVIS_CA_BUNDLE", str(trusted))
+    assert asyncio.run(_get("lm-studio", url)) == 200
+    assert tls_trust._check_file(str(rejected)) is None
+    monkeypatch.setenv("JARVIS_CA_BUNDLE", str(rejected))
+    with pytest.raises(httpx.ConnectError, match="CERTIFICATE_VERIFY_FAILED|certificate verify failed"):
+        asyncio.run(_get("lm-studio", url))
 
 
 @pytest.mark.parametrize("variable", tls_trust.CA_FILE_VARIABLES)
@@ -365,17 +429,25 @@ def test_trust_context_is_always_a_verifying_context(monkeypatch, tmp_path):
 
 
 def test_the_anchor_is_certifi_plus_the_owners_root(monkeypatch, tmp_path):
-    """certifi's roots are in every context this module builds — with the owner's root
-    added, and alone when there is none (never the bare system store)."""
+    """Add owner/certifi anchors to the runtime's baseline without leaking old roots."""
     import certifi
 
     fake_certifi, _k, _c = _make_ca(tmp_path, "stand-in-certifi-root")
     monkeypatch.setattr(certifi, "where", lambda: str(fake_certifi))
     owner, _k, _c = _make_ca(tmp_path, "owner-root")
+    default_baseline = _subjects(ssl.create_default_context())
+    explicit_baseline = _subjects(ssl.create_default_context(cafile=str(fake_certifi)))
+    assert "owner-root" not in default_baseline | explicit_baseline
     monkeypatch.setenv("JARVIS_CA_BUNDLE", str(owner))
-    assert {"stand-in-certifi-root", "owner-root"} <= _subjects(tls_trust.tls_verify())
+    with_owner = tls_trust.tls_verify()
+    assert isinstance(with_owner, ssl.SSLContext)
+    assert with_owner.check_hostname and with_owner.verify_mode == ssl.CERT_REQUIRED
+    assert _subjects(with_owner) == default_baseline | {"stand-in-certifi-root", "owner-root"}
     monkeypatch.delenv("JARVIS_CA_BUNDLE")
-    assert _subjects(tls_trust.trust_context()) == {"stand-in-certifi-root"}
+    without_owner = tls_trust.trust_context()
+    assert without_owner.check_hostname and without_owner.verify_mode == ssl.CERT_REQUIRED
+    assert _subjects(without_owner) == explicit_baseline
+    assert "owner-root" not in _subjects(without_owner)
 
 
 # ── the per-target switch ────────────────────────────────────────────────────

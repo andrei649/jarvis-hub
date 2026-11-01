@@ -1458,7 +1458,6 @@ def test_f9_the_hud_tts_keeps_the_owners_piper_voice_when_a_lang_is_sent(env, cl
         return None
 
     monkeypatch.setattr(core_tts.TTSEngine, "_speak_edge", fake_edge)
-    monkeypatch.setattr("core.settings_db.get_value", settings_db.get_value)   # the route's copy: this DB
     settings_db.put_category("voice", {"tts_voice": "piper:en_US-amy-low"})
     resp = client.post("/tts", json={"text": "Salut lume", "lang": "ro"})
     assert resp.status_code == 200, resp.text

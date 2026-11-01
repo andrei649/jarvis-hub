@@ -3022,3 +3022,41 @@ def test_h399_terminal_and_desktop_run_are_barriers_in_production_wiring(tmp_pat
     assert server.declares_parallel_safe("terminal_run") is False
     assert server.declares_parallel_safe("desktop_run") is False
     assert server.declares_parallel_safe("file_write") is False
+
+
+@pytest.mark.asyncio
+async def test_streamed_orchestrator_scopes_the_request_with_its_agent_and_window(monkeypatch):
+    """Review of #1321: the default /chat/stream path opened its model-usage scope without
+    the agent or the window, so H686 context and cache metrics never appeared there and
+    the conversation's cache epoch was poisoned. The scope now carries both, as
+    Agent.process passes them."""
+    from agents.core import turn_usage
+    from agents.core.llm import effective_window as windows
+
+    seen = []
+
+    class _SeamAgent:
+        id = "jarvis"
+        name = "Jarvis"
+        soul = {"content": "agent system"}
+        config = {"model": "configured-model"}
+
+        def build_prompt(self, text, context):
+            return f"User said: {text}"
+
+        async def generate_response(self, **kwargs):
+            generation = turn_usage._MODEL.get()
+            seen.append((generation.agent_id, generation.context_window))
+            kwargs["on_token"]("answer")
+            return "answer"
+
+    orchestrator, _backend, _calls, _turns = _streamed_orchestrator_for(
+        _SeamAgent(), monkeypatch=monkeypatch)
+    monkeypatch.setattr(windows, "resolve_effective_window",
+                        lambda _backend, _model: windows.EffectiveWindow(
+                            tokens=8192, backend_tokens=8192))
+    with turn_usage.turn_usage_scope():          # as /chat/stream opens it
+        answer = await orchestrator.handle_input_stream(
+            "question", channel="web", on_token=lambda _t: None, session_id="scoped-session")
+    assert answer == "answer"
+    assert seen == [("jarvis", 8192)]

@@ -10,6 +10,7 @@ import { VoiceOrb } from './orb';
 import { Markdown } from './markdown';
 import { MicLeases } from './mic-leases';
 import { StatusStrip, type TurnOutcome } from './turn-outcome';
+import type { PowerState } from './power-chip';
 
 /* Per-message TTS replay (🔊) — POST /tts {text,lang} → audio. Honest states: while
    speaking shows ◼ (stop is best-effort via re-click), errors fall back silently to
@@ -221,7 +222,7 @@ function Seg({ cur, opts, on }) {
 }
 
 /* input bar — text + voice (mic toggles the useVoice loop; ⚙ opens voice settings) */
-function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, agent='jarvis', sessionId='', selectedTurn=false, outcome }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; agent?: string; sessionId?: string; selectedTurn?: boolean; outcome?: TurnOutcome | null }) {
+function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, agent='jarvis', sessionId='', selectedTurn=false, outcome, power }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; agent?: string; sessionId?: string; selectedTurn?: boolean; outcome?: TurnOutcome | null; power?: PowerState }) {
   const [val,setVal]=useState('');
   const [cfgOpen,setCfgOpen]=useState(false);
   const draft=useComposerImages(val.trim(),agent,sessionId,selectedTurn);
@@ -244,7 +245,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
     </div>
   );
   return (
-    <div style={{position:'relative'}} onPaste={draft.onPaste} onDrop={draft.onDrop} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}>
+    <div style={{position:'relative',display:'flex',flexDirection:'column',minHeight:0,flexShrink:1}} onPaste={draft.onPaste} onDrop={draft.onDrop} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}>
       <ComposerImages draft={draft}/>
       {showPill && (
         <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>
@@ -291,7 +292,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
         </div>
         <button className="transmit" disabled={draft.enabled&&!draft.ready} onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
       </div>
-      <StatusStrip outcome={outcome} />
+      <StatusStrip outcome={outcome} power={power} />
     </div>
   );
 }

@@ -821,7 +821,9 @@ body.ws-modal-open .ws-toasts { top: var(--ws-s4); bottom: auto; left: var(--ws-
 .ws-chart__title { font-weight: 600; }
 .ws-chart__total { font-size: 12.5px; color: var(--ws-text-muted); }
 .ws-chart__plot { position: relative; border-radius: var(--ws-radius-sm); }
-.ws-chart__plot svg { overflow: visible; }
+/* ResizeObserver updates the SVG's width on the next frame. Clamp and clip the old width while
+   a narrow viewport settles, so the chart never widens the whole page in that frame. */
+.ws-chart__plot svg { max-width: 100%; overflow: hidden; }
 .ws-chart__grid, .ws-chart__axis { stroke: var(--ws-border); stroke-width: 1; shape-rendering: crispEdges; }
 .ws-chart__axis { stroke: var(--ws-border-strong); }
 .ws-chart__tick { fill: var(--ws-text-subtle); font-size: 11px; font-family: var(--ws-font-mono); }

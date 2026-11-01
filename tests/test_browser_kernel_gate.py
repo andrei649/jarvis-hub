@@ -263,7 +263,7 @@ async def test_the_null_driver_refuses_dunder_probes():
 # ── the kernel sees the step the driver will get ─────────────────────────────
 
 async def test_the_kernel_is_asked_about_the_same_payload_the_driver_receives():
-    """A gate that authorises a summary authorises a different action."""
+    """A real-driver call without an approved plan cannot even reach the kernel."""
     driver = _Driver()
     executor = BrowserActionExecutor(driver, authorizer=None)
     asked: list[tuple] = []
@@ -274,10 +274,9 @@ async def test_the_kernel_is_asked_about_the_same_payload_the_driver_receives():
         return await original(capability_id, payload, context)
 
     executor.api.perform = _spy
-    await executor.perform({"action": "click", "selector": "#buy", "index": 2})
-    assert asked == [
-        (CAPABILITY, {"action": "click", "args": {"selector": "#buy", "index": 2}, "risk_tier": 2})
-    ]
+    outcome = await executor.perform({"action": "click", "selector": "#buy", "index": 2})
+    assert outcome.status == 'refused' and outcome.reason == 'approved_plan_required'
+    assert asked == [] and driver.calls == []
 
 
 async def test_normalize_lowercases_and_trims_the_action():

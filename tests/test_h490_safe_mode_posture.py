@@ -195,6 +195,18 @@ _NUMBERS_NOT_FORCED = {
     "memory.compression_max_tokens", "memory.compression_keep_first",
     "memory.compaction_protect_last", "memory.backup_keep", "memory.compression_summary_max_tokens",
     "memory.compression_max_turn_hold_seconds", "memory.compression_summary_idle_seconds",
+    # Per-turn compression tries are bounded at 1-10 by TurnCompaction; this
+    # adjusts local history work, while the independent wire-window guard stays on.
+    "memory.compression_max_attempts",
+    # One pass is bounded at 600 seconds by the caller. This controls latency
+    # of local compaction, not a tool, outbound send or approval lifetime.
+    "memory.compression_preflight_timeout_seconds",
+    # The idle gap only schedules an opt-in history pass after a resumed turn.
+    "memory.compression_idle_after_seconds",
+    # These tune opt-in durable micro-summary cadence and local defragmentation;
+    # the summary has an independent 8192-byte bound and grants no authority.
+    "memory.compression_micro_every_n_turns",
+    "memory.compression_micro_defrag_threshold_tokens",
     # Owner-configured conversation cadence and index retention affect routing,
     # not tool authority or transcript deletion. Stall notice frequency cannot
     # send in safe mode because outbound sends are disabled there.

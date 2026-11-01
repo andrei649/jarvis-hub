@@ -31,7 +31,7 @@ defusedxml>=0.7.1
 
 # Nerva Workspace (docs/business/WORKSPACE_PILOT_SPEC.md)
 # pypdf: text extraction from uploaded PDF documents (pure Python, no system deps).
-pypdf>=6.21.2,<7
+pypdf>=6.21.4,<7
 # python-docx: Word (.docx) text extraction for file_read (local_docs)
 # (H444: tables, text boxes, headers/footers, notes in document order). Without it
 # a .docx read returns parser_missing.

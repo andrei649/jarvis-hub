@@ -2,21 +2,15 @@
 import asyncio
 import hashlib
 import json
-import sys
 from dataclasses import FrozenInstanceError
-from pathlib import Path
 
 import httpx
 import pytest
 
-repo_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(repo_root))
-sys.path.insert(0, str(repo_root / "agents"))
-
-from core import settings_db
-from core.llm.auth_rotation import AuthProfilePool
-from core.llm import gemini_cache as gemini_cache_module
-from core.llm.gemini_cache import ContextCache, GEMINI_API_BASE
+from agents.core import settings_db
+from agents.core.llm.auth_rotation import AuthProfilePool
+from agents.core.llm import gemini_cache as gemini_cache_module
+from agents.core.llm.gemini_cache import ContextCache, GEMINI_API_BASE
 
 
 class RecordingPool(AuthProfilePool):

@@ -46,6 +46,23 @@ describe('failed-mutation sink — a swallowed action still leaves a trace', () 
     await expect(apiPost('/api/x', {})).rejects.toThrow(/403/);
   });
 
+  /* Review of #1321: a queued owner approval answers 422 approval_required with its task
+     id. A caller that names that answer gets the body back and the Console banner no longer
+     reports a FAILED action for a task that was just created; any other refusal still is. */
+  it('returns a refusal the caller accepts without recording it', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 422,
+      json: async () => ({ ok: false, reason: 'approval_required', task_id: 7 }) });
+    const accept = (status, body) => status === 422 && body?.reason === 'approval_required';
+    await expect(apiPost('/api/toolrpc/call', {}, { accept })).resolves
+      .toEqual({ ok: false, reason: 'approval_required', task_id: 7 });
+    expect(actionFailures().length).toBe(0);
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 422,
+      json: async () => ({ ok: false, reason: 'tool_denied' }) });
+    await expect(apiPost('/api/toolrpc/call', {}, { accept })).rejects
+      .toMatchObject({ status: 422, body: { reason: 'tool_denied' } });
+    expect(actionFailures()).toHaveLength(1);
+  });
+
   it('does NOT record GETs — panels surface those, polling would drown the signal', async () => {
     mockStatus(500);
     await apiGet('/api/swarm/summary').catch(() => {});

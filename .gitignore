@@ -1,4 +1,5 @@
 .venv/
+.venv-browser/
 node_modules/
 .nyc_output/
 coverage/

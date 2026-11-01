@@ -127,6 +127,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -763,7 +764,9 @@ def _valid_offset(value: object) -> bool:
             and 0 <= value <= MAX_OFFSET)
 
 
-def _mutation_result(result: dict, target: Path, op: str, outcome: str) -> dict:
+def _mutation_result(result: dict, target: Path, op: str, outcome: str, *,
+                     attempt_id: str | None = None, verified: bool = False,
+                     record: bool = True) -> dict:
     """Preserve legacy fields and add this resolved attempt's limited observation.
 
     Refused means the byte effect was never entered; applied means it returned,
@@ -771,6 +774,12 @@ def _mutation_result(result: dict, target: Path, op: str, outcome: str) -> dict:
     Cancellation and escaping errors return no receipt. A ToolRPC-scrubbed path
     is not a stable identity.
     """
+    if attempt_id is not None and record:
+        from .turn_outcome import record_file_mutation_result
+        record_file_mutation_result(
+            hashlib.sha256(str(target).encode('utf-8')).hexdigest(), op,
+            'verified' if verified else ('applied_unverified' if outcome == 'applied' else outcome),
+            attempt_id)
     return {
         **result,
         "mutation_receipt": {"path": str(target), "op": op, "outcome": outcome},
@@ -1339,6 +1348,15 @@ class FileTools:
         root = self.scope.root_for(target)
         if root is None or target == root:
             return {"ok": False, "reason": "outside_scope"}
+        attempt_id: str | None = None
+        target_key = hashlib.sha256(str(target).encode('utf-8')).hexdigest()
+        reported: list[bool] = []
+
+        def _result(result: dict, path: Path, operation: str, outcome: str, *,
+                    verified: bool = False) -> dict:
+            return _mutation_result(result, path, operation, outcome,
+                                    attempt_id=attempt_id or uuid.uuid4().hex, verified=verified,
+                                    record=not reported)
 
         from .file_checkpoint_history import (
             HISTORY_SUPPORTED,
@@ -1366,12 +1384,12 @@ class FileTools:
         try:
             captured = await asyncio.to_thread(_snapshot)
         except OSError as exc:
-            return _mutation_result(
+            return _result(
                 {"ok": False, "reason": "snapshot_failed", "detail": exc.__class__.__name__},
                 target, op, "refused",
             )
         if isinstance(captured, str):
-            return _mutation_result({"ok": False, "reason": captured}, target, op, "refused")
+            return _result({"ok": False, "reason": captured}, target, op, "refused")
         identity = (captured.root_dev, captured.root_ino) if isinstance(
             captured, CapturedPreimage
         ) else None
@@ -1390,7 +1408,7 @@ class FileTools:
         if not decision.admissible:
             reason = decision.reason or "contract_denied"
             self._record("file.contract_denied", f"{op} {target}: {reason}", ok=False)
-            return _mutation_result(
+            return _result(
                 {"ok": False, "reason": reason, "snapshot_ref": snap.ref},
                 target, op, "refused",
             )
@@ -1406,7 +1424,7 @@ class FileTools:
         denied = self._authorize(op, target, payload, approved=approved)
         if denied is not None:
             self._record("file.kernel_denied", f"{op} {target}: {denied}", ok=False)
-            return _mutation_result(
+            return _result(
                 {"ok": False, "reason": denied, "snapshot_ref": snap.ref},
                 target, op, "refused",
             )
@@ -1425,18 +1443,31 @@ class FileTools:
         # in-process caller, not the braces the owner sees.
         if steers and not approved:
             self._record("file.instruction_floor", f"{op} {target}", ok=False)
-            return _mutation_result({
+            return _result({
                 "ok": False,
                 "reason": "approval_required",
                 "class": INSTRUCTION_CLASS,
                 "snapshot_ref": snap.ref,
             }, target, op, "refused")
 
+        # The distinct physical attempt begins only after the existing contract,
+        # Kernel and approval fences passed; the history worker rechecks scope
+        # again at its no-follow effect boundary.
+        attempt_id = uuid.uuid4().hex
         try:
             if HISTORY_SUPPORTED:
+                from .turn_outcome import record_file_mutation_result
+
+                verification: list[bool] = []
+                def observed(outcome):
+                    reported.append(True)
+                    record_file_mutation_result(target_key, op, outcome, attempt_id)
+
                 await asyncio.to_thread(self.history.apply_mutation, target, root, snap, op, data,
                                         expected_root=identity,
-                                        tool_turn=current_tool_turn())
+                                        tool_turn=current_tool_turn(),
+                                        verification=verification,
+                                        observed=observed)
             else:
                 def _legacy_apply() -> None:
                     if op == "delete":
@@ -1447,7 +1478,7 @@ class FileTools:
                 await asyncio.to_thread(_legacy_apply)
         except FileScopeError as exc:
             # Scope resolution in apply_mutation precedes its byte effect.
-            return _mutation_result(
+            return _result(
                 {"ok": False, "reason": exc.reason, "snapshot_ref": snap.ref},
                 target, op, "refused",
             )
@@ -1457,31 +1488,31 @@ class FileTools:
                 # refusals include effect_state_incomplete after possible I/O.
                 pre_effect = {"root_changed", "path_changed", "snapshot_changed",
                               "changed_since_snapshot"}
-                return _mutation_result(
+                return _result(
                     {"ok": False, "reason": exc.reason, "snapshot_ref": snap.ref},
                     target, op, "refused" if exc.reason in pre_effect else "unknown",
                 )
             if not isinstance(exc, OSError):
                 logger.warning("file checkpoint capture failed closed: %s", target,
                                exc_info=True)
-                return _mutation_result(
+                return _result(
                     {"ok": False, "reason": "checkpoint_failed", "snapshot_ref": snap.ref},
                     target, op, "unknown",
                 )
             self._record(f"file.{op}", f"{target}: io_error", ok=False)
-            return _mutation_result({
+            return _result({
                 "ok": False, "reason": "io_error", "detail": exc.__class__.__name__,
                 "snapshot_ref": snap.ref,
             }, target, op, "unknown")
         self._record(f"file.{op}", str(target), ok=True, snapshot_ref=snap.ref)
-        return _mutation_result({
+        return _result({
             "ok": True,
             "op": op,
             "path": str(target),
             "bytes": len(data),
             "existed": snap.existed,
             "snapshot_ref": snap.ref,
-        }, target, op, "applied")
+        }, target, op, "applied", verified=bool(HISTORY_SUPPORTED and verification and verification[0]))
 
     def _authorize(self, op: str, target: Path, payload: dict, *, approved: bool) -> str | None:
         """Ask the injected kernel hook. Returns a refusal reason or ``None``."""

@@ -96,7 +96,7 @@ async def test_clear_preview_names_exact_group_without_effect(owner_store):
     value = json.loads(outcome.reply)
     assert value["complete"] is True
     assert [r["id"] for r in value["candidates"]] == ["group:" + capture["id"]]
-    assert len(value["generation"]) == 64 and value["reclaimable_bytes"] is None
+    assert len(value["generation"]) == 64 and value["reclaimable_bytes"] > 0
     assert [n["code"] for n in notices] == ["checkpoint.preview"]
     assert note.read_text() == "after"
     assert before == {p.name for p in snapshots.directory.iterdir()}
@@ -114,6 +114,17 @@ async def test_invalid_or_unavailable_effect_is_not_reported_as_completed(owner_
     assert outcome.status == "answered"
     assert len(notices) == 1
     assert notices[0]["code"] in {"checkpoint.refused", "checkpoint.unavailable"}
+    assert not snapshots.directory.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["prune", "clear", "clear-legacy"])
+async def test_legacy_force_dry_run_is_a_preview_without_orphan_selection(owner_store, action):
+    orch, _root, snapshots = owner_store
+    ordinary, ordinary_notices = await command(orch, f"/checkpoints {action} --dry-run")
+    forced, forced_notices = await command(orch, f"/checkpoints {action} --dry-run --force")
+    assert json.loads(forced.reply) == json.loads(ordinary.reply)
+    assert [n["code"] for n in forced_notices] == [n["code"] for n in ordinary_notices]
     assert not snapshots.directory.exists()
 
 

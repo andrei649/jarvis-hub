@@ -126,6 +126,18 @@ def test_voice_persona_consent_default_is_seeded_off():
     assert row["kind"] == "toggle"
 
 
+def test_persisted_persona_consent_reads_canonical_settings_module(monkeypatch):
+    seen = []
+
+    def consent(category, key, default=None):
+        seen.append((category, key, default))
+        return True
+
+    monkeypatch.setattr("agents.core.settings_db.get_value", consent)
+    assert voice_persona_consent_status()["granted"] is True
+    assert seen == [("voice", "persona_voice_consent", False)]
+
+
 def test_persona_module_surfaces_voice_consent_status():
     status = PersonaModule().voice_consent_status(consent_getter=lambda: False)
 

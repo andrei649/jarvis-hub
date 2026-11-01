@@ -640,7 +640,138 @@ ACTION_CAPABILITY_CASES: list[RealityCase] = [
         _make_action_kernel_probe(manifest),
     )
     for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items())
+    if kind not in {"provider.credential", "provider.selection", "provider.custom_endpoint"}
 ]
+
+
+async def _probe_provider_credential_unbound_queues() -> bool:
+    """The owner service owns this action; a payload has no usable receipt."""
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import Action, Verdict, authorize
+
+    action = Action(kind="provider.credential", agent="jarvis", scope="provider:synthetic",
+                    payload={
+                        "schema": "provider-credential-v1", "authority": "local-owner-v1",
+                        "home": "synthetic-home", "provider_id": "synthetic",
+                        "source": "user", "artifact_id": "a" * 32,
+                        "package_hash": "b" * 64, "endpoint": "https://synthetic.invalid/v1",
+                        "auth_type": "bearer", "operation": "write",
+                        "current_generation": 0, "risk_tier": 3, "irreversible": True,
+                    })
+    decision = authorize(action, policy=AutonomyPolicy(mode="auto"),
+                         approval_check=lambda _: True)
+    return decision.verdict is Verdict.QUEUE and decision.tier == 3
+
+
+CREDENTIAL_ACTION_CASES: list[RealityCase] = [RealityCase(
+    "action:provider.credential", action_case_name("provider.credential"),
+    "a fabricated credential Action without the live owner-service receipt remains queued",
+    _probe_provider_credential_unbound_queues,
+    metadata={"promotable": False},
+)]
+
+
+async def _probe_provider_selection_unbound_queues() -> bool:
+    """A fabricated exact-looking selection payload has no owner-service receipt."""
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import Action, Verdict, authorize
+
+    action = Action(kind="provider.selection", agent="jarvis", scope="provider:synthetic",
+                    payload={
+                        "schema": "provider-selection-v1", "authority": "local-owner-v1",
+                        "home": "synthetic-home", "provider_id": "synthetic",
+                        "source": "user", "artifact_id": "a" * 32,
+                        "package_hash": "b" * 64, "endpoint": "https://synthetic.invalid/v1",
+                        "auth_type": "bearer", "model": "synthetic-model",
+                        "operation": "select", "current_revision": 0,
+                        "selected_revision": 1, "credential_generation": 1,
+                        "scope_sha256": "c" * 64, "price_ack": True, "data_ack": True,
+                        "risk_tier": 3, "irreversible": True,
+                    })
+    decision = authorize(action, policy=AutonomyPolicy(mode="auto"),
+                         approval_check=lambda _: True)
+    return decision.verdict is Verdict.QUEUE and decision.tier == 3
+
+
+SELECTION_ACTION_CASES: list[RealityCase] = [RealityCase(
+    "action:provider.selection", action_case_name("provider.selection"),
+    "a fabricated selection Action without the live owner-service receipt remains queued",
+    _probe_provider_selection_unbound_queues,
+    metadata={"promotable": False},
+)]
+
+
+async def _probe_custom_endpoint_owner_receipt_unavailable() -> bool:
+    """The real owner service rejects both a caller label and a copied receipt Action."""
+    import tempfile
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from agents.core import settings_db
+    from agents.core.autonomy.consent_types import OwnerConsentActor
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import Action, Verdict, authorize
+    from agents.core.llm import custom_endpoint_consent as consent
+    from agents.core.llm import custom_endpoints as catalog
+    from agents.core.llm.custom_endpoint_service import CustomEndpointService
+    from agents.core.llm.providers.packages import ProviderPackageError
+
+    calls: list[Action] = []
+    events: list[object] = []
+    with tempfile.TemporaryDirectory(prefix="reality-custom-endpoint-") as directory:
+        root = Path(directory)
+
+        def kernel(action, *, approval_check):
+            calls.append(action)
+            copied = Action(kind=action.kind, agent=action.agent, title=action.title,
+                            origin=action.origin, scope=action.scope,
+                            payload=dict(action.payload))
+            if approval_check(copied) or consent.receipt_matches(copied):
+                raise AssertionError("copied custom endpoint Action acquired owner receipt")
+            decision = authorize(copied, policy=AutonomyPolicy(mode="auto"),
+                                 approval_check=approval_check)
+            if decision.verdict is not Verdict.QUEUE or decision.tier != 3:
+                raise AssertionError("copied custom endpoint Action did not queue")
+            return decision
+
+        service = CustomEndpointService(
+            root=root / "custom", home="reality-owner", kernel=lambda: kernel,
+            audit=SimpleNamespace(log=events.append),
+        )
+        with (patch.dict(os.environ, {"JARVIS_ACTION_KERNEL": "1"}),
+              patch.object(settings_db, "DB_PATH", root / "settings.db"),
+              patch.object(settings_db, "_initialized", False)):
+            settings_db.init_db(force=True)
+            try:
+                service.create("synthetic", "Synthetic", "http://127.0.0.1:1234/v1",
+                               "synthetic-model", "none", "local", actor="owner")
+            except ProviderPackageError:
+                pass
+            else:
+                return False
+            if calls or events or catalog.list_endpoints():
+                return False
+            actor = OwnerConsentActor("owner", "admin", lambda: True,
+                                      principal_key="reality-owner")
+            try:
+                service.create("synthetic", "Synthetic", "http://127.0.0.1:1234/v1",
+                               "synthetic-model", "none", "local", actor=actor)
+            except ProviderPackageError:
+                pass
+            else:
+                return False
+            return (len(calls) == 1 and not events and not catalog.list_endpoints()
+                    and catalog.read_choice().active_key is None)
+
+
+CUSTOM_ENDPOINT_ACTION_CASES: list[RealityCase] = [RealityCase(
+    "action:provider.custom_endpoint",
+    "action-provider-custom_endpoint-owner-receipt-unavailable",
+    "the actual owner service refuses a caller-shaped owner without receipt, catalog or selection",
+    _probe_custom_endpoint_owner_receipt_unavailable,
+    metadata={"promotable": False},
+)]
 
 MEDIA_CAPABILITY_CASES: list[RealityCase] = [
     RealityCase(
@@ -833,6 +964,9 @@ CASES: list[RealityCase] = [
         _probe_capability_token_gates_kernel,
     ),
     *ACTION_CAPABILITY_CASES,
+    *CREDENTIAL_ACTION_CASES,
+    *SELECTION_ACTION_CASES,
+    *CUSTOM_ENDPOINT_ACTION_CASES,
     *MEDIA_CAPABILITY_CASES,
     *H30_HOUSE_REALITY_CASES,
     *H30_HOUSE_LIVE_CASES,

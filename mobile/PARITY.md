@@ -138,6 +138,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|
 | Managed Hermes runtime and exact action approvals | Admin `/api/hermes/{status,catalog,start,stop,rpc,ws,approvals}` and approval decision API | ✅ private runtime, sessions, methods, events, approve/deny controls | ➖ intentionally owner desktop administration; no native acceptance claimed | PR #1233 |
+| Signed model-provider installation, credentials and selection | Admin package lifecycle plus default-off owner GET/PUT/DELETE `/api/admin/llm/provider-credentials` and `/api/admin/llm/provider-selection`; exact signed binding, revision and credential generation; metadata-only readback | ⬜ owner APIs and guarded six-dialect sends; HUD review, key entry, risk acknowledgement and selection controls remain open | ➖ owner desktop administration; no native install/key/selection controls or device acceptance | H361 partial; local synthetic owner/Kernel/Vault/TLS tests cover source behavior; live provider, Docker, SDK and platform breadth remain open |
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
 | Current-turn duration (H686 first slice) | optional `outcome.latency_ms` on `/chat` and SSE end; owner `display.status_bar_fields` | ✅ local cockpit and focus-chat readout; normal returned turns only, ephemeral | 🟡 local current-turn readout from validated explicit SSE end; clears on work/context changes and never persists; physical-device/live-Hub acceptance open | H18.33 / H686; [evidence](docs/h1833-turn-duration.md) |
 
@@ -540,3 +541,28 @@ screens use their own theme and require separate contrast/device evidence. See
 browser scope and exclusions; no full native accessibility claim is made.
 
 Browser accessibility readiness (2026-10-09): the HUD Admin EstopCard exposes its pending state to assistive technology and its browser scan. This changes no native endpoint or control; native device accessibility remains separately unverified.
+
+## Named compatible endpoints (H367, 2026-10-29)
+
+The owner desktop HUD has Console → Admin → Custom Endpoints and the CLI has `nerva provider custom`. Ten admin-only routes under `/api/admin/llm/custom-endpoints` manage named entries, activation/clear, validation and endpoint credentials. Native mobile has no corresponding configuration or secret-entry surface; this remains owner desktop administration. The generated desktop route manifest includes the new panel, with floating chat routes unchanged. Local source/frontend tests do not establish a native GUI, physical-device or live endpoint result.
+
+## Governed fresh-profile browser sessions (2026-10-29)
+
+The desktop Operator exposes owner-approved start/act/close and grounded refs with bounded admin-only session/task projections. Native mobile has no equivalent browser session controls and no owner-profile access. The local Mac Chrome fixture verifies source behavior, not physical-device/live-Hub acceptance. Advanced browser/profile/engine requirements remain separate.
+
+
+H396 whole-turn outcome (2026-10-29 local source): browser cockpit/focus chat now reads
+one request-owned JSON/SSE outcome and live progress for consolidated source reasons,
+pending-tool WARNING, distinct proposal/queue/execution counts, observed or explicitly
+estimated output flow and path-free failed-unsuperseded file attempts. Signed task/turn
+origins and effect-boundary verification support the footer; late approvals cannot
+rewrite a closed turn. Native mobile retains its validated latency-only H18.33 strip.
+The new explanation, tool/output accounting and mutation footer are an explicit native
+surface gap; no physical-device/live-Hub acceptance is claimed.
+
+Browser observations (2026-10-29 local source): Operator queues separate approved
+console/get_images reads and renders bounded untrusted completed-task observations.
+The owner-only task projection retains strict session/registration/Kernel checks;
+reads do not fetch image bytes or authorize actions. Native mobile has no corresponding
+observation or session controls. Vision/dialog/JS/CDP, saved profiles and the other
+advanced browser requirements remain open.

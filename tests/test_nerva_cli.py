@@ -88,10 +88,12 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
-        "uninstall", "backup", "pairing", "webhook",
+        "uninstall", "backup", "pairing", "webhook", "provider",
     }
     # H039: the Hermes `hermes webhook` verbs; `test` is dry (a signed sample, nothing runs).
     assert tree["webhook"] == ["list", "remove", "subscribe", "test"]
+    # The owner-managed compatible endpoint is one explicit local CLI family.
+    assert tree["provider"] == ["custom"]
     # H010: backup create/list/verify read the data root; restore asks the hub's approval queue;
     # cancel withdraws a staged restore before it is applied.
     assert tree["backup"] == ["cancel", "create", "list", "restore", "verify"]

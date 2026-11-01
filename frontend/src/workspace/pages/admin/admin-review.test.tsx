@@ -6,12 +6,14 @@
    (A11Y-04); the archived toggle appears only when something is archived (UX-18 g); the
    departments table counts ready documents apart (F10); usage feedback is plural-correct (UX-08). */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { renderApp } from '../../test/render';
 import { ADMIN_DEPARTMENTS, makeAdminUser, makeUser, mockFetch, ORG, shellRoutes, signedIn, type RouteHandler } from '../../test/mockApi';
 
 const SMTP_OK = { host: 'smtp.acme.ro', port: 587, security: 'starttls', username: 'nerva', from_address: 'nerva@acme.ro', from_name: 'Nerva', allowed_domains: [], has_password: true };
 const SMTP_NONE = { host: '', port: 0, security: 'starttls', username: '', from_address: '', from_name: '', allowed_domains: [], has_password: false };
+
+beforeAll(async () => { await import('./AdminArea'); });
 
 function boot(path: string, routes: Record<string, RouteHandler> = {}) {
   const mock = mockFetch({

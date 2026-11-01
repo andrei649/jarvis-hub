@@ -188,6 +188,53 @@ async def test_compaction_boundary_withdraws_live_offer(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_second_compaction_refusal_settles_typed_and_legacy_results(monkeypatch):
+    from agents.core import turn_stops
+
+    recorded = []
+    original = turn_stops.record_runtime_stop
+
+    def note_stop(reason):
+        recorded.append(reason)
+        original(reason)
+
+    monkeypatch.setattr(turn_stops, "record_runtime_stop", note_stop)
+
+    async def refused_after_fold(*, typed):
+        runtime = _runtime()
+        backend = _Backend()
+        guidance = []
+        compactions = []
+
+        def guided(base, **_kwargs):
+            guidance.append(base)
+            return base if len(guidance) == 1 else base + " changed guidance"
+
+        async def compact(_messages, compacted, **_kwargs):
+            compactions.append(len(compacted))
+            if len(compactions) == 1:
+                compacted.add(2)  # Simulate a committed fold at the H672 boundary.
+                return True
+            return False
+
+        monkeypatch.setattr(runtime, "_guided_system", guided)
+        monkeypatch.setattr(runtime, "_compact_context", compact)
+        with turn_stops.turn_stops_scope() as stops:
+            outcome = await _run(runtime, backend, typed=typed,
+                                 effective_window=EffectiveWindow(tokens=4096))
+            assert stops.snapshot() == ["context_refused"]
+        assert len(guidance) == 2 and compactions == [0, 1]
+        assert backend.calls == 0
+        return outcome
+
+    result = await refused_after_fold(typed=True)
+    assert (result.reply, result.exit_reason) == (
+        agent_runtime._CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
+    assert await refused_after_fold(typed=False) == agent_runtime._CONTEXT_REPLY
+    assert recorded == [ToolLoopExitReason.CONTEXT_REFUSED] * 2
+
+
+@pytest.mark.asyncio
 async def test_deadline_is_outer_result_even_if_child_ignores_cancellation():
     entered = asyncio.Event()
     release = asyncio.Event()

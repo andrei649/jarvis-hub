@@ -357,6 +357,7 @@ def test_the_tool_gates(tmp_path, hermes, offer, shown):
     ("memory", "search_memory"), ("skills", "skill_propose"),
     ("computer_use", "desktop_run"),
     ("coding", "file_write"), ("coding", "terminal_run"), ("coding", "execute_code"),
+    ("browser", "browser_run"),
 ])
 def test_registered_toolset_members_control_both_gates(tmp_path, toolset, tool):
     required = _loader(_skill(tmp_path, "required", hermes={"requires_toolsets": [toolset]}))
@@ -393,7 +394,7 @@ def test_new_toolset_mappings_name_only_registered_tools(tmp_path, monkeypatch):
     for toolset in ("kanban", "memory", "skills", "computer_use", "coding"):
         assert set(visibility.TOOLSETS[toolset]) <= registered
     assert set(visibility.TOOLSETS["kanban"]) == set(registry.entries)
-    assert "browser" not in visibility.TOOLSETS
+    assert visibility.TOOLSETS["browser"] == ("browser_run",)
     assert "homeassistant" not in visibility.TOOLSETS
     assert "delegation" not in visibility.TOOLSETS
 
@@ -410,6 +411,32 @@ def test_kanban_toolset_soft_gate_allows_explicit_loading(tmp_path):
     finally:
         visibility.reset_offer(token)
     assert calls == [("board", "show")]
+
+
+def test_browser_toolset_uses_current_offer_and_preserves_explicit_soft_load(tmp_path):
+    from agents.core.autonomy_coordinator import _TURN_TOOL_OFFER
+
+    required = _skill(tmp_path, "required", hermes={"requires_toolsets": ["browser"]})
+    fallback = _skill(tmp_path, "fallback", hermes={"fallback_for_toolsets": ["browser"]})
+    loader = _loader(required, fallback)
+    for offer, visible in (
+        (frozenset(), ["fallback"]),
+        (frozenset({"web_extract"}), ["fallback"]),
+        (frozenset({"browser_run"}), ["required"]),
+        (frozenset({"browser_run", "web_extract"}), ["required"]),
+    ):
+        token = _TURN_TOOL_OFFER.set(offer)
+        try:
+            assert _catalog(loader) == visible
+        finally:
+            _TURN_TOOL_OFFER.reset(token)
+    token = visibility.bind_offer(frozenset())
+    try:
+        assert [row["skill"] for row in loader.prompt_catalog()] == ["fallback"]
+        assert _tools(loader)("skill_view", {"name": "required"})["ok"] is True
+        assert asyncio.run(required.execute("required", "", {"channel": "web"})) == "required ran"
+    finally:
+        visibility.reset_offer(token)
 
 
 def test_the_tool_loops_own_offer_is_used_inside_it(tmp_path):

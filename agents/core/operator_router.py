@@ -354,10 +354,16 @@ def _desktop_visual_available() -> bool:
     return _desktop_available() and _vlm_proven_local()
 
 
-def _browser_available() -> bool:
-    from agents.core.env_config import env_flag
-
-    return env_flag("JARVIS_PLAYWRIGHT_HOST")
+def _browser_available(orch=None) -> bool:
+    server = getattr(orch, 'tool_rpc', None)
+    spec = getattr(server, '_tools', {}).get('browser_run') if server is not None else None
+    runtime = getattr(spec.get('handler'), '__self__', None) if isinstance(spec, dict) else None
+    try:
+        return (callable(getattr(server, 'handle', None))
+                and server.allows('browser_run')
+                and callable(getattr(runtime, 'ready', None)) and runtime.ready() is True)
+    except Exception:
+        return False
 
 
 def default_implementations(orch=None) -> list[OperatorImplementation]:
@@ -401,7 +407,7 @@ def default_implementations(orch=None) -> list[OperatorImplementation]:
             route=OperatorRoute.STRUCTURED_UI,
             capability_id="tool:browser_run",
             matcher=lambda _goal, params: _params_allow(OperatorRoute.STRUCTURED_UI, params),
-            availability=_browser_available,
+            availability=lambda: _browser_available(orch),
             priority=5,
         ),
         OperatorImplementation(

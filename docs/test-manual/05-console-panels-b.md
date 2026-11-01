@@ -750,3 +750,18 @@ owner to triage — several are the reason a case above is written as "expected 
 > **Line numbers in this file were correct at the revision under test.** `file:line` pointers move —
 > re-grep the quoted symbol (not the number) before relying on any of them, exactly as
 > `COWORK_QA_RUNBOOK.md` §3b advises.
+
+## Named compatible endpoints — H367 owner pilot
+
+Console → Admin → **Custom Endpoints**. Run only against an isolated test catalog and an explicitly authorized synthetic/local endpoint; this manual pilot has not been executed by the current source integration. No credential belongs in chat, command arguments or a saved test receipt. The CLI equivalent is `nerva provider custom --help`; credential-set reads one line from stdin.
+
+| ID | Check | Steps | Expected | Severity | Automated source coverage |
+| --- | --- | --- | --- | --- | --- |
+| PNB-174 | Owner access | Request list/create/activate/credential routes without a credential and with a user-only credential, then use the configured admin owner credential | User-only/no-token requests refuse; owner receives bounded metadata; no secret/proof echo | BLOCKER | tests/test_h367_custom_endpoint_routes.py |
+| PNB-175 | Named catalog without egress | Add two distinct loopback entries using Add without probing; refresh, rename one, then restart the isolated service | Stable custom:key identity and aliases survive rename/restart; create sends no validation/model request; stale revisions refuse | MAJOR | tests/test_h367_custom_endpoint_store.py; tests/test_h367_custom_endpoint_service.py |
+| PNB-176 | Explicit current choice | Set a synthetic credential if required, acknowledge price/policy, activate the exact current revision/epoch, then switch to another entry and clear | Exactly one effective signed/custom choice; physical requests use current guarded choice; clear restores the generic baseline rather than an old signed choice | BLOCKER | tests/test_h367_custom_endpoint_service.py; tests/test_h367_custom_endpoint_runtime.py |
+| PNB-177 | Validation feedback | On the active synthetic entry, return a valid models response, then a non-200 models response; select Validate /models each time | Positive outcome reports completion; negative HTTP-200 API outcome displays validation failed; only bounded count/status fields are shown | MAJOR | frontend/src/panels/custom-endpoints.test.tsx; tests/test_h367_custom_endpoint_service.py |
+| PNB-178 | Credential and destination boundaries | Set/rotate/delete a synthetic secret; attempt LAN/public admission and activation without the destination grant; try an unsupported special IPv4 address | Secret input clears after success/refusal and never appears in responses; no grant or unsupported address refuses before admission; generation changes invalidate stale authority | BLOCKER | tests/test_h367_custom_endpoint_credentials.py; tests/test_h367_custom_endpoint_service.py; tests/test_h367_custom_endpoint_runtime.py |
+| PNB-179 | Upgrade and legacy repair | Restore a genuine old signed proof and a current proven bare custom alias in separate isolated fixtures; repeat with forged/stale rows | Genuine unchanged signed authority migrates transactionally; the same proven custom choice normalizes without a new grant; proofless/stale choices remain inert and show only an owner-activation candidate | BLOCKER | tests/test_h361_provider_selection_binding.py; tests/test_h367_custom_endpoint_service.py |
+
+Keep live provider/TLS/device results separate from these source checks. The custom endpoint capability remains WIRED until its own complete authorized reality proof; a generic kill-switch refusal is not that proof.
