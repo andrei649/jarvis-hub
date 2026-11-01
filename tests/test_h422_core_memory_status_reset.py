@@ -14,6 +14,12 @@ off now has its own row (``memory.core_enabled``) no posture sets, its own guard
 a test of its effect on the real runtime under ``companion_wave1``; the memory tool refuses a
 write past a ring's character budget, and the Long-Term Memory panel shows the sizes and
 resets.
+
+Third pass: the budget lived in the memory tool only, and the switch stopped only the prompt
+and the tool. The ring itself now holds its budget for every writer (``CoreMemory.put``, the
+post-turn review and the daily reflection rotate the oldest out), off keeps both background
+writers out of the rings under the wave-1 posture, and the hub's own memory tool (built by
+``AutonomyCoordinator._wire_agent_tool_runtime``) is the one the switch test calls.
 """
 
 from __future__ import annotations
@@ -612,9 +618,27 @@ async def _turn(orch) -> str:
     return await orch._build_agent_turn_text("jarvis", "what do you remember?")
 
 
-async def test_off_and_on_take_effect_on_the_real_runtime_under_the_wave1_posture(runtime):
-    from agents.core.tool_rpc import ToolRPCServer
+def _hub_tools(orch):
+    """The hub's own ToolRPC server, wired as the hub wires it (no stand-in registration)."""
+    from agents.core.autonomy_coordinator import AutonomyCoordinator
 
+    AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+    return orch.tool_rpc
+
+
+async def _as_owner(server, call):
+    """*call* on *server* in an owner's turn at the operator surface (the web HUD)."""
+    from agents.core.commands import Principal
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
+
+    token = bind_turn_principal(Principal(channel="web", admin=True))
+    try:
+        return (await server.handle(call, actor="jarvis"))["result"]
+    finally:
+        reset_turn_principal(token)
+
+
+async def test_off_and_on_take_effect_on_the_real_runtime_under_the_wave1_posture(runtime):
     orch, client = runtime.orch, runtime.client
     assert orch.get_setting("product.posture") == "companion_wave1"
     assert client.get("/api/memory").json()["enabled"] is True
@@ -638,22 +662,26 @@ async def test_off_and_on_take_effect_on_the_real_runtime_under_the_wave1_postur
     assert "[core memory]" not in off and "the repo uses uv" not in off and "prefers short answers" not in off
     assert runtime.settings.get_value("memory", "core_enabled") is False
 
-    # The memory tool, registered as the hub registers it, refuses while the switch is off.
-    server = ToolRPCServer()
-    memory_tool.register_memory_tool(
-        server, living=lambda: orch.cognition.module("memory"), audit=lambda: orch.intent_log,
-        posture=lambda: "operator/owner", origin=lambda: "generated",
-        switch=lambda: memory_tool.switched_on(orch.get_setting))
+    # The hub's own memory tool (AutonomyCoordinator's wiring, in an owner's operator turn)
+    # refuses while the switch is off: a read and a write, and its offer says it is off.
+    server = _hub_tools(orch)
     write = {"tool": "memory", "args": {"operations": [{"action": "add", "target": "memory", "text": "x"}]}}
-    refused = (await server.handle(write))["result"]
-    assert refused["reason"] == "memory_disabled" and runtime.living.core.list() == ["the repo uses uv"]
+    read = {"tool": "memory", "args": {}}
+    assert (await _as_owner(server, read)).get("reason") == "memory_disabled"
+    refused = await _as_owner(server, write)
+    assert refused.get("reason") == "memory_disabled" and runtime.living.core.list() == ["the repo uses uv"]
+    offer = next(t for t in server.tools() if t["name"] == "memory")
+    assert offer["description"] == memory_tool.OFF_DESCRIPTION
 
     code, out, err = _nerva(["memory", "on"], _RouteHub(hub))
     assert code == 0, (out, err)
     assert client.get("/api/memory").json()["enabled"] is True
     back = await _turn(orch)
     assert "[core memory]" in back and "the repo uses uv" in back and "prefers short answers" in back
-    assert (await server.handle(write))["result"]["ok"] is True
+    assert (await _as_owner(server, read))["memory"] == ["the repo uses uv"]
+    assert (await _as_owner(server, write))["ok"] is True
+    assert runtime.living.core.list() == ["the repo uses uv", "x"]
+    assert next(t for t in server.tools() if t["name"] == "memory")["description"] == memory_tool.DESCRIPTION
     actions = [row.get("action") for row in orch.intent_log.list()]
     assert actions.count("memory.switch") == 2 and "memory.write" in actions
 
@@ -786,3 +814,195 @@ async def test_the_owner_switch_makes_the_tool_read_as_off(tmp_path):
     assert (await broken())["reason"] == "memory_disabled"                     # unreadable: off
     state["on"] = True
     assert (await call(_add("memory", "x")))["ok"] is True and living.core.list() == ["uses uv", "x"]
+
+
+# ── the store keeps each ring within its budget, for every writer ────────────
+
+def _living(tmp_path):
+    from agents.core.cognition.memory import LivingMemory
+
+    return LivingMemory(core_path=tmp_path / "core.json", tiers_path=tmp_path / "tiers.json",
+                        user_path=tmp_path / "user.json")
+
+
+def _long(n: int, tag: str) -> str:
+    return f"{tag} {n:02d} " + "f" * 180
+
+
+_RINGS = (("core", "memory", MEMORY_CHAR_BUDGET), ("user_core", "user", USER_CHAR_BUDGET))
+
+
+def _within_budgets(living) -> None:
+    for attr, target, budget in _RINGS:
+        facts = getattr(living, attr).list()
+        assert core_block.section_chars(facts, target) <= budget, (target, len(facts))
+
+
+@pytest.mark.parametrize("attr,target,budget", _RINGS)
+def test_put_rotates_the_oldest_out_until_the_new_fact_fits_the_budget(tmp_path, attr, target, budget):
+    living = _living(tmp_path)
+    ring = getattr(living, attr)
+    assert (ring.char_budget, ring.budget_target) == (budget, target)
+    for n in range(20):
+        assert ring.put(_long(n, target)) is True
+        facts = ring.list()
+        assert core_block.section_chars(facts, target) <= budget
+        # The newest facts, oldest rotated out first: the count FIFO's own order.
+        assert facts == [_long(i, target) for i in range(n + 1 - len(facts), n + 1)]
+    assert len(ring.list()) < ring.cap                       # the budget bounded it, not the cap
+    reopened = _living(tmp_path)                             # what is on disk renders whole
+    usage = core_block_usage(reopened)[target]
+    assert usage["omitted"] == 0 and usage["chars"] <= budget and "not shown" not in render_core_block(reopened)
+
+
+def test_a_fact_longer_than_the_whole_budget_is_refused_and_nothing_rotates(tmp_path):
+    living = _living(tmp_path)
+    living.user_core.put("prefers short answers")
+    on_disk = (tmp_path / "user.json").read_bytes()
+    with pytest.raises(cognition_memory.CoreMemoryOverBudget) as caught:
+        living.user_core.put("w" * (USER_CHAR_BUDGET + 1))
+    assert (caught.value.chars, caught.value.budget) == (USER_CHAR_BUDGET + 1, USER_CHAR_BUDGET)
+    assert living.user_core.list() == ["prefers short answers"]
+    assert (tmp_path / "user.json").read_bytes() == on_disk
+    assert living.user_core.put("w" * USER_CHAR_BUDGET) is True              # exactly the budget fits
+    assert living.user_core.list() == ["prefers short answers", "w" * USER_CHAR_BUDGET]
+
+
+def test_a_ring_over_its_budget_on_disk_is_brought_within_it_by_the_next_put(tmp_path):
+    legacy = [f"old fact {i:02d} " + "o" * 280 for i in range(20)]           # saved before the budget
+    seed = CoreMemory(path=tmp_path / "core.json")
+    for fact in legacy:
+        seed.put(fact)
+    living = _living(tmp_path)
+    assert core_block.section_chars(living.core.list(), "memory") > MEMORY_CHAR_BUDGET
+    assert living.core.put("a new fact") is True
+    facts = living.core.list()
+    assert facts[-1] == "a new fact" and core_block.section_chars(facts, "memory") <= MEMORY_CHAR_BUDGET
+    assert facts[:-1] == legacy[len(legacy) + 1 - len(facts):]
+
+
+async def test_the_tool_still_refuses_with_the_usage_on_a_budgeted_ring_and_rotates_nothing(tmp_path):
+    living = _living(tmp_path)
+    for fact in _near_full("memory", MEMORY_CHAR_BUDGET):
+        assert living.core.put(fact) is True
+    before = living.core.list()
+    assert before == _near_full("memory", MEMORY_CHAR_BUDGET)              # the store rotated none
+    used = core_block.section_chars(before, "memory")
+    _server, call = _tool(tmp_path, living)
+    refused = await call(_add("memory", "z" * 250))
+    assert refused["reason"] == "memory_over_budget"
+    assert refused["usage"] == f"{used:,}/{MEMORY_CHAR_BUDGET:,}" and refused["char_budget"] == MEMORY_CHAR_BUDGET
+    assert living.core.list() == before
+
+
+def _review_reply(agent=(), user=()) -> str:
+    return json.dumps({"user_facts": list(user), "agent_facts": list(agent), "corrections": [],
+                       "skill_updates": [], "nothing": False})
+
+
+async def test_the_post_turn_review_keeps_both_rings_within_their_budgets(tmp_path, caplog):
+    from agents.core.learning.background_review import BackgroundReviewer
+
+    living = _living(tmp_path)
+    replies: list[str] = []
+
+    async def llm(prompt):
+        return replies.pop(0)
+
+    reviewer = BackgroundReviewer(llm, living=living)
+    for turn in range(8):
+        replies.append(_review_reply(agent=[_long(3 * turn + i, "memory") for i in range(3)],
+                                     user=[_long(3 * turn + i, "user") for i in range(3)]))
+        result = await reviewer.run("u", "a", cadence=False)
+        assert result["ran"] is True and result["counts"]["facts"] == 6, result
+        _within_budgets(living)
+    assert living.core.list()[-1] == _long(23, "memory") and living.user_core.list()[-1] == _long(23, "user")
+    usage = core_block_usage(living)
+    assert usage["memory"]["omitted"] == 0 and usage["user"]["omitted"] == 0
+
+    # One fact longer than the whole ring is refused by the ring; the others are kept.
+    replies.append(_review_reply(agent=["x" * (MEMORY_CHAR_BUDGET + 1), "a short fact"]))
+    with caplog.at_level("WARNING"):
+        result = await reviewer.run("u", "a", cadence=False)
+    assert result["actions"] == ["Core memory updated (+1)"]
+    assert living.core.list()[-1] == "a short fact" and "review fact not kept" in caplog.text
+    _within_budgets(living)
+
+
+def test_the_daily_reflection_keeps_the_core_ring_within_its_budget(tmp_path):
+    from datetime import date
+
+    from agents.core.autonomy.reflection import DailyReflector, ReflectionRunStore
+
+    living = _living(tmp_path)
+    reflector = DailyReflector(None, None, living_memory=living, run_store=ReflectionRunStore(tmp_path / "runs.json"))
+    lessons = [f"lesson {i:02d} " + "l" * 290 for i in range(12)]
+    today = date.today()
+    out = reflector._consolidate_living_memory({"lessons": lessons}, today)
+    assert out == {"available": True, "encoded": 12, "core": 12}
+    facts = living.core.list()
+    assert core_block.section_chars(facts, "memory") <= MEMORY_CHAR_BUDGET and len(facts) < 12
+    assert facts == [f"{today.isoformat()}: {lesson[:300]}" for lesson in lessons[12 - len(facts):]]
+
+
+# ── off keeps the background writers out of the rings, under the wave-1 posture ──
+
+async def test_off_keeps_the_review_and_the_reflection_out_of_the_rings_under_the_wave1_posture(runtime):
+    from datetime import date
+
+    orch, client, living = runtime.orch, runtime.client, runtime.living
+    # The posture forces the reviewer and cognition memory on: neither is the owner's off.
+    assert orch.get_setting("product.posture") == "companion_wave1"
+    assert orch.get_setting("cognition.review_enabled") is True and orch.cognition.sub_enabled("memory_enabled")
+    replies: list[str] = []
+
+    async def llm(prompt):
+        return replies.pop(0)
+
+    # The reviewer and the reflection the hub builds, on its runtime settings.
+    reviewer = orch._build_background_reviewer()
+    reviewer._llm = llm
+    reflector = orch._build_daily_reflector()
+    core_file, user_file = (runtime.tmp / "core.json").read_bytes(), (runtime.tmp / "user.json").read_bytes()
+    hub = SimpleNamespace(client=client, admin=runtime.admin)
+    code, out, err = _nerva(["memory", "off"], _RouteHub(hub))
+    assert code == 0, (out, err)
+    assert client.get("/api/memory").json()["enabled"] is False
+    assert orch.get_setting("cognition.review_enabled") is True                  # still forced on
+
+    learned = _review_reply(agent=["the build runs on uv"], user=["works late"])
+    replies.append(learned)
+    result = await reviewer.run("u", "a", cadence=False)
+    assert result["ran"] is True and result["counts"]["facts"] == 0 and result["actions"] == []
+    replies.append(learned)
+    refine = await reviewer.run_on_demand("user: what did you learn?")
+    assert refine["actions"] == ["2 fact(s) found but not kept: the owner's memory switch is off "
+                                 "(memory.core_enabled; `nerva memory on`)"]
+    today = date.today()
+    nightly = reflector._consolidate_living_memory({"lessons": ["deploys on fridays"]}, today)
+    assert nightly == {"available": True, "encoded": 1, "core": 0, "core_switched_off": True}
+    assert living.core.list() == ["the repo uses uv"] and living.user_core.list() == ["prefers short answers"]
+    assert (runtime.tmp / "core.json").read_bytes() == core_file
+    assert (runtime.tmp / "user.json").read_bytes() == user_file
+
+    code, out, err = _nerva(["memory", "on"], _RouteHub(hub))
+    assert code == 0, (out, err)
+    replies.append(learned)
+    result = await reviewer.run("u", "a", cadence=False)
+    assert result["counts"]["facts"] == 2
+    nightly = reflector._consolidate_living_memory({"lessons": ["deploys on fridays"]}, today)
+    assert nightly == {"available": True, "encoded": 1, "core": 1}
+    assert living.core.list() == ["the repo uses uv", "the build runs on uv", f"{today.isoformat()}: deploys on fridays"]
+    assert living.user_core.list() == ["prefers short answers", "works late"]
+
+
+def test_a_switch_the_reflection_cannot_read_keeps_its_lessons_out_of_the_ring(tmp_path):
+    from datetime import date
+
+    from agents.core.autonomy.reflection import DailyReflector
+
+    living = _living(tmp_path)
+    reflector = DailyReflector(None, None, living_memory=living, core_enabled=lambda: 1 / 0)
+    out = reflector._consolidate_living_memory({"lessons": ["a lesson"]}, date.today())
+    assert out == {"available": True, "encoded": 1, "core": 0, "core_switched_off": True}
+    assert living.core.list() == []

@@ -94,11 +94,15 @@ class DailyReflector:
         *,
         run_store: ReflectionRunStore | None = None,
         living_memory: Any | Callable[[], Any] | None = None,
+        core_enabled: Callable[[], bool] | None = None,
     ):
         self._memory = memory      # MemoryManager
         self._llm_call = llm_call  # async (prompt: str) -> str
         self._run_store = run_store
         self._living_memory = living_memory
+        #: H422 — the owner's memory switch (``memory_tool.switched_on``): off, a lesson is
+        #: still encoded into the tiers but never put in the curated core ring.
+        self._core_enabled = core_enabled
         self._last_run: Optional[date] = None
         self._last_result: Optional[dict] = None
         self._restore_latest_run()
@@ -233,6 +237,7 @@ class DailyReflector:
         lessons = extracted.get("lessons", [])
         if not isinstance(lessons, list):
             lessons = []
+        core_on = self._core_on()
 
         try:
             from ..cognition.memory import neuromodulators
@@ -258,22 +263,40 @@ class DailyReflector:
                 if result.get("encoded"):
                     encoded += 1
                 core_memory = getattr(living, "core", None)
-                if core_memory is not None and hasattr(core_memory, "put"):
+                if core_on and core_memory is not None and hasattr(core_memory, "put"):
                     core += self._put_core(core_memory, f"{day}: {lesson[:300]}")
         except Exception:
             logger.debug("LivingMemory reflection handoff skipped", exc_info=True)
-        return {"available": True, "encoded": encoded, "core": core}
+        result = {"available": True, "encoded": encoded, "core": core}
+        if not core_on:
+            result["core_switched_off"] = True
+        return result
+
+    def _core_on(self) -> bool:
+        """H422 — the owner's memory switch; one that cannot be read reads off, so an
+        owner's ``off`` is never lost to an error."""
+        core_enabled = getattr(self, "_core_enabled", None)
+        if core_enabled is None:
+            return True
+        try:
+            return core_enabled() is True
+        except Exception:
+            logger.warning("reflection: the owner's memory switch could not be read; no lesson "
+                           "goes to core memory", exc_info=True)
+            return False
 
     @staticmethod
     def _put_core(core_memory, fact: str) -> int:
         """1 when the lesson changed the core ring, else 0. H423: a ring held by another
         writer (CoreMemoryLocked) or hand-edited past reading back (CoreMemoryDrift) refuses
-        this one lesson with a warning; the remaining lessons are still encoded."""
-        from ..cognition.memory import CoreMemoryDrift, CoreMemoryLocked
+        this one lesson with a warning; the remaining lessons are still encoded. H422: so
+        does a lesson longer than the ring's whole character budget (CoreMemoryOverBudget);
+        the ring rotates its oldest facts out to keep within that budget otherwise."""
+        from ..cognition.memory import CoreMemoryDrift, CoreMemoryLocked, CoreMemoryOverBudget
 
         try:
             return int(core_memory.put(fact) is True)
-        except (CoreMemoryLocked, CoreMemoryDrift) as exc:
+        except (CoreMemoryLocked, CoreMemoryDrift, CoreMemoryOverBudget) as exc:
             logger.warning("reflection lesson not kept in core memory: %s", exc)
             return 0
 

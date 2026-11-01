@@ -472,15 +472,22 @@ class BackgroundReviewer:
         max_facts = self._number("learning.review_max_facts", 3)
 
         living = self._living() if callable(self._living) else self._living
-        if living is None and on_demand:
+        # H422: the owner's memory switch (memory.core_enabled, which no product posture
+        # sets) keeps every writer out of the curated rings, this one too. Read after the
+        # model answered, before any write, so an `off` taken while it thought holds.
+        switched_off = living is not None and not self._rings_on()
+        if (living is None or switched_off) and on_demand:
             # Said to the owner who asked, not dropped silently (review-H465 m-3), counting
             # only facts the injection scan would let through (review-H465b nit 5). The
             # per-turn pass stays quiet: memory being off is not news every turn.
             found = sum(1 for fact in review["user_facts"][:max_facts] + review["agent_facts"][:max_facts]
                         if not self._detect(fact))
             if found:
-                actions.append(f"{found} fact(s) found but not kept: living memory is off "
-                               "(cognition.memory_enabled)")
+                why = ("the owner's memory switch is off (memory.core_enabled; `nerva memory on`)"
+                       if switched_off else "living memory is off (cognition.memory_enabled)")
+                actions.append(f"{found} fact(s) found but not kept: {why}")
+        if switched_off:
+            living = None
         # H423: a ring put waits for the ring file's lock (up to LOCK_TIMEOUT_S per fact),
         # so the writes run in a worker thread and never stall the event loop.
         await asyncio.to_thread(self._put_facts, review["user_facts"][:max_facts],
@@ -549,7 +556,16 @@ class BackgroundReviewer:
         except Exception:
             return []
 
+    def _rings_on(self) -> bool:
+        """H422 — the owner's memory switch as this reviewer's settings read it (fails
+        closed: a switch that cannot be read keeps the facts out)."""
+        from agents.core.memory_tool import switched_on
+
+        return switched_on(self._get)
+
     def _put_facts(self, facts, store, label, actions, counts) -> None:
+        from agents.core.cognition.memory import CoreMemoryOverBudget
+
         if store is None or not hasattr(store, "put"):
             return
         added = 0
@@ -571,6 +587,10 @@ class BackgroundReviewer:
                 after = store.list() if hasattr(store, "list") else None
                 if before is None or after != before:
                     added += 1
+            except CoreMemoryOverBudget as exc:
+                # H422: one fact longer than the ring's whole character budget is refused
+                # by the ring itself; the others are still kept.
+                logger.warning("review fact not kept: %s", exc)
             except Exception:
                 # H423: a ring held by another writer, or hand-edited past reading back,
                 # is not written over; the fact is not kept.

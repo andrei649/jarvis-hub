@@ -293,6 +293,16 @@ class CoreMemoryLocked(TimeoutError):
     """Another writer held a core ring's file lock for longer than the wait allowed."""
 
 
+class CoreMemoryOverBudget(ValueError):
+    """H422 — one fact longer by itself than its ring's whole character budget (as written,
+    or as the prompt block shows it). Refused: nothing is evicted and nothing written."""
+
+    def __init__(self, label: str, chars: int, budget: int) -> None:
+        self.chars, self.budget = chars, budget
+        super().__init__(f"a {chars:,}-character fact is longer than the {budget:,}-character "
+                         f"budget of the {label} ring; it is not kept")
+
+
 class CoreMemoryDrift(RuntimeError):
     """A core ring's file was edited outside Nerva. ``bak`` is the owner-only copy kept of
     it; ``problem`` says why the edit cannot be taken as the ring (None when it was
@@ -444,10 +454,21 @@ class CoreMemory(JsonStore):
     that same lock. A file whose bytes no longer match the recorded digest was edited by
     hand: it is copied to an owner-only ``.bak`` and, when it reads back exactly (valid
     JSON, distinct one-line facts, within the cap), taken as the ring; otherwise
-    :class:`CoreMemoryDrift` is raised and nothing is written over it until it is fixed."""
+    :class:`CoreMemoryDrift` is raised and nothing is written over it until it is fixed.
 
-    def __init__(self, cap: int = 20, path: str | Path | None = None) -> None:
+    H422: a ring may also carry a character budget (*char_budget*; ``LivingMemory`` gives
+    the agent ring Hermes's 2200 and the user ring 1375, ``core_block.CHAR_BUDGETS``),
+    counted as the prompt block counts ring *budget_target* (``core_block.section_chars``,
+    the count the memory tool and ``GET /api/memory`` use). :meth:`put` keeps the ring
+    within it, so a ring any writer saved renders whole."""
+
+    def __init__(self, cap: int = 20, path: str | Path | None = None, *,
+                 char_budget: "int | None" = None, budget_target: str = "memory") -> None:
         self.cap = cap
+        #: H422 — the ring's character budget (None: no budget, the count cap only) and the
+        #: memory tool's name for the ring, which the block's [BLOCKED] stub carries.
+        self.char_budget = None if char_budget is None else int(char_budget)
+        self.budget_target = budget_target
         #: H423 review — False while this ring holds no copy of its file that read back
         #: exactly (a process that started over a hand edit it cannot take): its facts are
         #: then not a "last good copy" of anything, and a prompt note says so.
@@ -700,23 +721,54 @@ class CoreMemory(JsonStore):
                 self._facts.append(f)
         self._facts = self._facts[-self.cap:]
 
+    def chars(self, facts: "list[str] | None" = None) -> int:
+        """H422 — the characters *facts* (default: the ring) take in the prompt block,
+        counted as the block, the memory tool and ``GET /api/memory`` count them."""
+        from ..learning.core_block import section_chars
+
+        return section_chars(self.list() if facts is None else list(facts), self.budget_target)
+
+    def _fact_chars(self, fact: str) -> int:
+        """One fact's size against the budget: as written (whitespace folded) or as the
+        block shows it, whichever is longer."""
+        return max(len(" ".join(fact.split())), self.chars([fact]))
+
     def put(self, fact: str) -> bool:
         """Add *fact* on top of the ring as it is on disk (the oldest rotates out at the
         cap: this is the post-turn review's and the reflection's bounded ring; the model's
         ``memory`` tool refuses at the cap instead). True when the ring changed. Raises
         :class:`CoreMemoryLocked`, or :class:`CoreMemoryDrift` over a hand edit that
-        cannot be taken as the ring (nothing is written over it)."""
+        cannot be taken as the ring (nothing is written over it).
+
+        H422: with a :attr:`char_budget`, the oldest facts rotate out the same way until
+        the new one fits the budget too, so every writer keeps the ring within it (the
+        memory tool refuses with the usage instead). A fact longer than the whole budget by
+        itself raises :class:`CoreMemoryOverBudget` and changes nothing."""
         f = (fact or "").strip()
         if not f:
             return False
+        budget = self.char_budget
+        if budget is not None and (size := self._fact_chars(f)) > budget:
+            raise CoreMemoryOverBudget(self.budget_target, size, budget)
         with self.locked(), self._lock:
             self._sync_locked()
             if f in self._facts:
                 return False
-            self._facts.append(f)
-            if len(self._facts) > self.cap:
-                self._facts.pop(0)
-            self._save()
+            facts = [*self._facts, f][-self.cap:]
+            if budget is not None:
+                while len(facts) > 1 and self.chars(facts) > budget:
+                    facts.pop(0)
+            rotated = len(self._facts) + 1 - len(facts)
+            previous, self._facts = self._facts, facts
+            try:
+                self._save()
+            except Exception:
+                self._facts = previous   # a ring that could not be saved did not change
+                raise
+            if rotated > 1:
+                logger.info("core memory: %d older facts rotated out of %s to keep it within %s",
+                            rotated, self.path or "the ring",
+                            f"its {budget:,}-character budget" if budget is not None else "its cap")
             return True
 
     def list(self) -> "list[str]":
@@ -796,12 +848,16 @@ class LivingMemory:
         tiers_path: str | Path | None = None,
         user_path: str | Path | None = None,
     ) -> None:
+        from ..learning.core_block import CHAR_BUDGETS
+
         self.tiers = TieredMemory(path=tiers_path)
-        self.core = CoreMemory(path=core_path)
+        # H422: each ring holds its prompt section's character budget (Hermes's 2200 for
+        # the agent's notes, 1375 for the user profile) in the store, for every writer.
+        self.core = CoreMemory(path=core_path, char_budget=CHAR_BUDGETS["memory"], budget_target="memory")
         # H20/H21 bridge: a second bounded core for *user* facts (who the user
         # is — hermes USER.md analog), distinct from agent-learned facts. Same
         # ring semantics; rendered as its own prompt section.
-        self.user_core = CoreMemory(path=user_path)
+        self.user_core = CoreMemory(path=user_path, char_budget=CHAR_BUDGETS["user"], budget_target="user")
         self.embed_version = embed_version
         self.encode_threshold = encode_threshold
 

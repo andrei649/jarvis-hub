@@ -3064,7 +3064,8 @@ def _memory_switch(client: Any, ctx: Context, on: bool, as_json: bool) -> int:
                           "check again with `nerva memory` in 30 s\n")
             return EXIT_FAILED
         ctx.say("memory off: from the next turn no prompt carries the agent notes or the user profile, "
-                "and the memory tool refuses; nothing was erased (the stores stay on disk). "
+                "the memory tool refuses and the background review and reflection add nothing to them; "
+                "nothing was erased (the stores stay on disk). "
                 "Turn it back on with: nerva memory on")
         return EXIT_OK
     if enabled:

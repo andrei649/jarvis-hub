@@ -155,9 +155,12 @@ this order — the first ones are the most common and the cheapest to rule out:
     characters each holds and whether older entries are left out over that budget (the
     newest are kept), and how many are `[BLOCKED]` as prompt-injection. `nerva memory reset
     [--target memory|user]` erases a store for good after a typed `yes`; `nerva memory off`
-    takes both out of every prompt (whatever product posture is selected) without erasing
+    takes both out of every prompt (whatever product posture is selected) and keeps the
+    per-turn review and the nightly reflection from adding to them, without erasing
     anything, and `nerva memory on` brings them back. The memory tool refuses a write that
-    would take a store past its budget and tells the model the store's usage; the Long-Term
+    would take a store past its budget and tells the model the store's usage; the review and
+    the reflection rotate the oldest facts out instead, so no writer takes a store past it
+    (a hand edit can; the prompt then leaves the oldest out); the Long-Term
     Memory panel shows the same sizes and offers the off switch and the reset. A turn that has read untrusted content (an
     inbound message, web text, a tainted recall) cannot write memory: the tool refuses with
     `memory_untrusted_turn`, so tell it the fact again in a fresh turn of your own. Older conversations are a separate,

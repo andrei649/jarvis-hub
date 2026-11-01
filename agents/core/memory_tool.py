@@ -20,7 +20,9 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   (Hermes's 2200 for the agent notes, 1375 for the user profile: ``core_block.CHAR_BUDGETS``,
   counted as the prompt block counts them), and a write that would take a ring past it is
   refused with the ring's usage and its limit, so a ring the tool wrote renders whole (the
-  block's own cut stays as the backstop for the other writers). The budget is checked on
+  ring itself holds the same budget for the other writers, rotating its oldest facts out
+  as it does at its cap: ``CoreMemory.put``; the block's own cut stays as the backstop for
+  a hand edit). The budget is checked on
   the batch's final state, so
   an add listed before the remove that makes room is kept (H423); a turn that keeps
   hitting a full ring gets a terminal refusal after :data:`FULL_ATTEMPTS_PER_TURN` tries,
@@ -59,6 +61,7 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
 * H422: the owner's own switch, ``memory.core_enabled`` (:data:`SWITCH_SETTING`), takes the
   curated memory out of every prompt and makes this tool refuse, whatever the product
   posture says (the wave-1 postures force ``cognition.memory_enabled`` on, never this row).
+  Off, the post-turn review and the daily reflection put nothing in the rings either.
   Only ``POST /api/memory/switch`` (``nerva memory off|on``) writes it; the rings stay on
   disk while it is off.
 
