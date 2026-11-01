@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { apiGet, apiPost } from '../api/client';
@@ -160,6 +160,36 @@ describe('OperatorPanel browser policy dry run', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close fresh session' }));
     await waitFor(() => expect(post).toHaveBeenCalledWith(
       `/api/browser/sessions/${sid}/close`, {}, { admin: true }));
+  });
+
+  it('never queues a ref chosen on a session that ended against the session replacing it', async () => {
+    // Review of #1321: the 5 s poll replaced an ended session with the next one but kept
+    // the chosen ref, so "click @e7" was queued against a session that never offered it
+    // while the picker showed "Choose a current ref".
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const first = 'c'.repeat(32);
+      const next = 'd'.repeat(32);
+      let sessions = [{ id: first, origin: 'https://example.com', generation: 1,
+        refs: [{ ref: '@e7', role: 'button', name: 'Pay' }], active: false, expires_in: 60 }];
+      get.mockImplementation(async (path) => path === '/api/browser/sessions'
+        ? { available: true, sessions } : { available: true });
+      render(<OperatorPanel />);
+      await waitFor(() => expect(screen.getByLabelText('Live fresh-profile session')).toBeTruthy());
+      fireEvent.change(screen.getByLabelText('Session action'), { target: { value: 'click' } });
+      fireEvent.change(screen.getByLabelText('Observed element'), { target: { value: '@e7' } });
+      sessions = [{ id: next, origin: 'https://example.org', generation: 1,
+        refs: [{ ref: '@e1', role: 'link', name: 'Home' }], active: false, expires_in: 60 }];
+      await act(async () => { vi.advanceTimersByTime(5_100); });
+      await waitFor(() => expect((screen.getByLabelText('Live fresh-profile session') as HTMLSelectElement)
+        .value).toBe(next));
+      expect((screen.getByLabelText('Observed element') as HTMLSelectElement).value).toBe('');
+      fireEvent.click(screen.getByRole('button', { name: 'Queue session action' }));
+      await waitFor(() => expect(screen.getByText('Select a live element reference')).toBeTruthy());
+      expect(post).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('queues console and image inventory as separate owner approved session reads', async () => {

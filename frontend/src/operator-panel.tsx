@@ -384,6 +384,16 @@ export function OperatorPanel() {
   const [browserSessionId, setBrowserSessionId] = useState('');
   const [browserSessionAction, setBrowserSessionAction] = useState<'snapshot' | 'console' | 'get_images' | 'click' | 'scroll' | 'back' | 'press'>('snapshot');
   const [browserSessionRef, setBrowserSessionRef] = useState('');
+  const shownSessionRef = useRef('');
+  useEffect(() => {
+    // Refs restart at @e1 in every session: whenever another session is selected (a poll
+    // replacing one that ended, a close, a pick), the ref chosen on the old one is dropped
+    // rather than queued against the new one (review of #1321).
+    if (shownSessionRef.current !== browserSessionId) {
+      shownSessionRef.current = browserSessionId;
+      setBrowserSessionRef('');
+    }
+  }, [browserSessionId]);
   const [browserSessionKey, setBrowserSessionKey] = useState('Enter');
   const [browserSessionDirection, setBrowserSessionDirection] = useState<'up' | 'down'>('down');
 
@@ -666,8 +676,10 @@ export function OperatorPanel() {
   const actBrowserSession = () => {
     if (!browserSessionId) return setBrowserError('Select a live browser session');
     const action = browserSessionAction;
+    const live = browserSessions.find((item) => item.id === browserSessionId);
     if (!['snapshot', 'console', 'get_images', 'back'].includes(action)
-        && !/^@e[1-9][0-9]{0,5}$/.test(browserSessionRef)) {
+        && (!/^@e[1-9][0-9]{0,5}$/.test(browserSessionRef)
+          || !live?.refs.some((item) => isRecord(item) && item.ref === browserSessionRef))) {
       return setBrowserError('Select a live element reference');
     }
     const step = ['snapshot', 'console', 'get_images', 'back'].includes(action) ? { action }
@@ -684,6 +696,7 @@ export function OperatorPanel() {
       await apiPost(`/api/browser/sessions/${browserSessionId}/close`, {}, { admin: true });
       setBrowserSessions((old) => old.filter((item) => item.id !== browserSessionId));
       setBrowserSessionId('');
+      setBrowserSessionRef('');
     } catch (error) {
       setBrowserError(boundedError(error));
     } finally {
