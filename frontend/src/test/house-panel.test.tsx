@@ -76,11 +76,13 @@ describe('HousePanel (H30.5)', () => {
       : response(state()));
     global.fetch = fetchMock;
     render(<HousePanel />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /explain presence.*aaaaaaaa/i })).toBeTruthy());
+    // The default 1 s waitFor raced click → fetch → render on a loaded CI runner (#1307, #1321).
+    const slow = { timeout: 5000 };
+    await waitFor(() => expect(screen.getByRole('button', { name: /explain presence.*aaaaaaaa/i })).toBeTruthy(), slow);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/house/presence/explain'))).toBe(false);
 
     fireEvent.click(screen.getByRole('button', { name: /explain presence.*aaaaaaaa/i }));
-    await waitFor(() => expect(screen.getByText(/model explanation · Motion and tracker agree/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/model explanation · Motion and tracker agree/i)).toBeTruthy(), slow);
     const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/house/presence/explain'));
     expect(JSON.parse(call[1].body)).toEqual({ occupant_id: `occ-${'a'.repeat(32)}` });
   });
