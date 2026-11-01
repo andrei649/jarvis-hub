@@ -363,6 +363,10 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       }
     }
     ctx.globalCompositeOperation = 'source-over';
+    // Bolt Optimization: Set font and textAlign once before the node label loop
+    // to avoid ~900 redundant Canvas 2D font property assignments per second during 60 FPS animation.
+    ctx.font = '800 8px "JetBrains Mono",monospace';
+    ctx.textAlign = 'center';
     for (let i = 0; i < numNodes; i++) {
       const n = nodes[i];
       const c = colorFor(n); const isHov = hov === n.id; const dim = (hov && !isHov && n.kind !== 'core') || (foc && foc !== n.id && n.kind === 'agent');
@@ -382,7 +386,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
         ctx.lineWidth = n.kind === 'model' ? 1.5 : 1.2; ctx.strokeStyle = c; ctx.stroke();
       }
       ctx.globalAlpha = 1;
-      if (n.kind !== 'agent' || active || isHov || foc === n.id) { ctx.fillStyle = isHov ? '#eaf6ff' : 'rgba(165,190,210,0.75)'; ctx.font = '800 8px "JetBrains Mono",monospace'; ctx.textAlign = 'center'; ctx.fillText(String(n.label).toUpperCase(), n.x, n.y + n._r + 10); }
+      if (n.kind !== 'agent' || active || isHov || foc === n.id) { ctx.fillStyle = isHov ? '#eaf6ff' : 'rgba(165,190,210,0.75)'; ctx.fillText(String(n.label).toUpperCase(), n.x, n.y + n._r + 10); }
     }
   }
 
@@ -392,6 +396,10 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
     const outer = Math.min(W, H) * (st.cinema ? 0.48 : 0.46);
     ctx.globalCompositeOperation = 'source-over';
+    // Bolt Optimization: Set font and textAlign once before the task fan loop
+    // to avoid redundant Canvas 2D font property assignments per task at 60 FPS.
+    ctx.font = '800 8px "JetBrains Mono",monospace';
+    ctx.textAlign = 'center';
     // Bounded fan (real-world finding, 2026-07-08): an owner can accumulate far
     // more tasks than a fixed-size arc can label legibly — cap what's drawn so
     // the fan never degrades into an unreadable overlapping block, no matter
@@ -424,8 +432,6 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
         ctx.beginPath(); ctx.arc(x, y, focused ? 4.6 : 3.1, 0, 7); ctx.fill(); ctx.stroke();
         if (focused) {
           ctx.fillStyle = 'rgba(225,240,255,0.82)';
-          ctx.font = '800 8px "JetBrains Mono",monospace';
-          ctx.textAlign = 'center';
           if (i < MAX_FAN_LABELS) {
             ctx.fillText(taskTitle(tk).slice(0, 18).toUpperCase(), x, y - 8);
           } else if (i === MAX_FAN_LABELS && fullList.length > MAX_FAN_LABELS) {
