@@ -127,8 +127,11 @@ def _root_fds(pid: int, root: Path) -> dict[str, str]:
     return out
 
 
-def _assert_open_files_current(pid: int, fds: dict[str, str]) -> None:
-    """Check live descriptors; a transient file may close after /proc was listed."""
+def _verified_open_files(pid: int, fds: dict[str, str]) -> int:
+    """Check live descriptors and return how many were verified.
+
+    A transient file may close after /proc was listed; a live descriptor that is not the
+    file on disk fails at once."""
     checked = 0
     for fd, target in fds.items():
         proc_fd = f"/proc/{pid}/fd/{fd}"
@@ -144,7 +147,21 @@ def _assert_open_files_current(pid: int, fds: dict[str, str]) -> None:
             raise
         assert (held.st_dev, held.st_ino) == (current.st_dev, current.st_ino), target
         checked += 1
-    assert checked, "no live file descriptor was verified"
+    return checked
+
+
+def _assert_open_files_current(pid: int, fds: dict[str, str]) -> None:
+    assert _verified_open_files(pid, fds), "no live file descriptor was verified"
+
+
+def _holds_only_current_files(pid: int, root: Path) -> bool:
+    """One full snapshot of *pid*'s files under *root*, held to the restore invariant.
+
+    Fails at once on a deleted inode or a live descriptor that is not the file on disk;
+    returns False only while no descriptor stayed open long enough to be verified."""
+    fds = _root_fds(pid, root)
+    assert not [t for t in fds.values() if t.endswith("(deleted)")], fds
+    return _verified_open_files(pid, fds) > 0
 
 
 @pytest.mark.parametrize("defect", [None, "wrong_inode", "missing_target"])
@@ -174,6 +191,19 @@ def test_proc_snapshot_tolerates_closed_fds_but_rejects_stale_live_files(monkeyp
             _assert_open_files_current(123, fds)
     else:
         _assert_open_files_current(123, fds)
+
+
+def test_a_snapshot_of_only_closed_descriptors_waits_but_a_deleted_inode_fails(monkeypatch):
+    """The respawned coordinator's first opens can all close before stat() (PR #1321 CI):
+    such a snapshot proves nothing either way and is taken again, while a deleted inode in
+    any snapshot fails the restore invariant at once."""
+    snapshots = iter([{"16": "/root/settings.db"},
+                      {"17": "/root/missions.db", "18": "/root/old.db (deleted)"}])
+    monkeypatch.setattr(sys.modules[__name__], "_root_fds", lambda pid, root: next(snapshots))
+    monkeypatch.setattr(sys.modules[__name__], "_verified_open_files", lambda pid, fds: 0)
+    assert _holds_only_current_files(123, Path("/root")) is False
+    with pytest.raises(AssertionError, match="deleted"):
+        _holds_only_current_files(123, Path("/root"))
 
 
 def _db_fds(pid: int, root: Path) -> dict[str, str]:
@@ -230,11 +260,12 @@ def test_the_real_coordinator_holds_nothing_under_the_root_and_reopens_the_resto
                   and _db_fds(c, root), what="the respawned coordinator")
         second = _children(sup.pid)[0]
         assert not Path(f"/proc/{first}").exists()                      # the old one is gone
-        fds = _root_fds(second, root)
-        assert not [t for t in fds.values() if t.endswith("(deleted)")], fds
-        # Every still-open file IS the file on disk now. Short-lived atomic-write
-        # descriptors can legitimately close between listing /proc and stat().
-        _assert_open_files_current(second, fds)
+        # Every still-open file IS the file on disk now. The respawned coordinator's first
+        # opens can all be short-lived (settings, checkpoint restore, atomic writes) and close
+        # between listing /proc and stat(), so snapshot until one descriptor is still open
+        # when checked; every snapshot is held to the invariant in full (PR #1321 CI).
+        _wait_for(lambda: _holds_only_current_files(second, root),
+                  what="a verified live descriptor of the respawned coordinator")
         kinds = [(e.get("supervisor_event"), e.get("exit_code")) for e in _events(run_log)]
         assert ("child_exited", coordinator.RESTORE_YIELD_EXIT) in kinds, kinds
         assert ("respawned", None) in kinds
