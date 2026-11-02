@@ -165,6 +165,8 @@ def test_create_refuses_taken_reserved_and_unsafe_ids_and_writes_nothing(http, h
     first = post(name="Vega")
     assert first.status_code == 201
     assert post(name="Vega").json()["error"] == "agent_exists"
+    clash = post(name="Pepper", agent_id="pepper2")                               # another agent's name
+    assert clash.status_code == 409 and clash.json() == {"error": "name_taken", "agent": "pepper"}
 
 
 def test_a_failed_persona_write_leaves_no_half_made_agent(http, hub, env, monkeypatch):

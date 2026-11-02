@@ -1099,11 +1099,14 @@ class Orchestrator:
                 self.agents[agent_id] = agent
                 logger.info(f"Loaded: {agent_id}")
                 # H202: an agent the owner created is wake-word routable like a shipped one.
-                if agent_id not in self.router.ROUTING_TABLE:
-                    self.router.ROUTING_TABLE[agent_id] = [agent_id]
-            elif agent_config.status == "retired" and self.router.ROUTING_TABLE.get(agent_id) == [agent_id]:
+                wake = self._wake_table()
+                if wake is not None and agent_id not in wake:
+                    wake[agent_id] = [agent_id]
+            elif agent_config.status == "retired":
                 # H202: an agent the owner retired is not addressed by its wake word.
-                del self.router.ROUTING_TABLE[agent_id]
+                wake = self._wake_table()
+                if wake is not None and wake.get(agent_id) == [agent_id]:
+                    del wake[agent_id]
 
         self._configure_cognition_roster()
         _record_identity_version(self)
@@ -5930,6 +5933,12 @@ class Orchestrator:
         logger.info(f"promote_bench_agent: {bench_id} ({name}) is now active")
         return True
 
+    def _wake_table(self) -> dict | None:
+        """The intent router's wake-word table (agent id → routes-to), or None before a
+        router is wired: H202's created and retired agents join and leave it."""
+        table = getattr(getattr(self, "router", None), "ROUTING_TABLE", None)
+        return table if isinstance(table, dict) else None
+
     @staticmethod
     def agent_dict(agent_config) -> dict:
         """The constructor config ``load_agents`` builds an ``Agent`` from, for one
@@ -5967,8 +5976,9 @@ class Orchestrator:
         addressable. Nothing it left behind is touched (persona, versions, history, memory).
         Returns the agent that was live, or None."""
         agent = self.agents.pop(agent_id, None)
-        if self.router.ROUTING_TABLE.get(agent_id) == [agent_id]:
-            del self.router.ROUTING_TABLE[agent_id]
+        wake = self._wake_table()
+        if wake is not None and wake.get(agent_id) == [agent_id]:
+            del wake[agent_id]
         logger.info(f"retire_live_agent: {agent_id} is no longer live")
         return agent
 

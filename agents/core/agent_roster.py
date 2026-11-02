@@ -219,6 +219,17 @@ def _check_new_id(orch: Any, ident: str) -> None:
         raise SoulEditError("agent_exists", 409, agent=ident, detail="a folder by that name already exists")
 
 
+def _refuse_taken_name(registry: dict, display: str, ident: str) -> None:
+    """409 when another agent (active or retired) is called *display*, or has it as its id:
+    two agents one name apart is the confusion a roster exists to avoid."""
+    folded = display.casefold()
+    clash = next((other for other, row in registry.items()
+                  if other != ident and getattr(row, "status", "") in STATUSES
+                  and (str(getattr(row, "name", "")).casefold() == folded or other == folded)), None)
+    if clash is not None:
+        raise SoulEditError("name_taken", 409, agent=clash)
+
+
 def _revise(entry: dict, action: str, *, name: str, now: float, **extra: Any) -> int:
     revisions = entry.setdefault("revisions", [])
     number = int(revisions[-1].get("rev", 0)) + 1 if revisions else 1
@@ -333,8 +344,8 @@ def create(orch: Any, *, name: Any, template: Any = "", agent_id: Any = "", tier
     """Create an agent from *template* (a key of ``agent_templates``; empty or ``blank``
     starts from nothing), persist it in the roster and make it live with its persona.
 
-    Raises :class:`SoulEditError`: 409 safe mode, a taken/reserved id or too many created
-    agents; 404 an unknown template; 413/422 a persona the SOUL guard refuses, a bad name,
+    Raises :class:`SoulEditError`: 409 safe mode, a taken/reserved id, a name another agent
+    has, or too many created agents; 404 an unknown template; 413/422 a persona the SOUL guard refuses, a bad name,
     id or tier; 503 an unreadable roster. Blocking I/O: call it off the event loop.
     """
     from . import soul_edit
@@ -360,6 +371,7 @@ def create(orch: Any, *, name: Any, template: Any = "", agent_id: Any = "", tier
         config = build_agent_config(key, name=display, overrides={"id": wanted} if wanted else {})
     ident = wanted or config["id"]
     _check_new_id(orch, ident)
+    _refuse_taken_name(_registry(orch), display, ident)
     roster_tier = str(tier or "").strip().lower() or ROSTER_TIERS.get(key, "foundation")
     if roster_tier not in TIERS:
         raise SoulEditError("bad_tier", 422, tiers=list(TIERS))
@@ -430,12 +442,7 @@ def rename(orch: Any, agent_id: Any, name: Any) -> dict:
     before = cfg.name
     if display == before:
         return {"agent": describe(orch, ident, _entry_quiet(ident)), "changed": False, "audited": False}
-    folded = display.casefold()
-    clash = next((other for other, row in registry.items()
-                  if other != ident and getattr(row, "status", "") in STATUSES
-                  and (str(getattr(row, "name", "")).casefold() == folded or other == folded)), None)
-    if clash is not None:
-        raise SoulEditError("name_taken", 409, agent=clash)
+    _refuse_taken_name(registry, display, ident)
     now = time.time()
     with _LOCK:
         data = read()
