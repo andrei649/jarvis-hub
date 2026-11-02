@@ -237,7 +237,8 @@ async def agent_create(body: AgentCreateBody, req: Request):
     persona the guard refuses or a bad name, id or tier; 503 an unreadable roster."""
     from agents.core import agent_roster
 
-    return await _roster_change(req, "create", body.agent_id, lambda orch: agent_roster.create(
+    target = agent_roster.new_agent_id(body.name, body.agent_id)          # what the kernel is told
+    return await _roster_change(req, "create", target, lambda orch: agent_roster.create(
         orch, name=body.name, template=body.template, agent_id=body.agent_id, tier=body.tier,
         persona=body.soul), status_code=201)
 

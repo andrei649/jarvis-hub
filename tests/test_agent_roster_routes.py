@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,9 @@ class _Audit:
 
     def log(self, event):
         self.rows.append(event)
+
+    def preview(self, text, limit=100):                                 # a chat turn's audit row
+        return str(text or "")[:limit]
 
     def actions(self):
         return [row.action_taken for row in self.rows if str(row.action_taken).startswith(("agent_", "soul_"))]
@@ -267,6 +271,80 @@ def test_a_created_agent_retires_and_restores_and_jarvis_cannot_be_retired(http,
     assert refused.status_code == 409 and refused.json()["error"] == "protected" and "jarvis" in hub.agents
 
 
+# ── routing after a retire ───────────────────────────────────────────────────
+
+
+def test_a_turn_for_a_retired_agent_goes_to_jarvis_on_both_chat_paths(http, hub, env, monkeypatch):
+    """A retired agent's keyword rules no longer route to it: the turn is Jarvis's on the
+    plain and the streaming chat path, no plugin is fetched on the retired agent's behalf,
+    and the same holds on the next boot. (Before, the keyword stage still picked friday or hestia,
+    nobody live answered, and the reply was a hollow 'Done, sir.' or a false 'ran out of
+    context'.)"""
+    from agents.core.agent import Agent
+
+    async def answer(self, text, context, *, prepared=None):
+        return f"{self.id} answered"
+
+    monkeypatch.setattr(Agent, "process", answer)
+    before = asyncio.run(hub.router.classify("what's the weather forecast", hub.agents))
+    assert before.target_agents == ["friday"] and "weather" in before.context["keywords_found"]
+
+    for ident in ("friday", "hestia"):
+        got = http.post(f"/api/admin/agents/{ident}/retire", json={"confirm": ident}, headers=HDR)
+        assert got.status_code == 200, got.text
+
+    for orch in (hub, _boot(env)):
+        intent = asyncio.run(orch.router.classify("what's the weather forecast", orch.agents))
+        assert intent.target_agents == ["jarvis"] and intent.is_general
+        assert "weather" not in intent.context.get("keywords_found", [])
+        deterministic = asyncio.run(orch.router.classify_deterministic("set the thermostat to 21", orch.agents))
+        assert deterministic.target_agents == ["jarvis"]
+
+    asked = []
+    check_call = hub.permission_gate.check_call
+
+    def recording_gate(plugin_id, agent_id, *a, **k):
+        asked.append(agent_id)
+        return check_call(plugin_id, agent_id, *a, **k)
+
+    monkeypatch.setattr(hub.permission_gate, "check_call", recording_gate)
+    reply = asyncio.run(hub.handle_input("what's the weather forecast", channel="internal"))
+    assert reply == "jarvis answered"
+    assert "friday" not in asked                                         # no plugin runs on its behalf
+
+    selected = []
+    select = hub.llm_router.select_backend
+
+    def recording(agent_id, prompt, *a, **k):
+        selected.append(agent_id)
+        return select(agent_id, prompt, *a, **k)
+
+    monkeypatch.setattr(hub.llm_router, "select_backend", recording)
+    streamed = asyncio.run(hub.handle_input_stream("set the thermostat to 21", channel="web",
+                                                   on_token=lambda _t: None))
+    assert selected and set(selected) == {"jarvis"}
+    assert "cut short" not in streamed and "Done, sir." not in streamed
+
+    # A rule shared with a live agent still routes, to the agents that are left.
+    shared = asyncio.run(hub.router.classify("check my email inbox", hub.agents))
+    assert shared.target_agents and "friday" not in shared.target_agents and "email" in shared.context["keywords_found"]
+
+
+def test_the_keyword_stage_only_scores_agents_still_in_the_wake_table():
+    from agents.core.config import JarvisConfig
+    from agents.core.router import IntentRouter
+
+    router = IntentRouter(JarvisConfig())
+    assert asyncio.run(router.classify("check my email inbox", {})).target_agents == ["pepper", "stark", "veronica"]
+    del router.ROUTING_TABLE["pepper"]
+    shared = asyncio.run(router.classify("check my email inbox", {}))
+    assert shared.target_agents == ["stark", "veronica"] and shared.context["keywords_found"] == ["email"]
+    del router.ROUTING_TABLE["gecko"]
+    alone = asyncio.run(router.classify("how much money is in my budget", {}))
+    assert alone.target_agents == ["jarvis"] and alone.is_general
+    assert IntentRouter.ROUTING_TABLE["pepper"] == ["pepper"]           # the class default is untouched
+
+
 # ── governance ───────────────────────────────────────────────────────────────
 
 
@@ -283,6 +361,86 @@ def test_every_roster_route_is_admin_only(http, env):
     for key in ("GET /api/admin/agents/roster", "POST /api/admin/agents", "POST /api/admin/agents/{agent_id}/rename",
                 "POST /api/admin/agents/{agent_id}/retire", "POST /api/admin/agents/{agent_id}/restore"):
         assert snapshot[key] == "admin"
+
+
+def test_the_kernel_is_told_the_id_a_create_will_give(http, hub, monkeypatch):
+    from agents.core.routers import security
+
+    told = []
+
+    def denial(orch, kind, capability, payload, token):
+        told.append((kind, payload))
+        return None
+
+    monkeypatch.setattr(security, "_admin_kernel_denial", denial)
+    assert http.post("/api/admin/agents", json={"name": "Vega  Prime"}, headers=HDR).status_code == 201
+    assert http.post("/api/admin/agents", json={"name": "Lyra", "agent_id": "lyra_x"}, headers=HDR).status_code == 201
+    assert told == [("admin.agent_roster", {"op": "create", "target": "vega_prime"}),
+                    ("admin.agent_roster", {"op": "create", "target": "lyra_x"})]
+    assert {"vega_prime", "lyra_x"} <= set(hub.agents)
+
+
+class _HeldLock:
+    """The roster lock, held by the test: says when a change is waiting for it."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.waiting = threading.Event()
+
+    def __enter__(self):
+        self.waiting.set()
+        self.lock.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.lock.release()
+
+
+def _while_waiting(monkeypatch, change, meanwhile):
+    """Run *change* in a thread; once it waits for the roster lock, apply *meanwhile* (a
+    change that won the lock first) and let it through. Returns what *change* raised."""
+    from agents.core import agent_roster
+
+    held = _HeldLock()
+    monkeypatch.setattr(agent_roster, "_LOCK", held)
+    held.lock.acquire()
+    raised = []
+
+    def run():
+        try:
+            change()
+        except Exception as exc:  # noqa: BLE001 - the refusal is the result
+            raised.append(exc)
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    assert held.waiting.wait(10)
+    meanwhile()
+    held.lock.release()
+    worker.join(10)
+    assert not worker.is_alive()
+    return raised
+
+
+def test_a_name_taken_while_a_change_waits_for_the_lock_is_still_refused(hub, env, monkeypatch):
+    from agents.core import agent_roster
+    from agents.core.config import AgentConfig
+
+    def other_create():
+        hub.config.agents["vega"] = AgentConfig({"id": "vega", "name": "Vega", "status": "active"})
+
+    raised = _while_waiting(monkeypatch, lambda: agent_roster.create(hub, name="Vega", agent_id="vega_two"),
+                            other_create)
+    assert [getattr(e, "code", e) for e in raised] == ["name_taken"]
+    assert "vega_two" not in hub.agents and "vega_two" not in hub.config.agents
+    assert not (env / "data" / "agent_roster.json").exists()
+
+    def other_rename():
+        hub.config.agents["pepper"].name = "Penny"
+
+    raised = _while_waiting(monkeypatch, lambda: agent_roster.rename(hub, "friday", "Penny"), other_rename)
+    assert [getattr(e, "code", e) for e in raised] == ["name_taken"]
+    assert hub.config.agents["friday"].name == "Friday" and not (env / "data" / "agent_roster.json").exists()
 
 
 def test_the_kernel_denies_a_change_while_halted_before_anything_is_written(http, hub, env, monkeypatch):

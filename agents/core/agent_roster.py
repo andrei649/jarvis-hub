@@ -230,6 +230,15 @@ def _refuse_taken_name(registry: dict, display: str, ident: str) -> None:
         raise SoulEditError("name_taken", 409, agent=clash)
 
 
+def new_agent_id(name: Any, agent_id: Any = "") -> str:
+    """The id :func:`create` gives a new agent: *agent_id* when one is named, else the
+    template builders' slug of the cleaned *name*. The kernel names it as the target."""
+    from .agent_templates import _slugify
+
+    wanted = str(agent_id or "").strip().lower()
+    return wanted or _slugify(" ".join(name.split()) if isinstance(name, str) else "")
+
+
 def _revise(entry: dict, action: str, *, name: str, now: float, **extra: Any) -> int:
     revisions = entry.setdefault("revisions", [])
     number = int(revisions[-1].get("rev", 0)) + 1 if revisions else 1
@@ -369,7 +378,7 @@ def create(orch: Any, *, name: Any, template: Any = "", agent_id: Any = "", tier
         if tmpl is None:
             raise SoulEditError("unknown_template", 404, template=key[:64])
         config = build_agent_config(key, name=display, overrides={"id": wanted} if wanted else {})
-    ident = wanted or config["id"]
+    ident = new_agent_id(display, wanted)
     _check_new_id(orch, ident)
     _refuse_taken_name(_registry(orch), display, ident)
     roster_tier = str(tier or "").strip().lower() or ROSTER_TIERS.get(key, "foundation")
@@ -390,6 +399,10 @@ def create(orch: Any, *, name: Any, template: Any = "", agent_id: Any = "", tier
     registry = _registry(orch)
     now = time.time()
     with _LOCK:
+        # Again under the lock: another create or rename may have taken the id or the
+        # name between the checks above and here.
+        _check_new_id(orch, ident)
+        _refuse_taken_name(registry, display, ident)
         data = read()
         entries = data["agents"]
         if ident in entries:
@@ -445,6 +458,7 @@ def rename(orch: Any, agent_id: Any, name: Any) -> dict:
     _refuse_taken_name(registry, display, ident)
     now = time.time()
     with _LOCK:
+        _refuse_taken_name(registry, display, ident)                    # again, under the lock
         data = read()
         entry = data["agents"].setdefault(ident, {"created": False, "status": cfg.status})
         entry["name"] = display
@@ -542,6 +556,6 @@ def restore(orch: Any, agent_id: Any) -> dict:
 
 __all__ = [
     "FILENAME", "MAX_CREATED", "MAX_REVISIONS", "NAME_CHARS", "PROTECTED", "RESERVED", "TIERS",
-    "clean_name", "create", "describe", "merge_rows", "read", "rename", "restore", "retire",
-    "roster", "roster_path",
+    "clean_name", "create", "describe", "merge_rows", "new_agent_id", "read", "rename", "restore",
+    "retire", "roster", "roster_path",
 ]

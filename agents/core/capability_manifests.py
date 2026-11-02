@@ -311,6 +311,22 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.routers.security:capabilities_issue",
     ),
+    # H202 — the owner's roster. Every change is a numbered roster revision and nothing is
+    # deleted, so each one is undone by its opposite change (agent_roster.py).
+    "admin.agent_roster": _action(
+        "admin.agent_roster",
+        "Create, rename, retire or restore an agent in the owner's persisted roster.",
+        required=("op", "target"),
+        supports=("create", "rename", "retire", "restore"),
+        rollback=RollbackContract(
+            mode="compensate",
+            description="Apply the opposite roster change: retire a created agent, restore "
+                        "a retired one, rename back to the previous name.",
+            limitations="A created agent's persona folder and versions stay after a retire; "
+                        "nothing in the roster is ever deleted.",
+        ),
+        implementation="agents.core.routers.agents_api:_roster_change",
+    ),
     "kg.write": _action(
         "kg.write",
         "Apply an externally requested mutation to the governed knowledge graph.",

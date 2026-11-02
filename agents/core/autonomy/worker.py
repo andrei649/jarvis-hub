@@ -334,6 +334,9 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     "repo.sync": (),
     "admin.kill_switch": (),
     "admin.capability_issue": (),
+    # admin.agent_roster — H202's roster changes run only from admin routes and the CLI,
+    # never as an autonomy task, so no handler here returns a refusal for it.
+    "admin.agent_roster": (),
     "kg.write": (),
     # channel.reply — ChannelReplyBroker.execute (its contract denial is ``blocked``).
     "channel.reply": ("channel_manager_unavailable", "reply_transport_unavailable"),
