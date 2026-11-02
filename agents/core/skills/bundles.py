@@ -864,15 +864,6 @@ def turn_block(loader: Any, agent: str, *, session: str, template_vars: Any = No
         if skill is None:
             late.append((name, _why(loader, (getattr(loader, "skills", None) or {}).get(name), reply, agent)))
             continue
-        if environment_registry is not None:
-            try:
-                tools.declare_skill_environment(
-                    environment_registry, current_loader or (lambda: loader), skill,
-                    getattr(skill, "view_files", None) or {}, str(reply.get("warning") or ""),
-                    actor=agent, tag=principal_tag, session=session)
-            except Exception:
-                # As for skill_view: a declaration that fails never fails the load or grants env.
-                logger.debug("bundle load: environment declaration skipped", exc_info=True)
         attrs = f"name={json.dumps(skill.name)} bundle={json.dumps(load.bundle.slug)}"
         text = tools._fence(tools._carry_text(reply))
         if reply.get("tainted"):
@@ -888,6 +879,17 @@ def turn_block(loader: Any, agent: str, *, session: str, template_vars: Any = No
         pieces.append(piece)
         loaded.append(skill.name)
         used += size
+        # Only a member that reached the prompt declares its required_env: one left out for
+        # room never had its instructions read, so it grants nothing (Codex review, #1331).
+        if environment_registry is not None:
+            try:
+                tools.declare_skill_environment(
+                    environment_registry, current_loader or (lambda: loader), skill,
+                    getattr(skill, "view_files", None) or {}, str(reply.get("warning") or ""),
+                    actor=agent, tag=principal_tag, session=session)
+            except Exception:
+                # As for skill_view: a declaration that fails never fails the load or grants env.
+                logger.debug("bundle load: environment declaration skipped", exc_info=True)
         if (not reply.get("tainted") and agent and session
                 and not any(r[1] == agent and r[2] is skill for r in load.reads)):
             load.reads.append((session, agent, skill, tools._reply_digest(reply), reply, rendered))

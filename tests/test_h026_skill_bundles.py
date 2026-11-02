@@ -1449,3 +1449,22 @@ def test_skill_view_declares_for_the_turn_principal_the_hub_actually_binds():
                                           actor="athena"))
         assert reply["ok"] is True, reply
         assert registry.resolve_names(agent="athena", principal="owner", session_id="s") == expected
+
+
+@pytest.mark.asyncio
+async def test_a_member_left_out_for_room_declares_no_environment(tmp_path, monkeypatch):
+    # Codex review on #1331: a member skipped by the load budget never reached the prompt,
+    # so it must not grant its required_env to execute_code.
+    from agents.core.code_env import CodeEnvRegistry
+    from agents.core.skills import bundles
+
+    weather, news = _md_skill("weather"), _md_skill("news")
+    weather.manifest["required_environment_variables"] = [{"name": "WEATHER_API_KEY"}]
+    news.manifest["required_environment_variables"] = [{"name": "NEWS_API_KEY"}]
+    orch, seen = _hub(tmp_path, monkeypatch, weather, news)
+    registry = CodeEnvRegistry()
+    orch.code_environment = registry
+    monkeypatch.setattr(bundles, "load_budget", lambda window: 0)       # nothing fits
+    _morning(tmp_path)
+    await _say(orch, "/morning what is on today")
+    assert not registry.resolve_names(agent="athena", principal="owner", session_id="s")
