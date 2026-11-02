@@ -243,9 +243,13 @@ class BackgroundReviewer:
                  proposals=None, approvals=None,
                  get_setting: Callable | None = None,
                  detect: Callable[[str], list] | None = None,
-                 now: Callable[[], float] = time.monotonic):
+                 now: Callable[[], float] = time.monotonic,
+                 audit=None):
         self._llm = llm_call
         self._living = living
+        #: H422 — the intent log (or a callable returning it) that records a fact a curated
+        #: ring refused (``memory.write_refused``); None records nothing, the log line stays.
+        self._audit = audit
         self._skills = skills
         self._learning = learning
         self._proposals = proposals
@@ -492,10 +496,10 @@ class BackgroundReviewer:
         # so the writes run in a worker thread and never stall the event loop.
         await asyncio.to_thread(self._put_facts, review["user_facts"][:max_facts],
                                 getattr(living, "user_core", None),
-                                "User profile", actions, counts)
+                                "User profile", actions, counts, label, on_demand)
         await asyncio.to_thread(self._put_facts, review["agent_facts"][:max_facts],
                                 getattr(living, "core", None),
-                                "Core memory", actions, counts)
+                                "Core memory", actions, counts, label, on_demand)
 
         if not max_facts and on_demand:
             found = sum(1 for fact in review["user_facts"] + review["agent_facts"] if not self._detect(fact))
@@ -563,12 +567,26 @@ class BackgroundReviewer:
 
         return switched_on(self._get)
 
-    def _put_facts(self, facts, store, label, actions, counts) -> None:
+    def _audit_log(self):
+        """The intent log this reviewer records refusals in (None: none)."""
+        audit = self._audit
+        if audit is not None and not callable(getattr(audit, "record", None)) and callable(audit):
+            try:
+                audit = audit()
+            except Exception:
+                logger.debug("review: the intent log could not be resolved", exc_info=True)
+                return None
+        return audit
+
+    def _put_facts(self, facts, store, label, actions, counts, actor: str = "background_review",
+                   on_demand: bool = False) -> None:
         from agents.core.cognition.memory import CoreMemoryOverBudget
+        from agents.core.memory_tool import note_ring_refusal
 
         if store is None or not hasattr(store, "put"):
             return
         added = 0
+        refused: list = []
         for fact in facts:
             if self._detect(fact):
                 counts["blocked"] += 1
@@ -588,9 +606,12 @@ class BackgroundReviewer:
                 if before is None or after != before:
                     added += 1
             except CoreMemoryOverBudget as exc:
-                # H422: one fact longer than the ring's whole character budget is refused
-                # by the ring itself; the others are still kept.
-                logger.warning("review fact not kept: %s", exc)
+                # H422: the ring refuses a fact past its character budget, its cap or the
+                # per-fact limit, as Hermes's store refuses its own background review; no
+                # curated fact rotates out to make room. Logged with the ring's usage and
+                # recorded in the intent log; the other facts are still tried.
+                refused.append(exc)
+                note_ring_refusal(self._audit_log(), actor, exc)
             except Exception:
                 # H423: a ring held by another writer, or hand-edited past reading back,
                 # is not written over; the fact is not kept.
@@ -598,6 +619,18 @@ class BackgroundReviewer:
         if added:
             counts["facts"] += added
             actions.append(f"{label} updated (+{added})")
+        if refused and on_demand:
+            # Said to the owner who asked (/refine); the per-turn pass stays quiet, as it
+            # does for a switched-off memory (the log line and the intent log keep it).
+            full = [exc for exc in refused if exc.reason != "fact_too_long"]
+            if full:
+                last = full[-1]
+                actions.append(f"{len(full)} fact(s) found but not kept: the {last.target} ring is full "
+                               f"({last.usage}); remove or replace entries first")
+            long = [exc for exc in refused if exc.reason == "fact_too_long"]
+            if long:
+                actions.append(f"{len(long)} fact(s) found but not kept: longer than the "
+                               f"{long[0].fact_max_chars:,}-character limit for one fact")
 
     def _dispatch_new_skill(self, update, actions, label: str = "background_review") -> bool:
         """New skills ride the existing CDX-8 quarantine pipeline unchanged."""

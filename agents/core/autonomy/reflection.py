@@ -95,6 +95,7 @@ class DailyReflector:
         run_store: ReflectionRunStore | None = None,
         living_memory: Any | Callable[[], Any] | None = None,
         core_enabled: Callable[[], bool] | None = None,
+        audit: Any = None,
     ):
         self._memory = memory      # MemoryManager
         self._llm_call = llm_call  # async (prompt: str) -> str
@@ -103,6 +104,9 @@ class DailyReflector:
         #: H422 — the owner's memory switch (``memory_tool.switched_on``): off, a lesson is
         #: still encoded into the tiers but never put in the curated core ring.
         self._core_enabled = core_enabled
+        #: H422 — the intent log (or a callable returning it) that records a lesson the core
+        #: ring refused (``memory.write_refused``); None records nothing, the log line stays.
+        self._audit = audit
         self._last_run: Optional[date] = None
         self._last_result: Optional[dict] = None
         self._restore_latest_run()
@@ -233,6 +237,7 @@ class DailyReflector:
         if living is None:
             return {"available": False, "encoded": 0, "core": 0}
         encoded = core = 0
+        refused: list = []
         day = today.isoformat()
         lessons = extracted.get("lessons", [])
         if not isinstance(lessons, list):
@@ -264,13 +269,27 @@ class DailyReflector:
                     encoded += 1
                 core_memory = getattr(living, "core", None)
                 if core_on and core_memory is not None and hasattr(core_memory, "put"):
-                    core += self._put_core(core_memory, f"{day}: {lesson[:300]}")
+                    core += self._put_core(core_memory, self._core_fact(day, lesson), refused)
         except Exception:
             logger.debug("LivingMemory reflection handoff skipped", exc_info=True)
         result = {"available": True, "encoded": encoded, "core": core}
+        if refused:
+            # H422: lessons the core ring refused (full, or past a limit); nothing rotated.
+            result["core_not_kept"] = len(refused)
+            result["core_usage"] = refused[-1].usage
         if not core_on:
             result["core_switched_off"] = True
         return result
+
+    @staticmethod
+    def _core_fact(day: str, lesson: str) -> str:
+        """The core-ring line for *lesson*: dated, and cut so the whole line stays within
+        the memory tool's per-fact cap (``MAX_FACT_CHARS``), which the ring holds every
+        writer to (H422). The full lesson is encoded into the tiers either way."""
+        from ..memory_tool import MAX_FACT_CHARS
+
+        prefix = f"{day}: "
+        return prefix + lesson[:max(0, MAX_FACT_CHARS - len(prefix))]
 
     def _core_on(self) -> bool:
         """H422 — the owner's memory switch; one that cannot be read reads off, so an
@@ -285,20 +304,38 @@ class DailyReflector:
                            "goes to core memory", exc_info=True)
             return False
 
-    @staticmethod
-    def _put_core(core_memory, fact: str) -> int:
+    def _put_core(self, core_memory, fact: str, refused: "list | None" = None) -> int:
         """1 when the lesson changed the core ring, else 0. H423: a ring held by another
         writer (CoreMemoryLocked) or hand-edited past reading back (CoreMemoryDrift) refuses
         this one lesson with a warning; the remaining lessons are still encoded. H422: so
-        does a lesson longer than the ring's whole character budget (CoreMemoryOverBudget);
-        the ring rotates its oldest facts out to keep within that budget otherwise."""
+        does a full ring (CoreMemoryOverBudget: past its character budget or its cap, as
+        Hermes's store refuses every writer); no curated fact rotates out to make room. The
+        refusal is logged with the ring's usage and limit, recorded in the intent log
+        (``memory.write_refused``) and appended to *refused*."""
         from ..cognition.memory import CoreMemoryDrift, CoreMemoryLocked, CoreMemoryOverBudget
+        from ..memory_tool import note_ring_refusal
 
         try:
             return int(core_memory.put(fact) is True)
-        except (CoreMemoryLocked, CoreMemoryDrift, CoreMemoryOverBudget) as exc:
+        except CoreMemoryOverBudget as exc:
+            note_ring_refusal(self._audit_log(), "daily_reflection", exc)
+            if refused is not None:
+                refused.append(exc)
+            return 0
+        except (CoreMemoryLocked, CoreMemoryDrift) as exc:
             logger.warning("reflection lesson not kept in core memory: %s", exc)
             return 0
+
+    def _audit_log(self):
+        """The intent log this reflection records refusals in (None: none)."""
+        audit = getattr(self, "_audit", None)
+        if audit is not None and not callable(getattr(audit, "record", None)) and callable(audit):
+            try:
+                audit = audit()
+            except Exception:
+                logger.debug("reflection: the intent log could not be resolved", exc_info=True)
+                return None
+        return audit
 
     def _resolve_living_memory(self):
         source = self._living_memory

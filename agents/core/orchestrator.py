@@ -1372,7 +1372,8 @@ class Orchestrator:
         """The per-turn learning reviewer as the hub runs it: the strict-local review
         model, the living memory while cognition memory is on, and the runtime settings,
         through which it reads the owner's memory switch (H422, ``memory.core_enabled``:
-        off, no reviewed fact reaches the curated rings, whatever the posture says)."""
+        off, no reviewed fact reaches the curated rings, whatever the posture says), and the
+        intent log, which records a fact a full ring refused (H422)."""
         from .learning.background_review import BackgroundReviewer
 
         def _review_living():
@@ -1390,13 +1391,15 @@ class Orchestrator:
             proposals=getattr(self, "skill_proposals", None),
             approvals=getattr(self, "action_approvals", None),
             get_setting=self.get_setting,
+            audit=lambda: getattr(self, "intent_log", None),
         )
 
     def _build_daily_reflector(self) -> DailyReflector:
         """The nightly reflection as the hub runs it: the conversation memory, a jarvis
         turn on the reflection channel, the living memory while cognition memory is on and,
         H422, the owner's memory switch (``memory.core_enabled``, which no posture sets),
-        which keeps the nightly lessons out of the curated core ring when it is off."""
+        which keeps the nightly lessons out of the curated core ring when it is off, and the
+        intent log, which records a lesson a full ring refused."""
         from .memory_tool import switched_on
         from .paths import data_path
 
@@ -1415,6 +1418,7 @@ class Orchestrator:
             run_store=ReflectionRunStore(data_path("reflection", "daily_reflector.json")),
             living_memory=_reflection_living_memory,
             core_enabled=lambda: switched_on(getattr(self, "get_setting", None)),
+            audit=lambda: getattr(self, "intent_log", None),
         )
 
     def load_runtime_settings(self):

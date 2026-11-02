@@ -294,13 +294,50 @@ class CoreMemoryLocked(TimeoutError):
 
 
 class CoreMemoryOverBudget(ValueError):
-    """H422 — one fact longer by itself than its ring's whole character budget (as written,
-    or as the prompt block shows it). Refused: nothing is evicted and nothing written."""
+    """H422 — a fact a curated ring refuses, the way Hermes's MemoryStore refuses an entry
+    for every writer (its background review included) and never deletes a curated entry to
+    make room ("Replace or remove existing entries first"). ``reason`` says which limit:
+    ``"fact_too_long"`` (longer than one fact may be, the memory tool's
+    ``MAX_FACT_CHARS``), ``"over_budget"`` (the ring would hold more than its character
+    budget, counted on what it stores: ``core_block.stored_chars``) or ``"full"`` (it
+    already holds its cap of facts). Nothing is written and nothing rotates out. It
+    carries the ring's usage and limit, never the fact."""
 
-    def __init__(self, label: str, chars: int, budget: int) -> None:
-        self.chars, self.budget = chars, budget
-        super().__init__(f"a {chars:,}-character fact is longer than the {budget:,}-character "
-                         f"budget of the {label} ring; it is not kept")
+    def __init__(self, target: str, reason: str, *, chars: int, budget: int, chars_after: int,
+                 fact_chars: int, entries: int, cap: int, fact_max_chars: "int | None" = None) -> None:
+        self.target, self.reason = target, reason
+        #: The characters the ring holds now and its budget; what it would hold with the fact.
+        self.chars, self.budget, self.chars_after = chars, budget, chars_after
+        self.fact_chars, self.fact_max_chars = fact_chars, fact_max_chars
+        self.entries, self.cap = entries, cap
+        super().__init__(self._sentence())
+
+    @property
+    def usage(self) -> str:
+        """The limit that refused, as Hermes states a store's usage: ``"2,150/2,200"``
+        characters, or ``"20/20 facts"`` when the ring holds its cap of facts."""
+        if self.reason == "full":
+            return f"{self.entries}/{self.cap} facts"
+        return f"{self.chars:,}/{self.budget:,}"
+
+    def _sentence(self) -> str:
+        if self.reason == "fact_too_long":
+            return (f"a {self.fact_chars:,}-character fact is over the {self.fact_max_chars:,}-character "
+                    f"limit for one fact; it is not kept in the {self.target} ring "
+                    f"({self.chars:,}/{self.budget:,} characters)")
+        if self.reason == "full":
+            return (f"the {self.target} ring is full ({self.entries}/{self.cap} facts, "
+                    f"{self.chars:,}/{self.budget:,} characters); remove or replace entries first")
+        return (f"the {self.target} ring is full ({self.chars:,}/{self.budget:,} characters): a "
+                f"{self.fact_chars:,}-character fact would take it to {self.chars_after:,}; remove or "
+                "replace entries first")
+
+    def metadata(self) -> dict:
+        """What an intent-log record of the refusal carries: the ring, the limit and the
+        sizes (no text of the fact, nor a hash of it: the intent log survives a forget)."""
+        return {"target": self.target, "reason": self.reason, "usage": self.usage, "chars": self.chars,
+                "char_budget": self.budget, "chars_after": self.chars_after, "fact_chars": self.fact_chars,
+                "fact_max_chars": self.fact_max_chars, "entries": self.entries, "cap": self.cap}
 
 
 class CoreMemoryDrift(RuntimeError):
@@ -456,19 +493,28 @@ class CoreMemory(JsonStore):
     JSON, distinct one-line facts, within the cap), taken as the ring; otherwise
     :class:`CoreMemoryDrift` is raised and nothing is written over it until it is fixed.
 
-    H422: a ring may also carry a character budget (*char_budget*; ``LivingMemory`` gives
-    the agent ring Hermes's 2200 and the user ring 1375, ``core_block.CHAR_BUDGETS``),
-    counted as the prompt block counts ring *budget_target* (``core_block.section_chars``,
-    the count the memory tool and ``GET /api/memory`` use). :meth:`put` keeps the ring
-    within it, so a ring any writer saved renders whole."""
+    H422: a ring with a character budget (*char_budget*; ``LivingMemory`` gives the agent
+    ring Hermes's 2200 and the user ring 1375, ``core_block.CHAR_BUDGETS``, and the memory
+    tool's per-fact cap, *fact_max_chars*) is a curated store held the Hermes way: the
+    budget is measured on what the ring holds (``core_block.stored_chars``, the figure
+    ``GET /api/memory`` reports), and :meth:`put` refuses a fact that would pass the
+    budget, the cap or the per-fact limit (:class:`CoreMemoryOverBudget`) instead of
+    deleting a curated fact to make room. A ring already over its budget (saved before it,
+    or edited by hand) is never trimmed: it stays as it is, the block's own cut is the
+    backstop, and every put is refused until it is under the budget. A ring built without
+    a budget (the H21.3 bounded ring) still rotates its oldest fact out at the cap."""
 
     def __init__(self, cap: int = 20, path: str | Path | None = None, *,
-                 char_budget: "int | None" = None, budget_target: str = "memory") -> None:
+                 char_budget: "int | None" = None, budget_target: str = "memory",
+                 fact_max_chars: "int | None" = None) -> None:
         self.cap = cap
-        #: H422 — the ring's character budget (None: no budget, the count cap only) and the
-        #: memory tool's name for the ring, which the block's [BLOCKED] stub carries.
+        #: H422 — the ring's character budget (None: no budget, the count cap only, which
+        #: rotates) and the memory tool's name for the ring, which the block's [BLOCKED]
+        #: stub carries and a refusal names.
         self.char_budget = None if char_budget is None else int(char_budget)
         self.budget_target = budget_target
+        #: H422 — the longest fact a put keeps (None: no limit of its own).
+        self.fact_max_chars = None if fact_max_chars is None else int(fact_max_chars)
         #: H423 review — False while this ring holds no copy of its file that read back
         #: exactly (a process that started over a hand edit it cannot take): its facts are
         #: then not a "last good copy" of anything, and a prompt note says so.
@@ -722,53 +768,62 @@ class CoreMemory(JsonStore):
         self._facts = self._facts[-self.cap:]
 
     def chars(self, facts: "list[str] | None" = None) -> int:
-        """H422 — the characters *facts* (default: the ring) take in the prompt block,
-        counted as the block, the memory tool and ``GET /api/memory`` count them."""
-        from ..learning.core_block import section_chars
+        """H422 — the characters *facts* (default: the ring) hold as stored
+        (``core_block.stored_chars``): the figure :meth:`put`, the memory tool and
+        ``GET /api/memory`` hold against the budget."""
+        from ..learning.core_block import stored_chars
 
-        return section_chars(self.list() if facts is None else list(facts), self.budget_target)
+        return stored_chars(self.list() if facts is None else list(facts))
 
-    def _fact_chars(self, fact: str) -> int:
-        """One fact's size against the budget: as written (whitespace folded) or as the
-        block shows it, whichever is longer."""
-        return max(len(" ".join(fact.split())), self.chars([fact]))
+    def _refusal(self, fact: str) -> "CoreMemoryOverBudget | None":
+        """Under the locks, on the ring as just reread: why a curated ring refuses *fact*,
+        or None when it fits every limit."""
+        used, after = self.chars(self._facts), self.chars([*self._facts, fact])
+        if self.fact_max_chars is not None and len(fact) > self.fact_max_chars:
+            reason = "fact_too_long"
+        elif after > self.char_budget:
+            reason = "over_budget"
+        elif len(self._facts) >= self.cap:
+            reason = "full"
+        else:
+            return None
+        return CoreMemoryOverBudget(self.budget_target, reason, chars=used, budget=self.char_budget,
+                                    chars_after=after, fact_chars=len(fact), entries=len(self._facts),
+                                    cap=self.cap, fact_max_chars=self.fact_max_chars)
 
     def put(self, fact: str) -> bool:
-        """Add *fact* on top of the ring as it is on disk (the oldest rotates out at the
-        cap: this is the post-turn review's and the reflection's bounded ring; the model's
-        ``memory`` tool refuses at the cap instead). True when the ring changed. Raises
-        :class:`CoreMemoryLocked`, or :class:`CoreMemoryDrift` over a hand edit that
-        cannot be taken as the ring (nothing is written over it).
+        """Add *fact* on top of the ring as it is on disk: the post-turn review's and the
+        daily reflection's write (the model's ``memory`` tool writes by
+        :meth:`compare_and_set`). True when the ring changed; False for an empty fact or
+        one already saved. Raises :class:`CoreMemoryLocked`, or :class:`CoreMemoryDrift`
+        over a hand edit that cannot be taken as the ring (nothing is written over it).
 
-        H422: with a :attr:`char_budget`, the oldest facts rotate out the same way until
-        the new one fits the budget too, so every writer keeps the ring within it (the
-        memory tool refuses with the usage instead). A fact longer than the whole budget by
-        itself raises :class:`CoreMemoryOverBudget` and changes nothing."""
+        H422: a ring with a :attr:`char_budget` refuses, as Hermes's store refuses every
+        writer, a fact longer than :attr:`fact_max_chars`, or one that would take the ring
+        past its budget (measured on what it holds) or its cap: it raises
+        :class:`CoreMemoryOverBudget` with the ring's usage and limit, and nothing is
+        written or rotated out. A ring without a budget rotates its oldest fact out at the
+        cap (the H21.3 bounded ring)."""
         f = (fact or "").strip()
         if not f:
             return False
-        budget = self.char_budget
-        if budget is not None and (size := self._fact_chars(f)) > budget:
-            raise CoreMemoryOverBudget(self.budget_target, size, budget)
         with self.locked(), self._lock:
             self._sync_locked()
             if f in self._facts:
                 return False
-            facts = [*self._facts, f][-self.cap:]
-            if budget is not None:
-                while len(facts) > 1 and self.chars(facts) > budget:
-                    facts.pop(0)
-            rotated = len(self._facts) + 1 - len(facts)
+            if self.char_budget is None:
+                facts = [*self._facts, f][-self.cap:]
+            else:
+                refused = self._refusal(f)
+                if refused is not None:
+                    raise refused
+                facts = [*self._facts, f]
             previous, self._facts = self._facts, facts
             try:
                 self._save()
             except Exception:
                 self._facts = previous   # a ring that could not be saved did not change
                 raise
-            if rotated > 1:
-                logger.info("core memory: %d older facts rotated out of %s to keep it within %s",
-                            rotated, self.path or "the ring",
-                            f"its {budget:,}-character budget" if budget is not None else "its cap")
             return True
 
     def list(self) -> "list[str]":
@@ -849,15 +904,19 @@ class LivingMemory:
         user_path: str | Path | None = None,
     ) -> None:
         from ..learning.core_block import CHAR_BUDGETS
+        from ..memory_tool import MAX_FACT_CHARS
 
         self.tiers = TieredMemory(path=tiers_path)
         # H422: each ring holds its prompt section's character budget (Hermes's 2200 for
-        # the agent's notes, 1375 for the user profile) in the store, for every writer.
-        self.core = CoreMemory(path=core_path, char_budget=CHAR_BUDGETS["memory"], budget_target="memory")
+        # the agent's notes, 1375 for the user profile) and the memory tool's per-fact cap
+        # in the store, for every writer: a fact past either is refused, never made room for.
+        self.core = CoreMemory(path=core_path, char_budget=CHAR_BUDGETS["memory"], budget_target="memory",
+                               fact_max_chars=MAX_FACT_CHARS)
         # H20/H21 bridge: a second bounded core for *user* facts (who the user
         # is — hermes USER.md analog), distinct from agent-learned facts. Same
         # ring semantics; rendered as its own prompt section.
-        self.user_core = CoreMemory(path=user_path, char_budget=CHAR_BUDGETS["user"], budget_target="user")
+        self.user_core = CoreMemory(path=user_path, char_budget=CHAR_BUDGETS["user"], budget_target="user",
+                                    fact_max_chars=MAX_FACT_CHARS)
         self.embed_version = embed_version
         self.encode_threshold = encode_threshold
 

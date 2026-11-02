@@ -157,10 +157,15 @@ this order — the first ones are the most common and the cheapest to rule out:
     [--target memory|user]` erases a store for good after a typed `yes`; `nerva memory off`
     takes both out of every prompt (whatever product posture is selected) and keeps the
     per-turn review and the nightly reflection from adding to them, without erasing
-    anything, and `nerva memory on` brings them back. The memory tool refuses a write that
-    would take a store past its budget and tells the model the store's usage; the review and
-    the reflection rotate the oldest facts out instead, so no writer takes a store past it
-    (a hand edit can; the prompt then leaves the oldest out); the Long-Term
+    anything, and `nerva memory on` brings them back. The budget counts what a store holds,
+    and nothing is ever dropped to make room: the memory tool refuses a write that would take
+    a store past it and tells the model the store's usage, and the review and the reflection
+    are refused the same way (a fact over 300 characters too) — `/refine` then says
+    `N fact(s) found but not kept: the user ring is full (1,360/1,375); remove or replace
+    entries first`, and the intent log has a `memory.write_refused` record; remove or replace
+    entries (the memory tool in an owner turn, or `nerva memory reset`) to let new facts in.
+    A store already over its budget (saved before it, or edited by hand) keeps its facts, the
+    prompt leaves the oldest out, and nothing new lands until it is under. The Long-Term
     Memory panel shows the same sizes and offers the off switch and the reset. A turn that has read untrusted content (an
     inbound message, web text, a tainted recall) cannot write memory: the tool refuses with
     `memory_untrusted_turn`, so tell it the fact again in a fresh turn of your own. Older conversations are a separate,

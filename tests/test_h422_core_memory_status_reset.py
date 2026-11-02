@@ -16,10 +16,19 @@ write past a ring's character budget, and the Long-Term Memory panel shows the s
 resets.
 
 Third pass: the budget lived in the memory tool only, and the switch stopped only the prompt
-and the tool. The ring itself now holds its budget for every writer (``CoreMemory.put``, the
-post-turn review and the daily reflection rotate the oldest out), off keeps both background
-writers out of the rings under the wave-1 posture, and the hub's own memory tool (built by
-``AutonomyCoordinator._wire_agent_tool_runtime``) is the one the switch test calls.
+and the tool. The ring itself now holds its budget for every writer (``CoreMemory.put``), off
+keeps both background writers out of the rings under the wave-1 posture, and the hub's own
+memory tool (built by ``AutonomyCoordinator._wire_agent_tool_runtime``) is the one the switch
+test calls.
+
+Fourth pass: the store measured the budget on the 300-character render, so seven 2,000-character
+facts all landed and ``GET /api/memory`` read 2,120/2,200, and it made room by rotating the
+oldest facts out, a curated one included. Hermes measures what its stores hold and refuses
+every writer an entry past the limit ("Replace or remove existing entries first"). The ring
+now measures what it holds (``core_block.stored_chars``, the figure the status reports),
+holds every writer to the tool's per-fact cap, and refuses past the budget or the cap with
+nothing rotated; the review, /refine and the reflection log it and record it in the intent log,
+and a ring already over its budget stays as it is until the owner takes it under.
 """
 
 from __future__ import annotations
@@ -693,7 +702,7 @@ def _near_full(target: str, budget: int) -> list[str]:
     facts: list[str] = []
     while True:
         fact = f"{target} fact {len(facts):02d} " + "q" * 175
-        if core_block.section_chars([*facts, fact], target) > budget:
+        if core_block.stored_chars([*facts, fact]) > budget:
             return facts
         facts.append(fact)
 
@@ -705,7 +714,7 @@ def _add(target, text):
 @pytest.mark.parametrize("target,budget", [("memory", MEMORY_CHAR_BUDGET), ("user", USER_CHAR_BUDGET)])
 def test_an_add_past_the_budget_is_refused_with_the_usage_and_the_limit(target, budget):
     rings = {"memory": [], "user": [], target: _near_full(target, budget)}
-    used = core_block.section_chars(rings[target], target)
+    used = core_block.stored_chars(rings[target])
     assert len(rings[target]) < 20 and budget - 200 < used <= budget         # under the fact cap
     with pytest.raises(memory_tool.MemoryToolError) as caught:
         memory_tool.plan([_add(target, "z" * 200)], rings, {"memory": 20, "user": 20})
@@ -718,10 +727,10 @@ def test_an_add_past_the_budget_is_refused_with_the_usage_and_the_limit(target, 
 
 def test_a_fact_that_fills_the_budget_exactly_is_kept_and_one_more_character_is_not():
     rings = {"memory": _near_full("memory", MEMORY_CHAR_BUDGET), "user": []}
-    room = MEMORY_CHAR_BUDGET - core_block.section_chars(rings["memory"], "memory") - len("\n- ")
+    room = MEMORY_CHAR_BUDGET - core_block.stored_chars(rings["memory"]) - len("\n- ")
     assert 0 < room < memory_tool.MAX_FACT_CHARS
     after, _rows = memory_tool.plan([_add("memory", "e" * room)], rings, {"memory": 20, "user": 20})
-    assert core_block.section_chars(after["memory"], "memory") == MEMORY_CHAR_BUDGET
+    assert core_block.stored_chars(after["memory"]) == MEMORY_CHAR_BUDGET
     with pytest.raises(memory_tool.MemoryToolError) as caught:
         memory_tool.plan([_add("memory", "e" * (room + 1))], rings, {"memory": 20, "user": 20})
     assert caught.value.reason == "memory_over_budget"
@@ -733,14 +742,14 @@ def test_the_budget_holds_for_the_final_state_of_the_call():
                                     {"action": "remove", "target": "memory", "old_text": "memory fact 00"}],
                                    rings, {"memory": 20, "user": 20})
     assert [row["action"] for row in rows] == ["add", "remove"]
-    assert core_block.section_chars(after["memory"], "memory") <= MEMORY_CHAR_BUDGET
+    assert core_block.stored_chars(after["memory"]) <= MEMORY_CHAR_BUDGET
 
 
 def test_a_ring_already_over_its_budget_may_shrink_but_never_grow():
     legacy = [f"old fact {i:02d} " + "o" * 280 for i in range(20)]             # written before the budget
     rings = {"memory": legacy, "user": []}
     caps = {"memory": 20, "user": 20}
-    assert core_block.section_chars(legacy, "memory") > MEMORY_CHAR_BUDGET
+    assert core_block.stored_chars(legacy) > MEMORY_CHAR_BUDGET
     after, _ = memory_tool.plan([{"action": "remove", "target": "memory", "old_text": "old fact 03"}], rings, caps)
     assert len(after["memory"]) == 19
     after, _ = memory_tool.plan([{"action": "replace", "target": "memory", "old_text": "old fact 04",
@@ -774,7 +783,7 @@ async def test_the_tool_tells_the_model_the_usage_and_the_limit_and_the_store_st
     living = _rings(tmp_path, core=_near_full("memory", MEMORY_CHAR_BUDGET))
     _server, call = _tool(tmp_path, living)
     before = living.core.list()
-    used = core_block.section_chars(before, "memory")
+    used = core_block.stored_chars(before)
     refused = await call(_add("memory", "z" * 250))
     assert refused["ok"] is False and refused["reason"] == "memory_over_budget"
     assert refused["usage"] == f"{used:,}/{MEMORY_CHAR_BUDGET:,}" and refused["char_budget"] == MEMORY_CHAR_BUDGET
@@ -816,13 +825,13 @@ async def test_the_owner_switch_makes_the_tool_read_as_off(tmp_path):
     assert (await call(_add("memory", "x")))["ok"] is True and living.core.list() == ["uses uv", "x"]
 
 
-# ── the store keeps each ring within its budget, for every writer ────────────
+# ── the store holds every writer to each ring's budget, by refusing ──────────
 
-def _living(tmp_path):
+def _living(tmp_path, name: str = ""):
     from agents.core.cognition.memory import LivingMemory
 
-    return LivingMemory(core_path=tmp_path / "core.json", tiers_path=tmp_path / "tiers.json",
-                        user_path=tmp_path / "user.json")
+    return LivingMemory(core_path=tmp_path / f"{name}core.json", tiers_path=tmp_path / f"{name}tiers.json",
+                        user_path=tmp_path / f"{name}user.json")
 
 
 def _long(n: int, tag: str) -> str:
@@ -830,55 +839,123 @@ def _long(n: int, tag: str) -> str:
 
 
 _RINGS = (("core", "memory", MEMORY_CHAR_BUDGET), ("user_core", "user", USER_CHAR_BUDGET))
-
-
-def _within_budgets(living) -> None:
-    for attr, target, budget in _RINGS:
-        facts = getattr(living, attr).list()
-        assert core_block.section_chars(facts, target) <= budget, (target, len(facts))
+_FILES = {"core": "core.json", "user_core": "user.json"}
 
 
 @pytest.mark.parametrize("attr,target,budget", _RINGS)
-def test_put_rotates_the_oldest_out_until_the_new_fact_fits_the_budget(tmp_path, attr, target, budget):
+def test_put_refuses_the_fact_that_would_pass_the_budget_and_rotates_nothing(tmp_path, attr, target, budget):
     living = _living(tmp_path)
     ring = getattr(living, attr)
-    assert (ring.char_budget, ring.budget_target) == (budget, target)
-    for n in range(20):
-        assert ring.put(_long(n, target)) is True
-        facts = ring.list()
-        assert core_block.section_chars(facts, target) <= budget
-        # The newest facts, oldest rotated out first: the count FIFO's own order.
-        assert facts == [_long(i, target) for i in range(n + 1 - len(facts), n + 1)]
-    assert len(ring.list()) < ring.cap                       # the budget bounded it, not the cap
-    reopened = _living(tmp_path)                             # what is on disk renders whole
+    assert (ring.char_budget, ring.budget_target, ring.fact_max_chars) == (budget, target, memory_tool.MAX_FACT_CHARS)
+    kept: list[str] = []
+    fact = _long(0, target)
+    while core_block.stored_chars([*kept, fact]) <= budget:
+        assert ring.put(fact) is True
+        kept.append(fact)
+        fact = _long(len(kept), target)
+    on_disk = (tmp_path / _FILES[attr]).read_bytes()
+    used = core_block.stored_chars(kept)
+    with pytest.raises(cognition_memory.CoreMemoryOverBudget) as caught:
+        ring.put(fact)
+    err = caught.value
+    assert (err.target, err.reason, err.usage) == (target, "over_budget", f"{used:,}/{budget:,}")
+    assert (err.chars, err.budget, err.fact_chars) == (used, budget, len(fact))
+    assert err.chars_after == core_block.stored_chars([*kept, fact]) > budget
+    assert "remove or replace entries first" in str(err) and fact not in str(err)
+    assert fact not in json.dumps(err.metadata())
+    assert ring.list() == kept and (tmp_path / _FILES[attr]).read_bytes() == on_disk   # nothing rotated
+    assert ring.put(kept[0]) is False                                    # a saved fact is not a refusal
+    reopened = _living(tmp_path)                                         # what is on disk renders whole
     usage = core_block_usage(reopened)[target]
-    assert usage["omitted"] == 0 and usage["chars"] <= budget and "not shown" not in render_core_block(reopened)
+    assert usage["chars"] == used == getattr(reopened, attr).chars() and usage["omitted"] == 0
+    assert "not shown" not in render_core_block(reopened)
 
 
-def test_a_fact_longer_than_the_whole_budget_is_refused_and_nothing_rotates(tmp_path):
+def test_the_budget_is_measured_on_what_the_ring_holds_not_on_the_cut_render(tmp_path):
+    # Seven 2,000-character facts: cut to 300 for the prompt they would fit 2,200 seven
+    # times over; the facts themselves do not.
+    raw = [f"long fact {i} " + "r" * (2000 - len(f"long fact {i} ")) for i in range(7)]
+    assert core_block.section_chars(raw, "memory") <= MEMORY_CHAR_BUDGET < core_block.stored_chars(raw)
+    ring = CoreMemory(path=tmp_path / "core.json", char_budget=MEMORY_CHAR_BUDGET, budget_target="memory")
+    landed, reasons = [], []
+    for fact in raw:
+        try:
+            ring.put(fact)
+        except cognition_memory.CoreMemoryOverBudget as exc:
+            reasons.append(exc.reason)
+            continue
+        landed.append(fact)
+    assert landed == raw[:1] and ring.list() == raw[:1] and reasons == ["over_budget"] * 6
+    assert ring.chars() == core_block.stored_chars(raw[:1]) == 2 + 2000
+    # A LivingMemory ring also holds the memory tool's per-fact cap: none of them lands.
+    living = _living(tmp_path, "lm-")
+    for attr, _target, _budget in _RINGS:
+        for fact in raw:
+            with pytest.raises(cognition_memory.CoreMemoryOverBudget) as caught:
+                getattr(living, attr).put(fact)
+            assert caught.value.reason == "fact_too_long"
+        assert getattr(living, attr).list() == []
+
+
+def test_every_put_is_held_to_the_memory_tools_per_fact_cap(tmp_path):
     living = _living(tmp_path)
-    living.user_core.put("prefers short answers")
+    cap = memory_tool.MAX_FACT_CHARS
+    assert living.user_core.put("prefers short answers") is True
     on_disk = (tmp_path / "user.json").read_bytes()
     with pytest.raises(cognition_memory.CoreMemoryOverBudget) as caught:
-        living.user_core.put("w" * (USER_CHAR_BUDGET + 1))
-    assert (caught.value.chars, caught.value.budget) == (USER_CHAR_BUDGET + 1, USER_CHAR_BUDGET)
-    assert living.user_core.list() == ["prefers short answers"]
-    assert (tmp_path / "user.json").read_bytes() == on_disk
-    assert living.user_core.put("w" * USER_CHAR_BUDGET) is True              # exactly the budget fits
-    assert living.user_core.list() == ["prefers short answers", "w" * USER_CHAR_BUDGET]
+        living.user_core.put("w" * (cap + 1))
+    err = caught.value
+    assert (err.reason, err.fact_chars, err.fact_max_chars) == ("fact_too_long", cap + 1, cap)
+    assert f"over the {cap:,}-character limit for one fact" in str(err)
+    assert living.user_core.list() == ["prefers short answers"] and (tmp_path / "user.json").read_bytes() == on_disk
+    assert living.user_core.put("w" * cap) is True                       # exactly the cap is kept
+    facts = living.user_core.list()
+    assert core_block.stored_chars(facts) == core_block.section_chars(facts, "user")   # stored == rendered
 
 
-def test_a_ring_over_its_budget_on_disk_is_brought_within_it_by_the_next_put(tmp_path):
-    legacy = [f"old fact {i:02d} " + "o" * 280 for i in range(20)]           # saved before the budget
+def test_a_ring_at_its_cap_refuses_the_next_fact_and_keeps_its_oldest(tmp_path):
+    # Hermes's stores have no count cap and never delete an entry to make room, so the
+    # cap refuses as the budget does; nothing rotates out of a curated ring.
+    living = _living(tmp_path)
+    cap = living.core.cap
+    facts = [f"f{i:02d}" for i in range(cap)]
+    for fact in facts:
+        assert living.core.put(fact) is True
+    on_disk = (tmp_path / "core.json").read_bytes()
+    with pytest.raises(cognition_memory.CoreMemoryOverBudget) as caught:
+        living.core.put("one more")
+    assert caught.value.reason == "full" and caught.value.usage == f"{cap}/{cap} facts"
+    assert living.core.list() == facts and (tmp_path / "core.json").read_bytes() == on_disk
+    # The H21.3 bounded ring, built without a budget, still rotates at its cap.
+    plain = CoreMemory(cap=2, path=tmp_path / "plain.json")
+    for fact in ("a", "b", "c"):
+        plain.put(fact)
+    assert plain.list() == ["b", "c"]
+
+
+async def test_a_ring_over_its_budget_on_disk_stays_and_refuses_puts_until_it_is_under(tmp_path):
+    legacy = [f"old fact {i:02d} " + "o" * 280 for i in range(10)]          # saved before the budget
     seed = CoreMemory(path=tmp_path / "core.json")
     for fact in legacy:
         seed.put(fact)
+    on_disk = (tmp_path / "core.json").read_bytes()
     living = _living(tmp_path)
-    assert core_block.section_chars(living.core.list(), "memory") > MEMORY_CHAR_BUDGET
-    assert living.core.put("a new fact") is True
-    facts = living.core.list()
-    assert facts[-1] == "a new fact" and core_block.section_chars(facts, "memory") <= MEMORY_CHAR_BUDGET
-    assert facts[:-1] == legacy[len(legacy) + 1 - len(facts):]
+    assert living.core.list() == legacy and living.core.chars() > MEMORY_CHAR_BUDGET   # not trimmed
+    with pytest.raises(cognition_memory.CoreMemoryOverBudget) as caught:
+        living.core.put("a new fact")
+    assert caught.value.reason == "over_budget" and caught.value.chars == core_block.stored_chars(legacy)
+    assert living.core.list() == legacy and (tmp_path / "core.json").read_bytes() == on_disk
+    # The render-time cut stays the backstop: the newest that fit, one line naming the rest.
+    usage = core_block_usage(living)["memory"]
+    assert usage["chars"] == core_block.stored_chars(legacy) > MEMORY_CHAR_BUDGET >= usage["rendered_chars"]
+    assert usage["omitted"] > 0 and "older core memory entries not shown" in render_core_block(living)
+    # The owner's removals (the memory tool) take it under the budget; then a put that fits lands.
+    _server, call = _tool(tmp_path, living)
+    for n in range(3):
+        removed = await call({"action": "remove", "target": "memory", "old_text": f"old fact {n:02d}"})
+        assert removed["ok"] is True, removed
+    assert living.core.chars() <= MEMORY_CHAR_BUDGET
+    assert living.core.put("a new fact") is True and living.core.list() == [*legacy[3:], "a new fact"]
 
 
 async def test_the_tool_still_refuses_with_the_usage_on_a_budgeted_ring_and_rotates_nothing(tmp_path):
@@ -887,7 +964,7 @@ async def test_the_tool_still_refuses_with_the_usage_on_a_budgeted_ring_and_rota
         assert living.core.put(fact) is True
     before = living.core.list()
     assert before == _near_full("memory", MEMORY_CHAR_BUDGET)              # the store rotated none
-    used = core_block.section_chars(before, "memory")
+    used = core_block.stored_chars(before)
     _server, call = _tool(tmp_path, living)
     refused = await call(_add("memory", "z" * 250))
     assert refused["reason"] == "memory_over_budget"
@@ -900,49 +977,123 @@ def _review_reply(agent=(), user=()) -> str:
                        "skill_updates": [], "nothing": False})
 
 
-async def test_the_post_turn_review_keeps_both_rings_within_their_budgets(tmp_path, caplog):
+async def test_the_post_turn_review_is_refused_by_a_full_ring_and_never_rotates_a_curated_fact(tmp_path, caplog):
     from agents.core.learning.background_review import BackgroundReviewer
 
     living = _living(tmp_path)
+    _server, call = _tool(tmp_path, living)
+    assert (await call(_add("user", "the owner is Andrei")))["ok"] is True       # a curated fact
     replies: list[str] = []
 
     async def llm(prompt):
         return replies.pop(0)
 
-    reviewer = BackgroundReviewer(llm, living=living)
-    for turn in range(8):
-        replies.append(_review_reply(agent=[_long(3 * turn + i, "memory") for i in range(3)],
-                                     user=[_long(3 * turn + i, "user") for i in range(3)]))
-        result = await reviewer.run("u", "a", cadence=False)
-        assert result["ran"] is True and result["counts"]["facts"] == 6, result
-        _within_budgets(living)
-    assert living.core.list()[-1] == _long(23, "memory") and living.user_core.list()[-1] == _long(23, "user")
-    usage = core_block_usage(living)
-    assert usage["memory"]["omitted"] == 0 and usage["user"]["omitted"] == 0
-
-    # One fact longer than the whole ring is refused by the ring; the others are kept.
-    replies.append(_review_reply(agent=["x" * (MEMORY_CHAR_BUDGET + 1), "a short fact"]))
+    audit = _Audit()
+    reviewer = BackgroundReviewer(llm, living=living, audit=lambda: audit)
+    kept = 0
     with caplog.at_level("WARNING"):
-        result = await reviewer.run("u", "a", cadence=False)
-    assert result["actions"] == ["Core memory updated (+1)"]
-    assert living.core.list()[-1] == "a short fact" and "review fact not kept" in caplog.text
-    _within_budgets(living)
+        for turn in range(8):
+            facts = [f"user habit {3 * turn + i:02d} " + "h" * 95 for i in range(3)]
+            replies.append(_review_reply(user=facts))
+            result = await reviewer.run("u", "a", cadence=False)
+            assert result["ran"] is True and not any("not kept" in a for a in result["actions"]), result
+            kept += result["counts"]["facts"]
+            assert living.user_core.list()[0] == "the owner is Andrei"          # never rotated out
+            assert living.user_core.chars() <= USER_CHAR_BUDGET
+    assert 0 < kept < 24 and len(living.user_core.list()) == 1 + kept
+    refusals = [row for row in audit.rows if row["action"] == "memory.write_refused"]
+    assert len(refusals) == 24 - kept and {row["actor"] for row in refusals} == {"background_review"}
+    used = living.user_core.chars()
+    assert refusals[-1]["metadata"]["target"] == "user" and refusals[-1]["metadata"]["reason"] == "over_budget"
+    assert refusals[-1]["metadata"]["usage"] == f"{used:,}/{USER_CHAR_BUDGET:,}"
+    assert refusals[-1]["metadata"]["char_budget"] == USER_CHAR_BUDGET
+    assert "user habit" not in json.dumps(audit.rows)                            # no fact text
+    assert f"the user ring is full ({used:,}/{USER_CHAR_BUDGET:,} characters)" in caplog.text
+
+    # /refine says what it found and could not keep, and why.
+    on_disk = (tmp_path / "user.json").read_bytes()
+    replies.append(_review_reply(user=["works late " + "w" * 100, "uses vim " + "v" * 100],
+                                 agent=["x" * (memory_tool.MAX_FACT_CHARS + 1), "the build runs on uv"]))
+    refine = await reviewer.run_on_demand("user: what did you learn?")
+    assert refine["actions"] == [
+        "2 fact(s) found but not kept: the user ring is full "
+        f"({used:,}/{USER_CHAR_BUDGET:,}); remove or replace entries first",
+        "Core memory updated (+1)",
+        f"1 fact(s) found but not kept: longer than the {memory_tool.MAX_FACT_CHARS:,}-character limit for one fact"]
+    assert (tmp_path / "user.json").read_bytes() == on_disk and living.core.list() == ["the build runs on uv"]
+    assert [row["actor"] for row in audit.rows[-3:]] == ["refine"] * 3
 
 
-def test_the_daily_reflection_keeps_the_core_ring_within_its_budget(tmp_path):
+def test_the_daily_reflection_is_refused_by_a_full_ring_and_keeps_within_the_fact_cap(tmp_path, caplog):
     from datetime import date
 
     from agents.core.autonomy.reflection import DailyReflector, ReflectionRunStore
 
     living = _living(tmp_path)
-    reflector = DailyReflector(None, None, living_memory=living, run_store=ReflectionRunStore(tmp_path / "runs.json"))
+    audit = _Audit()
+    reflector = DailyReflector(None, None, living_memory=living, run_store=ReflectionRunStore(tmp_path / "runs.json"),
+                               audit=audit)
     lessons = [f"lesson {i:02d} " + "l" * 290 for i in range(12)]
     today = date.today()
-    out = reflector._consolidate_living_memory({"lessons": lessons}, today)
-    assert out == {"available": True, "encoded": 12, "core": 12}
+    with caplog.at_level("WARNING"):
+        out = reflector._consolidate_living_memory({"lessons": lessons}, today)
     facts = living.core.list()
-    assert core_block.section_chars(facts, "memory") <= MEMORY_CHAR_BUDGET and len(facts) < 12
-    assert facts == [f"{today.isoformat()}: {lesson[:300]}" for lesson in lessons[12 - len(facts):]]
+    used = core_block.stored_chars(facts)
+    assert out == {"available": True, "encoded": 12, "core": len(facts), "core_not_kept": 12 - len(facts),
+                   "core_usage": f"{used:,}/{MEMORY_CHAR_BUDGET:,}"}
+    assert 0 < len(facts) < 12 and used <= MEMORY_CHAR_BUDGET
+    # The first lessons stay, each line within the per-fact cap; nothing rotated out.
+    prefix = f"{today.isoformat()}: "
+    assert facts == [prefix + lesson[:memory_tool.MAX_FACT_CHARS - len(prefix)] for lesson in lessons[:len(facts)]]
+    assert all(len(fact) == memory_tool.MAX_FACT_CHARS for fact in facts)
+    refusals = [row for row in audit.rows if row["action"] == "memory.write_refused"]
+    assert len(refusals) == 12 - len(facts) and {row["actor"] for row in refusals} == {"daily_reflection"}
+    assert refusals[-1]["metadata"]["usage"] == f"{used:,}/{MEMORY_CHAR_BUDGET:,}"
+    assert "lesson 1" not in json.dumps(audit.rows)
+    assert f"the memory ring is full ({used:,}/{MEMORY_CHAR_BUDGET:,} characters)" in caplog.text
+
+
+async def test_the_hub_reports_the_stored_size_and_its_writers_record_the_refusal(runtime):
+    """The probe that found the cut-render measure: seven 2,000-character facts in the
+    agent ring (written before the budget) read 2,120/2,200 in GET /api/memory. Now the
+    status reports what the ring holds, and the hub-built reviewer, /refine and nightly
+    reflection are refused, record it in the hub's intent log, and write nothing."""
+    from datetime import date
+
+    orch, client, living = runtime.orch, runtime.client, runtime.living
+    seed = CoreMemory(path=runtime.tmp / "core.json")                    # a writer from before the budget
+    for i in range(7):
+        seed.put(f"legacy {i} " + "g" * 1990)
+    stored = core_block.stored_chars(seed.list())
+    status = client.get("/api/memory").json()["stores"]["memory"]
+    assert status["chars"] == stored > 7 * 2000 and status["char_budget"] == MEMORY_CHAR_BUDGET
+    assert status["entries"] == 8 and status["omitted"] == 0 and status["rendered_chars"] <= MEMORY_CHAR_BUDGET
+    assert living.core.list() == seed.list()                             # not trimmed
+    core_file = (runtime.tmp / "core.json").read_bytes()
+    replies: list[str] = []
+
+    async def llm(prompt):
+        return replies.pop(0)
+
+    reviewer = orch._build_background_reviewer()
+    reviewer._llm = llm
+    replies.append(_review_reply(agent=["the build runs on uv"]))
+    result = await reviewer.run("u", "a", cadence=False)
+    assert result["ran"] is True and result["counts"]["facts"] == 0 and result["actions"] == []
+    replies.append(_review_reply(agent=["the build runs on uv"]))
+    refine = await reviewer.run_on_demand("user: what did you learn?")
+    usage = f"{stored:,}/{MEMORY_CHAR_BUDGET:,}"
+    assert refine["actions"] == [f"1 fact(s) found but not kept: the memory ring is full ({usage}); "
+                                 "remove or replace entries first"]
+    nightly = orch._build_daily_reflector()._consolidate_living_memory({"lessons": ["deploys on fridays"]},
+                                                                        date.today())
+    assert nightly == {"available": True, "encoded": 1, "core": 0, "core_not_kept": 1, "core_usage": usage}
+    assert (runtime.tmp / "core.json").read_bytes() == core_file
+    rows = [row for row in reversed(orch.intent_log.list()) if row.get("action") == "memory.write_refused"]
+    assert [row["actor"] for row in rows] == ["background_review", "refine", "daily_reflection"]
+    assert all(row["metadata"]["usage"] == usage and row["metadata"]["target"] == "memory" for row in rows)
+    assert "build runs" not in json.dumps(rows) and "fridays" not in json.dumps(rows)
+    assert client.get("/api/memory").json()["stores"]["memory"]["chars"] == stored
 
 
 # ── off keeps the background writers out of the rings, under the wave-1 posture ──

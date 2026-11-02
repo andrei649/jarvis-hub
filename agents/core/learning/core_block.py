@@ -7,12 +7,16 @@ and renders a single prompt block. Injection-flagged entries are replaced with
 a ``[BLOCKED …]`` placeholder (hermes-agent pattern) — visible, and naming the
 ways the owner can actually delete them, never injected as content.
 
-H422 — each section has a hard character budget (Hermes's 2200/1375 for MEMORY/USER):
-its entry lines never take more, so the whole block never exceeds
-:data:`CORE_BLOCK_MAX_CHARS`. A ring that holds more keeps its newest entries and
-says, in one line, how many older ones were left out (the ring rotates its oldest
-fact out first, so the newest are the ones it keeps). Nothing is written: the cut is
-made from the ring as it is, so the same files always render the same block.
+H422 — each section has a hard character budget (Hermes's 2200/1375 for MEMORY/USER).
+The store holds it: every writer is refused a fact that would take a ring past it,
+measured on what the ring holds (:func:`stored_chars`, the figure ``GET /api/memory``
+reports), so a ring any Nerva writer saved renders whole. The block's own cut is the
+backstop for a ring that holds more (a ring saved before the budget, a hand edit, a
+[BLOCKED] stub longer than the entry it stands for): its entry lines never take more
+than the budget, so the whole block never exceeds :data:`CORE_BLOCK_MAX_CHARS`; it
+keeps the newest entries and says, in one line, how many older ones were left out.
+Nothing is written: the cut is made from the ring as it is, so the same files always
+render the same block.
 
 The orchestrator freezes the rendered block once per session (frozen-snapshot
 discipline): mid-session writes reach disk immediately but the prompt prefix
@@ -46,8 +50,9 @@ _SECTIONS: tuple[tuple[str, str, str, int], ...] = (
     ("user", "user_core", "user profile", USER_CHAR_BUDGET),
 )
 _RING_LABELS = tuple((attr, label) for _target, attr, label, _budget in _SECTIONS)
-#: H422 — each section's budget by the memory tool's target: the memory tool refuses a write
-#: that would take a ring past it (``memory_tool.plan``), and the block cuts to it.
+#: H422 — each section's budget by the memory tool's target: every writer is refused a fact
+#: that would take a ring past it (``memory_tool.plan``, ``CoreMemory.put``), and the block
+#: cuts to it as the backstop.
 CHAR_BUDGETS: dict[str, int] = {target: budget for target, _attr, _label, budget in _SECTIONS}
 
 #: H422 — the longest block :func:`with_core_notes` (and so :func:`render_core_block`) can
@@ -128,10 +133,23 @@ def _fit(entries: list[str], label: str, budget: int) -> tuple[list[str], int]:
 def section_chars(facts: list, target: str = "memory", detect: Callable[[str], list] | None = None) -> int:
     """H422 — the characters ring *target*'s facts take in the block uncut, counted as the
     block counts them: each entry cleaned and cut as the prompt shows it, a flagged one as
-    its [BLOCKED] stub, ``- `` before it and a newline between lines. What the memory tool
-    holds against :data:`CHAR_BUDGETS` on a write, so a ring it wrote renders whole."""
+    its [BLOCKED] stub, ``- `` before it and a newline between lines. The render's view
+    only: the budget is held on :func:`stored_chars`."""
     entries, _blocked = _clean_facts(facts, detect or _default_detect, target)
     return _chars([f"- {entry}" for entry in entries])
+
+
+def stored_chars(facts: list) -> int:
+    """H422 — the characters ring *facts* hold as the store keeps them: each fact exactly
+    as written (no whitespace folded, no 300-character cut, no [BLOCKED] stub), laid out as
+    the block lays a section out (``- `` before each, a newline between). Hermes measures
+    its stores on what they hold; this is the one figure every writer is held to against
+    :data:`CHAR_BUDGETS` (``CoreMemory.put`` for the post-turn review and the daily
+    reflection, the memory tool's plan) and the one ``GET /api/memory`` reports as
+    ``chars``. For facts the memory tool would save (one clean line of at most 300
+    characters, not flagged) it equals :func:`section_chars`, so a ring within its budget
+    renders whole."""
+    return _chars([f"- {fact}" for fact in (str(f or "") for f in facts or []) if fact.strip()])
 
 
 def _facts_of(living, attr: str) -> list:
@@ -149,10 +167,11 @@ def _sections(living, detect: Callable[[str], list]) -> list[tuple[str, list[str
     """Per ring: its target, the lines the block shows, and what they cost."""
     out = []
     for target, attr, label, budget in _SECTIONS:
-        entries, blocked = _clean_facts(_facts_of(living, attr), detect, target)
+        facts = _facts_of(living, attr)
+        entries, blocked = _clean_facts(facts, detect, target)
         lines, omitted = _fit(entries, label, budget)
         out.append((target, lines, {
-            "entries": len(entries), "chars": _chars([f"- {entry}" for entry in entries]),
+            "entries": len(entries), "chars": stored_chars(facts),
             "char_budget": budget, "shown": len(entries) - omitted, "omitted": omitted,
             "blocked": blocked, "rendered_chars": _chars(lines),
         }))
@@ -178,10 +197,11 @@ def render_core_block(living, detect: Callable[[str], list] | None = None) -> st
 
 
 def core_block_usage(living, detect: Callable[[str], list] | None = None) -> dict:
-    """H422 — what each ring costs the next block, by target (``memory``, ``user``): its
-    entries, the characters they would take uncut (``chars``) against the section's
-    ``char_budget``, how many the block shows, leaves out over the budget and blocks, and
-    the characters the section takes (``rendered_chars``). Read-only."""
+    """H422 — what each ring holds and costs the next block, by target (``memory``,
+    ``user``): its entries, the characters it holds (``chars``, :func:`stored_chars`, the
+    figure every writer is held to) against the section's ``char_budget``, how many
+    entries the block shows, leaves out over the budget and blocks, and the characters the
+    section takes in the prompt (``rendered_chars``). Read-only."""
     return {target: stats for target, _lines, stats in _sections(living, detect or _default_detect)}
 
 
@@ -226,4 +246,5 @@ def with_core_notes(block: str, notes: list[str]) -> str:
 
 
 __all__ = ["CHAR_BUDGETS", "CORE_BLOCK_MAX_CHARS", "MEMORY_CHAR_BUDGET", "USER_CHAR_BUDGET", "blocked_stub",
-           "core_block_usage", "render_core_block", "reread_core_rings", "section_chars", "with_core_notes"]
+           "core_block_usage", "render_core_block", "reread_core_rings", "section_chars", "stored_chars",
+           "with_core_notes"]

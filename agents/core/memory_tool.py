@@ -18,13 +18,15 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   normalised scanner; a full ring refuses an add instead of silently dropping the oldest
   fact (replace or remove one first). H422: each ring also has its character budget
   (Hermes's 2200 for the agent notes, 1375 for the user profile: ``core_block.CHAR_BUDGETS``,
-  counted as the prompt block counts them), and a write that would take a ring past it is
-  refused with the ring's usage and its limit, so a ring the tool wrote renders whole (the
-  ring itself holds the same budget for the other writers, rotating its oldest facts out
-  as it does at its cap: ``CoreMemory.put``; the block's own cut stays as the backstop for
-  a hand edit). The budget is checked on
-  the batch's final state, so
-  an add listed before the remove that makes room is kept (H423); a turn that keeps
+  measured on what the ring holds: ``core_block.stored_chars``, the figure ``GET
+  /api/memory`` reports), and a write that would take a ring past it is refused with the
+  ring's usage and its limit, so a ring the tool wrote renders whole. The ring itself
+  refuses the other writers the same way (``CoreMemory.put`` raises
+  ``CoreMemoryOverBudget`` past the budget, the cap or :data:`MAX_FACT_CHARS`, and nothing
+  rotates out; the post-turn review and the daily reflection log it and record it with
+  :func:`note_ring_refusal`); the block's own cut stays as the backstop for a ring saved
+  before the budget or edited by hand. The budget is checked on the batch's final state,
+  so an add listed before the remove that makes room is kept (H423); a turn that keeps
   hitting a full ring gets a terminal refusal after :data:`FULL_ATTEMPTS_PER_TURN` tries,
   so it stops retrying (the refusal sticks: the tool itself refuses every later write of
   that turn; its ``"terminal": true`` is a hint to the model, which the runtime does not
@@ -243,20 +245,21 @@ def _match(facts: list[str], old_text: str, index: int) -> int:
 
 
 def usage(facts: list[str], target: str) -> str:
-    """H422 — ring *target*'s characters against its budget, Hermes's ``"1,234/2,200"``."""
-    from .learning.core_block import section_chars
+    """H422 — the characters ring *target* holds against its budget, Hermes's
+    ``"1,234/2,200"`` (``core_block.stored_chars``, as ``GET /api/memory`` reports it)."""
+    from .learning.core_block import stored_chars
 
-    return f"{section_chars(facts, target):,}/{CHAR_BUDGETS[target]:,}"
+    return f"{stored_chars(facts):,}/{CHAR_BUDGETS[target]:,}"
 
 
 def _check_budget(target: str, before: list[str], after: list[str], budget: int) -> None:
     """H422 — refuse a final state that takes ring *target* past its character *budget*
-    (counted as the prompt block counts it). A ring already over it (written before the
-    budget, or by another writer) may still shrink: only a call that leaves it over the
-    budget *and* larger than it was is refused."""
-    from .learning.core_block import section_chars
+    (measured on what the ring holds, ``core_block.stored_chars``). A ring already over it
+    (saved before the budget, or edited by hand) may still shrink: only a call that leaves
+    it over the budget *and* larger than it was is refused."""
+    from .learning.core_block import stored_chars
 
-    now, then = section_chars(before, target), section_chars(after, target)
+    now, then = stored_chars(before), stored_chars(after)
     if then <= budget or then <= now:
         return
     raise MemoryToolError(
@@ -538,6 +541,25 @@ def _record(audit: Any, actor: str, action: str, why: str, ref: str, metadata: d
         raise MemoryToolError("memory_audit_unavailable",
                               "memory writes are recorded in the intent log, which is not available")
     audit.record(actor=actor, action=action, why=why, cause=ref, metadata=metadata)
+
+
+def note_ring_refusal(audit: Any, actor: str, refused: Any) -> bool:
+    """H422 — a background writer (the post-turn review, a /refine, the daily reflection)
+    that a curated ring refused (``CoreMemoryOverBudget``: past its character budget, its
+    cap or :data:`MAX_FACT_CHARS`). Logged with the ring's usage and limit, and recorded in
+    the intent log as ``memory.write_refused`` (the ring, the limit and the sizes: never
+    the fact, nor a hash of it). Best effort, since nothing was written: True when the
+    record was saved."""
+    logger.warning("memory: a %s fact was not kept: %s", actor, refused)
+    if audit is None or not callable(getattr(audit, "record", None)):
+        return False
+    try:
+        audit.record(actor=actor, action="memory.write_refused", why=str(refused), cause="",
+                     metadata=refused.metadata())
+    except Exception:
+        logger.warning("memory: the refusal of a %s fact could not be recorded", actor, exc_info=True)
+        return False
+    return True
 
 
 def _record_put_back(audit: Any, actor: str, action: str, ref: str, targets: list[str]) -> None:
@@ -931,5 +953,5 @@ __all__ = [
     "MAX_FACT_CHARS", "MAX_OPERATIONS",
     "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "SWITCH_CATEGORY",
     "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan", "register_memory_tool",
-    "reset", "reset_targets", "set_switch", "store_sizes", "switched_on", "undo", "usage",
+    "note_ring_refusal", "reset", "reset_targets", "set_switch", "store_sizes", "switched_on", "undo", "usage",
 ]

@@ -1040,8 +1040,9 @@ def _memory_module(orch):
 
 
 def _memory_view(living) -> dict:
-    """The rings reread from their files, then each one's size on disk and its cost in
-    the next prompt block, by target. Blocking file reads: run off the event loop."""
+    """The rings reread from their files, then each one's size on disk, the characters it
+    holds and its cost in the next prompt block, by target. Blocking file reads: run off
+    the event loop."""
     from agents.core.learning.core_block import core_block_usage
     from agents.core.memory_tool import MemoryToolError, _read_rings, store_sizes
 
@@ -1108,9 +1109,11 @@ async def memory_status():
     memory, ``cognition``, as the running hub reads them, a product posture included),
     whether the core block reaches the prompt (``injected``) and the model's memory tool
     can write (``tool``), and per ring (``memory``: the agent's notes, ``user``: the user
-    profile) the bytes its file holds, its entries, the characters they take against the
-    section's budget, what the next block shows, leaves out and blocks, and what else a
-    reset erases with it (``copies``: hand-edit ``.bak`` files, ``undo_writes``). Reported
+    profile) the bytes its file holds, its entries, the characters it holds (``chars``: the
+    figure every writer is refused past, ``core_block.stored_chars``) against the section's
+    budget, what the next block shows, leaves out and blocks (``rendered_chars``: what the
+    section takes in the prompt), and what else a reset erases with it (``copies``:
+    hand-edit ``.bak`` files, ``undo_writes``). Reported
     with memory switched off too; ``builtin_files`` is Hermes's bytes-per-store shape."""
     return nocache_json(await _memory_status_body(get_orch()))
 
