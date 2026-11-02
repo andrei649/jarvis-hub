@@ -532,6 +532,12 @@ MACHINE_FACING: dict[str, str] = {
         "H019: user-guarded slot-holder listing read by `nerva status` (agents/cli/nerva.py); "
         "the public GET /status keeps counts only and the HUD does not render holders"
     ),
+    "/api/dashboard/today/entries":
+        "H046: every learned entry whatever its age, with its id, read by `nerva journey list` "
+        "(agents/cli/nerva.py), Hermes's `journey list` lookup table; the HUD's TODAY card reads "
+        "the windowed feed (GET /api/dashboard/today) and edits or forgets an entry by its id "
+        "under /api/dashboard/today/entries/{entry_id}, whose literal path makes this one look "
+        "called as a substring",
     "/api/skills/bundles/reload":
         "H026: `nerva skills bundles reload` (agents/cli/nerva.py) re-reads hand-edited bundle "
         "files and reports the changes; the HUD's GET /api/skills/bundles already re-scans a "

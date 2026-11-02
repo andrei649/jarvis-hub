@@ -133,6 +133,7 @@
   "GET /api/context-refs": "context_ref_completions_api_context_refs_get",
   "GET /api/cost": "cost_breakdown_api_cost_get",
   "GET /api/dashboard/today": "dashboard_today_api_dashboard_today_get",
+  "GET /api/dashboard/today/entries": "dashboard_today_entries_api_dashboard_today_entries_get",
   "GET /api/dashboard/today/entries/{entry_id}": "dashboard_today_entry_api_dashboard_today_entries__entry_id__get",
   "GET /api/design-manifest": "design_manifest_api_design_manifest_get",
   "GET /api/desktop/allowlist": "desktop_allowlist_api_desktop_allowlist_get",

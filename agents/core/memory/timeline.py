@@ -19,11 +19,32 @@ an edit of the value and is never handed to another fact after a delete),
 where ``<source>`` is ``task:<id>`` or the ``learning:<id>`` it was read from.
 Only a learning is learned material; the routes that read, change and delete one
 by its id are in ``routers/dashboard.py`` and cross ``kg.write``.
+
+H046 review — what the assistant really learns is held in three stores, and each is a
+``learning`` here with its own id (``store`` says which):
+
+* the two curated rings every prompt carries (Hermes's ``MEMORY.md`` / ``USER.md``
+  cards, ``cognition.memory.CoreMemory``: the agent's notes and the user profile, which
+  the model's ``memory`` tool, the post-turn review and the daily reflection write):
+  ``memory:<memory|user>:<digest>``. A ring keeps no time per fact, so a fact carries the
+  time its ring was last saved, as Hermes dates a card by its file's mtime, and its place
+  in the ring orders it. The digest is a keyed hash of the fact under a key drawn when
+  the process starts and never written down: stable while the hub runs (``journey
+  list`` then ``journey edit``), and no log that outlives a forget can be matched back
+  to a short fact (the memory tool keeps no hash of a fact in the intent log either). An
+  id read before a restart answers "not found": list again;
+* the skills it learned (Hermes's agent-created or used skills): ``skill:<name>``, dated
+  by its last use, view or patch (else when the sidecar first saw it, else its
+  ``SKILL.md``), as Hermes dates a skill node;
+* the structured fact store (``memory/store.py``): ``learning:<row id>``.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import re
+import secrets
 import time
 from datetime import UTC, datetime
 
@@ -39,7 +60,18 @@ _ROW_ID = r"[1-9][0-9]{0,18}"
 _ENTRY_ID = re.compile(
     rf"(?P<kind>action|learning):(?P<row>{_ROW_ID})"
     rf"|followup:(?P<reason>[a-z_]{{1,40}}):(?P<source>(?:task|learning):{_ROW_ID})"
+    r"|memory:(?P<ring>memory|user):(?P<digest>[0-9a-f]{16})"
+    # A skill's registered name: its manifest's (a generated skill's is a title, with
+    # spaces), never a control character or a path separator, at most 128 characters.
+    r"|skill:(?P<skill>[^\x00-\x20\x7f/\\](?:[^\x00-\x1f\x7f/\\]{0,126}[^\x00-\x20\x7f/\\])?)"
 )
+#: H046 review — where a learned entry is kept: the fact store, a curated ring (``memory``:
+#: the agent's notes, ``user``: the user profile) or the skill library.
+LEARNED_STORES = ("facts", "memory", "user", "skill")
+#: Each ring in the owner's words (``memory_tool.STORE_LABELS``).
+RING_LABELS = {"memory": "agent notes", "user": "user profile"}
+#: The key of a ring fact's id: drawn per process, never stored (see the module doc).
+_FACT_ID_KEY = secrets.token_bytes(32)
 
 
 def _row_ref(value) -> str | None:
@@ -55,17 +87,34 @@ def learning_entry_id(row_id) -> str | None:
     return f"learning:{ref}" if ref else None
 
 
+def ring_fact_id(target: str, fact: str) -> str:
+    """``memory:<target>:<digest>`` for one fact of a curated ring (see the module doc)."""
+    digest = hmac.new(_FACT_ID_KEY, f"{target}\n{fact}".encode(), hashlib.sha256).hexdigest()[:16]
+    return f"memory:{target}:{digest}"
+
+
+def skill_entry_id(name) -> str | None:
+    """``skill:<name>``, or None for a name an id cannot carry."""
+    entry_id = f"skill:{name}" if isinstance(name, str) else None
+    return entry_id if entry_id and _ENTRY_ID.fullmatch(entry_id) else None
+
+
 def parse_entry_id(entry_id) -> tuple[str, str] | None:
     """``(kind, ref)`` for a well-formed entry id, else None.
 
     ``ref`` is the row id (as text) of an action or a learning; for a follow-up it is
-    the entry the follow-up was derived from (``task:<id>`` or ``learning:<id>``).
+    the entry the follow-up was derived from (``task:<id>`` or ``learning:<id>``); for a
+    ring fact (kind ``memory``) it is ``<target>:<digest>``; for a skill, its name.
     """
     if not isinstance(entry_id, str):
         return None
     m = _ENTRY_ID.fullmatch(entry_id)
     if m is None:
         return None
+    if m.group("ring"):
+        return "memory", f"{m.group('ring')}:{m.group('digest')}"
+    if m.group("skill"):
+        return "skill", m.group("skill")
     if m.group("kind"):
         kind, ref, number = m.group("kind"), m.group("row"), m.group("row")
     else:
@@ -92,21 +141,108 @@ def _ts_epoch(value) -> float | None:
     return dt.timestamp()
 
 
+def _iso(epoch) -> str | None:
+    if not isinstance(epoch, (int, float)) or isinstance(epoch, bool):
+        return None
+    return datetime.fromtimestamp(float(epoch), tz=UTC).isoformat()
+
+
 def learning_item(row: dict) -> dict:
     """One memory row as the feed shows it — also what the entry routes answer."""
     ts = row.get("updated_at") or row.get("created_at")
+    category, key = row.get("category"), row.get("key")
     return {
         "entry_id": learning_entry_id(row.get("id")),
         "ts": ts,
         "epoch": _ts_epoch(ts),
         "kind": "learning",
-        "category": row.get("category"),
-        "key": row.get("key"),
+        "store": "facts",
+        "label": "/".join(str(part) for part in (category, key) if part),
+        "category": category,
+        "key": key,
         "value": row.get("value"),
     }
 
 
-def build_unified_digest(queue, memory_entries=None, *, now=None, days=1, limit=50, kind=None) -> dict:
+def ring_items(target: str, facts, saved_epoch=None) -> list[dict]:
+    """The facts of curated ring *target* (``memory`` | ``user``), oldest first, as the
+    feed shows them. *saved_epoch* is when the ring's file was last written (None: no
+    file yet): the time every fact of it carries, its place in the ring (``order``)
+    ordering them, as Hermes dates its memory cards."""
+    label = RING_LABELS[target]
+    out = []
+    for position, fact in enumerate(facts or ()):
+        if not isinstance(fact, str) or not fact:
+            continue
+        out.append({
+            "entry_id": ring_fact_id(target, fact),
+            "ts": _iso(saved_epoch),
+            "epoch": float(saved_epoch) if _iso(saved_epoch) else None,
+            "order": position,
+            "kind": "learning",
+            "store": target,
+            "label": label,
+            "category": target,
+            "key": None,
+            "value": fact,
+        })
+    return out
+
+
+def skill_item(name: str, usage: dict | None = None, *, description: str = "", file_epoch=None) -> dict:
+    """One learned skill as the feed shows it. *usage* is its usage-sidecar record (the
+    counters, ``origin``, ``pinned``, ``state``); its time is the latest use, view, patch
+    or switch-on, else ``created_at``, else *file_epoch* (its ``SKILL.md``), as Hermes
+    dates a skill node."""
+    from agents.core.skills.usage import latest_activity_at
+
+    rec = usage if isinstance(usage, dict) else {}
+    latest = latest_activity_at(rec)
+    epoch = latest.timestamp() if latest is not None else _ts_epoch(rec.get("created_at"))
+    if epoch is None and _iso(file_epoch):
+        epoch = float(file_epoch)
+    try:
+        uses = int(rec.get("use_count") or 0)
+    except (TypeError, ValueError):
+        uses = 0
+    return {
+        "entry_id": skill_entry_id(name),
+        "ts": _iso(epoch),
+        "epoch": epoch,
+        "kind": "learning",
+        "store": "skill",
+        "label": name,
+        "category": "skill",
+        "key": name,
+        "value": description or "",
+        "origin": str(rec.get("origin") or "bundled"),
+        "use_count": uses,
+        "pinned": bool(rec.get("pinned")),
+        "state": str(rec.get("state") or "active"),
+    }
+
+
+def _order(item: dict) -> tuple:
+    """Oldest first: an undated entry before every dated one (Hermes sorts it as 0), then
+    by time, then by its place in its ring."""
+    epoch = item.get("epoch")
+    return (epoch is not None, epoch or 0.0, item.get("order") or 0)
+
+
+def journey_entries(memory_entries=None, learned=None, *, store=None) -> list[dict]:
+    """Every learned entry, whatever its age, oldest first (Hermes's ``journey list``):
+    the fact store's rows (*memory_entries*) and the ring facts and skills already shaped
+    by :func:`ring_items` / :func:`skill_item` (*learned*). *store* keeps one store."""
+    items = [learning_item(e) for e in (memory_entries or [])]
+    items.extend(dict(it) for it in (learned or []))
+    if store is not None:
+        items = [it for it in items if it.get("store") == store]
+    items.sort(key=_order)
+    return items
+
+
+def build_unified_digest(queue, memory_entries=None, *, now=None, days=1, limit=50, kind=None,
+                         learned=None) -> dict:
     """One timestamp-ordered feed of done-tasks + new memory facts in the window.
 
     Parameters
@@ -128,6 +264,9 @@ def build_unified_digest(queue, memory_entries=None, *, now=None, days=1, limit=
     kind:
         Keep only the items of this kind (``action`` | ``learning`` | ``followup``)
         before ``limit`` applies; None keeps every kind. ``counts`` is unchanged.
+    learned:
+        H046 review — the curated rings' facts and the learned skills, shaped by
+        :func:`ring_items` / :func:`skill_item`: learnings too, windowed by their time.
 
     Returns a JSON-safe dict: ``period`` / ``days`` / ``generated_at`` /
     ``counts`` / ``items``. Every item carries ``entry_id`` / ``ts`` / ``epoch`` /
@@ -171,6 +310,10 @@ def build_unified_digest(queue, memory_entries=None, *, now=None, days=1, limit=
         if item["epoch"] is not None and item["epoch"] < cutoff:
             continue
         items.append(item)
+    for item in (learned or []):
+        if item.get("epoch") is not None and item["epoch"] < cutoff:
+            continue
+        items.append(dict(item))
 
     for f in build_caring_followups(queue, memory_entries, now=now, days=days, limit=500):
         if f.get("source") == "task":
@@ -195,7 +338,7 @@ def build_unified_digest(queue, memory_entries=None, *, now=None, days=1, limit=
 
     # Newest first. Unparseable timestamps (epoch None) sink to the bottom but are
     # never dropped — a real row with a bad stamp still shows (honesty over tidiness).
-    items.sort(key=lambda it: (it["epoch"] is not None, it["epoch"] or 0.0), reverse=True)
+    items.sort(key=_order, reverse=True)
 
     actions = sum(1 for it in items if it["kind"] == "action")
     learnings = sum(1 for it in items if it["kind"] == "learning")

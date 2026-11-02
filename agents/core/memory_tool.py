@@ -665,6 +665,81 @@ def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str
     return sorted(restored)
 
 
+def _write_recorded(living: Any, before: Mapping[str, list[str]], after: Mapping[str, list[str]],
+                    rows: list[dict], *, sink: Any, actor: str, undo_store: UndoStore, why: str) -> str:
+    """Under :data:`_WRITE_LOCK` and the ring locks, after :func:`_settle`: keep the changed
+    rings' previous contents under a new undo ref, write the rings by compare-and-set, and
+    record the write in the intent log (``memory.write``: the ref, the targets and one row
+    per operation, never the text). A write whose record cannot be saved is put back. The
+    undo ref. Every writer of a memory *write* goes through here: the model's ``memory``
+    tool and the owner's change of one fact (:func:`owner_change`)."""
+    changed = sorted(t for t in TARGETS if after[t] != before[t])
+    ref = uuid.uuid4().hex[:16]
+    undo_store.put({"ref": ref, "ts": time.time(), "before": {t: before[t] for t in changed},
+                    "after_sha256": {t: _ring_sha(after[t]) for t in changed}})
+    try:
+        _commit(living, before, after)
+    except BaseException:
+        undo_store.drop(ref)
+        raise
+    try:
+        _record(sink, actor, "memory.write", why, ref, {"ref": ref, "targets": changed, "operations": rows})
+    except BaseException:
+        # A write is never kept unrecorded: put the rings back.
+        restored = _revert(living, after, before)
+        if restored:
+            _record_put_back(sink, actor, "memory.write_reverted", ref, restored)
+        undo_store.drop(ref)
+        raise
+    return ref
+
+
+def owner_change(living: Any, target: str, fact: str, text: str | None = None, *, audit: Any,
+                 actor: str = "owner", store: UndoStore | None = None) -> dict:
+    """H046 — the owner replaces (*text*) or removes (*text* None) the one fact of ring
+    *target* that is exactly *fact* (``nerva journey edit|delete``, the HUD's TODAY card),
+    held to every rule the model's own ``memory`` write is: the ring locks and the reread
+    first (a hand edit refuses, ``memory_drift``), the new text one clean line of at most
+    :data:`MAX_FACT_CHARS` characters scanned for injection, no duplicate, the ring's
+    character budget, compare-and-set, an undo ref (``POST /api/memory/core/undo`` puts it
+    back) and an intent-log record (``memory.write``, never the text). The fact is matched
+    whole, never as a substring, so the fact the owner picked is the one changed. Raises
+    :class:`MemoryToolError` (``memory_no_match`` when that fact is no longer saved). Runs
+    in a worker thread: it waits for the ring files' locks."""
+    if target not in TARGETS:
+        raise MemoryToolError("memory_bad_target", f"target is one of {', '.join(TARGETS)}")
+    if living is None:
+        raise MemoryToolError("memory_unavailable", "this hub has no long-term memory module")
+    store = UNDO if store is None else store
+    with _WRITE_LOCK, _ring_locks(living):
+        _settle(living)
+        before = {t: getattr(living, attr).list() for t, attr in TARGETS.items()}
+        facts = before[target]
+        if fact not in facts:
+            raise MemoryToolError("memory_no_match", f"that fact is no longer in the {STORE_LABELS[target]}; "
+                                  "list it again")
+        after = {t: list(v) for t, v in before.items()}
+        position = facts.index(fact)
+        if text is None:
+            after[target].pop(position)
+            rows = [{"action": "remove", "target": target}]
+        else:
+            new = _clean_text(text, 1, "text")
+            _scan(new, 1)
+            if new == fact:
+                return {"ok": True, "changed": [], "target": target, "fact": fact}
+            if new in facts:
+                raise MemoryToolError("memory_duplicate", "that fact is already saved")
+            after[target][position] = new
+            rows = [{"action": "replace", "target": target}]
+            if target in CHAR_BUDGETS:
+                _check_budget(target, facts, after[target], int(CHAR_BUDGETS[target]))
+        ref = _write_recorded(living, before, after, rows, sink=audit, actor=actor, undo_store=store,
+                              why="the owner changed its long-term memory")
+    return {"ok": True, "changed": [target], "target": target, "fact": None if text is None else after[target][position],
+            "undo_ref": ref, "usage": usage(after[target], target)}
+
+
 def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: UndoStore | None = None) -> dict:
     """Restore the rings a write replaced, while nothing has changed them since."""
     store = UNDO if store is None else store
@@ -934,25 +1009,8 @@ def register_memory_tool(
                 changed = sorted(t for t in TARGETS if after[t] != before[t])
                 ref = ""
                 if changed:
-                    sink, actor = audit(), current_tool_actor()
-                    ref = uuid.uuid4().hex[:16]
-                    undo_store.put({"ref": ref, "ts": time.time(), "before": {t: before[t] for t in changed},
-                                    "after_sha256": {t: _ring_sha(after[t]) for t in changed}})
-                    try:
-                        _commit(mem, before, after)
-                    except BaseException:
-                        undo_store.drop(ref)
-                        raise
-                    try:
-                        _record(sink, actor, "memory.write", "the model changed its long-term memory", ref,
-                                {"ref": ref, "targets": changed, "operations": rows})
-                    except BaseException:
-                        # A write is never kept unrecorded: put the rings back.
-                        restored = _revert(mem, after, before)
-                        if restored:
-                            _record_put_back(sink, actor, "memory.write_reverted", ref, restored)
-                        undo_store.drop(ref)
-                        raise
+                    ref = _write_recorded(mem, before, after, rows, sink=audit(), actor=current_tool_actor(),
+                                          undo_store=undo_store, why="the model changed its long-term memory")
                 return after, rows, changed, ref
 
         try:
@@ -992,7 +1050,8 @@ __all__ = [
     "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LISTING_MAX_CHARS",
     "LOCK_TIMEOUT_S", "MAX_FACT_CHARS", "MAX_OPERATIONS",
     "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "SWITCH_CATEGORY",
-    "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan", "register_memory_tool",
+    "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "owner_change", "plan",
+    "register_memory_tool",
     "current_entries", "note_ring_refusal", "reset", "reset_targets", "set_switch", "store_sizes", "switched_on",
     "undo", "usage",
 ]

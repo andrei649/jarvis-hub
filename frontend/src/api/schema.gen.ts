@@ -9119,9 +9119,42 @@ export interface paths {
          *     ``entry_id``; ``kind`` keeps one kind of item and ``limit`` (default 50, at most
          *     500) bounds the newest items returned; ``counts`` always covers the whole window.
          *     A learned entry is read, edited and deleted by that id under
-         *     ``/api/dashboard/today/entries/{entry_id}``.
+         *     ``/api/dashboard/today/entries/{entry_id}``, and ``/api/dashboard/today/entries``
+         *     lists every learned entry whatever its age.
+         *
+         *     H046 review: the learned half is what the assistant really keeps — the facts of the
+         *     two curated rings every prompt carries (the agent's notes and the user profile, which
+         *     the model's ``memory`` tool, the post-turn review and the daily reflection write;
+         *     dated by their ring's last save, as Hermes dates its memory cards), the skills it
+         *     learned (dated by their last use) and the fact store's rows. ``drift`` says a ring
+         *     file could not be read back.
          */
         get: operations["dashboard_today_api_dashboard_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/today/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Today Entries
+         * @description Every learned entry, whatever its age, oldest first, each with its id (Hermes's
+         *     ``journey list``: the lookup table ``journey show|edit|delete`` take an id from): the
+         *     facts of both curated rings (``memory``: the agent's notes, ``user``: the user
+         *     profile), the skills it learned (``skill``) and the fact store's rows (``facts``).
+         *     ``store`` keeps one store; past ``limit`` the newest are kept. ``total`` and
+         *     ``counts`` cover every entry; ``drift`` says a ring could not be read back.
+         */
+        get: operations["dashboard_today_entries_api_dashboard_today_entries_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9139,25 +9172,34 @@ export interface paths {
         };
         /**
          * Dashboard Today Entry
-         * @description One learned entry of the timeline, whatever its age (the feed shows 30 days at most).
+         * @description One learned entry, whatever its age: a ring fact, a learned skill (with its whole
+         *     SKILL.md as ``content``) or a fact-store row.
          */
         get: operations["dashboard_today_entry_api_dashboard_today_entries__entry_id__get"];
         put?: never;
         post?: never;
         /**
          * Dashboard Today Entry Delete
-         * @description Forget a learned entry: the fact leaves the memory store (and its search index and
-         *     write-ahead log), so it leaves the timeline and every brief that reads the store.
+         * @description Forget a learned entry. A ring fact leaves its ring by the memory tool's own write
+         *     (an undo ref keeps the ring as it was beside the rings, as for the model's own remove;
+         *     ``POST /api/memory/core/undo`` puts it back, a reset erases it); a learned skill is
+         *     archived, as Hermes archives one (its folder moved to the skills batch archive,
+         *     recoverable; a pinned skill is refused); a fact-store row leaves the store (and its
+         *     search index and write-ahead log), so it leaves the timeline and every brief.
          */
         delete: operations["dashboard_today_entry_delete_api_dashboard_today_entries__entry_id__delete"];
         options?: never;
         head?: never;
         /**
          * Dashboard Today Entry Edit
-         * @description Change what a learned entry says. Body: ``{value}`` (text, at most 2000 characters).
+         * @description Change what a learned entry says. Body: ``{value}``.
          *
-         *     The entry keeps its id, category and key; it moves to now on the timeline because it
-         *     changed now. An unchanged value writes nothing (``changed: false``).
+         *     A ring fact is replaced in place, by the memory tool's own write (one clean line of at
+         *     most 300 characters, scanned; the ring's budget; an undo ref; the intent log): its id
+         *     follows its text, so the reply carries the new one. A skill's ``value`` is its whole
+         *     SKILL.md, applied by the owner's skill batch (checked first; the old folder archived).
+         *     A fact-store row (at most 2000 characters) keeps its id, category and key and moves to
+         *     now on the timeline. An unchanged value writes nothing (``changed: false``).
          */
         patch: operations["dashboard_today_entry_edit_api_dashboard_today_entries__entry_id__patch"];
         trace?: never;
@@ -15833,7 +15875,8 @@ export interface components {
         };
         /**
          * TimelineEntryEdit
-         * @description The new text of a learned entry; its category and key stay what they are.
+         * @description The new text of a learned entry: a fact's value (at most 2000 characters; a ring
+         *     fact, 300), or a learned skill's whole SKILL.md. A fact keeps its category and key.
          */
         TimelineEntryEdit: {
             /** Value */
@@ -30542,6 +30585,38 @@ export interface operations {
                 days?: number;
                 limit?: number;
                 kind?: ("action" | "learning" | "followup") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entries_api_dashboard_today_entries_get: {
+        parameters: {
+            query?: {
+                store?: ("facts" | "memory" | "user" | "skill") | null;
+                limit?: number;
             };
             header?: never;
             path?: never;

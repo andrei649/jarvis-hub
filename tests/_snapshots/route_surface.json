@@ -133,6 +133,7 @@
   "GET /api/context-refs",
   "GET /api/cost",
   "GET /api/dashboard/today",
+  "GET /api/dashboard/today/entries",
   "GET /api/dashboard/today/entries/{entry_id}",
   "GET /api/design-manifest",
   "GET /api/desktop/allowlist",
