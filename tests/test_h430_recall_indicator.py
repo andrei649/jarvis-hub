@@ -8,8 +8,10 @@ prefetch. Nerva has two sources that put memory into a prompt, and each reports 
 last prefetch to the turn's outcome collector: the orchestrator's long-term recall
 (``Orchestrator._recall_block``) and Howard's message-archive few-shots
 (``Agent.build_prompt``). The HUD's StatusStrip renders one line per provider (live, when
-the prefetch finishes), and an owner's channel reply carries them as footer lines. Nerva
-adds what was withheld and why, from ``recall_admission``'s closed vocabulary.
+the prefetch finishes), and an owner's channel reply carries them as footer lines — read,
+never spoken: a Telegram chat in voice mode hears the reply alone, and a Telegram reply
+streamed in place shows the line from its first frame. Nerva adds what was withheld and
+why, from ``recall_admission``'s closed vocabulary.
 """
 from __future__ import annotations
 
@@ -647,3 +649,260 @@ async def test_a_real_telegram_turn_routed_to_howard_carries_the_archive_line(mo
     stored = await orch.memory.get_history(orch.session_id, 10)
     assert any(row.get("role") == "assistant" for row in stored)
     assert all("🧠" not in str(row) for row in stored)
+
+
+# ── the footer is read, never spoken ──────────────────────────────────────────
+#
+# A Telegram chat in voice mode gets a voice note of each reply. The recall line (and the
+# turn's ℹ notices) are status for reading: they reach the text message, never the clip.
+
+REPLY = "Am ales varianta simpla."
+
+
+class _BotApi:
+    """Records every Telegram Bot API call; answers like Telegram does."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, dict]] = []
+        self.next_id = 100
+
+    async def post(self, url, json=None, data=None, files=None, **kwargs):
+        method = url.rsplit("/", 1)[-1]
+        self.calls.append((method, dict(json or data or {})))
+        self.next_id += 1
+        return _BotResponse(self.next_id)
+
+    def texts(self, method):
+        return [body["text"] for m, body in self.calls if m == method]
+
+
+class _BotResponse:
+    status_code, is_success = 200, True
+
+    def __init__(self, message_id):
+        self.message_id = message_id
+
+    def json(self):
+        return {"ok": True, "result": {"message_id": self.message_id}}
+
+    def raise_for_status(self):
+        return None
+
+
+class _Speech:
+    """The host's text-to-speech engine: what each voice note was asked to say."""
+
+    def __init__(self, tmp_path):
+        self.tmp_path, self.said = tmp_path, []
+
+    async def __call__(self, text, lang):
+        self.said.append(text)
+        path = self.tmp_path / f"clip{len(self.said)}.mp3"
+        path.write_bytes(b"ID3clip")
+        return str(path)
+
+
+def _voice_chat(tmp_path, chat_id=42):
+    """A real TelegramChannel whose chat is in voice mode ``always``."""
+    from agents.core.channels.spoken_reply import SpokenReply
+    from agents.core.channels.telegram import TelegramChannel
+    from agents.core.channels.voice_mode import ALWAYS, VoiceModeStore
+
+    channel = TelegramChannel(token="t")
+    channel.client = _BotApi()
+    channel._voice_modes = VoiceModeStore(None)
+    channel._voice_modes.set("telegram", chat_id, ALWAYS)
+    speech = _Speech(tmp_path)
+    channel._speaker = SpokenReply(synthesize=speech, available=True, backend="fake")
+    return channel, speech
+
+
+FOOTER = ("🧠 Long-term memory — recalled 2 memories", "🧠 Message archive — recalled 3 memories",
+          "ℹ a note")
+
+
+def _footed():
+    return Orchestrator._with_channel_notices(
+        REPLY, [{"code": "x", "text": "a note"}],
+        recall=[recall_status([admit({})] * 2), recall_status([admit({})] * 3, provider="message_archive")])
+
+
+def test_the_footer_rides_apart_from_the_reply_it_sits_under():
+    from agents.core.turn_notices import FootedReply, spoken_text
+
+    reply = _footed()
+    assert reply == REPLY + "\n\n" + "\n".join(FOOTER)          # what a person reads
+    assert isinstance(reply, FootedReply) and spoken_text(reply) == REPLY
+    assert spoken_text("a plain reply") == "a plain reply" and spoken_text(None) == ""
+    for bad in (("", ["🧠 x"]), (REPLY, []), (REPLY, ["  "])):
+        with pytest.raises(ValueError):
+            FootedReply(*bad)
+
+
+async def test_a_voice_mode_chat_reads_the_footer_and_hears_only_the_reply(tmp_path):
+    """The finding's probe, on the real ``TelegramChannel.send``: the text message carries
+    the recall lines and the notice, the voice note says the reply and nothing else."""
+    channel, speech = _voice_chat(tmp_path)
+    assert await channel.send(_footed(), chat_id=42) is True
+    [text] = channel.client.texts("sendMessage")
+    assert all(line in text for line in FOOTER)
+    assert speech.said == [REPLY]
+    assert [m for m, _ in channel.client.calls][-1] == "sendVoice"
+
+
+async def test_a_streamed_reply_reads_the_footer_and_hears_only_the_reply(tmp_path):
+    from agents.core.channels.telegram import TelegramDraft
+
+    channel, speech = _voice_chat(tmp_path)
+    draft = TelegramDraft(channel, 42, interval=0)
+    await draft.push("Am ales ")
+    await draft.push("varianta simpla.")
+    assert await draft.finish(_footed()) is True
+    assert all(line in channel.client.texts("editMessageText")[-1] for line in FOOTER)
+    assert speech.said == [REPLY]
+
+    channel, speech = _voice_chat(tmp_path)                      # a draft that never started
+    assert await TelegramDraft(channel, 42, interval=0).finish(_footed()) is True
+    assert all(line in channel.client.texts("sendMessage")[-1] for line in FOOTER)
+    assert speech.said == [REPLY]
+
+
+class _ChannelMemory(_Memory):
+    """Long-term recall plus what a channel turn's session lifecycle asks of memory."""
+
+    async def new_session(self, session_id=None):
+        return f"mem:{session_id}"
+
+    async def resume_session(self, session_id):
+        return False
+
+    async def add_turn(self, *args, **kwargs):
+        return None
+
+
+def _telegram_hub(channel, *, streaming, admin=True, prefetches=(2,)):
+    """The real ``channel_handler`` → ``_channel_turn`` → ChannelManager → TelegramChannel
+    path. The turn runs one long-term prefetch per entry of *prefetches* (that many hits
+    each), one token after each, so a later prefetch lands while the reply is written."""
+    from agents.core.channels.manager import ChannelManager
+
+    memory = _ChannelMemory()
+    orch = _orch(memory, **{"channels.streaming_replies": streaming})
+    orch._channel_sessions = {}
+    orch.session_id = orch._session_id_default = "owner"
+    orch.channel_manager = ChannelManager()
+    orch.channel_manager.register(channel)
+    orch._channel_principal = lambda name, sender, chat_id: Principal(
+        channel=name, sender=sender, admin=admin)
+    frames = []
+
+    async def turn(text, on_token=None):
+        for n, count in enumerate(prefetches):
+            memory.hits = [_hit(f"fact {i}", hit_id=f"m{n}-{i}") for i in range(count)]
+            await orch._recall_block(text)
+            if on_token is not None:
+                await on_token(("Am ales ", "varianta simpla.")[n % 2])
+                frames.append(list(channel.client.calls))
+        return REPLY
+
+    async def handle_input_stream(text, channel="telegram", on_token=None, **kwargs):
+        return await turn(text, on_token)
+
+    async def handle_input(text, channel="telegram", **kwargs):
+        return await turn(text)
+
+    orch.handle_input_stream, orch.handle_input = handle_input_stream, handle_input
+    return orch, frames
+
+
+@pytest.mark.parametrize("streaming", [True, False], ids=["streamed", "whole"])
+async def test_a_real_telegram_turn_in_voice_mode_speaks_the_reply_without_its_footer(
+        tmp_path, streaming):
+    channel, speech = _voice_chat(tmp_path)
+    orch, _ = _telegram_hub(channel, streaming=streaming)
+    reply = await orch.channel_handler("ce ai ales?", channel="telegram", chat_id=42, sender="42")
+    assert reply == REPLY + "\n\n🧠 Long-term memory — recalled 2 memories"
+    final = channel.client.texts("editMessageText" if streaming else "sendMessage")[-1]
+    assert "🧠 Long-term memory — recalled 2 memories" in final
+    assert speech.said == [REPLY]
+
+
+async def test_a_streamed_telegram_reply_shows_the_line_from_its_first_frame(tmp_path, monkeypatch):
+    """Hermes renders the line right after the prefetch. A reply written in place shows it
+    in the very first frame (the prefetch ran before the first token), and the line it
+    shows is always the LAST prefetch's: a second prefetch mid-reply replaces it."""
+    from agents.core.channels import telegram as telegram_module
+
+    monkeypatch.setattr(telegram_module, "STREAM_EDIT_INTERVAL", 0)
+    channel, speech = _voice_chat(tmp_path)
+    orch, frames = _telegram_hub(channel, streaming=True, prefetches=(2, 1))
+    reply = await orch.channel_handler("ce ai ales?", channel="telegram", chat_id=42, sender="42")
+    first = [body["text"] for method, body in frames[0] if method == "sendMessage"]
+    assert len(first) == 1 and "🧠 Long-term memory — recalled 2 memories" in first[0]
+    later = [body["text"] for method, body in frames[1][len(frames[0]):] if method == "editMessageText"]
+    assert later and "recalled 1 memory" in later[-1] and "2 memories" not in later[-1]
+    assert reply == REPLY + "\n\n🧠 Long-term memory — recalled 1 memory"
+    assert speech.said == [REPLY]
+
+
+async def test_a_strangers_streamed_reply_shows_no_line(tmp_path, monkeypatch):
+    from agents.core.channels import telegram as telegram_module
+
+    monkeypatch.setattr(telegram_module, "STREAM_EDIT_INTERVAL", 0)
+    channel, _ = _voice_chat(tmp_path)
+    orch, _ = _telegram_hub(channel, streaming=True, admin=False)
+    assert await orch.channel_handler("ce ai ales?", channel="telegram", chat_id=42, sender="7") == REPLY
+    assert all("🧠" not in body.get("text", "") for _, body in channel.client.calls)
+
+
+def test_an_unreadable_later_prefetch_unseats_the_line_live_too():
+    """The collector drops a provider's status when its later prefetch reports something
+    unreadable; a live view (the stream, a draft) is told, so it never keeps the stale line."""
+    sink, token = turn_outcome.open_turn_outcome()
+    principal = _as(True)
+    seen = []
+    sink.observe_progress(lambda: seen.append(describe_recalls(sink.recall())))
+    try:
+        assert turn_outcome.record_recall_status(recall_status([admit({})] * 2))
+        assert not turn_outcome.record_recall_status({"provider": "long_term_memory", "text": SECRET})
+        assert seen == [["🧠 Long-term memory — recalled 2 memories"], []]
+    finally:
+        reset_turn_principal(principal)
+        turn_outcome.reset_turn_outcome(token)
+
+
+# ── nerva chat ────────────────────────────────────────────────────────────────
+
+class _Hub:
+    def __init__(self, reply):
+        self.reply, self.base_url = reply, "http://127.0.0.1:8080"
+
+    def post(self, path, body=None):
+        assert path == "/chat"
+        return self.reply
+
+    def request(self, method, path, body=None):
+        return self.post(path, body)
+
+
+def _nerva_chat(reply, *argv):
+    import io
+
+    from agents.cli.nerva import Context, main
+
+    out, err = io.StringIO(), io.StringIO()
+    ctx = Context(environ={}, out=out, err=err, inp=io.StringIO(""), client_factory=lambda env: _Hub(reply))
+    return main(["chat", "ce ai ales?", *argv], context=ctx), out.getvalue(), err.getvalue()
+
+
+def test_nerva_chat_prints_the_line_on_stderr_and_keeps_stdout_the_answer():
+    recall = [recall_status([admit({})] * 2), recall_status([admit({})], provider="message_archive")]
+    code, out, err = _nerva_chat({"reply": REPLY, "outcome": {"recall": recall}})
+    assert code == 0 and out == REPLY + "\n"
+    assert err.splitlines() == ["🧠 Long-term memory — recalled 2 memories",
+                                "🧠 Message archive — recalled 1 memory"]
+    # Only counts and closed words render: anything else a hub sends prints nothing.
+    _, _, err = _nerva_chat({"reply": REPLY, "outcome": {"recall": [{**recall[0], "text": SECRET}]}})
+    assert err == ""
+    _, out, err = _nerva_chat({"reply": REPLY, "outcome": {"recall": recall}}, "-z")   # a script's answer
+    assert out == REPLY + "\n" and err == ""

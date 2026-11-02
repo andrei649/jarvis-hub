@@ -44,4 +44,36 @@ def record_turn_notice(code: str, text: str) -> bool:
     return True
 
 
-__all__ = ["open_turn_notices", "record_turn_notice", "reset_turn_notices"]
+class FootedReply(str):
+    """A channel reply with the turn's system lines under it (H674 ``ℹ`` notices, H430
+    ``🧠`` recall lines), kept apart from the reply they sit under.
+
+    The ``str`` is the whole message a person reads: the reply, a blank line, one line
+    per notice. :attr:`spoken` is the reply alone. The footer is status for reading,
+    never part of the answer, so whatever turns a reply into speech (a Telegram chat in
+    voice mode) takes :func:`spoken_text` and the voice note says only what was answered.
+    """
+
+    spoken: str
+
+    def __new__(cls, reply: str, lines):
+        if type(reply) is not str or not reply.strip():
+            raise ValueError("A footer sits under a reply")
+        footer = [str(line) for line in lines if str(line).strip()]
+        if not footer:
+            raise ValueError("A footed reply has at least one footer line")
+        instance = super().__new__(cls, reply.rstrip() + "\n\n" + "\n".join(footer))
+        instance.spoken = reply
+        return instance
+
+
+def spoken_text(message: object) -> str:
+    """What a voice note of *message* may say: a :class:`FootedReply`'s reply alone, any
+    other message whole."""
+    if isinstance(message, FootedReply):
+        return message.spoken
+    return str(message or "")
+
+
+__all__ = ["FootedReply", "open_turn_notices", "record_turn_notice", "reset_turn_notices",
+           "spoken_text"]

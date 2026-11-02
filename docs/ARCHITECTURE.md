@@ -81,8 +81,12 @@ prefetch reports the second) and only on an owner's turn. `/chat` and the stream
 `outcome.recall` (a list, provider order); the stream also sends an `outcome_progress` the moment a
 prefetch lands, so the line does not wait for the first token. The HUD StatusStrip renders one line
 per provider (`turn-outcome.tsx` `recallLines`), and an owner's Telegram/Slack/Discord/ntfy reply
-gets them as footer lines (`_channel_turn` → `_with_channel_notices` → `describe_recalls`). Both
-renderers produce `🧠 Long-term memory — recalled 1 memory` / `🧠 Message archive — recalled 3
+gets them as footer lines (`_channel_turn` → `_with_channel_notices` → `describe_recalls`), handed
+to the adapter as a `turn_notices.FootedReply` so a Telegram chat in voice mode reads the footer and
+hears only the reply (`spoken_text`). A Telegram reply streamed in place shows the line from its
+first frame (`TelegramDraft.show_footer`, fed by the turn outcome's progress observer). `nerva
+chat` prints the lines on stderr before the answer (stdout stays the answer; `-z`/`--json` are
+unchanged). Both renderers produce `🧠 Long-term memory — recalled 1 memory` / `🧠 Message archive — recalled 3
 memories` / `recalled relevant memory`, plus withheld reasons, a previous-recall stand-in or
 "unavailable this turn", and they share the cases in `frontend/src/test/recall-line-cases.json`.
 

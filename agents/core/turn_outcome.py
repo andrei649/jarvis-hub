@@ -249,10 +249,9 @@ class TurnOutcomeCollector:
         with self._lock:
             if self._closed or self._completion is not None:
                 return False
-            if status is not None and not (valid_recall_status(status) and status["provider"] == provider):
-                self._recall.pop(provider, None)   # an unreadable later prefetch still unseats the earlier one
-                return False
-            if status is None:
+            readable = status is None or (valid_recall_status(status) and status["provider"] == provider)
+            if status is None or not readable:
+                # an unreadable later prefetch still unseats the earlier one, live as well
                 changed = self._recall.pop(provider, None) is not None
             else:
                 self._recall[provider], changed = _copy(status), True
@@ -262,7 +261,7 @@ class TurnOutcomeCollector:
                 observer()
             except Exception:
                 logger.debug('turn outcome progress observer failed', exc_info=True)
-        return True
+        return readable
 
     def observe_progress(self, callback) -> None:
         """Call *callback* (no arguments) when a recall status lands, so a live client can

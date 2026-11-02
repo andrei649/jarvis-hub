@@ -48,6 +48,7 @@ from .spoken_reply import REASON_SEND, Audio, SpokenReply
 from ..commands import side_question_command_name
 from ..log_safe import log_safe
 from ..settings_db import get_value
+from ..turn_notices import FootedReply, spoken_text
 from ..owner_once_context import OwnerReplySource, bind_owner_reply_source, close_owner_reply_source
 
 logger = logging.getLogger("jarvis.channels.telegram")
@@ -132,7 +133,9 @@ class TelegramDraft:
     as new messages. Every step is best effort and never raises into the turn: a failed
     edit is a skipped frame, a failed final edit becomes a fresh send, markup Telegram
     rejects is retried as plain text. ``finish()`` is True only when the final text was
-    delivered.
+    delivered. The turn's status lines (H430: the recall indicator, from the moment each
+    memory prefetch lands, ``show_footer``) sit under the text while it is written; the
+    final text brings its own (a ``FootedReply``), and a voice note speaks the reply alone.
     """
 
     def __init__(self, channel: "TelegramChannel", chat_id, *, interval: float | None = None,
@@ -146,6 +149,7 @@ class TelegramDraft:
         self._last_edit = 0.0
         self._last_shown = ""
         self._cap = channel.descriptor.max_message_length or TELEGRAM_MAX_MESSAGE_LENGTH
+        self._footer: tuple[str, ...] = ()
         self.finished = False
 
     @property
@@ -185,12 +189,19 @@ class TelegramDraft:
         except Exception:
             logger.debug("Telegram draft frame skipped", exc_info=True)
 
+    def show_footer(self, lines) -> None:
+        """Show *lines* under the text from the next frame on. One assignment, so it is
+        safe from the thread a prefetch ran on; it never starts the message by itself (a
+        turn that ends silent leaves nothing behind)."""
+        self._footer = tuple(str(line) for line in lines or () if str(line).strip())
+
     def _preview_source(self) -> str:
-        budget = self._cap - len(_STREAM_CURSOR) - 1
+        footer = ("\n\n" + "\n".join(self._footer)) if self._footer else ""
+        budget = self._cap - len(_STREAM_CURSOR) - 1 - len(footer)
         source = self._text
         if len(source) > budget:
             source = source[:budget] + "…"
-        return source + _STREAM_CURSOR
+        return source + _STREAM_CURSOR + footer
 
     def _preview(self) -> str:
         return to_telegram_html(self._preview_source())
@@ -204,7 +215,9 @@ class TelegramDraft:
         if not text.strip():
             return False
         if self._message_id is None:
-            return await self._channel.send(text, chat_id=self._chat_id)
+            # A FootedReply goes to send() whole, so its footer stays out of the voice note.
+            return await self._channel.send(
+                final_text if isinstance(final_text, FootedReply) else text, chat_id=self._chat_id)
         pieces = chunk(text, self._cap)
         try:
             ok = await self._channel._edit_message(
@@ -218,8 +231,10 @@ class TelegramDraft:
             if not await self._channel._send_chunk(self._chat_id, piece):
                 return False
         if ok:
-            # Same rule as `send()`: the text landed, so the chat's voice mode applies.
-            await self._channel._after_reply(self._chat_id, text)
+            # Same rule as `send()`: the text landed, so the chat's voice mode applies, to
+            # the reply alone (the footer's status lines are for reading).
+            await self._channel._after_reply(
+                self._chat_id, text if final_text is None else spoken_text(final_text))
         return ok
 
 
@@ -472,8 +487,10 @@ class TelegramChannel(ChannelAdapter):
         # `voice=False` marks a service line (a transcript echo, an unreadable-attachment
         # notice, a pairing reply, a reason acknowledgement) that is never spoken and
         # never takes the voice mark of a voice-note turn running in the chat. Any other
-        # send takes that mark only from inside the turn itself (see _after_reply).
-        await self._after_reply(cid, str(message or ""), speak=kwargs.get("voice", True))
+        # send takes that mark only from inside the turn itself (see _after_reply). A reply
+        # with a footer (FootedReply: the recall indicator, the turn's notices) is spoken
+        # without it — those lines are status for reading, not part of the answer.
+        await self._after_reply(cid, spoken_text(message), speak=kwargs.get("voice", True))
         return True
 
     async def _send_ephemeral_chunk(self, cid, piece: str, *, plain: bool, ttl: int) -> bool:

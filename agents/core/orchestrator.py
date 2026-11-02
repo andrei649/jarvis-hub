@@ -2054,6 +2054,13 @@ class Orchestrator:
             outcome_sink, outcome_token = (current_turn_outcome() if carries else None), None
             if carries and outcome_sink is None:
                 outcome_sink, outcome_token = open_turn_outcome()
+            if outcome_sink is not None and callable(getattr(draft, "show_footer", None)):
+                # Hermes shows the line right after the prefetch, not with the reply: a reply
+                # written in place carries it from its first frame (a later prefetch's line
+                # from the next one). Called from whichever thread the prefetch ran on.
+                from .memory.recall_admission import describe_recalls
+                outcome_sink.observe_progress(
+                    lambda: draft.show_footer(describe_recalls(outcome_sink.recall())))
             try:
                 if draft is not None:
                     async def push(token):
@@ -2081,12 +2088,15 @@ class Orchestrator:
         ``str`` subclass) is left exactly as it is. Only an owner's turn on a text-chat
         channel collects any (see ``_channel_turn``)."""
         from .memory.recall_admission import describe_recalls
+        from .turn_notices import FootedReply
 
         lines = describe_recalls(recall or []) + [
             f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
         if not lines or type(reply) is not str or not reply.strip():
             return reply
-        return reply.rstrip() + "\n\n" + "\n".join(lines)
+        # The footer is for reading: the adapter gets it apart from the reply, so a chat in
+        # voice mode hears only the reply (``turn_notices.spoken_text``).
+        return FootedReply(reply, lines)
 
     async def _run_channel_session_turn(self, session_id, text, channel, *, observe_only, draft):
         # BUG-5: request-local binding never mutates the owner's default session.
