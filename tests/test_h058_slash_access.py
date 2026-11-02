@@ -458,18 +458,28 @@ def test_the_settings_key_is_declared_with_an_empty_default():
 
 
 async def test_the_gate_only_lets_a_command_reach_its_handler_the_handler_still_governs(store):
-    """An allowed command still answers only through its own guards: a guest allowed
-    /recap on the owner's shared session is refused by /recap itself, as before."""
-    store({"*": {"dm": ["recap"]}})
+    """Not listed, /recap never reaches its handler; listed, it reaches it — and an allowed
+    command still answers only through its own guards: a guest allowed /recap on the
+    owner's shared session is refused by /recap itself, as before."""
     registry = build_default_registry()
+    reached = []
 
     async def history(*_a, **_k):
         raise AssertionError("the shared session must not be read for a guest")
 
-    orch = SimpleNamespace(commands=registry, on_shared_session=lambda: True,
+    def shared():
+        reached.append(True)
+        return True
+
+    orch = SimpleNamespace(commands=registry, on_shared_session=shared,
                            memory=SimpleNamespace(get_history=history), session_id="shared")
+    store({"*": {"dm": []}})
+    gated = await registry.dispatch("/recap", orch=orch, principal=Principal(channel="widget"))
+    assert gated.status == "refused" and gated.reply.startswith("⛔ /recap is admin-only here")
+    assert reached == []                                   # the handler was never reached
+    store({"*": {"dm": ["recap"]}})
     outcome = await registry.dispatch("/recap", orch=orch, principal=Principal(channel="widget"))
-    assert outcome.status == "answered" and "owner" in outcome.reply
+    assert outcome.status == "answered" and "owner" in outcome.reply and reached == [True]
 
 
 async def test_the_principal_scope_follows_the_adapters_chat_type():
