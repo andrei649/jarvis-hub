@@ -783,8 +783,8 @@ class AgentToolRuntime:
         # this loop, or carried in the prompt from an earlier turn) answers with a pointer.
         # The loop runs in its own copy of the turn's context (_run_turn), so this binding
         # ends with it.
-        from .skills.tools import bind_transcript
-        bind_transcript(messages[0]["content"], prompt)
+        from .skills.tools import bind_transcript, with_pruned_skill_notice
+        bind_transcript(messages[0]["content"], prompt, messages=messages)
         from . import trajectory  # H652: what the model saw, step by step (opt-in, never raises)
         trajectory.note_system(messages[0]["content"])
         trajectory.note_tools(tools)  # the definitions sent as the provider's ``tools=``
@@ -892,8 +892,11 @@ class AgentToolRuntime:
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
                         if known_window else 0
                     )
-                rebuilt = self._guided_system(system, model=model, agent_id=agent_id,
-                                              metadata=metadata, backend=backend)
+                # H389: the rebuilt prompt keeps the pruned-skill notice the fold put there.
+                rebuilt = with_pruned_skill_notice(
+                    self._guided_system(system, model=model, agent_id=agent_id,
+                                        metadata=metadata, backend=backend),
+                    messages)
                 if rebuilt != messages[0]["content"]:
                     messages[0] = {**messages[0], "content": rebuilt}
                     trajectory.note_system(rebuilt)
@@ -904,6 +907,8 @@ class AgentToolRuntime:
                         output_risks=output_risks,
                     ):
                         return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
+                else:
+                    trajectory.note_system(messages[0]["content"])   # the fold's own notice
             # H513: every round rechecks revocation after tool/profile awaits.
             # Errors propagate before provider I/O; an unreadable gate never widens.
             if before_model_call is not None:
@@ -1187,6 +1192,12 @@ class AgentToolRuntime:
         assistant call that made it, which is what every provider validates — only their
         content shrinks. The most recent ``compaction_keep_recent`` iterations are folded last.
         Returns False when the transcript still exceeds the budget with everything folded.
+
+        H389: a ``skill_view`` result that served a skill's text folds to a
+        ``[SKILL_PRUNED: <name> ...]`` marker (``skills.tools.pruned_skill_content``), never
+        to a preview of the body, and the system prompt then carries the reload notice and
+        the rule against acting on a pruned body (``skills.tools.with_pruned_skill_notice``),
+        counted in what must fit.
         """
         from .conversation_clock import active_clock
         binding = active_clock()
@@ -1229,44 +1240,84 @@ class AgentToolRuntime:
         used = before
         folded = 0
         replacement_risks: dict[int, ToolOutputRisk] = {}
-        for positions in (
-            [index for index in candidates if index < protected_from],
-            [index for index in candidates if index >= protected_from],
-        ):
-            for index in positions:
-                if used <= budget:
-                    break
-                compacted.add(index)
-                message = messages[index]
-                content = message.get("content")
-                encoded = content if isinstance(content, str) else json.dumps(content, default=str)
-                if len(encoded.encode("utf-8")) <= self._compacted_result_bytes:
+        from .skills.tools import (
+            MAX_PRUNED_SKILLS,
+            TOOL_VIEW,
+            pruned_skill_content,
+            with_pruned_skill_notice,
+            without_pruned_skill_notice,
+        )
+        # H389: the calls whose results are skill_view answers. A served skill body this
+        # fold reaches becomes a [SKILL_PRUNED] marker, never a preview of its text.
+        skill_views = {
+            call.get("id")
+            for message in messages if message.get("role") == "assistant"
+            for call in (message.get("tool_calls") or ())
+            if isinstance(call, dict) and isinstance(call.get("function"), dict)
+            and call["function"].get("name") == TOOL_VIEW
+        }
+
+        def fold_pass() -> None:
+            nonlocal used, folded
+            for positions in (
+                [index for index in candidates if index < protected_from],
+                [index for index in candidates if index >= protected_from],
+            ):
+                for index in positions:
+                    if used <= budget:
+                        return
+                    if index in compacted:
+                        continue
+                    compacted.add(index)
+                    message = messages[index]
+                    content = message.get("content")
+                    encoded = content if isinstance(content, str) else json.dumps(content, default=str)
+                    if len(encoded.encode("utf-8")) <= self._compacted_result_bytes:
+                        if message.get("images"):
+                            # H297: a small text can carry megabytes of images; folding
+                            # it still detaches them (the descriptors stay).
+                            replacement = _image_trimmed(message, [], "compacted")
+                            messages[index] = replacement
+                            risk = output_risks.get(id(message)) if output_risks is not None else None
+                            if risk is not None:
+                                replacement_risks[id(replacement)] = risk
+                            folded += 1
+                            used = _window_estimate(messages)
+                        continue
+                    risk = output_risks.get(id(message)) if output_risks is not None else None
+                    if risk is not None and risk.upstream_elided and encoded.startswith(COMPLETENESS_NOTICE):
+                        encoded = encoded[len(COMPLETENESS_NOTICE):]
+                    pruned = (pruned_skill_content(encoded)
+                              if message.get("tool_call_id") in skill_views else None)
+                    folded_content = pruned if pruned is not None else self._compacted_content(encoded)
+                    if risk is not None and risk.upstream_elided:
+                        folded_content = COMPLETENESS_NOTICE + folded_content
+                    # A folded result drops its images with its bytes (H297).
+                    replacement = {**message, "content": folded_content}
                     if message.get("images"):
-                        # H297: a small text can carry megabytes of images; folding
-                        # it still detaches them (the descriptors stay).
-                        replacement = _image_trimmed(message, [], "compacted")
-                        messages[index] = replacement
-                        risk = output_risks.get(id(message)) if output_risks is not None else None
-                        if risk is not None:
-                            replacement_risks[id(replacement)] = risk
-                        folded += 1
-                        used = _window_estimate(messages)
-                    continue
-                risk = output_risks.get(id(message)) if output_risks is not None else None
-                if risk is not None and risk.upstream_elided and encoded.startswith(COMPLETENESS_NOTICE):
-                    encoded = encoded[len(COMPLETENESS_NOTICE):]
-                folded_content = self._compacted_content(encoded)
-                if risk is not None and risk.upstream_elided:
-                    folded_content = COMPLETENESS_NOTICE + folded_content
-                # A folded result drops its images with its bytes (H297).
-                replacement = {**message, "content": folded_content}
-                if message.get("images"):
-                    replacement = _image_trimmed(replacement, [], "compacted")
-                messages[index] = replacement
-                if risk is not None:
-                    replacement_risks[id(replacement)] = risk.with_context_elided()
-                folded += 1
-                used = _window_estimate(messages)
+                        replacement = _image_trimmed(replacement, [], "compacted")
+                    messages[index] = replacement
+                    if risk is not None:
+                        replacement_risks[id(replacement)] = risk.with_context_elided()
+                    folded += 1
+                    used = _window_estimate(messages)
+
+        fold_pass()
+        # H389: a fold that pruned a skill's served text puts the reload notice and the rule
+        # against acting on a pruned body in the system prompt — part of what must fit, so a
+        # notice that does not fit folds further (each round can only name more skills).
+        for _round in range(MAX_PRUNED_SKILLS + 1):
+            if not folded:
+                break
+            noticed = with_pruned_skill_notice(messages[0]["content"], messages)
+            if noticed is messages[0]["content"]:
+                break
+            messages[0] = {**messages[0], "content": noticed}
+            used = _window_estimate(messages)
+            folds_so_far = folded
+            fold_pass()
+            if folded == folds_so_far:
+                break
         exhausted = used > budget
         if not exhausted and folded:
             from .conversation_clock import _active_clock, render_snapshot
@@ -1277,7 +1328,10 @@ class AgentToolRuntime:
                 manager, snapshot = binding.manager, binding.snapshot
                 now = max(datetime.now(UTC), snapshot.rebuilt_at.astimezone())
                 proposed = replace(snapshot, rebuilt_at=now, revision=snapshot.revision + 1)
-                messages[0] = {**messages[0], "content": render_snapshot(messages[0]["content"], proposed)}
+                # The clock is the prompt's trailing block: the H389 notice is set aside
+                # while it is rendered and put back after it.
+                clocked = render_snapshot(without_pruned_skill_notice(messages[0]["content"]), proposed)
+                messages[0] = {**messages[0], "content": with_pruned_skill_notice(clocked, messages)}
                 if _window_estimate(messages) > budget:
                     return False
                 committed = manager.commit_clock(snapshot, json.dumps(messages, sort_keys=True, default=str), now=now)

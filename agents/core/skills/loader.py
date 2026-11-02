@@ -104,6 +104,17 @@ INDEX_SNAPSHOT_MAX_BYTES = 512 * 1024
 INDEX_HEADER = "Available skills:"
 INDEX_DEFAULT_CATEGORY = "general"
 INDEX_MAX_COMMANDS = 8
+#: H389 — under the coding posture (``visibility.coding_posture``) a non-coding category is
+#: one line of names (Hermes ``  <category> [names only]: a, b``) and the index ends with
+#: one of these notes (the first when ``skill_view`` is offered). Names are never hidden:
+#: a skill the model stops seeing is a capability it stops reaching for.
+INDEX_NAMES_ONLY = " [names only]: "
+INDEX_NAMES_ONLY_NOTES = (
+    "(Categories marked [names only] are outside the current coding context, so their descriptions "
+    "are omitted - the skills work normally and load with skill_view(name) as usual.)",
+    "(Categories marked [names only] are outside the current coding context, so their descriptions "
+    "are omitted - the skills work normally.)",
+)
 _INDEX_LRU: "OrderedDict[str, str]" = OrderedDict()
 _INDEX_LOCK = threading.Lock()
 
@@ -1802,7 +1813,13 @@ def register(skill):
         this loader's, its text is scanned again, and every row in it is one this loader
         would write now for a skill the gates show (:meth:`_index_rows_current`); the
         manifest hash is not a secret, so a block failing either check is rebuilt. A cache
-        hit skips the per-skill hide notes; the first build of each key logs them."""
+        hit skips the per-skill hide notes; the first build of each key logs them.
+
+        H389: under the coding posture (the turn's offer, ``visibility.coding_posture`` —
+        Hermes ``agent.coding_context: focus``) a non-coding category
+        (``visibility.NON_CODING_CATEGORIES``) is one line of its skills' names, and a note
+        closing the index says why; names are never hidden. The posture is read off the
+        offered tools, which the cache key already holds."""
         from . import switches as skill_switches
         from . import visibility as skill_visibility
 
@@ -1846,7 +1863,7 @@ def register(skill):
         from ..security import quarantine
         from . import visibility as skill_visibility
 
-        grouped: dict[str, list[str]] = {}
+        grouped: dict[str, list[tuple[str, str]]] = {}
         shown = 0
         for name in sorted(self.skills):
             if shown >= limit:
@@ -1864,15 +1881,34 @@ def register(skill):
                 logger.warning("Skill '%s' is NOT in the model's skills index — its row is "
                                "injection-flagged: %s", skill.name, quarantine.injection_flag_names(flags))
                 continue
-            grouped.setdefault(category, []).append(row)
+            grouped.setdefault(category, []).append((label, row))
             shown += 1
         if not grouped:
             return ""
-        lines = [INDEX_HEADER]
+        demoted = self._index_demoted(seen)
+        lines, names_only = [INDEX_HEADER], False
         for category in sorted(grouped):
+            if demoted is not None and skill_visibility.names_only_category(category):
+                names = sorted({label for label, _row in grouped[category]})
+                lines.append(f"  {category}{INDEX_NAMES_ONLY}{', '.join(names)}")
+                names_only = True
+                continue
             lines.append(f"  {category}:")
-            lines.extend(f"    - {row}" for row in grouped[category])
+            lines.extend(f"    - {row}" for _label, row in grouped[category])
+        if names_only and demoted is not None:
+            lines.append(demoted)
         return "\n".join(lines)
+
+    @staticmethod
+    def _index_demoted(seen: dict) -> Optional[str]:
+        """H389 — under the coding posture (the turn's offer, ``visibility.coding_posture``),
+        the note that ends an index with names-only categories; None in the general posture."""
+        from . import visibility as skill_visibility
+
+        offered = seen.get("offered_tools")
+        if not skill_visibility.coding_posture(offered):
+            return None
+        return INDEX_NAMES_ONLY_NOTES[0 if "skill_view" in offered else 1]
 
     @staticmethod
     def _index_row(skill: "Skill", chars: int) -> tuple[str, str]:
@@ -1902,26 +1938,52 @@ def register(skill):
         block naming a hidden, switched-off or invented skill, or with an edited row, is
         rebuilt: the manifest hash it is keyed by is not a secret. (Injection flags are
         re-scanned by :meth:`_index_text_clean`.)"""
+        from . import visibility as skill_visibility
+
         if text == "":
             return True
         by_row: dict[str, tuple[str, str]] = {}
+        by_label: dict[tuple[str, str], str] = {}
         for name in sorted(self.skills):
             skill = self.skills[name]
             if self.catalog_gate(skill, agent_id, switches=switched, visibility=seen):
                 continue
             category, row = self._index_row(skill, chars)
             by_row.setdefault(row, (category, name))
-        category, names, rows = None, set(), 0
-        for line in text.split("\n")[1:]:
-            if not line.startswith("    - "):
-                category = line.strip()[:-1]
+            by_label.setdefault((category, _catalog_text(skill.name, 64)), name)
+        # H389: under the coding posture a non-coding category must be names only, under
+        # the general posture none may be, and the note closes the index iff one is.
+        demoted = self._index_demoted(seen)
+        lines = text.split("\n")[1:]
+        if demoted is not None and lines and lines[-1] == demoted:
+            lines = lines[:-1]
+            noted = True
+        else:
+            noted = False
+        category, names, rows, names_only = None, set(), 0, False
+        for line in lines:
+            if line.startswith("    - "):
+                hit = by_row.get(line[len("    - "):])
+                if (hit is None or hit[0] != category or hit[1] in names
+                        or (demoted is not None and skill_visibility.names_only_category(category))):
+                    return False
+                names.add(hit[1])
+                rows += 1
                 continue
-            hit = by_row.get(line[len("    - "):])
-            if hit is None or hit[0] != category or hit[1] in names:
-                return False
-            names.add(hit[1])
-            rows += 1
-        return rows <= limit
+            head, sep, listed = line[2:].partition(INDEX_NAMES_ONLY)
+            if sep:
+                if demoted is None or not skill_visibility.names_only_category(head):
+                    return False
+                for label in listed.split(", "):
+                    hit_name = by_label.get((head, label))
+                    if hit_name is None or hit_name in names:
+                        return False
+                    names.add(hit_name)
+                    rows += 1
+                names_only, category = True, None
+                continue
+            category = line.strip()[:-1]
+        return rows <= limit and names_only == noted
 
     @staticmethod
     def _index_text_clean(text: object) -> bool:
@@ -1936,8 +1998,11 @@ def register(skill):
         lines = text.split("\n")
         if lines[0] != INDEX_HEADER:
             return False
+        if len(lines) > 1 and lines[-1] in INDEX_NAMES_ONLY_NOTES:
+            lines = lines[:-1]
         for line in lines[1:]:
-            if not (re.fullmatch(r"  \S[^\n]*:", line) or line.startswith("    - ")):
+            if not (re.fullmatch(r"  \S[^\n]*:", line) or line.startswith("    - ")
+                    or re.fullmatch(r"  \S[^\n]*" + re.escape(INDEX_NAMES_ONLY) + r"\S[^\n]*", line)):
                 return False
             if quarantine.detect_injection_normalized(line):
                 return False

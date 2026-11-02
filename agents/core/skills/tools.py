@@ -38,6 +38,11 @@ Three ToolRPC tools, all ungated:
     keeps the skill's file list; ``reload: true`` reads it again. A carry rendered with
     other template variables, older than its turns, or bound for an inbound non-owner turn
     on the shared session is not carried, and the view is then served whole.
+    H389: when the loop's compaction folds a served body, it becomes a
+    ``[SKILL_PRUNED: <name> ...]`` marker (:func:`pruned_skill_content`), the system prompt
+    gains the reload notice and the rule against acting on a pruned body
+    (:func:`with_pruned_skill_notice`), and the next view of that skill is served whole with
+    :data:`PRUNED_RELOAD_NOTICE`.
 
 ``skill_propose``
     Authoring, governed: ``{name, content}`` proposes a new SKILL.md for an existing skill
@@ -281,28 +286,256 @@ def guest_on_shared_session(shared: bool, origin: str, identity: Any) -> bool:
     return not (getattr(identity, "admin", False) is True or str(getattr(identity, "tag", "") or "") == "owner")
 
 
+# ── H389: a served skill body pruned at a compaction ─────────────────────────────────
+#
+# Hermes replaces a loaded ``skill_view`` body in compacted history with a
+# ``[SKILL_PRUNED: ...]`` marker, tells the model which skills to reload before acting on
+# work they governed, and keeps a prompt rule that forbids acting on a pruned body. Nerva's
+# compaction is the tool loop's fold (``AgentToolRuntime._compact_context``): a served
+# body it folds becomes the marker (:func:`pruned_skill_content`), never a preview of the
+# body; the system prompt then carries the reload notice and the rule
+# (:func:`with_pruned_skill_notice`); and ``skill_view`` serves a pruned skill whole again
+# with :data:`PRUNED_RELOAD_NOTICE` (``_once``, reading :func:`pruned_skills` off the live
+# transcript). Everything is derived from the transcript itself, so it is deterministic and
+# a compaction that prunes nothing changes nothing.
+
+SKILL_PRUNED_PREFIX = "[SKILL_PRUNED:"
+#: The skills one reload notice names (Hermes ``_MAX_PRUNED_SKILL_MARKERS``), first pruned first.
+MAX_PRUNED_SKILLS = 20
+PRUNED_NOTICE_HEADER = "[Skills pruned by context compaction - reload before acting on them]"
+PRUNED_NOTICE_END = "[/Skills pruned by context compaction]"
+PRUNED_RELOAD_NOTICE = (
+    "Context compaction pruned this skill's earlier copy in this conversation to a [SKILL_PRUNED] marker; "
+    "this is its full text again. Follow this copy, and treat the remaining [SKILL_PRUNED] markers for it "
+    "as historical."
+)
+#: What a marker may quote: printable, no quote, bracket or backslash (the marker parses back).
+_MARKER_TEXT = re.compile(r"[^\x00-\x1f\x7f'\[\]\\]{1,256}")
+#: What the system prompt's notice may name: plain skill names and skill-relative paths only
+#: (the notice outranks a tool result, so a skill's own text never reaches it unvetted).
+_NOTICE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+_NOTICE_FILE = re.compile(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+){0,7}")
+
+
+def pruned_marker(name: str, file: str = "") -> str:
+    """The marker a pruned body leaves: which skill (and file) it was and how to reload it."""
+    name, file = str(name or ""), str(file or "")
+    if not _MARKER_TEXT.fullmatch(name) or (file and not _MARKER_TEXT.fullmatch(file)):
+        return (f"{SKILL_PRUNED_PREFIX} a skill's text was removed by context compaction; reload it with "
+                "skill_view before acting on anything that depends on it]")
+    target = f"name='{name}'" + (f", file='{file}'" if file else "")
+    what = f"{name} {file}" if file else name
+    return (f"{SKILL_PRUNED_PREFIX} {what} - its text was removed by context compaction; reload with "
+            f"skill_view({target}) before acting on anything that depends on it]")
+
+
+def _served_copy(payload: str) -> tuple[str, str] | None:
+    """``(name, file)`` of a ``skill_view`` answer that carried a skill's text (a whole
+    body, or one of its files); None for a pointer, a refusal or anything else."""
+    try:
+        envelope = json.loads(payload)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(envelope, dict) or envelope.get("tool") != TOOL_VIEW or envelope.get("ok") is not True:
+        return None
+    result = envelope.get("result")
+    if not isinstance(result, dict) or result.get("ok") is not True or not isinstance(result.get("name"), str):
+        return None
+    if isinstance(result.get("body"), str) and "file" not in result:
+        return result["name"], ""
+    if isinstance(result.get("content"), str) and isinstance(result.get("file"), str):
+        return result["name"], result["file"]
+    return None
+
+
+def _pruned_entry(payload: str) -> tuple[str, str] | None:
+    """``(name, file)`` of a marker envelope :func:`pruned_skill_content` wrote; None otherwise.
+    A skill's own text sits under ``result`` and cannot pose as one."""
+    try:
+        envelope = json.loads(payload)
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(envelope, dict) or envelope.get("tool") != TOOL_VIEW or "result" in envelope
+            or not isinstance(envelope.get("pruned"), str) or not envelope["pruned"].startswith(SKILL_PRUNED_PREFIX)
+            or not isinstance(envelope.get("name"), str)):
+        return None
+    file = envelope.get("file", "")
+    return envelope["name"], file if isinstance(file, str) else ""
+
+
+def pruned_skill_content(content: str) -> str | None:
+    """What a compaction folds a ``skill_view`` result to: the ``[SKILL_PRUNED: ...]``
+    marker envelope when the result served a skill's text (never a preview of it), fenced
+    again when the result was fenced; None when it served none (a pointer, a refusal), which
+    the caller folds like any other result."""
+    from ..security.quarantine import fence_tool_result, split_fenced_tool_result
+
+    if not isinstance(content, str):
+        return None
+    fenced = split_fenced_tool_result(content)
+    if fenced is not None:
+        source, payload = fenced
+        inner = pruned_skill_content(payload)
+        return None if inner is None else fence_tool_result(inner, source=source)[0]
+    served = _served_copy(content)
+    if served is None:
+        return None
+    name, file = served
+    envelope: dict[str, Any] = {"ok": True, "tool": TOOL_VIEW, "name": name}
+    if file:
+        envelope["file"] = file
+    envelope["pruned"] = pruned_marker(name, file)
+    envelope["original_bytes"] = len(content.encode("utf-8"))
+    return json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+
+
+def pruned_skills(messages: Any, *, vetted: bool = False) -> list[tuple[str, str]]:
+    """The skills (``(name, file)``, first pruned first) whose served text a compaction
+    pruned from ``messages`` and that no later ``skill_view`` answer in it served again or
+    pointed at. ``vetted`` keeps what the system prompt may name: an unfenced marker whose
+    name (and file) is plain and not injection-flagged, at most :data:`MAX_PRUNED_SKILLS`."""
+    pending = _pending_pruned(messages)
+    if not vetted:
+        return list(pending)
+    named = []
+    for (name, file), unfenced in pending.items():
+        if (unfenced and _NOTICE_NAME.fullmatch(name)
+                and (not file or (_NOTICE_FILE.fullmatch(file) and ".." not in file.split("/")))
+                and not _flags(f"{name} {file}")):
+            named.append((name, file))
+    return named[:MAX_PRUNED_SKILLS]
+
+
+def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
+    """``(name, file) → whether its marker is unfenced``, for :func:`pruned_skills`. Only a
+    ``tool`` row answering an assistant's ``skill_view`` call is read."""
+    from ..security.quarantine import split_fenced_tool_result
+
+    views: set[str] = set()
+    pending: dict[tuple[str, str], bool] = {}
+    for message in messages if isinstance(messages, list) else ():
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "assistant":
+            for call in message.get("tool_calls") or ():
+                function = call.get("function") if isinstance(call, dict) else None
+                if isinstance(function, dict) and function.get("name") == TOOL_VIEW and isinstance(call.get("id"), str):
+                    views.add(call["id"])
+            continue
+        content = message.get("content")
+        if message.get("role") != "tool" or message.get("tool_call_id") not in views or not isinstance(content, str):
+            continue
+        fenced = split_fenced_tool_result(content)
+        payload = fenced[1] if fenced is not None else content
+        entry = _pruned_entry(payload)
+        if entry is not None:
+            pending[entry] = pending.get(entry, True) and fenced is None
+            continue
+        reread = _served_copy(payload) or _pointer(payload)
+        if reread is not None:
+            pending.pop(reread, None)
+    return pending
+
+
+def _pointer(payload: str) -> tuple[str, str] | None:
+    """``(name, file)`` of an ``already_loaded`` answer: the model was pointed at an intact copy."""
+    try:
+        envelope = json.loads(payload)
+    except (TypeError, ValueError):
+        return None
+    result = envelope.get("result") if isinstance(envelope, dict) and envelope.get("tool") == TOOL_VIEW else None
+    if not isinstance(result, dict) or not result.get("already_loaded") or not isinstance(result.get("name"), str):
+        return None
+    file = result.get("file", "")
+    return result["name"], file if isinstance(file, str) else ""
+
+
+def without_pruned_skill_notice(system: Any) -> Any:
+    """``system`` without the block :func:`with_pruned_skill_notice` added (the same object
+    when there is none)."""
+    if not isinstance(system, str):
+        return system
+    start = system.rfind(PRUNED_NOTICE_HEADER)
+    stop = system.find(PRUNED_NOTICE_END, start) if start >= 0 else -1
+    if stop < 0:
+        return system
+    if start >= 2 and system[start - 2:start] == "\n\n":
+        start -= 2
+    return _same_kind(system, system[:start] + system[stop + len(PRUNED_NOTICE_END):])
+
+
+def with_pruned_skill_notice(system: Any, messages: Any) -> Any:
+    """The system prompt for ``messages`` after a compaction: without any earlier notice,
+    then — when a skill's served text was pruned and not loaded again since — the reload
+    notice naming those skills (Hermes ``[Skills pruned during compression — reload before
+    acting on these tasks]``) and the rule that forbids acting on a pruned body
+    (``operating_guidance.SKILL_SAFETY_RULE``, unless the prompt's operating guidance
+    already states it), at the end. Unchanged (the same object) when there is nothing to
+    add or remove."""
+    from ..operating_guidance import SKILL_SAFETY_RULE
+
+    if not isinstance(system, str):
+        return system
+    base = without_pruned_skill_notice(system)
+    if not _pending_pruned(messages):
+        return base
+    named = pruned_skills(messages, vetted=True)
+    calls = "; ".join(f"skill_view(name='{name}'" + (f", file='{file}')" if file else ")") for name, file in named)
+    lines = [PRUNED_NOTICE_HEADER,
+             "Context compaction removed the text of skills loaded earlier in this conversation; the "
+             "instructions that governed the work so far are no longer in front of you. Before acting on "
+             "anything that depends on one of them, reload it"
+             + (f": {calls}." if calls else " (each [SKILL_PRUNED] marker says how).")
+             + " After reloading, re-check that each pending step is still justified: findings recorded "
+             "before the compaction may have changed it."]
+    if SKILL_SAFETY_RULE not in base:            # the operating guidance may carry it already
+        lines.append(SKILL_SAFETY_RULE)
+    lines.append(PRUNED_NOTICE_END)
+    block = "\n".join(lines)
+    text = f"{base}\n\n{block}" if base else block
+    return system if text == system else _same_kind(system, text)
+
+
+def _same_kind(original: Any, text: str) -> Any:
+    """``text`` as the same kind of prompt as ``original`` (an ``OperatingPrompt`` keeps its base)."""
+    if text == original:
+        return original
+    from ..operating_prompt import OperatingPrompt
+
+    if isinstance(original, OperatingPrompt):
+        return OperatingPrompt(text, base=original.base, model=original.model)
+    return text
+
+
 class Transcript:
-    """What one tool loop has put before the model: its system and first prompt (``text``)
-    and the skill loads served since the last compaction (``served``)."""
+    """What one tool loop has put before the model: its system and first prompt (``text``),
+    the skill loads served since the last compaction (``served``) and, when the loop binds
+    it, its live message list (``messages``: H389 reads pruned skills off it)."""
 
-    __slots__ = ("served", "text")
+    __slots__ = ("messages", "served", "text")
 
-    def __init__(self, *texts: Any):
+    def __init__(self, *texts: Any, messages: list | None = None):
         self.text = "\n".join(t for t in texts if isinstance(t, str))
         self.served: set[tuple[tuple[str, str], str]] = set()
+        self.messages = messages
 
     def compacted(self) -> None:
         """Older tool results were folded: no earlier load is provably intact any more."""
         self.served.clear()
+
+    def pruned(self) -> list[tuple[str, str]]:
+        """The skills a compaction pruned from this loop and nothing served again since."""
+        return pruned_skills(self.messages) if self.messages is not None else []
 
 
 _TRANSCRIPT: contextvars.ContextVar[Transcript | None] = contextvars.ContextVar(
     "nerva_skill_transcript", default=None)
 
 
-def bind_transcript(*texts: Any) -> contextvars.Token:
-    """Bind the tool loop's transcript (``AgentToolRuntime`` does, once a loop)."""
-    return _TRANSCRIPT.set(Transcript(*texts))
+def bind_transcript(*texts: Any, messages: list | None = None) -> contextvars.Token:
+    """Bind the tool loop's transcript (``AgentToolRuntime`` does, once a loop, with its live
+    ``messages`` so a reload after a compaction can tell it was pruned, H389)."""
+    return _TRANSCRIPT.set(Transcript(*texts, messages=messages))
 
 
 def reset_transcript(token: contextvars.Token) -> None:
@@ -857,7 +1090,12 @@ def register_skill_tools(
         Anything else — no bound transcript, a changed skill, ``reload`` — is served whole.
         The carried copy counts only when the ledger carried that digest into this
         session and agent's latest prompt, so a marker echoed into history or typed by a
-        user is not taken for it. A whole-skill pointer keeps the reply's file list."""
+        user is not taken for it. A whole-skill pointer keeps the reply's file list.
+
+        H389: a compaction that pruned this skill (or file) from the loop to a
+        ``[SKILL_PRUNED]`` marker is no copy at all: the compaction already made the loop
+        forget it, so it is served whole again, carrying :data:`PRUNED_RELOAD_NOTICE` (the
+        marker left in the transcript is historical from here on)."""
         digest = _reply_digest(reply)
         transcript = _TRANSCRIPT.get()
         key = (skill.name, rel)
@@ -885,6 +1123,8 @@ def register_skill_tools(
             transcript.served.add((key, digest))
         if not rel and not reply.get("tainted") and actor and session and not guest:
             LEDGER.record(session, actor, skill, digest, reply, rendered=rendered)
+        if transcript is not None and key in transcript.pruned():
+            reply = {**reply, "reloaded_after": "compaction", "notice": PRUNED_RELOAD_NOTICE}
         return reply
 
     async def _propose(args: dict) -> dict:
@@ -1109,6 +1349,9 @@ def register_skill_tools(
 
 
 __all__ = [
+    "MAX_PRUNED_SKILLS", "PRUNED_NOTICE_END", "PRUNED_NOTICE_HEADER", "PRUNED_RELOAD_NOTICE", "SKILL_PRUNED_PREFIX",
+    "pruned_marker", "pruned_skill_content", "pruned_skills", "with_pruned_skill_notice",
+    "without_pruned_skill_notice",
     "LEDGER", "LoadedSkillLedger", "Transcript", "bind_transcript", "carry_marker", "note_compacted",
     "carry_budget", "guest_on_shared_session", "render_key", "reset_transcript",
     "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW", "register_skill_tools",

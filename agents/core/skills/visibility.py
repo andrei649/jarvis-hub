@@ -32,6 +32,11 @@ reads them as four gates split in two, and so does Nerva:
 
 Every hide is logged once per skill and reason. Nothing here enables a skill or a
 tool: it only narrows what is shown.
+
+H389 — the offer also decides the **coding posture** (:func:`coding_posture`): an offer the
+owner narrowed to coding tools (an agent's ``tools:`` list, a job's ``enabled_toolsets``)
+makes the skills index show the non-coding categories (:data:`NON_CODING_CATEGORIES`) by
+name only. Demoted, never hidden: every skill stays named and loads as before.
 """
 from __future__ import annotations
 
@@ -72,6 +77,24 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     ),
     "basic": ("echo", "time"),
 }
+#: H389 — the coding posture. Hermes shifts into it under ``agent.coding_context: focus``:
+#: the offer collapses to its ``coding`` toolset (everything but image generation, speech,
+#: scheduling, computer use and the board) and the skills index demotes the categories
+#: below to names only. Nerva's offer collapses the same way where the owner narrows it —
+#: an agent's ``tools:`` list (``tool_profiles``) or a job's ``enabled_toolsets``
+#: (``job_toolsets``) — so the posture is read off the offer itself (:func:`coding_posture`):
+#: it holds a coding tool (the ``coding`` toolset above) and nothing outside these job
+#: toolset groups, the browser and the owner's MCP tools. The full owner offer always
+#: holds more (``canvas_point`` is registered on every hub), so it stays general: the
+#: index changes only where the owner chose a coding-only offer, never as a surprise.
+CODING_POSTURE_TOOLSETS = ("basic", "files", "terminal", "code", "web", "recall", "skills", "notes", "checklist")
+CODING_POSTURE_TOOLS = ("browser_run",)
+#: Hermes ``_NON_CODING_SKILL_CATEGORIES`` (a deny-list: a category not named here — the
+#: default ``general``, any custom one — keeps its full rows under the coding posture).
+NON_CODING_CATEGORIES = frozenset({
+    "apple", "communication", "cooking", "creative", "email", "finance", "gaming", "gifs", "health", "media",
+    "music", "note-taking", "productivity", "shopping", "smart-home", "social-media", "travel", "yuanbao",
+})
 _SYS_PLATFORMS = (("darwin", "macos"), ("linux", "linux"), ("win", "windows"))
 #: The OS names a refusal may quote; any other declared name is manifest text, only counted.
 _KNOWN_PLATFORMS = frozenset({nerva for _prefix, nerva in _SYS_PLATFORMS} | {"android"})
@@ -173,6 +196,31 @@ def context(*, channel: str | None = None, environments: frozenset[str] | None =
             "host": host_platforms() if host is None else host}
 
 
+def coding_posture(offered: Any) -> bool:
+    """H389 — whether a turn offered ``offered`` (tool names; None when unknown) is in the
+    coding posture: the offer holds one of Hermes' ``coding`` toolset tools (``file_write``,
+    ``terminal_run``, ``execute_code``) and every tool in it belongs to
+    :data:`CODING_POSTURE_TOOLSETS`, :data:`CODING_POSTURE_TOOLS` or the owner's MCP servers.
+    An unknown or empty offer is the general posture."""
+    if offered is None:
+        return False
+    from agents.core.job_toolsets import CATALOG
+    from agents.core.tool_profiles import MCP_TOOL_PREFIX
+
+    names = frozenset(str(name) for name in offered)
+    if not names & frozenset(TOOLSETS["coding"]):
+        return False
+    allowed = {tool for group in CODING_POSTURE_TOOLSETS for tool in CATALOG.get(group, ())}
+    allowed.update(CODING_POSTURE_TOOLS)
+    return all(name in allowed or name.startswith(MCP_TOOL_PREFIX) for name in names)
+
+
+def names_only_category(category: str) -> bool:
+    """A category the coding posture shows by name only; a nested one (``media/podcasts``)
+    follows its parent, as in Hermes."""
+    return str(category or "").split("/", 1)[0].strip().lower() in NON_CODING_CATEGORIES
+
+
 def _unattended() -> bool:
     """A turn with no human at the keyboard (a job, a workflow, the heartbeat)."""
     try:
@@ -233,7 +281,8 @@ def note_hidden(skill: Any, gate: str) -> None:
 
 
 __all__ = [
-    "ENV_OVERRIDE", "HARD_GATES", "SOFT_GATES", "TOOLSETS", "bind_offer", "context", "current_offer",
-    "host_environments", "reset_offer",
+    "CODING_POSTURE_TOOLS", "CODING_POSTURE_TOOLSETS", "ENV_OVERRIDE", "HARD_GATES", "NON_CODING_CATEGORIES",
+    "SOFT_GATES", "TOOLSETS", "bind_offer", "coding_posture", "context", "current_offer",
+    "host_environments", "names_only_category", "reset_offer",
     "host_platforms", "note_hidden", "offer_gate", "readiness",
 ]
