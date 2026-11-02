@@ -1647,7 +1647,13 @@ class WorkRunLedger:
         """The waits the owner let this run go from, oldest first: ``{kind, target}``
         (plus a pid's ``start`` token, when recorded) as each one's ``barrier.set``
         event recorded it. Read from the append-only
-        audit, so an owner's "stop waiting" outlives a restart (H464 review F3)."""
+        audit, so an owner's "stop waiting" outlives a restart (H464 review F3).
+
+        Only a wait someone else set counts. The owner lifting the owner's own pause
+        (``/goal resume``, or "stop waiting" on a pause: a barrier whose
+        ``barrier.set`` source is ``"owner"``) overrides nobody, so it is left out —
+        else every later clock wait the planner or the judge asks for would read as
+        the wait the owner let go of (H462). The clear stays on the audit."""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT kind, detail FROM run_events WHERE run_id = ? ORDER BY seq",
@@ -1661,7 +1667,7 @@ class WorkRunLedger:
                 sets[detail.get("id")] = detail
             elif row["kind"] == "barrier.cleared" and detail.get("by") == "owner":
                 origin = sets.get(detail.get("id"))
-                if origin is not None:
+                if origin is not None and origin.get("source") != "owner":
                     entry = {"kind": origin.get("kind"), "target": origin.get("target")}
                     if "start" in origin:
                         entry["start"] = origin.get("start")

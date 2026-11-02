@@ -340,7 +340,8 @@ field, constraint or boundary over its cap refuses the whole goal, never a cut o
 stop conditions; only a `scope:` comma list of step kinds (or `unrestricted`) is a
 scope. From chat the owner also intervenes through the HUD's own paths:
 `/goal status`, `/goal stop` (the stop route), `/goal pause` (an owner barrier that
-still ends at the run's deadline) and `/goal resume` (the HUD's "stop waiting"), and
+still ends at the run's deadline) and `/goal resume` (the HUD's "stop waiting"; lifting
+the owner's own pause never counts as letting go of a planner's or judge's wait), and
 `/subgoal remove <N>` / `/subgoal clear` take back the owner's own criteria — never
 the checks approved on the card.
 

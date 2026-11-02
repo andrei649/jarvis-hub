@@ -812,8 +812,56 @@ async def test_goal_pause_parks_the_run_and_resume_is_the_owner_s_clear(ledger):
     reply = await _say(orch, "/goal resume")
     assert reply.startswith("Resumed “Prepare the brief”"), reply
     assert ledger.get(run.id).barrier is None
-    assert ledger.owner_cleared(run.id)            # on the audit as the owner's clear
+    # On the audit as the owner's clear, but of the owner's own pause: no model wait
+    # the owner let the run go from, so it binds neither the planner nor the judge.
+    cleared = [e for e in ledger.events(run.id, limit=50) if e["kind"] == "barrier.cleared"]
+    assert [(e["detail"]["why"], e["detail"]["by"]) for e in cleared] == [("owner", "owner")]
+    assert ledger.owner_cleared(run.id) == []
     assert "was not paused" in await _say(orch, "/goal resume")
+
+
+async def test_resuming_the_owner_s_own_pause_never_refuses_a_later_clock_wait(ledger):
+    """Lifting the owner's own pause is not the owner letting the run go from a wait
+    the planner or the judge asked for. A clock wait the judge could set before the
+    pause is still set after /goal pause and /goal resume (and after the HUD's "stop
+    waiting" on a pause); an owner's clear of a model's own wait still sticks."""
+    from agents.core.autonomy.run_barriers import RunBarriers, RunBarriersError
+
+    run = _open(ledger)
+    orch = _orch(None, ledger)
+    barriers = RunBarriers(ledger)
+    wait = {"kind": "deadline", "target": {"in_seconds": 600}, "reason": "wait for CI"}
+
+    def clock_wait(source):
+        state = barriers.request(run.id, dict(wait), source=source)
+        assert (state["kind"], state["source"]) == ("deadline", source)
+        # The check lets it go when the clock is reached: not the owner, binds nothing.
+        assert ledger.clear_barrier_if(run.id, why="elapsed", by="check",
+                                       expect_id=ledger.get(run.id).barrier["id"])[0]
+
+    clock_wait("judge")                                   # SET before any pause
+    assert (await _say(orch, "/goal pause")).startswith("Paused “Prepare the brief”")
+    assert (await _say(orch, "/goal resume")).startswith("Resumed “Prepare the brief”")
+    clock_wait("judge")                                   # still SET after it
+    clock_wait("planner")
+    # The HUD's "stop waiting" on a pause is the same owner compare-and-clear.
+    assert (await _say(orch, "/goal pause")).startswith("Paused “Prepare the brief”")
+    assert barriers.clear(run.id)[0] is True
+    clock_wait("judge")
+    assert ledger.owner_cleared(run.id) == []
+    # The owner clearing a model's own clock wait still binds both models.
+    barriers.request(run.id, dict(wait), source="judge")
+    assert barriers.clear(run.id)[0] is True
+    assert ledger.owner_cleared(run.id) == [{"kind": "deadline",
+                                             "target": NOW + 600}]
+    for who in ("planner", "judge"):
+        with pytest.raises(RunBarriersError) as exc:
+            barriers.request(run.id, dict(wait), source=who)
+        assert exc.value.reason == "owner_cleared"
+    # ...and the owner may still pause and resume the run after it.
+    assert (await _say(orch, "/goal pause")).startswith("Paused “Prepare the brief”")
+    assert (await _say(orch, "/goal resume")).startswith("Resumed “Prepare the brief”")
+    assert ledger.owner_cleared(run.id) == [{"kind": "deadline", "target": NOW + 600}]
 
 
 async def test_goal_pause_refuses_a_run_waiting_on_the_owner(ledger):
