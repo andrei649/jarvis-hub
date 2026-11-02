@@ -296,8 +296,8 @@ def _run(fn: Callable[[int], int], settings: TrimSettings, reason: str) -> bool:
                    "heap trim #%d after %s: %s, %s, %d unreachable objects collected, %.1f ms",
                    number, reason, sizes, "pages released" if released else "nothing to release",
                    collected, duration_ms)
-    except Exception:
-        pass
+    except Exception as exc:                         # the report never fails a trim that ran
+        logger.debug("heap trim report after %s failed: %s: %s", reason, type(exc).__name__, exc)
     return True
 
 
