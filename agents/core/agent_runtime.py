@@ -1626,7 +1626,9 @@ class AgentToolRuntime:
                     {
                         "name": tool.get("name", ""),
                         "gated": bool(tool.get("gated")),
-                        "description": (description + context)[:1024],
+                        # The capability context is what registry planning adds; cut the
+                        # description, never the context, so a long description keeps its risk.
+                        "description": description[:max(0, 1024 - len(context))] + context,
                         "input_schema": inputs,
                         "capability_id": capability_id,
                         # The fence follows the tool, not the planning mode: a declared-
