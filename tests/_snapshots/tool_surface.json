@@ -1214,13 +1214,13 @@
       "capability_id": "tool:kanban_list",
       "untrusted_output": true,
       "live_overrides": false,
-      "risk": "read_only",
+      "risk": "reversible",
       "rollback": {
-        "mode": "none",
-        "description": "No mutation is performed, so there is nothing to roll back.",
+        "mode": "compensate",
+        "description": "Every listing first runs the board's dependency catch-up, the one the dispatcher tick and the CLI list run: each todo task, and each blocked one that is neither held for an operator nor at its failure limit, whose parents are all done or archived (or that has none) moves to ready, or back to review where it left off, and gets a 'promoted' event; the answer counts them in `promoted`. A later board write answers it: linking a ready task under a parent that is still open (kanban_link) gates it back to todo.",
         "automatic": false,
         "handler_ref": null,
-        "limitations": ""
+        "limitations": "The catch-up covers the whole board, not only the rows the filters return; the 'promoted' events stay in the log; and a promoted task is dispatchable from the next dispatcher tick, whose own catch-up would have promoted it."
       },
       "description": "List Kanban task summaries so an orchestrator profile can discover work to route. Supports the same core filters as the CLI: assignee, status, tenant, include_archived, and limit. Returns compact rows with ids, title, status, assignee, priority, parent/child ids, and counts. Bounded to 50 rows by default, 200 max, with truncation metadata. Also recomputes ready tasks before listing, matching the CLI. Orchestrator-only — dispatcher-spawned task workers never see this tool.",
       "input_schema": {

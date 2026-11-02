@@ -634,7 +634,7 @@ table, the snapshot, or a tool named in these docs drifts from the registry.
 | `kanban_create` | ungated | sensitive | compensate | untrusted | static | `tool:kanban_create` |
 | `kanban_heartbeat` | ungated | sensitive | compensate | untrusted | static | `tool:kanban_heartbeat` |
 | `kanban_link` | ungated | sensitive | compensate | untrusted | static | `tool:kanban_link` |
-| `kanban_list` | ungated | read_only | none | untrusted | static | `tool:kanban_list` |
+| `kanban_list` | ungated | reversible | compensate | untrusted | static | `tool:kanban_list` |
 | `kanban_request_changes` | ungated | sensitive | compensate | untrusted | static | `tool:kanban_request_changes` |
 | `kanban_request_review` | ungated | sensitive | compensate | untrusted | static | `tool:kanban_request_review` |
 | `kanban_show` | ungated | read_only | none | untrusted | static | `tool:kanban_show` |

@@ -20,8 +20,9 @@ the surface describes itself, and every description of it is checked against it:
    ``register_tool`` call in ``agents/`` keeps it that way: an ungated writer (memory, the
    board, a skill proposal, the checklist, a HUD pointer, a skill view's env grant and usage
    count) is never "read_only, no mutation". The walk proves a declaration exists, not that
-   it is true; where a handler's writes are easy to miss (``skill_view``), a served call is
-   run and its writes are checked against its label.
+   it is true; where a handler's writes are easy to miss (``skill_view``, ``kanban_list``),
+   a served call is run and its writes are checked against its label, and the board tools
+   labelled read-only are run and shown to change no row.
 3. The hand-written docs: ``docs/ARCHITECTURE.md`` carries the generated table, which must
    equal the registry; the prose that names a tool as a tool must name a registered one,
    and say "gated"/"ungated" only where it is; the ``register_tool`` contract table in
@@ -333,6 +334,9 @@ UNGATED_WRITERS = {
     # view in the persisted usage sidecar (H325 review r1).
     "skill_view": ("reversible", "revoke"),
     "execute_code": ("sensitive", "implementation_specific"),
+    # Listing runs the board's dependency catch-up first: todo/blocked tasks whose parents
+    # are done move to ready, with a 'promoted' event each (H325 review r2).
+    "kanban_list": ("reversible", "compensate"),
     **dict.fromkeys((
         "kanban_attach", "kanban_attach_url", "kanban_block", "kanban_comment", "kanban_complete",
         "kanban_create", "kanban_heartbeat", "kanban_link", "kanban_request_changes",
@@ -357,9 +361,8 @@ async def test_the_capability_routes_do_not_call_an_ungated_writer_read_only(wid
             assert "No mutation" not in record["rollback"]["description"], name
         # The board tools are on the board at all now (they had no identity before).
         assert {n for n in records if n.startswith("kanban_")} == {
-            n for n in UNGATED_WRITERS if n.startswith("kanban_")} | {
-            "kanban_list", "kanban_show", "kanban_attachments"}
-        for name in ("kanban_list", "kanban_show", "kanban_attachments", "file_read", "web_search",
+            n for n in UNGATED_WRITERS if n.startswith("kanban_")} | {"kanban_show", "kanban_attachments"}
+        for name in ("kanban_show", "kanban_attachments", "file_read", "web_search",
                      "session_search", "echo", "skills_list"):
             assert (records[name]["risk"], records[name]["rollback"]["mode"]) == ("read_only", "none")
 
@@ -373,6 +376,8 @@ def test_registry_planning_tells_the_model_what_a_writer_does(widest):
     assert "risk=sensitive" in projected["kanban_create"]["description"]
     assert "risk=read_only" in projected["kanban_show"]["description"]
     assert "risk=reversible" in projected["skill_view"]["description"]
+    assert "risk=reversible" in projected["kanban_list"]["description"]
+    assert "risk=read_only" not in projected["kanban_list"]["description"]
 
 
 def test_every_ungated_tool_declares_its_effect(widest):
@@ -433,6 +438,73 @@ async def test_a_served_skill_view_writes_what_its_label_says(tmp_path):
     assert (record.risk, record.rollback.mode) == ("reversible", "revoke")
     assert "No mutation" not in record.rollback.description
     assert "execute_code" in record.rollback.description and "usage" in record.rollback.description
+
+
+@pytest.mark.asyncio
+async def test_a_board_listing_writes_what_its_label_says(tmp_path):
+    """``kanban_list`` is the board tool that looks like a read and writes (H325 review r2):
+    it runs the dependency catch-up before listing, so a todo task whose parent finished
+    since the last dispatcher tick moves to ready with a 'promoted' event. Its label says
+    so; the two board tools labelled read-only (show, attachments) are run on the same
+    board, catch-up pending, and leave every row as it was."""
+    import sqlite3
+
+    from agents.core.commands import Principal
+    from agents.core.kanban.context import KanbanContext, kanban_scope
+    from agents.core.kanban.runtime import register_kanban_tools
+    from agents.core.kanban.upstream import kanban_db as kb
+    from agents.core.observability.capability_registry import _tool_records
+
+    server = ToolRPCServer()
+    register_kanban_tools(server, home=lambda: tmp_path, enabled=lambda: True,
+                          principal=lambda: Principal(channel="web", admin=True),
+                          session_id=lambda: "s-owner", profiles=lambda: ("jarvis",))
+
+    async def call(tool, args=None):
+        answer = await server.handle({"tool": tool, "args": args or {}}, actor="jarvis")
+        return answer.get("result", answer)
+
+    def rows():
+        db = sqlite3.connect(f"file:{tmp_path / 'kanban.db'}?mode=ro", uri=True)
+        try:
+            return list(db.iterdump())
+        finally:
+            db.close()
+
+    parent = (await call("kanban_create", {"title": "parent", "assignee": "jarvis"}))["task_id"]
+    child = (await call("kanban_create", {"title": "child", "assignee": "jarvis"}))["task_id"]
+    assert (await call("kanban_link", {"parent_id": parent, "child_id": child}))["ok"]
+    with kanban_scope(KanbanContext(tmp_path, "jarvis", can_mutate=True)), kb.connect_closing() as conn:
+        assert kb.get_task(conn, child).status == "todo"
+        # The parent finishes through a writer that runs no catch-up (another process, an edit).
+        conn.execute("UPDATE tasks SET status = 'done' WHERE id = ?", (parent,))
+        conn.commit()
+    before = rows()
+    for tool in ("kanban_show", "kanban_attachments"):
+        answer = await call(tool, {"task_id": child})
+        assert answer.get("ok", True) is not False, (tool, answer)
+        assert rows() == before, f"{tool} is labelled read_only but changed the board"
+
+    listed = await call("kanban_list")
+    assert listed["promoted"] == 1
+    with kanban_scope(KanbanContext(tmp_path, "jarvis", can_mutate=True)), kb.connect_closing() as conn:
+        assert kb.get_task(conn, child).status == "ready"
+        assert kb.list_events(conn, child)[-1].kind == "promoted"
+    assert rows() != before
+    # The compensating write the contract names: a link under a parent still open gates it back.
+    gate = (await call("kanban_create", {"title": "gate", "assignee": "jarvis"}))["task_id"]
+    assert (await call("kanban_link", {"parent_id": gate, "child_id": child}))["gated"] is True
+    with kanban_scope(KanbanContext(tmp_path, "jarvis", can_mutate=True)), kb.connect_closing() as conn:
+        assert kb.get_task(conn, child).status == "todo"
+
+    records = {r.id: r for r in _tool_records(SimpleNamespace(tool_rpc=server))}
+    record = records["tool:kanban_list"]
+    assert server.declared_effect("kanban_list") == ("reversible", record.rollback)
+    assert (record.risk, record.rollback.mode) == ("reversible", "compensate")
+    assert "No mutation" not in record.rollback.description
+    assert "promoted" in record.rollback.description and "ready" in record.rollback.description
+    for name in ("kanban_show", "kanban_attachments"):
+        assert (records[f"tool:{name}"].risk, records[f"tool:{name}"].rollback.mode) == ("read_only", "none")
 
 
 def _noop(args):
