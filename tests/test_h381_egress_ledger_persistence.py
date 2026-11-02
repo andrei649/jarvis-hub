@@ -445,8 +445,8 @@ def test_a_queued_event_is_served_live_and_counted_once_while_it_is_written(tmp_
 
 
 def test_the_async_routes_read_the_file_off_the_event_loop(data_root, monkeypatch):
-    """GET /api/admin/network/calls and GET /api/system-map are async routes: the
-    ledger's SQLite read runs in a worker thread, never on the event loop."""
+    """GET /api/admin/network/calls, GET /api/system-map and GET /api/support/bundle are
+    async routes: the ledger's SQLite read runs in a worker thread, never on the event loop."""
     from agents import web
     from agents.core.routers._deps import user_guard
 
@@ -468,7 +468,9 @@ def test_the_async_routes_read_the_file_off_the_event_loop(data_root, monkeypatc
         assert TestClient(web.app).get("/api/system-map").status_code == 200
     finally:
         web.app.dependency_overrides.pop(user_guard, None)
-    assert where == ["worker thread", "worker thread"], where
+    bundle = _admin_get("/api/support/bundle")
+    assert bundle.status_code == 200 and "model_egress_total" in bundle.json()["egress"]
+    assert where == ["worker thread", "worker thread", "worker thread"], where
 
 
 _SLOW_CHILD = textwrap.dedent(

@@ -7,6 +7,7 @@ without a screen-share or a risky data dump. Safety is allow-list, not redaction
 (see `support_bundle`): only the specific aggregates are ever included.
 """
 
+import asyncio
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -31,8 +32,11 @@ async def support_bundle(request: Request,
     # agents.web here — that keeps support_bundle out of an import cycle (CodeQL).
     route_count = len(getattr(request.app, "routes", []))
     now = datetime.now(UTC)
-    resp = nocache_json(sb.build_bundle(orch, now_iso=now.isoformat(),
-                                        route_count=route_count, log_lines=log_lines))
+    # H381: the bundle reads the persisted egress ledger (SQLite) and the log files, so it
+    # is built in a worker thread, never on the event loop.
+    bundle = await asyncio.to_thread(sb.build_bundle, orch, now_iso=now.isoformat(),
+                                     route_count=route_count, log_lines=log_lines)
+    resp = nocache_json(bundle)
     if download:
         stamp = now.strftime("%Y%m%dT%H%M%SZ")
         resp.headers["Content-Disposition"] = f'attachment; filename="nerva-support-bundle-{stamp}.json"'

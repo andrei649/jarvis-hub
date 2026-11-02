@@ -26,6 +26,20 @@ client internally), the httpx package handed on as an object (``getattr(httpx, �
 ``transport.handle_async_request`` read outside an ``httpx`` transport class (a transport
 mounted on a ledgered client is the only place a raw send is admitted).
 
+**Model SDKs are bare clients one call removed** (round-2 review): ``ollama.Client``
+"creates a httpx client" from its own kwargs, ``openai.AsyncOpenAI`` /
+``anthropic.AsyncAnthropic`` / ``google.genai.Client`` build ``httpx`` clients unless
+handed one, and ``ollama.embed`` / ``openai.chat`` send through a module-level client
+built without any hook. So every read of a constructor in :data:`_MODEL_SDKS` (same alias,
+re-export and type-position rules) is a finding unless it is a call whose keywords hand the
+SDK a ledgered client — a call of ``llm_async_client`` / ``llm_sync_client`` /
+``native_admitted_client`` / ``custom_client`` imported from the ledger modules, or a name
+only ever bound to one — or, for ollama, whose kwargs go straight to ``httpx.Client``,
+``event_hooks={"request": [llm_sync_request_hook(...)]}``. Every read of an SDK's
+module-level members (its module client) is a finding, a module importing a model SDK is a
+provider module wherever it lives, and a model SDK that does not dial through httpx at all
+counts as another HTTP stack.
+
 A finding in the **prompt-carrying scope** — ``agents/core/llm/**`` plus every provider
 module (any module that builds model clients through the ledgered constructor, the
 admitted native transport or the direct-transport proof, and the provider roots named
@@ -158,7 +172,105 @@ _LEDGER_MARKERS = frozenset({"llm_async_client", "llm_sync_client", "llm_sync_re
                              "native_admitted_client", "require_direct_async_transport",
                              "custom_client"})
 
+# The ledger's own constructors and hook, by the module that defines them. Only a name
+# that resolves here counts as ledgered (a local function of the same name does not).
+_LEDGER_SOURCES = {
+    "agents.core.llm.egress": frozenset({"llm_async_client", "llm_sync_client",
+                                         "llm_sync_request_hook"}),
+    "agents.core.llm.providers.native_transport": frozenset({"native_admitted_client"}),
+    "agents.core.llm.providers.custom_runtime": frozenset({"custom_client"}),
+}
+_LEDGER_CLIENTS = frozenset({"llm_async_client", "llm_sync_client", "native_admitted_client",
+                             "custom_client"})
+_LEDGER_HOOKS = frozenset({"llm_sync_request_hook"})
+
+# Model SDKs that build their own httpx client. Package -> constructor -> the keyword paths
+# that must ALL carry a ledgered client for a call to be clean (a path ending in
+# ``event_hooks`` must carry the ledger's request hook instead: ollama hands its kwargs
+# straight to ``httpx.Client``). ``None``: no ledgered form exists, every read is a finding
+# — ollama's AsyncClient would need an async hook (``llm_sync_request_hook`` is sync), and
+# the ``Default*Client`` helpers are httpx clients with the SDK's defaults.
+_HTTP_CLIENT = (("http_client",),)
+_SDK_DEFAULT_CLIENTS = dict.fromkeys(("DefaultHttpxClient", "DefaultAsyncHttpxClient",
+                                      "DefaultAioHttpClient"))
+_MODEL_SDKS: dict[str, dict[str, tuple[tuple[str, ...], ...] | None]] = {
+    "ollama": {"Client": (("event_hooks",),), "AsyncClient": None},
+    "openai": {**dict.fromkeys(("OpenAI", "AsyncOpenAI", "AzureOpenAI", "AsyncAzureOpenAI",
+                                "Client", "AsyncClient"), _HTTP_CLIENT), **_SDK_DEFAULT_CLIENTS},
+    "anthropic": {**dict.fromkeys(("Anthropic", "AsyncAnthropic", "AnthropicBedrock",
+                                   "AsyncAnthropicBedrock", "AnthropicVertex",
+                                   "AsyncAnthropicVertex", "Client", "AsyncClient"), _HTTP_CLIENT),
+                  **_SDK_DEFAULT_CLIENTS},
+    "groq": {**dict.fromkeys(("Groq", "AsyncGroq", "Client", "AsyncClient"), _HTTP_CLIENT),
+             **_SDK_DEFAULT_CLIENTS},
+    "mistralai": {"Mistral": (("client",), ("async_client",))},
+    "cohere": dict.fromkeys(("Client", "ClientV2", "AsyncClient", "AsyncClientV2"),
+                            (("httpx_client",),)),
+    "google.genai": {"Client": (("http_options", "httpx_client"),
+                                ("http_options", "httpx_async_client"))},
+}
+# Lowercase package members that are type/error namespaces, not a module-level client.
+_SDK_INERT = frozenset({"types", "errors", "pagination", "version"})
+# Model SDKs that do not dial through httpx (gRPC, google-api-core): no ledger hook can be
+# hung on them, so they are another HTTP stack for a provider module.
+_UNLEDGERED_MODEL_SDKS = ("google.generativeai", "google.ai.generativelanguage",
+                          "google.cloud.aiplatform", "vertexai")
+
 _CTOR, _HELPER, _HTTPX, _REPO = "ctor", "helper", "httpx", "repo"
+# Kinds that carry their target in the kind itself (a re-export keeps only the kind):
+# "sdk:<module path>" (an SDK package, submodule or module-level member),
+# "sdkctor:<package>:<Name>", "ns:<namespace>" (``google`` of ``import google.genai``) and
+# "ledger:<function>".
+_SDK, _SDK_CTOR, _NS, _LEDGER = "sdk:", "sdkctor:", "ns:", "ledger:"
+
+
+def _sdk_root(path: str) -> str | None:
+    return next((p for p in _MODEL_SDKS if path == p or path.startswith(p + ".")), None)
+
+
+def _sdk_member(path: str, name: str) -> str | None:
+    """The kind of a name read off a model SDK module (``path`` is the package or a
+    submodule): a constructor, a deeper module path (a submodule or a module-level
+    member such as ``ollama.chat``), or nothing (a type, an exception, a constant)."""
+    root = _sdk_root(path)
+    if root is None or name.startswith("__"):
+        return None
+    if name in _MODEL_SDKS[root]:
+        return f"{_SDK_CTOR}{root}:{name}"
+    if path == root and name in _SDK_INERT:
+        return None
+    if name[:1].islower() or name.startswith("_"):
+        return f"{_SDK}{path}.{name}"
+    return None
+
+
+def _model_sdk(name: str) -> bool:
+    """``name`` is (part of) a model SDK: an httpx-backed one or one no hook can see."""
+    return _sdk_root(name) is not None or any(
+        name == s or name.startswith(s + ".") for s in _UNLEDGERED_MODEL_SDKS)
+
+
+def _keyword(node: ast.AST, key: str) -> ast.AST | None:
+    """The value a call passes as ``key=`` or a dict literal holds under ``"key"``."""
+    if isinstance(node, ast.Call):
+        return next((k.value for k in node.keywords if k.arg == key), None)
+    if isinstance(node, ast.Dict):
+        return next((v for k, v in reversed(list(zip(node.keys, node.values, strict=True)))
+                     if isinstance(k, ast.Constant) and k.value == key), None)
+    return None
+
+
+_SDK_UNLEDGERED = ("builds a model SDK client without a ledgered HTTP client "
+                   "(the SDK's own httpx client skips the egress ledger)")
+
+
+def _is_ctor(kind: str) -> bool:
+    return kind == _CTOR or kind.startswith(_SDK_CTOR)
+
+
+def _is_client_path(kind: str) -> bool:
+    """A kind whose reads the scanner reports (re-exports of these are followed)."""
+    return kind in (_CTOR, _HELPER) or kind.startswith((_SDK_CTOR, _SDK))
 
 
 def _attr_chain(node: ast.AST) -> list[str]:
@@ -203,6 +315,9 @@ def _assignments(node: ast.AST) -> list[tuple[ast.AST, ast.AST]]:
         pairs = [(t, node.value) for t in node.targets]
     elif isinstance(node, ast.AnnAssign) and node.value is not None:
         pairs = [(node.target, node.value)]
+    elif isinstance(node, (ast.With, ast.AsyncWith)):   # `with llm_async_client(…) as http:`
+        pairs = [(item.optional_vars, item.context_expr) for item in node.items
+                 if item.optional_vars is not None]
     else:
         return []
     out = []
@@ -251,12 +366,20 @@ class _Bindings:
         self.names: dict[str, tuple[str, str]] = {}
         self.exports = exports
         self.repo_modules = repo_modules
+        self.assignments = module.assignments
         for node in module.imports:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name == "httpx" or alias.name.startswith("httpx."):
                         self.names[alias.asname or "httpx"] = (_HTTPX, "httpx")
-                    elif alias.name in repo_modules:
+                    elif (root := _sdk_root(alias.name)) is not None:
+                        # `import ollama._client` binds `ollama`; `import google.genai`
+                        # binds the `google` namespace; `import x.y as z` binds x.y.
+                        top = alias.name.split(".")[0]
+                        kind = (f"{_SDK}{alias.name}" if alias.asname
+                                else f"{_SDK}{root}" if top == root else f"{_NS}{top}")
+                        self.names[alias.asname or top] = (kind, alias.name)
+                    elif alias.name in repo_modules or alias.name in _LEDGER_SOURCES:
                         bound = alias.asname or alias.name.split(".")[0]
                         self.names[bound] = (_REPO, alias.name if alias.asname else bound)
                 continue
@@ -269,12 +392,21 @@ class _Bindings:
                         self.names.update({n: (_HELPER, n) for n in _HELPERS})
                     elif (kind := _httpx_member(alias.name)) is not None:
                         self.names[bound] = (kind, alias.name)
+                elif (root := _sdk_root(source)) is not None:
+                    if alias.name == "*":
+                        self.names.update({n: (f"{_SDK_CTOR}{root}:{n}", n) for n in _MODEL_SDKS[root]})
+                    elif (kind := _sdk_member(source, alias.name)) is not None:
+                        self.names[bound] = (kind, alias.name)
+                elif _sdk_root(f"{source}.{alias.name}") == f"{source}.{alias.name}":
+                    self.names[bound] = (f"{_SDK}{source}.{alias.name}", alias.name)  # from google import genai
+                elif alias.name in _LEDGER_SOURCES.get(source, ()):
+                    self.names[bound] = (f"{_LEDGER}{alias.name}", alias.name)
                 elif alias.name == "*":
                     for name, kind in exports.get(source, {}).items():
                         self.names[name] = (kind, name)
                 elif alias.name in exports.get(source, {}):
                     self.names[bound] = (exports[source][alias.name], alias.name)
-                elif f"{source}.{alias.name}" in repo_modules:
+                elif f"{source}.{alias.name}" in repo_modules or f"{source}.{alias.name}" in _LEDGER_SOURCES:
                     self.names[bound] = (_REPO, f"{source}.{alias.name}")
         for _ in range(3):  # aliases of aliases (`A = httpx.AsyncClient; B = A`)
             for target, value in module.assignments:
@@ -293,7 +425,17 @@ class _Bindings:
         if base[0] == _HTTPX:
             kind = _httpx_member(node.attr)
             return (kind, node.attr) if kind else None
+        if base[0].startswith(_SDK):
+            kind = _sdk_member(base[0][len(_SDK):], node.attr)
+            return (kind, node.attr) if kind else None
+        if base[0].startswith(_NS):
+            sub = f"{base[0][len(_NS):]}.{node.attr}"
+            if sub in _MODEL_SDKS:
+                return (f"{_SDK}{sub}", node.attr)
+            return (f"{_NS}{sub}", node.attr) if any(p.startswith(sub + ".") for p in _MODEL_SDKS) else None
         if base[0] == _REPO:
+            if node.attr in _LEDGER_SOURCES.get(base[1], ()):
+                return (f"{_LEDGER}{node.attr}", node.attr)
             exported = self.exports.get(base[1], {}).get(node.attr)
             if exported:
                 return (exported, node.attr)
@@ -343,7 +485,7 @@ class _Scanner:
         if kind is None:
             return False
         if not isinstance(node.ctx, ast.Load):
-            if kind[0] in (_CTOR, _HELPER) and isinstance(node, ast.Attribute):
+            if (_is_ctor(kind[0]) or kind[0] == _HELPER) and isinstance(node, ast.Attribute):
                 self._hit(node, "rebinds the httpx client constructor or helper")
             return True
         if kind[0] == _CTOR:
@@ -354,6 +496,18 @@ class _Scanner:
             elif not safe:
                 self._hit(node, "references the bare client constructor uncalled "
                                 "(aliased, defaulted, returned or handed on)")
+        elif kind[0].startswith(_SDK_CTOR):
+            if role == "call":
+                self._hit(node, _SDK_UNLEDGERED)
+            elif role == "base":
+                self._hit(node, "subclasses a model SDK client")
+            elif not safe and role != "ledgered":
+                self._hit(node, "references a model SDK client constructor uncalled "
+                                "(aliased, defaulted, returned or handed on)")
+        elif kind[0].startswith(_SDK):
+            if not safe:
+                self._hit(node, "reaches a model SDK module or its module-level client "
+                                "(built without the ledger hook)")
         elif kind[0] == _HELPER:
             self._hit(node, "uses a module-level httpx request helper" if role == "call"
                       else "references a module-level httpx request helper")
@@ -372,7 +526,7 @@ class _Scanner:
         if node.attr in _PRIVATE_SENDS:
             self._hit(node, "skips the client's request hooks through a private send step")
         base = self.b.resolve(node.value)
-        if base is not None and base[0] == _CTOR:
+        if base is not None and _is_ctor(base[0]):
             if not isinstance(node.ctx, ast.Load):
                 self._hit(node, "patches the httpx client class")
             elif node.attr in _CONSTRUCTION:
@@ -391,9 +545,55 @@ class _Scanner:
         for operand in [node.left, *node.comparators]:
             self.visit(operand, identity)
 
+    # ── model SDK calls ──────────────────────────────────────────────────────
+    def _values(self, node: ast.AST, seen: tuple = ()) -> list[ast.AST]:
+        """What an expression can be: itself, or (flow-insensitively) every value its name
+        or attribute chain is ever bound to in this module. An unbound name (a parameter)
+        stays itself, so it cannot prove anything."""
+        if isinstance(node, ast.NamedExpr):
+            return self._values(node.value, seen)
+        chain = tuple(_attr_chain(node))
+        if not chain or chain in seen or self.b.resolve(node) is not None:
+            return [node]
+        bound = [value for target, value in self.b.assignments if tuple(_attr_chain(target)) == chain]
+        return [v for value in bound for v in self._values(value, (*seen, chain))] or [node]
+
+    def _calls(self, node: ast.AST, names: frozenset[str]) -> bool:
+        kind = self.b.resolve(node.func) if isinstance(node, ast.Call) else None
+        return kind is not None and kind[0] in {f"{_LEDGER}{n}" for n in names}
+
+    def _carries_ledger(self, node: ast.AST, path: tuple[str, ...]) -> bool:
+        value = _keyword(node, path[0])
+        if value is None:
+            return False
+        values = self._values(value)
+        if len(path) > 1:
+            return all(self._carries_ledger(v, path[1:]) for v in values)
+        if path[0] == "event_hooks":
+            return all(self._has_ledger_hook(v) for v in values)
+        return all(self._calls(v, _LEDGER_CLIENTS) for v in values)
+
+    def _has_ledger_hook(self, hooks: ast.AST) -> bool:
+        """``{"request": [..., llm_sync_request_hook(...), ...]}`` (or ``dict(request=…)``)."""
+        request = _keyword(hooks, "request")
+        if request is None:
+            return False
+        return all(isinstance(hook_list, (ast.List, ast.Tuple)) and any(
+                       all(self._calls(v, _LEDGER_HOOKS) for v in self._values(hook))
+                       for hook in hook_list.elts)
+                   for hook_list in self._values(request))
+
+    def _sdk_call_ledgered(self, call: ast.Call, kind: str) -> bool:
+        package, name = kind[len(_SDK_CTOR):].rsplit(":", 1)
+        paths = _MODEL_SDKS[package].get(name)
+        return bool(paths) and all(self._carries_ledger(call, path) for path in paths)
+
     def _v_Call(self, node, safe, role):
         name = (_attr_chain(node.func) or [""])[-1]
-        self.visit(node.func, False, "call")
+        kind = self.b.resolve(node.func)
+        ledgered = (kind is not None and kind[0].startswith(_SDK_CTOR)
+                    and self._sdk_call_ledgered(node, kind[0]))
+        self.visit(node.func, False, "ledgered" if ledgered else "call")
         type_args: set[int] = set()
         if name in {"isinstance", "issubclass"}:
             type_args = set(range(1, len(node.args)))
@@ -410,6 +610,8 @@ class _Scanner:
             first = node.args[0]
             if isinstance(first, ast.Constant) and str(first.value).split(".")[0] == "httpx":
                 self._hit(node, "imports httpx dynamically")
+            elif isinstance(first, ast.Constant) and _model_sdk(str(first.value)):
+                self._hit(node, "imports a model SDK dynamically")
         for index, arg in enumerate(node.args):
             self.visit(arg, index in type_args)
         for keyword in node.keywords:
@@ -519,9 +721,24 @@ def _modules() -> list[Path]:
                   if "__pycache__" not in p.parts and not _rel(p).startswith("agents/web/"))
 
 
+def _imported(module: _Module) -> set[str]:
+    """Every module path one module imports (``from a import b`` names ``a`` and ``a.b``)."""
+    out: set[str] = set()
+    for node in module.imports:
+        if isinstance(node, ast.Import):
+            out.update(alias.name for alias in node.names)
+        else:
+            source = _import_source(module.name, module.is_package, node)
+            out.add(source)
+            out.update(f"{source}.{alias.name}" for alias in node.names)
+    return out
+
+
 def _is_provider_module(module: _Module) -> bool:
     if module.rel.startswith("agents/core/llm/") or module.rel.startswith(PROVIDER_ROOTS):
         return True
+    if any(_model_sdk(name) for name in _imported(module)):
+        return True     # a model SDK is a model provider wherever the module lives
     for node in module.imports:
         if isinstance(node, ast.ImportFrom):
             source = node.module or ""
@@ -538,22 +755,33 @@ _PROVIDER_IMPORT_HINTS = ("egress", "direct_transport", "native_transport", "cus
                           *_LEDGER_MARKERS)
 
 
-def _scan_repo():
+_SDK_TOPS = sorted({name.split(".")[0] for name in (*_MODEL_SDKS, *_UNLEDGERED_MODEL_SDKS)})
+# Text that can only be an import (static or dynamic) of a model SDK.
+_SDK_HINT = re.compile(r"(?:\b(?:import|from)\s+|import_module\(\s*['\"]|__import__\(\s*['\"])"
+                       r"(?:" + "|".join(_SDK_TOPS) + r")\b")
+
+
+def _scan_repo(extra: dict[str, str] | None = None):
+    """Scan ``agents/`` (plus ``extra`` probe modules, rel -> source, for the tests that
+    prove the whole pipeline — parse filter, scope and rule — catches a new provider)."""
     sources = {_rel(p): p.read_text(encoding="utf-8") for p in _modules()}
+    sources.update(extra or {})
     repo_modules = _repo_module_names(sources)
     # Parse only what can matter (parsing all ~1000 modules costs seconds): a module that
-    # names httpx or a raw send, a provider by path or by import, and — to a fixed point —
-    # any module whose text names something another parsed module binds to a bare
-    # constructor or helper (a re-export under a name that never mentions httpx).
-    hints = ("httpx", *_RAW_SENDS, *_PROVIDER_IMPORT_HINTS)
+    # names httpx, a raw or private send, a provider by path or by import, a model SDK
+    # import, and — to a fixed point — any module whose text names something another
+    # parsed module binds to a bare constructor, helper or model SDK (a re-export under a
+    # name that never mentions httpx).
+    hints = ("httpx", *_RAW_SENDS, *_PRIVATE_SENDS, *_PROVIDER_IMPORT_HINTS)
     wanted = {rel for rel, src in sources.items()
-              if rel.startswith(("agents/core/llm/", *PROVIDER_ROOTS)) or any(h in src for h in hints)}
+              if rel.startswith(("agents/core/llm/", *PROVIDER_ROOTS))
+              or any(h in src for h in hints) or _SDK_HINT.search(src)}
     modules: dict[str, _Module] = {}
     while True:
         modules.update({rel: _Module(rel, sources[rel]) for rel in wanted - modules.keys()})
         bindings = _bind_all(modules, repo_modules)
         bound = {name for b in bindings.values() for name, (kind, _) in b.names.items()
-                 if kind in (_CTOR, _HELPER)}
+                 if _is_client_path(kind)}
         if not bound:
             break
         named = re.compile(r"\b(?:" + "|".join(map(re.escape, sorted(bound))) + r")\b")
@@ -565,9 +793,6 @@ def _scan_repo():
     outside: dict[str, list[tuple[str, int, str]]] = {}
     provider_modules = {rel for rel, m in modules.items() if _is_provider_module(m)}
     for rel, module in modules.items():
-        # A module with no httpx-bound name and no raw-send text has nothing to find.
-        if not bindings[rel].exported() and not any(s in module.source for s in _RAW_SENDS):
-            continue
         scanner = _Scanner(bindings[rel])
         scanner.visit(module.tree)
         if scanner.findings:
@@ -631,29 +856,40 @@ def test_every_exemption_is_still_needed_and_justified():
         assert isinstance(why, str) and len(why.strip()) >= 30, f"{key} needs a real reason"
 
 
+# Libraries a provider could dial with instead of httpx, including the model SDKs that do
+# not go through httpx at all (gRPC / google-api-core, botocore): no ledger hook sees them.
 _OTHER_HTTP_STACKS = ("requests", "aiohttp", "urllib.request", "urllib3", "http.client",
-                      "httpcore", "websockets")
+                      "httpcore", "websockets", "grpc", "boto3", "botocore", "aiobotocore",
+                      *_UNLEDGERED_MODEL_SDKS)
+# httpcore is imported by the admitted transports for TYPE IDENTITY checks only, never to send.
+_HTTPCORE_IDENTITY_ONLY = frozenset({"agents/core/llm/direct_transport.py",
+                                     "agents/core/llm/providers/native_transport.py",
+                                     "agents/core/llm/providers/custom_runtime.py",
+                                     "agents/core/ingestion/embedding_policy.py"})
+
+
+def _other_stack_imports(module: _Module) -> list[str]:
+    offenders = []
+    for node in module.imports:
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif node.level:
+            continue          # a repo-relative import
+        else:                 # `from google import generativeai` names google.generativeai
+            names = [node.module or "", *(f"{node.module}.{alias.name}" for alias in node.names)]
+        name = next((n for n in names if n.startswith(_OTHER_HTTP_STACKS)), None)
+        top_level_httpcore = (name if isinstance(node, ast.Import) else node.module) == "httpcore"
+        if name and not (top_level_httpcore and module.rel in _HTTPCORE_IDENTITY_ONLY):
+            offenders.append(f"{module.rel}:{node.lineno} imports {name}")
+    return offenders
 
 
 def test_no_provider_module_switches_to_another_http_stack():
-    """The httpx rule cannot be dodged by dialling with a different library. (httpcore is
-    imported by the admitted transports for TYPE IDENTITY checks only, never to send.)"""
-    identity_only = {"agents/core/llm/direct_transport.py",
-                     "agents/core/llm/providers/native_transport.py",
-                     "agents/core/llm/providers/custom_runtime.py",
-                     "agents/core/ingestion/embedding_policy.py"}
+    """The httpx rule cannot be dodged by dialling with a different library, nor with a
+    model SDK that does not dial through httpx."""
     _, _, provider_modules = _scan()
-    offenders = []
-    for rel in sorted(provider_modules):
-        tree = ast.parse((REPO / rel).read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            names = ([a.name for a in node.names] if isinstance(node, ast.Import)
-                     else [node.module or ""] if isinstance(node, ast.ImportFrom) and not node.level
-                     else [])
-            for name in names:
-                if name.startswith(_OTHER_HTTP_STACKS) and not (
-                        name == "httpcore" and rel in identity_only):
-                    offenders.append(f"{rel}:{node.lineno} imports {name}")
+    offenders = [line for rel in sorted(provider_modules)
+                 for line in _other_stack_imports(_Module(rel, (REPO / rel).read_text(encoding="utf-8")))]
     assert offenders == [], "\n".join(offenders)
 
 
@@ -730,7 +966,94 @@ _BYPASSES = {
                           "    return await send(req)\n"),
     "raw send by name": ("async def f(t, req):\n"
                          "    return await getattr(t, 'handle_async_request')(req)\n"),
+    # ── model SDKs (round-2 review): the SDK builds the bare httpx client ──
+    "sdk openai provider": ("from openai import AsyncOpenAI\nclass P:\n    def __init__(self, k, u):\n"
+                            "        self.client = AsyncOpenAI(api_key=k, base_url=u)\n"),
+    "sdk anthropic": "import anthropic\ndef f():\n    return anthropic.AsyncAnthropic()\n",
+    "sdk alias": "import anthropic as a\ndef f():\n    return a.Client()\n",
+    "sdk private module": "import openai\ndef f():\n    return openai._client.OpenAI()\n",
+    "sdk lib module": "from openai.lib.azure import AzureOpenAI\ndef f():\n    return AzureOpenAI()\n",
+    "sdk star import": "from groq import *\ndef f():\n    return AsyncGroq()\n",
+    "sdk ollama remote": "import ollama\ndef f():\n    return ollama.Client(host='https://ollama.com')\n",
+    "sdk ollama no hook": ("from ollama import Client\ndef f(h):\n"
+                           "    return Client(host=h, timeout=30.0, trust_env=False)\n"),
+    "sdk ollama hook on response": (
+        "import ollama\nfrom agents.core.llm.egress import llm_sync_request_hook\ndef f(h):\n"
+        "    return ollama.Client(host=h, event_hooks={'response': [llm_sync_request_hook('o')]})\n"),
+    "sdk ollama foreign hook": ("import ollama\ndef f(h, log):\n"
+                                "    return ollama.Client(host=h, event_hooks={'request': [log]})\n"),
+    "sdk ollama look-alike hook": (
+        "import ollama\ndef llm_sync_request_hook(b):\n    return print\ndef f(h):\n"
+        "    return ollama.Client(host=h, event_hooks={'request': [llm_sync_request_hook('o')]})\n"),
+    "sdk ollama async": (
+        "import ollama\nfrom agents.core.llm.egress import llm_sync_request_hook\ndef f(h):\n"
+        "    return ollama.AsyncClient(host=h, event_hooks={'request': [llm_sync_request_hook('o')]})\n"),
+    "sdk ollama module client": "import ollama\ndef f(t):\n    return ollama.embed(model='m', input=t)\n",
+    "sdk ollama module function": "from ollama import chat\ndef f(m):\n    return chat(model='x', messages=m)\n",
+    "sdk openai module client": ("import openai\ndef f(m):\n"
+                                 "    return openai.chat.completions.create(model='x', messages=m)\n"),
+    "sdk http_client from a parameter": ("import openai\ndef f(client):\n"
+                                         "    return openai.OpenAI(http_client=client)\n"),
+    "sdk http_client rebound": (
+        "import openai\nfrom agents.core.llm.egress import llm_sync_client\ndef f(make):\n"
+        "    h = llm_sync_client('openai')\n    h = make()\n    return openai.OpenAI(http_client=h)\n"),
+    "sdk kwargs splat": ("import openai\nfrom agents.core.llm.egress import llm_sync_client\n"
+                         "def f():\n    kw = {'http_client': llm_sync_client('openai')}\n"
+                         "    return openai.OpenAI(**kw)\n"),
+    "sdk default client": "import openai\ndef f():\n    return openai.OpenAI(http_client=openai.DefaultHttpxClient())\n",
+    "sdk genai": "from google import genai\ndef f(k):\n    return genai.Client(api_key=k)\n",
+    "sdk genai namespace import": "import google.genai\ndef f(k):\n    return google.genai.Client(api_key=k)\n",
+    "sdk genai half ledgered": (
+        "from google import genai\nfrom google.genai import types\n"
+        "from agents.core.llm.egress import llm_sync_client\ndef f():\n"
+        "    return genai.Client(http_options=types.HttpOptions(httpx_client=llm_sync_client('g')))\n"),
+    "sdk mistral half ledgered": (
+        "from mistralai import Mistral\nfrom agents.core.llm.egress import llm_sync_client\ndef f(k):\n"
+        "    return Mistral(api_key=k, client=llm_sync_client('mistral'))\n"),
+    "sdk class attribute": "import openai\nclass B:\n    _client_cls = openai.AsyncOpenAI\n",
+    "sdk default parameter": "import cohere\ndef f(make=cohere.ClientV2):\n    return make()\n",
+    "sdk subclass": "import anthropic\nclass Mine(anthropic.Anthropic):\n    pass\n",
+    "sdk module handed on": "import openai\ndef f():\n    return getattr(openai, 'OpenAI')()\n",
+    "sdk dynamic import": "import importlib\ndef f():\n    return importlib.import_module('openai').OpenAI()\n",
+    "sdk explicit __init__": "import ollama\ndef f(c):\n    ollama.Client.__init__(c, host='https://ollama.com')\n",
 }
+
+# Ledgered SDK shapes and type-only SDK reads: none of these is a finding.
+_SAFE_SDK = (
+    "from agents.core.llm import egress\n"
+    "from agents.core.llm.egress import llm_async_client, llm_sync_client, llm_sync_request_hook\n"
+    "from agents.core.llm.providers.native_transport import native_admitted_client\n"
+    "import anthropic, cohere, ollama, openai\n"
+    "from google import genai\n"
+    "from google.genai import types\n"
+    "from mistralai import Mistral\n"
+    "def f(h, k, profile, credential, model):\n"
+    "    a = openai.AsyncOpenAI(api_key=k, http_client=llm_async_client('openai', base_url=h))\n"
+    "    hook = llm_sync_request_hook('ollama')\n"
+    "    b = ollama.Client(host=h, event_hooks={'request': [hook]})\n"
+    "    b2 = ollama.Client(host=h, event_hooks=dict(request=[egress.llm_sync_request_hook('o')]))\n"
+    "    c = genai.Client(http_options=types.HttpOptions(httpx_client=llm_sync_client('g'),\n"
+    "                                                    httpx_async_client=llm_async_client('g')))\n"
+    "    d = Mistral(api_key=k, client=llm_sync_client('m'), async_client=llm_async_client('m'))\n"
+    "    e = cohere.ClientV2(k, httpx_client=llm_sync_client('cohere'))\n"
+    "    g = openai.AsyncOpenAI(http_client=native_admitted_client(profile, credential, model))\n"
+    "    if ollama is None or isinstance(b, ollama.Client) or type(a) is openai.AsyncOpenAI:\n"
+    "        pass\n"
+    "    try:\n"
+    "        pass\n"
+    "    except (ollama.ResponseError, openai.APIError):\n"
+    "        pass\n"
+    "    message: openai.types.chat.ChatCompletion | None = None\n"
+    "    options = ollama.Options(temperature=0)\n"
+    "    return a, b, b2, c, d, e, g, message, options, openai.NOT_GIVEN\n"
+    "class Backend:\n"
+    "    def __init__(self, k):\n"
+    "        self.http = llm_async_client('anthropic')\n"
+    "        self.client = anthropic.AsyncAnthropic(api_key=k, http_client=self.http)\n"
+    "async def g(k):\n"
+    "    async with llm_async_client('anthropic') as http:\n"
+    "        return anthropic.AsyncAnthropic(api_key=k, http_client=http)\n"
+)
 
 _SAFE = (
     "from agents.core.llm.egress import llm_async_client\n"
@@ -763,6 +1086,7 @@ def test_the_scanner_catches_every_bypass_shape():
     for name, source in _BYPASSES.items():
         assert scan_source(source), f"the scanner misses the {name!r} shape"
     assert scan_source(_SAFE) == []
+    assert scan_source(_SAFE_SDK) == []
 
 
 def test_a_re_export_through_another_repo_module_is_caught():
@@ -844,3 +1168,84 @@ def test_a_new_client_in_a_classified_module_is_not_covered_by_its_classificatio
     findings = scan_source(source, rel)
     uncovered = [qual for qual, _, _ in findings if qual not in NOT_A_MODEL_PROVIDER[rel][1]]
     assert uncovered == ["_new_cloud_probe"], findings
+
+
+def test_the_real_ollama_embedder_without_its_ledger_hook_is_caught():
+    """Round-2 review's mutation, on the real embedder: ``ollama.Client`` builds an
+    ``httpx.Client`` from its own kwargs, so its ``event_hooks`` request hook is the only
+    ledger, host-protocol and data-handling check on the path that sends document text
+    (``OLLAMA_HOST`` may be ollama.com). Dropping the hook passed every test before."""
+    rel = "agents/core/ingestion/embedder.py"
+    hook = 'event_hooks={"request": [llm_sync_request_hook("ollama")]},'
+    source = (REPO / rel).read_text(encoding="utf-8")
+    assert source.count(hook) == 1, f"{rel} changed; update this mutation"
+    assert scan_source(source, rel) == []
+    for broken in ("",                                                         # hook removed
+                   'event_hooks={"response": [llm_sync_request_hook("ollama")]},',  # wrong event
+                   'event_hooks={"request": [logger.debug]},',                 # not the ledger
+                   'event_hooks=hooks,'):                                      # unproven name
+        findings = scan_source(source.replace(hook, broken), rel)
+        assert [(q, s) for q, _, s in findings] == [("Embedder._setup", _SDK_UNLEDGERED)], broken
+    assert (rel, "Embedder._setup") not in PROMPT_SCOPE_ALLOWLIST
+    # The in-scope rule itself fails on the mutation (the embedder is a provider module).
+    assert _is_provider_module(_Module(rel, source.replace(hook, "")))
+
+
+def test_a_new_model_sdk_provider_fails_the_repo_rule_wherever_it_lives():
+    """Round-2 review's probe, through the whole pipeline (parse filter, scope, rule): a
+    Hermes-style provider holding ``AsyncOpenAI(api_key, base_url)`` under llm/, an
+    Anthropic SDK provider outside llm/ (in scope because it imports a model SDK), and a
+    module calling ``ollama.embed`` (the SDK's module-level client) all fail the rule;
+    their ledgered twins and a non-httpx model SDK are handled too."""
+    probes = {
+        "agents/core/llm/zz_probe_sdk.py": (
+            "from openai import AsyncOpenAI\n"
+            "class ProbeBackend:\n"
+            "    def __init__(self, api_key, base_url):\n"
+            "        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)\n"),
+        "agents/core/tools/zz_probe_anthropic.py": (
+            "import anthropic\n"
+            "def ask(prompt):\n"
+            "    return anthropic.Anthropic().messages.create(model='m', max_tokens=8,\n"
+            "        messages=[{'role': 'user', 'content': prompt}])\n"),
+        "agents/core/tools/zz_probe_ollama.py": (
+            "import ollama\n"
+            "def embed(text):\n"
+            "    return ollama.embed(model='nomic-embed-text', input=text)\n"),
+        "agents/core/tools/zz_probe_ledgered.py": (
+            "import openai\n"
+            "from agents.core.llm.egress import llm_async_client\n"
+            "def client(key):\n"
+            "    return openai.AsyncOpenAI(api_key=key, http_client=llm_async_client('openai'))\n"),
+        "agents/core/tools/zz_probe_vertex.py": "import vertexai\n",
+    }
+    in_scope, outside, provider_modules = _scan_repo(probes)
+    assert set(probes) <= provider_modules
+    assert not set(probes) & set(outside)
+    found = {rel: [(q, s) for q, _, s in in_scope.get(rel, [])] for rel in probes}
+    assert found == {
+        "agents/core/llm/zz_probe_sdk.py": [("ProbeBackend.__init__", _SDK_UNLEDGERED)],
+        "agents/core/tools/zz_probe_anthropic.py": [("ask", _SDK_UNLEDGERED)],
+        "agents/core/tools/zz_probe_ollama.py": [
+            ("embed", "reaches a model SDK module or its module-level client "
+                      "(built without the ledger hook)")],
+        "agents/core/tools/zz_probe_ledgered.py": [],
+        "agents/core/tools/zz_probe_vertex.py": [],
+    }
+    assert _other_stack_imports(_Module("agents/core/tools/zz_probe_vertex.py", "import vertexai\n")) == [
+        "agents/core/tools/zz_probe_vertex.py:1 imports vertexai"]
+    assert _other_stack_imports(_Module("agents/core/llm/zz.py", "from google import generativeai\n")) == [
+        "agents/core/llm/zz.py:1 imports google.generativeai"]
+
+
+def test_a_model_sdk_re_export_through_another_repo_module_is_caught():
+    findings = scan_modules({
+        "agents/core/compat_sdk.py": "from openai import AsyncOpenAI\nimport ollama as _ollama\n",
+        "agents/core/llm/p1.py": ("from agents.core.compat_sdk import AsyncOpenAI\n"
+                                  "def f():\n    return AsyncOpenAI()\n"),
+        "agents/core/llm/p2.py": ("from agents.core import compat_sdk\n"
+                                  "def f(t):\n    return compat_sdk._ollama.embed(model='m', input=t)\n"),
+    })
+    assert findings["agents/core/llm/p1.py"] == [("f", 3, _SDK_UNLEDGERED)]
+    assert [q for q, _, _ in findings["agents/core/llm/p2.py"]] == ["f"]
+    assert findings["agents/core/compat_sdk.py"] == []

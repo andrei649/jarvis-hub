@@ -27,8 +27,11 @@ same data root, such as a CLI turn) recorded next to this process's live ones. E
 recent row says where it came from (``origin``: ``live`` / ``restored`` / ``unsaved``)
 and the top-level ``ledger`` block says whether the file is being written. The store
 is bounded — the newest ``_MAX_PERSISTED_EVENTS`` model rows and, separately, the
-newest ``_MAX_PERSISTED_EVENTS`` plugin rows, so a chatty plugin can never evict the
-record of a prompt — and it holds **no prompt content**: the only columns are time,
+newest ``_MAX_PERSISTED_EVENTS`` plugin rows, so a chatty plugin can never evict a
+model-backend (``llm:``) row. A plugin that sends a prompt itself
+(``plugins/cloud_llm.py`` through the plugin choke point) is recorded under its own
+plugin row, in the plugin class, and is not part of ``model_egress_total``. The store
+holds **no prompt content**: the only columns are time,
 row name, host, method, the allowed/local flags and a short reason with any URL
 replaced by ``<url>``. Nothing here is ever handed a path, a query, a header or a
 body. A write that fails keeps the event in memory (``origin: unsaved``) and reports
