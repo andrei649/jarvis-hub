@@ -46,6 +46,7 @@ class SchedulerService:
         self.schedule_llm_backend_refresh()
         self.schedule_power_monitor()
         self.schedule_pressure_monitor()
+        self.schedule_memory_trim()
         self.schedule_company_mode()
         self.schedule_backups()
         self.schedule_owner_jobs()
@@ -433,6 +434,32 @@ class SchedulerService:
                           id="pressure-monitor", replace_existing=True)
         except Exception as e:
             logger.warning(f"Failed to schedule the pressure monitor: {e}")
+
+    def schedule_memory_trim(self):
+        """H448 — the heap trim's housekeeping tick, every minute (Hermes trims on the
+        gateway's housekeeping tick as well as after a turn): an idle hub, a turn that
+        ended inside the cooldown and non-turn work all get their freed pages returned.
+        Rate-limited by ``context.memory_trim.cooldown_seconds`` inside. Skipped under
+        JARVIS_TESTING (the tests drive the tick)."""
+        from agents.core.env_config import env_flag
+        if env_flag("JARVIS_TESTING"):
+            return
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_memory_trim_tick, "interval", seconds=60,
+                          id="memory-trim", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the heap trim: {e}")
+
+    async def run_memory_trim_tick(self):
+        """One housekeeping trim attempt; a tick with no trim due records nothing."""
+        from agents.core import mem_trim
+
+        if await mem_trim.housekeeping(self._orch):
+            return {"trimmed": True}
+        return {"skipped": True, "reason": "not_due"}   # off, cooling down, unsupported or running
 
     async def run_pressure_tick(self):
         from agents.core import resource_pressure
