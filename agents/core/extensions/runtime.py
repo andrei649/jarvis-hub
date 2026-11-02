@@ -43,6 +43,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..capability_manifests import RollbackContract
 from .consent import CHANGED, ExtensionConsentStore
 from .manifest import MAX_EXTENSIONS, ExtensionManifest, ManifestError, validate_registration
 
@@ -57,6 +58,13 @@ UNDECLARED_EXIT = 97
 NO_OBSERVER_EXIT = 96
 MAX_INPUT_BYTES = 64 * 1024
 SOURCE_MEMBER = "main.py"
+#: H325 — what the capability registry says about an extension tool's call.
+EXTENSION_TOOL_ROLLBACK = RollbackContract(
+    mode="disable",
+    description=("Revoke the extension's consent (nerva extensions consent <manifest> --revoke): "
+                 "its tools come off the surface at once."),
+    limitations="Completed calls are not undone; a manifest declares nothing about what a call writes.",
+)
 
 
 class ExtensionRuntimeError(RuntimeError):
@@ -223,6 +231,10 @@ class ExtensionRuntime:
                 description=f"Sandboxed extension tool {tool}.",
                 input_schema={"type": "object", "additionalProperties": True},
                 capability_id=f"tool:extension.{tool}",
+                # H325 — ungated, but a manifest says nothing about what a call writes,
+                # so the capability registry must not call it read-only.
+                risk="sensitive",
+                rollback=EXTENSION_TOOL_ROLLBACK,
             )
 
     # ── gates ────────────────────────────────────────────────────────────────

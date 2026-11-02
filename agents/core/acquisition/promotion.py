@@ -607,6 +607,7 @@ class PromotionBroker:
     def _register(self, name: str) -> None:
         if self.tool_rpc.allows(name):
             return
+        from agents.core.capability_manifests import RollbackContract
 
         async def handler(args):
             return await self.runtime.run(name, args)
@@ -621,6 +622,14 @@ class PromotionBroker:
             description=f"Sandbox-only acquired capability {name}.",
             input_schema={"type": "object", "additionalProperties": True},
             capability_id=f"tool:acquired.{name}",
+            # H325 — the package declares no read-only contract either: label it as the
+            # acquired skill record is labelled, not as a read.
+            risk="sensitive",
+            rollback=RollbackContract(
+                mode="disable",
+                description=f"Revoke and unregister acquired capability {name}.",
+                limitations="Completed calls are not undone.",
+            ),
         )
         record = self.packages.get(name)
         if record is not None:

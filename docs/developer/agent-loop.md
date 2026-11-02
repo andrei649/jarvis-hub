@@ -19,7 +19,7 @@ everything below reads it without it being passed down:
 
 | bound | by | read by |
 |---|---|---|
-| the session id | `agents/core/llm/request_context.py::session_scope` | provider caching, the todo tool, trajectories |
+| the session id | `agents/core/llm/request_context.py::session_scope` | provider caching, the `todo` tool, trajectories |
 | the conversation clock snapshot | `agents/core/conversation_clock.py::clock_scope` | the system prompt's time block, compaction |
 | the usage observer | `agents/core/llm/usage_context.py::observer_scope` | the cost meter (every model request of the turn) |
 | the trajectory recorder (opt-in) | `agents/core/trajectory.py::capture` | the tool loop's step notes; the saved turn |
@@ -106,7 +106,7 @@ Then, **each iteration**:
    - the stall observer sees the call; a repeat or a failure streak adds a
      `stall_notice` to the result (advice), or halts the loop when halting is on;
    - oversized results were already spilled by `_prepare_result` to the result store
-     with a `file_read` paging recipe in the preview;
+     with a recipe for paging it back with the `file_read` tool in the preview;
    - image parts ride beside the text only to a backend that reads them;
    - the tool message is appended.
 8. **Exits after the step.** Any `approval_required` → `APPROVAL_REQUIRED` (the reply

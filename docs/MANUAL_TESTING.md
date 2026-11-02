@@ -487,14 +487,15 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 ### L4. Cost tracking & budgets (H23.1)
 
 - [ ] **Cost estimation** 🔑🤖 — Send 3–5 prompts with different cloud backends:
-  - [ ] `GET /api/cost/summary` (admin) returns `cost_estimate` (USD) for each prompt.
+  - [ ] `GET /api/cost` returns `by_agent` (each agent's `calls` and `cost`, USD), `by_day` and
+    `summary` (`{calls, total_cost}`); the cost grows with each prompt.
   - [ ] Confirm the cost is non-zero and plausible (Claude: ~$0.01–0.05 per prompt depending on size).
   - [ ] Cross-check against actual API bills (if available) — totals should match ±5%.
 
 - [ ] **Payment budgets** 🔑🤖 — Set `JARVIS_TASK_BUDGET_PAYMENT_CENTS=50` ($0.50 cap):
   - [ ] Send prompts totaling ~$0.45 → all succeed.
   - [ ] Next prompt that would exceed the budget → kernel **DENY** with `BudgetExceededError` (audit log records reason).
-  - [ ] Confirm `GET /api/metrics/kernel` (admin) shows `deny_count` incremented.
+  - [ ] Confirm `GET /api/metrics/kernel` (admin) shows `by_verdict.deny` incremented.
 
 - [ ] **Token budgets** 🔑🤖 — Set `JARVIS_TASK_BUDGET_TOKENS=5000`:
   - [ ] Send a long prompt (>5000 tokens input) → kernel **DENY** with `BudgetExceededError`.
@@ -510,7 +511,7 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 - [ ] **Timeout & network errors** 🔑🤖 — Simulate network failure (e.g. block API domain in firewall):
   - [ ] Send a prompt → `ProviderUnavailableError` (not a hang; ~5s timeout).
   - [ ] HUD shows "backend unreachable" (never raw exception).
-  - [ ] `GET /api/metrics/kernel` shows `deny_count` (kernel queued the task as QUEUE/APPROVE, user can retry).
+  - [ ] `GET /api/metrics/kernel` shows `by_verdict.deny` (kernel queued the task as QUEUE/APPROVE, user can retry).
 
 - [ ] **Context-length exceeded** 🔑🤖 — Send a prompt with huge history (>model max):
   - [ ] Error logged; graceful degradation (truncate history or reject politely).

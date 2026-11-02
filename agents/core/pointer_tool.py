@@ -26,7 +26,8 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from agents.core.canvas import MAX_CAPTION, MAX_TOUR_STEPS, POINTER_ANCHORS
+from agents.core.canvas import MAX_CAPTION, MAX_TOUR_STEPS, POINTER_ANCHORS, POINTER_TTL_SECONDS
+from agents.core.capability_manifests import RollbackContract
 from agents.core.tool_profiles import PRINCIPAL_OWNER, SURFACE_OPERATOR
 
 logger = logging.getLogger("jarvis.pointer_tool")
@@ -34,6 +35,13 @@ _OWNER_AT_THE_HUD = f"{SURFACE_OPERATOR}/{PRINCIPAL_OWNER}"
 
 TOOL_NAME = "canvas_point"
 CAPABILITY_ID = "tool:canvas_point"
+#: H325 — ungated, but it does post on the owner's HUD.
+ROLLBACK = RollbackContract(
+    mode="cancel",
+    description=(f"A tip or tour ages out of its own ring after {POINTER_TTL_SECONDS} seconds "
+                 "and never evicts another canvas element; DELETE /api/canvas/{id} removes it "
+                 "sooner, and the owner closes it on the HUD."),
+)
 DESCRIPTION = (
     "Point at part of the owner's HUD. Pass target + caption for one tip, or title + steps "
     "(each a target + caption) for a short tour the owner pages through. Captions are one line."
@@ -117,8 +125,10 @@ def register_pointer_tool(
         description=DESCRIPTION,
         input_schema=INPUT_SCHEMA,
         capability_id=CAPABILITY_ID,
+        risk="reversible",
+        rollback=ROLLBACK,
     )
     return TOOL_NAME
 
 
-__all__ = ["CAPABILITY_ID", "DESCRIPTION", "INPUT_SCHEMA", "TOOL_NAME", "register_pointer_tool"]
+__all__ = ["CAPABILITY_ID", "DESCRIPTION", "INPUT_SCHEMA", "ROLLBACK", "TOOL_NAME", "register_pointer_tool"]

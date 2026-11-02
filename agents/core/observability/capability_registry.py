@@ -312,42 +312,38 @@ def _action_records(orch=None) -> list[CapabilityRecord]:
     return records
 
 
-def _session_state_record(tool: dict, capability_id: str, name: str, verification) -> CapabilityRecord:
-    """H315 review: a session-scoped tool (``todo``) is ungated but not read-only. It
-    writes the session's own state in memory. What a call replaced is put back by a
-    compensating call: every answer carries the whole list, and the answer stays in the
-    transcript (H315 second review: "none" contradicted "reversible")."""
-    return CapabilityRecord(
-        id=capability_id,
-        kind="tool",
-        state=WIRED,
-        description=str(tool.get("description", "")),
-        inputs=tool.get("input_schema") or {"type": "object"},
-        risk="reversible",
-        requires=("tool-rpc.registered",),
-        supports=("tool-rpc", "inline"),
-        verification=verification,
-        rollback=RollbackContract(
-            mode="compensate",
-            description=("It writes only this session's in-memory state. Every answer carries "
-                         "the whole list, so a later call can write back what a call replaced; "
-                         "the tool keeps no copy of it."),
-        ),
-        confidence=0.0,
-        implementation=f"agents.core.tool_rpc:{name}",
-        detail={"tool": name, "gated": False, "session_scoped": True},
-    )
+#: The rollback of a tool that declared ``risk="read_only"`` (H325). An *undeclared*
+#: ungated registration still gets it, as before; every ungated built-in declares its
+#: effect (``tests/test_tool_surface.py`` walks every ``register_tool`` call), so in
+#: the shipped registry that fallback only ever labels a test double.
+_NO_MUTATION = RollbackContract(
+    mode="none",
+    description="No mutation is performed, so there is nothing to roll back.",
+)
+_GATED_ROLLBACK = RollbackContract(
+    mode="implementation_specific",
+    description="Use the rollback declared by the selected tool.",
+    limitations="The action is not reversible when the tool declares no rollback.",
+)
 
 
 def _tool_records(orch, *, live_schemas: bool = True) -> list[CapabilityRecord]:
     """Derive live ToolRPC capabilities only when registration declares identity.
-    ``live_schemas=False`` takes each tool's static schema, not its H296 override."""
+    ``live_schemas=False`` takes each tool's static schema, not its H296 override.
+
+    H325 — the risk and the rollback are the ones the tool declared at registration
+    (``register_tool(risk=…, rollback=…)``, read through ``declared_effect``), not a
+    guess from the gate: an ungated tool may still write (the owner's memory, the
+    board, a pending skill proposal, the session's checklist), and calling it
+    read-only with "no mutation" was the same docs-versus-registry drift Hermes's own
+    inventory lists. A gated tool that declares nothing keeps the gated contract."""
     server = getattr(orch, "tool_rpc", None)
     project = getattr(server, "tools", None)
     if not callable(project):
         return []
     from agents.core.capability_verification import tool_verification_ref
 
+    declared = getattr(server, "declared_effect", None)
     out = []
     for tool in (project() if live_schemas else project(live=False)):
         capability_id = tool.get("capability_id") if isinstance(tool, dict) else None
@@ -355,9 +351,17 @@ def _tool_records(orch, *, live_schemas: bool = True) -> list[CapabilityRecord]:
             continue
         name = str(tool.get("name", ""))
         gated = bool(tool.get("gated"))
-        if not gated and name in SESSION_SCOPED_TOOLS:
-            out.append(_session_state_record(tool, capability_id, name, tool_verification_ref(name)))
-            continue
+        effect = declared(name) if callable(declared) else None
+        if effect is not None:
+            risk, rollback = effect
+            rollback = rollback if rollback is not None else _NO_MUTATION
+        elif gated:
+            risk, rollback = "sensitive", _GATED_ROLLBACK
+        else:
+            risk, rollback = "read_only", _NO_MUTATION
+        detail: dict = {"tool": name, "gated": gated}
+        if name in SESSION_SCOPED_TOOLS:
+            detail["session_scoped"] = True
         out.append(
             CapabilityRecord(
                 id=capability_id,
@@ -365,25 +369,15 @@ def _tool_records(orch, *, live_schemas: bool = True) -> list[CapabilityRecord]:
                 state=WIRED,
                 description=str(tool.get("description", "")),
                 inputs=tool.get("input_schema") or {"type": "object"},
-                risk="sensitive" if gated else "read_only",
+                risk=risk,
                 requires=("tool-rpc.registered", "action-kernel") if gated
                 else ("tool-rpc.registered",),
                 supports=("tool-rpc", "approval") if gated else ("tool-rpc", "inline"),
                 verification=tool_verification_ref(name),
-                rollback=(
-                    RollbackContract(
-                        mode="implementation_specific",
-                        description="Use the rollback declared by the selected tool.",
-                        limitations="The action is not reversible when the tool declares no rollback.",
-                    )
-                    if gated else RollbackContract(
-                        mode="none",
-                        description="No mutation is performed, so there is nothing to roll back.",
-                    )
-                ),
+                rollback=rollback,
                 confidence=0.0,
                 implementation=f"agents.core.tool_rpc:{name}",
-                detail={"tool": name, "gated": gated},
+                detail=detail,
             )
         )
     return out

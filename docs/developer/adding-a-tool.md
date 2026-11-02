@@ -28,7 +28,7 @@ module, that the owner can install, switch off, sign and review.
 
 A Markdown skill is a `SKILL.md` (frontmatter or heading dialect, checked by
 `agents/core/skills/validate.py::validate_skill_md`); the model reads it through
-`skills_list` / `skill_view` (`agents/core/skills/tools.py::register_skill_tools`). A
+the `skills_list` / `skill_view` tools (`agents/core/skills/tools.py::register_skill_tools`). A
 command skill is `skills/<name>/SKILL.md` plus `skills/<name>/main.py` (see the "Add a
 skill" recipe in `docs/ARCHITECTURE.md`). `nerva skills lint PATH` checks one before you
 ship it.
@@ -42,7 +42,7 @@ ship it.
 - it handles binary data, streaming or real-time events (images, audio, a camera);
 - it acts on the hub's own state (the canvas, memory, the session's checklist) where
   the owner needs the approval queue, the audit log and the tool profiles to apply;
-- examples in the tree: `canvas_point` (`agents/core/pointer_tool.py`), `todo`
+- example tools in the tree: `canvas_point` (`agents/core/pointer_tool.py`), `todo`
   (`agents/core/todo_tool.py`), `memory` (`agents/core/memory_tool.py`), the file
   tools (`agents/core/file_tools.py`).
 
@@ -79,6 +79,23 @@ Then, depending on what the tool is:
   `agents/core/tool_profiles.py::OWNER_OPERATOR_TOOLS`. Regenerate the pinned offer
   with `python tests/test_tool_profiles.py --update` and review the diff: a tool
   reaching a surface you did not intend is exactly what that snapshot is for.
+- **What it looks like to the model and the capability board.** Regenerate
+  `tests/_snapshots/tool_surface.json` and the generated tool table in
+  `docs/ARCHITECTURE.md` with `python tests/test_tool_surface.py --update` and review
+  the diff: its description, schema, gate and risk/rollback label are all in it. A doc
+  that names a tool as a tool ("the `<name>` tool", "`<name>` ToolRPC tool", "the gated `<name>` …",
+  a list after "tools:", "tools (…):" or "Registers", "Model-callable `<name>`",
+  "registered beside `<name>`") must name a registered one with its real gate, and the
+  `docs/ARCHITECTURE.md` module-index row for your file must name your tools, say only the
+  gate they have, and name another file's tool only as one ("registered beside `<name>`",
+  "`<name>`, registered in `<file>.py`"), or that test fails. Every other backticked name in
+  those docs must be a registered tool or a name the code uses, and `--update` records each
+  tool and input property that leaves the surface as retired in the snapshot — so a doc
+  still naming a tool or parameter you renamed or removed goes red until it is corrected
+  (or, named as removed, allowlisted in `RETIRED_TOOL_MENTIONS`). A registration that
+  picks its description or schema from a host setting (as `execute_code` does when session
+  kernels are composed) needs its other shape pinned as well: add the settings to `VARIANTS`
+  and the file to `HOST_CHOSEN_SURFACES` in that test, or it fails.
 - **A per-agent narrowing.** An agent's `tools:` list in `agents.yaml` (names or
   globs) narrows the posture further; it never widens it.
 
@@ -88,9 +105,12 @@ Then, depending on what the tool is:
 
 | argument | what it decides |
 |---|---|
+| `description` | The one paragraph the model reads to decide whether to call the tool. Pinned, with the schema, in `tests/_snapshots/tool_surface.json`. |
 | `gated` | `True` = external or mutating. The call never runs in the turn: it is enqueued as an ask-tier task, the model gets `{"ok": false, "reason": "approval_required", "task_id": ...}`, and the handler runs from `ToolRPCServer.execute` only after the owner approves. `False` = runs inline. |
 | `input_schema` | JSON Schema the model sees. Use `"additionalProperties": false` and `required`; arguments that are not strict JSON objects are refused as `bad_tool_arguments` before your handler runs. |
-| `capability_id` | A unique machine id (`tool:<name>`), read by the capability registry and planning. |
+| `capability_id` | A unique machine id (`tool:<name>`), read by the capability registry and planning. A tool without one is not on the capability board at all. |
+| `risk`, `rollback` | What a call does to state, in the capability vocabulary (`agents/core/capability_manifests.py::RISK_LEVELS`, `agents/core/capability_manifests.py::RollbackContract`); the capability registry labels the tool with them (H325). **Every ungated tool declares one**: `risk="read_only"` for a pure read, otherwise the risk plus the contract that says how a call is put back (`agents/core/memory_tool.py::ROLLBACK` restores from its undo store, `agents/core/todo_tool.py::ROLLBACK` compensates). A gated tool may leave both out and keeps the gated contract; `register_tool` refuses a gated `read_only`, a read with a rollback, and a write without one. |
+| `preflight` | An argument check that may also normalise: it runs on every call before approval intake or the handler, and again when an approved call executes. Return the arguments to use, or raise `agents/core/tool_rpc.py::ToolRPCValidationError` with a machine reason, so a malformed proposal never becomes an approval card. |
 | `untrusted_output` | `True` when the result is content from outside the box (a page, a search hit). The loop fences it as data and raises the turn's taint, so an action built from it queues for approval. |
 | `max_result_bytes` | How much of the context window one result may take before it is spilled to a file the model can page back with `file_read` (`agents/core/tool_result_store.py`). |
 | `parallel_safe` | `False` makes every call a barrier the loop runs alone (a writer two concurrent calls could interleave on). Undeclared stays concurrent for an ungated tool and fails closed (barrier) for a gated one. |
@@ -142,8 +162,10 @@ with a scripted backend that returns a `ToolTurn` carrying your `ToolCall`, as
 - [ ] It really is a tool, not a skill or an extension (the rule above).
 - [ ] `agents/core/<name>_tool.py` with constants, schema and `register_<name>_tool`.
 - [ ] Wired in `_wire_agent_tool_runtime`; job toolset entry if jobs may use it.
-- [ ] `gated` / `untrusted_output` / `parallel_safe` declared on purpose.
+- [ ] `gated` / `untrusted_output` / `parallel_safe` declared on purpose; an ungated tool
+      declares `risk` (and `rollback` when it writes).
 - [ ] Refusals are `{"ok": False, "reason": ...}` dicts with machine reasons.
-- [ ] `tests/_snapshots/tool_profiles.json` regenerated and the diff reviewed.
+- [ ] `tests/_snapshots/tool_profiles.json` and `tests/_snapshots/tool_surface.json`
+      (with the `docs/ARCHITECTURE.md` table) regenerated and the diffs reviewed.
 - [ ] Offline tests for schema, refusals and identity.
 - [ ] A row in `docs/ARCHITECTURE.md`'s module index.

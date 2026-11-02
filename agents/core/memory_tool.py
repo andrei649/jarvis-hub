@@ -92,6 +92,7 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
+from .capability_manifests import RollbackContract
 from .learning.core_block import CHAR_BUDGETS
 
 logger = logging.getLogger("jarvis.memory_tool")
@@ -114,6 +115,16 @@ LOCK_TIMEOUT_S = 5.0
 #: H422 — the most characters of entries a refusal lists (:func:`current_entries`). A ring
 #: the hub keeps (at most 20 facts, each shown in at most 300 characters) always fits whole.
 LISTING_MAX_CHARS = 6_000
+#: H325 — ungated, and it writes what the owner keeps: the capability registry says so,
+#: and names the undo this module already has, instead of "no mutation".
+ROLLBACK = RollbackContract(
+    mode="restore",
+    description=("Each write keeps the rings as they were in a purgeable undo store; "
+                 "POST /api/memory/core/undo (memory_tool.undo) puts them back."),
+    handler_ref="agents.core.memory_tool:undo",
+    limitations=(f"Only while nothing changed those rings since, and only the last {UNDO_KEEP} "
+                 "writes; a forget empties the undo store."),
+)
 _ARG_FIELDS = frozenset({"operations"})
 _OP_FIELDS = frozenset({"action", "target", "text", "old_text"})
 
@@ -984,6 +995,8 @@ def register_memory_tool(
         schema_overrides=schema_overrides,
         # H399 — a write to the owner's memory file; never overlapped with another call.
         parallel_safe=False,
+        risk="reversible",
+        rollback=ROLLBACK,
     )
     return TOOL_NAME
 
@@ -994,5 +1007,5 @@ __all__ = [
     "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "SWITCH_CATEGORY",
     "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan", "register_memory_tool",
     "current_entries", "note_ring_refusal", "reset", "reset_targets", "set_switch", "store_sizes", "switched_on",
-    "undo", "usage",
+    "undo", "usage", "ROLLBACK",
 ]
