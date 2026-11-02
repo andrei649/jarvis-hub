@@ -71,6 +71,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # mediated — it must always be able to release a halt.)
     "admin.kill_switch": Mediation.KERNEL,
     "admin.capability_issue": Mediation.KERNEL,
+    # H202 — the owner's roster: creating, renaming, retiring or restoring an agent changes
+    # who answers, so each crosses the kernel (in addition to admin_guard) through the same
+    # admin helper: a halt or a refused token denies it before the roster is touched.
+    "admin.agent_roster": Mediation.KERNEL,
     # Wave 3/4b — externally-driven KG writes (the /api/kg/* mutating HTTP handlers) are
     # mediated with a MANDATORY capability token (kernel.TOKEN_MANDATORY_KINDS); the
     # high-frequency *internal* ingestion path (incremental.ingest from

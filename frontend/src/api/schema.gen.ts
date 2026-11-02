@@ -9492,6 +9492,120 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/agents/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Roster View
+         * @description H202 — every agent the registry knows, active and retired: whether it is live, made
+         *     by the owner (and from which template), protected, and its last roster revisions; with
+         *     the templates and tiers a new agent can take.
+         */
+        get: operations["agent_roster_view_api_admin_agents_roster_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Create
+         * @description H202 — create an agent from a template (``GET /api/agent-templates``) or blank, and
+         *     keep it: written to the owner's roster (``agent_roster.json``), loaded now and at every
+         *     boot, its persona made live through the SOUL editor's own path (guard-scanned, version
+         *     1, audited). No plugins, heartbeat or model pin are granted. 201; 409 a taken or
+         *     reserved id, too many created agents or safe mode; 404 an unknown template; 413/422 a
+         *     persona the guard refuses or a bad name, id or tier; 503 an unreadable roster.
+         */
+        post: operations["agent_create_api_admin_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents/{agent_id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Rename
+         * @description H202 — rename an agent for good (its id, the key of its persona and history,
+         *     stays): saved in the roster, applied to the running agent, versioned and audited. The
+         *     in-memory display override of ``PUT /api/admin/agents/{id}`` no longer hides it. 409 a
+         *     name another agent has.
+         */
+        post: operations["agent_rename_api_admin_agents__agent_id__rename_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents/{agent_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Retire
+         * @description H202 — retire an agent: out of the running hub and every later boot, nothing deleted
+         *     (its persona, persona versions, run history and memory stay; ``/restore`` brings it
+         *     back as it was). ``{"confirm": "<agent id>"}`` is required: without it nothing changes
+         *     and the 400 says what would stop and what is kept. Jarvis cannot be retired (409).
+         */
+        post: operations["agent_retire_api_admin_agents__agent_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents/{agent_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Restore
+         * @description H202 — bring a retired agent back, live now and at every boot, with the persona and
+         *     history it had. 409 for an agent that is not retired.
+         */
+        post: operations["agent_restore_api_admin_agents__agent_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/agents/{agent_id}/description/draft": {
         parameters: {
             query?: never;
@@ -9604,8 +9718,8 @@ export interface paths {
          * @description H10.29 — render a ready-to-save agent config from a template.
          *
          *     Body: {"template": "researcher", "name": "Vega", "overrides": {...}}.
-         *     Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); the
-         *     caller persists it via the normal agent-creation flow.
+         *     Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); nothing is
+         *     saved. ``POST /api/admin/agents`` (H202) is the agent-creation flow that keeps one.
          */
         post: operations["agent_templates_instantiate_api_agent_templates_instantiate_post"];
         delete?: never;
@@ -13585,6 +13699,46 @@ export interface components {
              * @default false
              */
             acknowledge_training: boolean;
+        };
+        /** AgentCreateBody */
+        AgentCreateBody: {
+            /** Name */
+            name: string;
+            /**
+             * Template
+             * @default
+             */
+            template: string;
+            /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /**
+             * Tier
+             * @default
+             */
+            tier: string;
+            /** Soul */
+            soul?: string | null;
+        };
+        /** AgentRenameBody */
+        AgentRenameBody: {
+            /** Name */
+            name: string;
+        };
+        /** AgentRetireBody */
+        AgentRetireBody: {
+            /**
+             * Confirm
+             * @default
+             */
+            confirm: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** AgentUpdateRequest */
         AgentUpdateRequest: {
@@ -31096,6 +31250,160 @@ export interface operations {
                 "application/json": components["schemas"]["SoulEditBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_roster_view_api_admin_agents_roster_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    agent_create_api_admin_agents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentCreateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_rename_api_admin_agents__agent_id__rename_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRenameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_retire_api_admin_agents__agent_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRetireBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_restore_api_admin_agents__agent_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

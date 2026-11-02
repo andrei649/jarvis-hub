@@ -1,4 +1,5 @@
 {
+  "action:admin.agent_roster": "wired",
   "action:admin.capability_issue": "wired",
   "action:admin.kill_switch": "wired",
   "action:browser.step": "wired",

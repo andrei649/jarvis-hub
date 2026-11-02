@@ -2211,7 +2211,7 @@ function TemplatesPanel() {
     {tpls.slice(0, 8).map((tp, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{tp.id || tp.name || tp}</span><span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(tp.description || tp.role || '').slice(0, 36)}</span><Btn onClick={() => inst(tp)}>instantiate</Btn></Row>)}
     <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new agent name (optional)" style={{ ...inpS, width: '100%', marginTop: 8 }} />
     {out && <Json v={out} />}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>renders an agents.yaml config + SOUL skeleton — save via the normal agent flow (H10.29)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>a preview of an agents.yaml config + SOUL skeleton — create the agent from the Agents roster (+ New agent), which keeps it (H10.29, H202)</div>
   </Card>;
 }
 

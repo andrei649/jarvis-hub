@@ -93,10 +93,14 @@ class JarvisConfig:
             agent_rows = data.get("agents", {})
             if not isinstance(agent_rows, dict):
                 raise ValueError("agents must contain a mapping")
-            agents = {}
             for agent_id, agent_data in agent_rows.items():
                 if not isinstance(agent_data, dict):
                     raise ValueError(f"agent {agent_id!r} must contain a mapping")
+            # H202: the owner's roster (agents they created, renamed or retired) lies over
+            # the shipped registry; an unreadable roster is reported and leaves it alone.
+            from .agent_roster import merge_rows
+            agents = {}
+            for agent_id, agent_data in merge_rows(agent_rows).items():
                 agents[agent_id] = AgentConfig({**agent_data, "id": agent_id})
             for section in ("general", "plugins", "bench"):
                 if not isinstance(data.get(section, {}) or {}, dict):

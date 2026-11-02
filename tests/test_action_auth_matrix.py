@@ -253,6 +253,30 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             asyncio.run(secmod.kill_switch_set(_Req({"engage": True, "scope": "global"})))
         else:
             asyncio.run(secmod.capabilities_issue(_Req({"capabilities": ["x"]})))
+    elif kind == "admin.agent_roster":
+        # H202: a roster change (here a restore) crosses the kernel through the same admin
+        # helper before the roster is read; the stub orch has no registry, so the change
+        # itself is refused afterwards (503) — the crossing is what this proves.
+        import asyncio
+
+        import agents.web as web
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.routers import agents_api
+        from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+        class _Orch:
+            kill_switch = KillSwitch(tmp_path / "kill.json")
+            capabilities = CapabilityBroker()
+            autonomy_policy = AutonomyPolicy()
+            intent_log = None
+
+        class _Req:
+            headers: dict = {}
+
+        monkeypatch.setattr(web, "orch", _Orch())
+        monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda orch: spy)
+        reply = asyncio.run(agents_api.agent_restore("vega", _Req()))
+        assert reply.status_code == 503
     elif kind == "kg.write":
         # Externally-driven KG write (HTTP route): drive the REAL kg_upsert_entity handler.
         # The stub orch must carry memory.graph so _kg() resolves (else 503 before the gate).
