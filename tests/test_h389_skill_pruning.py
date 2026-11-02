@@ -17,7 +17,11 @@ and ``Orchestrator._build_agent_prompt``):
 * a ``this_turn`` pointer at the pruned copy does not end the prune;
 * the system prompt then carries the reload notice and the rule, with the optional
   operating guidance on or off, and keeps them when the loop rebuilds it;
-* ``skill_view`` serves a pruned skill whole again with the reload notice;
+* ``skill_view`` serves a pruned skill whole again with the reload notice — also the
+  second time the same skill is pruned in one loop, whole, bounded or spilled: the loop's
+  byte dedup never points a repeat at a row the fold has replaced;
+* a fenced copy the loop wrapped with a stall notice is still a copy and still pruned, and
+  only the prompt's trailing block is the notice;
 * the coding posture — read off the turn's offer, narrowed by an agent's ``tools:`` list
   or a job's toolsets — demotes non-coding categories to one line of names.
 """
@@ -326,6 +330,163 @@ def test_a_this_turn_pointer_to_the_pruned_copy_keeps_it_pruned(monkeypatch):
     assert SKILL_SAFETY_RULE in system
     reloaded = json.loads(_tool_row(backend.seen[4], "c4"))["result"]
     assert "check the forecast source" in reloaded["body"] and reloaded["notice"] == PRUNED_RELOAD_NOTICE
+
+
+def _twice_pruned_run(monkeypatch, *, last_args, budget=3072, echoes=2, **kwargs):
+    """The same skill pruned twice in one loop, then viewed again: c1 view, c2 echo (the
+    fold prunes c1), c3 view (the first reload), then ``echoes`` echo calls (the fold prunes
+    c3 again) and a last view with ``last_args``. The budget leaves room for one copy beside
+    one echo, so the last view is not folded before the model reads it. Returns the backend,
+    the request after c3, the request after the last view, that view's call id and the
+    loop's events."""
+    loader = _loader(_skill("weather", body=kwargs.pop("body", BODY)))
+    runtime = _runtime(_with_echo(_server(loader)), monkeypatch, **kwargs)
+    runtime._context_budget_tokens = lambda: budget
+    events = []
+
+    async def sink(event):
+        events.append(event)
+
+    last = f"c{4 + echoes}"
+    backend = _Backend(
+        ToolTurn(tool_calls=(_call("c1", TOOL_VIEW, {"name": "weather"}),), finish_reason="tool_calls"),
+        ToolTurn(tool_calls=(_call("c2", "echo", {}),), finish_reason="tool_calls"),
+        ToolTurn(tool_calls=(_call("c3", TOOL_VIEW, {"name": "weather"}),), finish_reason="tool_calls"),
+        *(ToolTurn(tool_calls=(_call(f"c{4 + n}", "echo", {}),), finish_reason="tool_calls")
+          for n in range(echoes)),
+        ToolTurn(tool_calls=(_call(last, TOOL_VIEW, last_args),), finish_reason="tool_calls"),
+        ToolTurn(content="done", finish_reason="stop"),
+    )
+    answer = asyncio.run(runtime.run(agent_id="jarvis", backend=backend, model="local-model",
+                                     prompt="use the weather skill", system="IDENTITY", max_tokens=64,
+                                     event_sink=sink))
+    assert answer == "done"
+    after_c3, before_last, after_last = backend.seen[3], backend.seen[3 + echoes], backend.seen[4 + echoes]
+    assert "check the forecast source" in _tool_row(after_c3, "c3")      # the first reload, read
+    assert SKILL_PRUNED_PREFIX in _tool_row(before_last, "c3")           # pruned again since
+    assert "skill_view(name='weather')" in before_last[0]["content"]     # and the notice asks for it
+    return backend, after_c3, after_last, last, events
+
+
+@pytest.mark.parametrize("last_args", [{"name": "weather"}, {"name": "weather", "reload": True}],
+                         ids=["view", "reload"])
+def test_a_skill_pruned_twice_in_one_loop_is_served_whole_again(monkeypatch, last_args):
+    """The loop's byte dedup keyed the second reload (the same bytes as the first: the body
+    with the same reload notice) on the first reload's row — by then a [SKILL_PRUNED]
+    marker — and answered with a ``same_as`` stub pointing at it: the notice kept asking for
+    a reload that could never be served. A fold that replaces a row ends its fingerprint."""
+    _backend, after_c3, after_last, last, events = _twice_pruned_run(monkeypatch, last_args=last_args)
+    first_reload = json.loads(_tool_row(after_c3, "c3"))["result"]
+    assert first_reload["notice"] == PRUNED_RELOAD_NOTICE
+    row = json.loads(_tool_row(after_last, last))
+    assert "same_as" not in row, row
+    reloaded = row["result"]
+    assert "check the forecast source" in reloaded["body"]
+    assert reloaded["notice"] == PRUNED_RELOAD_NOTICE and reloaded["reloaded_after"] == "compaction"
+    assert pruned_skills(after_last) == []                               # nothing left to reload
+    assert PRUNED_NOTICE_HEADER not in after_last[0]["content"]
+    assert not [e for e in events if e.get("event") == "tool_result_deduplicated"]
+
+
+def test_a_bounded_skill_view_pruned_twice_is_served_again(monkeypatch):
+    """The loop's bounded envelope of an oversized answer is deterministic too: the second
+    reload's envelope is byte-identical to the first one's, which the fold has pruned."""
+    _backend, after_c3, after_last, last, _events = _twice_pruned_run(
+        monkeypatch, last_args={"name": "weather"}, body=_BIG, budget=1024, echoes=3,
+        context_window_tokens=lambda: 2048)
+    first = json.loads(_tool_row(after_c3, "c3"))
+    assert first["truncated"] is True and first["skill_copy"] == {"name": "weather"}
+    row = json.loads(_tool_row(after_last, last))
+    assert "same_as" not in row, row
+    assert row["truncated"] is True and row["skill_copy"] == {"name": "weather"}
+    assert "check the forecast source" in row["preview"]["head"]
+    assert PRUNED_RELOAD_NOTICE in row["preview"]["tail"]
+    assert pruned_skills(after_last) == []
+
+
+def test_a_spilled_skill_view_pruned_twice_is_served_again(tmp_path, monkeypatch):
+    """A spilled answer names its spill by content, so the second reload's envelope is
+    byte-identical to the first, pruned one; it is served again with the spill's reference."""
+    from agents.core.tool_result_store import ToolResultStore
+
+    _backend, after_c3, after_last, last, _events = _twice_pruned_run(
+        monkeypatch, last_args={"name": "weather"}, body=_BIG, budget=1024, echoes=3,
+        context_window_tokens=lambda: 2048, result_store=ToolResultStore(tmp_path / "spill"))
+    first = json.loads(_tool_row(after_c3, "c3"))
+    assert first["spilled"] is True and first["skill_copy"] == {"name": "weather"}
+    row = json.loads(_tool_row(after_last, last))
+    assert "same_as" not in row, row
+    assert row["spilled"] is True and row["skill_copy"] == {"name": "weather"}
+    assert row["result_reference"] == first["result_reference"]
+    assert pruned_skills(after_last) == []
+
+
+def test_a_fenced_reload_under_a_stall_notice_is_a_copy_and_is_pruned_to_a_marker(monkeypatch):
+    """An unvouched skill's answer is fenced. Two identical reloads in a row (each pruned
+    before the next) earn the second one a stall notice, which the loop cannot add to a
+    fence, so it wraps it: ``{"tool_result": <fenced>, "stall_notice": ...}``. That row is
+    still the skill's copy (it ends the prune) and still folds to a fenced marker."""
+    loader = _loader(_skill("imported", vouched=False, body=_BIG))
+    runtime = _runtime(_with_echo(_server(loader)), monkeypatch)
+    backend = _Backend(
+        *(ToolTurn(tool_calls=(_call(f"c{n}", TOOL_VIEW, {"name": "imported"}),), finish_reason="tool_calls")
+          for n in (1, 2, 3)),
+        *(ToolTurn(tool_calls=(_call(f"e{n}", "echo", {}),), finish_reason="tool_calls") for n in range(4)),
+        ToolTurn(content="done", finish_reason="stop"),
+    )
+    asyncio.run(runtime.run(agent_id="jarvis", backend=backend, model="local-model",
+                            prompt="use the imported skill", system="IDENTITY", max_tokens=64))
+    after_c3 = backend.seen[3]
+    wrapped = json.loads(_tool_row(after_c3, "c3"))
+    assert set(wrapped) == {"tool_result", "stall_notice"}                  # the loop's wrapper
+    assert split_fenced_tool_result(wrapped["tool_result"])[0] == TOOL_VIEW
+    assert SKILL_PRUNED_PREFIX in _tool_row(after_c3, "c2")
+    assert pruned_skills(after_c3) == []                                    # the reload counts
+    marker = _tool_row(backend.seen[-1], "c3")
+    source, payload = split_fenced_tool_result(marker)                     # fenced again
+    assert source == TOOL_VIEW and json.loads(payload)["pruned"].startswith(f"{SKILL_PRUNED_PREFIX} imported")
+    assert "check the forecast source" not in marker
+    assert pruned_skills(backend.seen[-1]) == [("imported", "")]
+
+
+def test_only_a_trailing_block_is_the_notice():
+    """The notice is always the prompt's last block. The same header and end quoted earlier
+    in the prompt (a carried skill body, recalled text) are prompt content and stay."""
+    quoted = f"IDENTITY\n\n{PRUNED_NOTICE_HEADER}\nquoted by a skill\n{PRUNED_NOTICE_END}\n\nmore of the prompt"
+    assert without_pruned_skill_notice(quoted) is quoted
+    nothing_pruned = _transcript(("a", _served(_loader(_skill("weather")), {"name": "weather"})))
+    assert with_pruned_skill_notice(quoted, nothing_pruned) is quoted
+    pruned = _transcript(("a", _marker("weather")))
+    noticed = with_pruned_skill_notice(quoted, pruned)
+    assert noticed.startswith(quoted) and noticed.count(PRUNED_NOTICE_HEADER) == 2
+    assert without_pruned_skill_notice(noticed) == quoted
+    assert with_pruned_skill_notice(noticed, nothing_pruned) == quoted
+
+
+def test_a_repeat_of_a_folded_result_is_served_whole_and_an_intact_one_still_dedupes(monkeypatch):
+    """Any tool: a ``same_as`` stub points only at a row that still holds the bytes."""
+    server = _with_echo(ToolRPCServer())
+
+    async def same(args):
+        return {"payload": "z" * 3000}
+
+    server.register_tool("same", same, description="same",
+                         input_schema={"type": "object", "properties": {}})
+    runtime = _runtime(server, monkeypatch)
+    backend = _Backend(
+        ToolTurn(tool_calls=(_call("c1", "same", {}),), finish_reason="tool_calls"),
+        ToolTurn(tool_calls=(_call("c2", "same", {}),), finish_reason="tool_calls"),     # c1 intact
+        ToolTurn(tool_calls=(_call("c3", "echo", {}),), finish_reason="tool_calls"),     # folds c1
+        ToolTurn(tool_calls=(_call("c4", "same", {}),), finish_reason="tool_calls"),
+        ToolTurn(content="done", finish_reason="stop"),
+    )
+    asyncio.run(runtime.run(agent_id="jarvis", backend=backend, model="local-model", prompt="p",
+                            system="IDENTITY", max_tokens=64))
+    assert json.loads(_tool_row(backend.seen[2], "c2"))["same_as"] == "c1"     # the intact copy
+    after = backend.seen[4]
+    assert '"truncated":true' in _tool_row(after, "c1")                        # folded since
+    repeat = json.loads(_tool_row(after, "c4"))
+    assert "same_as" not in repeat and repeat["result"]["payload"] == "z" * 3000
 
 
 def _pointer_row(name, where):

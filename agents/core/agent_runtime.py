@@ -841,6 +841,7 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 event_sink=event_sink,
                 output_risks=output_risks,
+                seen_results=seen_results,
             ):
                 return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
             if len(compacted) > folds_before:
@@ -904,7 +905,7 @@ class AgentToolRuntime:
                         messages, compacted, model=model, max_tokens=max_tokens,
                         effective_window=known_window, schema_tokens=schema_tokens,
                         agent_id=agent_id, event_sink=event_sink,
-                        output_risks=output_risks,
+                        output_risks=output_risks, seen_results=seen_results,
                     ):
                         return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
                 else:
@@ -1185,6 +1186,7 @@ class AgentToolRuntime:
         effective_window: int | None = None,
         schema_tokens: int = 0,
         output_risks: dict[int, ToolOutputRisk] | None = None,
+        seen_results: dict[str, str] | None = None,
     ) -> bool:
         """Fold older tool results into bounded envelopes until the transcript fits.
 
@@ -1200,6 +1202,13 @@ class AgentToolRuntime:
         ``file_read`` pages of such a spill (``skills.tools.skill_text_pages``). The system
         prompt then carries the reload notice and the rule against acting on a pruned body
         (``skills.tools.with_pruned_skill_notice``), counted in what must fit.
+
+        ``seen_results`` is the loop's dedup map (``_dedupe_result``: fingerprint → the
+        call whose row holds those bytes). A committed fold drops every fingerprint whose
+        row it replaced: a "same as call N" stub must point at a row that still holds the
+        bytes, and a folded row (a preview or a ``[SKILL_PRUNED]`` marker) no longer does,
+        so a repeat of it is served whole again — the reload a pruned skill's notice asks
+        for included, however many times the same skill is pruned in one loop.
         """
         from .conversation_clock import active_clock
         binding = active_clock()
@@ -1348,6 +1357,14 @@ class AgentToolRuntime:
                 _active_clock.set(replace(binding, snapshot=committed))
                 from .turn_outcome import record_accepted_compression
                 record_accepted_compression(committed.session_id, committed.instance_id)
+            if seen_results:
+                replaced = {
+                    message.get("tool_call_id")
+                    for message, prior in zip(messages, original_messages, strict=True)
+                    if message is not prior and message.get("role") == "tool"
+                }
+                for fingerprint in [key for key, call_id in seen_results.items() if call_id in replaced]:
+                    del seen_results[fingerprint]
             original_messages[:] = messages
             original_compacted.update(compacted)
             from .skills.tools import note_compacted

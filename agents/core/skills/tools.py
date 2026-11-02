@@ -300,9 +300,12 @@ def guest_on_shared_session(shared: bool, origin: str, identity: Any) -> bool:
 # (:func:`with_pruned_skill_notice`); and ``skill_view`` serves a pruned skill whole again
 # with :data:`PRUNED_RELOAD_NOTICE` (``_once``, reading :func:`pruned_skills` off the live
 # transcript). Only a new copy or the prompt's carried copy ends a prune; a ``this_turn``
-# pointer names the very copy the fold may have pruned. Everything is derived from the
-# transcript itself, so it is deterministic and a compaction that prunes nothing changes
-# nothing.
+# pointer names the very copy the fold may have pruned. The loop's byte dedup forgets every
+# row a fold replaced (``AgentToolRuntime._compact_context`` ``seen_results``), so a reload
+# is served however often the same skill is pruned in one loop, and a fenced row the loop
+# wrapped with a stall notice is still read as the copy it is (``_row_payload``). Everything
+# is derived from the transcript itself, so it is deterministic and a compaction that prunes
+# nothing changes nothing.
 
 SKILL_PRUNED_PREFIX = "[SKILL_PRUNED:"
 #: The skills one reload notice names (Hermes ``_MAX_PRUNED_SKILL_MARKERS``), first pruned first.
@@ -347,6 +350,21 @@ def _envelope(payload: Any) -> dict | None:
     except (TypeError, ValueError):
         return None
     return envelope if isinstance(envelope, dict) else None
+
+
+def _row_payload(content: str) -> tuple[str | None, str]:
+    """``(fence source, payload)`` of a tool row's text: a fenced row's source and inner
+    payload — also when the loop wrapped that fence with a stall notice (it cannot add a key
+    to a fence, so it writes ``{"tool_result": <fenced>, "stall_notice": ...}``,
+    ``AgentToolRuntime.run``) — or ``(None, content)`` for anything else."""
+    from ..security.quarantine import split_fenced_tool_result
+
+    fenced = split_fenced_tool_result(content)
+    if fenced is None:
+        wrapper = _envelope(content)
+        if wrapper is not None and set(wrapper) == {"tool_result", "stall_notice"}:
+            fenced = split_fenced_tool_result(wrapper["tool_result"])
+    return fenced if fenced is not None else (None, content)
 
 
 def _served_copy(payload: Any) -> tuple[str, str] | None:
@@ -414,14 +432,13 @@ def pruned_skill_content(content: str, *, page_of: tuple[str, str] | None = None
     known. With ``page_of`` (``(name, file)``, from :func:`skill_text_pages`) the row is a
     successful ``file_read`` page of such a spill. None when the row carried no skill text
     (a pointer, a refusal, an unrelated read), which the caller folds like any other."""
-    from ..security.quarantine import fence_tool_result, split_fenced_tool_result
+    from ..security.quarantine import fence_tool_result
     from ..tool_result_store import READ_TOOL
 
     if not isinstance(content, str):
         return None
-    fenced = split_fenced_tool_result(content)
-    if fenced is not None:
-        source, payload = fenced
+    source, payload = _row_payload(content)
+    if source is not None:
         inner = pruned_skill_content(payload, page_of=page_of)
         return None if inner is None else fence_tool_result(inner, source=source)[0]
     envelope = _envelope(content)
@@ -456,7 +473,6 @@ def skill_text_pages(messages: Any) -> dict[str, tuple[str, str]]:
     ``skill_view`` answer the loop spilled at insertion (its ``path`` names that spill's
     file, as the spill's ``read_with`` does): those pages hold the skill's text too, and a
     compaction prunes them like the answer (:func:`pruned_skill_content` ``page_of``)."""
-    from ..security.quarantine import split_fenced_tool_result
     from ..tool_result_store import READ_TOOL
 
     calls: dict[str, tuple[str, Any]] = {}
@@ -475,8 +491,7 @@ def skill_text_pages(messages: Any) -> dict[str, tuple[str, str]]:
         called = calls.get(message.get("tool_call_id")) if message.get("role") == "tool" else None
         if called is None or called[0] != TOOL_VIEW or not isinstance(content, str):
             continue
-        fenced = split_fenced_tool_result(content)
-        envelope = _envelope(fenced[1] if fenced is not None else content)
+        envelope = _envelope(_row_payload(content)[1])
         if envelope is None:
             continue
         identity = _bounded_copy(envelope) if envelope.get("spilled") is True else _pruned_entry(envelope)
@@ -520,7 +535,6 @@ def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
     or pointed at the copy the prompt carries (``already_loaded: this_session``) clears it.
     A ``this_turn`` pointer does not: it points at a copy served earlier in this loop, which
     is the very copy a compaction may have pruned since."""
-    from ..security.quarantine import split_fenced_tool_result
     from ..tool_result_store import READ_TOOL
 
     calls: dict[str, str] = {}
@@ -539,13 +553,13 @@ def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
         tool = calls.get(message.get("tool_call_id")) if message.get("role") == "tool" else None
         if tool is None or not isinstance(content, str):
             continue
-        fenced = split_fenced_tool_result(content)
-        envelope = _envelope(fenced[1] if fenced is not None else content)
+        source, payload = _row_payload(content)
+        envelope = _envelope(payload)
         if envelope is None:
             continue
         entry = _pruned_entry(envelope, tool)
         if entry is not None:
-            pending[entry] = pending.get(entry, True) and fenced is None
+            pending[entry] = pending.get(entry, True) and source is None
             continue
         if tool != TOOL_VIEW:
             continue
@@ -568,16 +582,18 @@ def _carried_pointer(envelope: dict) -> tuple[str, str] | None:
 
 def without_pruned_skill_notice(system: Any) -> Any:
     """``system`` without the block :func:`with_pruned_skill_notice` added (the same object
-    when there is none)."""
-    if not isinstance(system, str):
+    when there is none). That block is always the prompt's last one — it is appended, the
+    loop's guided rebuild appends it again and the clock render sets it aside and puts it
+    back after — so only a trailing block is removed: the same header and end quoted earlier
+    in the prompt (a carried skill body, recalled text) are not this notice and stay."""
+    if not isinstance(system, str) or not system.endswith(PRUNED_NOTICE_END):
         return system
     start = system.rfind(PRUNED_NOTICE_HEADER)
-    stop = system.find(PRUNED_NOTICE_END, start) if start >= 0 else -1
-    if stop < 0:
+    if start < 0:
         return system
     if start >= 2 and system[start - 2:start] == "\n\n":
         start -= 2
-    return _same_kind(system, system[:start] + system[stop + len(PRUNED_NOTICE_END):])
+    return _same_kind(system, system[:start])
 
 
 def with_pruned_skill_notice(system: Any, messages: Any) -> Any:
