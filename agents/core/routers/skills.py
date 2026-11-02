@@ -1224,8 +1224,10 @@ async def skills_batch(body: SkillBatchBody):
 
     H330: a delete may share the batch with edits to other skills and name the skill that
     absorbs it (``absorbed_into``); the answer's ``references`` say what was migrated to it
-    and what still names the deleted skill. A delete crosses the ``skill.install`` kernel
-    gate before any folder moves (a DENY answers 422 ``skill_batch_kernel_denied``)."""
+    and what still names the deleted skill. Before any folder moves a delete crosses the
+    ``skill.install`` kernel gate and every other write (a create, a patch, a file, a
+    related_skills migration, a bundle rewrite) the ``skill.generation`` one; a DENY answers
+    422 ``skill_batch_kernel_denied`` and nothing changes."""
     import asyncio
 
     from agents.core.skills.batch import run_batch

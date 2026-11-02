@@ -843,14 +843,28 @@ def _migrate_related(deletes: dict[str, str | None], targets: dict[str, _Target]
                                      if new and references.identities(targets[d].skill) & named)
 
 
-def _shown_members(members: list[str], may_see: Callable[[str], bool] | None,
-                   named: set[str]) -> tuple[list[str], int]:
+def _shown_members(members: list[str], may_see: Callable[[str], bool] | None, named: set[str],
+                   loader: Any) -> tuple[list[str], int]:
     """``(members the caller may see, how many it may not)``. A bundle can list a skill the
     caller may not see; on the governed path that member is counted, never named, as every
-    other skill the agent may not see is. The skills the batch itself names are shown."""
+    other skill the agent may not see is. A member is judged by the skill it names as the
+    bundle resolves it (:func:`bundles.find_member`: a path, or a name in any case), so a
+    member naming a skill the batch deletes or absorbs into is shown, however it is
+    written, as the one the apply rewrites (review-H330 r2). A member that names no loaded
+    skill is shown only when it is a name the batch itself gives (a skill it creates)."""
     if may_see is None:
         return list(members), 0
-    shown = [m for m in members if m in named or may_see(m)]
+    from . import bundles
+
+    skills = getattr(loader, "skills", {}) or {}
+    pool = list(skills.values())
+    key_of = {id(skill): key for key, skill in skills.items()}
+    shown = []
+    for member in members:
+        skill, _why = bundles.find_member(pool, member)
+        key = key_of.get(id(skill)) if skill is not None else None
+        if (member in named) if key is None else (key in named or may_see(key)):
+            shown.append(member)
     return shown, len(members) - len(shown)
 
 
@@ -875,8 +889,8 @@ def _report(deletes: dict[str, str | None], targets: dict[str, _Target], loader:
                                 for t in targets.values() if name in t.migrated_for]
         for move in bundle_moves:
             if name in move["skills"]:
-                before, hidden_members = _shown_members(move["before"], may_see, named)
-                after, _n = _shown_members(move["after"], may_see, named)
+                before, hidden_members = _shown_members(move["before"], may_see, named, loader)
+                after, _n = _shown_members(move["after"], may_see, named, loader)
                 migrated.append({"holder": "bundle", "name": move["name"], "slug": move["slug"], "before": before,
                                  "after": after, **({"hidden_members": hidden_members} if hidden_members else {})})
         left: list[dict] = []
@@ -898,7 +912,10 @@ def _report(deletes: dict[str, str | None], targets: dict[str, _Target], loader:
             for rel, lines in mentions:
                 left.append({"holder": "skill", "name": other, "field": "text", "file": rel,
                              "lines": lines[:references.MAX_LINES]})
-        left += [entry for entry in bundle_left if entry["skill"] == name]
+        # On the governed path a skipped bundle file is reported without its file name, which
+        # the owner chose and the agent may not otherwise see.
+        left += [{k: v for k, v in entry.items() if not (may_see is not None and k == "file")}
+                 for entry in bundle_left if entry["skill"] == name]
         left += references.outside(name, skill, new, holders, exclude_batch=exclude_batch)
         entry = {"skill": name, "absorbed_into": new, "migrated": migrated, "left": left[:references.MAX_LEFT]}
         if len(left) > references.MAX_LEFT:
@@ -911,10 +928,16 @@ def _report(deletes: dict[str, str | None], targets: dict[str, _Target], loader:
 
 def _bundle_drift(moves: list[dict], left: list[dict], allowed: Any) -> str | None:
     """The first bundle the owner approved a rewrite of that is no longer the one they saw:
-    its members changed (``pin``), or it now names a deleted skill it would not rewrite."""
+    its members changed (``pin``), it now names a deleted skill it would not rewrite, or
+    the apply would not rewrite it at all (its file no longer parses, it is gone, it no
+    longer names the skill): every rewrite the review showed is part of the batch."""
     pins = allowed if isinstance(allowed, dict) else {}
-    for move in moves:
-        pin = pins.get(move["slug"])
+    planned = {move["slug"]: move for move in moves}
+    for slug in sorted(str(s) for s in allowed):
+        move = planned.get(slug)
+        if move is None:
+            return slug
+        pin = pins.get(slug)
         if pin is not None and pin != move["pin"]:
             return str(move["name"])
     for entry in left:
@@ -931,7 +954,9 @@ def _cross_kernel(order: list[_Target], deletes: dict[str, str | None], bundle_m
     acquired install crosses. Every other write of a skill's bytes (a create, a patch, a
     supporting file, a related_skills migration, a bundle rewrite) is ``skill.generation``.
     A DENY, or a gate that fails, refuses the whole batch; a QUEUE is the owner's decision
-    this batch already carries (their route, their card)."""
+    this batch already carries (their route, their card). The hub's gate binds the kill
+    switch, the autonomy policy and the audit (:func:`kernel.binding.make_action_kernel`
+    without a loop breaker or a budget ledger, as every route caller binds it)."""
     from agents.core.acquisition.promotion import cross_skill_gate, hub_skill_kernel_gate
 
     requested_by = actor or "owner"
@@ -956,8 +981,9 @@ def _cross_kernel(order: list[_Target], deletes: dict[str, str | None], bundle_m
         refused = cross_skill_gate(gate, payload)
         if refused == "kernel_denied":
             raise BatchError("skill_batch_kernel_denied", f"the action kernel refused the batch ({kind}), so "
-                             "nothing was applied", hints=["a halt, a budget or a loop guard is in force: nothing "
-                                                           "changed; the owner can retry once it lifts"],
+                             "nothing was applied", hints=["a halt (the kill switch) or the autonomy policy refused it: "
+                                                           "nothing changed; once it lifts, send the batch again "
+                                                           "(a batch decided on its card is proposed again)"],
                              extra={"kernel_kind": kind})
         if refused:
             raise BatchError("skill_batch_kernel_error", f"the {kind} gate could not decide the batch, so nothing "

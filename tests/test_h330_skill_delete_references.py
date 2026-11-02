@@ -782,3 +782,147 @@ def test_the_absorbing_skill_never_lists_itself_as_related(hub):
     lone = _related_md("omega", "related_skills:\n  - alpha\ntags: [t]\n")
     text = references.rewrite_related(lone, {"alpha"}, None)
     assert references.related_names(text) == [] and "related_skills: []" in text and "tags: [t]" in text
+
+
+# ── review-H330 r2: the card names what the apply moves; a migration keeps every entry ──
+
+def _frontmatter(path: Path) -> dict:
+    from agents.core.skills.frontmatter import split_frontmatter
+
+    fm, _body = split_frontmatter(path.read_text(), lenient=False)
+    return fm
+
+
+@pytest.mark.parametrize("spelling", ["path", "case", "other_case"])
+def test_a_bundle_member_is_shown_as_the_skill_it_resolves_to(hub, monkeypatch, spelling):
+    # Fails on the old code: a member naming alpha by its path or as "Alpha" (or beta as
+    # "Beta") was judged by its raw text, so the card the owner approved said
+    # "beta -> omega, beta (and 1 member the agent cannot see, kept)" while the apply moved
+    # that member (review-H330 r2).
+    hub.write("alpha")
+    hub.write("omega")
+    hub.write("beta")
+    hub.write("secretskill")
+    hub.load()
+    _hide(monkeypatch, "secretskill")
+    first = {"path": str(hub.root / "alpha"), "case": "Alpha", "other_case": "alpha"}[spelling]
+    second = "Beta" if spelling == "other_case" else "beta"
+    _bundle("research", [first, second, "SecretSkill"])
+    store, queue = SkillBatchStore(hub.tmp / "b.json"), ActionApprovalQueue(path=str(hub.tmp / "actions.json"))
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "delete", "absorbed_into": "omega"}]})
+    assert got["ok"] is True, got
+    rec = store.get(got["batch_id"])
+    for view in (_ref(got, "alpha"), rec["references"][0]):
+        [moved] = [m for m in view["migrated"] if m["holder"] == "bundle"]
+        # The hidden skill, in whatever case the bundle spells it, is still counted, never named.
+        assert moved == {"holder": "bundle", "name": "research", "slug": "research", "before": [first, second],
+                         "after": ["omega", second], "hidden_members": 1}, moved
+    assert "secretskill" not in json.dumps(got).casefold()
+    queue.decide(rec["card"], True)
+    out = store.decide(rec["id"], rec["card"], queue, hub.loader, backup_dir=hub.archive, holders=_holders())
+    assert out["ok"] is True, out
+    # What the card said is what landed.
+    assert list(bundles.get("research").skills) == ["omega", second, "SecretSkill"]
+
+
+def test_a_long_related_list_is_migrated_whole(hub):
+    # Fails on the old code: the check compared the loader's capped views (64 entries), so
+    # rel's SKILL.md was written back as [omega, s0..s62] and 17 entries were gone.
+    hub.write("alpha")
+    hub.write("omega")
+    rel = hub.root / "rel"
+    rel.mkdir()
+    names = ["alpha"] + [f"s{i}" for i in range(80)] + ["s3"]
+    (rel / "SKILL.md").write_text(_related_md("rel", "related_skills: [" + ", ".join(names) + "]\n"))
+    hub.load()
+    out = _run(hub, [{"name": "alpha", "action": "delete", "absorbed_into": "omega"}])
+    assert out["ok"] is True, out
+    # Every other entry kept as written, where it was, the repeated one too.
+    assert _frontmatter(rel / "SKILL.md")["related_skills"] == ["omega"] + names[1:]
+    assert {"holder": "skill", "name": "rel", "field": "related_skills"} in _ref(out, "alpha")["migrated"]
+
+
+@pytest.mark.parametrize("related", [
+    "related_skills:\n  - alpha\n  - {x: y}\n  - true\n",
+    "related_skills: [alpha, 7]\n",
+    "related_skills:\n  alpha, beta\n",
+])
+def test_a_related_value_that_is_not_a_list_of_names_is_reported_not_rewritten(hub, related):
+    # Fails on the old code: [alpha, {x: y}, true] became [omega, "True"] (the mapping item
+    # dropped, the boolean turned to a string), [alpha, 7] became [omega, "7"], and the
+    # scalar "alpha, beta" under the key became a block list (review-H330 r2).
+    hub.write("alpha")
+    hub.write("omega")
+    rel = hub.root / "rel"
+    rel.mkdir()
+    text = _related_md("rel", related)
+    (rel / "SKILL.md").write_text(text)
+    hub.load()
+    assert references.rewrite_related(text, {"alpha"}, "omega") is None
+    out = _run(hub, [{"name": "alpha", "action": "delete", "absorbed_into": "omega"}])
+    assert out["ok"] is True, out
+    assert (rel / "SKILL.md").read_text() == text
+    assert "rel" not in {s["name"] for s in out["skills"]}
+    assert {"holder": "skill", "name": "rel", "field": "related_skills",
+            "why": "its related_skills could not be rewritten exactly"} in _ref(out, "alpha")["left"]
+
+
+def test_rewrite_related_moves_only_the_entries_naming_the_deleted_skill():
+    # Fails on the old code: every repeated entry was folded into one ([alpha, b, b] became
+    # [omega, b]). An entry the loader reads as alpha (quoted with spaces) is moved too.
+    out = references.rewrite_related(_related_md("x", "related_skills: [alpha, b, b]\n"), {"alpha"}, "omega")
+    assert "related_skills: [omega, b, b]" in out
+    spaced = references.rewrite_related(_related_md("x", "related_skills: [' alpha ', b]\n"), {"alpha"}, "omega")
+    assert "related_skills: [omega, b]" in spaced
+    # A list that names alpha only in another key's mapping item is not this rewrite's.
+    nested = _related_md("x", "related_skills: [beta]\nextra:\n  related_skills: [alpha]\n")
+    assert references.rewrite_related(nested, {"alpha"}, "omega") is None
+
+
+def _break(bundle) -> None:
+    bundle.path.write_text("name: research\nskills: [alpha\n")      # no longer parses
+
+
+def test_a_bundle_file_that_does_not_parse_is_reported_as_not_checked(hub, monkeypatch):
+    # Fails on the old code: the folder read's skipped files were dropped, so a bundle that
+    # may list the deleted skill was neither migrated nor reported (review-H330 r2 minor 5).
+    hub.write("alpha")
+    hub.write("omega")
+    hub.load()
+    _break(_bundle("research", ["alpha"]))
+    out = _run(hub, [{"name": "alpha", "action": "delete", "absorbed_into": "omega"}], dry_run=True)
+    assert {"holder": "bundle", "skill": "alpha", "file": "research.yaml", "unreadable": True,
+            "why": "invalid_yaml"} in _ref(out, "alpha")["left"]
+    # The agent is told a bundle file was not checked, without the file's name.
+    store, queue = SkillBatchStore(hub.tmp / "b.json"), ActionApprovalQueue(path=str(hub.tmp / "actions.json"))
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "delete", "absorbed_into": "omega"}]})
+    assert got["ok"] is True, got
+    assert {"holder": "bundle", "skill": "alpha", "unreadable": True, "why": "invalid_yaml"} in _ref(got, "alpha")["left"]
+    assert "research.yaml" not in json.dumps(got)
+
+
+@pytest.mark.parametrize("change", ["no_longer_parses", "no_longer_lists_it"])
+def test_an_approved_bundle_rewrite_the_apply_would_not_make_refuses_it(hub, change):
+    # Fails on the old code: the owner approved "research: alpha -> omega", the bundle's file
+    # then stopped parsing (or stopped listing alpha), and the delete landed with that rewrite
+    # silently gone from the batch and from its report (review-H330 r2).
+    hub.write("alpha")
+    hub.write("omega")
+    hub.load()
+    bundle = _bundle("research", ["alpha", "omega"])
+    store, queue = SkillBatchStore(hub.tmp / "b.json"), ActionApprovalQueue(path=str(hub.tmp / "actions.json"))
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "delete", "absorbed_into": "omega"}]})
+    rec = store.get(got["batch_id"])
+    assert [m["slug"] for m in rec["references"][0]["migrated"] if m["holder"] == "bundle"] == ["research"]
+    if change == "no_longer_parses":
+        _break(bundle)
+    else:
+        bundles.save("research", ["omega"], description="the research bundle", overwrite=True)
+    before = hub.tree()
+    queue.decide(rec["card"], True)
+    out = store.decide(rec["id"], rec["card"], queue, hub.loader, backup_dir=hub.archive, holders=_holders())
+    assert out["ok"] is False and out["reason"] == "skill_batch_drifted", out
+    assert "'research'" in out["detail"] and hub.tree() == before and (hub.root / "alpha").is_dir()

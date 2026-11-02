@@ -1199,7 +1199,7 @@ Agent-generated skill from successful task completion.
                            "; ".join(str(p) for p in self.last_generation_problems))
             return None
         # H330 — writing a skill folder crosses the skill.generation kernel gate before it
-        # exists (a halt, a budget or a loop guard stops it); the CDX-8 quarantine below is
+        # exists (a halt or the autonomy policy stops it); the CDX-8 quarantine below is
         # the owner's floor, so a QUEUE proceeds to it.
         refused = self._generation_kernel_refusal(
             {"action": "generate", "agent": agent_id, "name": skill_name, "command_name": cmd,

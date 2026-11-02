@@ -96,7 +96,8 @@ export function BatchFileDiff({ f }: { f: FileChange }) {
 /** H330 — one reference a delete leaves where it is, in the owner's words. */
 export function referenceLine(e: any): string {
   if (!e || typeof e !== 'object') return '';
-  if (e.unreadable) return `${e.holder} · could not be read`;
+  // A skipped bundle file names its file (the owner's view) and why the folder read skipped it.
+  if (e.unreadable) return `${e.holder}${e.file ? ` ${e.file}` : ''} · could not be read${e.why ? ` · ${e.why}` : ''}`;
   switch (e.holder) {
     case 'skill':
       return e.field === 'related_skills'

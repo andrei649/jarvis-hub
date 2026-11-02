@@ -957,7 +957,8 @@ def register_skill_tools(
                     refused["problems"] = [p.as_dict() for p in problems]
                     return refused
                 return _refuse("skill_propose_refused", "no new skill was written: one of that name exists, "
-                                                        "or the skill-generation contract refused it")
+                                                        "or the skill-generation contract or the action kernel "
+                                                        "refused it")
             _spend(today)
             reply = {"ok": True, "kind": "new", "skill": created, "pending": True,
                      "detail": "written to quarantine; the owner reviews it before it can run"}

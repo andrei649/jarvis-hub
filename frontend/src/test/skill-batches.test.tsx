@@ -192,6 +192,8 @@ describe('H330 — a delete, what absorbs it, and what still names it', () => {
     expect(referenceLine({ holder: 'proposal', id: 'sp-1' })).toBe('pending proposal sp-1');
     expect(referenceLine({ holder: 'batch', id: 'sb-2' })).toBe('pending batch sb-2');
     expect(referenceLine({ holder: 'job', unreadable: true })).toBe('job · could not be read');
+    expect(referenceLine({ holder: 'bundle', skill: 'alpha', file: 'research.yaml', unreadable: true,
+      why: 'invalid_yaml' })).toBe('bundle research.yaml · could not be read · invalid_yaml');
     expect(referenceLine({ holder: 'skill', name: 'q', field: 'related_skills', why: 'ships with Nerva' }))
       .toBe('skill q · related_skills · ships with Nerva');
   });

@@ -95,7 +95,9 @@ def make_skill_generation_kernel_gate(action_kernel, *, title: str = "Write a sk
     proposal (:mod:`agents.core.skills.proposals`), a generated skill and the owner's
     promotion of one to executable (:class:`agents.core.skills.loader.SkillLoader`). The
     ``skill.generation`` contract, the CDX-8 quarantine and the owner's approval stay in
-    force around it; the kernel adds the kill switch, the budget and the loop guard."""
+    force around it; the kernel adds the kill switch, the autonomy policy and the audit
+    (:func:`hub_skill_kernel_gate` binds no loop breaker or budget ledger, as route callers
+    of :func:`agents.core.kernel.binding.make_action_kernel` do not)."""
     return make_skill_kernel_gate(action_kernel, kind="skill.generation", title=title)
 
 

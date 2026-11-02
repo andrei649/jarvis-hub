@@ -10,12 +10,16 @@ anyone being told:
 * **other skills** — ``related_skills`` (top-level or ``metadata.hermes``) is a structured
   link: with ``absorbed_into`` it is rewritten in the same atomic batch, on that skill's
   staging copy, and shown in the batch's diff like any edit (:func:`rewrite_related`).
-  A skill the batch may not edit (shipped with Nerva, awaiting review in CDX-8
-  quarantine, linked, unreadable, or hidden from the caller) is reported instead. Prose
+  Only a list of names is rewritten, entry for entry; a value that is not one (a mapping
+  or a boolean among the items, a scalar ``a, b``) is reported, never coerced. A skill
+  the batch may not edit (shipped with Nerva, awaiting review in CDX-8 quarantine,
+  linked, unreadable, or hidden from the caller) is reported instead. Prose
   that names the deleted skill is reported with its lines (:func:`mention_lines`): text
   is not rewritten by guesswork, the model or the owner patches it in the same batch.
-* **bundles** (H026) — a member that resolves to the deleted skill is rewritten to the
-  absorbing one when the batch lands, inside the same all-or-nothing apply.
+* **bundles** (H026) — a member that resolves to the deleted skill (by name in any case,
+  or by path, :func:`bundles.find_member`) is rewritten to the absorbing one when the
+  batch lands, inside the same all-or-nothing apply. A bundle file the folder read
+  skipped is reported as not checked.
 * **scheduled jobs** — a Nerva job has no skill link field (``skills`` is refused at
   intake, ``jobs_health`` lists it as unsupported); a job whose prompt, message, title or
   payload names the skill is reported with its id and field.
@@ -123,20 +127,41 @@ def text_files(folder: Path | None) -> list[tuple[str, str]]:
 
 # ── related_skills: the structured link a skill carries ─────────────────────────────
 
-def _related(fm: dict | None) -> dict[str, list[str]]:
-    """``{"top": [...], "hermes": [...]}`` for the related_skills keys present."""
-    from .frontmatter import str_list
-
-    out: dict[str, list[str]] = {}
+def _related_raw(fm: dict | None) -> dict[str, Any]:
+    """``{"top": value, "hermes": value}``: each related_skills key present, as parsed."""
+    out: dict[str, Any] = {}
     if not isinstance(fm, dict):
         return out
     if "related_skills" in fm:
-        out["top"] = str_list(fm.get("related_skills"))
+        out["top"] = fm.get("related_skills")
     metadata = fm.get("metadata")
     hermes = metadata.get("hermes") if isinstance(metadata, dict) else None
     if isinstance(hermes, dict) and "related_skills" in hermes:
-        out["hermes"] = str_list(hermes.get("related_skills"))
+        out["hermes"] = hermes.get("related_skills")
     return out
+
+
+def _names_only(value: Any) -> bool:
+    """Whether a related_skills value is a list of names and nothing else: every item a
+    string. Only such a list is rewritten, item for item; any other value (a mapping or a
+    boolean among the items, a scalar ``a, b`` list) is left as it is and reported."""
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _names(value: Any) -> list[str]:
+    """The names one related_skills value lists: each entry of a list of names, stripped
+    as the loader reads it, however long the list; any other value as the loader's view
+    (:func:`frontmatter.str_list`) reads it."""
+    from .frontmatter import str_list
+
+    if _names_only(value):
+        return [item.strip() for item in value if item.strip()]
+    return str_list(value)
+
+
+def _related(fm: dict | None) -> dict[str, list[str]]:
+    """``{"top": [...], "hermes": [...]}``: the names each related_skills key present lists."""
+    return {key: _names(value) for key, value in _related_raw(fm).items()}
 
 
 def related_names(text: str) -> list[str]:
@@ -161,15 +186,16 @@ def _without_related(fm: dict) -> dict:
 
 def _moved(names: list[str], old: set[str], new: str | None) -> list[str]:
     """``names`` with each one in ``old`` moved to ``new`` (dropped when ``new`` is None),
-    never repeating a name."""
+    never listing ``new`` twice. Every other entry stays as it is, where it is."""
     out: list[str] = []
     for name in names:
-        if name in old:
+        if name.strip() in old:
             if new is None:
                 continue
             name = new
-        if name not in out:
-            out.append(name)
+        if name == new and name in out:
+            continue
+        out.append(name)
     return out
 
 
@@ -183,18 +209,21 @@ def rewrite_related(text: str, old: set[str], new: str | None) -> str | None:
     """``text`` with every related_skills entry naming one of ``old`` moved to ``new``
     (an entry already naming ``new`` is not repeated; with ``new`` None the entries are
     dropped: the absorbing skill's own file never lists itself), or None when no
-    related_skills key names ``old`` or the rewrite cannot be proved exact. Only the
-    related_skills lines of the frontmatter change, and the result is parsed again: its
-    lists must be exactly the moved ones and every other frontmatter key and the body
-    unchanged."""
+    related_skills key names ``old`` or the rewrite cannot be proved exact. Only a list
+    of names (:func:`_names_only`) is rewritten, every entry kept as written however long
+    the list; any other value that names ``old`` makes the answer None. Only the
+    related_skills lines of the frontmatter change, and the result is parsed again: each
+    list must be exactly the moved one as parsed (not as the loader's capped view reads
+    it), no view of it may still name ``old``, and every other frontmatter key and the
+    body must be unchanged."""
     from .frontmatter import split_frontmatter
 
     fm, body = split_frontmatter(text, lenient=False)
     if not isinstance(fm, dict):
         return None
-    before = _related(fm)
-    if not any(set(names) & old for names in before.values()):
+    if not any(set(names) & old for names in _related(fm).values()):
         return None
+    before = _related_raw(fm)
     bom = "﻿" if text.startswith("﻿") else ""
     lines = text.removeprefix(bom).split("\n")
     end = next((i for i in range(1, len(lines)) if lines[i].rstrip() == "---"), None)
@@ -223,7 +252,12 @@ def rewrite_related(text: str, old: set[str], new: str | None) -> str | None:
         current = _parse_list(region)
         if current is None:
             return None
-        moved = _moved(current, old, new)
+        if not _names_only(current):
+            if set(_names(current)) & old:
+                return None            # names old, but not as a list of names: not rewritten
+            i = j
+            continue
+        moved = _moved(current, old, new) if set(_names(current)) & old else current
         if moved != current:
             if value and not value.startswith("["):
                 return None            # a scalar list ("a, b"): not rewritten by hand
@@ -243,19 +277,22 @@ def rewrite_related(text: str, old: set[str], new: str | None) -> str | None:
     after_fm, after_body = split_frontmatter(result, lenient=False)
     if not isinstance(after_fm, dict) or after_body != body:
         return None
-    after = _related(after_fm)
-    if set(after) != set(before) or any(after[k] != _moved(before[k], old, new) for k in before):
+    # Exact on the values as parsed: a list the loader's view would cap or coerce must not
+    # pass because both views agree (review-H330 r2).
+    expected = {key: _moved(value, old, new) if _names_only(value) and set(_names(value)) & old else value
+                for key, value in before.items()}
+    after = _related_raw(after_fm)
+    if after != expected or any(set(names) & old for names in _related(after_fm).values()):
         return None
     if _without_related(after_fm) != _without_related(fm):
         return None
     return result
 
 
-def _parse_list(region: str) -> list[str] | None:
-    """A related_skills value (flow list, block list) as names; None when it is not one."""
+def _parse_list(region: str) -> list | str | None:
+    """A related_skills value (flow list, block list, scalar) as parsed; None when it is
+    none of those."""
     import yaml
-
-    from .frontmatter import str_list
 
     try:
         data = yaml.safe_load(region if region.strip() else "[]")
@@ -264,7 +301,7 @@ def _parse_list(region: str) -> list[str] | None:
     if data is None:
         return []
     if isinstance(data, (list, str)):
-        return str_list(data)
+        return data
     return None
 
 
@@ -283,11 +320,18 @@ class Holders:
     load_set: Callable[[], dict] | None = None
 
     def bundle_list(self) -> list:
+        return self.bundle_snapshot()[0]
+
+    def bundle_snapshot(self) -> tuple[list, list[dict]]:
+        """``(bundles, skipped files)``: one read of the bundles folder, with every file
+        :func:`bundles.snapshot` skipped (it did not parse, it was too large, a second file
+        for one bundle) — a file that may name the skill and was not checked."""
         if self.bundles is not None:
-            return list(self.bundles())
+            return list(self.bundles()), []
         from . import bundles
 
-        return bundles.snapshot()[0]
+        loaded, skipped = bundles.snapshot()
+        return list(loaded), list(skipped)
 
     def switch_state(self) -> dict:
         if self.switches is not None:
@@ -347,13 +391,20 @@ def bundle_plan(deleted: dict[str, tuple[Any, str | None]], loaded: Iterable[Any
     each deleted skill's name to ``(skill, absorbed_into)``. A bundle whose deleted
     members all have an absorbing skill is rewritten (``allowed``, when given, holds the
     bundle slugs that may be: the ones the owner saw); the rest are reported. Each
-    rewrite carries its ``pin`` (:func:`bundle_pin` of the members before)."""
+    rewrite carries its ``pin`` (:func:`bundle_pin` of the members before). A bundle file
+    the folder read skipped is reported for every deleted skill, as unreadable: it was
+    neither checked nor migrated (review-H330 r2)."""
     from . import bundles
 
     pool = list(loaded)
     by_path = {str(Path(skill.path)): name for name, (skill, _new) in deleted.items()}
     rewrites, left = [], []
-    for bundle in holders.bundle_list():
+    found, skipped = holders.bundle_snapshot()
+    for problem in skipped:
+        for name in deleted:
+            left.append({"holder": "bundle", "skill": name, "file": str(problem.get("file") or ""),
+                         "unreadable": True, "why": str(problem.get("reason") or "")})
+    for bundle in found:
         hits: dict[str, str] = {}
         for member in bundle.skills:
             skill, _why = bundles.find_member(pool, member)
