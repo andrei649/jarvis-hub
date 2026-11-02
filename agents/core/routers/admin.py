@@ -839,9 +839,20 @@ async def admin_network_calls(plugin: str = Query(None), limit: int = Query(100)
     Still not instrumented at all (recorded so this docstring does not overclaim in the
     other direction): cloud TTS in `voice/tts.py`, `skills/importer.py`,
     `cameras/frigate.py`, `house/home_assistant.py` and `channels/telegram.py`.
+
+    H381 — the ledger survives a restart. Tallies and `recent` are read back from the
+    owner-only, bounded `egress_ledger.db` under the data root, so rows recorded before
+    this process started (or by another process on the same root, e.g. a CLI turn) are
+    served with this process's live ones; each row's `origin` is `live`, `restored` or
+    `unsaved` (its write failed and it is held in memory), and `ledger` reports
+    `persistent`, `since`, the stored/restored/live/queued/unsaved counts and any store
+    error. No prompt content is stored: time, row name, host, method, flags, a
+    URL-redacted reason. Events are written by a background thread (`queued` ones are
+    already served as `live`), and the file is read in a worker thread, so neither a
+    request hook nor this route waits for SQLite on the event loop.
     """
     from agents.core.observability.egress_monitor import EGRESS_MONITOR
-    return nocache_json(EGRESS_MONITOR.snapshot(plugin=plugin, limit=limit))
+    return nocache_json(await asyncio.to_thread(EGRESS_MONITOR.snapshot, plugin=plugin, limit=limit))
 
 
 # ── H10.22 Prompt Version Control (SOUL.md history / diff / rollback / A/B) ──

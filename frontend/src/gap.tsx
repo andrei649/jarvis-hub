@@ -3203,6 +3203,17 @@ export function ProjectsMode(_props: any) {
    clean. `model_egress_total` absent (an older backend) reads as unknown, never as zero —
    `?? null` rather than `|| 0`, since a missing measurement that renders as 0 is the same
    false all-clear in a different place. */
+/* H381 — the ledger survives a restart. The backend reads tallies and `recent` back from
+   the on-disk ledger, so the panel shows rows recorded before this hub started next to
+   live ones, and says which is which: the `ledger` row states since when the proof is
+   kept (or that it is memory-only and will be lost on restart, with the store error),
+   and the "where model calls went" rows list the newest model calls by host with their
+   origin — `restored` (an earlier or other process), `live`, or `unsaved` (the write
+   failed). An older backend with no `ledger` block renders no ledger claim at all. */
+const EGRESS_ORIGIN_COLOR: Record<string, string> = {
+  live: 'var(--green)', restored: 'var(--ink-2)', unsaved: 'var(--red)',
+};
+
 export function NetworkMonitorPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/network/calls', true, true);
   const plugins = (d && d.plugins) || {};
@@ -3211,6 +3222,8 @@ export function NetworkMonitorPanel() {
   const violations = (d && d.local_only_violations) || [];
   const clean = d ? d.clean : true;
   const model = d && d.model_egress_total != null ? Number(d.model_egress_total) : null;
+  const ledger = d && d.ledger ? d.ledger : null;
+  const prompts = ((d && d.recent) || []).filter((r) => String(r.plugin || '').startsWith('llm:')).slice(0, 6);
   const headline = !d ? null
     : !clean ? 'VIOLATION'
     : model == null ? 'no policy violations · model egress unmeasured'
@@ -3234,6 +3247,35 @@ export function NetworkMonitorPanel() {
       {violations.length > 0 && (
         <Row><span style={{ ...mono, color: 'var(--red)' }}>⚠ local-only egress: {violations.join(', ')}</span></Row>
       )}
+      {ledger && (
+        <Row>
+          <span style={mono}>ledger</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+            {ledger.persistent
+              ? <Tag c="var(--green)">{ledger.since ? `saved since ${String(ledger.since).slice(0, 10)}` : 'saved · empty'}</Tag>
+              : <Tag c="var(--amber)">memory only — lost on restart</Tag>}
+            {ledger.persistent && <Tag c="var(--ink-2)">{`${Number(ledger.restored_events || 0)} restored`}</Tag>}
+            <Tag c="var(--green)">{`${Number(ledger.live_events || 0)} live`}</Tag>
+            {Number(ledger.unsaved_events || 0) > 0 && <Tag c="var(--red)">{`${Number(ledger.unsaved_events)} unsaved`}</Tag>}
+          </span>
+        </Row>
+      )}
+      {ledger && ledger.error && (
+        <Row><span style={{ ...mono, fontSize: 10, color: 'var(--amber)' }}>ledger store: {String(ledger.error)}</span></Row>
+      )}
+      {prompts.length > 0 && (
+        <Row><span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>where model calls went</span></Row>
+      )}
+      {prompts.map((r, i) => (
+        <Row key={`${r.ts}-${i}`}>
+          <span style={{ ...mono, fontSize: 11 }}>{`${r.plugin} → ${r.host || '?'}`}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {!r.allowed && <Tag c="var(--red)">refused</Tag>}
+            {r.origin && <Tag c={EGRESS_ORIGIN_COLOR[r.origin] || 'var(--ink-2)'}>{r.origin}</Tag>}
+            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{String(r.ts || '').slice(5, 16).replace('T', ' ')}</span>
+          </span>
+        </Row>
+      ))}
       {names.map((name) => {
         const p = plugins[name];
         return (

@@ -150,16 +150,42 @@ def _echo_matches(body: Mapping, echo: object) -> bool:
 
 
 class HttpxJSONTransport:
-    """Default LAN transport: one POST, no redirects, no proxies, short timeout."""
+    """Default LAN transport: one POST, no redirects, no proxies, short timeout.
 
-    def __init__(self, timeout: float = _DEFAULT_TIMEOUT) -> None:
+    The destination is checked here, not trusted to the caller (H381): the URL's origin
+    must pass the same LAN-only rule as the configured strip (``validate_wled_origin``
+    with this transport's allowlist, every resolved address on the LAN), and it must be
+    a bare origin plus a path, so this transport cannot be pointed off the LAN.
+    """
+
+    def __init__(self, timeout: float = _DEFAULT_TIMEOUT, *,
+                 allowed_hosts: tuple[str, ...] = (), resolver=None) -> None:
         self._timeout = float(timeout)
+        self._allowed_hosts = tuple(allowed_hosts)
+        self._resolver = resolver
+
+    def _lan_destination(self, url: object) -> bool:
+        if not isinstance(url, str):
+            return False
+        try:
+            parsed = urlparse(url)
+            origin = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+            if parsed.query or parsed.fragment or parsed.params:
+                return False
+            validate_wled_origin(origin, allowed_hosts=self._allowed_hosts,
+                                 resolver=self._resolver)
+        except (ValueError, WLEDConfigError):
+            return False
+        return True
 
     async def __call__(self, url: str, body: Mapping) -> dict:
         try:
             import httpx
         except ImportError:
             return {"ok": False, "reason": "dependency_unavailable:httpx"}
+        # Blocking DNS (the LAN check resolves the host): off the event loop.
+        if not await asyncio.to_thread(self._lan_destination, url):
+            return {"ok": False, "reason": "wled_url_rejected"}
         try:
             async with httpx.AsyncClient(
                 follow_redirects=False, trust_env=False, timeout=self._timeout
@@ -193,9 +219,10 @@ class WLEDBridge:
     ) -> None:
         raw = env_str(WLED_URL_ENV) if url is None else url
         self._url = raw.strip() if isinstance(raw, str) else ""
-        self._transport = transport or HttpxJSONTransport()
         self._allowed_hosts = tuple(allowed_hosts)
         self._resolver = resolver
+        self._json_transport = transport or HttpxJSONTransport(
+            allowed_hosts=self._allowed_hosts, resolver=resolver)
         self._clock = clock or time.monotonic
         self._agent = agent
         self._budget = max(1, int(writes_per_minute))
@@ -253,7 +280,7 @@ class WLEDBridge:
         if origin is None:
             return {"ok": False, "reason": "wled_url_rejected"}
         body = scene_payload(str(payload.get("scene", "")))
-        result = self._transport(f"{origin}/json/state", body)
+        result = self._json_transport(f"{origin}/json/state", body)
         if asyncio.iscoroutine(result) or hasattr(result, "__await__"):
             result = await result
         if not isinstance(result, Mapping) or not result.get("ok"):
