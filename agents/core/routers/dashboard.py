@@ -3,6 +3,9 @@
 Covers the HUD-facing surface only: `GET /dashboard` (weather + calendar +
 notifications), `GET /tasks` (autonomy-queue tasks), and `GET /ticker` (live
 status ticker). Behavior is byte-frozen — the inline handlers moved verbatim.
+Also the "Today" timeline (`GET /api/dashboard/today`) and, by its stable ids,
+read / edit / delete of one learned entry of it
+(`/api/dashboard/today/entries/{entry_id}`, H046, crossing `kg.write`).
 
 The orchestrator is resolved at request time via `get_orch()` (late binding to
 `web.orch`), matching the other extracted routers.
@@ -16,15 +19,16 @@ does `monkeypatch.setattr(web, "_dashboard_cache", ...)` / `_dashboard_lock`), a
 import edge back into `agents.web`.
 """
 
+import asyncio
 import logging
 import sys
 import time
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StrictStr
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
@@ -203,14 +207,21 @@ async def get_tasks(
 
 
 @router.get("/api/dashboard/today", dependencies=[Depends(user_guard)])
-async def dashboard_today(days: int = Query(1, ge=1, le=30)):
+async def dashboard_today(days: int = Query(1, ge=1, le=30), limit: int = Query(50, ge=1, le=500),
+                          kind: Literal["action", "learning", "followup"] | None = None):
     """P1 G1 — the unified "Today in Jarvis" feed.
 
     Fuses what Jarvis *did* (completed autonomy actions) and what it *learned*
     (new / updated memory facts) into one timestamp-ordered story — closing the
     gap where the task recap (`autonomy/digest.py`) and learnings (`memory/digest.py`)
     lived in separate places. Pure read over existing rows; `user_guard`'d because
-    it surfaces personal facts. `days` defaults to 1 ("today"), clamped 1–30."""
+    it surfaces personal facts. `days` defaults to 1 ("today"), clamped 1–30.
+
+    H046 (the learning timeline `nerva journey` prints): every item carries a stable
+    ``entry_id``; ``kind`` keeps one kind of item and ``limit`` (default 50, at most
+    500) bounds the newest items returned; ``counts`` always covers the whole window.
+    A learned entry is read, edited and deleted by that id under
+    ``/api/dashboard/today/entries/{entry_id}``."""
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
@@ -228,7 +239,153 @@ async def dashboard_today(days: int = Query(1, ge=1, le=30)):
         memory_entries = []
 
     from agents.core.memory.timeline import build_unified_digest
-    return nocache_json(build_unified_digest(queue, memory_entries, days=days))
+    return nocache_json(build_unified_digest(queue, memory_entries, days=days, limit=limit, kind=kind))
+
+
+# ── H046: one learned entry of the timeline, by its id (Hermes `hermes journey`) ─────
+# A learned entry is a fact in the memory store, so changing or deleting one is a memory
+# write: it crosses `kg.write` exactly as the externally-driven `/api/kg/*` writes do (the
+# write contract, then the Action Kernel with a capability token, minted for the already
+# proven caller when none is presented), and the kernel's deny comes before the lookup so
+# a halt never says whether the entry exists. An action is the hub's record of what it
+# did and a follow-up is derived from another entry: neither is learned material.
+
+_LEARNING_VALUE_MAX = 2000
+_GONE = object()   # the store call has not answered (a cancelled call may still have written)
+
+
+class TimelineEntryEdit(BaseModel):
+    """The new text of a learned entry; its category and key stay what they are."""
+
+    value: StrictStr = Field(..., max_length=_LEARNING_VALUE_MAX)
+
+
+def _learned_row_id(entry_id: str):
+    """``(memory row id, None)`` for a learned entry's id, else ``(None, the refusal)``."""
+    from agents.core.memory.timeline import parse_entry_id
+
+    parsed = parse_entry_id(entry_id)
+    if parsed is None:
+        return None, JSONResponse(
+            {"error": "not a timeline entry id: learning:<n>, action:<n> or followup:<reason>:<source>"},
+            status_code=400)
+    kind, ref = parsed
+    if kind == "action":
+        return None, JSONResponse(
+            {"error": "an action is the hub's record of what it did, not something it learned; "
+                      "only a learned entry is read, edited or deleted here", "kind": kind},
+            status_code=409)
+    if kind == "followup":
+        return None, JSONResponse(
+            {"error": f"a follow-up is derived from {ref}; read, edit or delete that entry instead",
+             "kind": kind, "source": ref},
+            status_code=409)
+    return int(ref), None
+
+
+def _learning_write_denied(orch, payload: dict, req: Request | None):
+    """The kg.write mediation every externally-driven memory write takes, or None (allow)."""
+    from agents.core.routers.memory_kg import _kg_contract_denial, _kg_kernel_denial
+
+    denied = _kg_contract_denial(payload)
+    if denied is not None:
+        return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    # req is None only for a direct (non-HTTP) call; the kernel helper then mints the token.
+    token_id = req.headers.get("x-capability-token", "") if req is not None else ""
+    denied = _kg_kernel_denial(orch, payload, token_id)
+    if denied is not None:
+        return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
+    return None
+
+
+async def _memory_store():
+    from agents.core.memory.store import MemoryStore
+
+    return await asyncio.to_thread(MemoryStore)   # opens SQLite (WAL): off the loop
+
+
+@router.get("/api/dashboard/today/entries/{entry_id}", dependencies=[Depends(user_guard)])
+async def dashboard_today_entry(entry_id: str):
+    """One learned entry of the timeline, whatever its age (the feed shows 30 days at most)."""
+    if not get_orch():
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    row_id, refusal = _learned_row_id(entry_id)
+    if refusal is not None:
+        return refusal
+    from agents.core.memory.timeline import learning_item
+
+    row = await (await _memory_store()).get_by_id(row_id)
+    if row is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return nocache_json({"entry": learning_item(row)})
+
+
+@router.patch("/api/dashboard/today/entries/{entry_id}", dependencies=[Depends(user_guard)])
+async def dashboard_today_entry_edit(entry_id: str, body: TimelineEntryEdit, req: Request = None):
+    """Change what a learned entry says. Body: ``{value}`` (text, at most 2000 characters).
+
+    The entry keeps its id, category and key; it moves to now on the timeline because it
+    changed now. An unchanged value writes nothing (``changed: false``)."""
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    row_id, refusal = _learned_row_id(entry_id)
+    if refusal is not None:
+        return refusal
+    value = body.value.strip()
+    if not value:
+        return JSONResponse({"error": "value required (to remove the entry, delete it)"}, status_code=400)
+    denied = _learning_write_denied(
+        orch, {"op": "edit_learning", "entry": entry_id, "value_len": len(value)}, req)
+    if denied is not None:
+        return denied
+    from agents.core.memory.timeline import learning_item
+    from agents.core.routers.memory_kg import _recall_forget
+
+    store = await _memory_store()
+    current = await store.get_by_id(row_id)
+    if current is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if current.get("value") == value:
+        return nocache_json({"ok": True, "changed": False, "entry": learning_item(current)})
+    row = _GONE
+    try:
+        row = await store.update_value_by_id(row_id, value)
+    finally:
+        if row is not None:
+            # The old wording must not come back from a cached recall result (H428).
+            _recall_forget(orch)
+    if row is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return nocache_json({"ok": True, "changed": True, "entry": learning_item(row)})
+
+
+@router.delete("/api/dashboard/today/entries/{entry_id}", dependencies=[Depends(user_guard)])
+async def dashboard_today_entry_delete(entry_id: str, req: Request = None):
+    """Forget a learned entry: the fact leaves the memory store (and its search index and
+    write-ahead log), so it leaves the timeline and every brief that reads the store."""
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    row_id, refusal = _learned_row_id(entry_id)
+    if refusal is not None:
+        return refusal
+    denied = _learning_write_denied(orch, {"op": "delete_learning", "entry": entry_id}, req)
+    if denied is not None:
+        return denied
+    from agents.core.routers.memory_kg import _recall_forget
+
+    store = await _memory_store()
+    removed = _GONE
+    try:
+        removed = await store.delete_by_id(row_id)
+    finally:
+        if removed is not None:
+            _recall_forget(orch)
+    if removed is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return nocache_json({"ok": True, "deleted": entry_id,
+                         "category": removed.get("category"), "key": removed.get("key")})
 
 
 @router.get("/ticker", dependencies=[Depends(user_guard)])

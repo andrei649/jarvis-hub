@@ -7680,9 +7680,11 @@ export interface paths {
          *     memory, ``cognition``, as the running hub reads them, a product posture included),
          *     whether the core block reaches the prompt (``injected``) and the model's memory tool
          *     can write (``tool``), and per ring (``memory``: the agent's notes, ``user``: the user
-         *     profile) the bytes its file holds, its entries, the characters they take against the
-         *     section's budget, what the next block shows, leaves out and blocks, and what else a
-         *     reset erases with it (``copies``: hand-edit ``.bak`` files, ``undo_writes``). Reported
+         *     profile) the bytes its file holds, its entries, the characters it holds (``chars``: the
+         *     figure every writer is refused past, ``core_block.stored_chars``) against the section's
+         *     budget, what the next block shows, leaves out and blocks (``rendered_chars``: what the
+         *     section takes in the prompt), and what else a reset erases with it (``copies``:
+         *     hand-edit ``.bak`` files, ``undo_writes``). Reported
          *     with memory switched off too; ``builtin_files`` is Hermes's bytes-per-store shape.
          */
         get: operations["memory_status_api_memory_get"];
@@ -9112,6 +9114,12 @@ export interface paths {
          *     gap where the task recap (`autonomy/digest.py`) and learnings (`memory/digest.py`)
          *     lived in separate places. Pure read over existing rows; `user_guard`'d because
          *     it surfaces personal facts. `days` defaults to 1 ("today"), clamped 1–30.
+         *
+         *     H046 (the learning timeline `nerva journey` prints): every item carries a stable
+         *     ``entry_id``; ``kind`` keeps one kind of item and ``limit`` (default 50, at most
+         *     500) bounds the newest items returned; ``counts`` always covers the whole window.
+         *     A learned entry is read, edited and deleted by that id under
+         *     ``/api/dashboard/today/entries/{entry_id}``.
          */
         get: operations["dashboard_today_api_dashboard_today_get"];
         put?: never;
@@ -9120,6 +9128,38 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/today/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Today Entry
+         * @description One learned entry of the timeline, whatever its age (the feed shows 30 days at most).
+         */
+        get: operations["dashboard_today_entry_api_dashboard_today_entries__entry_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Dashboard Today Entry Delete
+         * @description Forget a learned entry: the fact leaves the memory store (and its search index and
+         *     write-ahead log), so it leaves the timeline and every brief that reads the store.
+         */
+        delete: operations["dashboard_today_entry_delete_api_dashboard_today_entries__entry_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Dashboard Today Entry Edit
+         * @description Change what a learned entry says. Body: ``{value}`` (text, at most 2000 characters).
+         *
+         *     The entry keeps its id, category and key; it moves to now on the timeline because it
+         *     changed now. An unchanged value writes nothing (``changed: false``).
+         */
+        patch: operations["dashboard_today_entry_edit_api_dashboard_today_entries__entry_id__patch"];
         trace?: never;
     };
     "/ticker": {
@@ -15790,6 +15830,14 @@ export interface components {
              * Format: date-time
              */
             as_of: string;
+        };
+        /**
+         * TimelineEntryEdit
+         * @description The new text of a learned entry; its category and key stay what they are.
+         */
+        TimelineEntryEdit: {
+            /** Value */
+            value: string;
         };
         /** ToolRPCCallBody */
         ToolRPCCallBody: {
@@ -30492,12 +30540,111 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
+                limit?: number;
+                kind?: ("action" | "learning" | "followup") | null;
             };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entry_api_dashboard_today_entries__entry_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entry_delete_api_dashboard_today_entries__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entry_edit_api_dashboard_today_entries__entry_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimelineEntryEdit"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -63,6 +63,10 @@ _KG_WRITE_OPS = frozenset({
     "delete_relation",
     "add_fact",
     "ingest",
+    # H046: a learned entry of the timeline (a memory-store fact) changed or deleted by
+    # its id from GET /api/dashboard/today (routers/dashboard.py).
+    "edit_learning",
+    "delete_learning",
 })
 
 
@@ -103,7 +107,8 @@ def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope
     a missing capability token, or a *presented* token that lacks ``kg:write``).
 
     **Boundary (the whole point of this slice):** only the externally-driven ``/api/kg/*``
-    HTTP handlers call this. The high-frequency *internal* ingestion path — incremental
+    HTTP handlers call this, and (H046) the timeline's learned-entry edit and delete
+    (``/api/dashboard/today/entries/{entry_id}``, routers/dashboard.py). The high-frequency *internal* ingestion path — incremental
     ``IncrementalKGUpdater.ingest`` from ``orchestrator._record_interactions``, ``seed_graph``,
     reflection promotion — writes ``graph.add_entity``/``add_relation`` DIRECTLY and
     never traverses these handlers, so it pays no per-write kernel cost and a halt never

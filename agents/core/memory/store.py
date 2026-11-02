@@ -587,6 +587,77 @@ class MemoryStore:
             finally:
                 conn.close()
 
+    # ── H046: one fact by its row id (the learning timeline's ``learning:<id>``) ──
+    # The id is AUTOINCREMENT: an upsert keeps it, and a deleted fact's id is never
+    # given to another one, so an id read from the timeline can only ever name that fact.
+
+    async def get_by_id(self, row_id: int) -> Optional[dict]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_by_id_sync, row_id)
+
+    def _get_by_id_sync(self, row_id: int) -> Optional[dict]:
+        with self._lock:
+            conn = self._conn()
+            try:
+                row = conn.execute("SELECT * FROM memory WHERE id=?", (row_id,)).fetchone()
+                return dict(row) if row else None
+            finally:
+                conn.close()
+
+    async def delete_by_id(self, row_id: int) -> Optional[dict]:
+        """Delete the fact with this id, erased the way :meth:`delete` erases one (its
+        index terms and its pages in the write-ahead log too). The row as it was, or
+        None when no fact has that id."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._delete_by_id_sync, row_id)
+
+    def _delete_by_id_sync(self, row_id: int) -> Optional[dict]:
+        with self._lock:
+            conn = self._conn()
+            try:
+                with conn:
+                    row = conn.execute("SELECT * FROM memory WHERE id=?", (row_id,)).fetchone()
+                    if row is None:
+                        return None
+                    if self._fts:
+                        try:
+                            conn.execute("DELETE FROM memory_fts WHERE rowid=?", (row_id,))
+                        except sqlite3.DatabaseError as exc:
+                            self._fts_failed(exc)
+                    if conn.execute("DELETE FROM memory WHERE id=?", (row_id,)).rowcount == 0:
+                        return None
+                    self._purge_fts_deletes(conn)
+                self._truncate_wal(conn)
+                return dict(row)
+            finally:
+                conn.close()
+
+    async def update_value_by_id(self, row_id: int, value: str) -> Optional[dict]:
+        """Replace the value of the fact with this id (its category, key and metadata
+        stay; ``updated_at`` becomes now), reindexed and with the old value's pages out
+        of the write-ahead log as an upsert leaves them. The row as it now is, or None
+        when no fact has that id."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._update_value_by_id_sync, row_id, value)
+
+    def _update_value_by_id_sync(self, row_id: int, value: str) -> Optional[dict]:
+        with self._lock:
+            conn = self._conn()
+            try:
+                with conn:
+                    changed = conn.execute(
+                        "UPDATE memory SET value=?, updated_at=datetime('now') WHERE id=?",
+                        (value, row_id),
+                    ).rowcount
+                    if not changed:
+                        return None
+                    row = conn.execute("SELECT * FROM memory WHERE id=?", (row_id,)).fetchone()
+                    self._index_row(conn, row["category"], row["key"])
+                self._truncate_wal(conn)
+                return dict(row)
+            finally:
+                conn.close()
+
     async def search(self, query: str, limit: int = 10) -> list[dict]:
         """Basic text search — semantic search stubbed for H8.3."""
         loop = asyncio.get_event_loop()

@@ -3803,9 +3803,22 @@ export function BackupPanel() {
   );
 }
 
+const TODAY_TAGS = { action: ['did', 'var(--green)'], learning: ['learned', 'var(--accent-light)'], followup: ['follow-up', 'var(--amber)'] };
+
+function todayText(it) {
+  if (it.kind === 'action') return it.title || `#${it.id}`;
+  if (it.kind === 'followup') return it.detail ? `${it.title}: ${it.detail}` : String(it.title || '');
+  return `${it.key}: ${it.value}`;
+}
+
 export function TodayPanel() {
   // P1 G1 — "Today in Jarvis": what Jarvis *did* (autonomy) + *learned* (memory) in one feed.
+  // H046 — each entry carries a stable id; a learned one is edited or forgotten by it (the
+  // hub crosses kg.write: a halted kernel refuses, and the refusal is shown, not swallowed).
   const { d, e, loading, reload } = useApi('/api/dashboard/today');
+  const [editing, setEditing] = useState(null);
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState(null);
   const items = (d && d.items) || [];
   const c = (d && d.counts) || {};
   const fmt = (ts) => {
@@ -3813,18 +3826,48 @@ export function TodayPanel() {
     const t = new Date(String(ts).replace(' ', 'T'));
     return isNaN(t.getTime()) ? String(ts) : t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+  const refused = (err) => { setMsg(`refused · ${refusalReason(err)}`); return false; };
+  const save = (it) => {
+    const value = text.trim();
+    if (!value) { setMsg('refused · the new text is empty (forget removes an entry)'); return; }
+    apiPatch('/api/dashboard/today/entries/' + encodeURIComponent(it.entry_id), { value })
+      .then((r: any) => { setEditing(null); setMsg(r && r.changed === false ? `unchanged · ${it.key}` : `saved · ${it.key}`); reload(); })
+      .catch(refused);
+  };
+  const forget = (it) => apiDelete('/api/dashboard/today/entries/' + encodeURIComponent(it.entry_id))
+    .then(() => { if (editing === it.entry_id) setEditing(null); setMsg(`forgot · ${it.key}`); reload(); })
+    .catch(refused);
   return (
     <Card title="TODAY" live={asLive(d)} sub={d ? `${c.actions || 0} did · ${c.learnings || 0} learned` : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
-      {items.slice(0, 12).map((it, i) => (
-        <Row key={i}>
-          <Tag c={it.kind === 'action' ? 'var(--green)' : 'var(--accent-light)'}>{it.kind === 'action' ? 'did' : 'learned'}</Tag>
-          <span style={{ fontSize: 11, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {it.kind === 'action' ? (it.title || `#${it.id}`) : `${it.key}: ${it.value}`}
-          </span>
-          <span style={{ marginLeft: 'auto', ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>{fmt(it.ts)}</span>
-        </Row>
-      ))}
+      {items.slice(0, 12).map((it, i) => {
+        const [tag, colour] = TODAY_TAGS[it.kind] || [String(it.kind || '?'), 'var(--ink-2)'];
+        const changeable = it.kind === 'learning' && !!it.entry_id;
+        return (
+          <React.Fragment key={it.entry_id || i}>
+            <Row>
+              <Tag c={colour}>{tag}</Tag>
+              <span title={it.entry_id || undefined} style={{ fontSize: 11, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {todayText(it)}
+              </span>
+              <span style={{ marginLeft: 'auto', ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>{fmt(it.ts)}</span>
+              {changeable && <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <button className="tool-btn" aria-label={`edit ${it.key}`} title="change what was learned"
+                  onClick={() => { setEditing(it.entry_id); setText(String(it.value ?? '')); setMsg(null); }}>edit</button>
+                <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="forget" armedLabel="confirm forget" ariaLabel={`forget ${it.key}`}
+                  prompt={`forget ${it.key} for good?`} onConfirm={() => forget(it)} />
+              </span>}
+            </Row>
+            {changeable && editing === it.entry_id && <div style={{ display: 'flex', gap: 6, margin: '4px 0' }}>
+              <input aria-label={`new text for ${it.key}`} value={text} maxLength={2000}
+                onChange={(ev) => setText(ev.target.value)} style={{ ...inpS, flex: 1 }} />
+              <button className="tool-btn" onClick={() => save(it)}>save</button>
+              <button className="tool-btn" onClick={() => setEditing(null)}>cancel</button>
+            </div>}
+          </React.Fragment>
+        );
+      })}
+      {msg && <div role="status" style={{ fontSize: 10, color: msg.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     </Card>
   );
 }

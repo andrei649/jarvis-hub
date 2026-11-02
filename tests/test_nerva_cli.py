@@ -89,10 +89,14 @@ def test_the_command_tree_is_discoverable_and_complete():
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
         "uninstall", "backup", "pairing", "webhook", "provider", "goal", "memory",
+        "journey", "learning", "memory-graph",
     }
     # H422: Hermes's `hermes memory status|reset|off` for the two core rings; reset is the
     # only verb that erases, after a typed `yes`.
     assert tree["memory"] == ["off", "on", "reset", "status"]
+    # H046: Hermes's `hermes journey` and its two aliases are one verb; edit and delete
+    # change one learned entry and cross kg.write on the hub.
+    assert tree["journey"] == tree["learning"] == tree["memory-graph"] == ["delete", "edit", "list", "show"]
     # H039: the Hermes `hermes webhook` verbs; `test` is dry (a signed sample, nothing runs).
     assert tree["webhook"] == ["list", "remove", "subscribe", "test"]
     # The owner-managed compatible endpoint is one explicit local CLI family.

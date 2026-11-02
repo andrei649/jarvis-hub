@@ -517,6 +517,37 @@ def build_parser() -> argparse.ArgumentParser:
         "on", help="bring the curated memory back into the prompt after `nerva memory off` (admin)")
     memory_on.add_argument("--json", action="store_true")
 
+    # H046 — Hermes's `hermes journey` (aliases `learning`, `memory-graph`): the learning
+    # timeline the HUD's TODAY card reads, and one learned entry edited or forgotten by id.
+    journey = verbs.add_parser(
+        "journey", aliases=list(_JOURNEY_ALIASES),
+        help="look back at what the assistant did and learned: the timeline, and edit or forget "
+             "one learned entry by its id (user)")
+    journey_verbs = journey.add_subparsers(dest="action", metavar="action")
+    journey_list = journey_verbs.add_parser(
+        "list", help="the timeline, newest first, each entry with its id (the default)")
+    journey_list.add_argument("--days", type=_bounded_int(1, 30), metavar="1-30", default=_JOURNEY_DAYS,
+                              help=f"how far back to look (default {_JOURNEY_DAYS}, the most the timeline serves)")
+    journey_list.add_argument("--kind", choices=("action", "learning", "followup"),
+                              help="only one kind of entry (learning: only what it learned)")
+    journey_list.add_argument("--limit", type=_bounded_int(1, 500), metavar="1-500", default=_JOURNEY_LIMIT,
+                              help=f"at most this many entries, newest first (default {_JOURNEY_LIMIT})")
+    journey_list.add_argument("--json", action="store_true")
+    journey_show = journey_verbs.add_parser("show", help="one learned entry, whatever its age")
+    journey_show.add_argument("entry", help="the id `nerva journey list` prints (learning:<n>)")
+    journey_show.add_argument("--json", action="store_true")
+    journey_delete = journey_verbs.add_parser(
+        "delete", help="forget one learned entry for good (crosses kg.write)")
+    journey_delete.add_argument("entry", help="the id `nerva journey list` prints (learning:<n>)")
+    journey_delete.add_argument("--yes", "-y", action="store_true", help="skip the typed confirmation")
+    journey_delete.add_argument("--json", action="store_true")
+    journey_edit = journey_verbs.add_parser(
+        "edit", help="change what one learned entry says: in $VISUAL/$EDITOR, or --text (crosses kg.write)")
+    journey_edit.add_argument("entry", help="the id `nerva journey list` prints (learning:<n>)")
+    journey_edit.add_argument("--text", metavar="TEXT",
+                              help="the new text, without opening an editor ('-' reads it from stdin)")
+    journey_edit.add_argument("--json", action="store_true")
+
     webhook = verbs.add_parser("webhook", help="inbound webhooks: subscribe an external system's events to an agent (admin, H039)")
     webhook_verbs = webhook.add_subparsers(dest="action", required=True, metavar="action")
     webhook_subscribe = webhook_verbs.add_parser(
@@ -1724,6 +1755,18 @@ def _run_editor(argv: list[str], path: str) -> int:
     return subprocess.run([*argv, path], check=False).returncode  # noqa: S603  # nosec B603
 
 
+def _editor_failure(exc: OSError) -> str:
+    """Why the owner's editor did not start, in the words ``config edit`` and ``journey
+    edit`` both print."""
+    import errno
+
+    if isinstance(exc, FileNotFoundError):
+        return "not found"
+    if isinstance(exc, PermissionError) or exc.errno == errno.ENOEXEC or getattr(exc, "winerror", None) == 193:
+        return "not executable"
+    return "could not start"
+
+
 def _edit_document(settings: Any) -> tuple[str, dict[str, Mapping[str, Any]]]:
     """The file the editor opens, and by name the rows it may change. A secret, a
     route-only row and an undeclared row are named in a comment, their value never
@@ -1781,7 +1824,6 @@ def _config_edit(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
     values that differ afterwards are written, each through ``config set``'s checks, and
     every line that cannot be written is named. A failed editor writes nothing."""
     import contextlib
-    import errno
     import tempfile
 
     document, editable = _edit_document(settings)
@@ -1793,18 +1835,8 @@ def _config_edit(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
         try:
             status = _run_editor(argv, temporary)
         except OSError as exc:
-            if isinstance(exc, FileNotFoundError):
-                why = "not found"
-            elif (
-                isinstance(exc, PermissionError)
-                or exc.errno == errno.ENOEXEC
-                or getattr(exc, "winerror", None) == 193
-            ):
-                why = "not executable"
-            else:
-                why = "could not start"
-            ctx.err.write(f"editor {_plain(argv[0], 80)} {why} — set $VISUAL or $EDITOR to one; "
-                          "nothing changed\n")
+            ctx.err.write(f"editor {_plain(argv[0], 80)} {_editor_failure(exc)} — set $VISUAL or $EDITOR "
+                          "to one; nothing changed\n")
             return EXIT_FAILED
         if status != 0:
             ctx.err.write(f"editor exited {status}; nothing changed\n")
@@ -3596,6 +3628,211 @@ def cmd_memory(ns: argparse.Namespace, ctx: Context) -> int:
     if reply.get("audited") is False:
         ctx.say("note: the intent log could not record this reset")
     return EXIT_OK
+
+
+#: H046 — Hermes names the same verb `journey`, `learning` and `memory-graph`.
+_JOURNEY_ALIASES = ("learning", "memory-graph")
+_JOURNEY_DAYS = 30      # the widest window GET /api/dashboard/today serves
+_JOURNEY_LIMIT = 50
+_JOURNEY_PATH = "/api/dashboard/today"
+_JOURNEY_TAGS = {"action": "did", "learning": "learned", "followup": "follow-up"}
+
+
+def _bounded_int(low: int, high: int) -> Callable[[str], int]:
+    """An argparse ``type``: a whole number in ``low..high``, else a usage error."""
+    def parse(text: str) -> int:
+        try:
+            value = int(text)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"not a whole number: {text!r}") from None
+        if not low <= value <= high:
+            raise argparse.ArgumentTypeError(f"{value} is outside {low}-{high}")
+        return value
+    return parse
+
+
+def _journey_entry_path(entry: str) -> str:
+    return f"{_JOURNEY_PATH}/entries/{quote(entry, safe=':')}"
+
+
+def _journey_text(item: Mapping[str, Any]) -> str:
+    """What one timeline entry says, on one line."""
+    kind = item.get("kind")
+    if kind == "learning":
+        where = "/".join(str(part) for part in (item.get("category"), item.get("key")) if part)
+        return f"{where}: {item.get('value')}"
+    if kind == "followup":
+        detail = item.get("detail")
+        return f"{item.get('title')}" + (f": {detail}" if detail else "")
+    return str(item.get("title") or f"task #{item.get('id')}")
+
+
+def _journey_when(item: Mapping[str, Any]) -> str:
+    epoch = item.get("epoch")
+    if isinstance(epoch, (int, float)) and not isinstance(epoch, bool):
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(epoch))
+    return _plain(item.get("ts") or "?", 16)
+
+
+def _journey_reply(reply: Any) -> Mapping[str, Any]:
+    entry = reply.get("entry") if isinstance(reply, dict) else None
+    if not isinstance(entry, Mapping):
+        raise HubError(502, "unexpected reply from the hub: no entry in it")
+    return entry
+
+
+def cmd_journey(ns: argparse.Namespace, ctx: Context) -> int:
+    """H046 — `nerva journey` (also `nerva learning` / `nerva memory-graph`), Hermes's
+    `hermes journey`: look back at what the assistant did and learned.
+
+    ``list`` (the default) prints the timeline the HUD's TODAY card reads (``GET
+    /api/dashboard/today``), newest first, each entry with its stable id. ``show`` reads
+    one learned entry by that id, whatever its age. ``delete`` forgets one (after a typed
+    ``yes`` unless ``--yes``) and ``edit`` changes what it says, in ``$VISUAL``/``$EDITOR``
+    or from ``--text``: both are memory writes and cross ``kg.write`` on the hub (the
+    Action Kernel, when it is on, decides; a refusal is printed and nothing changes).
+    Only a learned entry can be changed: an action is the record of what the hub did.
+    """
+    client = ctx.client()
+    action = ns.action or "list"
+    as_json = bool(getattr(ns, "json", False))
+    if action == "list":
+        query = {"days": getattr(ns, "days", _JOURNEY_DAYS), "limit": getattr(ns, "limit", _JOURNEY_LIMIT)}
+        if getattr(ns, "kind", None):
+            query["kind"] = ns.kind
+        reply = client.get(f"{_JOURNEY_PATH}?{urlencode(query)}")
+        if as_json:
+            ctx.dump(reply)
+            return EXIT_OK
+        items = reply.get("items") if isinstance(reply, dict) else None
+        if not isinstance(items, list):
+            ctx.err.write("unexpected reply from the hub: no timeline items in it\n")
+            return EXIT_FAILED
+        counts = reply.get("counts") if isinstance(reply.get("counts"), Mapping) else {}
+        summary = [f"{int(counts.get('actions') or 0)} did", f"{int(counts.get('learnings') or 0)} learned"]
+        if counts.get("followups"):
+            summary.append(f"{int(counts['followups'])} follow-ups")
+        ctx.say(f"journey · last {reply.get('days', query['days'])} day(s) · " + " · ".join(summary))
+        if not items:
+            ctx.say("nothing in this window yet")
+            return EXIT_OK
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            tag = _JOURNEY_TAGS.get(str(item.get("kind")), _plain(item.get("kind"), 10))
+            ctx.say(f"{_journey_when(item)}  {tag:<9}  {_plain(item.get('entry_id') or '-', 48):<22}  "
+                    f"{_plain(_journey_text(item), 160)}")
+        total = int(counts.get("total") or 0)
+        if len(items) < total and not getattr(ns, "kind", None):
+            ctx.say(f"showing the newest {len(items)} of {total} (--limit shows more, --kind narrows)")
+        return EXIT_OK
+
+    path = _journey_entry_path(ns.entry)
+    if action == "show":
+        reply = client.get(path)
+        if as_json:
+            ctx.dump(reply)
+            return EXIT_OK
+        entry = _journey_reply(reply)
+        ctx.say(f"{_plain(entry.get('entry_id'), 48)}  {_journey_when(entry)}  {_plain(_journey_text(entry), 400)}")
+        return EXIT_OK
+
+    if action == "delete":
+        entry = _journey_reply(client.get(path))
+        if not ns.yes:
+            ctx.say(f"This forgets, for good: {_plain(_journey_text(entry), 400)}")
+            ctx.out.write("Type 'yes' to confirm: ")
+            if callable(getattr(ctx.out, "flush", None)):
+                ctx.out.flush()
+            try:
+                answer = ctx.inp.readline() if ctx.inp is not None else ""
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+            if (answer or "").strip().lower() != "yes":
+                ctx.say("\nCancelled — nothing was forgotten.")
+                return EXIT_FAILED
+        reply = _journey_write(ctx, lambda: client.request("DELETE", path))
+        if reply is _REFUSED:
+            return EXIT_FAILED
+        if as_json:
+            ctx.dump(reply)
+            return EXIT_OK if isinstance(reply, dict) and reply.get("ok") is True else EXIT_FAILED
+        if not (isinstance(reply, dict) and reply.get("ok") is True):
+            ctx.err.write("the hub did not confirm the delete; run `nerva journey show` to see what is there\n")
+            return EXIT_FAILED
+        ctx.say(f"forgot {_plain(reply.get('deleted'), 48)}")
+        return EXIT_OK
+
+    # edit
+    if ns.text is not None:
+        text = ctx.inp.read() if ns.text == "-" else ns.text
+    else:
+        entry = _journey_reply(client.get(path))
+        before = str(entry.get("value") or "")
+        edited = _journey_edit_in_editor(ctx, before)
+        if edited is None:
+            return EXIT_FAILED
+        if edited.strip() == before.strip():
+            ctx.say("nothing changed")
+            return EXIT_OK
+        text = edited
+    text = text.strip()
+    if not text:
+        ctx.err.write("the new text is empty; nothing changed (to forget the entry: nerva journey delete "
+                      f"{_plain(ns.entry, 48)})\n")
+        return EXIT_USAGE
+    reply = _journey_write(ctx, lambda: client.request("PATCH", path, {"value": text}))
+    if reply is _REFUSED:
+        return EXIT_FAILED
+    if as_json:
+        ctx.dump(reply)
+        return EXIT_OK if isinstance(reply, dict) and reply.get("ok") is True else EXIT_FAILED
+    entry = _journey_reply(reply)
+    ctx.say(("changed " if reply.get("changed") else "unchanged ")
+            + f"{_plain(entry.get('entry_id'), 48)}  {_plain(_journey_text(entry), 400)}")
+    return EXIT_OK
+
+
+_REFUSED = object()
+
+
+def _journey_write(ctx: Context, call: Callable[[], Any]) -> Any:
+    """An edit or delete; a ``kg.write`` refusal (the write contract or the Action Kernel:
+    a halt, a missing capability) is the hub's own reason, not a credential problem, so it
+    is printed as such and answers ``_REFUSED``."""
+    try:
+        return call()
+    except HubError as exc:
+        if exc.status == 403 and str(exc.reason).startswith(("kernel denied", "contract denied")):
+            ctx.err.write(f"{exc.reason}; nothing changed\n")
+            return _REFUSED
+        raise
+
+
+def _journey_edit_in_editor(ctx: Context, before: str) -> str | None:
+    """The owner's ``$VISUAL``/``$EDITOR`` on one entry's text, in an owner-only temporary
+    file removed afterwards; what was saved, or None (said why) when the editor failed."""
+    import contextlib
+    import tempfile
+
+    argv = _editor_argv(ctx.environ)
+    fd, temporary = tempfile.mkstemp(prefix="nerva-journey-", suffix=".txt")   # owner-only (0600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(before + "\n")
+        try:
+            status = _run_editor(argv, temporary)
+        except OSError as exc:
+            ctx.err.write(f"editor {_plain(argv[0], 80)} {_editor_failure(exc)} — set $VISUAL or $EDITOR "
+                          "to one; nothing changed\n")
+            return None
+        if status != 0:
+            ctx.err.write(f"editor exited {status}; nothing changed\n")
+            return None
+        return Path(temporary).read_text(encoding="utf-8")
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
 
 
 def _json_option(flag: str, text: str, *, an_object: bool = False):
@@ -5581,6 +5818,8 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "goal": cmd_goal,
     "pairing": cmd_pairing,
     "memory": cmd_memory,
+    # argparse names the verb as typed, so each alias dispatches too.
+    **dict.fromkeys(("journey", *_JOURNEY_ALIASES), cmd_journey),
     "provider": cmd_custom_provider,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,
