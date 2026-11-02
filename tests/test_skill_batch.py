@@ -3,9 +3,11 @@
 Hermes's ``skill_manage`` takes an ordered ``operations`` array (create, patch,
 write_file, remove_file, delete) across several skills, applies it atomically ("any
 failure rolls every touched skill back"), wants a ``create`` before that skill's other
-operations and a ``delete`` as the sole operation. Nerva runs the same batch through
-``skills.batch.run_batch``: the owner directly (``POST /api/skills/batch``) and the model
-governed (``skill_propose {operations}``, applied when the owner decides its card).
+operations and a ``delete`` as its skill's only operation (H330 lets it share the batch with
+edits to other skills; ``tests/test_h330_skill_delete_references.py`` pins that). Nerva runs
+the same batch through ``skills.batch.run_batch``: the owner directly (``POST
+/api/skills/batch``) and the model governed (``skill_propose {operations}``, applied when
+the owner decides its card).
 """
 
 from __future__ import annotations
@@ -158,15 +160,20 @@ def test_a_create_must_come_before_that_skills_other_operations(hub):
     assert hub.tree() == before
 
 
-def test_a_delete_must_be_the_sole_operation_and_deletes_alone(hub):
+def test_a_delete_must_be_its_skills_only_operation_and_deletes_alone(hub):
+    # H330 changed this rule: a delete was the batch's only operation; now it is its
+    # skill's only operation and shares the batch with edits to other skills.
     hub.write("alpha")
     hub.write("beta")
     hub.load()
     before = hub.tree()
-    out = _run(hub, [{"name": "beta", "action": "patch", "old_string": "Do", "new_string": "Make"},
-                     {"name": "alpha", "action": "delete"}])
-    assert out["reason"] == "skill_batch_delete_not_alone" and out["failed_op"]["index"] == 1
-    assert hub.tree() == before
+    for ops in ([{"name": "alpha", "action": "patch", "old_string": "Do", "new_string": "Make"},
+                 {"name": "alpha", "action": "delete"}],
+                [{"name": "alpha", "action": "delete"},
+                 {"name": "alpha", "action": "write_file", "file_path": "references/a.md", "file_content": "a"}]):
+        out = _run(hub, ops)
+        assert out["reason"] == "skill_batch_delete_not_alone" and out["failed_op"]["index"] == 1, out
+        assert hub.tree() == before
     out = _run(hub, [{"name": "alpha", "action": "delete"}])
     assert out["ok"] is True and out["skills"][0]["change"] == "deleted"
     assert not (hub.root / "alpha").exists() and "alpha" not in hub.loader.skills

@@ -173,6 +173,8 @@ PROPOSE_SCHEMA: dict[str, Any] = {
                 "replace_all": {"type": "boolean"},
                 "file_path": {"type": "string", "maxLength": MAX_PATH},
                 "file_content": {"type": "string"},
+                # H330 — delete: the skill that takes the deleted one's place.
+                "absorbed_into": {"type": "string", "minLength": 1, "maxLength": MAX_NAME},
             },
             "required": ["name", "action"],
             "additionalProperties": False,
@@ -199,8 +201,11 @@ PROPOSE_DESCRIPTION = (
     "each op is {name, action} with action create (content: the whole SKILL.md; must come "
     "before that skill's other ops), patch (old_string/new_string, replace_all, file_path; "
     "or content to rewrite the file), write_file / remove_file (file_path under references/, "
-    "templates/, scripts/ or assets/; file_content), or delete (only as the sole op). A "
-    "failing op comes back with hints and a file_preview to correct it from."
+    "templates/, scripts/ or assets/; file_content), or delete (that skill's only op; "
+    "absorbed_into: the skill taking its place, so other skills' related_skills and bundles "
+    "that name it move there, and references that do not move come back under references to "
+    "patch in the same batch). A failing op comes back with hints and a file_preview to "
+    "correct it from."
 )
 
 
@@ -982,7 +987,8 @@ def register_skill_tools(
                     refused["problems"] = [p.as_dict() for p in problems]
                     return refused
                 return _refuse("skill_propose_refused", "no new skill was written: one of that name exists, "
-                                                        "or the skill-generation contract refused it")
+                                                        "or the skill-generation contract or the action kernel "
+                                                        "refused it")
             _spend(today)
             reply = {"ok": True, "kind": "new", "skill": created, "pending": True,
                      "detail": "written to quarantine; the owner reviews it before it can run"}
@@ -1054,6 +1060,7 @@ def register_skill_tools(
         if target is None or store is None:
             return _refuse("skill_propose_unavailable", "skill batches are not available on this hub")
         if isinstance(operations, list):
+            created = {o.get("name") for o in operations if isinstance(o, dict) and o.get("action") == "create"}
             for index, op in enumerate(operations):
                 # A skill this agent may not see answers as one that does not exist.
                 name = op.get("name") if isinstance(op, dict) else None
@@ -1063,6 +1070,14 @@ def register_skill_tools(
                     skill = _skill(name)
                     if skill is None or skill is _UNSUPPORTED:
                         refused = _unknown(name)
+                        refused["failed_op"] = {"index": index, "action": op.get("action"), "name": name}
+                        return refused
+                # H330 — so does an absorbing skill it may not see (one the batch creates is new).
+                absorbed = op.get("absorbed_into") if isinstance(op, dict) else None
+                if isinstance(absorbed, str) and absorbed and absorbed not in created:
+                    seen = _skill(absorbed)
+                    if seen is None or seen is _UNSUPPORTED:
+                        refused = _unknown(absorbed)
                         refused["failed_op"] = {"index": index, "action": op.get("action"), "name": name}
                         return refused
         today = time.strftime("%Y-%m-%d")
@@ -1075,7 +1090,7 @@ def register_skill_tools(
             return seen is not None and seen is not _UNSUPPORTED
 
         checked = run_batch(operations, target, dry_run=True, flagger=lambda text: bool(_flags(text)),
-                            may_see=_may_see)
+                            may_see=_may_see, actor=f"agent:{_actor() or 'agent'}")
         if not checked.get("ok"):
             # H351 — a preview of a loaded skill's file is read as data, as skill_view says.
             preview = checked.get("file_preview")
@@ -1108,7 +1123,13 @@ def register_skill_tools(
                                 "to replace a file that large, ask the owner to change it"]
             return refused
         actor = _actor() or "agent"
-        record = store.propose(operations, expect=expect, preview=checked["skills"], origin=f"agent:{actor}")
+        # H330: a skill the batch rewrites only for a moved related_skills entry is pinned to
+        # the tree its diff was made from, as every skill an operation names is.
+        for name, pin in (checked.get("fingerprints") or {}).items():
+            expect.setdefault(name, pin)
+        references = checked.get("references") or []
+        record = store.propose(operations, expect=expect, preview=checked["skills"], origin=f"agent:{actor}",
+                               references=references, bundle_pins=checked.get("bundle_pins"))
         queue = approvals()
         store.supersede_older(record, queue)
         if queue is not None:
@@ -1120,12 +1141,21 @@ def register_skill_tools(
             except Exception:
                 logger.warning("skill_propose: the batch's approval card could not be queued", exc_info=True)
         _spend(today)
-        return {"ok": True, "kind": "batch", "batch_id": record["id"], "pending": True,
-                "skills": [{"name": s["name"], "change": s["change"],
-                            "files": [f"{f['change']} {f['file']}" for f in s["files"]],
-                            **({"lint": s["lint"]} if s.get("lint") else {})} for s in checked["skills"]],
-                "detail": "checked against staging copies; the owner applies it whole, or not at all, from the "
-                          "Decision Inbox"}
+        reply = {"ok": True, "kind": "batch", "batch_id": record["id"], "pending": True,
+                 "skills": [{"name": s["name"], "change": s["change"],
+                             "files": [f"{f['change']} {f['file']}" for f in s["files"]],
+                             **({"lint": s["lint"]} if s.get("lint") else {}),
+                             **({"migrated_for": s["migrated_for"]} if s.get("migrated_for") else {})}
+                            for s in checked["skills"]],
+                 "detail": "checked against staging copies; the owner applies it whole, or not at all, from the "
+                           "Decision Inbox"}
+        if references:
+            reply["references"] = references
+            if any(ref.get("left") for ref in references):
+                reply["hints"] = ["references under left still name a deleted skill: patch the skills' text in "
+                                  "this batch (old_string the deleted name, new_string the absorbing one) and "
+                                  "propose it again; jobs, the load set and the switches are the owner's to edit"]
+        return reply
 
     server.register_tool(TOOL_LIST, _list, gated=False, description=LIST_DESCRIPTION,
                          input_schema=LIST_SCHEMA, capability_id="tool:skills_list", risk="read_only")

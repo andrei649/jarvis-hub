@@ -552,6 +552,33 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         )
         proposal = broker.propose(package.artifact_id, contract=contract)
         assert proposal.status == "pending"  # the owner floor holds even on GRANT
+    elif kind == "skill.generation":
+        # H330: every write of a skill's bytes crosses the kernel through the SAME
+        # production gate binding (make_skill_generation_kernel_gate): a generated
+        # skill, the owner's promotion of it to executable, and a skill batch's write.
+        # The skill.generation contract and the CDX-8 quarantine stay around it.
+        from agents.core.acquisition.promotion import make_skill_generation_kernel_gate
+        from agents.core.skills import loader as loader_mod
+        from agents.core.skills.approval import SkillApprovalStore
+        from agents.core.skills.batch import run_batch
+        from agents.core.skills.references import Holders
+
+        root = tmp_path / "skill-generation"
+        root.mkdir()
+        monkeypatch.setattr(loader_mod, "SKILLS_DIR", root)
+        monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: root)
+        skills = loader_mod.SkillLoader(approval_store=SkillApprovalStore(root / ".private" / "approvals.json"))
+        skills.kernel_gate = make_skill_generation_kernel_gate(spy)
+        name = skills.generate_skill(agent_id="pepper", task_description="organize the morning inbox",
+                                     solution_steps=["read inbox", "label", "archive"], command_name="tidy_inbox")
+        assert name is not None and (root / name / "PENDING_REVIEW").exists()
+        assert skills.approve_generated_skill(name) is True
+        created = run_batch([{"name": "matrix-notes", "action": "create",
+                              "content": "---\nname: matrix-notes\ndescription: Use when testing\n---\n"
+                                         "## Steps\n\nDo the thing.\n"}],
+                            skills, create_root=root, write_gate=make_skill_generation_kernel_gate(spy),
+                            holders=Holders())
+        assert created["ok"] is True, created
     elif kind == "plugin.load":
         from agents.core.acquisition.managed_signing import ManagedSigningKeyStore
         from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
