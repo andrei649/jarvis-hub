@@ -149,6 +149,8 @@ def _approval_label(record: dict) -> str:
     label = f"Switch on {display}{' on ' + record['channel'] if record['channel'] else ' everywhere'}"
     if record["category"]:
         label += f" (category {record['category'][:40]})"
+    if record.get("bundle"):
+        label += f" (bundle {record['bundle'][:40]})"
     return label
 
 
@@ -159,15 +161,19 @@ def _expected_payload(record: dict, binding: str) -> dict:
 
 
 def request_enable(orch, skills: list, *, channel: str = "", category: str = "",
-                   requested_by: str = "owner") -> dict:
-    """Queue one governed, exact-target approval; do not widen the switches."""
+                   requested_by: str = "owner", bundle: str = "") -> dict:
+    """Queue one governed, exact-target approval; do not widen the switches.
+
+    H026: *bundle* (a bundle's slug) names the bundle the targets came from. The
+    approval still binds the exact targets; the worker also refuses it when the bundle
+    no longer resolves to them, as it does for a category."""
     with _REQUEST_LOCK:
         return _request_enable_locked(orch, skills, channel=channel, category=category,
-                                      requested_by=requested_by)
+                                      requested_by=requested_by, bundle=bundle)
 
 
 def _request_enable_locked(orch, skills: list, *, channel: str, category: str,
-                           requested_by: str) -> dict:
+                           requested_by: str, bundle: str = "") -> dict:
     ledger = getattr(orch, "permission_ledger", None)
     worker = getattr(orch, "autonomy", None)
     if channel and switches.clean_channel(channel) != channel:
@@ -186,6 +192,9 @@ def _request_enable_locked(orch, skills: list, *, channel: str, category: str,
             raise PermissionRequestError("skill switch approval intake or Action Kernel unavailable")
         record = {"targets": _target_record(skills), "channel": channel,
                   "category": category, "revision": _revision(conn), "requested_by": requested_by}
+        if bundle:
+            # Only when given: a skill or category request keeps its binding unchanged.
+            record["bundle"] = bundle
         conn.rollback()
         binding = _binding(record)
         prior = conn.execute("SELECT task_id FROM skill_switch_requests WHERE binding=? AND status='pending'",
@@ -301,6 +310,16 @@ async def apply_approved(task, *, ledger, loader, usage=None, intent_log=None) -
                     conn.rollback()
                     _retire_grant(ledger, grant, reason="stale_skill_category")
                     return {"status": "refused", "reason": "stale_skill_category"}
+            if record.get("bundle"):
+                from . import bundles
+
+                named = bundles.get(record["bundle"])
+                members = ({s.name for s in bundles.resolve(named.skills, loader.skills.values())[0]}
+                           if named is not None else None)
+                if members != {s.name for s in current}:
+                    conn.rollback()
+                    _retire_grant(ledger, grant, reason="stale_skill_bundle")
+                    return {"status": "refused", "reason": "stale_skill_bundle"}
             state = switches.state_from_connection(conn)
             outcome = switches.plan(current, enabled=True, channel=record["channel"], now=state)
             _write_state(conn, outcome["state"])

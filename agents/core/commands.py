@@ -640,6 +640,26 @@ def _personality_refusal(preset, wanted: str, usage: str) -> str:
     return ""
 
 
+def _bundles(ctx: CommandContext) -> str:
+    """H026 — Hermes' ``/bundles``: the skill bundles, and how each is loaded into a turn."""
+    from .skills import bundles
+
+    loader = getattr(ctx.orch, "skills", None)
+    try:
+        return bundles.list_reply((getattr(loader, "skills", None) or {}).values())
+    except OSError:
+        logger.warning("/bundles: the skill bundles could not be read", exc_info=True)
+        return "The skill bundles could not be read."
+
+
+def _bundle(ctx: CommandContext) -> str:
+    """H026 — ``/bundle <name> [instruction]``. The orchestrator loads the bundle into the
+    owner's turn before the registry is asked (``Orchestrator._begin_bundle_load``); the
+    registry answers only where no turn loads one (an alias, a surface without skills)."""
+    return ("/bundle <name> [instruction] loads every skill of a bundle into a conversation turn: "
+            "send it as a message of its own. /bundles lists the bundles.")
+
+
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
 
@@ -663,6 +683,10 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("personality", "switch this conversation's personality preset", _personality,
                                    tier=ADMIN, usage="[<name>|none|default|global <name|none>]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
+    registry.register(SlashCommand("bundles", "your skill bundles, and how to load one into a turn", _bundles,
+                                   tier=ADMIN))
+    registry.register(SlashCommand("bundle", "load every skill of a bundle into this turn (/<bundle> works too)",
+                                   _bundle, tier=ADMIN, usage="<name> [instruction]"))
     registry.register(SlashCommand("checkpoints", "checkpoint previews and approved owner operations",
                                    checkpoint_command, tier=ADMIN,
                                    usage="[status|list|diff|restore|prune|clear|clear-legacy]"))

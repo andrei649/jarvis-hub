@@ -531,6 +531,10 @@ MACHINE_FACING: dict[str, str] = {
         "H019: user-guarded slot-holder listing read by `nerva status` (agents/cli/nerva.py); "
         "the public GET /status keeps counts only and the HUD does not render holders"
     ),
+    "/api/skills/bundles/reload":
+        "H026: `nerva skills bundles reload` (agents/cli/nerva.py) re-reads hand-edited bundle "
+        "files and reports the changes; the HUD's GET /api/skills/bundles already re-scans a "
+        "changed file on every read",
     "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
     "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",
     "/api/admin/backup/restore":
