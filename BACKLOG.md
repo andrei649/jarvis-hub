@@ -2657,6 +2657,18 @@
   outbound allowlists, so the write-side registry must be its own list (H270). No status
   moves; `needs_review` 16 → 0; headline 119 → 123/697 — the four `equivalent` rows
   #1179 had staled (H298, H551, H671, H679) count again, nothing new rose.
+  **Batch 1 (2026-11-02, #1331):** four rows built, each in its own worktree and put through
+  repeated rounds of fresh adversarial review against its pinned Hermes contract, every finding
+  fixed with a test that fails on the old code. H019 (`nerva status` service block, slot usage and a
+  user-guarded slot-holder listing, the e-stop banner), H422 (core memory: hard stored-character
+  budgets 2200/1375 refused for every writer, usage headers in the frozen block, a refused write
+  lists the ring, normalised injection scan, `GET /api/memory`, admin reset and switch,
+  `nerva memory status|reset|off|on`) and H026 (named skill bundles, switched as one unit, and
+  `/<bundle>` loading every member into one turn) are `equivalent`; H339 rose with H026 (the same
+  bundles close its contract). H462 (`/goal`, `/subgoal`, `POST /api/company/goals`, `nerva goal`,
+  the HUD form) stays `partial`: no production grader or judge is wired, there is no probe registry,
+  and the completion contract is inert at runtime. The 354 rows whose evidence the batch moved were
+  re-read (311 held, 43 corrected); `needs_review` 0; headline 134 → 138/697.
 
 ## Darwin feature absorption — 2026-09-09
 
