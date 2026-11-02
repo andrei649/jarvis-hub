@@ -1098,7 +1098,7 @@ def register_skill_tools(
             expect.setdefault(name, pin)
         references = checked.get("references") or []
         record = store.propose(operations, expect=expect, preview=checked["skills"], origin=f"agent:{actor}",
-                               references=references)
+                               references=references, bundle_pins=checked.get("bundle_pins"))
         queue = approvals()
         store.supersede_older(record, queue)
         if queue is not None:

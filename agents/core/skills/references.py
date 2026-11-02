@@ -34,10 +34,11 @@ Everything here reads; the only writes are the two migrations, both made by
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Container, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -158,10 +159,15 @@ def _without_related(fm: dict) -> dict:
     return out
 
 
-def _moved(names: list[str], old: set[str], new: str) -> list[str]:
+def _moved(names: list[str], old: set[str], new: str | None) -> list[str]:
+    """``names`` with each one in ``old`` moved to ``new`` (dropped when ``new`` is None),
+    never repeating a name."""
     out: list[str] = []
     for name in names:
-        name = new if name in old else name
+        if name in old:
+            if new is None:
+                continue
+            name = new
         if name not in out:
             out.append(name)
     return out
@@ -173,12 +179,14 @@ def _yaml_item(name: str) -> str:
     return json.dumps(name, ensure_ascii=False)
 
 
-def rewrite_related(text: str, old: set[str], new: str) -> str | None:
+def rewrite_related(text: str, old: set[str], new: str | None) -> str | None:
     """``text`` with every related_skills entry naming one of ``old`` moved to ``new``
-    (an entry already naming ``new`` is not repeated), or None when no related_skills
-    key names ``old`` or the rewrite cannot be proved exact. Only the related_skills
-    lines of the frontmatter change, and the result is parsed again: its lists must be
-    exactly the moved ones and every other frontmatter key and the body unchanged."""
+    (an entry already naming ``new`` is not repeated; with ``new`` None the entries are
+    dropped: the absorbing skill's own file never lists itself), or None when no
+    related_skills key names ``old`` or the rewrite cannot be proved exact. Only the
+    related_skills lines of the frontmatter change, and the result is parsed again: its
+    lists must be exactly the moved ones and every other frontmatter key and the body
+    unchanged."""
     from .frontmatter import split_frontmatter
 
     fm, body = split_frontmatter(text, lenient=False)
@@ -219,7 +227,7 @@ def rewrite_related(text: str, old: set[str], new: str) -> str | None:
         if moved != current:
             if value and not value.startswith("["):
                 return None            # a scalar list ("a, b"): not rewritten by hand
-            if value:
+            if value or not moved:
                 block = [f"{indent}related_skills: [{', '.join(_yaml_item(n) for n in moved)}]"]
             else:
                 item = next((ln[: len(ln) - len(ln.lstrip())] for ln in lines[i + 1:j] if ln.strip()),
@@ -327,12 +335,19 @@ def _job_texts(job: Any) -> list[tuple[str, str]]:
     return out
 
 
+def bundle_pin(members: Iterable[str]) -> str:
+    """What a reviewer saw of one bundle: its member list, as a digest. A governed apply
+    rewrites a bundle only while its members are still the ones the review showed."""
+    return hashlib.sha256(json.dumps(list(members), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 def bundle_plan(deleted: dict[str, tuple[Any, str | None]], loaded: Iterable[Any], holders: Holders,
-                allowed: set[str] | None = None) -> tuple[list[dict], list[dict]]:
+                allowed: Container[str] | None = None) -> tuple[list[dict], list[dict]]:
     """``(rewrites, left)`` for the bundles that list a deleted skill. ``deleted`` maps
     each deleted skill's name to ``(skill, absorbed_into)``. A bundle whose deleted
-    members all have an absorbing skill is rewritten (``allowed``, when given, is the set
-    of bundle slugs that may be: the ones the owner saw); the rest are reported."""
+    members all have an absorbing skill is rewritten (``allowed``, when given, holds the
+    bundle slugs that may be: the ones the owner saw); the rest are reported. Each
+    rewrite carries its ``pin`` (:func:`bundle_pin` of the members before)."""
     from . import bundles
 
     pool = list(loaded)
@@ -355,7 +370,7 @@ def bundle_plan(deleted: dict[str, tuple[Any, str | None]], loaded: Iterable[Any
                     members.append(name)
             rewrites.append({"holder": "bundle", "name": bundle.name, "slug": bundle.slug,
                              "skills": sorted(set(hits.values())), "before": list(bundle.skills),
-                             "after": members, "bundle": bundle})
+                             "after": members, "pin": bundle_pin(bundle.skills), "bundle": bundle})
         else:
             for member, name in hits.items():
                 left.append({"holder": "bundle", "name": bundle.name, "slug": bundle.slug, "skill": name,
@@ -387,7 +402,9 @@ def outside(name: str, skill: Any, new: str | None, holders: Holders, *,
     try:
         lists = holders.load_lists()
     except Exception:
-        lists = {"disabled": [], "only": [], "unreadable": True}
+        logger.warning("skill references: the load set could not be read", exc_info=True)
+        left.append({"holder": "load_set", "unreadable": True})
+        lists = {}
     for key, setting in (("disabled", "skills_disabled"), ("only", "skills_only")):
         if ids & set(lists.get(key) or []):
             left.append({"holder": "load_set", "setting": f"loadset.{setting}", "skill": name})
@@ -425,6 +442,6 @@ def outside(name: str, skill: Any, new: str | None, holders: Holders, *,
 
 
 __all__ = [
-    "Holders", "MAX_LEFT", "bundle_plan", "hub_holders", "identities", "mention_lines", "outside",
+    "Holders", "MAX_LEFT", "bundle_pin", "bundle_plan", "hub_holders", "identities", "mention_lines", "outside",
     "related_names", "rewrite_related", "text_files",
 ]

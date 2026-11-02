@@ -11,9 +11,13 @@ decided on its card) asks every holder and each reference is migrated or reporte
 * a bundle member is rewritten when the batch lands, inside the same rollback;
 * scheduled jobs, the load set, the switches, pending proposals and batches are reported.
 
-Governance: the delete crosses the ``skill.install`` kernel gate before anything moves; a
-create in the batch crosses the ``skill.generation`` contract; a skill in CDX-8 quarantine
-is never edited, migrated or made the absorbing skill.
+Governance: before anything moves the delete crosses the ``skill.install`` kernel gate and
+every other write the ``skill.generation`` one (registered in ``ACTION_REGISTRY``; it also
+guards ``generate_skill``, ``approve_generated_skill`` and an approved SKILL.md proposal); a
+create in the batch passes the ``skill.generation`` contract; a skill in CDX-8 quarantine is
+never edited, migrated or made the absorbing skill. On the governed path a bundle member the
+agent may not see is counted, never named, and whatever the review showed rewritten must be
+unchanged when the owner's card applies it.
 """
 
 from __future__ import annotations
@@ -214,6 +218,10 @@ def test_a_bundle_listing_the_deleted_skill_is_rewritten_to_the_absorbing_one(hu
     assert bundles.get("other").path.read_bytes() == other_before
     moved = {m["slug"]: m for m in _ref(out, "alpha")["migrated"] if m["holder"] == "bundle"}
     assert moved["research"]["before"] == ["alpha", "beta"] and moved["research"]["after"] == ["omega", "beta"]
+    # The bundles' old bytes are archived with the old folders (review-H330 r1 minor e).
+    archived = Path(out["backup"]) / "bundles"
+    assert sorted(p.name for p in archived.iterdir()) == sorted(
+        bundles.get(slug).path.name for slug in ("research", "both"))
 
 
 def test_a_bundle_without_an_absorbing_skill_is_reported_and_left(hub):
@@ -323,14 +331,123 @@ def test_a_delete_crosses_the_skill_install_kernel_gate_before_anything_moves(hu
                      {"name": "beta", "action": "patch", "old_string": "Do", "new_string": "Make"}])
     assert out["ok"] is False and out["reason"] == "skill_batch_kernel_denied", out
     assert hub.tree() == before and bundles.get("research").path.read_bytes() == bundle_before
-    [action] = seen
+    [action] = seen                                  # the delete is asked first; its DENY ends it
     assert action.kind == "skill.install" and action.payload["operation"] == "delete"
     assert action.payload["names"] == ["alpha"] and action.payload["absorbed_into"] == {"alpha": "omega"}
-    # A batch without a delete never asks; a QUEUE is the owner decision the batch carries.
-    assert _run(hub, [{"name": "beta", "action": "patch", "old_string": "Do", "new_string": "Make"}])["ok"]
-    assert len(seen) == 1
-    _deny_kernel(monkeypatch, verdict="queue")
-    assert _run(hub, [{"name": "alpha", "action": "delete"}])["ok"] is True
+    assert out["kernel_kind"] == "skill.install"
+    # A QUEUE is the owner decision the batch carries: both kinds are asked, and it lands.
+    seen = _deny_kernel(monkeypatch, verdict="queue")
+    assert _run(hub, [{"name": "alpha", "action": "delete", "absorbed_into": "omega"},
+                      {"name": "beta", "action": "patch", "old_string": "Do", "new_string": "Make"}])["ok"] is True
+    assert [a.kind for a in seen] == ["skill.install", "skill.generation"]
+    assert seen[1].payload["changed"] == ["beta"] and seen[1].payload["bundles"] == ["research"]
+
+
+def test_every_other_batch_write_crosses_skill_generation_before_anything_moves(hub, monkeypatch):
+    # Fails on the old code: only a delete reached the kernel, so a patch, a file write and
+    # a create landed under a DENY (review-H330 r1).
+    hub.write("beta")
+    hub.load()
+    seen = _deny_kernel(monkeypatch)
+    before = hub.tree()
+    for ops in ([{"name": "beta", "action": "patch", "old_string": "Do", "new_string": "Make"}],
+                [{"name": "beta", "action": "write_file", "file_path": "references/x.md", "file_content": "x"}],
+                [{"name": "gamma", "action": "create", "content": _md("gamma")}]):
+        out = _run(hub, ops)
+        assert out["reason"] == "skill_batch_kernel_denied" and out["kernel_kind"] == "skill.generation", out
+        assert hub.tree() == before
+    assert [a.kind for a in seen] == ["skill.generation"] * 3
+    assert seen[0].payload["changed"] == ["beta"] and seen[2].payload["created"] == ["gamma"]
+    # A dry run moves nothing, so it asks nothing.
+    assert _run(hub, [{"name": "beta", "action": "patch", "old_string": "Do", "new_string": "Make"}],
+                dry_run=True)["ok"] is True
+    assert len(seen) == 3
+
+
+def _real_kernel_hub(monkeypatch, tmp_path, loader=None):
+    """The production default gates against a real kernel: a real policy and kill switch."""
+    import agents.web as web
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    switch = KillSwitch(tmp_path / "kill.json")
+    monkeypatch.setattr(web, "orch", SimpleNamespace(kill_switch=switch, capabilities=CapabilityBroker(),
+                                                     autonomy_policy=AutonomyPolicy(), intent_log=None,
+                                                     skills=loader))
+    return switch
+
+
+def test_a_halt_stops_every_skill_write_through_the_real_kernel(hub, monkeypatch, tmp_path):
+    # Fails on the old code: with the kill switch engaged a delete was refused, but a
+    # patch-only batch on the same hub applied (review-H330 r1, reproduced with the real kernel).
+    hub.write("alpha")
+    hub.write("beta")
+    hub.load()
+    switch = _real_kernel_hub(monkeypatch, tmp_path)
+    patch = [{"name": "beta", "action": "patch", "old_string": "Do", "new_string": "Make"}]
+    assert run_batch(patch, hub.loader, backup_dir=hub.archive, holders=_holders())["ok"] is True
+    switch.engage(reason="test")
+    before = hub.tree()
+    out = run_batch([{"name": "beta", "action": "patch", "old_string": "Make", "new_string": "Do"}], hub.loader,
+                    backup_dir=hub.archive, holders=_holders())
+    assert out["reason"] == "skill_batch_kernel_denied" and out["kernel_kind"] == "skill.generation", out
+    out = _run(hub, [{"name": "alpha", "action": "delete"}])
+    assert out["reason"] == "skill_batch_kernel_denied" and out["kernel_kind"] == "skill.install"
+    assert hub.tree() == before
+
+
+def test_promoting_a_generated_skill_crosses_the_kernel(hub, monkeypatch, tmp_path):
+    # Fails on the old code: approve_generated_skill signed and activated LLM-authored code
+    # behind admin_guard alone; the kernel (and so the kill switch) was never asked.
+    from fastapi.testclient import TestClient
+
+    import agents.web as web
+
+    hub.load()
+    switch = _real_kernel_hub(monkeypatch, tmp_path, loader=hub.loader)
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "h330-admin")
+    name = hub.loader.generate_skill("pepper", "organize the morning inbox", ["read", "label"], "tidy_inbox")
+    assert name and (hub.root / name / "PENDING_REVIEW").exists()
+    switch.engage(reason="test")
+    client = TestClient(web.app)
+    refused = client.post(f"/api/skills/{name}/approve", headers=ADMIN)
+    assert refused.status_code == 403 and refused.json()["reason"] == "kernel_denied", refused.json()
+    assert (hub.root / name / "PENDING_REVIEW").exists() and not (hub.root / name / "SKILL.sig").exists()
+    # A halted kernel also stops a new generated skill before its folder exists.
+    assert hub.loader.generate_skill("pepper", "summarize the evening news", ["read"], "news") is None
+    assert not any(p.name.startswith("summarize") for p in hub.root.iterdir())
+    switch.disengage()
+    approved = client.post(f"/api/skills/{name}/approve", headers=ADMIN)
+    assert approved.status_code == 200 and approved.json()["approved"] is True, approved.json()
+    assert not (hub.root / name / "PENDING_REVIEW").exists()
+
+
+def test_an_approved_skill_change_crosses_the_kernel_before_it_is_written(hub, monkeypatch, tmp_path):
+    # Fails on the old code: an approved SKILL.md proposal was written under a halt, with
+    # no kernel crossing at all.
+    from agents.core.skills.proposals import STATUS_APPROVED, SkillProposalStore
+
+    hub.write("alpha")
+    hub.load()
+    store = SkillProposalStore(tmp_path / "proposals.json")
+    current = (hub.root / "alpha" / "SKILL.md").read_text()
+    rec = store.propose("alpha", current, current.replace("Do the thing.", "Make the thing."))
+    store.mark(rec["id"], STATUS_APPROVED)
+    switch = _real_kernel_hub(monkeypatch, tmp_path)
+    switch.engage(reason="test")
+    out = store.apply(rec["id"], hub.loader, tmp_path / "backups")
+    assert out == {"ok": False, "reason": "kernel_denied"}, out
+    assert (hub.root / "alpha" / "SKILL.md").read_text() == current and store.get(rec["id"])["status"] == "approved"
+    switch.disengage()
+    assert store.apply(rec["id"], hub.loader, tmp_path / "backups")["ok"] is True
+    assert "Make the thing." in (hub.root / "alpha" / "SKILL.md").read_text()
+    # What the gate is asked: a skill.generation patch of this skill.
+    seen = []
+    rec = store.propose("alpha", (hub.root / "alpha" / "SKILL.md").read_text(), _md("alpha", "## Steps\n\nx\n"))
+    store.mark(rec["id"], STATUS_APPROVED)
+    store.apply(rec["id"], hub.loader, tmp_path / "backups", kernel_gate=lambda p: seen.append(p) or "deny")
+    assert seen[0]["kind"] == "skill.generation" and seen[0]["action"] == "patch" and seen[0]["skill"] == "alpha"
 
 
 def test_a_kernel_gate_that_fails_refuses_the_delete(hub):
@@ -539,3 +656,129 @@ def test_the_tool_schema_takes_absorbed_into():
     item = PROPOSE_SCHEMA["properties"]["operations"]["items"]
     assert item["properties"]["absorbed_into"]["type"] == "string"
     assert "absorbed_into" in PROPOSE_DESCRIPTION and "only as the sole op" not in PROPOSE_DESCRIPTION
+
+
+# ── review-H330 r1: what the model sees, and the governed apply is the batch approved ──
+
+def _hide(monkeypatch, *hidden):
+    from agents.core.skills import tools as tools_mod
+
+    real_gate = tools_mod._gate
+    monkeypatch.setattr(tools_mod, "_gate",
+                        lambda target, name, agent="": None if name in hidden else real_gate(target, name, agent))
+
+
+def test_a_bundle_member_the_agent_cannot_see_is_counted_never_named(hub, monkeypatch):
+    # Fails on the old code: the bundle's before/after member lists reached the model whole,
+    # naming a skill the agent may not see (review-H330 r1).
+    hub.write("alpha")
+    hub.write("omega")
+    hub.write("secretskill")
+    hub.load()
+    _bundle("research", ["alpha", "secretskill"])
+    _hide(monkeypatch, "secretskill")
+    store, queue = SkillBatchStore(hub.tmp / "b.json"), ActionApprovalQueue(path=str(hub.tmp / "actions.json"))
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "delete", "absorbed_into": "omega"}]})
+    assert got["ok"] is True, got
+    assert "secretskill" not in json.dumps(got)
+    [moved] = [m for m in _ref(got, "alpha")["migrated"] if m["holder"] == "bundle"]
+    assert moved == {"holder": "bundle", "name": "research", "slug": "research", "before": ["alpha"],
+                     "after": ["omega"], "hidden_members": 1}
+    rec = store.get(got["batch_id"])
+    assert "secretskill" not in json.dumps(rec.get("references")) and "bundle_pins" not in got
+    # The owner's approval still rewrites the bundle whole, the hidden member kept.
+    queue.decide(rec["card"], True)
+    out = store.decide(rec["id"], rec["card"], queue, hub.loader, backup_dir=hub.archive, holders=_holders())
+    assert out["ok"] is True, out
+    assert list(bundles.get("research").skills) == ["omega", "secretskill"]
+
+
+def test_an_approved_bundle_migration_that_cannot_be_read_refuses_the_apply(hub):
+    # Fails on the old code: the delete landed (ok: true) and the bundle the owner saw
+    # rewritten still named the deleted skill (review-H330 r1).
+    hub.write("alpha")
+    hub.write("omega")
+    hub.load()
+    _bundle("research", ["alpha"])
+    store, queue = SkillBatchStore(hub.tmp / "b.json"), ActionApprovalQueue(path=str(hub.tmp / "actions.json"))
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "delete", "absorbed_into": "omega"}]})
+    rec = store.get(got["batch_id"])
+    queue.decide(rec["card"], True)
+
+    def broken():
+        raise OSError("bundles folder unreadable")
+
+    before = hub.tree()
+    out = store.decide(rec["id"], rec["card"], queue, hub.loader, backup_dir=hub.archive,
+                       holders=_holders(bundles=broken))
+    assert out["ok"] is False and out["reason"] == "skill_batch_bundles_unreadable", out
+    assert hub.tree() == before and list(bundles.get("research").skills) == ["alpha"]
+    assert store.get(rec["id"])["status"] == "failed"
+
+
+def test_a_bundle_changed_after_the_review_is_drift(hub):
+    hub.write("alpha")
+    hub.write("beta")
+    hub.write("omega")
+    hub.load()
+    _bundle("research", ["alpha"])
+    store, queue = SkillBatchStore(hub.tmp / "b.json"), ActionApprovalQueue(path=str(hub.tmp / "actions.json"))
+    got = _propose(_server(hub, store, queue), {"operations": [
+        {"name": "alpha", "action": "delete", "absorbed_into": "omega"}]})
+    rec = store.get(got["batch_id"])
+    bundles.save("research", ["alpha", "beta"], description="the research bundle", overwrite=True)
+    queue.decide(rec["card"], True)
+    before = hub.tree()
+    out = store.decide(rec["id"], rec["card"], queue, hub.loader, backup_dir=hub.archive, holders=_holders())
+    assert out["reason"] == "skill_batch_drifted" and "research" in out["detail"], out
+    assert hub.tree() == before and list(bundles.get("research").skills) == ["alpha", "beta"]
+
+
+def test_a_migrated_skill_the_apply_could_no_longer_rewrite_is_drift(hub, client):
+    # Fails on the old code: rel, shown rewritten in the review and then put in quarantine,
+    # was dropped from the migration silently and the delete landed (review-H330 r1 minor b).
+    got = _propose(_server(hub, hub.store, hub.queue), {"operations": OPS})
+    (hub.root / "rel" / "PENDING_REVIEW").write_text("")
+    before = hub.tree()
+    card = hub.store.get(got["batch_id"])["card"]
+    reply = client.post(f"/api/actions/{card}/decide", json={"approved": True}, headers=ADMIN).json()
+    applied = reply["action"]["applied"]
+    assert applied["reason"] == "skill_batch_drifted" and "'rel'" in applied["detail"], applied
+    assert hub.tree() == before and list(bundles.get("research").skills) == ["alpha"]
+
+
+def test_a_load_set_that_cannot_be_read_is_reported_unreadable(hub):
+    # Fails on the old code: a failing load-set read answered as "nothing names it".
+    hub.write("alpha")
+    hub.load()
+
+    def broken():
+        raise RuntimeError("settings db locked")
+
+    out = _run(hub, [{"name": "alpha", "action": "delete"}], holders=_holders(load_set=broken))
+    assert {"holder": "load_set", "unreadable": True} in _ref(out, "alpha")["left"]
+
+
+def test_the_absorbing_skill_never_lists_itself_as_related(hub):
+    # Fails on the old code: omega's related_skills [alpha, beta] became [omega, beta].
+    hub.write("alpha")
+    hub.write("beta")
+    omega = hub.root / "omega"
+    omega.mkdir()
+    (omega / "SKILL.md").write_text(_related_md("omega", "related_skills: [alpha, beta]\n"))
+    only = hub.root / "only"
+    only.mkdir()
+    (only / "SKILL.md").write_text(_related_md("only", "related_skills:\n  - alpha\ntags: [t]\n"))
+    hub.load()
+    out = _run(hub, [{"name": "alpha", "action": "delete", "absorbed_into": "omega"}])
+    assert out["ok"] is True, out
+    assert references.related_names((omega / "SKILL.md").read_text()) == ["beta"]
+    assert references.related_names((only / "SKILL.md").read_text()) == ["omega"]
+    moved = {m["name"]: m for m in _ref(out, "alpha")["migrated"] if m["holder"] == "skill"}
+    assert moved["omega"].get("dropped") is True and "dropped" not in moved["only"]
+    # Its only entry gone, the absorbing skill keeps an empty list and every other key.
+    lone = _related_md("omega", "related_skills:\n  - alpha\ntags: [t]\n")
+    text = references.rewrite_related(lone, {"alpha"}, None)
+    assert references.related_names(text) == [] and "related_skills: []" in text and "tags: [t]" in text

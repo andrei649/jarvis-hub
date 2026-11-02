@@ -298,12 +298,14 @@ class SkillProposalStore(JsonStore):
 
     # ── apply (curator-driven, owner-approved) ───────────────────────────────
 
-    def apply(self, proposal_id: str, loader, backup_dir: str | Path) -> dict:
+    def apply(self, proposal_id: str, loader, backup_dir: str | Path, *, kernel_gate=None) -> dict:
         """Apply an APPROVED proposal to its skill's SKILL.md.
 
         Hash-checked (drift ⇒ ``stale``), backed up (reversible), then the
         skill is reloaded so the new manifest is live. Returns a summary dict;
-        never raises.
+        never raises. The write crosses the ``skill.generation`` action kernel gate
+        first (H330; ``kernel_gate``, default the live hub's): a DENY leaves the
+        proposal approved and unwritten, for the next pass once the halt lifts.
         """
         rec = self.get(proposal_id)
         if rec is None:
@@ -369,6 +371,17 @@ class SkillProposalStore(JsonStore):
         if manifest_hash(current) != rec["original_hash"]:
             self.mark(proposal_id, STATUS_STALE)
             return {"ok": False, "reason": "drifted_since_proposal"}
+        from agents.core.acquisition.promotion import cross_skill_gate, hub_skill_kernel_gate
+
+        refused = cross_skill_gate(
+            kernel_gate or hub_skill_kernel_gate("skill.generation", title="Apply an approved skill change"),
+            {"kind": "skill.generation", "action": "patch", "operation": "proposal", "skill": rec["skill"],
+             "proposal_id": proposal_id, "requested_by": str(rec.get("origin") or "agent"), "risk_tier": 3,
+             "reversible": True, "approval_mode": "owner"})
+        if refused:
+            logger.warning("approved proposal %s for skill '%s' not applied: the action kernel said %s",
+                           proposal_id, rec["skill"], refused)
+            return {"ok": False, "reason": refused}
         try:
             backup_root = Path(backup_dir)
             backup_root.mkdir(parents=True, exist_ok=True)

@@ -145,7 +145,9 @@ describe('H330 — a delete, what absorbs it, and what still names it', () => {
     skill: 'alpha', absorbed_into: 'omega',
     migrated: [
       { holder: 'skill', name: 'rel', field: 'related_skills' },
+      { holder: 'skill', name: 'omega', field: 'related_skills', dropped: true },
       { holder: 'bundle', name: 'research', slug: 'research', before: ['alpha', 'beta'], after: ['omega', 'beta'] },
+      { holder: 'bundle', name: 'private', slug: 'private', before: ['alpha'], after: ['omega'], hidden_members: 1 },
     ],
     left: [
       { holder: 'skill', name: 'prose', field: 'text', file: 'SKILL.md', lines: [7] },
@@ -163,7 +165,9 @@ describe('H330 — a delete, what absorbs it, and what still names it', () => {
     const text = screen.getByTestId('skill-batch-references').textContent;
     expect(text).toContain('alpha deleted · absorbed into omega');
     expect(text).toContain('skill rel · related_skills now names omega');
+    expect(text).toContain('skill omega · related_skills no longer lists alpha');
     expect(text).toContain('bundle research: alpha, beta → omega, beta');
+    expect(text).toContain('bundle private: alpha → omega (and 1 member(s) the agent cannot see, kept)');
     expect(text).toContain('still names it: skill prose · SKILL.md line 7');
     expect(text).toContain('still names it: job Daily (j1) · prompt');
     expect(text).toContain("'omega' is not in skills_only");

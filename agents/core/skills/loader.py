@@ -634,16 +634,35 @@ class Skill:
 
 
 class SkillLoader:
+    #: H330 — the class-level defaults of the two attributes below, for a loader built
+    #: without ``__init__`` (tests do): the live hub's gate, and no refusal yet.
+    kernel_gate = None
+    last_approval_refusal: str = ""
+
     def __init__(self, approval_store: SkillApprovalStore | None = None):
         self.skills: dict[str, Skill] = {}
         # H350 — why the last generate_skill refused its document (empty when it did not).
         self.last_generation_problems: list = []
         # H507 — what the last generated skill's code looks like (warn-only).
         self.last_generation_warnings: list = []
+        # H330 — why the last approve_generated_skill refused at the action kernel
+        # ("kernel_denied" / "kernel_error"; empty when it did not).
+        self.last_approval_refusal: str = ""
+        # H330 — the ``skill.generation`` kernel gate a generated skill and its promotion
+        # cross (acquisition.promotion.make_skill_generation_kernel_gate). None binds the
+        # live hub's kernel at call time; the action-auth matrix injects its own.
+        self.kernel_gate = None
         # H20.5 — optional usage-telemetry sidecar (SkillUsageStore); attached by
         # the orchestrator. None → zero behavior change.
         self._usage = None
         self._approval_store = approval_store or SkillApprovalStore()
+
+    def _generation_kernel_refusal(self, payload: dict, *, title: str) -> str:
+        """Cross the ``skill.generation`` kernel gate: ``""`` to proceed, else why not."""
+        from agents.core.acquisition.promotion import cross_skill_gate, hub_skill_kernel_gate
+
+        gate = self.kernel_gate or hub_skill_kernel_gate(SKILL_GENERATION_CONTRACT_KIND, title=title)
+        return cross_skill_gate(gate, {"kind": SKILL_GENERATION_CONTRACT_KIND, **payload})
 
     def attach_usage(self, store) -> None:
         """Attach a SkillUsageStore; hooks existing and future skills."""
@@ -1179,6 +1198,16 @@ Agent-generated skill from successful task completion.
             logger.warning("Skill generation refused: %s",
                            "; ".join(str(p) for p in self.last_generation_problems))
             return None
+        # H330 — writing a skill folder crosses the skill.generation kernel gate before it
+        # exists (a halt, a budget or a loop guard stops it); the CDX-8 quarantine below is
+        # the owner's floor, so a QUEUE proceeds to it.
+        refused = self._generation_kernel_refusal(
+            {"action": "generate", "agent": agent_id, "name": skill_name, "command_name": cmd,
+             "quarantined": True, "risk_tier": 1, "reversible": True},
+            title="Generate a skill (quarantined for review)")
+        if refused:
+            logger.warning("Skill generation refused by the action kernel (%s): %s", refused, skill_name)
+            return None
         skill_dir.mkdir(parents=True, exist_ok=True)
         # The bytes checked, never text mode: Windows would write every '\n' as '\r\n'.
         (skill_dir / "SKILL.md").write_bytes(skill_md.encode("utf-8"))
@@ -1286,6 +1315,7 @@ def register(skill):
         The legacy in-tree marker can identify a re-approval candidate but never
         authorizes import by itself.
         """
+        self.last_approval_refusal = ""
         # Resolve to the skill dir: accept the registry name (manifest title, what the
         # pending-list endpoint exposes) OR the on-disk dir slug.
         reg = self.skills.get(name)
@@ -1326,6 +1356,18 @@ def register(skill):
                 "command_name": name,
             }
         ):
+            return False
+        # H330 — promoting LLM-authored code to executable is the most privileged skill
+        # action: it crosses the skill.generation kernel gate (on top of admin_guard and
+        # the contract) before anything is signed. A DENY or a failing gate leaves the skill
+        # quarantined; a QUEUE is this owner's own decision.
+        refused = self._generation_kernel_refusal(
+            {"action": "approve", "agent": "owner", "name": skill_dir.name, "command_name": name,
+             "requested_by": "owner", "risk_tier": 3, "reversible": True, "approval_mode": "owner"},
+            title="Approve a generated skill (make it executable)")
+        if refused:
+            self.last_approval_refusal = refused
+            logger.warning("Generated skill '%s' not approved: the action kernel said %s", name, refused)
             return False
         signing.sign_skill(skill_dir)
         self._approval_store.approve(skill_dir)

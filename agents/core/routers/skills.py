@@ -928,7 +928,9 @@ async def list_pending_skills():
 @router.post("/api/skills/{name}/approve", dependencies=[Depends(admin_guard)])
 async def approve_generated_skill(name: str):
     """CDX-8: owner-approve a quarantined auto-generated skill — sign + activate it. Only an
-    admin can promote LLM-authored code from pending to executable."""
+    admin can promote LLM-authored code from pending to executable, and the promotion
+    crosses the ``skill.generation`` action kernel gate (H330): a halt answers 403
+    ``kernel_denied`` and the skill stays quarantined."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -940,6 +942,10 @@ async def approve_generated_skill(name: str):
             return {"approved": True, "skill": name, "loaded": False,
                     "message": "approved; it loads on the next normal boot (safe mode)"}
         return {"approved": True, "skill": name}
+    refused = str(getattr(orch.skills, "last_approval_refusal", "") or "")
+    if refused:
+        return JSONResponse({"error": f"the action kernel refused to approve '{name}'", "reason": refused,
+                             "skill": name}, status_code=403 if refused == "kernel_denied" else 503)
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
 
 
@@ -1044,7 +1050,9 @@ def _bulk_review(orch, body: BulkReviewBody) -> dict:
             logger.warning("bulk review: skill %s could not be decided", name, exc_info=True)
             results.append({"kind": "skill", "id": name, "ok": False, "error": "error"})
             continue
-        results.append({"kind": "skill", "id": name, "ok": ok, **(done if ok else {"error": "not_pending"})})
+        refused = "" if ok or not body.approved else str(getattr(loader, "last_approval_refusal", "") or "")
+        results.append({"kind": "skill", "id": name, "ok": ok,
+                        **(done if ok else {"error": refused or "not_pending"})})
 
     proposals = getattr(orch, "skill_proposals", None)
     decided_proposals: list[dict] = []

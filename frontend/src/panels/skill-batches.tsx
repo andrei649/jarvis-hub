@@ -122,7 +122,9 @@ export function BatchReferences({ refs }: { refs: any[] }) {
       {arr(r, 'migrated').map((m: any, j: number) => <div key={`m${j}`}>
         → {m.holder === 'bundle'
           ? `bundle ${m.name}: ${arr(m, 'before').join(', ')} → ${arr(m, 'after').join(', ')}`
-          : `skill ${m.name} · related_skills now names ${r.absorbed_into}`}
+            + (m.hidden_members > 0 ? ` (and ${m.hidden_members} member(s) the agent cannot see, kept)` : '')
+          : m.dropped ? `skill ${m.name} · related_skills no longer lists ${r.skill}`
+            : `skill ${m.name} · related_skills now names ${r.absorbed_into}`}
       </div>)}
       {arr(r, 'left').map((e: any, j: number) => <div key={`l${j}`} style={{ color: 'var(--amber)' }}>
         · still names it: {referenceLine(e)}

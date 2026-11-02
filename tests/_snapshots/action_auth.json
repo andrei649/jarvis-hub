@@ -32,6 +32,7 @@
  "report.export": "kernel",
  "research": "kernel",
  "settings.voice_command": "kernel",
+ "skill.generation": "kernel",
  "skill.install": "kernel",
  "social.*": "kernel",
  "terminal.exec": "kernel",
