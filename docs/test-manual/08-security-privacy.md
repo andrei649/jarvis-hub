@@ -367,7 +367,7 @@ Chain: `memory_logs/security/audit.db`, table `security_events`, per-row `row_ha
 | SEC-090 | Posture reports the hardened truth | with `JARVIS_HARDENED=1` + a key, `GET /api/security/posture` | `hardened`: `{enabled:true, audit_key_required:true, audit_key_present:true, strict_egress_forced:true, mutating_mcp_blocked:true, plugin_least_privilege:true}` | MAJOR if any flag misreports | ⚠️`tests/test_o26_p2_product_posture.py` |
 | SEC-091 | A blank-hash row injected mid-chain fails closed | on the **copy**, `insert into security_events(timestamp,event_type,content_preview,row_hash,prev_hash) values(…,'','')` after real rows, then `verify_chain` | `(False, <that id>)` — a blank hash is legitimate only as a leading legacy prefix (`audit.py:181-192`) | **BLOCKER** | ✅`tests/test_audit_verify.py` |
 | SEC-092 | Verify degrades honestly with no audit subsystem | temporarily point the orchestrator at a box with no audit (or read the code path) | `503` `{"error":"audit log not available"}` — never `{"valid":true}` | **BLOCKER** (a fabricated green) | ✅`tests/test_audit_verify.py` |
-| SEC-093 | Audit is not the egress ledger | `GET /api/admin/network/calls` after a restart | counters reset to zero — it is explicitly in-memory (`agents/core/observability/egress_monitor.py:12`); the durable record is the audit chain. Confirm no UI presents it as historical | MINOR | ⚠️`tests/test_plugin_egress.py` |
+| SEC-093 | Audit is not the egress ledger | make one cloud model call, restart, then `GET /api/admin/network/calls` | the call is still there with `origin: "restored"` and `ledger.persistent: true` (H381, `egress_ledger.db` under the data root); the ledger is bounded and not tamper-evident, so the durable record of decisions is still the audit chain. Confirm no UI presents the ledger as the audit trail | MINOR | ✅`tests/test_h381_egress_ledger_persistence.py` |
 
 ---
 
@@ -710,9 +710,15 @@ Observations from reading the source. **No code was changed.** Line numbers were
 12. **Injection patterns are English-only** (`agents/core/security/quarantine.py:35`). A Romanian
     injection (`Ignoră instrucțiunile anterioare…`) is not flagged, in a product whose owner and family
     speak Romanian. This is a coverage gap, not a regression.
-13. **Egress ledger is in-memory and resets on restart** (`agents/core/observability/egress_monitor.py:12`).
+13. ~~**Egress ledger is in-memory and resets on restart** (`agents/core/observability/egress_monitor.py:12`).
     It cannot answer "did anything leave the box yesterday?", yet it is the artifact `docs/PRIVACY.md`
-    points at to *prove* local-only behaviour. There is no durable egress record.
+    points at to *prove* local-only behaviour. There is no durable egress record.~~ **FIXED (H381)** —
+    every event is also written (off the event loop) to the owner-only `egress_ledger.db` under the data
+    root (`EgressLedgerStore`), and `GET /api/admin/network/calls`, `GET /api/system-map` and the HUD
+    network panel serve the rows of earlier processes beside the live ones (`origin: restored`; the
+    `ledger` block says whether the file is written). It is bounded (the newest 1000 model rows and,
+    separately, 1000 plugin rows), holds no prompt, path, query, header or body, and a forget erases it.
+    It is still not tamper-evident: the audit chain remains the durable record of *decisions*.
 14. **`local_only_violations` classifies only manifested plugins.** `_local_only_violations` returns `[]`
     when the manifest registry cannot be imported, and skips unmanifested callers entirely
     (`egress_monitor.py:139-163`) — the still-unmanifested networked plugins tracked as SEC-5b are

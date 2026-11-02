@@ -50,6 +50,7 @@ from time import monotonic
 
 from . import code_interruptions
 from .action_origin import current_action_origin
+from .capability_manifests import RollbackContract
 from .environments.output_limits import (
     MAX_LINE_LENGTH,
     MAX_OUTPUT_BYTES,
@@ -67,6 +68,15 @@ from .tool_rpc import ToolRPCValidationError, current_tool_actor
 logger = logging.getLogger("jarvis.code_tools")
 
 TOOL = "execute_code"
+#: H325 — what the capability registry says a run leaves behind.
+ROLLBACK = RollbackContract(
+    mode="implementation_specific",
+    description=("The container keeps nothing (read-only filesystem, no network); each tool a "
+                 "script calls has that tool's effect and rollback, and a gated one still "
+                 "queues for the owner's approval."),
+    limitations=("A session kernel keeps interpreter state from cell to cell until it is reset; "
+                 "what a called tool wrote is undone only as that tool allows."),
+)
 SETTING = "llm.execute_code"
 SESSION_SETTING = "llm.execute_code_sessions"
 MAX_TOOL_CALLS_SETTING = "security.sandbox_max_tool_calls"
@@ -880,6 +890,10 @@ def register_code_tools(
         # H399 — a script can call other tools and a session kernel carries state from
         # cell to cell, so a cell runs alone, after everything the model asked first.
         parallel_safe=False,
+        # H325 — ungated is a claim about the container, not about what a script can
+        # reach: the ungated tools it is offered (memory, todo, the board, ...) write.
+        risk="sensitive",
+        rollback=ROLLBACK,
     )
     return [TOOL]
 
@@ -887,6 +901,6 @@ def register_code_tools(
 __all__ = [
     "AUTHORITY_UNAVAILABLE", "CODE_REQUIRED", "CODE_TOO_LONG", "CodeExecutionTool",
     "DISABLED", "INPUT_SCHEMA", "INVALID_ARGS",
-    "MAX_CODE_CHARS", "MAX_OUTPUT_BYTES", "NOT_ISOLATED", "SANDBOX_UNAVAILABLE",
+    "MAX_CODE_CHARS", "MAX_OUTPUT_BYTES", "NOT_ISOLATED", "ROLLBACK", "SANDBOX_UNAVAILABLE",
     "SETTING", "TOOL", "register_code_tools",
 ]

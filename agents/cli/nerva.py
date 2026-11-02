@@ -4318,21 +4318,35 @@ def _answer_text(reply: Any) -> str:
     return _ANSWER_CONTROL.sub("", _ANSWER_ESCAPE.sub("", text))
 
 
-def _write_answer(ctx: Context, text: str) -> None:
-    """Put the answer on stdout without letting encoding turn a 0 into a crash.
+def _write_answer(ctx: Context, text: str, *, stream: Any = None) -> None:
+    """Put the answer on stdout (or *stream*) without letting encoding turn a 0 into a crash.
 
     stdout's encoding belongs to the caller — a pipe under ``LC_ALL=C`` is ascii — and
     a model may answer in any script. A raw write can therefore raise UnicodeEncodeError
     *after* the turn succeeded, which a caller reads as "the turn did not complete" for
     a turn that did, and which skips the receipt that was promised on every path.
     """
+    out = ctx.out if stream is None else stream
     try:
-        ctx.out.write(text + "\n")
+        out.write(text + "\n")
         return
     except UnicodeEncodeError:
         pass
-    encoding = getattr(ctx.out, "encoding", None) or "utf-8"
-    ctx.out.write(text.encode(encoding, "backslashreplace").decode(encoding, "replace") + "\n")
+    encoding = getattr(out, "encoding", None) or "utf-8"
+    out.write(text.encode(encoding, "backslashreplace").decode(encoding, "replace") + "\n")
+
+
+def _recall_lines(reply: Any) -> list[str]:
+    """H430 — the turn's memory recall indicator, one line per memory provider, from the
+    ``outcome.recall`` a hub sends its owner. Rendered by the hub's own renderer
+    (``recall_admission.describe_recalls``), which renders only counts and closed words:
+    anything else in the payload prints nothing."""
+    outcome = reply.get("outcome") if isinstance(reply, dict) else None
+    if not isinstance(outcome, dict):
+        return []
+    from agents.core.memory.recall_admission import describe_recalls
+
+    return describe_recalls(outcome.get("recall"))
 
 
 def _utc_now() -> str:
@@ -4700,6 +4714,10 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
             if ns.json:
                 ctx.dump(reply)
             else:
+                # H430: which memory this turn used, before the answer (Hermes prints it right
+                # after the prefetch) and on stderr, so stdout stays exactly the answer.
+                for line in _recall_lines(reply):
+                    _write_answer(ctx, line, stream=ctx.err)
                 ctx.say(str(raw))
             status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
             return finish(EXIT_OK, status=status, reason=stop_reason or refusal, pending=pending,

@@ -3094,6 +3094,9 @@ def register_file_tools(
             # H399 — a mutation runs alone: a read of the same path in the same step
             # must see it either wholly before or wholly after, never mid-write.
             parallel_safe=False if spec["gated"] else None,
+            # H325 — the ungated three only read; the gated two keep the gated contract
+            # (they snapshot first, and the kernel's `file.write` rollback is `restore`).
+            risk=None if spec["gated"] else "read_only",
         )
         registered.append(name)
     return registered

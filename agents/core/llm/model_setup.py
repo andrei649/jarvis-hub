@@ -210,12 +210,33 @@ MODEL_PULL_CONTRACT = ContractTemplate(
 
 # ── Ollama HTTP (loopback only, injectable client) ───────────────────────────
 
+class OllamaURLNotLoopback(ValueError):
+    """A loopback-only Ollama client was asked to reach another host."""
+
+
+async def _refuse_non_loopback(request) -> None:
+    # An absolute URL overrides ``base_url``, so the destination is checked per request,
+    # before transport entry, not only once at construction.
+    if not is_loopback_url(str(request.url)):
+        raise OllamaURLNotLoopback("ollama_url_not_loopback")
+
+
 def _client(url: str, client: Any, timeout: float):
+    """The loopback Ollama client this module dials (tags/pull/delete; never a prompt).
+
+    Loopback-only is enforced here, not left to callers: a non-loopback ``url`` is
+    refused, and the client it builds refuses every request whose destination is not
+    loopback (an absolute URL included), so it cannot be turned into a cloud client.
+    It sits outside the model-egress ledger on purpose (control plane, no content)."""
+    if not is_loopback_url(url):
+        raise OllamaURLNotLoopback("ollama_url_not_loopback")
     if client is not None:
         return client, False
     import httpx  # lazy: only the network path needs it
 
-    return httpx.AsyncClient(base_url=url.rstrip("/"), timeout=timeout, trust_env=False), True
+    return httpx.AsyncClient(base_url=url.rstrip("/"), timeout=timeout, trust_env=False,
+                             follow_redirects=False,
+                             event_hooks={"request": [_refuse_non_loopback]}), True
 
 
 def _model_names(payload: Any) -> list[str]:

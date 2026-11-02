@@ -642,3 +642,17 @@ async def test_the_taint_fence_is_per_iteration_not_per_call():
 
     fenced = [event for event in events if event["event"] == "tool_result_untrusted"]
     assert [event["call_id"] for event in fenced] == ["a", "b", "c"]
+
+
+def test_registry_mode_keeps_the_risk_context_on_a_long_description():
+    # A capability description near the 1024-character cap (the H422 memory tool's is one)
+    # must lose its own tail, never the [capability=… risk=…] context registry planning adds.
+    server = _server([], capability_ids=True)
+    snapshot = {"capabilities": [_capability_row("cap.web", "w" * 1100),
+                                 _capability_row("cap.lookup", "look up a number")]}
+    runtime = _runtime(server, registry_enabled=lambda: True, capability_snapshot=lambda: snapshot)
+    rows = {row["name"]: row for row in runtime._registry_metadata(server.tools())}
+    long_row = rows["web_fetch"]["description"]
+    assert len(long_row) <= 1024
+    assert long_row.endswith("]") and " risk=" in long_row and "[capability=cap.web" in long_row
+    assert rows["lookup"]["description"].startswith("look up a number [capability=cap.lookup")

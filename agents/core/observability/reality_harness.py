@@ -479,7 +479,7 @@ async def _probe_tool_echo_protocol() -> bool:
     async def _echo(args):
         return {"echo": args}
 
-    server.register_tool("echo", _echo, capability_id="tool:echo")
+    server.register_tool("echo", _echo, capability_id="tool:echo", risk="read_only")
     result = await server.handle({"tool": "echo", "args": {"value": "probe"}})
     return result == {
         "ok": True,
@@ -498,7 +498,7 @@ async def _probe_tool_time_protocol() -> bool:
     async def _time(_args):
         return {"now": time.time()}
 
-    server.register_tool("time", _time, capability_id="tool:time")
+    server.register_tool("time", _time, capability_id="tool:time", risk="read_only")
     result = await server.handle({"tool": "time", "args": {}})
     value = (result.get("result") or {}).get("now")
     return result.get("ok") is True and result.get("tool") == "time" and isinstance(value, float)

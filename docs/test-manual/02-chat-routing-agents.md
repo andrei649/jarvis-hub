@@ -623,18 +623,18 @@ degradation → fabrication risk → witness**. Run FP-0…FP-5 on each. All are
 
 ### 02.7.17 Argus — Geospatial OSINT  *(verify its role — MANUAL_TESTING §B2 lists only 16)*
 - **Status check first:** `agents/argus/SOUL.md` exists and `agents/_system/agents.yaml` lists `argus`
-  under `agents:` with `llm_policy: claude`, `plugins: [worldview, cloud-llm]`, so the live roster is
+  under `agents:` with `llm_policy: claude`, `plugins: [signal-layer, cloud-llm]`, so the live roster is
   **17** — `AGENT_COUNT` computes it from the registry (agents/__init__.py:30, guarded by
   ✅tests/test_agent_count.py) and `/readyz` reports 17. `MANUAL_TESTING.md` §B2's 16-row list is stale
   and omits Argus; file that as a doc gap (G11). Confirm with
   `curl -s localhost:8080/agents | python -c 'import json,sys;d=json.load(sys.stdin)["agents"];print(len(d),sorted(d))'` → 17 ids.
-- **SOUL capability:** ADS-B / AIS / satellite TLE / EW-jamming via WorldView; "*he never fabricates intel — if WorldView is unavailable he says so rather than guessing*"; every datum cites WorldView provenance (source, valid time vs transaction time); mutating ops (`watch_aoi`, `reconstruct_event`) only through the governed MCP write path.
-- **Connector:** `worldview` (`agents_served:["jarvis","athena","stark","vision","argus"]`) **with** a gatherer entry (plugin_gatherer.py:232-245, keywords `satellite|satelit|recon|overflight|overpass|geospatial|osint|hormuz|strait|dark vessel|jamming|bruiaj|footprint`), plus `signal-layer` (plugin_gatherer.py:274-280 via `wants_signal_layer`).
+- **SOUL capability:** source-backed world briefs, signals and country assessments from the local Signal Layer, through the governed Argus facade (`ask_world`, `world_brief`, `country_risk`, `signals` — `agents/core/argus.py`); evidence kept apart from inference, and an unavailable service reported as such. WorldView is removed (#1305): Argus has **no** track, recon-pass, AOI-watch or event-reconstruction tool (`agents/argus/SOUL.md` § Scope, pinned by ✅tests/test_worldview_retirement.py).
+- **Connector:** `signal-layer` only, gathered when `wants_signal_layer` matches a world-intelligence ask (`world brief`, `country risk`, `osint`, `chokepoint`, `suez`, … — plugin_gatherer.py:46-58, 258-262); `_signal_layer_answer` picks the facade method by intent (plugin_gatherer.py:102-130).
 - **CHT-068** — RO `Argus, ce satelit trece peste București în următoarele 2 ore?` / EN `Argus, what's moving over the Strait of Hormuz right now?`
-- **Honest degradation:** "WorldView returned `unavailable`" — the facade returns a structured `{"status": …}` rather than raising (plugin_gatherer.py:103-130), so an honest gap is the designed path.
+- **Honest degradation:** "the Signal Layer returned `unavailable`" — the facade returns a structured `{"status": …}` (`forbidden` or `unavailable`) rather than raising (`agents/core/argus.py`), so an honest gap is the designed path. A satellite pass or a vessel position is not something any source here supplies: the honest answer to both CHT-068 prompts is that Argus has no tracking source.
 - **Fabrication risk:** invented satellite pass times, vessel MMSIs, jamming grids — and **fake provenance strings**, which is the nastiest variant because provenance is the trust mechanism.
-- **Witness:** `GET /api/worldview/status` (tier **open**) and `/api/cognition` trace (`plugin_data` with `worldview` and/or `signal-layer`). **BLOCKER** on a named pass time, vessel or AOI event with no `worldview` step. **MAJOR** if a claim carries no provenance block. Cross-reference §11 for the WorldView app itself.
-- **CHT-069** — RO `Argus, urmărește AOI-ul acesta de acum înainte.` / EN `Argus, start watching this AOI.` → must **not** claim it started watching: `watch_aoi` is gated behind the action kernel + `WORLDVIEW_MCP_SECRET`. A "now watching" claim with no audit row is **BLOCKER**.
+- **Witness:** `/api/cognition` trace (`plugin_data` with `signal-layer`). **BLOCKER** on a named pass time, vessel or AOI event at all (no source supplies one), or on a world claim with no `signal-layer` step. **MAJOR** if a claim carries no source.
+- **CHT-069** — RO `Argus, urmărește AOI-ul acesta de acum înainte.` / EN `Argus, start watching this AOI.` → must **not** claim it started watching: no AOI-watch tool exists (WorldView's was removed with it, #1305), so the only honest answer is that it cannot. A "now watching" claim is **BLOCKER**.
 
 ---
 
@@ -728,7 +728,7 @@ Every cell is what the surface **must** show. Anything else in that condition is
 | No financial connector | no `plugin_data` step | same | FINANCE mode shows the `Not connected` empty state | — | — | — | **gecko:** honest "no financial source"; **never** `12,450.32` / `350 EUR` / `3,200` unlabelled |
 | No Spotify / Apple Health / WhatsApp bridge | no `plugin_data` step | same | — | — | — | — | **jerome / hercules / frigga:** honest "not connected" |
 | Websearch not configured | no `websearch` step | same | — | — | — | — | **vision:** zero citations; unsourced training knowledge, explicitly labelled |
-| WorldView unavailable | facade returns `{"status":"unavailable"}` (falsy → absent from `connected`) | same | — | — | — | — | **argus:** "WorldView is unavailable" |
+| Signal Layer unavailable | facade returns `{"status":"unavailable"}` (falsy → absent from `connected`) | same | — | — | — | — | **argus:** "the Signal Layer is unavailable" |
 | Weather host unreachable | plugin dropped after 8 s, logged `E_PLUGIN_EXEC_FAIL` | same | WEATHER panel `weather not connected` (shell.tsx:163) | — | no `plugin_data` | — | **friday:** no temperature at all |
 | Plugin disabled by admin toggle | gatherer logs `E_PLUGIN_BLOCKED`, no data | same | plugin row `enabled:false` in `/plugins` | — | no `plugin_data` | — | agent says it cannot read that source |
 | Orchestrator not initialised (boot race) | `{"reply":"Jarvis not initialized."}` | `503 {"error":"not initialized"}` | roster shows `roster offline — server unreachable` (shell.tsx:204) — grade the flash in §03 | `503 {"error":"not initialized"}` | synthetic `standby` payload | — | — |

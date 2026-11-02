@@ -15886,6 +15886,8 @@ export interface components {
              * @constant
              */
             file_mutation_attribution?: "unknown";
+            /** Recall */
+            recall?: components["schemas"]["TurnRecall"][];
         };
         /** TurnOutputFlow */
         TurnOutputFlow: {
@@ -15896,6 +15898,32 @@ export interface components {
              * @enum {string}
              */
             basis: "provider_complete" | "visible_estimate" | "unknown";
+        };
+        /** TurnRecall */
+        TurnRecall: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "nerva.recall-status.v1";
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "long_term_memory" | "message_archive";
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "this_turn" | "previous_recall" | "unavailable";
+            /** Recalled */
+            recalled: number | null;
+            /** Withheld */
+            withheld: {
+                [key: string]: number;
+            };
+            /** Untrusted */
+            untrusted: number;
         };
         /** TurnToolAccounting */
         TurnToolAccounting: {

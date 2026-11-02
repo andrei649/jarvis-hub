@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+from agents.core.capability_manifests import RollbackContract
 from agents.core.tool_profiles import classify_turn
 from agents.core.tool_rpc import current_tool_actor
 
@@ -73,9 +74,45 @@ def _validate_scope(context, name, args):
         raise ValueError("session provenance is assigned by Nerva")
 
 
-#: H399 — the board tools that only read it. Every other kanban tool changes the board
-#: (create, comment, block, link, attach, heartbeat, …) and runs alone in a model step.
+#: H399 — the board tools that may share a model step. Every other kanban tool changes the
+#: board (create, comment, block, link, attach, heartbeat, …) and runs alone in a step.
+#: ``kanban_list`` is here although it writes (``LIST_ROLLBACK``): its dependency catch-up
+#: is one IMMEDIATE transaction and idempotent, so two listings, or a listing beside a
+#: show, leave the board as either alone would. Parallel safety is not the effect label.
 KANBAN_READ_TOOLS = frozenset({"kanban_list", "kanban_show", "kanban_attachments"})
+#: H325 — what the capability registry says a board write leaves behind. The tools are
+#: ungated, so without this the registry called every one of them read-only.
+WRITE_ROLLBACK = RollbackContract(
+    mode="compensate",
+    description=("A later board call moves the task again (unblock, request changes, a new "
+                 "comment or a completion); nothing is erased."),
+    limitations=("The board keeps every comment, link, attachment and run event, so a write "
+                 "is answered by another write, never undone."),
+)
+#: H325 review r2 — ``kanban_list`` is not a pure read: before listing it runs
+#: ``kanban_db.recompute_ready`` (``tools._handle_list``), the catch-up the dispatcher tick
+#: and the CLI list run, which writes task statuses and ``promoted`` events.
+LIST_ROLLBACK = RollbackContract(
+    mode="compensate",
+    description=("Every listing first runs the board's dependency catch-up, the one the "
+                 "dispatcher tick and the CLI list run: each todo task, and each blocked one "
+                 "that is neither held for an operator nor at its failure limit, whose parents "
+                 "are all done or archived (or that has none) moves to ready, or back to review "
+                 "where it left off, and gets a 'promoted' event; the answer counts them in "
+                 "`promoted`. A later board write answers it: linking a ready task under a "
+                 "parent that is still open (kanban_link) gates it back to todo."),
+    limitations=("The catch-up covers the whole board, not only the rows the filters return; "
+                 "the 'promoted' events stay in the log; and a promoted task is dispatchable "
+                 "from the next dispatcher tick, whose own catch-up would have promoted it."),
+)
+#: H325 — each board tool's ``(risk, rollback)``. A tool not named here writes the board
+#: like the rest (``sensitive``/``WRITE_ROLLBACK``); the two pure reads leave every row of
+#: the board database as it was (``tests/test_tool_surface.py`` runs them and checks).
+KANBAN_EFFECTS = {
+    "kanban_show": ("read_only", None),
+    "kanban_attachments": ("read_only", None),
+    "kanban_list": ("reversible", LIST_ROLLBACK),
+}
 
 
 def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda: None,
@@ -118,6 +155,11 @@ def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda
                 return await asyncio.to_thread(_invoke, args)
 
         schema = spec["schema"]
+        risk, rollback = KANBAN_EFFECTS.get(name, ("sensitive", WRITE_ROLLBACK))
         server.register_tool(name, handler, description=schema.get("description", ""),
                              input_schema=schema["parameters"], untrusted_output=True,
-                             parallel_safe=None if name in KANBAN_READ_TOOLS else False)
+                             # H325 — an identity, so the capability board lists the
+                             # board tools at all, under what they really do.
+                             capability_id=f"tool:{name}",
+                             parallel_safe=None if name in KANBAN_READ_TOOLS else False,
+                             risk=risk, rollback=rollback)

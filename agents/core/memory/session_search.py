@@ -461,6 +461,7 @@ def register_session_search(server: Any, *, directory: Path | None = None) -> st
         input_schema=INPUT_SCHEMA,
         capability_id=CAPABILITY_ID,
         preflight=preflight,
+        risk="read_only",  # H325
     )
     return TOOL_NAME
 

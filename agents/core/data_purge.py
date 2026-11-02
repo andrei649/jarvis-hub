@@ -772,7 +772,10 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
     # Binary wave 2 explicitly excludes attachment bytes from recovery archives.
     # The disk-backed store has no live cache to re-persist after this deletion.
     from .artifact_store import BinaryArtifactStore
-    with BinaryArtifactStore(root).forget():
+    from .observability.egress_monitor import EGRESS_MONITOR
+    # The egress ledger's write-behind queue must not put back what this erases: events
+    # recorded before the forget are dropped and the writer stays off the file until done.
+    with BinaryArtifactStore(root).forget(), EGRESS_MONITOR.forgetting(root):
 
         if backup_first:
             # AUDIT-2c. Three deliberate changes from the old call, each closing a way the

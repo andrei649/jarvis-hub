@@ -20,6 +20,7 @@ Rules this surface lives by (plan: docs/superpowers/plans/2026-08-31-live-system
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -284,7 +285,14 @@ ACTIVITY_SOURCES = (
 # ── shared context: one tracer pass + one egress read feed several reducers ──
 
 
-def _build_context(orch, now: float) -> dict:
+def _egress_snapshot() -> dict:
+    """Ledger tallies (H381: read from SQLite — the async route runs this in a thread)."""
+    return _safe(lambda: __import__(
+        "agents.core.observability.egress_monitor", fromlist=["EGRESS_MONITOR"]
+    ).EGRESS_MONITOR.snapshot(limit=0), {}) or {}
+
+
+def _build_context(orch, now: float, egress: dict | None = None) -> dict:
     ctx: dict = {"turns_60s": 0, "inbound_turns_60s": 0, "local_turns_60s": 0,
                  "cloud_turns_60s": 0, "active_agents_60s": 0, "egress_violations": []}
     traces = _safe(lambda: orch.tracer.list(limit=_TRACE_LIMIT), []) if orch else []
@@ -309,9 +317,8 @@ def _build_context(orch, now: float) -> dict:
             else:
                 ctx["local_turns_60s"] += 1
     ctx["active_agents_60s"] = len(active)
-    egress = _safe(lambda: __import__(
-        "agents.core.observability.egress_monitor", fromlist=["EGRESS_MONITOR"]
-    ).EGRESS_MONITOR.snapshot(limit=0), {}) or {}
+    if egress is None:
+        egress = _egress_snapshot()
     ctx["egress_violations"] = list(egress.get("local_only_violations") or [])
     return ctx
 
@@ -354,11 +361,14 @@ def _edge_activity(orch, ctx) -> dict:
     return out
 
 
-def build_system_map(orch) -> dict:
-    """The whole feed: topology version + per-node status + per-edge activity."""
+def build_system_map(orch, *, egress: dict | None = None) -> dict:
+    """The whole feed: topology version + per-node status + per-edge activity.
+
+    *egress* is a ledger snapshot the caller already read off the event loop; without
+    one it is read here (synchronous callers)."""
     now = time.time()
     topo = load_topology()
-    ctx = _build_context(orch, now)
+    ctx = _build_context(orch, now) if egress is None else _build_context(orch, now, egress)
     nodes = {}
     for node in topo["nodes"]:
         reducer = HEALTH_REDUCERS.get(node["health_source"])
@@ -387,6 +397,7 @@ async def system_map_page(request: Request):
 @router.get("/api/system-map", dependencies=[Depends(user_guard)])
 async def system_map_feed():
     """Live subsystem-health snapshot driving the map — read-only."""
-    feed = build_system_map(get_orch())
+    egress = await asyncio.to_thread(_egress_snapshot)
+    feed = build_system_map(get_orch(), egress=egress)
     feed["topology"] = load_topology()
     return nocache_json(feed)

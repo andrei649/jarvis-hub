@@ -52,7 +52,8 @@ from .action_origin import (
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from .turn_outcome import (measure_turn_latency, record_turn_completion,
                            record_agent_observation, record_synthesis_observation,
-                           settle_agent_turn, record_accepted_compression)
+                           settle_agent_turn, record_accepted_compression,
+                           record_recall_status)
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import (
     ADMIN,
@@ -68,6 +69,7 @@ from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from . import project_context  # H594: the project's convention files
 from . import power  # H182: keep awake while a turn runs
+from . import mem_trim  # H448: give freed heap pages back after a turn
 from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
@@ -809,6 +811,9 @@ class Orchestrator:
         self._session_id_default: Optional[str] = None
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
+        # H255 — the variables the runtime settings' ${env:…} references name, as digests
+        # at the last load: get_setting loads again once one of them holds something else.
+        self._env_ref_snapshot: dict = {}
         self._channel_sessions: dict[str, str] = {}
         self._channel_lifecycle = None
         self._pending_inputs = None
@@ -1440,7 +1445,14 @@ class Orchestrator:
 
     def load_runtime_settings(self):
         try:
-            all_s = _get_settings()
+            # H255 — the runtime settings are a load cache of values as they are used: a
+            # ${env:…} reference is expanded here, and the variables it names are
+            # snapshotted so a change to one of them invalidates this cache (get_setting).
+            from . import settings_db, settings_interpolation
+
+            stored = _get_settings()
+            self._env_ref_snapshot = settings_interpolation.snapshot(settings_db.env_ref_names(stored))
+            all_s = settings_db.interpolated(stored)
             flat = {}
             for cat, items in all_s.items():
                 for item in items:
@@ -1502,6 +1514,19 @@ class Orchestrator:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 
     def get_setting(self, key: str, default=None):
+        snap = getattr(self, "_env_ref_snapshot", None)
+        if snap:
+            from .settings_interpolation import changed
+
+            if changed(snap):
+                # H255 (Hermes _env_ref_snapshot): a variable a setting names moved — a .env
+                # loaded late, a rotation in this process. One reload per change: a failed
+                # one keeps the last values and the 30 s watcher tries again.
+                self._env_ref_snapshot = {}
+                try:
+                    self.load_runtime_settings()
+                except Exception:  # noqa: BLE001 — a read never fails on a reload; the last values stand
+                    logger.warning("runtime settings: reload after an environment change failed", exc_info=True)
         return self._runtime_settings.get(key, default)
 
     def _telegram_owner_settings(self) -> dict:
@@ -2144,6 +2169,20 @@ class Orchestrator:
             # read by a machine, opens no collector: the notices stay for the owner.
             carries = channel in _NOTICE_FOOTER_CHANNELS and current_principal().admin is True
             notices, notices_token = open_turn_notices() if carries else ([], None)
+            # H430: the same turn's recall indicator, read from the turn's outcome collector
+            # (the HUD's StatusStrip reads the same one), opened here only when this turn's
+            # reply carries a footer and no caller opened one already.
+            from .turn_outcome import current_turn_outcome, open_turn_outcome, reset_turn_outcome
+            outcome_sink, outcome_token = (current_turn_outcome() if carries else None), None
+            if carries and outcome_sink is None:
+                outcome_sink, outcome_token = open_turn_outcome()
+            if outcome_sink is not None and callable(getattr(draft, "show_footer", None)):
+                # Hermes shows the line right after the prefetch, not with the reply: a reply
+                # written in place carries it from its first frame (a later prefetch's line
+                # from the next one). Called from whichever thread the prefetch ran on.
+                from .memory.recall_admission import describe_recalls
+                outcome_sink.observe_progress(
+                    lambda: draft.show_footer(describe_recalls(outcome_sink.recall())))
             try:
                 if draft is not None:
                     async def push(token):
@@ -2153,20 +2192,33 @@ class Orchestrator:
                 else:
                     reply = await self.handle_input(text, channel)
             finally:
+                recall = outcome_sink.recall() if outcome_sink is not None else []
+                if outcome_token is not None:
+                    outcome_sink.close()
+                    reset_turn_outcome(outcome_token)
                 reset_turn_notices(notices_token)
                 code_interruptions.reset_conversation(conversation_token)
-            return self._with_channel_notices(reply, notices)
+            return self._with_channel_notices(reply, notices, recall=recall)
 
     @staticmethod
-    def _with_channel_notices(reply, notices: list) -> Optional[str]:
+    def _with_channel_notices(reply, notices: list, *, recall: list | None = None) -> Optional[str]:
         """The turn's notices as system lines under a channel reply (the HUD's ``ℹ``
-        lines, H674). A silent turn stays silent, and a typed reply (an ephemeral system
-        notice is a ``str`` subclass) is left exactly as it is. Only an owner's turn on a
-        text-chat channel collects any (see ``_channel_turn``)."""
-        lines = [f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
+        lines, H674), after the turn's recall indicator (H430: one line per memory
+        provider, e.g. ``🧠 Long-term memory — recalled 2 memories``, rendered by
+        ``recall_admission.describe_recalls`` from each provider's last prefetch). A
+        silent turn stays silent, and a typed reply (an ephemeral system notice is a
+        ``str`` subclass) is left exactly as it is. Only an owner's turn on a text-chat
+        channel collects any (see ``_channel_turn``)."""
+        from .memory.recall_admission import describe_recalls
+        from .turn_notices import FootedReply
+
+        lines = describe_recalls(recall or []) + [
+            f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
         if not lines or type(reply) is not str or not reply.strip():
             return reply
-        return reply.rstrip() + "\n\n" + "\n".join(lines)
+        # The footer is for reading: the adapter gets it apart from the reply, so a chat in
+        # voice mode hears only the reply (``turn_notices.spoken_text``).
+        return FootedReply(reply, lines)
 
     async def _run_channel_session_turn(self, session_id, text, channel, *, observe_only, draft):
         # BUG-5: request-local binding never mutates the owner's default session.
@@ -2462,6 +2514,7 @@ class Orchestrator:
         finally:
             reset_action_origin(origin_token)
             power.release_for_turn(awake)
+            mem_trim.after_turn(self)            # H448: at most every cooldown, off the loop
         resp = responses.get(agent_id, "") if responses else ""
         # _call_agents_parallel returns structured error/timeout markers instead
         # of raising; treat those as a soft failure and return "".
@@ -2678,6 +2731,7 @@ class Orchestrator:
             close_approval_turn(state["context"] if state else None, outcome_token)
             _TURN_CHAT_OUTCOMES.reset(snapshot_token)
             power.release_for_turn(awake)
+            mem_trim.after_turn(self)            # H448: at most every cooldown, off the loop
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
             _commit_bundle_load()                    # H026: before the carry turn closes
@@ -2946,6 +3000,7 @@ class Orchestrator:
             close_approval_turn(state["context"] if state else None, outcome_token)
             _TURN_CHAT_OUTCOMES.reset(snapshot_token)
             power.release_for_turn(awake)
+            mem_trim.after_turn(self)            # H448: at most every cooldown, off the loop
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
             _commit_bundle_load()                    # H026: before the carry turn closes
@@ -3973,7 +4028,14 @@ class Orchestrator:
         memory.recall_gate) skips recall entirely, a job-model-pinned turn never
         recalls, and the retrieval is bounded by `memory.recall_timeout_s`
         (default 8 s) through _bounded_recall_hits. The living-memory rerank then
-        runs off the event loop on the hits this turn uses."""
+        runs off the event loop on the hits this turn uses.
+
+        H430: this is also where the turn's ``long_term_memory`` recall indicator comes
+        from. Each call is a new prefetch and first unseats whatever an earlier one this
+        turn reported, then reports what IT put in the prompt (``_note_recall``) — so that
+        line always describes the last long-term prefetch, from the guard's own verdicts.
+        Howard's message-archive recall reports its own line (``Agent.build_prompt``)."""
+        record_recall_status(None, provider="long_term_memory")
         if not self.get_setting("memory.recall_enabled", False):
             return ""
         from . import safe_mode
@@ -3997,6 +4059,7 @@ class Orchestrator:
             logger.info("recall skipped: memory is being erased")
             return ""
         generation = state.generation  # the generation this recall starts under
+        basis = "this_turn"
         try:
             hits = await self._bounded_recall_hits(text, generation)
             if hits is None:
@@ -4006,6 +4069,7 @@ class Orchestrator:
                 # Those hits were reranked when first served, so they are not again:
                 # a fallback does not reinforce memories this turn never recalled.
                 hits = self._warm_recall() or []
+                basis = "previous_recall" if hits else "unavailable"
                 logger.info("recall unavailable this turn; %s",
                             f"using this session's previous recall ({len(hits)} hits)" if hits
                             else "the turn runs without long-term memory")
@@ -4015,8 +4079,10 @@ class Orchestrator:
                 self._keep_warm_recall(hits, generation)
             if state.generation != generation:
                 hits = []  # a delete landed while this turn was recalling: serve nothing it read
+                basis = "unavailable"
         except Exception as e:
             logger.warning(f"recall failed: {e}")
+            self._note_recall("unavailable")
             return ""
         # CDX-7: retrieved memory is an indirect-injection surface — fence it as scanned,
         # capped, provenance-tagged DATA (never a raw splice) via the rag_guard choke point.
@@ -4031,7 +4097,23 @@ class Orchestrator:
             # handle_input's own origin reset; propagation *through* the model stays out
             # of reach (see security/recall_taint.py).
             mark_turn_recall_tainted()
+        self._note_recall(basis, wrapped)
         return wrapped.block
+
+    @staticmethod
+    def _note_recall(basis: str, wrapped=None) -> None:
+        """H430 — report this prefetch's long-term recall status to the turn
+        (``turn_outcome``), from the guard's per-snippet verdicts
+        (``recall_admission.guarded_recall_status``): counts and closed words only, never
+        a snippet. Only an owner's turn keeps one (``record_recall_status``). Never fails
+        the turn."""
+        from .memory.recall_admission import guarded_recall_status
+
+        try:
+            record_recall_status(guarded_recall_status(wrapped, basis=basis, provider="long_term_memory"),
+                                 provider="long_term_memory")
+        except Exception:
+            logger.debug("recall status unavailable", exc_info=True)
 
     def _living_memory_rerank_hits(self, hits: list) -> list:
         """Use cognition LivingMemory metadata as a post-fusion recall hint."""

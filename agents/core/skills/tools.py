@@ -72,6 +72,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ..capability_manifests import RollbackContract
+from ..code_env import DECLARATION_TTL_SECONDS
 from .batch import ACTIONS as BATCH_ACTIONS
 from .batch import MAX_OPS as BATCH_MAX_OPS
 from .frontmatter import split_frontmatter
@@ -95,6 +97,16 @@ MAX_STEPS = 20
 MAX_STEP = 300
 MAX_COMMAND = 120
 MAX_PROPOSALS_PER_DAY = 10
+#: H325 — skill_propose is ungated and writes: a pending proposal and its card, or a new
+#: skill in quarantine. No live SKILL.md moves until the owner decides.
+PROPOSE_ROLLBACK = RollbackContract(
+    mode="cancel",
+    description=("Nothing live changes until the owner approves: rejecting the card in the "
+                 "Decision Inbox discards the proposal, and a requested new skill waits in "
+                 "quarantine (pending review) and never runs unless the owner approves it."),
+    limitations=(f"Each proposal spends one of the process's {MAX_PROPOSALS_PER_DAY} a day and "
+                 "supersedes the same agent's older pending one."),
+)
 #: The file list skill_view shows beside a body, in bytes of names (review-H318b m-4): a
 #: skill with thousands of files cannot push the answer past its declared budget.
 MAX_LISTED_BYTES = 3 * 1024
@@ -216,6 +228,24 @@ CARRY_BYTES_PER_WINDOW_TOKEN = 0.25
 CARRY_MIN_WINDOW = 8192
 CARRY_HEADER = ("Skills loaded earlier this session (skill_view's answer in an earlier turn, unchanged "
                 "since; follow them as loaded):")
+#: H325 review r1 — skill_view is ungated, but a served view is not a pure read: it grants
+#: env names to the session's execute_code, puts the body into the session's carry, and
+#: counts the view in the persisted usage sidecar (which moves the curator's clock). Each
+#: write ends on its own or is withdrawn; the count is what stays.
+VIEW_ROLLBACK = RollbackContract(
+    mode="revoke",
+    description=("A served view writes three things. On an owner turn it grants this "
+                 "session's execute_code the skill's declared environment names (names, never "
+                 f"values): the grant lapses after {DECLARATION_TTL_SECONDS // 60} minutes, stops as "
+                 "soon as the skill's files, its env list, its catalog standing or the owner's "
+                 "vouch for it change, and a later view that finds the skill tainted revokes it. "
+                 "It puts an untainted, owner-vouched body into this session's carry for the next "
+                 f"{CARRY_TTL_TURNS} turns, forgotten when the session is archived, deleted or "
+                 "cleared. And it counts the view in the skills usage sidecar."),
+    limitations=("The count is kept: it restarts the curator's idle clock and returns a stale "
+                 "skill to active, and only the curator marks it stale again, once the skill has "
+                 "idled again."),
+)
 
 
 def _reply_digest(reply: dict) -> str:
@@ -1098,18 +1128,21 @@ def register_skill_tools(
                           "Decision Inbox"}
 
     server.register_tool(TOOL_LIST, _list, gated=False, description=LIST_DESCRIPTION,
-                         input_schema=LIST_SCHEMA, capability_id="tool:skills_list")
+                         input_schema=LIST_SCHEMA, capability_id="tool:skills_list", risk="read_only")
     server.register_tool(TOOL_VIEW, _view, gated=False, description=VIEW_DESCRIPTION,
                          input_schema=VIEW_SCHEMA, capability_id="tool:skill_view",
-                         max_result_bytes=MAX_ENCODED_BYTES + MAX_LISTED_BYTES + MAX_DESCRIPTION_BYTES + 4096)
+                         max_result_bytes=MAX_ENCODED_BYTES + MAX_LISTED_BYTES + MAX_DESCRIPTION_BYTES + 4096,
+                         risk="reversible", rollback=VIEW_ROLLBACK)
     server.register_tool(TOOL_PROPOSE, _propose, gated=False, description=PROPOSE_DESCRIPTION,
                          input_schema=PROPOSE_SCHEMA, capability_id="tool:skill_propose",
-                         parallel_safe=False)  # H399 — spends the daily budget, queues a card
+                         parallel_safe=False,  # H399 — spends the daily budget, queues a card
+                         risk="reversible", rollback=PROPOSE_ROLLBACK)
     return TOOL_LIST, TOOL_VIEW, TOOL_PROPOSE
 
 
 __all__ = [
     "LEDGER", "LoadedSkillLedger", "Transcript", "bind_transcript", "carry_marker", "note_compacted",
     "carry_budget", "guest_on_shared_session", "render_key", "reset_transcript",
-    "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW", "register_skill_tools",
+    "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "PROPOSE_ROLLBACK", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW",
+    "VIEW_ROLLBACK", "register_skill_tools",
 ]

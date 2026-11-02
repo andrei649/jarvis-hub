@@ -491,5 +491,6 @@ def register_search_memory(server: Any, recall_getter: Callable[[], Any], *, sca
         input_schema=INPUT_SCHEMA,
         capability_id=CAPABILITY_ID,
         preflight=preflight,
+        risk="read_only",  # H325
     )
     return TOOL_NAME

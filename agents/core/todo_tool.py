@@ -60,6 +60,8 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from .capability_manifests import RollbackContract
+
 logger = logging.getLogger("jarvis.todo_tool")
 
 TOOL_NAME = "todo"
@@ -68,6 +70,13 @@ STATUSES: tuple[str, ...] = ("pending", "in_progress", "completed", "cancelled")
 MAX_ITEMS = 50
 MAX_CONTENT = 200
 MAX_ID = 64
+#: H325 — how the capability registry says a call is put back (see ``register_todo_tool``).
+ROLLBACK = RollbackContract(
+    mode="compensate",
+    description=("It writes only this session's in-memory state. Every answer carries "
+                 "the whole list, so a later call can write back what a call replaced; "
+                 "the tool keeps no copy of it."),
+)
 MAX_SESSION_ID = 128
 MAX_SESSIONS = 256
 #: The whole list, as the tool answers it (JSON, UTF-8), fits under the smallest
@@ -597,12 +606,18 @@ def register_todo_tool(
         # H399 — each call rewrites the one plan and restates it; two in the same step
         # would interleave and one would restate a plan the other already changed.
         parallel_safe=False,
+        # H315 review / H325 — ungated but not read-only: it writes the session's own
+        # state in memory. What a call replaced is put back by a compensating call:
+        # every answer carries the whole list and stays in the transcript.
+        risk="reversible",
+        rollback=ROLLBACK,
     )
     return TOOL_NAME
 
 
 __all__ = [
     "CAPABILITY_ID", "DESCRIPTION", "INPUT_SCHEMA", "MAX_CONTENT", "MAX_ID", "MAX_ITEMS",
-    "MAX_PLAN_BYTES", "MAX_SESSIONS", "SHARED_SESSION_DETAIL", "STATUSES", "TODOS", "TOOL_NAME",
+    "MAX_PLAN_BYTES", "MAX_SESSIONS", "ROLLBACK", "SHARED_SESSION_DETAIL", "STATUSES", "TODOS",
+    "TOOL_NAME",
     "TodoError", "TodoStore", "counts", "model_items", "plan_bytes", "register_todo_tool",
 ]

@@ -526,6 +526,12 @@ class ComfyUIBackend:
 
     async def generate(self, prompt, options, *, guard=None):
         self.config.fingerprint()
+        # The config is a plain dataclass: from_env admits only literal loopback, but a
+        # directly built one is not checked, so the backend checks it before any send
+        # (H381) — the image prompt must not leave the machine.
+        from .registry import local_endpoint
+        if local_endpoint(self.config.base_url) != self.config.base_url:
+            raise ImageGenerationError("invalid_endpoint")
         opts = validate_options(prompt, options)
         # Resolved before a socket is opened. An unusable reference must not cost a
         # submission whose outcome we would then be unable to observe.

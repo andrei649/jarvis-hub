@@ -92,6 +92,11 @@ def _passable_name(name: object) -> bool:
     return not upper.startswith(("AUXILIARY_", "JARVIS_", "HERMES_"))
 
 
+#: How long a skill view's declaration lasts unless the host sizes it otherwise (the
+#: coordinator does not); ``skills.tools.VIEW_ROLLBACK`` states it to the capability board.
+DECLARATION_TTL_SECONDS = 3600
+
+
 @dataclass(frozen=True, repr=False)
 class _Declaration:
     names: frozenset[str]
@@ -106,7 +111,7 @@ class CodeEnvRegistry:
         self,
         *,
         clock: Callable[[], float] = time.monotonic,
-        ttl_seconds: float = 3600,
+        ttl_seconds: float = DECLARATION_TTL_SECONDS,
         max_scopes: int = 256,
         max_variables: int = 64,
     ) -> None:
@@ -307,4 +312,4 @@ def prepare_code_env(
     return result
 
 
-__all__ = ["CodeEnvRegistry", "prepare_code_env"]
+__all__ = ["DECLARATION_TTL_SECONDS", "CodeEnvRegistry", "prepare_code_env"]
