@@ -2669,6 +2669,18 @@
   the HUD form) stays `partial`: no production grader or judge is wired, there is no probe registry,
   and the completion contract is inert at runtime. The 354 rows whose evidence the batch moved were
   re-read (311 held, 43 corrected); `needs_review` 0; headline 134 → 138/697.
+  **Batch 2 (2026-11-02):** five rows built, each looped through fresh adversarial review and
+  fixes. H448 (`malloc_trim` after turns on Linux/glibc, probed once, rate-limited, a no-op elsewhere),
+  H255 (`${NAME}`/`${env:NAME}` in settings values at load, templates written back, a reference policy
+  for credentials) and H430 (a per-turn 'recalled N memories' line per provider in the HUD and channel
+  footers, only the last prefetch) are `equivalent`. H381 (the egress ledger now survives restarts; a
+  structural scan fails a prompt-carrying module that reaches a bare HTTP client, hook rewiring
+  included) and H325 (a committed snapshot of every tool's description and schema, honest risk and
+  rollback labels for ungated writers, a docs-vs-registry check) stay `partial`: their reviewers kept
+  finding shapes a static check misses (`type(client)()`, planted host attributes; parameter names,
+  omissions, fenced examples), recorded as the rows' remaining work. Registry planning now keeps the
+  risk context on a long tool description. 397 rows re-read (344 held, 53 corrected); headline
+  138 → 141/697.
 
 ## Darwin feature absorption — 2026-09-09
 
