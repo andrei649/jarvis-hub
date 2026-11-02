@@ -80,13 +80,17 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
     schemas = payload["components"]["schemas"]
     assert set(schemas) == {
         "ChatRequest", "ChatResponse", "TurnNotice", "TurnOutcome", "TurnCompletion",
-        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation",
+        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall",
     }
     assert schemas["ChatRequest"] == source["components"]["schemas"]["ChatRequest"]
     assert schemas["ChatResponse"] == source["components"]["schemas"]["ChatResponse"]
     assert schemas["TurnNotice"] == source["components"]["schemas"]["TurnNotice"]
-    for name in ("TurnOutcome", "TurnCompletion", "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation"):
+    for name in ("TurnOutcome", "TurnCompletion", "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation",
+                 "TurnRecall"):
         assert schemas[name] == source["components"]["schemas"][name]
+    # H430: the recall status the descriptor publishes is counts and closed words only.
+    assert set(schemas["TurnRecall"]["properties"]) == {
+        "schema", "provider", "basis", "recalled", "withheld", "untrusted"}
     assert schemas["ChatRequest"]["additionalProperties"] is False
     assert "model" not in schemas["ChatRequest"]["properties"]
     assert "provider" not in schemas["ChatRequest"]["properties"]

@@ -59,6 +59,8 @@ class TurnOutcomeCollector:
         self._visible_bytes = 0
         self._file_attempts: list[tuple[str, str, str]] = []
         self._file_attribution_unknown = False
+        self._recall: dict[str, dict] = {}
+        self._progress_observers: list = []
         self._final: dict | None = None
 
     def claim(self) -> bool:
@@ -233,6 +235,49 @@ class TurnOutcomeCollector:
             self._file_attribution_unknown = True
             return True
 
+    def recall_observation(self, status: dict | None, *, provider: str) -> bool:
+        """H430 — the state *provider*'s LAST memory prefetch this turn left, replacing that
+        provider's earlier one: a provider that prefetches twice reports the second, never
+        a stale first count, and one provider's prefetch never unseats another's (each put
+        its own memory in the prompt). ``None`` is a prefetch that began (or injected
+        nothing to report). Only a ``recall_admission.recall_status`` shape for that same
+        provider is kept: counts and closed words."""
+        from .memory.recall_admission import RECALL_PROVIDERS, valid_recall_status
+
+        if provider not in RECALL_PROVIDERS:
+            return False
+        with self._lock:
+            if self._closed or self._completion is not None:
+                return False
+            readable = status is None or (valid_recall_status(status) and status["provider"] == provider)
+            if status is None or not readable:
+                # an unreadable later prefetch still unseats the earlier one, live as well
+                changed = self._recall.pop(provider, None) is not None
+            else:
+                self._recall[provider], changed = _copy(status), True
+            observers = list(self._progress_observers) if changed else []
+        for observer in observers:   # outside the lock: an observer reads progress()
+            try:
+                observer()
+            except Exception:
+                logger.debug('turn outcome progress observer failed', exc_info=True)
+        return readable
+
+    def observe_progress(self, callback) -> None:
+        """Call *callback* (no arguments) when a recall status lands, so a live client can
+        show the indicator when the prefetch finishes rather than with the first token."""
+        if callable(callback):
+            with self._lock:
+                self._progress_observers.append(callback)
+
+    def recall(self) -> list[dict]:
+        """The recorded recall statuses (copies), one per provider in display order, open
+        or closed."""
+        from .memory.recall_admission import RECALL_PROVIDERS
+
+        with self._lock:
+            return [_copy(self._recall[p]) for p in RECALL_PROVIDERS if p in self._recall]
+
     def progress(self, *, usage: dict | None = None, status: dict | None = None) -> dict | None:
         with self._lock:
             if self._closed:
@@ -288,6 +333,10 @@ class TurnOutcomeCollector:
                                     'basis': 'visible_estimate'}
             elif self._completion is not None:
                 result['output'] = {'tokens': None, 'basis': 'unknown'}
+            if self._recall:
+                from .memory.recall_admission import RECALL_PROVIDERS
+
+                result['recall'] = [_copy(self._recall[p]) for p in RECALL_PROVIDERS if p in self._recall]
             if type(status) is dict:
                 for name in ('model', 'context_detail', 'context_pct', 'cache_hit', 'tps'):
                     if name in status:
@@ -460,6 +509,25 @@ def record_tool_refused() -> bool:
 def record_visible_output(piece: str) -> bool:
     sink = _current.get()
     return bool(sink and sink.visible_output(piece))
+
+
+def record_recall_status(status: dict | None, *, provider: str = "long_term_memory") -> bool:
+    """H430 — a memory provider reports what its prefetch injected (``None`` when a
+    prefetch begins). A no-op outside a turn.
+
+    Only an owner's turn keeps a status — the same rule as the turn's notices
+    (``Orchestrator._channel_turn``): what the owner's memory held is the owner's to see.
+    Checked here, where every status enters the turn, so no recall path can forget it.
+    Clearing (``None``) is never refused."""
+    sink = _current.get()
+    if sink is None:
+        return False
+    if status is not None:
+        from .orchestrator import current_principal
+
+        if current_principal().admin is not True:
+            return False
+    return sink.recall_observation(status, provider=provider)
 
 
 def measure_turn_latency(fn):

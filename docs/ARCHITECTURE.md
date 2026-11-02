@@ -67,6 +67,29 @@ Same flow but step 7 calls `backend.generate_stream(..., on_token=on_token)`.
 `_recall_block` is called in both paths. Controlled by `memory.recall_enabled` (default `False`).
 When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k as a prompt prefix.
 
+H430 recall indicator: every source that puts memory into a prompt is a provider
+(`recall_admission.RECALL_PROVIDERS`), and each reports its own last prefetch. `long_term_memory`
+is `_recall_block` (one prefetch per call: it clears that provider's status, then reports what it
+put in the prompt). `message_archive` is Howard's few-shot recall of the owner's imported messages
+(`Agent.build_prompt` → `search_similar(only_me=True)`), reported the same way on every Howard
+prompt build; safe mode reports none, a failed search of a non-empty archive is "unavailable".
+Both compute the status from `rag_guard.WrappedMemory.verdicts` (`clean`/`untrusted` recalled,
+`redacted` withheld as `rejected_taint`) through `recall_admission.guarded_recall_status`: counts
+and closed words only. `turn_outcome.record_recall_status(status, provider=)` keeps one status per
+provider (a provider's later prefetch replaces only its own; the stream path's second long-term
+prefetch reports the second) and only on an owner's turn. `/chat` and the stream carry them as
+`outcome.recall` (a list, provider order); the stream also sends an `outcome_progress` the moment a
+prefetch lands, so the line does not wait for the first token. The HUD StatusStrip renders one line
+per provider (`turn-outcome.tsx` `recallLines`), and an owner's Telegram/Slack/Discord/ntfy reply
+gets them as footer lines (`_channel_turn` → `_with_channel_notices` → `describe_recalls`), handed
+to the adapter as a `turn_notices.FootedReply` so a Telegram chat in voice mode reads the footer and
+hears only the reply (`spoken_text`). A Telegram reply streamed in place shows the line from its
+first frame (`TelegramDraft.show_footer`, fed by the turn outcome's progress observer). `nerva
+chat` prints the lines on stderr before the answer (stdout stays the answer; `-z`/`--json` are
+unchanged). Both renderers produce `🧠 Long-term memory — recalled 1 memory` / `🧠 Message archive — recalled 3
+memories` / `recalled relevant memory`, plus withheld reasons, a previous-recall stand-in or
+"unavailable this turn", and they share the cases in `frontend/src/test/recall-line-cases.json`.
+
 ---
 
 ## 3. Module Index
