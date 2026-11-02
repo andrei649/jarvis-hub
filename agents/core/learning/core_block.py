@@ -114,9 +114,12 @@ CORE_BLOCK_MAX_CHARS = (_header_max_chars(_HEADER, MEMORY_CHAR_BUDGET) + len(_CA
 
 
 def _default_detect(text: str) -> list:
+    # The block is rendered to the model verbatim, so it is scanned the way verbatim text
+    # is (quarantine.detect_injection_normalized): an instruction split by an invisible
+    # character or respaced is flagged too, as Hermes's strict scan blocks it.
     try:
-        from ..security.quarantine import detect_injection
-        return detect_injection(text)
+        from ..security.quarantine import detect_injection_normalized
+        return detect_injection_normalized(text)
     except Exception:                                    # pragma: no cover
         return []
 
