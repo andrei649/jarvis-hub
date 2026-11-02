@@ -4,9 +4,9 @@
     "blocked": 1,
     "delivered": 0,
     "done": 289,
-    "open": 20,
-    "open_or_blocked": 21,
-    "total": 310
+    "open": 21,
+    "open_or_blocked": 22,
+    "total": 311
   },
   "horizons": {
     "H10": {
@@ -69,8 +69,8 @@
       "blocked": 0,
       "delivered": 0,
       "done": 22,
-      "open": 12,
-      "total": 34
+      "open": 13,
+      "total": 35
     },
     "H19": {
       "blocked": 0,
@@ -224,7 +224,7 @@
   ],
   "routes": 745,
   "tests": {
-    "backend": 30915,
+    "backend": 30918,
     "frontend": 2721,
     "mobile": 359
   },
