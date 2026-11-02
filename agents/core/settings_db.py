@@ -1034,6 +1034,13 @@ def _changed(category, values) -> None:
             logger.warning("a settings change listener failed", exc_info=True)
 
 
+def _changed_as_used(category: str, values: dict[str, Any]) -> None:
+    """Tell the listeners what a write stored, each value as it is used: a ``${env:…}``
+    reference reaches them expanded (H255), whichever writer stored it (a category write,
+    an import, a reset, an undo)."""
+    _changed(category, {key: _interpolated(category, key, value) for key, value in values.items()})
+
+
 def get_category(cat: str) -> list[dict]:
     _ensure_init()
     conn = get_conn()
@@ -1288,18 +1295,52 @@ def is_literal(cat: str, key: str) -> bool:
     return (cat, key) in LITERAL or (cat, key) in ROUTE_ONLY
 
 
+def _credential_setting(cat: str, key: str) -> bool:
+    """H255 review — a declared setting that holds a credential (encrypted at rest, or named
+    like one: ``is_secret_setting``). Its consumer sends it to its own vendor, and every
+    view, export and support bundle treats it as a secret."""
+    return (cat, key) in _SPEC and is_secret_setting(cat, key)
+
+
+def _refuser(cat: str, key: str) -> _interp.Refuse:
+    """H255 review — which variables this setting may not expand, and why (see
+    ``settings_interpolation``): an expansion must never show a value that
+    ``/api/admin/env`` masks to a route, a host or a prompt the setting reaches. The
+    hub's own credentials, never; another credential, only in a credential setting; and
+    outside one, no variable whose value looks like a credential."""
+    credential = _credential_setting(cat, key)
+
+    def refuse(name: str, value: str | None) -> str | None:
+        reason = _interp.refusal(name, credential_setting=credential)
+        if reason is None and value is not None and not credential and _looks_like_credential(value):
+            reason = _interp.CREDENTIAL_VALUE
+        return reason
+
+    return refuse
+
+
 def _interpolated(cat: str, key: str, value: Any) -> Any:
     """H255 — *value* (decrypted) as it is used: its ``${NAME}`` / ``${env:NAME}``
-    references expanded against the environment now. The expanded value must pass the
-    same checks a write of it would; one that does not stays as written (a reference
-    must not carry a value past the check its setting has)."""
+    references expanded against the environment now, except a variable this setting may
+    not name (:func:`_refuser`). The expanded value must pass the same checks a write of
+    it would; one that does not stays as written (a reference must not carry a value past
+    the check its setting has), and outside a credential setting it must not look like a
+    credential the stored text did not already hold (``http://${U}:${P}@host``)."""
     if is_literal(cat, key) or not _interp.has_refs(value):
         return value
-    expanded = _interp.expand(value, setting=f"{cat}.{key}")
+    expanded = _interp.expand(value, setting=f"{cat}.{key}", refuse=_refuser(cat, key))
     if expanded == value:
         return value
+    if (not _credential_setting(cat, key) and _looks_like_credential(expanded)
+            and not _looks_like_credential(_interp.without_refs(value))):
+        logger.warning("setting %s.%s: what its environment references expand to looks like a "
+                       "credential, which only a credential setting may hold; kept as written",
+                       _logsafe(cat), _logsafe(key))
+        return value
     try:
-        problems = validate_category(cat, {key: expanded}) if (cat, key) in _SPEC else []
+        # The references still in it are ones this expansion refused (or left unset): they
+        # stay as text on purpose, so only the setting's own checks judge it here.
+        problems = validate_category(cat, {key: expanded}, references=False) if (cat, key) in _SPEC else []
     except Exception:  # noqa: BLE001 — a check that cannot run does not let the value through
         problems = ["unchecked"]
     if problems:
@@ -1311,9 +1352,21 @@ def _interpolated(cat: str, key: str, value: Any) -> Any:
 
 
 def _env_refs(cat: str, key: str, value: Any) -> list[dict[str, Any]]:
-    """H255 — the variables a stored value names (``{"name", "set"}``), for a view; [] for
-    a literal setting. Names only: a view never carries what a variable holds."""
-    return [] if is_literal(cat, key) else _interp.references(value)
+    """H255 — the variables a stored value names (``{"name", "set"}``, plus ``refused``
+    with the reason for one this setting may not name), for a view; [] for a literal
+    setting. Names only: a view never carries what a variable holds."""
+    return [] if is_literal(cat, key) else _interp.references(value, refuse=_refuser(cat, key))
+
+
+def _reference_problem(cat: str, key: str, value: Any) -> str | None:
+    """H255 review — a write may not name a variable this setting must never expand: the
+    write is refused, naming the variable and why (never its value)."""
+    if is_literal(cat, key) or not _interp.has_refs(value):
+        return None
+    for ref in _env_refs(cat, key, value):
+        if ref.get("refused"):
+            return f"{key}: names the environment variable {ref['name']}, {ref['refused']}"
+    return None
 
 
 def interpolated(groups: dict[str, list[dict]]) -> dict[str, list[dict]]:
@@ -1333,8 +1386,8 @@ def env_ref_names(groups: dict[str, list[dict]]) -> list[str]:
     for rows in groups.values():
         for row in rows:
             for ref in row.get("env_refs") or ():
-                if ref.get("name") not in names:
-                    names.append(ref["name"])
+                if not ref.get("refused") and ref.get("name") not in names:
+                    names.append(ref["name"])   # a refused name never expands: nothing to reload
     return names
 
 
@@ -1348,18 +1401,20 @@ def _keep_reference(cat: str, key: str, value: Any, stored_json: Any) -> Any:
         old = _decrypt_if_secret(json.loads(stored_json))
     except (TypeError, ValueError):
         return value
-    kept = _interp.preserve(value, old, setting=f"{cat}.{key}")
+    kept = _interp.preserve(value, old, setting=f"{cat}.{key}", refuse=_refuser(cat, key))
     if kept != value:
         logger.info("setting %s.%s: kept its environment reference; the value written is what it "
                     "expands to", _logsafe(cat), _logsafe(key))
     return kept
 
 
-def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
+def validate_category(cat: str, data: dict[str, Any], *, references: bool = True) -> list[str]:
     """Validate a settings write; return a list of human-readable errors (empty = ok).
 
     Only keys known in DEFAULTS for *cat* are checked (unknown keys are ignored on
-    write). Values must be JSON-serializable so they can be stored.
+    write). Values must be JSON-serializable so they can be stored. A ``${…}`` reference
+    to a variable the setting may not name is refused (H255 review); *references* False
+    leaves that out, for a value that is already an expansion.
     """
     errors: list[str] = []
     for key, value in data.items():
@@ -1400,6 +1455,8 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             odd = [v for v in value if v not in spec.get("opts", [])]
             if odd:
                 err = f"mic_surfaces: {odd} are not surfaces that arm a microphone ({spec.get('opts', [])})"
+        if err is None and references:
+            err = _reference_problem(cat, key, value)   # H255 review: which variables it may name
         if err:
             errors.append(err)
     return errors
@@ -1545,11 +1602,9 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
     if skipped:
         logger.warning("put_category(%s): ignored unknown keys: %s",
                        _logsafe(cat), _logsafe(skipped))
-    # A listener holds values as they are used: a reference reaches it expanded (H255).
-    written = {key: _interpolated(cat, key, kept.get(key, value))
-               for key, value in data.items() if key not in skipped}
+    written = {key: kept.get(key, value) for key, value in data.items() if key not in skipped}
     if written:
-        _changed(cat, written)
+        _changed_as_used(cat, written)
     return updated, skipped
 
 # ── init on first use (via _ensure_init) — NOT at import ─────────
@@ -1770,7 +1825,7 @@ def _apply_import_fenced(changes: dict[str, dict[str, Any]], *,
     _require_readable_store()
     for cat, values in changes.items():
         if values:
-            _changed(cat, {key: _interpolated(cat, key, value) for key, value in values.items()})
+            _changed_as_used(cat, values)
     return written
 
 
@@ -1890,7 +1945,7 @@ def _reset_settings_fenced(cat: str | None,
         conn.close()
     _require_readable_store()
     for c, values in plan.items():
-        _changed(c, dict(values))
+        _changed_as_used(c, values)
     return plan, snap
 
 
@@ -1970,7 +2025,7 @@ def _undo_last_reset_fenced(gate: Callable[[dict[str, dict[str, Any]]], list[str
         conn.close()
     _require_readable_store()
     for cat, values in restore.items():
-        _changed(cat, dict(values))
+        _changed_as_used(cat, values)
     return {"id": row["id"], "scope": row["scope"], "restored": _names(restore), "skipped": skipped}
 
 

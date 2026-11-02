@@ -12,7 +12,12 @@ settings routes, ``nerva config``, export and import):
 * the runtime-settings load cache loads again when a variable it names changes;
 * a save writes the reference back, never what it expands to (also after a rotation, in
   nested values, from the admin route, the CLI and an import);
-* an expanded secret is never persisted or logged; literal settings are never expanded.
+* an expanded secret is never persisted or logged; literal settings are never expanded;
+* (H255 review) a setting never expands a variable ``/api/admin/env`` masks into a place
+  that variable's value may not reach: the hub's own credentials nowhere, another
+  credential only in a credential setting, and outside one no value that looks like a
+  credential. Checked through a route that echoes a setting (``/api/onboarding/model-plan``),
+  the prompt a setting reaches, the admin write, ``nerva config`` and an import.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ import base64
 import io
 import json
 import logging
+import os
 import sqlite3
 
 import pytest
@@ -40,7 +46,7 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_db, "_wal_set", False)
     monkeypatch.setattr(settings_db, "_field_cipher", None)
     for name in ("H255_SECRET", "H255_ID", "H255_URL", "H255_WAKE", "H255_FONT", "H255_TRIG",
-                 "H255_UNSET", "H255_MODEL"):
+                 "H255_UNSET", "H255_MODEL", "H255_PROVIDER_API_KEY", "H255_LEAKY", "H255_USER", "H255_PW"):
         monkeypatch.delenv(name, raising=False)
     try:  # the module this row adds; the entry-point tests below do not need it to exist
         from agents.core import settings_interpolation
@@ -269,21 +275,69 @@ def test_a_changed_or_cleared_value_is_written_as_given(store, monkeypatch):
     assert _stored("plugins", "tuya_client_id") == ""
 
 
+def _guidance(**overrides) -> dict:
+    return {"enabled": True, "flags": {}, "agents": {}, "platform_overrides": overrides}
+
+
 def test_nested_values_keep_their_references_leaf_by_leaf(store, monkeypatch):
+    from agents.core.operating_guidance import build_operating_guidance
+
     monkeypatch.setenv("H255_FONT", "mono")
     monkeypatch.setenv("H255_WAKE", "computer")
-    store.put_category("appearance", {"preferences": {"font": "${env:H255_FONT}", "theme": "dark"}})
+    # llm.operating_guidance reaches the turn's prompt through the runtime settings
+    store.put_category("llm", {"operating_guidance": _guidance(cli="Reply in ${env:H255_FONT}", telegram="plain")})
     store.put_category("general", {"wake_words": ["nerva", "${env:H255_WAKE}"]})
 
-    prefs = store.get_value("appearance", "preferences")
-    assert prefs == {"font": "mono", "theme": "dark"}
-    store.put_category("appearance", {"preferences": {**prefs, "theme": "light"}})
-    assert _stored("appearance", "preferences") == {"font": "${env:H255_FONT}", "theme": "light"}
+    o = _bare_orchestrator()
+    o.load_runtime_settings()
+    used = o.get_setting("llm.operating_guidance")
+    assert used["platform_overrides"] == {"cli": "Reply in mono", "telegram": "plain"}
+    assert "Reply in mono" in build_operating_guidance(model="claude-sonnet-4-5", surface="cli",
+                                                       platform_overrides=used["platform_overrides"])
+    store.put_category("llm", {"operating_guidance": {**used, "platform_overrides": {
+        **used["platform_overrides"], "telegram": "bullets"}}})
+    assert _stored("llm", "operating_guidance") == _guidance(cli="Reply in ${env:H255_FONT}", telegram="bullets")
 
     words = store.get_value("general", "wake_words")
     assert words == ["nerva", "computer"]
     store.put_category("general", {"wake_words": [*words, "hub"]})       # list items by position
     assert _stored("general", "wake_words") == ["nerva", "${env:H255_WAKE}", "hub"]
+
+
+def test_a_removed_or_moved_list_item_never_writes_a_later_ones_expansion(store, monkeypatch):
+    from agents.core.settings_interpolation import preserve
+
+    env = {"A": "a-secret", "B": "b-secret"}
+    assert preserve(["b-secret"], ["${env:A}", "${env:B}"], setting="t.l", environ=env) == ["${env:B}"]
+    assert preserve(["b-secret", "a-secret"], ["${env:A}", "${env:B}"], setting="t.l", environ=env) == [
+        "${env:B}", "${env:A}"]
+    assert preserve([{"u": "b-secret"}], [{"u": "${env:A}"}, {"u": "${env:B}"}], setting="t.l",
+                    environ=env) == [{"u": "${env:B}"}]
+
+    monkeypatch.setenv("H255_WAKE", "computer")
+    monkeypatch.setenv("H255_FONT", "jarvis")
+    store.put_category("general", {"wake_words": ["${env:H255_WAKE}", "${env:H255_FONT}"]})
+    words = store.get_value("general", "wake_words")
+    assert words == ["computer", "jarvis"]
+    store.put_category("general", {"wake_words": words[1:]})               # the first one removed
+    assert _stored("general", "wake_words") == ["${env:H255_FONT}"]
+    store.put_category("general", {"wake_words": ["${env:H255_WAKE}", "${env:H255_FONT}"]})
+    store.put_category("general", {"wake_words": list(reversed(words))})   # moved
+    assert _stored("general", "wake_words") == ["${env:H255_FONT}", "${env:H255_WAKE}"]
+
+
+def test_every_writer_tells_the_listeners_the_value_as_it_is_used(store, monkeypatch):
+    monkeypatch.setattr(store, "_change_listeners", [])
+    heard: list = []
+    store.on_change(lambda cat, values: heard.append((cat, values)))
+    monkeypatch.setenv("H255_WAKE", "computer")
+    store.put_category("general", {"wake_words": ["nerva", "${env:H255_WAKE}"]})
+    assert heard[-1] == ("general", {"wake_words": ["nerva", "computer"]})
+    assert store.reset_settings("general") is not None                     # back to the defaults
+    undone = store.undo_last_reset()
+    assert "general.wake_words" in json.dumps(undone)
+    assert heard[-1][0] == "general" and heard[-1][1]["wake_words"] == ["nerva", "computer"]
+    assert _stored("general", "wake_words") == ["nerva", "${env:H255_WAKE}"]
 
 
 def test_preserve_matches_list_items_by_name_else_position():
@@ -343,12 +397,11 @@ def test_nerva_config_writes_and_shows_the_reference_and_a_path_write_keeps_it(s
     assert code == 0 and out.strip() == '"${env:H255_ID}"'
     assert store.get_value("plugins", "tuya_device_id") == "tuya-client-42"
 
-    store.put_category("appearance", {"preferences": {"font": "${env:H255_FONT}", "theme": "dark"}})
-    assert store.get_value("appearance", "preferences")["font"] == "mono"
-    code, _, err = _cli(["config", "set", "appearance.preferences.theme", "light"])
+    store.put_category("llm", {"operating_guidance": _guidance(cli="Reply in ${env:H255_FONT}", telegram="plain")})
+    assert store.get_value("llm", "operating_guidance")["platform_overrides"]["cli"] == "Reply in mono"
+    code, _, err = _cli(["config", "set", "llm.operating_guidance.platform_overrides.telegram", "bullets"])
     assert code == 0, err
-    stored = _stored("appearance", "preferences")
-    assert stored["font"] == "${env:H255_FONT}" and stored["theme"] == "light"
+    assert _stored("llm", "operating_guidance") == _guidance(cli="Reply in ${env:H255_FONT}", telegram="bullets")
 
 
 def test_export_carries_the_reference_and_an_import_keeps_it(store, monkeypatch):
@@ -411,3 +464,161 @@ def test_every_model_choice_the_selection_guards_judge_is_literal():
         for probe in ("vendor/some-model", "allow"):
             if sg.choices_from_settings(cat, {key: probe}, lambda _k: "openrouter"):
                 assert settings_db.is_literal(cat, key), f"{cat}.{key} is judged by H378 but expanded"
+
+
+# ── 7. which variables a setting may name (H255 review) ──────────────────────
+
+PROVIDER_KEY = "sk-ant-h255-PROVIDER-KEY-0042"
+ADMIN_TOKEN = "h255-admin-token-VALUE-77"
+CREDENTIAL_ONLY = "a credential (/api/admin/env masks it), which only a credential setting may name"
+
+
+def _put_raw(cat: str, key: str, value) -> None:
+    """Store *value* as a row written before the check (or by hand, or by an old import) holds it."""
+    conn = sqlite3.connect(str(settings_db.DB_PATH))
+    try:
+        with conn:
+            conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(value), cat, key))
+    finally:
+        conn.close()
+
+
+def test_which_names_are_credentials_is_the_admin_env_views_own_rule():
+    from agents.core import env_provenance
+    from agents.core.routers import admin
+
+    assert admin._SECRET_HINTS is env_provenance.SECRET_HINTS      # one list, not two
+    for name in ("JARVIS_ADMIN_TOKEN", "JARVIS_SECRET_KEY", "JARVIS_USER_TOKEN", "JARVIS_AUDIT_KEY",
+                 "JARVIS_BACKUP_KEY", "NERVA_WORKSPACE_SSO_SECRET"):
+        assert env_provenance.hub_credential(name), name
+    for name in ("ANTHROPIC_API_KEY", "TUYA_SECRET", "TELEGRAM_BOT_TOKEN"):
+        assert env_provenance.masked(name) and not env_provenance.hub_credential(name), name
+    for name in ("JARVIS_HOME", "OLLAMA_HOST", "HOME"):
+        assert not env_provenance.masked(name), name
+
+
+def test_the_hubs_own_credentials_are_never_expanded_in_any_setting(store, monkeypatch, caplog):
+    monkeypatch.setenv("JARVIS_ADMIN_TOKEN", ADMIN_TOKEN)
+    for cat, key in (("plugins", "tuya_secret"), ("llm", "ollama_url")):    # a credential setting too
+        problems = store.validate_category(cat, {key: "${env:JARVIS_ADMIN_TOKEN}"})
+        assert problems == [f"{key}: names the environment variable JARVIS_ADMIN_TOKEN, one of the hub's own "
+                            "credentials, which no setting may name"]
+    _put_raw("plugins", "tuya_secret", "${env:JARVIS_SECRET_KEY}")
+    _put_raw("llm", "ollama_url", "http://127.0.0.1:11434/${JARVIS_ADMIN_TOKEN}")
+    with caplog.at_level(logging.DEBUG):
+        assert store.get_value("plugins", "tuya_secret") == "${env:JARVIS_SECRET_KEY}"
+        assert store.read_setting("llm", "ollama_url") == (True, "http://127.0.0.1:11434/${JARVIS_ADMIN_TOKEN}")
+        o = _bare_orchestrator()
+        o.load_runtime_settings()
+        assert o.get_setting("plugins.tuya_secret") == "${env:JARVIS_SECRET_KEY}"
+        assert o.get_setting("llm.ollama_url") == "http://127.0.0.1:11434/${JARVIS_ADMIN_TOKEN}"
+    assert _KEY not in caplog.text and ADMIN_TOKEN not in caplog.text
+    warned = [r.getMessage() for r in caplog.records if "JARVIS_SECRET_KEY" in r.getMessage()]
+    assert len(warned) == 1 and "plugins.tuya_secret" in warned[0] and "hub's own credentials" in warned[0]
+    row = {r["key"]: r for r in store.get_category("plugins")}["tuya_secret"]
+    assert row["env_refs"] == [{"name": "JARVIS_SECRET_KEY", "set": True,
+                                "refused": "one of the hub's own credentials, which no setting may name"}]
+    assert "JARVIS_SECRET_KEY" not in store.env_ref_names(store.get_all())   # nothing to reload for
+
+
+def test_a_credential_variable_expands_only_in_a_credential_setting(store, monkeypatch, caplog):
+    monkeypatch.setenv("H255_PROVIDER_API_KEY", PROVIDER_KEY)
+    store.put_category("plugins", {"tuya_secret": "${env:H255_PROVIDER_API_KEY}"})
+    assert store.get_value("plugins", "tuya_secret") == PROVIDER_KEY        # a credential setting: expands
+
+    assert store.validate_category("llm", {"ollama_url": "http://h/${env:H255_PROVIDER_API_KEY}"}) == [
+        f"ollama_url: names the environment variable H255_PROVIDER_API_KEY, {CREDENTIAL_ONLY}"]
+    _put_raw("llm", "ollama_url", "http://h/${env:H255_PROVIDER_API_KEY}")
+    _put_raw("general", "wake_words", ["nerva", "${H255_PROVIDER_API_KEY}"])
+    with caplog.at_level(logging.DEBUG):
+        for _ in range(2):
+            assert store.get_value("llm", "ollama_url") == "http://h/${env:H255_PROVIDER_API_KEY}"
+            assert store.get_value("general", "wake_words") == ["nerva", "${H255_PROVIDER_API_KEY}"]
+    assert PROVIDER_KEY not in caplog.text
+    warned = [r.getMessage() for r in caplog.records if "H255_PROVIDER_API_KEY" in r.getMessage()]
+    assert len(warned) == 2 and all("only a credential setting may name" in m for m in warned)
+    assert {m.split()[1] for m in warned} == {"llm.ollama_url", "general.wake_words"}
+
+
+def test_a_value_that_looks_like_a_credential_expands_only_in_a_credential_setting(store, monkeypatch, caplog):
+    monkeypatch.setenv("H255_URL", "http://admin:hunter2@lms.local:1234")
+    monkeypatch.setenv("H255_LEAKY", "ghp_" + "a1B2c3D4" * 4 + "e5F6")    # a token under an innocent name
+    monkeypatch.setenv("H255_USER", "admin")
+    monkeypatch.setenv("H255_PW", "hunter2")
+    with caplog.at_level(logging.DEBUG):
+        store.put_category("llm", {"lm_studio_url": "${env:H255_URL}"})
+        assert store.get_value("llm", "lm_studio_url") == "${env:H255_URL}"
+        store.put_category("llm", {"lm_studio_url": "http://${H255_USER}:${H255_PW}@lms.local"})   # assembled
+        assert store.get_value("llm", "lm_studio_url") == "http://${H255_USER}:${H255_PW}@lms.local"
+        store.put_category("general", {"wake_words": ["${env:H255_LEAKY}"]})
+        assert store.get_value("general", "wake_words") == ["${env:H255_LEAKY}"]
+    assert "hunter2" not in caplog.text and os.environ["H255_LEAKY"] not in caplog.text
+
+    store.put_category("plugins", {"tuya_secret": "${env:H255_LEAKY}"})       # a credential setting: expands
+    assert store.get_value("plugins", "tuya_secret") == os.environ["H255_LEAKY"]
+    monkeypatch.setenv("H255_URL", "http://lms.local:1234")                   # no credential in it: expands
+    store.put_category("llm", {"lm_studio_url": "${env:H255_URL}"})
+    assert store.get_value("llm", "lm_studio_url") == "http://lms.local:1234"
+
+
+def test_no_route_echoes_a_masked_variable_through_a_setting(store, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import agents.web as web
+    from agents.core.routers import model_setup
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", PROVIDER_KEY)
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "h255-admin")
+    monkeypatch.setattr(model_setup, "_service", None)
+    hdr = {"X-Admin-Token": "h255-admin"}
+    client = TestClient(web.app)
+    assert client.get("/api/admin/env", headers=hdr).json()["ANTHROPIC_API_KEY"] != PROVIDER_KEY
+
+    # the admin write that would name it is refused, naming the variable, never its value
+    resp = client.put("/api/admin/settings/llm", headers=hdr,
+                      json={"values": {"ollama_url": "http://poc.example/${env:ANTHROPIC_API_KEY}"}})
+    assert resp.status_code == 422 and "ANTHROPIC_API_KEY" in resp.text and PROVIDER_KEY not in resp.text
+    assert _stored("llm", "ollama_url") == "http://localhost:11434"
+
+    # a row that already names it reads as written: the user-tier plan echoes the reference
+    _put_raw("llm", "ollama_url", "http://poc.example/${env:ANTHROPIC_API_KEY}")
+    plan = client.get("/api/onboarding/model-plan", headers=hdr)
+    assert plan.status_code == 200 and PROVIDER_KEY not in plan.text
+    assert plan.json()["ollama"]["url"] == "http://poc.example/${env:ANTHROPIC_API_KEY}"
+    shown = client.get("/api/admin/settings/llm", headers=hdr)
+    row = next(r for r in shown.json()["llm"] if r["key"] == "ollama_url")
+    assert row["env_refs"] == [{"name": "ANTHROPIC_API_KEY", "set": True, "refused": CREDENTIAL_ONLY}]
+    assert PROVIDER_KEY not in shown.text
+
+
+def test_no_prompt_carries_a_masked_variable_through_a_setting(store, monkeypatch):
+    from agents.core.operating_guidance import build_operating_guidance
+
+    monkeypatch.setenv("H255_PROVIDER_API_KEY", PROVIDER_KEY)
+    monkeypatch.setenv("H255_FONT", "mono")
+    guidance = {"enabled": True, "flags": {}, "agents": {},
+                "platform_overrides": {"cli": "Reply in ${H255_FONT}; key ${env:H255_PROVIDER_API_KEY}"}}
+    assert store.validate_category("llm", {"operating_guidance": guidance}) == [
+        f"operating_guidance: names the environment variable H255_PROVIDER_API_KEY, {CREDENTIAL_ONLY}"]
+    _put_raw("llm", "operating_guidance", guidance)
+    o = _bare_orchestrator()
+    o.load_runtime_settings()                                   # the runtime settings the turn reads
+    overrides = o.get_setting("llm.operating_guidance")["platform_overrides"]
+    text = build_operating_guidance(model="claude-sonnet-4-5", surface="cli", platform_overrides=overrides)
+    assert PROVIDER_KEY not in text
+    assert "Reply in mono; key ${env:H255_PROVIDER_API_KEY}" in text   # the allowed name expands, the other not
+
+
+def test_nerva_config_and_an_import_refuse_a_reference_the_setting_may_not_name(store, monkeypatch):
+    monkeypatch.setenv("H255_PROVIDER_API_KEY", PROVIDER_KEY)
+    code, out, err = _cli(["config", "set", "llm.lm_studio_url", "http://h/${env:H255_PROVIDER_API_KEY}"])
+    assert code != 0 and "H255_PROVIDER_API_KEY" in out + err and PROVIDER_KEY not in out + err
+    assert _stored("llm", "lm_studio_url") == "http://localhost:1234"
+
+    changes, errors = store.plan_import({"settings": {"llm": {"lm_studio_url": "${JARVIS_ADMIN_TOKEN}"}}})
+    assert errors and "JARVIS_ADMIN_TOKEN" in errors[0] and "hub's own credentials" in errors[0]
+
+    _put_raw("llm", "lm_studio_url", "http://h/${env:H255_PROVIDER_API_KEY}")   # stored before the check
+    code, out, err = _cli(["config", "check"])
+    assert code != 0 and "llm.lm_studio_url" in out and "H255_PROVIDER_API_KEY" in out
+    assert PROVIDER_KEY not in out + err

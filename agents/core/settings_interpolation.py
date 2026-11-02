@@ -32,9 +32,27 @@ The rules — Hermes', with Nerva's guards:
 * A save writes the reference back, never what it expands to (:func:`preserve`): when a
   write carries the value a stored reference expands to — now, or at a load this process
   made before the variable moved — the reference is kept. List items are matched by their
-  ``name``, else by position.
+  ``name``, else by position and then against every other stored item (an item removed or
+  moved before it shifts the positions).
 * No value is logged or kept: a warning names the setting and the variable, and what
   this module remembers about an expansion is a SHA-256 digest of it.
+
+Which variables a setting may name (H255 review): an expansion must never show anyone a
+value they could not already read. ``/api/admin/env`` masks every variable whose name
+looks like a credential (``env_provenance.masked``), even from an admin, while a setting's
+value can reach a lower-tier route, a host the setting names or a model's prompt. So:
+
+* the hub's own credentials (``env_provenance.hub_credential``: the admin and user tokens,
+  the at-rest cipher key, the audit and backup keys) are never expanded, in any setting;
+* any other variable named like a credential is expanded only in a declared credential
+  setting (``settings_db.is_secret_setting``), whose consumer sends it to its own vendor;
+* elsewhere a variable whose value looks like a credential (the secret scanner), or an
+  expansion that assembles one, stays as written too.
+
+A refused reference stays as written and warns once (setting, variable, reason; never a
+value); a write that names one is refused (``settings_db.validate_category``). The caller
+says what is refused (:data:`Refuse`): this module knows the names, ``settings_db`` the
+settings.
 
 Some settings are literal by design and are never expanded (``settings_db.LITERAL``,
 plus every route-only row): their own guard judged the exact text, or ``${…}`` means
@@ -63,9 +81,21 @@ BARE = ""
 SEEN_TEMPLATES = 512
 SEEN_PER_TEMPLATE = 8
 
+#: Why a reference is not expanded (H255 review), as a warning and a write refusal say it.
+HUB_CREDENTIAL = "one of the hub's own credentials, which no setting may name"
+CREDENTIAL = "a credential (/api/admin/env masks it), which only a credential setting may name"
+CREDENTIAL_VALUE = ("a variable holding what looks like a credential, which only a credential "
+                    "setting may name")
+
+#: ``refuse(name, value)``: why this setting may not expand the variable *name* (None: it
+#: may). *value* is what the variable holds, or None when the question is about the name
+#: alone (a view, a write, an unset variable).
+Refuse = Callable[[str, str | None], str | None]
+
 _lock = threading.Lock()
 _warned_unset: set[tuple[str, str]] = set()
 _warned_sources: set[str] = set()
+_warned_refused: set[tuple[str, str, str]] = set()
 _seen: OrderedDict[str, list[str]] = OrderedDict()
 
 
@@ -113,9 +143,29 @@ def has_refs(value: Any) -> bool:
     return any(_REF.search(text) for text in _strings(value))
 
 
-def references(value: Any, environ: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
+def without_refs(value: Any) -> Any:
+    """*value* with every ``${…}`` reference removed: what its own text holds, whatever the
+    variables do (a copy)."""
+    return _walk(value, lambda text: _REF.sub("", text))
+
+
+def refusal(name: str, *, credential_setting: bool) -> str | None:
+    """Why a setting may not name the variable *name*, by its name alone (None: it may).
+    The hub's own credentials, nowhere; another credential, only in a credential setting."""
+    from .env_provenance import hub_credential, masked
+
+    if hub_credential(name):
+        return HUB_CREDENTIAL
+    if masked(name) and not credential_setting:
+        return CREDENTIAL
+    return None
+
+
+def references(value: Any, environ: Mapping[str, str] | None = None, *,
+               refuse: Refuse | None = None) -> list[dict[str, Any]]:
     """The environment variables *value* names, in order, each once: ``{"name", "set"}``
-    (whether the environment holds it now). Names only, never a value."""
+    (whether the environment holds it now), plus ``refused`` (why) for one *refuse* says
+    the setting may not name. Names only, never a value."""
     env = os.environ if environ is None else environ
     out: list[dict[str, Any]] = []
     known: set[str] = set()
@@ -125,7 +175,11 @@ def references(value: Any, environ: Mapping[str, str] | None = None) -> list[dic
             if source not in (ENV, BARE) or not name or name in known:
                 continue
             known.add(name)
-            out.append({"name": name, "set": name in env})
+            row: dict[str, Any] = {"name": name, "set": name in env}
+            reason = refuse(name, None) if refuse is not None else None
+            if reason:
+                row["refused"] = reason
+            out.append(row)
     return out
 
 
@@ -169,6 +223,16 @@ def _warn_source(source: str, setting: str) -> None:
         "environment and name it there", _safe(setting), _safe(source, 40))
 
 
+def _warn_refused(setting: str, name: str, reason: str) -> None:
+    key = (setting, name, reason)
+    with _lock:
+        if key in _warned_refused:
+            return
+        _warned_refused.add(key)
+    logger.warning("setting %s names ${env:%s}, %s: kept as written", _safe(setting), _safe(name),
+                   _safe(reason, 160))
+
+
 def _remember(setting: str, template: str, expanded: str) -> None:
     key = _digest(setting + "\0" + template)
     seen = _digest(expanded)
@@ -190,13 +254,19 @@ def _was_expansion(setting: str, template: str, value: str) -> bool:
         return _digest(value) in _seen.get(_digest(setting + "\0" + template), ())
 
 
-def _expand_text(text: str, setting: str, env: Mapping[str, str], *, quiet: bool = False) -> str:
+def _expand_text(text: str, setting: str, env: Mapping[str, str], *, quiet: bool = False,
+                 refuse: Refuse | None = None) -> str:
     if "${" not in text:
         return text
 
     def one(match: re.Match) -> str:
         source, name = _parse(match.group(1))
         if source in (ENV, BARE):
+            reason = refuse(name, env.get(name)) if refuse is not None and name else None
+            if reason:
+                if not quiet:
+                    _warn_refused(setting, name, reason)
+                return match.group(0)
             if name and name in env:
                 if not quiet:
                     _warned_unset.discard((setting, name))   # warn again if it goes away
@@ -214,11 +284,13 @@ def _expand_text(text: str, setting: str, env: Mapping[str, str], *, quiet: bool
     return out
 
 
-def expand(value: Any, *, setting: str, environ: Mapping[str, str] | None = None) -> Any:
+def expand(value: Any, *, setting: str, environ: Mapping[str, str] | None = None,
+           refuse: Refuse | None = None) -> Any:
     """*value* with every ``${NAME}`` / ``${env:NAME}`` the environment holds replaced, a
-    copy (*value* is not changed). *setting* (``category.key``) names it in a warning."""
+    copy (*value* is not changed). *setting* (``category.key``) names it in a warning; a
+    variable *refuse* gives a reason for stays as written, and that reason is warned once."""
     env = os.environ if environ is None else environ
-    return _walk(value, lambda text: _expand_text(text, setting, env))
+    return _walk(value, lambda text: _expand_text(text, setting, env, refuse=refuse))
 
 
 def snapshot(names: Iterable[str], environ: Mapping[str, str] | None = None) -> dict[str, str | None]:
@@ -238,54 +310,61 @@ def changed(snap: Mapping[str, str | None], environ: Mapping[str, str] | None = 
     return False
 
 
-_NO_MATCH = object()
-
-
-def _expands_to(template: str, value: str, setting: str, env: Mapping[str, str]) -> bool:
-    return (_expand_text(template, setting, env, quiet=True) == value
+def _expands_to(template: str, value: str, setting: str, env: Mapping[str, str],
+                refuse: Refuse | None) -> bool:
+    return (_expand_text(template, setting, env, quiet=True, refuse=refuse) == value
             or _was_expansion(setting, template, value))
 
 
-def _old_item(item: Any, index: int, old: list, setting: str, env: Mapping[str, str]) -> Any:
-    """The stored list item *item* stands for: the one with its ``name`` when the list's
-    items are named, else the one at its position."""
+def _old_items(item: Any, index: int, old: list, setting: str, env: Mapping[str, str],
+               refuse: Refuse | None) -> list:
+    """The stored list items *item* may stand for, best first: the one with its ``name``
+    when the list's items are named; else the one at its position, then every other one
+    (an item removed or moved before it shifts the positions)."""
     named = [o for o in old if isinstance(o, dict) and isinstance(o.get("name"), str)]
     if named and isinstance(item, dict) and isinstance(item.get("name"), str):
         for candidate in named:
             name = candidate["name"]
-            if name == item["name"] or ("${" in name and _expands_to(name, item["name"], setting, env)):
-                return candidate
-        return _NO_MATCH
-    return old[index] if index < len(old) else _NO_MATCH
+            if name == item["name"] or ("${" in name and _expands_to(name, item["name"], setting, env, refuse)):
+                return [candidate]
+        return []
+    here = [old[index]] if index < len(old) else []
+    return here + [candidate for at, candidate in enumerate(old) if at != index]
 
 
-def _keep(new: Any, old: Any, setting: str, env: Mapping[str, str]) -> Any:
+def _keep(new: Any, old: Any, setting: str, env: Mapping[str, str], refuse: Refuse | None) -> Any:
     if isinstance(old, str):
         if (isinstance(new, str) and new and new != old and "${" in old
-                and _expands_to(old, new, setting, env)):
+                and _expands_to(old, new, setting, env, refuse)):
             return old
         return new
     if isinstance(old, dict) and isinstance(new, dict):
-        return {key: (_keep(item, old[key], setting, env) if key in old else item)
+        return {key: (_keep(item, old[key], setting, env, refuse) if key in old else item)
                 for key, item in new.items()}
     if isinstance(old, list) and isinstance(new, list):
         out = []
         for index, item in enumerate(new):
-            match = _old_item(item, index, old, setting, env)
-            out.append(item if match is _NO_MATCH else _keep(item, match, setting, env))
+            kept = item
+            for candidate in _old_items(item, index, old, setting, env, refuse):
+                kept = _keep(item, candidate, setting, env, refuse)
+                if kept != item:            # this stored item's reference is what it expands from
+                    break
+            out.append(kept)
         return out
     return new
 
 
-def preserve(new: Any, old: Any, *, setting: str, environ: Mapping[str, str] | None = None) -> Any:
+def preserve(new: Any, old: Any, *, setting: str, environ: Mapping[str, str] | None = None,
+             refuse: Refuse | None = None) -> Any:
     """What a write of *new* over the stored *old* should store: *new*, with every string
     that is what a stored ``${…}`` reference expands to (now, or at an earlier load in this
     process) put back as the reference. An empty string is written as it is: it is never a
-    secret, and it is how a reference is cleared."""
+    secret, and it is how a reference is cleared. A reference *refuse* refuses never
+    expands, so nothing is matched against what its variable holds."""
     env = os.environ if environ is None else environ
     if not has_refs(old):
         return new
-    return _keep(new, old, setting, env)
+    return _keep(new, old, setting, env, refuse)
 
 
 def reset() -> None:
@@ -293,7 +372,9 @@ def reset() -> None:
     with _lock:
         _warned_unset.clear()
         _warned_sources.clear()
+        _warned_refused.clear()
         _seen.clear()
 
 
-__all__ = ["changed", "expand", "has_refs", "preserve", "references", "reset", "snapshot"]
+__all__ = ["CREDENTIAL", "CREDENTIAL_VALUE", "HUB_CREDENTIAL", "Refuse", "changed", "expand", "has_refs",
+           "preserve", "references", "refusal", "reset", "snapshot", "without_refs"]

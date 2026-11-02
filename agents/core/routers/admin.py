@@ -44,6 +44,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, StrictBool
 
 from agents.core.app_state import get_orch
+from agents.core.env_provenance import SECRET_HINTS, masked
 from agents.core.log_safe import log_safe
 from agents.core.paths import data_path
 from agents.core.routers._deps import admin_guard
@@ -60,8 +61,10 @@ router = APIRouter(tags=["admin"])
 
 
 # Substrings that mark an env var as sensitive — its value is masked in
-# /api/admin/env so keys/tokens/secrets are never returned in clear text.
-_SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "pass", "client_id")
+# /api/admin/env so keys/tokens/secrets are never returned in clear text. One list,
+# in env_provenance: the settings plane uses it too (H255: which variables a setting
+# may name).
+_SECRET_HINTS = SECRET_HINTS
 
 
 def _web():
@@ -633,7 +636,7 @@ async def admin_get_env():
     for key, val in sorted(os.environ.items()):
         if key.startswith("_"):
             continue
-        if any(h in key.lower() for h in _SECRET_HINTS):
+        if masked(key):
             out[key] = mask_secret(val)
         else:
             out[key] = val
@@ -658,7 +661,7 @@ async def admin_env_sources():
         if key.startswith("_"):
             continue
         item = {"key": key, "layer": row["layer"], "label": env_provenance.LABELS[row["layer"]],
-                "shadowed": row["shadowed"], "masked": any(h in key.lower() for h in _SECRET_HINTS)}
+                "shadowed": row["shadowed"], "masked": masked(key)}
         note = env_provenance.note_for(key, row["layer"])
         if note:
             item["note"] = note
