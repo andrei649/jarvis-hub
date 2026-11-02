@@ -15,6 +15,7 @@ from collections.abc import Callable
 from contextlib import contextmanager, nullcontext
 from typing import Any
 
+from agents.core import settings_interpolation as _interp
 from agents.core.config_read_errors import report_unreadable
 from agents.core.llm import provider_routing as _routing
 from agents.core.llm.model_config import (
@@ -677,7 +678,7 @@ def _recover_value(category: str, key: str, exc: Exception):
         report_unreadable(DB_PATH, exc)
     values = _last_good_values.get(_db_path_key())
     if values is not None and (category, key) in values:
-        return _decrypt_if_secret(values[(category, key)])
+        return _interpolated(category, key, _decrypt_if_secret(values[(category, key)]))
     raise SettingsUnreadable(f"Settings store {DB_PATH} is unreadable") from exc
 
 def _ensure_init():
@@ -884,7 +885,19 @@ def _mark_overlay(category: str, row: dict, posture: tuple[str, dict]) -> dict:
     return row
 
 
+def _with_env_refs(category: str, row: dict) -> dict:
+    """H255 — a view shows a value as stored, ``${env:…}`` and all; a row that names
+    variables carries ``env_refs`` (each name and whether it is set, never its value)."""
+    refs = _env_refs(category, row["key"], row["value"])
+    if refs:
+        row["env_refs"] = refs
+    return row
+
+
 def get_all() -> dict[str, list[dict]]:
+    """Every stored row as the admin panel and ``nerva config`` show it: the value as
+    stored (an ``${env:…}`` reference as written, H255), its label, kind and source.
+    ``interpolated(get_all())`` is the same rows as they are used."""
     _ensure_init()
     _require_readable_store()
     conn = get_conn()
@@ -899,14 +912,14 @@ def get_all() -> dict[str, list[dict]]:
             groups[cat] = []
         raw = json.loads(r["value"])
         value = _decrypt_if_secret(raw)
-        groups[cat].append(_mark_overlay(cat, {
+        groups[cat].append(_mark_overlay(cat, _with_env_refs(cat, {
             "key": r["key"],
             "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
             "source": value_source(cat, r["key"], value, raw),
-        }, posture))
+        }), posture))
     return groups
 
 def get_value(category: str, key: str, default=None):
@@ -926,7 +939,8 @@ def get_value(category: str, key: str, default=None):
             return default
         raw = json.loads(row["value"])
         _last_good_values.setdefault(_db_path_key(), {})[(category, key)] = raw
-        return _decrypt_if_secret(raw)
+        # H255 — a value is read for use: its ${env:…} references expanded, the row unchanged.
+        return _interpolated(category, key, _decrypt_if_secret(raw))
     except SettingsUnreadable as exc:
         return _recover_value(category, key, exc)
     except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
@@ -953,10 +967,11 @@ def read_setting(category: str, key: str) -> tuple[bool, Any]:
     if row is None:
         return False, None
     try:
-        return True, _decrypt_if_secret(json.loads(row["value"]))
+        value = _decrypt_if_secret(json.loads(row["value"]))
     except Exception as exc:
         report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
+    return True, _interpolated(category, key, value)   # H255: read for use, references expanded
 
 
 def read_job_tool_policy() -> dict[str, Any]:
@@ -1034,6 +1049,13 @@ def _changed(category, values) -> None:
             logger.warning("a settings change listener failed", exc_info=True)
 
 
+def _changed_as_used(category: str, values: dict[str, Any]) -> None:
+    """Tell the listeners what a write stored, each value as it is used: a ``${env:…}``
+    reference reaches them expanded (H255), whichever writer stored it (a category write,
+    an import, a reset, an undo)."""
+    _changed(category, {key: _interpolated(category, key, value) for key, value in values.items()})
+
+
 def get_category(cat: str) -> list[dict]:
     _ensure_init()
     conn = get_conn()
@@ -1048,14 +1070,14 @@ def get_category(cat: str) -> list[dict]:
     for r in rows:
         raw = json.loads(r["value"])
         value = _decrypt_if_secret(raw)
-        out.append(_mark_overlay(cat, {
+        out.append(_mark_overlay(cat, _with_env_refs(cat, {
             "key": r["key"],
             "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
             "source": value_source(cat, r["key"], value, raw),
-        }, posture))
+        }), posture))
     return out
 
 
@@ -1259,11 +1281,158 @@ def route_only_problems(cat: str, keys) -> list[str]:
     return [f"{key}: changed only in {ROUTE_ONLY[(cat, key)]}" for key in keys if (cat, key) in ROUTE_ONLY]
 
 
-def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
+_MODEL_CHOICE = ("a model choice: the selection guards (H378) or the provider route judged the "
+                 "model written, so an environment variable must not change it after them")
+_OWNER_BINDING = "who the owner is: it moves only by a settings write, never by an environment variable"
+
+#: H255 — settings read exactly as stored: a ``${…}`` in them is never expanded
+#: (``settings_interpolation``), each for the reason given. Every route-only row is literal
+#: too: its own route judged the exact value, and for some of them an approval did.
+LITERAL: dict[tuple[str, str], str] = {
+    ("skills", "template_vars"): "literal text a skill body names as ${name} (H340); never an environment variable",
+    ("commands", "quick_commands"): ("shell commands: a ${VAR} in one is the shell's, and the approval "
+                                     "shows the command as it is stored"),
+    ("mcp", "servers"): ("an MCP server's environment is the stdio allow-list's (JARVIS_MCP_STDIO_ALLOWED_ENV); "
+                         "a reference in its command would put a variable the list withholds on the child's argv"),
+    ("autonomy", "owner_chat_id"): _OWNER_BINDING,
+    ("autonomy", "owner_user_ids"): _OWNER_BINDING,
+    ("channels", "owner_senders"): _OWNER_BINDING,
+    ("llm", "default_model"): _MODEL_CHOICE,
+    ("llm", "claude_model"): _MODEL_CHOICE,
+    ("llm", "gemini_model"): _MODEL_CHOICE,
+    ("llm", "compatible_provider"): _MODEL_CHOICE,
+    ("llm", "compatible_model"): _MODEL_CHOICE,
+    ("llm", "openrouter_data_collection"): _MODEL_CHOICE,
+    ("autonomy", "subagent_model"): _MODEL_CHOICE,
+    ("autonomy", "subagent_provider"): _MODEL_CHOICE,
+}
+
+
+def is_literal(cat: str, key: str) -> bool:
+    """H255 — whether a ``${…}`` in this setting stays as written (never expanded)."""
+    return (cat, key) in LITERAL or (cat, key) in ROUTE_ONLY
+
+
+def _credential_setting(cat: str, key: str) -> bool:
+    """H255 review — a declared setting that holds a credential (encrypted at rest, or named
+    like one: ``is_secret_setting``). Its consumer sends it to its own vendor, and every
+    view, export and support bundle treats it as a secret."""
+    return (cat, key) in _SPEC and is_secret_setting(cat, key)
+
+
+def _refuser(cat: str, key: str) -> _interp.Refuse:
+    """H255 review — which variables this setting may not expand, and why (see
+    ``settings_interpolation``): an expansion must never show a value that
+    ``/api/admin/env`` masks to a route, a host or a prompt the setting reaches. The
+    hub's own credentials, never; another credential, only in a credential setting; and
+    outside one, no variable whose value looks like a credential."""
+    credential = _credential_setting(cat, key)
+
+    def refuse(name: str, value: str | None) -> str | None:
+        reason = _interp.refusal(name, credential_setting=credential)
+        if reason is None and value is not None and not credential and _looks_like_credential(value):
+            reason = _interp.CREDENTIAL_VALUE
+        return reason
+
+    return refuse
+
+
+def _interpolated(cat: str, key: str, value: Any) -> Any:
+    """H255 — *value* (decrypted) as it is used: its ``${NAME}`` / ``${env:NAME}``
+    references expanded against the environment now, except a variable this setting may
+    not name (:func:`_refuser`). The expanded value must pass the same checks a write of
+    it would; one that does not stays as written (a reference must not carry a value past
+    the check its setting has), and outside a credential setting it must not look like a
+    credential the stored text did not already hold (``http://${U}:${P}@host``)."""
+    if is_literal(cat, key) or not _interp.has_refs(value):
+        return value
+    expanded = _interp.expand(value, setting=f"{cat}.{key}", refuse=_refuser(cat, key))
+    if expanded == value:
+        return value
+    if (not _credential_setting(cat, key) and _looks_like_credential(expanded)
+            and not _looks_like_credential(_interp.without_refs(value))):
+        logger.warning("setting %s.%s: what its environment references expand to looks like a "
+                       "credential, which only a credential setting may hold; kept as written",
+                       _logsafe(cat), _logsafe(key))
+        return value
+    try:
+        # The references still in it are ones this expansion refused (or left unset): they
+        # stay as text on purpose, so only the setting's own checks judge it here.
+        problems = validate_category(cat, {key: expanded}, references=False) if (cat, key) in _SPEC else []
+    except Exception:  # noqa: BLE001 — a check that cannot run does not let the value through
+        problems = ["unchecked"]
+    if problems:
+        # The problem text may quote the value; only the name is logged.
+        logger.warning("setting %s.%s: what its environment reference expands to is not a value "
+                       "it accepts; kept as written", _logsafe(cat), _logsafe(key))
+        return value
+    return expanded
+
+
+def _env_refs(cat: str, key: str, value: Any) -> list[dict[str, Any]]:
+    """H255 — the variables a stored value names (``{"name", "set"}``, plus ``refused``
+    with the reason for one this setting may not name), for a view; [] for a literal
+    setting. Names only: a view never carries what a variable holds."""
+    return [] if is_literal(cat, key) else _interp.references(value, refuse=_refuser(cat, key))
+
+
+def _reference_problem(cat: str, key: str, value: Any) -> str | None:
+    """H255 review — a write may not name a variable this setting must never expand: the
+    write is refused, naming the variable and why (never its value)."""
+    if is_literal(cat, key) or not _interp.has_refs(value):
+        return None
+    for ref in _env_refs(cat, key, value):
+        if ref.get("refused"):
+            return f"{key}: names the environment variable {ref['name']}, {ref['refused']}"
+    return None
+
+
+def interpolated(groups: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """H255 — rows as :func:`get_all` returns them, each value as it is used (references
+    expanded; a row without one is the same object). The orchestrator's runtime settings
+    load this way; a view never does."""
+    def used(cat: str, row: dict) -> dict:
+        value = _interpolated(cat, str(row.get("key", "")), row.get("value"))
+        return row if value is row.get("value") else {**row, "value": value}
+
+    return {cat: [used(cat, row) for row in rows] for cat, rows in groups.items()}
+
+
+def env_ref_names(groups: dict[str, list[dict]]) -> list[str]:
+    """H255 — every variable the rows of *groups* name (their ``env_refs``), each once."""
+    names: list[str] = []
+    for rows in groups.values():
+        for row in rows:
+            for ref in row.get("env_refs") or ():
+                if not ref.get("refused") and ref.get("name") not in names:
+                    names.append(ref["name"])   # a refused name never expands: nothing to reload
+    return names
+
+
+def _keep_reference(cat: str, key: str, value: Any, stored_json: Any) -> Any:
+    """H255 — what a write of *value* stores over the row now holding *stored_json*: the
+    stored ``${…}`` reference wherever *value* is what it expands to, so a save never
+    writes the expanded secret (Hermes ``_preserve_env_ref_templates``)."""
+    if is_literal(cat, key) or stored_json is None:
+        return value
+    try:
+        old = _decrypt_if_secret(json.loads(stored_json))
+    except (TypeError, ValueError):
+        return value
+    kept = _interp.preserve(value, old, setting=f"{cat}.{key}", refuse=_refuser(cat, key))
+    if kept != value:
+        logger.info("setting %s.%s: kept its environment reference; the value written is what it "
+                    "expands to", _logsafe(cat), _logsafe(key))
+    return kept
+
+
+def validate_category(cat: str, data: dict[str, Any], *, references: bool = True) -> list[str]:
     """Validate a settings write; return a list of human-readable errors (empty = ok).
 
     Only keys known in DEFAULTS for *cat* are checked (unknown keys are ignored on
-    write). Values must be JSON-serializable so they can be stored.
+    write). Values must be JSON-serializable so they can be stored. A ``${…}`` reference
+    to a variable the setting may not name is refused (H255 review); *references* False
+    leaves that out, for a value that is already an expansion.
     """
     errors: list[str] = []
     for key, value in data.items():
@@ -1307,6 +1476,8 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             odd = [v for v in value if v not in spec.get("opts", [])]
             if odd:
                 err = f"mic_surfaces: {odd} are not surfaces that arm a microphone ({spec.get('opts', [])})"
+        if err is None and references:
+            err = _reference_problem(cat, key, value)   # H255 review: which variables it may name
         if err:
             errors.append(err)
     return errors
@@ -1419,10 +1590,14 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
         raise
     updated = 0
     skipped = []
+    kept: dict[str, Any] = {}
     for key, value in data.items():
         cur = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", (cat, key))
         previous = cur.fetchone()
         if previous:
+            # H255 — a value that is what the stored ${env:…} reference expands to is
+            # written as the reference: the expanded secret never reaches the store.
+            value = kept[key] = _keep_reference(cat, key, value, previous["value"])
             stored = _encrypt_if_secret(key, value)
             conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(stored), cat, key))
             updated += 1
@@ -1448,9 +1623,9 @@ def _put_category_fenced(cat: str, data: dict[str, Any], *,
     if skipped:
         logger.warning("put_category(%s): ignored unknown keys: %s",
                        _logsafe(cat), _logsafe(skipped))
-    written = {key: value for key, value in data.items() if key not in skipped}
+    written = {key: kept.get(key, value) for key, value in data.items() if key not in skipped}
     if written:
-        _changed(cat, written)
+        _changed_as_used(cat, written)
     return updated, skipped
 
 # ── init on first use (via _ensure_init) — NOT at import ─────────
@@ -1660,14 +1835,24 @@ def _apply_import_fenced(changes: dict[str, dict[str, Any]], *,
     try:
         with conn:
             _check_pair_revision(conn, expected_pair_revision)
+            # H255 — as a single write: a stored ${env:…} reference is kept wherever the
+            # imported value is what it expands to.
+            changes = {cat: {key: _keep_reference(cat, key, value, _stored_json(conn, cat, key))
+                             for key, value in values.items()}
+                       for cat, values in changes.items()}
             written = _write_values(conn, changes)
     finally:
         conn.close()
     _require_readable_store()
     for cat, values in changes.items():
         if values:
-            _changed(cat, dict(values))
+            _changed_as_used(cat, values)
     return written
+
+
+def _stored_json(conn: sqlite3.Connection, cat: str, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", (cat, key)).fetchone()
+    return row["value"] if row is not None else None
 
 
 def reset_kept(cat: str) -> list[str]:
@@ -1781,7 +1966,7 @@ def _reset_settings_fenced(cat: str | None,
         conn.close()
     _require_readable_store()
     for c, values in plan.items():
-        _changed(c, dict(values))
+        _changed_as_used(c, values)
     return plan, snap
 
 
@@ -1861,7 +2046,7 @@ def _undo_last_reset_fenced(gate: Callable[[dict[str, dict[str, Any]]], list[str
         conn.close()
     _require_readable_store()
     for cat, values in restore.items():
-        _changed(cat, dict(values))
+        _changed_as_used(cat, values)
     return {"id": row["id"], "scope": row["scope"], "restored": _names(restore), "skipped": skipped}
 
 

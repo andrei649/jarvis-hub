@@ -101,6 +101,26 @@ PROCESS_ONLY_NOTE = ("it locates the hub's own files, so the load leaves a .env 
                      "stores would split between two roots): the .env value is not in effect, so set it in "
                      "the process environment")
 
+# Substrings that mark an environment variable as a credential (matched in its lower-cased
+# name). ``/api/admin/env`` masks such a value, ``/api/admin/env/sources`` flags it, and a
+# setting outside the declared credential settings never expands a reference to one (H255).
+SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "pass", "client_id")
+# The hub's own namespace. A credential in it (the admin and user tokens, the at-rest
+# cipher key, the audit and backup keys) is never expanded into any setting (H255).
+HUB_PREFIXES = ("JARVIS_", "NERVA_")
+
+
+def masked(key: str) -> bool:
+    """Whether *key* names a credential: ``/api/admin/env`` never returns its value."""
+    lowered = str(key).lower()
+    return any(hint in lowered for hint in SECRET_HINTS)
+
+
+def hub_credential(key: str) -> bool:
+    """Whether *key* is one of the hub's own credentials (a masked name in its namespace)."""
+    return masked(key) and str(key).upper().startswith(HUB_PREFIXES)
+
+
 _TABLE: dict[str, dict] = {}
 _FILES: dict[str, dict] = {}   # what the last load read, per layer: {"path", "kind", "present", "read"}
 _NOT_SET: set[str] = set()     # FROM_PROCESS_ONLY names a file set and the load took back out
@@ -554,9 +574,9 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
 
 
 __all__ = [
-    "FROM_PROCESS_ONLY", "LABELS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
+    "FROM_PROCESS_ONLY", "HUB_PREFIXES", "LABELS", "SECRET_HINTS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
     "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "OPTIONAL_SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "dotenv_disabled",
-    "env_file_keys", "files", "hub_values", "is_fifo", "is_file_or_fifo", "load_hub_env", "load_layered_env",
-    "note_for", "profile_env_file", "provenance", "raw_values", "text_keys",
+    "env_file_keys", "files", "hub_credential", "hub_values", "is_fifo", "is_file_or_fifo", "load_hub_env",
+    "load_layered_env", "masked", "note_for", "profile_env_file", "provenance", "raw_values", "text_keys",
 ]
 
