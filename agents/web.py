@@ -818,6 +818,7 @@ _NO_STORE_PATHS = {
     "/api/self-improvement/status", "/api/swarm/summary", "/api/presence/owner",
     "/api/system-map",
     "/api/ops/estop",
+    "/api/status/slots",   # H019: who holds the turn slots, read by `nerva status`
 }
 
 
