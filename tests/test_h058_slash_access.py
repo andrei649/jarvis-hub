@@ -108,11 +108,14 @@ class _Hub:
         self.sent: list[tuple[int, str]] = []
         pairing = SimpleNamespace(is_allowed=lambda channel, sender: True,
                                   gate_inbound=lambda channel, sender, code=None: {"allowed": True})
+        # Wired as agents/web.py wires the production hub.
         gateway = Gateway(handler=orch.channel_handler, pairing=pairing,
-                          interrupt_handler=orch.interrupt_channel_message)
+                          interrupt_handler=orch.interrupt_channel_message,
+                          command_probe=orch.command_refused_here)
         channel = TelegramChannel(token="fake", allowed_user_ids=[OWNER_ID, GUEST_ID], pairing=pairing,
                                   group_policy=GroupPolicy(require_mention=False),
-                                  pre_turn_interrupt=gateway.pre_lane_interrupt)
+                                  pre_turn_interrupt=gateway.pre_lane_interrupt,
+                                  pre_turn_refused=gateway.pre_lane_refused)
         channel.handler = gateway.route
         self.channel = channel
         orch.channels = {"telegram": channel}
@@ -320,6 +323,130 @@ async def test_a_side_question_is_judged_on_the_busy_path_too(hub, store):
     assert [row["command"] for row in _denials(hub.orch.audit)] == ["btw"]
 
 
+async def _reply_to(hub, chat, before: int, *, timeout: float = 5) -> str:
+    """The first reply the hub sent to *chat* after ``hub.sent[before]`` (waits for it)."""
+    async def first():
+        while True:
+            replies = [reply for to, reply in hub.sent[before:] if str(to) == str(chat)]
+            if replies:
+                return replies[0]
+            await asyncio.sleep(0.01)
+
+    return await asyncio.wait_for(first(), timeout)
+
+
+async def test_a_refused_command_skips_the_telegram_chat_lane_while_that_chat_runs_a_turn(hub, store, monkeypatch):
+    """The production busy path: the poll loop hands each chat's turns to its lane, so a
+    command sent while that chat's turn runs would wait behind it. A command this sender
+    may not run changes nothing — it is answered beside the lane, at once, audited, and it
+    neither interrupts the running work nor waits for it; a command it may run still waits."""
+    from agents.core import code_interruptions
+    from agents.core.channels.chat_lanes import ChatLanes
+    from agents.core.channels.session import SessionSource, build_session_key
+
+    store({"telegram": {"dm": ["status"], "group": []}})
+    interrupts = []
+    monkeypatch.setattr(code_interruptions, "interrupt", lambda sid: interrupts.append(sid) or False)
+    hub.orch._turn_lease_max_wait = 30
+    hub.channel._lanes = ChatLanes(name="telegram")            # what the poll loop runs on
+    base = build_session_key(SessionSource(channel="telegram", sender=str(GUEST_ID), thread_id=str(GUEST_ID)))
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def running_turn():
+        async with hub.orch.turn_lease(base) as held:
+            assert held
+            started.set()
+            await release.wait()
+
+    hub.channel._lanes.submit(GUEST_ID, running_turn)
+    await asyncio.wait_for(started.wait(), 5)
+    try:
+        before = len(hub.sent)
+        await hub.say("/sessions")
+        refused = await _reply_to(hub, GUEST_ID, before)
+        assert refused.startswith("⛔ /sessions is admin-only here. You can run: /help, /whoami, /status.")
+        assert not release.is_set() and interrupts == []
+        assert [row["command"] for row in _denials(hub.orch.audit)] == ["sessions"]
+        before = len(hub.sent)
+        await hub.say("/status")                                 # allowed: it waits its turn
+        await asyncio.sleep(0.2)
+        assert [reply for to, reply in hub.sent[before:] if str(to) == str(GUEST_ID)] == []
+    finally:
+        release.set()
+    assert "backend lm-studio" in await _reply_to(hub, GUEST_ID, before)
+
+
+async def test_a_refused_discord_command_does_not_wait_behind_the_authors_running_turn(store):
+    """Discord holds an author's next turn behind the one running in that channel (the
+    batcher's key lock). A command the author may not run is handed over beside it, through
+    the same Gateway probe the hub wires; one the author may run still waits its turn."""
+    from agents.core.channels.discord import DiscordChannel
+    from tests.test_slash_commands import _bare_orchestrator
+
+    store({"discord": {"dm": ["status"]}})
+    orch, _seen = _bare_orchestrator()
+    gateway = Gateway(handler=None, command_probe=orch.command_refused_here)
+    delivered, release = [], asyncio.Event()
+
+    async def handler(text, **_kwargs):
+        delivered.append(text)
+        if text == "a long question":
+            await release.wait()
+
+    channel = DiscordChannel(token="fake", handler=handler, pre_turn_refused=gateway.pre_lane_refused)
+    author = SimpleNamespace(id=7, bot=False)
+
+    def message(text):
+        return SimpleNamespace(author=author, channel=SimpleNamespace(id=900, parent_id=None),
+                               guild=None, content=text, webhook_id=None, edited_at=None)
+
+    running = asyncio.create_task(channel._handle_message(message("a long question")))
+    while delivered != ["a long question"]:
+        await asyncio.sleep(0.01)
+    try:
+        await asyncio.wait_for(channel._handle_message(message("/pause")), 5)
+        assert delivered == ["a long question", "/pause"] and not release.is_set()
+        allowed = asyncio.create_task(channel._handle_message(message("/status")))
+        await asyncio.sleep(0.2)
+        assert delivered == ["a long question", "/pause"]          # it waits its turn
+    finally:
+        release.set()
+    await asyncio.wait_for(asyncio.gather(running, allowed), 5)
+    assert delivered == ["a long question", "/pause", "/status"]
+
+
+async def test_the_web_door_refuses_a_command_at_once_while_its_session_runs_a_turn(web_chat, store, monkeypatch):
+    """``POST /chat`` and ``/chat/stream`` interrupt running work and then wait for the
+    session's lease; a command the requester may not run is refused before either."""
+    from agents.core import code_interruptions
+
+    store({"web": {"dm": ["status"]}})
+    interrupts = []
+    monkeypatch.setattr(code_interruptions, "interrupt", lambda sid: interrupts.append(sid) or False)
+    web_chat.orch._turn_lease_max_wait = 30
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def running_turn():
+        async with web_chat.orch.turn_lease() as held:
+            assert held
+            started.set()
+            await release.wait()
+
+    holder = asyncio.create_task(running_turn())
+    await asyncio.wait_for(started.wait(), 5)
+    try:
+        reply = await asyncio.wait_for(web_chat.chat("/sessions"), 5)
+        assert reply.startswith("⛔ /sessions is admin-only here. You can run: /help, /whoami, /status.")
+        streamed = await asyncio.wait_for(web_chat.stream("/pause"), 5)
+        assert streamed.startswith("⛔ /pause is admin-only here") and "owner command" in streamed
+        assert interrupts == [] and not release.is_set()
+        assert web_chat.conversation.sessions["h058_web"] == []      # nothing was appended
+    finally:
+        release.set()
+        await holder
+    assert sorted(row["command"] for row in _denials(web_chat.orch.audit)) == ["pause", "sessions"]
+
+
 # ── quick commands are judged again, on the raw typed name ─────────────────────────
 
 
@@ -390,7 +517,18 @@ def web_chat(tmp_path, monkeypatch, store):
                            "client": ("10.0.0.9", 43123), "scheme": "http"})
         return (await web.chat(web.ChatRequest(message=message), request)).reply
 
-    yield SimpleNamespace(chat=chat, orch=orch, conversation=conversation)
+    async def stream(message):
+        """The text of the ``end`` event ``POST /chat/stream`` sends (no admin token)."""
+        request = Request({"type": "http", "method": "POST", "path": "/chat/stream", "headers": [],
+                           "client": ("10.0.0.9", 43123), "scheme": "http"})
+        response = await web.chat_stream(web.ChatRequest(message=message), request)
+        async for chunk in response.body_iterator:
+            event = json.loads(chunk.removeprefix("data: "))
+            if event["type"] == "end":
+                return event["text"]
+        raise AssertionError("the stream ended without an end event")
+
+    yield SimpleNamespace(chat=chat, stream=stream, orch=orch, conversation=conversation)
     orch.checkpoints.close()
     module._active_session.reset(token)
     module._session_is_shared.reset(shared)
@@ -496,6 +634,25 @@ async def test_the_principal_scope_follows_the_adapters_chat_type():
     assert orch._channel_principal("slack", "T1:U1", None, orch._principal_chat_type(
         "slack", {"slack_channel": "C123", "thread_ts": "1.2"})).scope == "group"
     assert orch._channel_principal("discord", "9", None, "thread").scope == "group"
+    # The webhook channels report the chat type their provider states.
+    from agents.core.channels.webhook_channels import GoogleChatChannel, SignalChannel, TeamsChannel
+
+    def scope(adapter, payload):
+        return orch._channel_principal(adapter.channel_id, "u", None, orch._principal_chat_type(
+            adapter.channel_id, adapter.parse_inbound(payload))).scope
+
+    teams = {"text": "/status", "from": {"id": "u1"}, "conversation": {"id": "c1"}}
+    assert scope(TeamsChannel(), {**teams, "conversation": {"id": "c1", "conversationType": "personal"}}) == "dm"
+    assert scope(TeamsChannel(), {**teams, "conversation": {"id": "c1", "conversationType": "groupChat"}}) == "group"
+    assert scope(TeamsChannel(), {**teams, "conversation": {"id": "c1", "conversationType": "channel"}}) == "group"
+    chat = {"message": {"text": "/status", "sender": {"name": "users/1"}}}
+    assert scope(GoogleChatChannel(), {**chat, "space": {"name": "spaces/1", "spaceType": "DIRECT_MESSAGE"}}) == "dm"
+    assert scope(GoogleChatChannel(), {**chat, "space": {"name": "spaces/1", "type": "ROOM"}}) == "group"
+    assert scope(GoogleChatChannel(), {**chat, "space": {"name": "spaces/1", "spaceType": "SPACE"}}) == "group"
+    signal = {"envelope": {"source": "+1555", "dataMessage": {"message": "/status"}}}
+    assert scope(SignalChannel(), signal) == "dm"
+    assert scope(SignalChannel(), {"envelope": {"source": "+1555", "dataMessage": {
+        "message": "/status", "groupInfo": {"groupId": "g1"}}}}) == "group"
     token = bind_turn_principal(Principal(channel="web"))
     try:
         assert (await orch._slash_access_denial("hello there")) is None

@@ -1634,9 +1634,11 @@ channel and per scope:
 
 - **Keys** are channel names (`telegram`, `slack`, `discord`, `ntfy`, `web`, …) or `"*"` for
   every channel without an entry of its own. Each holds a `dm` and/or a `group` list.
-  A DM is a private chat (Telegram `private`, a Slack `D…` channel, a Discord DM, the web
-  chat, a channel that reports no chat type); a group, supergroup, guild channel or thread
-  is a group.
+  A DM is a private chat (Telegram `private`, a Slack `D…` channel, a Discord DM, a Teams
+  `personal` conversation, a Google Chat direct message, a Signal message outside a group,
+  the web chat, and any channel that reports no chat type — voice, email, ntfy, WhatsApp,
+  Matrix); a group, supergroup, guild channel, thread, Teams group chat or channel, Google
+  Chat space or Signal group is a group.
 - **Resolution:** the channel's own entry, then `"*"`; a `dm` list that is not set uses the
   same entry's `group` list (Hermes' rule — a DM never gets a wider list by accident); a
   channel and scope nobody configured keeps the whole user tier (`/status`, `/sessions`,
@@ -1659,11 +1661,17 @@ sender id, reason — never the arguments). `/whoami` reports the platform, scop
 tier and the exact list of commands the sender may run there.
 
 **Where it is checked:** on the cold path (`CommandRegistry.dispatch`, inside the turn); on
-the busy path — a channel command that arrives while a turn holds its route is judged at
-once in `Orchestrator.channel_handler`, before the session lease and the running-work
-interrupt, and a `/btw` side question is judged as it is answered beside a running turn;
-and again for quick commands, on the raw typed name (`quick_commands.dispatch_quick`), with
-an alias target judged once more when it re-enters the registry. The gate decides who may
+the busy path — a command that arrives while a turn holds its session is refused at once,
+before the running-work interrupt and the session lease: in `Orchestrator.channel_handler`
+for every channel; on Telegram it is first handed over beside the chat's lane, and on
+Discord beside the author's batch lock (`Gateway.pre_lane_refused` →
+`Orchestrator.command_refused_here`), so it does not queue behind the running turn (Slack
+reads one event at a time while a turn runs, so a Slack command is read after it); on the
+web door in `POST /chat` and `/chat/stream`
+(`Orchestrator.busy_command_refusal`); and a `/btw` side question is judged as it is
+answered beside a running turn — and again for quick commands, on the raw typed name
+(`quick_commands.dispatch_quick`), with an alias target judged once more when it re-enters
+the registry. A command the sender may run keeps its place in the queue. The gate decides who may
 *reach* a handler; it is in front of the Action Kernel, never instead of it — a command that
 acts still crosses its own kernel kind and approval.
 

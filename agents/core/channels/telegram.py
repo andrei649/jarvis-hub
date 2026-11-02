@@ -250,11 +250,14 @@ class TelegramChannel(ChannelAdapter):
                  group_policy: Optional[GroupPolicy] = None,
                  pairing=None, pending_reply_handler: Optional[Callable] = None,
                  pending_callback_handler: Optional[Callable] = None,
-                 pre_turn_interrupt: Optional[Callable] = None):
+                 pre_turn_interrupt: Optional[Callable] = None,
+                 pre_turn_refused: Optional[Callable] = None):
         super().__init__("telegram", handler)
         self.pending_reply_handler = pending_reply_handler
         self.pending_callback_handler = pending_callback_handler
         self.pre_turn_interrupt = pre_turn_interrupt
+        # H058: a probe (Gateway.pre_lane_refused) for a command its sender may not run here.
+        self.pre_turn_refused = pre_turn_refused
         self._pending_callback_generation = object()
         self._pending_callback_fast: dict[str, asyncio.Task] = {}
         # H117: a burst from one sender (a split message, an album, a photo then its
@@ -1351,10 +1354,12 @@ class TelegramChannel(ChannelAdapter):
         mark = (chat_id, str(uid))
         if session_meta.get("message_thread_id") is not None:
             mark += (session_meta["message_thread_id"],)
-        if side_question_command_name(turn) is not None:
+        if side_question_command_name(turn) is not None or self._refused_here(chat_id, uid, turn, session_meta):
             # H414: a /btw is asked beside the running turn, so it does not queue behind
             # that chat's lane. It has a lane of its own (still counted by settle/drain),
             # takes no voice mark, and the held pieces were already flushed in order.
+            # H058: so is a command this sender may not run here — it changes nothing, and
+            # its refusal is answered at once instead of after the chat's running turn.
             def work():
                 return self._run_turn(chat_id, uid, turn, spoken=False, **session_meta)
 
@@ -1366,6 +1371,19 @@ class TelegramChannel(ChannelAdapter):
         spoken = mark in self._voice_pending
         self._voice_pending.discard(mark)
         await self._in_chat(chat_id, lambda: self._run_turn(chat_id, uid, turn, spoken=spoken, **session_meta))
+
+    def _refused_here(self, chat_id, uid, turn: str, session_meta: dict) -> bool:
+        """H058 — whether *turn* is a command this sender may not run in this chat (judged by
+        the hub through ``pre_turn_refused``; a missing or failing probe says no)."""
+        probe = self.pre_turn_refused
+        if not callable(probe) or not is_command(turn):
+            return False
+        try:
+            return probe(channel="telegram", sender=str(uid), chat_id=chat_id, text=turn,
+                         chat_type=session_meta.get("chat_type", "private")) is True
+        except Exception:
+            logger.warning("Telegram command access probe unavailable", exc_info=True)
+            return False
 
     async def _in_chat(self, chat_id, work) -> None:
         """Run *work* after everything already queued for *chat_id* (H677): in that chat's

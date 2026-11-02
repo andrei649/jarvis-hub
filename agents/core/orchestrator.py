@@ -1792,15 +1792,30 @@ class Orchestrator:
             shared = (self.get_setting("memory.cross_channel_sessions", False)
                       or not (source.thread_id or source.sender or source.client_id))
             base = default if shared else build_session_key(source)
-            keys = {str(base)}
             selected = self.__dict__.get("_channel_sessions", {}).get(base)
-            if selected:
-                keys.add(str(selected))
-            table = self.__dict__.get("_turn_leases", {})
-            return any(table[key].locked() for key in keys if key in table)
+            return self._lease_held(base, *([selected] if selected else []))
         except Exception:
             logger.debug("route lease state unavailable; the command takes the cold path", exc_info=True)
             return False
+
+    def _lease_held(self, *keys) -> bool:
+        """Whether a turn holds the turn lease of any of these session keys right now."""
+        table = self.__dict__.get("_turn_leases", {})
+        return any(table[str(key)].locked() for key in keys if str(key) in table)
+
+    async def busy_command_refusal(self, text: str, session_key: Optional[str] = None):
+        """H058, the busy path of a door that takes its own turn lease (the web ``/chat`` and
+        ``/chat/stream``): while a turn holds the lease of the session *session_key* names
+        (resolved as ``turn_lease`` resolves it), the audited refusal for a command the
+        bound principal may not run, answered before the door interrupts running work or
+        waits for the lease. None when the session is idle (the registry judges the command
+        on the cold path, inside the turn) and for anything that is not such a command."""
+        try:
+            busy = self._lease_held(self._lease_key(session_key))
+        except Exception:
+            logger.debug("session lease state unavailable; the command takes the cold path", exc_info=True)
+            return None
+        return await self._slash_access_denial(text) if busy else None
 
     def interrupt_channel_message(self, *, channel: str, sender: str,
                                   chat_id=None, message_thread_id=None, text: str = "",
@@ -1811,7 +1826,8 @@ class Orchestrator:
         disturbs nothing — the turn that answers it says why."""
         if side_question_command_name(text) is not None:
             return False
-        if self._command_denied_quietly(channel, sender, chat_id, chat_type, text):
+        if self.command_refused_here(channel=channel, sender=sender, chat_id=chat_id,
+                                     chat_type=chat_type, text=text):
             return False
         thread_id = str(chat_id) if chat_id is not None else None
         if channel == "telegram" and message_thread_id:
@@ -2039,9 +2055,12 @@ class Orchestrator:
             logger.warning("slash command access check failed; the registry decides", exc_info=True)
             return None
 
-    def _command_denied_quietly(self, channel, sender, chat_id, chat_type, text) -> bool:
-        """H058 — whether *text* is a command this channel sender may not run here, judged
-        without an answer or an audit row (the turn that answers it writes both)."""
+    def command_refused_here(self, *, channel: str, sender, chat_id=None, chat_type=None,
+                             text: str = "") -> bool:
+        """H058 — trusted adapter probe, before a chat lane: whether *text* is a command this
+        channel sender may not run here, judged without an answer or an audit row (the turn
+        that answers it writes both). Such a command changes nothing, so it neither signals
+        the running work nor queues behind it."""
         registry = getattr(self, "commands", None)
         if not isinstance(registry, CommandRegistry) or not isinstance(text, str):
             return False

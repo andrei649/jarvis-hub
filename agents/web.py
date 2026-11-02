@@ -532,6 +532,7 @@ async def lifespan(application: FastAPI):
         pending_handler=orch.channel_pending_handler,
         pending_callback_handler=orch.channel_pending_callback,
         interrupt_handler=orch.interrupt_channel_message,
+        command_probe=orch.command_refused_here,        # H058: a refused command skips the lane
         pairing=getattr(orch, "sender_pairing", None),
         inbox_store=orch.channel_inbox,
     )
@@ -580,6 +581,7 @@ async def lifespan(application: FastAPI):
             pending_reply_handler=gateway.route_pending,
             pending_callback_handler=gateway.route_pending_callback,
             pre_turn_interrupt=gateway.pre_lane_interrupt,
+            pre_turn_refused=gateway.pre_lane_refused,
             allowed_user_ids=_telegram_allowed_user_ids(),
             group_policy=GroupPolicy.from_env(os.environ),
             # The one SenderPairing this process holds: the object the gateway gates
@@ -599,6 +601,7 @@ async def lifespan(application: FastAPI):
             token=discord_token, handler=gateway.route, pairing=gateway.pairing,
             pending_reply_handler=gateway.route_pending,
             pending_callback_handler=gateway.route_pending_callback,
+            pre_turn_refused=gateway.pre_lane_refused,
         )
         await orch.register_channel(discord_ch)
         logger.info("Discord channel wired")
@@ -1429,6 +1432,25 @@ async def chat(req: ChatRequest, request: Request):
         return await _chat_with_usage(req, request, collector, stops)
 
 
+async def _busy_command_refusal(request: Request, session_id, message) -> str | None:
+    """H058 — the web door's busy path. While a turn holds the lease of the session this
+    request addresses, a slash command its principal may not run is refused (and audited)
+    here, before the door interrupts running work or waits for that lease; otherwise None
+    and the command plane judges it inside the turn, on the cold path."""
+    import inspect
+
+    judge = getattr(orch, "busy_command_refusal", None)
+    if not inspect.iscoroutinefunction(judge) or type(message) is not str:
+        return None                      # a stand-in hub without the command plane
+    token = bind_turn_principal(_web_principal(request))
+    try:
+        outcome = await judge(message, session_id)
+    finally:
+        reset_turn_principal(token)
+    reply = getattr(outcome, "reply", None)
+    return reply if type(reply) is str else None
+
+
 async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops):
     from agents.core.foreign_history import http_owner_guard
     await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
@@ -1445,6 +1467,9 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
             except ContinuationRefused as exc:
                 return JSONResponse({"error": exc.reason, "usage": collector.snapshot(),
                                      "runtime_stops": stops.snapshot()}, status_code=exc.status)
+        refused = await _busy_command_refusal(request, req.session_id, req.message)
+        if refused is not None:   # H058: answered now — no interrupt, no wait behind the turn
+            return ChatResponse(reply=refused, usage=collector.snapshot(), runtime_stops=stops.snapshot())
         from agents.core import code_interruptions
         from agents.core.commands import side_question_command_name
         side_question = side_question_command_name(req.message) is not None
@@ -1526,7 +1551,7 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
-                             attached=None, own_words=None, pending_actor=None, pending_current=None):
+                             attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1613,6 +1638,11 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                                      stops.snapshot())))
 
         try:
+            if refused is not None:
+                # H058: the endpoint already refused this command on the busy path (and
+                # audited it); it ends here, without waiting for the running turn's lease.
+                await end(refused)
+                return
             with reasoning_scope(reasoning):
                 from agents.core.commands import side_question_command_name
                 async with _turn_lease(orch, session_id,
@@ -1716,10 +1746,11 @@ async def chat_stream(req: ChatRequest, request: Request):
             await prepare_session(orch, req.session_id)
         except ContinuationRefused as exc:
             return JSONResponse({"error": exc.reason}, status_code=exc.status)
+    refused = await _busy_command_refusal(request, req.session_id, req.message)   # H058, see /chat
     from agents.core import code_interruptions
     from agents.core.commands import side_question_command_name
     side_question = side_question_command_name(req.message) is not None   # H414, see /chat
-    if not side_question:
+    if not side_question and refused is None:
         code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
     agent_override = req.agent if req.agent != "jarvis" else None
     # H579: @file:path references are attached for the turn here too, as on /chat.
@@ -1727,7 +1758,8 @@ async def chat_stream(req: ChatRequest, request: Request):
     from agents.core.commands import preappend_command_name
 
     checkpoint_command = preappend_command_name(req.message) is not None   # see /chat
-    expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
+    expansion = (None if checkpoint_command or refused is not None
+                 else await asyncio.to_thread(context_refs.expand, req.message))
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
     # applying the moment the cockpit switched to streaming.
@@ -1742,7 +1774,8 @@ async def chat_stream(req: ChatRequest, request: Request):
     return StreamingResponse(
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
                            attached=expansion, own_words=req.message, pending_actor=actor,
-                           pending_current=lambda: actor is not None and http_actor(request) == actor),
+                           pending_current=lambda: actor is not None and http_actor(request) == actor,
+                           refused=refused),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

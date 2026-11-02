@@ -173,11 +173,15 @@ class SignalChannel(WebhookChannel):
 
     def parse_inbound(self, payload):
         env = payload.get("envelope", payload) or {}
-        text = (env.get("dataMessage") or {}).get("message", "")
+        data = env.get("dataMessage") or {}
+        text = data.get("message", "")
         sender = env.get("source", "") or env.get("sourceNumber", "")
         if not text or not sender:
             return None
-        return {"text": text, "sender": sender, "to": sender}
+        parsed = {"text": text, "sender": sender, "to": sender}
+        if data.get("groupInfo") or data.get("groupV2"):
+            parsed["chat_type"] = "group"   # H058: a group message is judged in group scope
+        return parsed
 
 
 class MatrixChannel(WebhookChannel):
@@ -230,10 +234,16 @@ class TeamsChannel(WebhookChannel):
     def parse_inbound(self, payload):
         text = payload.get("text", "")
         sender = (payload.get("from") or {}).get("id", "")
-        convo = (payload.get("conversation") or {}).get("id", "")
+        conversation = payload.get("conversation") or {}
+        convo = conversation.get("id", "")
         if not text or not sender:
             return None
-        return {"text": text, "sender": sender, "conversation": convo}
+        parsed = {"text": text, "sender": sender, "conversation": convo}
+        kind = conversation.get("conversationType")
+        if type(kind) is str and kind:
+            # H058: a one-to-one chat is a DM; a group chat or a team channel is a group.
+            parsed["chat_type"] = "private" if kind == "personal" else "group"
+        return parsed
 
 
 class GoogleChatChannel(WebhookChannel):
@@ -253,10 +263,17 @@ class GoogleChatChannel(WebhookChannel):
         msg = payload.get("message", {}) or {}
         text = msg.get("text", "") or payload.get("text", "")
         sender = (msg.get("sender") or {}).get("name", "") or (payload.get("user") or {}).get("name", "")
-        space = (payload.get("space") or {}).get("name", "")
+        room = payload.get("space") or {}
+        space = room.get("name", "")
         if not text or not sender:
             return None
-        return {"text": text, "sender": sender, "space": space}
+        parsed = {"text": text, "sender": sender, "space": space}
+        kind = room.get("spaceType") or room.get("type")
+        if room.get("singleUserBotDm") is True or kind in {"DIRECT_MESSAGE", "DM"}:
+            parsed["chat_type"] = "private"           # H058: a DM with the app
+        elif kind in {"GROUP_CHAT", "SPACE", "ROOM"}:
+            parsed["chat_type"] = "group"
+        return parsed
 
 
 _REGISTRY: "dict[str, type[WebhookChannel]]" = {

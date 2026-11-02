@@ -27,12 +27,15 @@ class Gateway:
     def __init__(self, handler: Optional[Callable] = None, pairing: Any = None,
                  inbox_store: Any = None, pending_handler: Optional[Callable] = None,
                  pending_callback_handler: Optional[Callable] = None,
-                 interrupt_handler: Optional[Callable] = None):
+                 interrupt_handler: Optional[Callable] = None,
+                 command_probe: Optional[Callable] = None):
         self.handler = handler
         # A trusted, pending-only consumer: it cannot start a new model turn.
         self.pending_handler = pending_handler
         self.pending_callback_handler = pending_callback_handler
         self.interrupt_handler = interrupt_handler
+        # H058: whether a command is one its sender may not run here (no answer, no audit).
+        self.command_probe = command_probe
         # H12.19 — optional inbound sender-pairing gate. When set (and pairing is
         # enabled), unknown senders are held for approval instead of reaching the
         # handler. None → unchanged behavior.
@@ -254,6 +257,25 @@ class Gateway:
                 message_thread_id=message_thread_id, text=text, chat_type=chat_type))
         except Exception:
             logger.warning("Telegram pre-lane code interruption unavailable", exc_info=True)
+            return False
+
+    def pre_lane_refused(self, *, channel: str, sender: str, chat_id, text: str = "",
+                         chat_type=None) -> bool:
+        """H058 — probe, before a chat lane, whether *text* is a command its admitted sender
+        may not run here. Such a command changes nothing, so the adapter hands it over beside
+        the lane instead of behind the running turn, and ``channel_handler`` answers its
+        audited refusal at once (the busy path). This reserves nothing and pairs no one; the
+        later route still makes the admission decision, and an unpaired sender is never
+        probed."""
+        if not callable(self.command_probe):
+            return False
+        try:
+            if self.pairing is not None and self.pairing.is_allowed(channel, str(sender)) is not True:
+                return False
+            return self.command_probe(channel=channel, sender=str(sender), chat_id=chat_id,
+                                      chat_type=chat_type, text=text) is True
+        except Exception:
+            logger.warning("pre-lane command access probe unavailable", exc_info=True)
             return False
 
     def get_channel_info(self, channel_id: str = None) -> dict:

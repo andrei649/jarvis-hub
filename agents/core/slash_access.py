@@ -28,8 +28,11 @@ audit log (``SecurityEventType.AUDIT_LOG``, ``slash_command_denied``) — the au
 Hermes rebuild note asked for and never shipped. ``/whoami`` reports the platform, scope,
 sender id, tier and the exact command list. The orchestrator asks this module on the cold
 path (``CommandRegistry.dispatch``), on the busy path (a channel command is judged before
-the session lease and the running-work interrupt; the ``/btw`` side question is judged as
-it is answered beside a running turn) and again for quick commands, on the raw typed name.
+the session lease and the running-work interrupt, and on Telegram and Discord a refused one
+is handed over beside the chat's lane instead of behind its running turn; the web door's ``/chat``
+and ``/chat/stream`` judge it before their interrupt and lease; the ``/btw`` side question
+is judged as it is answered beside a running turn) and again for quick commands, on the
+raw typed name.
 """
 
 from __future__ import annotations
