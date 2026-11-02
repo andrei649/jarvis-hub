@@ -1700,6 +1700,9 @@ class AutonomyCoordinator:
         from .code_env import CodeEnvRegistry
 
         code_environment = CodeEnvRegistry()
+        # H026 — a /<bundle> load declares its members' required_env through the same
+        # registry skill_view uses (Orchestrator._bundle_prompt_block reads it here).
+        bind_external_orchestrator_attribute(self._orch, "code_environment", code_environment)
 
         def _redact_code_project(text):
             # Secret sources may be initialized lazily after tool composition.
@@ -1764,7 +1767,7 @@ class AutonomyCoordinator:
         )
         # H314 — the model writes its long-term memory (the LivingMemory core and user
         # rings): owner-operator turns only, audited in the intent log, undoable.
-        from .memory_tool import register_memory_tool
+        from .memory_tool import register_memory_tool, switched_on
 
         def _living_memory():
             cog = getattr(self._orch, "cognition", None)
@@ -1775,6 +1778,8 @@ class AutonomyCoordinator:
         register_memory_tool(
             server,
             living=_living_memory,
+            # H422: the owner's memory switch (memory.core_enabled), which no posture sets.
+            switch=lambda: switched_on(getattr(self._orch, "get_setting", None)),
             audit=lambda: getattr(self._orch, "intent_log", None),
             posture=lambda: tool_profile.posture().key,
         )

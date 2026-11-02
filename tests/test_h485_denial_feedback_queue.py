@@ -308,7 +308,12 @@ def test_purge_and_backup_include_only_observational_metadata(queue):
 
 def test_tally_capacity_evicts_old_epoch_without_reviving_warning(queue, monkeypatch):
     monkeypatch.setenv("JARVIS_SMART_DENIAL_BREAKER_THRESHOLD", "1")
-    monkeypatch.setattr("agents.core.autonomy.queue._now", lambda: "2026-10-03T00:00:00+00:00")
+    # One frozen instant for every write, taken from the real clock: retention
+    # (prune_chat_outcomes) reads datetime.now, so a fixed calendar date here ages past
+    # TERMINAL_RETENTION_DAYS and the rows this test inspects are pruned under it.
+    from datetime import UTC, datetime
+    frozen = datetime.now(UTC).isoformat()
+    monkeypatch.setattr("agents.core.autonomy.queue._now", lambda: frozen)
     for index in range(257):
         task_id, digest = _propose(queue, context=_turn(session=f"s{index}"))
         _judge(queue, task_id, digest)

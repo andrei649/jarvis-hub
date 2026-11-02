@@ -76,6 +76,7 @@ from .skills.marketplace import SkillMarketplace
 from .skills.skill_history import SkillHistory
 from .skills import switches as skill_switches  # H329: the turn's channel for the skill switches
 from .skills.tools import bind_carry_turn, reset_carry_turn  # H326: one real turn for the skill carry
+from .skills import bundles as skill_bundles  # H026: the owner's /<bundle> load, one turn's
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, InterruptBudget, MissionStore
 from .autonomy import ProactiveObserver, default_probes
@@ -297,6 +298,8 @@ NO_MODEL_REPLY = (
 _held_turn_leases: contextvars.ContextVar = contextvars.ContextVar(
     "nerva_held_turn_leases", default=frozenset()
 )
+#: H019: this turn's row in ``Orchestrator._turn_holders`` (surface, session, start).
+_turn_holder: contextvars.ContextVar = contextvars.ContextVar("nerva_turn_holder", default=None)
 # Hermes absorption, wave 1 — who is speaking in this turn (channel, sender, owner?),
 # established by the channel or the web endpoint and read by the slash-command plane.
 _turn_principal: contextvars.ContextVar = contextvars.ContextVar(
@@ -404,6 +407,15 @@ def _taint_attached_context() -> None:
     if attached():
         from .security.recall_taint import mark_turn_recall_tainted
         mark_turn_recall_tainted()
+
+
+def _commit_bundle_load() -> None:
+    """H026 — the turn's ``/<bundle>`` loads go into the session's skill ledger, as
+    skill_view's reads do, so later turns carry them. Never raises."""
+    try:
+        skill_bundles.commit_turn()
+    except Exception:
+        logger.warning("skill bundle loads not recorded in the ledger", exc_info=True)
 
 
 async def _begin_project_context(orch) -> None:
@@ -610,6 +622,9 @@ class Orchestrator:
         # K3 — the session-kernel manager the coordinator composes. Declared here
         # like the rest of the external slots so the protocol holds before wiring.
         self.session_kernels = None
+        # H026 — the coordinator's skill-environment registry, so a /<bundle> load declares
+        # its members' required_env as skill_view does.
+        self.code_environment = None
 
         # ── optional components via the registry (A2: tames the god-object) ──
         from .component_registry import ComponentRegistry
@@ -799,6 +814,8 @@ class Orchestrator:
         self._pending_inputs = None
         self._turn_leases: dict[str, asyncio.Lock] = {}
         self._turn_lease_max_wait: float = _TURN_LEASE_MAX_WAIT_SECONDS
+        # H019: one row per turn holding a session's turn lease (turn_slots/turn_holders).
+        self._turn_holders: dict[int, dict] = {}
         self.commands = build_default_registry()
         self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
@@ -1131,22 +1148,8 @@ class Orchestrator:
             ]
             self.event_watcher = EventWatcher(self.autonomy, event_probes)
 
-            async def _reflect_llm(prompt: str) -> str:
-                return await self.process(prompt, agent="jarvis", channel="reflection")
-
-            def _reflection_living_memory():
-                cog = getattr(self, "cognition", None)
-                if cog is None or not cog.sub_enabled("memory_enabled"):
-                    return None
-                return cog.module("memory")
-
             from .paths import data_path
-            self.reflector = DailyReflector(
-                self.memory,
-                _reflect_llm,
-                run_store=ReflectionRunStore(data_path("reflection", "daily_reflector.json")),
-                living_memory=_reflection_living_memory,
-            )
+            self.reflector = self._build_daily_reflector()
 
             # Proactive Technology Scout (Self-Improvement) — reuses the same
             # WebSearchPlugin the assistant's own websearch feature calls; None if
@@ -1202,7 +1205,6 @@ class Orchestrator:
         # no local backend up ⇒ the review pass just skips; NEVER the cloud-
         # preferring HybridRouter.backend property).
         try:
-            from .learning.background_review import BackgroundReviewer
             from .skills.proposals import SkillProposalStore
             from .paths import data_path as _dp
             self.skill_proposals = SkillProposalStore(
@@ -1211,22 +1213,7 @@ class Orchestrator:
             from .skills.batch import SkillBatchStore
             self.skill_batches = SkillBatchStore(path=_dp("learning", "skill_batches.json"))
 
-            def _review_living():
-                cog = getattr(self, "cognition", None)
-                if cog is None or not cog.sub_enabled("memory_enabled"):
-                    return None
-                return cog.module("memory")
-
-            self.reviewer = BackgroundReviewer(
-                self._review_llm,
-                living=_review_living,
-                skills=self.skills,
-                learning=(self.cognition.module("learning")
-                          if getattr(self, "cognition", None) is not None else None),
-                proposals=self.skill_proposals,
-                approvals=getattr(self, "action_approvals", None),
-                get_setting=self.get_setting,
-            )
+            self.reviewer = self._build_background_reviewer()
 
             # H20.5 — usage telemetry (sidecar, best-effort) + the nightly skill
             # curator (lifecycle + approved-patch application; gated at the tick).
@@ -1397,6 +1384,59 @@ class Orchestrator:
             safe_mode.note("plugins")
             return
         self.plugin_manager.build(self)
+
+    def _build_background_reviewer(self):
+        """The per-turn learning reviewer as the hub runs it: the strict-local review
+        model, the living memory while cognition memory is on, and the runtime settings,
+        through which it reads the owner's memory switch (H422, ``memory.core_enabled``:
+        off, no reviewed fact reaches the curated rings, whatever the posture says), and the
+        intent log, which records a fact a full ring refused (H422)."""
+        from .learning.background_review import BackgroundReviewer
+
+        def _review_living():
+            cog = getattr(self, "cognition", None)
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return None
+            return cog.module("memory")
+
+        cognition = getattr(self, "cognition", None)
+        return BackgroundReviewer(
+            self._review_llm,
+            living=_review_living,
+            skills=getattr(self, "skills", None),
+            learning=cognition.module("learning") if cognition is not None else None,
+            proposals=getattr(self, "skill_proposals", None),
+            approvals=getattr(self, "action_approvals", None),
+            get_setting=self.get_setting,
+            audit=lambda: getattr(self, "intent_log", None),
+        )
+
+    def _build_daily_reflector(self) -> DailyReflector:
+        """The nightly reflection as the hub runs it: the conversation memory, a jarvis
+        turn on the reflection channel, the living memory while cognition memory is on and,
+        H422, the owner's memory switch (``memory.core_enabled``, which no posture sets),
+        which keeps the nightly lessons out of the curated core ring when it is off, and the
+        intent log, which records a lesson a full ring refused."""
+        from .memory_tool import switched_on
+        from .paths import data_path
+
+        async def _reflect_llm(prompt: str) -> str:
+            return await self.process(prompt, agent="jarvis", channel="reflection")
+
+        def _reflection_living_memory():
+            cog = getattr(self, "cognition", None)
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return None
+            return cog.module("memory")
+
+        return DailyReflector(
+            getattr(self, "memory", None),
+            _reflect_llm,
+            run_store=ReflectionRunStore(data_path("reflection", "daily_reflector.json")),
+            living_memory=_reflection_living_memory,
+            core_enabled=lambda: switched_on(getattr(self, "get_setting", None)),
+            audit=lambda: getattr(self, "intent_log", None),
+        )
 
     def load_runtime_settings(self):
         try:
@@ -1936,6 +1976,64 @@ class Orchestrator:
             logger.warning("slash command dispatch failed closed", exc_info=True)
             return None
 
+    async def _begin_bundle_load(self, text: str):
+        """H026 — the owner's ``/<bundle> [instruction]`` or ``/bundle <name> [instruction]``.
+
+        ``(outcome, loaded)``: ``loaded`` when the bundle's members are bound to this turn
+        (its prompts carry them, :func:`skills.bundles.turn_block`) and the turn goes on to
+        the model; an ``outcome`` to answer instead when nothing can be loaded; ``(None,
+        False)`` when ``text`` asks for no bundle load. Only the owner's turn loads one: for
+        anyone else ``/bundle`` is refused by the registry as the owner command it is, and a
+        bare ``/<slug>`` is an unknown command, so a bundle's name is not disclosed. A
+        built-in or quick command keeps its name (``/bundle <name>`` reaches a bundle that
+        shares it)."""
+        if not isinstance(text, str) or not text.lstrip().startswith("/"):
+            return None, False
+        if current_principal().admin is not True:
+            return None, False
+        loader = getattr(self, "skills", None)
+        if loader is None:
+            return None, False
+        registry = getattr(self, "commands", None)
+
+        def taken(word: str) -> bool:
+            get = getattr(registry, "get", None)
+            if callable(get) and get(word) is not None:
+                return True
+            from .quick_commands import configured
+
+            try:
+                return word in configured()
+            except Exception:
+                return True                      # unreadable quick commands: no shadowing
+
+        try:
+            inv = await asyncio.to_thread(skill_bundles.invocation, text, taken=taken)
+        except OSError:
+            # Only the bundles folder itself failing to list gets here: a file in it that
+            # cannot be read is that file's problem (skipped and named), never this answer.
+            logger.warning("skill bundles unreadable; nothing loaded", exc_info=True)
+            word = text.strip().split(None, 1)[0][:65]
+            return CommandOutcome(skill_bundles.EXPLICIT_COMMAND, "failed",
+                                  f"The skill bundles folder could not be read, so {word} could not be "
+                                  "looked up as a bundle; nothing was loaded."), False
+        if inv is None:
+            return None, False
+        if inv.bundle is None:
+            reply = (f"No skill bundle named {inv.named[:64]!r}. /bundles lists them."
+                     if inv.named else
+                     "Usage: /bundle <name> [instruction] — load every skill of a bundle into this turn "
+                     "(/bundles lists them; /<name> works too when no command has that name).")
+            return CommandOutcome(skill_bundles.EXPLICIT_COMMAND, "refused" if inv.named else "answered",
+                                  reply), False
+        from .skills.template_vars import SETTING as TEMPLATE_VARS_SETTING
+
+        answer = skill_bundles.begin_load(inv, loader, session=str(self.session_id or ""),
+                                          template_vars=self.get_setting(TEMPLATE_VARS_SETTING, {}))
+        if answer is not None:
+            return CommandOutcome(skill_bundles.EXPLICIT_COMMAND, "refused", answer), False
+        return None, True
+
     async def _dispatch_preappend_checkpoint_command(self, text: str):
         """Keep owner checkpoint operations outside the exchange they address."""
         name = checkpoint_command_name(text)
@@ -2223,11 +2321,47 @@ class Orchestrator:
             yield False
             return
         token = _held_turn_leases.set(held | {key})
+        # H019: one slot per turn — a lease taken inside one already held (a channel turn
+        # holds its base key, then its session's) is the same turn, not another slot; its
+        # holder row follows it to the session it takes last (the one it runs on).
+        holders = self.__dict__.setdefault("_turn_holders", {})
+        holder = _turn_holder.get() if held else None
+        holder_token = None
+        if not held:
+            holder = {"surface": current_principal().channel, "session_id": key,
+                      "started_at": time.time()}
+            holders[id(holder)] = holder
+            holder_token = _turn_holder.set(holder)
+        elif holder is not None:
+            holder["session_id"] = key
         try:
             yield True
         finally:
+            if holder_token is not None:
+                holders.pop(id(holder), None)
+                _turn_holder.reset(holder_token)
             _held_turn_leases.reset(token)
             lock.release()
+
+    def turn_slots(self) -> dict:
+        """H019 — turn slots in use, for ``nerva status``: how many turns (or session
+        changes made under a lease) hold a session's turn lease right now. The lease allows
+        one per session; nothing caps them hub-wide, so ``cap`` is None."""
+        running = len(self.__dict__.get("_turn_holders", {}))
+        return {"running": running, "per_session": 1, "cap": None}
+
+    def turn_holders(self, *, now: Optional[float] = None) -> list[dict]:
+        """H019 — who holds the turn slots (Hermes' one row per slot holder): for each
+        running turn the surface it came from (its principal's channel; ``unknown`` for a
+        turn no channel bound, such as a background worker's), the session its lease is on,
+        when it took the slot (epoch seconds) and its age in whole seconds; oldest first.
+        Raw values: ``GET /api/status/slots`` (user-guarded) filters them for the wire."""
+        current = time.time() if now is None else now
+        rows = [dict(row) for row in list(self.__dict__.get("_turn_holders", {}).values())]
+        rows.sort(key=lambda row: row["started_at"])
+        for row in rows:
+            row["age_s"] = max(0, int(current - row["started_at"]))
+        return rows
 
     @staticmethod
     def _command_cognition(outcome) -> dict:
@@ -2486,6 +2620,7 @@ class Orchestrator:
         channel_token = skill_switches.bind_turn_channel(channel)
         # H326: one real turn for the loaded-skills carry, however many prompts it builds.
         carry_token = bind_carry_turn()
+        bundle_token = skill_bundles.bind_turn()   # H026: a /<bundle> load is this turn's
         # The reply is one string, so an approval this turn queues would otherwise
         # be unnameable. The collector adopts a sink the caller opened (that is how
         # /chat reads the ids back); otherwise the turn gets its own, so a voice or
@@ -2545,6 +2680,8 @@ class Orchestrator:
             power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
+            _commit_bundle_load()                    # H026: before the carry turn closes
+            skill_bundles.reset_turn(bundle_token)
             reset_carry_turn(carry_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
@@ -2589,14 +2726,16 @@ class Orchestrator:
         turn_tools.begin()          # H441: the reply records the tools this turn calls
         await _begin_project_context(self)   # H594: the project's convention files
 
-        outcome = await self._dispatch_command(text)
+        outcome, bundle_loaded = await self._begin_bundle_load(text)
+        if outcome is None and not bundle_loaded:
+            outcome = await self._dispatch_command(text)
         if outcome is not None:
             await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
             self.last_cognition = self._command_cognition(outcome)
             record_turn_completion("command")
             return outcome.reply
 
-        skill_cmd = self.skills.parse_command(text)
+        skill_cmd = None if bundle_loaded else self.skills.parse_command(text)
         if skill_cmd:
             skill_name, command, args = skill_cmd
             skill = self.skills.get_skill(skill_name)
@@ -2619,7 +2758,7 @@ class Orchestrator:
                     return result
 
         # Natural-language LLM-backend control (start / load / unload / status).
-        if self._chat_control_enabled():
+        if not bundle_loaded and self._chat_control_enabled():
             llm_ctl = detect_llm_control(text)
             if llm_ctl:
                 reply = await self._run_llm_control(*llm_ctl, channel=channel)
@@ -2753,6 +2892,7 @@ class Orchestrator:
         origin_token = bind_turn_action_origin(channel)
         channel_token = skill_switches.bind_turn_channel(channel)   # see handle_input
         carry_token = bind_carry_turn()          # H326: see handle_input
+        bundle_token = skill_bundles.bind_turn()   # H026: see handle_input
         approvals_token = bind_turn_approvals()  # see handle_input
         meter_token = _TURN_METER_MAPS.set({})
         title_token = _TURN_TITLE.set([])
@@ -2808,6 +2948,8 @@ class Orchestrator:
             power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
+            _commit_bundle_load()                    # H026: before the carry turn closes
+            skill_bundles.reset_turn(bundle_token)
             reset_carry_turn(carry_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
@@ -2859,7 +3001,9 @@ class Orchestrator:
         turn_tools.begin()          # H441: the reply records the tools this turn calls
         await _begin_project_context(self)   # H594: the project's convention files
 
-        outcome = await self._dispatch_command(text)
+        outcome, bundle_loaded = await self._begin_bundle_load(text)
+        if outcome is None and not bundle_loaded:
+            outcome = await self._dispatch_command(text)
         if outcome is not None:
             record_turn_completion("command")
             await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
@@ -2870,7 +3014,7 @@ class Orchestrator:
             self.last_cognition = self._command_cognition(outcome)
             return outcome.reply
 
-        skill_cmd = self.skills.parse_command(text)
+        skill_cmd = None if bundle_loaded else self.skills.parse_command(text)
         if skill_cmd:
             skill_name, command, args = skill_cmd
             skill = self.skills.get_skill(skill_name)
@@ -2897,7 +3041,7 @@ class Orchestrator:
                     return result
 
         # Natural-language LLM-backend control (start / load / unload / status).
-        if self._chat_control_enabled():
+        if not bundle_loaded and self._chat_control_enabled():
             llm_ctl = detect_llm_control(text)
             if llm_ctl:
                 reply = await self._run_llm_control(*llm_ctl, channel=channel)
@@ -3913,9 +4057,17 @@ class Orchestrator:
         ``freeze=False`` (H227, the inspector) answers what the next turn would send
         without being what freezes it: the frozen block when a turn already froze
         one, else a fresh render that is not kept.
+
+        H422: the owner's memory switch (``memory.core_enabled``, which no product
+        posture sets) keeps the block out from the next turn on, a conversation under
+        way included; switched back on, the session's frozen block returns.
         """
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
+            return ""
+        from .memory_tool import switched_on
+
+        if not switched_on(getattr(self, "get_setting", None)):
             return ""
         from . import safe_mode
 
@@ -3953,6 +4105,10 @@ class Orchestrator:
         cog = getattr(self, "cognition", None)
         try:
             if cog is None or not cog.sub_enabled("memory_enabled"):
+                return
+            from .memory_tool import switched_on
+
+            if not switched_on(getattr(self, "get_setting", None)):
                 return
             from . import safe_mode
 
@@ -4118,6 +4274,20 @@ class Orchestrator:
         return f"User said: {text}\nRespond as {name}."
 
     def _prompt_context(self, agent, context: dict) -> dict:
+        """The per-agent prompt context (:meth:`_skills_prompt_context`), with this turn's
+        ``/<bundle>`` load (H026) ahead of the session's carried skills in ``skills_loaded``."""
+        # Called on the class: a caller may hand in a bare stand-in for the orchestrator.
+        merged = Orchestrator._skills_prompt_context(self, agent, context)
+        loaded = Orchestrator._bundle_prompt_block(self, agent)
+        if not loaded:
+            return merged
+        merged = dict(merged)
+        carried = merged.get("skills_loaded")
+        merged["skills_loaded"] = "\n\n".join(
+            block for block in (loaded, carried if isinstance(carried, str) else "") if block)
+        return merged
+
+    def _skills_prompt_context(self, agent, context: dict) -> dict:
         """The per-agent prompt context: the intent context plus the skills the model may name.
 
         Hermes absorption 0.2. ``Agent.build_prompt`` has rendered ``context["skills"]`` since
@@ -4187,6 +4357,33 @@ class Orchestrator:
         if carried:
             merged["skills_loaded"] = carried
         return merged
+
+    def _bundle_prompt_block(self, agent) -> str:
+        """H026 — the owner's ``/<bundle>`` load of this turn as ``agent`` reads it, or ""
+        (no load bound). It does not depend on ``llm.skills_in_prompt``: that setting is
+        about the catalog every turn pays for, and a load is the owner asking for these
+        skills now. Sized to the agent's model window like the carry."""
+        if skill_bundles.current_load() is None:
+            return ""
+        agent_id = str(getattr(agent, "id", "") or "")
+        try:
+            from .context_compressor import window_for
+            from .skills.template_vars import SETTING as TEMPLATE_VARS_SETTING
+
+            try:
+                window = window_for(self._agent_default_model(agent_id, agent))
+            except Exception:
+                window = None                          # unknown: the load's own cap
+            return skill_bundles.turn_block(
+                getattr(self, "skills", None), agent_id, session=str(self.session_id or ""),
+                template_vars=self.get_setting(TEMPLATE_VARS_SETTING, {}),
+                max_bytes=skill_bundles.load_budget(window),
+                environment_registry=getattr(self, "code_environment", None),
+                principal_tag=current_principal(),
+                current_loader=lambda: getattr(self, "skills", None))
+        except Exception:
+            logger.warning("skill bundle load failed; none loaded", exc_info=True)
+            return ""
 
     def _agent_default_model(self, agent_id: str, agent) -> str:
         default_model = getattr(agent, "default_model", None)

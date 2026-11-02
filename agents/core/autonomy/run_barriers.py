@@ -39,6 +39,12 @@ rules that keep it from ever wedging a run:
 * **The owner's "stop waiting" sticks.** Once the owner clears a wait, neither the
   planner nor the judge may park the run on that same wait again (``owner_cleared``);
   a different wait is still theirs to ask for.
+* **The owner may pause a run (H462).** ``/goal pause`` is a ``deadline`` barrier
+  with ``source="owner"``, capped like every other (the run's deadline and the time
+  its budget has left still run), and ended by the owner's clear — ``/goal resume``
+  or the HUD's "stop waiting", the same compare-and-clear. Lifting the owner's own
+  pause lets go of no wait the planner or the judge asked for, so it never counts
+  as ``owner_cleared``: their later clock waits are still theirs to ask for.
 * **Nothing to wait on is not a failure.** ``request`` refuses a wait on work that
   has already finished (and the other codes in :data:`NOTHING_TO_WAIT_ON`) the same
   way it refuses a malformed one, but a caller must not charge the run for it: the
@@ -191,6 +197,9 @@ def describe(barrier: Mapping[str, Any] | None) -> str:
     b = dict(barrier or {})
     kind = b.get("kind")
     target = b.get("target")
+    if b.get("source") == "owner":
+        # H462: the owner's own pause (``/goal pause``) — what ends it is the owner.
+        return "the owner to resume it"
     if kind == "trigger" and isinstance(target, str):
         registry, _, ident = target.partition(":")
         if registry == "task":
@@ -443,7 +452,9 @@ class RunBarriers:
         "The same wait" is the same kind and target — except the clock: a deadline's
         target is recomputed from ``in_seconds`` on every ask, so for the clock any
         deadline is the same wait. Otherwise the judge would re-park a run on a
-        fresh six-hour clock the very tick after the owner let it go.
+        fresh six-hour clock the very tick after the owner let it go. The owner's
+        own pause is not among the waits the ledger returns: lifting it binds no
+        model (H462).
 
         A pid is a process, not a number: the same pid AND the same start token
         (N5), so a later process the hub registers on a reused pid is a new wait.

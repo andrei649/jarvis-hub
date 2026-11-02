@@ -88,8 +88,11 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
-        "uninstall", "backup", "pairing", "webhook", "provider",
+        "uninstall", "backup", "pairing", "webhook", "provider", "goal", "memory",
     }
+    # H422: Hermes's `hermes memory status|reset|off` for the two core rings; reset is the
+    # only verb that erases, after a typed `yes`.
+    assert tree["memory"] == ["off", "on", "reset", "status"]
     # H039: the Hermes `hermes webhook` verbs; `test` is dry (a signed sample, nothing runs).
     assert tree["webhook"] == ["list", "remove", "subscribe", "test"]
     # The owner-managed compatible endpoint is one explicit local CLI family.
@@ -113,9 +116,12 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["estop"] == ["engage", "resume", "status"]
     # H350: the linter reads files and reports; it never writes a skill.
     # H354: `verify` runs one in-process reality probe on the hub and writes nothing durable.
-    assert tree["skills"] == ["config", "lint", "list", "off", "on", "verify"]
+    # H026: `bundles` keeps named groups of skills; it switches none of them (off/on --bundle does).
+    assert tree["skills"] == ["bundles", "config", "lint", "list", "off", "on", "verify"]
     # H464: read the runs, and let a parked one go. Nothing here starts a run.
     assert tree["company"] == ["clear-wait", "list"]
+    # H462: propose only sends a card to the decision inbox; subgoal only narrows.
+    assert tree["goal"] == ["propose", "subgoal"]
     # H473: `discover` scans the file roots into the repo cache; `repos` lists that cache.
     assert tree["project"] == [
         "add-folder", "archive", "bind-board", "create", "discover", "list", "ls", "remove-folder",

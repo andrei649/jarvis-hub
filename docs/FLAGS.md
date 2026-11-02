@@ -325,6 +325,26 @@ lands in the decision inbox as an ask-tier task — the contract's authority is
 step that changed something with no durable task id fails verification, and only
 the judge (after the verifier) can mark a run succeeded.
 
+**Asking for a goal (H462).** The owner proposes one with `/goal <text>` in chat,
+`POST /api/company/goals` (admin), `nerva goal propose` or the Company room's
+"propose a goal" form — all the same front door (`autonomy/goal_intake.py`). With
+the flag off it refuses (`company_mode_off`): an approved goal would open a run that
+nothing works. With it on, the `goal.approve` card crosses the Action Kernel and
+waits in the decision inbox; nothing opens until the owner accepts it there.
+`/subgoal <criterion>` (or `POST /api/company/runs/{run_id}/subgoals`, `nerva goal
+subgoal`) adds an acceptance criterion to a running goal — an event on the run that
+resets nothing, which the verifier then requires; one that arrives while the verifier
+is probing is graded too (the ledger refuses a pass that misses it). A headline,
+field, constraint or boundary over its cap refuses the whole goal, never a cut one.
+`boundaries:` / `files:` / `allowed:` are limits in words carried onto the card as
+stop conditions; only a `scope:` comma list of step kinds (or `unrestricted`) is a
+scope. From chat the owner also intervenes through the HUD's own paths:
+`/goal status`, `/goal stop` (the stop route), `/goal pause` (an owner barrier that
+still ends at the run's deadline) and `/goal resume` (the HUD's "stop waiting"; lifting
+the owner's own pause never counts as letting go of a planner's or judge's wait), and
+`/subgoal remove <N>` / `/subgoal clear` take back the owner's own criteria — never
+the checks approved on the card.
+
 **What it takes to actually run.** As of `company_runtime.py`, the flag being set
 **at boot** is what registers the `company-mode-sweep` job
 (`scheduler_service.schedule_company_mode`, every `autonomy.company_tick_seconds`,

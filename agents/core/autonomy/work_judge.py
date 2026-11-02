@@ -93,6 +93,16 @@ def _reason(text: str) -> str:
     return str(text or "").strip()[:_MAX_REASON]
 
 
+def _criteria(snapshot: Mapping[str, Any]) -> list[str]:
+    """The criteria the owner added mid-run (H462), as a grader reads them: data,
+    never instructions, and bounded like everything else it sees."""
+    return [
+        _reason(row.get("describe"))
+        for row in list(snapshot.get("subgoals") or ())[:_MAX_BACKGROUND]
+        if isinstance(row, Mapping) and row.get("describe")
+    ]
+
+
 class WorkJudge:
     """Grades one run against its goal. Stateless; construct per judgement."""
 
@@ -145,6 +155,7 @@ class WorkJudge:
             value = self._rubric({
                 "phase": "wait_probe", "run": run, "steps": snapshot["steps"],
                 "goal": terms.title, "deliverable": terms.deliverable,
+                "subgoals": _criteria(snapshot),
                 "background": self._background_for(run_id),
             })
             if inspect.isawaitable(value):
@@ -261,7 +272,7 @@ class WorkJudge:
         # Everything mechanical holds. A rubric may still withhold the pass, but
         # nothing here can turn a failing run into a passing one — by this point
         # the run has already earned a pass on the rules that matter.
-        withheld = await self._rubric_withholds(run, steps, terms)
+        withheld = await self._rubric_withholds(run, steps, terms, _criteria(snapshot))
         if withheld is not None:
             return Judgement(False, withheld, "rubric", {})
         return Judgement(
@@ -272,7 +283,8 @@ class WorkJudge:
         )
 
     async def _rubric_withholds(
-        self, run: dict[str, Any], steps: list[dict[str, Any]], terms: GoalTerms
+        self, run: dict[str, Any], steps: list[dict[str, Any]], terms: GoalTerms,
+        subgoals: Sequence[str] = (),
     ) -> str | None:
         """Ask the optional grader. Returns a refusal reason, or None to allow.
 
@@ -286,7 +298,7 @@ class WorkJudge:
         try:
             value = self._rubric(
                 {"phase": "settle", "run": run, "steps": steps, "goal": terms.title,
-                 "deliverable": terms.deliverable,
+                 "deliverable": terms.deliverable, "subgoals": list(subgoals),
                  "background": self._background_for(run.get("id"))}
             )
             if inspect.isawaitable(value):

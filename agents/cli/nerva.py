@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from .client import HubClient, HubError, HubUnavailable, hub_url
+from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -407,8 +407,40 @@ def build_parser() -> argparse.ArgumentParser:
         switch = skills_verbs.add_parser(verb, help=text)
         switch.add_argument("name", nargs="?", help="the skill's name or folder")
         switch.add_argument("--category", help="every skill of this category instead of one skill")
+        switch.add_argument("--bundle", help="every installed skill of this bundle instead of one skill")
         switch.add_argument("--channel", help="only on this channel (telegram, voice, web, ...)")
         switch.add_argument("--json", action="store_true")
+    # H026 — named groups of skills, switched off/on as one unit with --bundle.
+    bundles = skills_verbs.add_parser(
+        "bundles", help="named groups of skills, switched as one unit (`nerva skills off|on --bundle`) "
+                        "or loaded into a chat turn with /<bundle>; with no action, the list")
+    bundle_verbs = bundles.add_subparsers(dest="bundle_action", required=False, metavar="action")
+    bundle_verbs.add_parser("list", help="every bundle, its skills and which are not installed").add_argument(
+        "--json", action="store_true")
+    bundle_show = bundle_verbs.add_parser("show", help="one bundle's skills")
+    bundle_show.add_argument("name", help="the bundle's name (any casing; spaces and _ read as -)")
+    bundle_show.add_argument("--json", action="store_true")
+    bundle_create = bundle_verbs.add_parser(
+        "create", help="create a bundle of installed skills; it switches nothing (admin). Skills come "
+                       "from --skill, or are asked for one a line on a terminal when there is none")
+    bundle_create.add_argument("name", help="the bundle's name (/<its slug> loads it in chat)")
+    bundle_create.add_argument("--skill", "-s", action="append", default=[], metavar="SKILL",
+                               help="an installed skill's name or folder, or its path below the skills "
+                                    "folder as Hermes writes one (productivity/maps); repeat for each")
+    bundle_create.add_argument("--description", "-d", default="")
+    bundle_create.add_argument("--instruction", "-i", default=None,
+                               help="extra guidance put before the skills when the bundle is loaded; "
+                                    "omitted, a replaced bundle keeps its own (\"\" drops it)")
+    bundle_create.add_argument("--force", "-f", action="store_true",
+                               help="replace the bundle of that name (only its own file is replaced)")
+    bundle_create.add_argument("--json", action="store_true")
+    bundle_delete = bundle_verbs.add_parser(
+        "delete", help="delete a bundle; its skills and their switches are untouched (admin)")
+    bundle_delete.add_argument("name", help="the bundle's name")
+    bundle_delete.add_argument("--json", action="store_true")
+    bundle_verbs.add_parser(
+        "reload", help="re-read the bundle files and report what changed (admin)").add_argument(
+        "--json", action="store_true")
     # H354 — the owner's trigger for one skill's reality-harness case.
     verify = skills_verbs.add_parser(
         "verify", help="run the reality harness's case for one loaded skill on the hub, now (admin)")
@@ -431,6 +463,21 @@ def build_parser() -> argparse.ArgumentParser:
     clear_wait.add_argument("run_id")
     clear_wait.add_argument("--json", action="store_true")
 
+    goal = verbs.add_parser("goal", help="propose a goal for a work run, or add a criterion to one (H462)")
+    goal_verbs = goal.add_subparsers(dest="action", required=True, metavar="action")
+    goal_propose = goal_verbs.add_parser(
+        "propose", help="send a goal to the decision inbox; nothing runs until you approve it (admin)")
+    goal_propose.add_argument(
+        "lines", nargs="+", metavar="line",
+        help="the goal: a headline, then optional 'verify: ...', 'scope: ...', 'step: <kind>: ...', "
+             "'must not: ...', 'stop when: ...' lines, one per argument; '-' reads them from stdin")
+    goal_propose.add_argument("--json", action="store_true")
+    goal_subgoal = goal_verbs.add_parser(
+        "subgoal", help="add an acceptance criterion to a running goal; it resets nothing (user)")
+    goal_subgoal.add_argument("run_id")
+    goal_subgoal.add_argument("criterion", nargs="+")
+    goal_subgoal.add_argument("--json", action="store_true")
+
     pairing = verbs.add_parser("pairing", help="who may talk to the agent over a DM channel (admin, H051)")
     pairing_verbs = pairing.add_subparsers(dest="action", required=True, metavar="action")
     pairing_list = pairing_verbs.add_parser("list", help="every sender the pairing store knows, and its status")
@@ -450,6 +497,25 @@ def build_parser() -> argparse.ArgumentParser:
         "clear-pending", help="drop every pending request (nobody is blocked); a preview without --confirm")
     pairing_clear.add_argument("--confirm", action="store_true", help="actually drop them")
     pairing_clear.add_argument("--json", action="store_true")
+
+    memory = verbs.add_parser(
+        "memory", help="the long-term memory every prompt carries: what it holds, reset it, switch it off (H422)")
+    memory_verbs = memory.add_subparsers(dest="action", metavar="action")
+    memory_status = memory_verbs.add_parser(
+        "status", help="is memory on, and what the agent notes and the user profile hold (the default)")
+    memory_status.add_argument("--json", action="store_true")
+    memory_reset = memory_verbs.add_parser(
+        "reset", help="erase the agent notes, the user profile or both, for good (admin)")
+    memory_reset.add_argument("--target", choices=_MEMORY_RESET_TARGETS, default="all",
+                              help="which store to erase: all (default), memory (the agent notes) or user")
+    memory_reset.add_argument("--yes", "-y", action="store_true", help="skip the typed confirmation")
+    memory_reset.add_argument("--json", action="store_true")
+    memory_off = memory_verbs.add_parser(
+        "off", help="take the curated memory out of every prompt, whatever the posture; nothing is erased (admin)")
+    memory_off.add_argument("--json", action="store_true")
+    memory_on = memory_verbs.add_parser(
+        "on", help="bring the curated memory back into the prompt after `nerva memory off` (admin)")
+    memory_on.add_argument("--json", action="store_true")
 
     webhook = verbs.add_parser("webhook", help="inbound webhooks: subscribe an external system's events to an agent (admin, H039)")
     webhook_verbs = webhook.add_subparsers(dest="action", required=True, metavar="action")
@@ -1121,9 +1187,167 @@ def _runnable_line(verdict: Mapping[str, Any], client: Any = None) -> str:
     return f"{word} — {reason}: {target}"
 
 
+#: H019 — a name from the hub (a unit, a channel) is printed only in systemd's characters;
+#: anything else (a control sequence from a hub at a wrong address) reads as unknown.
+_PRINTABLE_NAME = re.compile(r"[A-Za-z0-9:_.@\-]{1,128}")
+_SERVICE_MANAGERS = frozenset({"systemd", "launchd", "s6", "nssm", "none", "unknown"})
+
+
+def _count_value(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _printable(value: Any) -> str | None:
+    return value if isinstance(value, str) and _PRINTABLE_NAME.fullmatch(value) else None
+
+
+def _uptime_words(seconds: Any) -> str:
+    whole = _count_value(seconds)
+    if whole is None:
+        return "unknown"
+    hours, rest = divmod(whole, 3600)
+    return f"{hours}:{rest // 60:02d}:{rest % 60:02d}"
+
+
+def _service_line(block: Any) -> str:
+    """H019 — the hub's service block in one line (Hermes' Gateway Service: manager,
+    running, installed-but-not-managing vs installed-but-stopped, pid). A fact the hub could
+    not read says unknown; an older hub that sends no block says so."""
+    if not isinstance(block, dict):
+        return "unknown (this hub does not report it)"
+    manager = block.get("manager") if block.get("manager") in _SERVICE_MANAGERS else "unknown"
+    unit = _printable(block.get("unit"))
+    shipped = unit or "the shipped unit"
+    state, active = block.get("state"), block.get("active")
+    if state == "managed" and manager not in ("none", "unknown"):
+        head = f"{manager} — running as {unit}" if unit else f"{manager} — running (unit name unknown)"
+    elif state == "unconfirmed" and manager not in ("none", "unknown"):
+        head = f"{manager}? — not confirmed that it runs this hub" + (f" (unit {unit})" if unit else "")
+    elif state == "installed_not_managing":
+        how = " and active" if active is True else (" (state unknown)" if active is None else "")
+        head = f"none detected — {shipped} is installed{how} but not managing this hub"
+    elif state == "installed_stopped":
+        head = f"none detected — {shipped} is installed but stopped; this hub runs outside it"
+    elif state == "not_installed":
+        head = f"none detected — {shipped} is not installed"
+    elif state == "unsupported":
+        head = "none detected — no service unit Nerva ships applies on this host"
+    else:
+        head = "unknown — the service manager could not be read"
+    pid = _count_value(block.get("pid"))
+    return f"{head} · pid {pid if pid is not None else 'unknown'} · up {_uptime_words(block.get('uptime_s'))}"
+
+
+def _in_use(running: Any, cap: Any) -> str:
+    held, limit = _count_value(running), _count_value(cap)
+    text = f"{held if held is not None else '?'}/{limit if limit is not None else '?'} in use"
+    return text + (" (full)" if held is not None and limit is not None and held >= limit else "")
+
+
+def _slots_line(slots: Any) -> str:
+    """H019 — concurrency in use against what is allowed (Hermes' Sessions → Slots): turns
+    holding a session's lease, each running channel's chat lanes, the sub-agents."""
+    if not isinstance(slots, dict):
+        return "unknown (this hub does not report it)"
+    parts = []
+    turns = slots.get("turns")
+    running = _count_value(turns.get("running")) if isinstance(turns, dict) else None
+    if running is None:
+        parts.append("turns unknown")
+    elif _count_value(turns.get("cap")) is not None:
+        parts.append(f"turns {_in_use(running, turns.get('cap'))}")
+    else:
+        per = _count_value(turns.get("per_session"))
+        bound = f"{per} per session" if per is not None else "per-session bound unknown"
+        parts.append(f"turns {running} running ({bound}, no hub-wide cap)")
+    lanes = slots.get("lanes")
+    if isinstance(lanes, list):
+        for row in lanes:
+            if not isinstance(row, dict):
+                continue
+            text = f"{_printable(row.get('channel')) or '?'} lanes {_in_use(row.get('running'), row.get('cap'))}"
+            queued = _count_value(row.get("queued"))
+            parts.append(text + (f", {queued} queued" if queued else ("" if queued == 0 else ", queued unknown")))
+    else:
+        parts.append("chat lanes unknown")
+    sub = slots.get("subagents")
+    if isinstance(sub, dict) and _count_value(sub.get("running")) is not None and _count_value(sub.get("cap")) is not None:
+        parts.append(f"sub-agents {_in_use(sub['running'], sub['cap'])}")
+    else:
+        parts.append("sub-agents unknown")
+    return " · ".join(parts)
+
+
+#: The status lines' value column: holder rows sit under the `slots:` value.
+_STATUS_INDENT = " " * 15
+
+
+def _holder_rows(detail: Any) -> list[str]:
+    """H019 — one row per slot holder under `slots:` (Hermes' Slots rows: surface, session
+    id, age), from `GET /api/status/slots`; nothing when the hub did not return them."""
+    holders = detail.get("holders") if isinstance(detail, dict) else None
+    if not isinstance(holders, list):
+        return []
+    rows = []
+    for row in holders:
+        if not isinstance(row, dict):
+            continue
+        surface = _printable(row.get("surface")) or "unknown"
+        session = _printable(row.get("session_id")) or "?"
+        rows.append(f"{_STATUS_INDENT}{surface:<17} {session:<24} held {_uptime_words(row.get('age_s'))}")
+    total = _count_value(detail.get("holders_total"))
+    if total is not None and total > len(rows):
+        rows.append(f"{_STATUS_INDENT}… and {total - len(rows)} more")
+    return rows
+
+
+def _estop_banner(estop: Any) -> str | None:
+    """H019 — the e-stop announced at the top of `nerva status` while it is engaged
+    (Hermes' pause banner under the status header); None when it is not engaged."""
+    if not isinstance(estop, dict) or not estop.get("engaged"):
+        return None
+    state = estop.get("state") if isinstance(estop.get("state"), dict) else {}
+    since = _plain(state.get("engaged_at") or "?", 64)
+    reason = _plain(state.get("reason") or "no reason given")
+    return f"  PAUSED — emergency stop ENGAGED since {since} — {reason}; `nerva estop resume` lifts it"
+
+
+def _local_service_line() -> str | None:
+    """H019 — no hub answered on this machine: the unit Nerva ships, as this box sees it
+    (Hermes' "stopped" / "installed but stopped"). None where no unit is shipped."""
+    from agents.core import service_status
+
+    try:
+        unit = service_status.shipped_unit()
+    except Exception:
+        return None
+    if not isinstance(unit, dict) or not unit.get("applicable"):
+        return None
+    name = _printable(unit.get("unit")) or "the service unit"
+    installed, active = unit.get("installed"), unit.get("active")
+    if installed is None:
+        return f"{name}: could not tell whether it is installed"
+    if installed is False:
+        return f"{name} is not installed"
+    if active is False:
+        return f"{name} is installed but stopped"
+    if active is True:
+        return f"{name} is active, yet no hub answers at this address (still starting, or another port)"
+    return f"{name} is installed; its state is unknown"
+
+
 def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
-    status = client.get("/status")
+    try:
+        status = client.get("/status")
+    except HubUnavailable:
+        # H019: say what this box's service unit is doing; the no-hub error follows (exit 3).
+        line = (None if ns.json or not is_loopback_url(str(getattr(client, "base_url", "")))
+                else _local_service_line())
+        if line:
+            ctx.say(f"nerva — no hub answered at {client.base_url}")
+            ctx.say(f"  service:     {line}")
+        raise
     if not isinstance(status, dict):
         raise HubError(0, "malformed /status reply")
     estop = None
@@ -1134,12 +1358,27 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         if exc.status not in (401, 403):
             raise
         estop_refused = exc.reason
+    # H019: who holds the slots (a user-tier read). A hub without the route, or one that
+    # refuses it, leaves the rows out; only a hub gone away mid-way ends the verb.
+    slot_holders, holders_refused = None, None
+    try:
+        slot_holders = client.get("/api/status/slots")
+    except HubUnavailable:
+        raise
+    except HubError as exc:
+        if exc.status in (401, 403):
+            holders_refused = exc.reason
+    if not isinstance(slot_holders, dict):
+        slot_holders = None
     runnable = _runnable(client)
     if ns.json:
-        ctx.dump({"status": status, "estop": estop, "runnable": runnable})
+        ctx.dump({"status": status, "estop": estop, "runnable": runnable, "slot_holders": slot_holders})
         return EXIT_OK
     agents = status.get("agents") or []
     ctx.say(f"nerva {status.get('version', '?')} — {client.base_url}")
+    banner = _estop_banner(estop)
+    if banner:   # H019: a paused hub says so at the top (Hermes' pause banner)
+        ctx.say(banner)
     ctx.say(f"  backend:     {status.get('llm_backend', 'none')}")
     state = str(status.get("model_state", "unknown"))
     ctx.say(
@@ -1153,10 +1392,19 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         str(c.get("id") or c.get("channel") or c) if isinstance(c, dict) else str(c) for c in channels
     )
     ctx.say(f"  channels:    {names or '—'}")
+    ctx.say(f"  service:     {_service_line(status.get('service'))}")
+    slots = status.get("slots")
+    ctx.say(f"  slots:       {_slots_line(slots)}")
+    for row in _holder_rows(slot_holders):
+        ctx.say(row)
+    turns = slots.get("turns") if isinstance(slots, dict) else None
+    if holders_refused is not None and isinstance(turns, dict) and _count_value(turns.get("running")):
+        ctx.say(f"{_STATUS_INDENT}holders {_read_hint(client, holders_refused)}")
     if isinstance(estop, dict):
         if estop.get("engaged"):
-            state = estop.get("state") or {}
-            ctx.say(f"  e-stop:      ENGAGED since {state.get('engaged_at') or '?'} — {state.get('reason') or 'no reason given'}")
+            state = estop.get("state") if isinstance(estop.get("state"), dict) else {}
+            ctx.say(f"  e-stop:      ENGAGED since {_plain(state.get('engaged_at') or '?', 64)}"
+                    f" — {_plain(state.get('reason') or 'no reason given')}")
         else:
             ctx.say("  e-stop:      not engaged")
     else:
@@ -2557,11 +2805,14 @@ def _skill_files(raw: str) -> list[Path] | None:
 def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
     H329 — ``nerva skills list | off | on | config``: running-hub skill switches.
-    H354 — ``nerva skills verify``: run one skill's reality-harness case on the hub."""
+    H354 — ``nerva skills verify``: run one skill's reality-harness case on the hub.
+    H026 — ``nerva skills bundles list|show|create|delete|reload``: named skill bundles."""
     if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
     if ns.action == "verify":
         return _skill_verify(ns, ctx)
+    if ns.action == "bundles":
+        return _skill_bundles(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
         Problem,
@@ -2722,6 +2973,152 @@ def _skill_verify(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK if passed else EXIT_FAILED
 
 
+_BUNDLES_PATH = "/api/skills/bundles"
+
+
+def _bundle_line(row: Mapping[str, Any]) -> str:
+    skills = row.get("skills") if isinstance(row.get("skills"), list) else []
+    missing = row.get("missing") if isinstance(row.get("missing"), list) else []
+    text = f"{_plain(row.get('slug'), 70)}  {_plain(row.get('name'), 70)}  {len(skills)} skill{'s' if len(skills) != 1 else ''}"
+    if missing:
+        text += f" ({len(missing)} not installed)"
+    return text + (f"  {_plain(row.get('description'), 120)}" if row.get("description") else "")
+
+
+def _ask_bundle_skills(ctx: Context) -> list[str] | None:
+    """Hermes' interactive fallback: one skill a line at ``skill> ``, an empty line ends;
+    None when the owner cancels (end of input or Ctrl-C)."""
+    ctx.say("No skills passed via --skill. Enter one skill name per line.")
+    ctx.say("Submit an empty line to finish.")
+    members: list[str] = []
+    try:
+        while len(members) < 64:
+            ctx.out.write("skill> ")
+            flush = getattr(ctx.out, "flush", None)
+            if callable(flush):
+                flush()
+            line = ctx.inp.readline()
+            if not line:
+                return None
+            name = line.strip()
+            if not name:
+                break
+            members.append(name)
+    except KeyboardInterrupt:
+        return None
+    return members
+
+
+def _skill_bundles(ns: argparse.Namespace, ctx: Context) -> int:
+    """H026 — ``nerva skills bundles``: keep named skill bundles on the hub (no action
+    lists them, as Hermes' ``bundles`` does). A bundle is switched off or on as one unit
+    with ``nerva skills off|on --bundle NAME`` (on waits for the owner's approval, as for
+    one skill), and loaded into a chat turn with ``/<bundle> [instruction]``."""
+    from urllib.parse import quote
+
+    action = ns.bundle_action or "list"       # Hermes: `bundles` alone lists them
+    as_json = bool(getattr(ns, "json", False))
+    if action == "create":
+        members = [s for s in ns.skill if s.strip()]
+        if not members:
+            if not _is_tty(ctx.inp):
+                ctx.err.write("a bundle must name at least one skill: pass --skill NAME (repeat for each); "
+                              "without one, skills are asked for only on an interactive terminal\n")
+                return EXIT_USAGE
+            asked = _ask_bundle_skills(ctx)
+            if asked is None:
+                ctx.err.write("Cancelled.\n")
+                return EXIT_FAILED
+            members = asked
+            if not members:
+                ctx.err.write("A bundle must reference at least one skill.\n")
+                return EXIT_USAGE
+        body = {"name": ns.name, "skills": members, "description": ns.description, "overwrite": ns.force}
+        if ns.instruction is not None:
+            body["instruction"] = ns.instruction
+        reply = ctx.client().post(_BUNDLES_PATH, body)
+    elif action == "delete":
+        reply = ctx.client().request("DELETE", f"{_BUNDLES_PATH}/{quote(ns.name, safe='')}")
+    elif action == "reload":
+        reply = ctx.client().post(f"{_BUNDLES_PATH}/reload", {})
+    elif action == "show":
+        reply = ctx.client().get(f"{_BUNDLES_PATH}/{quote(ns.name, safe='')}")
+    else:
+        reply = ctx.client().get(_BUNDLES_PATH)
+    if not isinstance(reply, dict):
+        ctx.err.write("unexpected reply from the hub\n")
+        return EXIT_FAILED
+    if as_json:
+        ctx.dump(reply)
+        return EXIT_OK
+    if action == "list":
+        rows = reply.get("bundles")
+        if not isinstance(rows, list):
+            ctx.err.write("unexpected reply from the hub: no bundles in it\n")
+            return EXIT_FAILED
+        if not rows:
+            ctx.say("no bundles yet; create one with: nerva skills bundles create NAME --skill A --skill B")
+        for row in rows:
+            if isinstance(row, Mapping):
+                ctx.say(_bundle_line(row))
+        for problem in reply.get("problems") or []:
+            if isinstance(problem, Mapping):
+                ctx.say(f"skipped {_plain(problem.get('file'), 120)}: {_plain(problem.get('detail'), 200)}")
+        if reply.get("directory"):
+            ctx.say(f"bundles folder: {_plain(reply['directory'], 300, keep_tail=True)}")
+        return EXIT_OK
+    if action == "show":
+        row = reply.get("bundle") if isinstance(reply.get("bundle"), Mapping) else {}
+        missing = {str(m).casefold() for m in row.get("missing") or []}
+        ctx.say(f"{_plain(row.get('slug'), 70)}  {_plain(row.get('name'), 70)}")
+        if row.get("description"):
+            ctx.say(f"  {_plain(row['description'], 200)}")
+        ctx.say(f"  file: {_plain(row.get('file'), 300, keep_tail=True)}")
+        skills = row.get("skills") if isinstance(row.get("skills"), list) else []
+        ctx.say(f"  skills ({len(skills)}):")
+        for name in skills:
+            ctx.say(f"    - {_plain(name, 130)}{' (not installed)' if str(name).casefold() in missing else ''}")
+        if row.get("instruction"):
+            ctx.say("  Instruction:")
+            for line in str(row["instruction"]).splitlines() or [""]:
+                ctx.say(f"    {_plain(line, 300)}")
+        return EXIT_OK
+    if action == "create":
+        row = reply.get("bundle") if isinstance(reply.get("bundle"), Mapping) else {}
+        skills = row.get("skills") if isinstance(row.get("skills"), list) else []
+        ctx.say(f"{'replaced' if reply.get('replaced') else 'created'} bundle {_plain(row.get('name'), 70)} "
+                f"({len(skills)} skill{'s' if len(skills) != 1 else ''}): {_plain(row.get('file'), 300, keep_tail=True)}")
+        ctx.say(f"  switch it as one unit: nerva skills off|on --bundle {_plain(row.get('slug'), 70)}")
+        return EXIT_OK
+    if action == "delete":
+        row = reply.get("deleted") if isinstance(reply.get("deleted"), Mapping) else {}
+        ctx.say(f"deleted bundle {_plain(row.get('name'), 70)}: {_plain(row.get('file'), 300, keep_tail=True)}; "
+                "its skills and their switches are untouched")
+        return EXIT_OK
+    added = [r for r in reply.get("added") or [] if isinstance(r, Mapping)]
+    removed = [r for r in reply.get("removed") or [] if isinstance(r, Mapping)]
+    changed = [str(s) for s in reply.get("changed") or []]
+    if not (added or removed or changed):
+        ctx.say(f"no changes; {reply.get('total', 0)} bundle(s) loaded")
+    if added:
+        ctx.say(f"added ({len(added)}):")
+        for row in added:
+            text = f" — {_plain(row['description'], 120)}" if row.get("description") else ""
+            ctx.say(f"  + {_plain(row.get('name'), 70)}{text}")
+    if removed:
+        ctx.say(f"removed ({len(removed)}):")
+        for row in removed:
+            ctx.say(f"  - {_plain(row.get('name'), 70)}")
+    if changed:
+        ctx.say(f"changed ({len(changed)}): {', '.join(_plain(s, 70) for s in changed)}")
+    if added or removed or changed:
+        ctx.say(f"total bundles now: {reply.get('total', 0)}")
+    for problem in reply.get("problems") or []:
+        if isinstance(problem, Mapping):
+            ctx.say(f"skipped {_plain(problem.get('file'), 120)}: {_plain(problem.get('detail'), 200)}")
+    return EXIT_OK
+
+
 def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
     if ns.action == "config":
@@ -2742,22 +3139,28 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say(f"{name}: {where}{' (essential)' if row.get('essential') else ''}"
                     f"{_skill_usage_suffix(row.get('usage'))}")
         return EXIT_OK
-    if bool(ns.name) == bool(ns.category):
-        ctx.err.write("name one skill, or one --category\n")
+    bundle = getattr(ns, "bundle", None)
+    if sum(1 for target in (ns.name, ns.category, bundle) if target) != 1:
+        ctx.err.write("name one skill, or one --category, or one --bundle\n")
         return EXIT_USAGE
     body = {"enabled": ns.action == "on"}
-    body.update({"skill": ns.name} if ns.name else {"category": ns.category})
+    body.update({"skill": ns.name} if ns.name else {"category": ns.category} if ns.category
+                else {"bundle": bundle})
     if ns.channel:
         body["channel"] = ns.channel
     reply = client.post("/api/skills/switch", body)
     if ns.json:
         ctx.dump(reply)
         return EXIT_OK
+    # H026: a bundle member that is not installed is skipped, and said so.
+    missing = (reply.get("missing") or []) if isinstance(reply, dict) else []
     if isinstance(reply, dict) and reply.get("status") == "pending":
         ctx.say(f"pending owner approval: task {reply.get('task_id')} · "
                 f"{', '.join(reply.get('pending') or [])}")
         for name in reply.get("off_everywhere") or []:
             ctx.say(f"{name}: still off everywhere after a channel-only approval")
+        for name in missing:
+            ctx.say(f"{_plain(str(name), 130)}: in the bundle but not installed, skipped")
         return EXIT_OK
     changed = reply.get("changed") or [] if isinstance(reply, dict) else []
     where = f"on {ns.channel}" if ns.channel else "everywhere"
@@ -2771,6 +3174,8 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"{name}: not switched off; the switch could not be stored")
     for name in (reply.get("essential") or []) if isinstance(reply, dict) else []:
         ctx.say(f"{name}: essential, stays on")
+    for name in missing:
+        ctx.say(f"{_plain(str(name), 130)}: in the bundle but not installed, skipped")
     if changed and isinstance(reply, dict) and not reply.get("audited"):
         ctx.say("note: the intent log could not record this switch")
     return EXIT_OK
@@ -2877,8 +3282,9 @@ def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
     """H464 — read the work runs, and let a parked one go.
 
     There is no verb that starts a run, for the same reason there is no route: a run
-    opens only on a goal the owner approved in the decision inbox. ``clear-wait``
-    grants nothing — the run goes back to the cadence it was already approved for.
+    opens only on a goal the owner approved in the decision inbox (``nerva goal
+    propose`` only asks for one, H462). ``clear-wait`` grants nothing — the run goes
+    back to the cadence it was already approved for.
     """
     client = ctx.client()
     if ns.action == "list":
@@ -2911,6 +3317,47 @@ def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say(f"not cleared: it is now waiting on {reply['waiting_on']}")
         else:
             ctx.say("no barrier")
+    return EXIT_OK
+
+
+def cmd_goal(ns: argparse.Namespace, ctx: Context) -> int:
+    """H462 — say "goal: ..." from the shell.
+
+    ``propose`` sends the goal to the hub's one front door (``POST
+    /api/company/goals``, the same as ``/goal`` in chat): the card crosses the Action
+    Kernel and waits in the decision inbox, and a run opens only when it is accepted
+    there. ``subgoal`` adds a criterion to a running goal, which only narrows it.
+    """
+    client = ctx.client()
+    if ns.action == "propose":
+        lines = list(ns.lines)
+        if lines == ["-"]:
+            lines = ctx.inp.read().splitlines()
+        text = "\n".join(line for line in lines if line.strip())
+        if not text.strip():
+            ctx.err.write("no goal given\n")
+            return EXIT_USAGE
+        reply = client.post("/api/company/goals", {"text": text})
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        reply = reply if isinstance(reply, dict) else {}
+        ctx.say(f"proposed as task {reply.get('task_id')}: decide it in the decision inbox "
+                "(nerva approvals list); nothing runs until you accept it")
+        for line in reply.get("card") or ():
+            ctx.say(f"  {line}")
+        return EXIT_OK
+    if not _RUN_ID.match(ns.run_id or ""):
+        ctx.err.write(f"not a run id: {ns.run_id!r} (letters, digits, _ and -)\n")
+        return EXIT_USAGE
+    criterion = " ".join(ns.criterion).strip()
+    reply = client.post(f"/api/company/runs/{ns.run_id}/subgoals", {"text": criterion})
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    added = reply.get("subgoal") if isinstance(reply, dict) else None
+    added = added if isinstance(added, dict) else {}
+    ctx.say(f"added {added.get('id')}: {added.get('describe')}")
     return EXIT_OK
 
 
@@ -2992,6 +3439,162 @@ def cmd_pairing(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.dump(reply)
     else:
         ctx.say(f"approved {who}" if ns.action == "approve" else f"revoked {who}")
+    return EXIT_OK
+
+
+#: H422 — a reset's ``--target`` and the stores each erases (``memory_tool.RESET_TARGETS``).
+_MEMORY_RESET_TARGETS = ("all", "memory", "user")
+_MEMORY_STORES = {"all": ("memory", "user"), "memory": ("memory",), "user": ("user",)}
+#: Both rings' lock waits on the hub (``cognition.memory.CLEAR_LOCK_TIMEOUT_S`` each), and a margin.
+_MEMORY_RESET_TIMEOUT_S = 75.0
+
+
+def _memory_store_line(target: str, store: Mapping[str, Any]) -> str:
+    line = (f"  {target} ({store.get('label') or target}): {int(store.get('entries') or 0)}/"
+            f"{store.get('cap')} entries · {int(store.get('chars') or 0)}/{store.get('char_budget')} chars"
+            f" · {int(store.get('bytes') or 0):,} bytes on disk")
+    if store.get("omitted"):
+        line += f" · {int(store['omitted'])} older not shown (over the budget)"
+    if store.get("blocked"):
+        line += f" · {int(store['blocked'])} blocked as prompt-injection"
+    return line
+
+
+def _memory_erases(target: str, store: Mapping[str, Any]) -> str:
+    line = (f"  - {target} ({store.get('label') or target}): {int(store.get('entries') or 0)} entries,"
+            f" {int(store.get('bytes') or 0):,} bytes")
+    extra = []
+    if store.get("copies"):
+        extra.append(f"{int(store['copies'])} hand-edit copies ({int(store.get('copies_bytes') or 0):,} bytes)")
+    if store.get("undo_writes"):
+        extra.append(f"{int(store['undo_writes'])} undoable writes")
+    return line + (f", and {' and '.join(extra)}" if extra else "")
+
+
+def _memory_holds(store: Any) -> bool:
+    return isinstance(store, Mapping) and any(
+        int(store.get(key) or 0) for key in ("entries", "copies", "undo_writes"))
+
+
+def _memory_switch(client: Any, ctx: Context, on: bool, as_json: bool) -> int:
+    """H422 — ``nerva memory off|on``: post the switch, then reread the status, and claim
+    only what the hub reports."""
+    reply = client.post("/api/memory/switch", {"enabled": on})
+    status = client.get("/api/memory")
+    status = status if isinstance(status, dict) else {}
+    enabled = status.get("enabled") is True
+    if as_json:
+        ctx.dump({"switch": reply, "status": status})
+        return EXIT_OK if enabled is on else EXIT_FAILED
+    if not on:
+        if enabled:
+            ctx.err.write("memory is still on: the hub saved the switch but still reads it as on; "
+                          "check again with `nerva memory` in 30 s\n")
+            return EXIT_FAILED
+        ctx.say("memory off: from the next turn no prompt carries the agent notes or the user profile, "
+                "the memory tool refuses and the background review and reflection add nothing to them; "
+                "nothing was erased (the stores stay on disk). "
+                "Turn it back on with: nerva memory on")
+        return EXIT_OK
+    if enabled:
+        tail = ", but safe mode leaves it out of every prompt" if status.get("safe_mode") else ""
+        ctx.say(f"memory on: the next turn's prompt carries the agent notes and the user profile{tail}")
+        return EXIT_OK
+    if status.get("switch") is True and status.get("cognition") is False:
+        ctx.err.write("the switch is on, but memory stays off: cognition.enabled and cognition.memory_enabled "
+                      "must be on too (nerva config set, or a product posture that sets them)\n")
+    elif status.get("available") is False:
+        ctx.err.write("memory is not available on this hub (no cognition module)\n")
+    else:
+        ctx.err.write("memory is still off: the hub saved the switch but still reads it as off; "
+                      "check again with `nerva memory` in 30 s\n")
+    return EXIT_FAILED
+
+
+def cmd_memory(ns: argparse.Namespace, ctx: Context) -> int:
+    """H422 — the long-term memory every prompt carries (the agent notes and the user
+    profile: LivingMemory's core rings), over the hub's routes.
+
+    ``status`` (the default) reads ``GET /api/memory``: whether the core block reaches the
+    prompt and the memory tool can write, and per store its entries, characters against
+    the section budget and bytes on disk. ``reset`` shows what it would erase, asks for a
+    typed ``yes`` unless ``--yes``, and posts ``POST /api/memory/reset`` (admin; the hub
+    records it in the intent log). ``off`` / ``on`` post the owner's memory switch
+    (``POST /api/memory/switch``, admin), which no product posture overrides; nothing is
+    erased. Each then rereads ``GET /api/memory`` and says what the hub really does: it
+    fails when memory is not in the state asked for.
+    """
+    client = ctx.client()
+    action = ns.action or "status"
+    as_json = bool(getattr(ns, "json", False))
+    if action in ("off", "on"):
+        return _memory_switch(client, ctx, action == "on", as_json)
+    status = client.get("/api/memory")
+    stores = status.get("stores") if isinstance(status, dict) else None
+    if not isinstance(stores, dict):
+        ctx.err.write("unexpected reply from the hub: no memory stores in it\n")
+        return EXIT_FAILED
+    if action == "status":
+        if as_json:
+            ctx.dump(status)
+            return EXIT_OK
+        if not status.get("available"):
+            ctx.say("memory: not available on this hub (no cognition module)")
+            return EXIT_OK
+        if not status.get("enabled"):
+            why = ("switched off by the owner (nerva memory on brings it back)" if status.get("switch") is False
+                   else "cognition.enabled and cognition.memory_enabled must both be on")
+            state = f"off ({why}); the stores stay on disk"
+        elif status.get("safe_mode"):
+            state = "on, but safe mode leaves it out of every prompt and the memory tool refuses"
+        else:
+            state = ("on · the prompt carries it · the memory tool "
+                     + ("writes in owner turns" if status.get("tool") else "is not offered (llm.tool_loop_enabled off)"))
+        ctx.say(f"memory: {state}")
+        for target in ("memory", "user"):
+            if isinstance(stores.get(target), Mapping):
+                ctx.say(_memory_store_line(target, stores[target]))
+        if status.get("drift"):
+            ctx.say(f"note: {status['drift']}")
+        return EXIT_OK
+    targets = _MEMORY_STORES[ns.target]
+    holding = [target for target in targets if _memory_holds(stores.get(target))]
+    if not holding:
+        ctx.say("Nothing to reset — the selected memory is empty.")
+        return EXIT_OK
+    if not as_json or not ns.yes:
+        ctx.say("This will permanently erase:")
+        for target in holding:
+            ctx.say(_memory_erases(target, stores[target]))
+    if not ns.yes:
+        ctx.out.write("Type 'yes' to confirm: ")
+        if callable(getattr(ctx.out, "flush", None)):
+            ctx.out.flush()
+        try:
+            answer = ctx.inp.readline() if ctx.inp is not None else ""
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if (answer or "").strip().lower() != "yes":
+            ctx.say("\nCancelled — nothing was erased.")
+            return EXIT_FAILED
+    # The hub waits up to 30 s for each ring's lock (CoreMemory.clear) before it answers.
+    reply = client.post("/api/memory/reset", {"target": ns.target, "confirm": "RESET"},
+                        timeout=_MEMORY_RESET_TIMEOUT_S)
+    reply = reply if isinstance(reply, dict) else {}
+    if as_json:
+        ctx.dump(reply)
+        return EXIT_OK if reply.get("ok") is True else EXIT_FAILED
+    erased = reply.get("erased") if isinstance(reply.get("erased"), dict) else {}
+    for target, count in erased.items():
+        label = (stores.get(target) or {}).get("label") or target
+        ctx.say(f"  erased {target} ({label}): {int(count or 0)} entries")
+    if reply.get("ok") is not True:
+        ctx.err.write(f"not erased: {', '.join(reply.get('not_erased') or []) or 'unknown'}; run the reset again\n")
+        return EXIT_FAILED
+    ctx.say("Memory reset complete. A conversation under way keeps what it started with; "
+            "the next one starts with a blank slate.")
+    if reply.get("audited") is False:
+        ctx.say("note: the intent log could not record this reset")
     return EXIT_OK
 
 
@@ -4975,7 +5578,9 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "skills": cmd_skills,
     "estop": cmd_estop,
     "company": cmd_company,
+    "goal": cmd_goal,
     "pairing": cmd_pairing,
+    "memory": cmd_memory,
     "provider": cmd_custom_provider,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,

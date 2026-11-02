@@ -10,7 +10,8 @@
    · an unauthorised run is called out at the top AND rendered red on its own row;
    · a step with no task id says "no approved task" in red, not a blank cell;
    · "company mode is off" and "no run has been opened" render as different sentences;
-   · there is NO start control — only stop, which needs no approval;
+   · there is NO start control — only stop, which needs no approval; "propose a goal"
+     (H462) only asks, through the admin route, and the run opens in the inbox;
    · a refused stop reaches the screen instead of reading as success;
    · an outstanding ask says HOW LONG it has waited, because "3 waiting" and "3 waiting,
      the oldest since 11pm" call for different responses;
@@ -19,7 +20,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { CompanyRoomPanel, waitedFor } from './company-room';
+import { CompanyRoomPanel, waitedFor, composeGoalText } from './company-room';
 
 const RUN = {
   run_id: 'run-1',
@@ -339,5 +340,108 @@ describe('CompanyRoomPanel — the night shift, reported without flattery', () =
     await waitFor(() => expect(screen.getByText('in progress')).toBeTruthy());
     expect(screen.queryByText('waiting')).toBeNull();
     expect(screen.queryByTitle(/stop waiting/)).toBeNull();
+  });
+});
+
+/* H462 — the owner can ASK for a goal here; the run still opens only in the inbox. */
+describe('CompanyRoomPanel — proposing a goal and adding a criterion (H462)', () => {
+  it('composes the same text /goal takes, one prefixed line per line typed', () => {
+    expect(composeGoalText({
+      goal: '  Prepare the quarterly brief ', verify: 'the brief is in docs/\n\n a reviewer signs it ',
+      scope: 'research, write', steps: 'research: read the Q3 figures', mustNot: 'touch the ledger',
+      stopWhen: 'the figures are missing',
+    })).toBe([
+      'Prepare the quarterly brief',
+      'verify: the brief is in docs/',
+      'verify: a reviewer signs it',
+      'scope: research, write',
+      'step: research: read the Q3 figures',
+      'must not: touch the ledger',
+      'stop when: the figures are missing',
+    ].join('\n'));
+  });
+
+  it('sends a proposal to the admin route and says it waits in the inbox, opening nothing', async () => {
+    localStorage.setItem('hud.admin_token', 'owner-token');
+    const fn = mockFetch({
+      '/api/company/goals': ok({ ok: true, task_id: 12, title: 'Prepare the brief',
+        card: ['goal: Prepare the brief', 'scope: research'] }),
+      '/api/company/runs': ok(BRIEF),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByText('Prepare the quarterly brief')).toBeTruthy());
+    fireEvent.click(screen.getByText('propose a goal'));
+    fireEvent.change(screen.getByLabelText('goal'), { target: { value: 'Prepare the brief' } });
+    fireEvent.change(screen.getByLabelText('scope'), { target: { value: 'research' } });
+    fireEvent.change(screen.getByLabelText('verify'), { target: { value: 'the brief is in docs/' } });
+    fireEvent.click(screen.getByText('send for approval'));
+    await waitFor(() => expect(screen.getByText(/proposed as task 12/)).toBeTruthy());
+    const call = fn.mock.calls.find((c) => String(c[0]) === '/api/company/goals');
+    expect(call[1].method).toBe('POST');
+    expect(call[1].headers['X-Admin-Token']).toBe('owner-token');
+    expect(JSON.parse(call[1].body)).toEqual({
+      text: 'Prepare the brief\nverify: the brief is in docs/\nscope: research',
+    });
+    expect(screen.getByText(/nothing runs until you accept it there/)).toBeTruthy();
+    expect(screen.getByText('scope: research')).toBeTruthy();
+    // Proposing never reaches a run route: no stop, no start, no clear.
+    expect(fn.mock.calls.some((c) => /\/(stop|start|barrier)/.test(String(c[0])))).toBe(false);
+  });
+
+  it("surfaces a refused proposal in the backend's own sentence", async () => {
+    mockFetch({
+      '/api/company/goals': refuse(400, { ok: false, reason: 'scope_required_or_declare_unrestricted',
+        detail: 'say what the run may do: a `scope:` line naming step kinds' }),
+      '/api/company/runs': ok(BRIEF),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByText('propose a goal')).toBeTruthy());
+    fireEvent.click(screen.getByText('propose a goal'));
+    fireEvent.change(screen.getByLabelText('goal'), { target: { value: 'Prepare it' } });
+    fireEvent.click(screen.getByText('send for approval'));
+    await waitFor(() => expect(screen.getByText(/refused · say what the run may do/)).toBeTruthy());
+  });
+
+  it('adds a criterion to a live run without stopping it', async () => {
+    const fn = mockFetch({
+      '/subgoals': ok({ ok: true, subgoal: { id: 'subgoal:1', describe: 'the brief has a summary' },
+        subgoals: [] }),
+      '/api/company/runs': ok(BRIEF),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByLabelText('criterion for run-1')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('criterion for run-1'),
+      { target: { value: 'the brief has a summary' } });
+    fireEvent.click(screen.getByText('add criterion'));
+    await waitFor(() => expect(screen.getByText(/criterion subgoal:1 added to run-1/)).toBeTruthy());
+    const call = fn.mock.calls.find((c) => String(c[0]) === '/api/company/runs/run-1/subgoals');
+    expect(call[1].method).toBe('POST');
+    expect(JSON.parse(call[1].body)).toEqual({ text: 'the brief has a summary' });
+    expect(fn.mock.calls.some((c) => String(c[0]).endsWith('/stop'))).toBe(false);
+  });
+
+  it('surfaces a refused criterion instead of reading as success', async () => {
+    mockFetch({
+      '/subgoals': refuse(409, { ok: false, reason: 'run_already_graded' }),
+      '/api/company/runs': ok(BRIEF),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByLabelText('criterion for run-1')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('criterion for run-1'), { target: { value: 'x' } });
+    fireEvent.click(screen.getByText('add criterion'));
+    await waitFor(() => expect(screen.getByText(/refused · run_already_graded/)).toBeTruthy());
+  });
+
+  it("lists the criteria the owner added in the owner's words, and offers none on a finished run", async () => {
+    mockFetch({
+      '/api/company/runs': ok({ ...BRIEF, runs: [
+        { ...RUN, subgoals: ['the brief has a summary'] },
+        { ...RUN, run_id: 'run-2', title: 'Done already', status: 'succeeded', headline: 'met its goal' },
+      ] }),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByText(/criteria you added: “the brief has a summary”/)).toBeTruthy());
+    expect(screen.getByLabelText('criterion for run-1')).toBeTruthy();
+    expect(screen.queryByLabelText('criterion for run-2')).toBeNull();
   });
 });

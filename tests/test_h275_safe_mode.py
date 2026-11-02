@@ -687,6 +687,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         # H277: video analysis refuses execution entirely in safe mode.
         "agents/core/llm/video_policy.py",
         "agents/core/memory_tool.py",
+        # H422: GET /api/memory only reports that safe mode keeps the curated memory out.
+        "agents/core/routers/memory_kg.py",
         "agents/core/orchestrator.py",
         "agents/core/plugin_gate.py",
         "agents/core/project_context.py",

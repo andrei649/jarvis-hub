@@ -10,7 +10,10 @@ request time through `sys.modules` — so the skills test suite's
 `monkeypatch.setattr(web, "DEV_MODE", ...)` is still observed and no test changes.
 """
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Request
+from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -90,6 +93,8 @@ def _skill_category(skill) -> str:
 class SkillSwitchBody(BaseModel):
     skill: str | None = Field(None, max_length=128)
     category: str | None = Field(None, max_length=64)
+    # H026: the installed skills of one named bundle, as one unit.
+    bundle: str | None = Field(None, max_length=64)
     enabled: bool
     channel: str | None = Field(None, max_length=32)
 
@@ -99,7 +104,13 @@ async def switch_skill(body: SkillSwitchBody):
     """H329 — switch one skill, or every skill of a category, on or off: everywhere, or
     on one channel. Nothing is uninstalled. Off applies at once; on creates an
     exact once-scoped human approval task and stays pending until its worker runs.
-    An essential skill is never switched off."""
+    An essential skill is never switched off.
+
+    H026 — ``bundle`` switches the installed members of one named bundle the same way,
+    through the same exact-target approval for on, so a bundle grants nothing that
+    switching each member would not. A member is a skill's name, or its path matched
+    exactly as Hermes writes one (``bundles.find_member``); members that name no
+    installed skill come back under ``missing``."""
     import asyncio
 
     from agents.core.skills import switches
@@ -107,8 +118,9 @@ async def switch_skill(body: SkillSwitchBody):
     orch = get_orch()
     if not orch or getattr(orch, "skills", None) is None:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    if bool(body.skill) == bool(body.category):
-        return JSONResponse({"error": "name one skill or one category", "reason": "bad_target"}, status_code=422)
+    if sum(1 for target in (body.skill, body.category, body.bundle) if target) != 1:
+        return JSONResponse({"error": "name one skill, one category or one bundle", "reason": "bad_target"},
+                            status_code=422)
     channel = ""
     if body.channel:
         channel = switches.clean_channel(body.channel)
@@ -116,14 +128,31 @@ async def switch_skill(body: SkillSwitchBody):
             return JSONResponse({"error": f"{body.channel!r} is not a channel name", "reason": "bad_channel"},
                                 status_code=422)
     loaded = orch.skills.skills
+    bundle_slug, missing = "", []
     if body.skill:
-        wanted = body.skill.strip().casefold()
-        # A manifest name wins over another skill's folder of the same spelling.
-        targets = sorted((s for s in loaded.values() if wanted in switches.identities(s)),
-                         key=lambda s: s.name.casefold() != wanted)
-    else:
+        found = switches.find(loaded.values(), body.skill)
+        targets = [found] if found is not None else []
+    elif body.category:
         wanted = body.category.strip().casefold()
         targets = [s for s in loaded.values() if _skill_category(s).casefold() == wanted and wanted]
+    else:
+        from agents.core.skills import bundles
+
+        try:
+            named = await asyncio.to_thread(bundles.get, body.bundle)
+        except OSError:
+            logger.warning("skill bundles unreadable", exc_info=True)
+            return JSONResponse({"error": "the skill bundles could not be read", "reason": "bundles_unavailable"},
+                                status_code=503)
+        if named is None:
+            return JSONResponse({"error": f"no bundle named {body.bundle!r}", "reason": "not_found"},
+                                status_code=404)
+        bundle_slug = named.slug
+        # A member is a name, or a path matched exactly (bundles.find_member).
+        targets, missing = await asyncio.to_thread(bundles.resolve, named.skills, list(loaded.values()))
+        if not targets:
+            return JSONResponse({"error": f"no skill of bundle {named.name!r} is installed",
+                                 "reason": "not_found", "missing": missing}, status_code=404)
     if not targets:
         what = "skill" if body.skill else "category"
         return JSONResponse({"error": f"no installed {what} named {(body.skill or body.category)!r}",
@@ -137,7 +166,7 @@ async def switch_skill(body: SkillSwitchBody):
         if body.enabled:
             outcome = await asyncio.to_thread(
                 switch_approval.request_enable, orch, targets, channel=channel,
-                category=body.category or "", requested_by="owner",
+                category=body.category or "", requested_by="owner", bundle=bundle_slug,
             )
         else:
             outcome = await asyncio.to_thread(switch_approval.disable, targets, channel=channel, actor="owner")
@@ -158,22 +187,25 @@ async def switch_skill(body: SkillSwitchBody):
         if outcome["unstorable"]:
             return JSONResponse({"error": f"{name} cannot be stored as a switch",
                                  "reason": "unstorable"}, status_code=409)
+    extra = {"bundle": bundle_slug, "missing": missing} if bundle_slug else {}
     if outcome.get("status") == "pending":
         return JSONResponse({"ok": True, "status": "pending", "task_id": outcome["task_id"],
                              "pending": outcome["pending"], "enabled": False,
                              "channel": channel or None, "switches": outcome["state"],
-                             "off_everywhere": outcome["off_everywhere"]}, status_code=202)
+                             "off_everywhere": outcome["off_everywhere"], **extra}, status_code=202)
     audited = False
     if not body.enabled and outcome["changed"]:
         audit = getattr(orch, "intent_log", None)
         if callable(getattr(audit, "record", None)):
+            metadata = {"skills": outcome["changed"], "channel": channel or None,
+                        "category": body.category or None}
+            if bundle_slug:
+                metadata["bundle"] = bundle_slug
             try:
                 audit.record(actor="owner", action="skill.disable",
                              why=f"the owner switched {', '.join(outcome['changed'])} off "
                                  f"{'on ' + channel if channel else 'everywhere'}",
-                             cause="skills.switch",
-                             metadata={"skills": outcome["changed"], "channel": channel or None,
-                                       "category": body.category or None})
+                             cause="skills.switch", metadata=metadata)
                 audited = True
             except Exception:
                 logger.warning("optional skill switch intent projection failed", exc_info=True)
@@ -181,7 +213,156 @@ async def switch_skill(body: SkillSwitchBody):
             "channel": channel or None, "changed": outcome["changed"],
             "unchanged": outcome["unchanged"], "essential": outcome["essential"],
             "off_everywhere": outcome["off_everywhere"], "unstorable": outcome["unstorable"],
-            "switches": outcome["state"], "audited": audited}
+            "switches": outcome["state"], "audited": audited, **extra}
+
+
+# ── H026: named skill bundles ────────────────────────────────────────────────────
+#
+# A bundle is a named list of skills kept as one YAML file (agents/core/skills/bundles.py).
+# These routes keep the files; switching a bundle is `POST /api/skills/switch` with
+# `bundle`, the same governed path one skill takes. Reads are user routes like
+# `GET /skills`; writes are admin routes like the switch.
+
+_BUNDLE_STATUS = {"not_found": 404, "exists": 409, "too_many_bundles": 409, "not_a_file": 409,
+                  "no_free_file": 409, "write_failed": 503}
+
+
+def _bundle_refusal(exc) -> JSONResponse:
+    return JSONResponse({"error": str(exc), "reason": exc.reason, **exc.extra},
+                        status_code=_BUNDLE_STATUS.get(exc.reason, 422))
+
+
+def _bundles_unavailable() -> JSONResponse:
+    logger.warning("skill bundles unavailable", exc_info=True)
+    return JSONResponse({"error": "the skill bundles could not be read or written",
+                         "reason": "bundles_unavailable"}, status_code=503)
+
+
+def _installed_skills(orch) -> list:
+    return list(getattr(getattr(orch, "skills", None), "skills", {}).values())
+
+
+@router.get("/api/skills/bundles", dependencies=[Depends(user_guard)])
+async def list_skill_bundles():
+    """H026 — every bundle with its skills, which of them are installed, and the files
+    the folder holds that do not load (each with its reason)."""
+    import asyncio
+
+    from agents.core.skills import bundles
+
+    orch = get_orch()
+    if not orch or getattr(orch, "skills", None) is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        rows, skipped = await asyncio.to_thread(bundles.snapshot)
+    except OSError:
+        return _bundles_unavailable()
+    loaded = _installed_skills(orch)
+    described = await asyncio.to_thread(lambda: [bundles.describe(row, loaded) for row in rows])
+    return {"bundles": described, "problems": skipped,
+            "directory": str(bundles.bundles_dir()), "limits": {"bundles": bundles.MAX_BUNDLES,
+                                                                 "skills": bundles.MAX_MEMBERS}}
+
+
+@router.get("/api/skills/bundles/{name}", dependencies=[Depends(user_guard)])
+async def show_skill_bundle(name: str = PathParam(..., min_length=1, max_length=64)):
+    """H026 — one bundle; any casing, spaces or underscores name it (the slug decides)."""
+    import asyncio
+
+    from agents.core.skills import bundles
+
+    orch = get_orch()
+    if not orch or getattr(orch, "skills", None) is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        bundle = await asyncio.to_thread(bundles.get, name)
+    except OSError:
+        return _bundles_unavailable()
+    if bundle is None:
+        return JSONResponse({"error": f"no bundle named {name!r}", "reason": "not_found"}, status_code=404)
+    return {"bundle": await asyncio.to_thread(bundles.describe, bundle, _installed_skills(orch))}
+
+
+class SkillBundleBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    skills: list[Annotated[str, Field(max_length=128)]] = Field(..., min_length=1, max_length=64)
+    description: str = Field("", max_length=200)
+    # Hermes' `instruction`: guidance put before the skills when the bundle is loaded into a
+    # turn. Left out (null), a replaced bundle keeps its own; "" drops it.
+    instruction: str | None = Field(None, max_length=2000)
+    overwrite: bool = False
+
+
+@router.post("/api/skills/bundles", dependencies=[Depends(admin_guard)])
+async def create_skill_bundle(body: SkillBundleBody):
+    """H026 — create a bundle, or replace one with ``overwrite``. Every member must be an
+    installed skill: its name or folder, or (Hermes' other form) its path relative to the
+    skills folder, or an absolute path that is exactly its folder inside the skills
+    folder, matched exactly and never through ``..`` or a link out of it. The bundle
+    stores the skill's name. Creating a bundle switches nothing. Only the bundle's own
+    file is ever replaced (``replaced`` says so); a new bundle whose file name another
+    file holds is written beside it."""
+    import asyncio
+
+    from agents.core.skills import bundles
+
+    orch = get_orch()
+    if not orch or getattr(orch, "skills", None) is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    loaded = _installed_skills(orch)
+    members, unknown, why = [], [], {}
+    for member in (m for m in body.skills if m.strip()):
+        skill, reason = await asyncio.to_thread(bundles.find_member, loaded, member)
+        if skill is None:
+            unknown.append(member)
+            why[member] = reason
+        else:
+            members.append(skill.name)
+    if unknown:
+        named = ", ".join(m if why[m] == bundles.NOT_INSTALLED else f"{m} ({why[m]})" for m in unknown)
+        return JSONResponse({"error": f"not installed: {named}", "reason": "unknown_skill",
+                             "unknown": unknown, "why": why}, status_code=422)
+    try:
+        bundle, replaced = await asyncio.to_thread(
+            bundles.save, body.name, members, description=body.description, instruction=body.instruction,
+            overwrite=body.overwrite)
+    except bundles.BundleError as exc:
+        return _bundle_refusal(exc)
+    except OSError:
+        return _bundles_unavailable()
+    return {"ok": True, "replaced": replaced, "bundle": bundles.describe(bundle, loaded)}
+
+
+@router.delete("/api/skills/bundles/{name}", dependencies=[Depends(admin_guard)])
+async def delete_skill_bundle(name: str = PathParam(..., min_length=1, max_length=64)):
+    """H026 — delete a bundle's file. Its skills, and whether each is switched on or off,
+    are not touched."""
+    import asyncio
+
+    from agents.core.skills import bundles
+
+    try:
+        bundle = await asyncio.to_thread(bundles.delete, name)
+    except bundles.BundleError as exc:
+        return _bundle_refusal(exc)
+    except OSError:
+        return _bundles_unavailable()
+    return {"ok": True, "deleted": bundle.as_dict()}
+
+
+@router.post("/api/skills/bundles/reload", dependencies=[Depends(admin_guard)])
+async def reload_skill_bundles():
+    """H026 — re-read every bundle file and report what was added, removed or changed
+    since the hub last looked, and which files do not load."""
+    import asyncio
+
+    from agents.core.skills import bundles
+
+    try:
+        report = await asyncio.to_thread(bundles.reload)
+    except OSError:
+        return _bundles_unavailable()
+    return {"ok": True, **report}
 
 
 @router.get("/sandbox/status")

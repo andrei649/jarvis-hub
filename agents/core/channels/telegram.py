@@ -826,6 +826,12 @@ class TelegramChannel(ChannelAdapter):
         except Exception as e:
             logger.debug("Telegram sendChatAction failed (cosmetic): %s", e)
 
+    def lane_usage(self) -> Optional[dict]:
+        """H019 — this channel's chat-lane slots (``ChatLanes.usage``) while its poll loop
+        runs, for ``GET /status``; None when no poll loop runs."""
+        lanes = self._lanes
+        return lanes.usage() if lanes is not None else None
+
     async def _poll_loop(self):
         from .chat_lanes import ChatLanes
 

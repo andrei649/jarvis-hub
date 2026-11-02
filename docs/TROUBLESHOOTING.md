@@ -150,7 +150,23 @@ this order — the first ones are the most common and the cheapest to rule out:
     oldest fact), or by the per-turn review (`cognition.review_enabled`, off by default).
     The rings a turn sees are frozen for the session and the day, so a fact written now
     reaches the prompt at the next session (`/new`) or the next day. `GET /api/memory/core`
-    lists both rings — check the fact is there. A turn that has read untrusted content (an
+    lists both rings — check the fact is there. The prompt shows at most 2,200 characters of
+    the agent's notes and 1,375 of your profile: `nerva memory status` says how many
+    characters each holds and whether older entries are left out over that budget (the
+    newest are kept), and how many are `[BLOCKED]` as prompt-injection. `nerva memory reset
+    [--target memory|user]` erases a store for good after a typed `yes`; `nerva memory off`
+    takes both out of every prompt (whatever product posture is selected) and keeps the
+    per-turn review and the nightly reflection from adding to them, without erasing
+    anything, and `nerva memory on` brings them back. The budget counts what a store holds,
+    and nothing is ever dropped to make room: the memory tool refuses a write that would take
+    a store past it and tells the model the store's usage, and the review and the reflection
+    are refused the same way (a fact over 300 characters too) — `/refine` then says
+    `N fact(s) found but not kept: the user ring is full (1,360/1,375); remove or replace
+    entries first`, and the intent log has a `memory.write_refused` record; remove or replace
+    entries (the memory tool in an owner turn, or `nerva memory reset`) to let new facts in.
+    A store already over its budget (saved before it, or edited by hand) keeps its facts, the
+    prompt leaves the oldest out, and nothing new lands until it is under. The Long-Term
+    Memory panel shows the same sizes and offers the off switch and the reset. A turn that has read untrusted content (an
     inbound message, web text, a tainted recall) cannot write memory: the tool refuses with
     `memory_untrusted_turn`, so tell it the fact again in a fresh turn of your own. Older conversations are a separate,
     searched store: `memory.recall_enabled` (off by default) adds the

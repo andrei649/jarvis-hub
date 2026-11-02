@@ -3364,8 +3364,91 @@ export interface paths {
          *     on one channel. Nothing is uninstalled. Off applies at once; on creates an
          *     exact once-scoped human approval task and stays pending until its worker runs.
          *     An essential skill is never switched off.
+         *
+         *     H026 — ``bundle`` switches the installed members of one named bundle the same way,
+         *     through the same exact-target approval for on, so a bundle grants nothing that
+         *     switching each member would not. A member is a skill's name, or its path matched
+         *     exactly as Hermes writes one (``bundles.find_member``); members that name no
+         *     installed skill come back under ``missing``.
          */
         post: operations["switch_skill_api_skills_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Skill Bundles
+         * @description H026 — every bundle with its skills, which of them are installed, and the files
+         *     the folder holds that do not load (each with its reason).
+         */
+        get: operations["list_skill_bundles_api_skills_bundles_get"];
+        put?: never;
+        /**
+         * Create Skill Bundle
+         * @description H026 — create a bundle, or replace one with ``overwrite``. Every member must be an
+         *     installed skill: its name or folder, or (Hermes' other form) its path relative to the
+         *     skills folder, or an absolute path that is exactly its folder inside the skills
+         *     folder, matched exactly and never through ``..`` or a link out of it. The bundle
+         *     stores the skill's name. Creating a bundle switches nothing. Only the bundle's own
+         *     file is ever replaced (``replaced`` says so); a new bundle whose file name another
+         *     file holds is written beside it.
+         */
+        post: operations["create_skill_bundle_api_skills_bundles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/bundles/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show Skill Bundle
+         * @description H026 — one bundle; any casing, spaces or underscores name it (the slug decides).
+         */
+        get: operations["show_skill_bundle_api_skills_bundles__name__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Skill Bundle
+         * @description H026 — delete a bundle's file. Its skills, and whether each is switched on or off,
+         *     are not touched.
+         */
+        delete: operations["delete_skill_bundle_api_skills_bundles__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/bundles/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reload Skill Bundles
+         * @description H026 — re-read every bundle file and report what was added, removed or changed
+         *     since the hub last looked, and which files do not load.
+         */
+        post: operations["reload_skill_bundles_api_skills_bundles_reload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3845,6 +3928,28 @@ export interface paths {
         };
         /** Status */
         get: operations["status_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status Slots
+         * @description H019 — who holds the slots ``GET /status`` counts (Hermes ``hermes status`` →
+         *     Slots, one row per holder: surface, session id, age). User-guarded like
+         *     ``GET /sessions``: session ids never leave the public ``/status``. Read-only.
+         */
+        get: operations["status_slots_api_status_slots_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7555,6 +7660,87 @@ export interface paths {
          * @description H314 — undo one write of the model's memory tool, while nothing has changed since.
          */
         post: operations["memory_core_undo_api_memory_core_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Status
+         * @description H422 — the long-term memory's status (Hermes's ``GET /api/memory``): whether the
+         *     curated memory is on (``enabled``: the owner's switch, ``switch``, and cognition
+         *     memory, ``cognition``, as the running hub reads them, a product posture included),
+         *     whether the core block reaches the prompt (``injected``) and the model's memory tool
+         *     can write (``tool``), and per ring (``memory``: the agent's notes, ``user``: the user
+         *     profile) the bytes its file holds, its entries, the characters they take against the
+         *     section's budget, what the next block shows, leaves out and blocks, and what else a
+         *     reset erases with it (``copies``: hand-edit ``.bak`` files, ``undo_writes``). Reported
+         *     with memory switched off too; ``builtin_files`` is Hermes's bytes-per-store shape.
+         */
+        get: operations["memory_status_api_memory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Switch
+         * @description H422 — the owner switches the curated memory off or on (``nerva memory off|on``,
+         *     the Long-Term Memory panel). Off keeps the stores on disk and takes the core block out
+         *     of every prompt from the next turn, the memory tool refusing, whatever product posture
+         *     is selected (it writes ``memory.core_enabled``, which no posture sets); on brings them
+         *     back. Admin-only, JSON only, recorded in the intent log as ``memory.switch``; the hub's
+         *     runtime settings are reloaded at once, and the reply is the status as the hub now
+         *     reads it, so ``enabled`` says whether memory is really on (switched on, it stays off
+         *     while cognition memory is off).
+         */
+        post: operations["memory_switch_api_memory_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Reset
+         * @description H422 — erase the agent's notes, the user profile or both, for good (Hermes's
+         *     ``POST /api/memory/reset``). Body ``{"target": "all"|"memory"|"user", "confirm":
+         *     "RESET"}``: the target defaults to ``all``, and the word is required like the
+         *     forget's ``FORGET``; without it nothing is erased and the reply says what would be
+         *     (``would_erase``). Admin-only, an owner act on the owner's own memory: recorded in the
+         *     intent log as ``memory.reset`` (no intent log, nothing erased). A conversation under
+         *     way keeps its frozen prompt snapshot; the next one starts without the facts.
+         */
+        post: operations["memory_reset_api_memory_reset_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11811,6 +11997,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/company/goals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Company Goal Propose
+         * @description Propose a goal for the owner's approval (H462). Opens nothing.
+         *
+         *     The card crosses the Action Kernel and waits in the decision inbox; the run
+         *     opens only when the owner accepts it there. Answers the card as the owner will
+         *     read it and the durable task id — never the task payload.
+         */
+        post: operations["company_goal_propose_api_company_goals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/company/runs/{run_id}/subgoals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Company Run Subgoal
+         * @description Add an acceptance criterion to a running goal (H462 ``/subgoal``).
+         *
+         *     Narrowing only, so it needs no approval: the run is not reset (its status,
+         *     budget, steps and fingerprint are untouched), and the verifier will not pass it
+         *     until this criterion holds too. Refused once a verdict is written on the run;
+         *     one that arrives while the verifier is still probing is graded too (the ledger
+         *     refuses a pass that misses it, and the verifier grades again).
+         */
+        post: operations["company_run_subgoal_api_company_runs__run_id__subgoals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operator/benchmark": {
         parameters: {
             query?: never;
@@ -14271,6 +14507,14 @@ export interface components {
             /** Description */
             description: string;
         };
+        /**
+         * GoalProposalBody
+         * @description The goal, as ``/goal`` takes it: a headline and optional field lines.
+         */
+        GoalProposalBody: {
+            /** Text */
+            text: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -14611,6 +14855,11 @@ export interface components {
             /** Valid */
             valid: boolean;
             stats: components["schemas"]["MediationCounts"] | null;
+        };
+        /** MemorySwitchBody */
+        MemorySwitchBody: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** MicArmBody */
         MicArmBody: {
@@ -15344,12 +15593,33 @@ export interface components {
              */
             dry_run: boolean;
         };
+        /** SkillBundleBody */
+        SkillBundleBody: {
+            /** Name */
+            name: string;
+            /** Skills */
+            skills: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Instruction */
+            instruction?: string | null;
+            /**
+             * Overwrite
+             * @default false
+             */
+            overwrite: boolean;
+        };
         /** SkillSwitchBody */
         SkillSwitchBody: {
             /** Skill */
             skill?: string | null;
             /** Category */
             category?: string | null;
+            /** Bundle */
+            bundle?: string | null;
             /** Enabled */
             enabled: boolean;
             /** Channel */
@@ -15456,6 +15726,14 @@ export interface components {
         SubAgentSteerBody: {
             /** Message */
             message: string;
+        };
+        /**
+         * SubgoalBody
+         * @description One acceptance criterion to add to a running goal.
+         */
+        SubgoalBody: {
+            /** Text */
+            text: string;
         };
         /** SyncPullBody */
         SyncPullBody: {
@@ -21278,6 +21556,141 @@ export interface operations {
             };
         };
     };
+    list_skill_bundles_api_skills_bundles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_skill_bundle_api_skills_bundles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillBundleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    show_skill_bundle_api_skills_bundles__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_skill_bundle_api_skills_bundles__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_skill_bundles_api_skills_bundles_reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     sandbox_status_sandbox_status_get: {
         parameters: {
             query?: never;
@@ -21898,6 +22311,26 @@ export interface operations {
         };
     };
     status_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    status_slots_api_status_slots_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -28247,6 +28680,94 @@ export interface operations {
             };
         };
     };
+    memory_status_api_memory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_switch_api_memory_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySwitchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_reset_api_memory_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     memory_remember_api_memory_remember_post: {
         parameters: {
             query?: never;
@@ -34057,6 +34578,74 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_goal_propose_api_company_goals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalProposalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_run_subgoal_api_company_runs__run_id__subgoals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubgoalBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

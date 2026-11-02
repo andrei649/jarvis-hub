@@ -25,13 +25,23 @@ class ChatLanes:
     def __init__(self, *, max_active: int = DEFAULT_MAX_ACTIVE, name: str = "channel") -> None:
         self._tails: dict[Hashable, asyncio.Task] = {}
         self._live: set[asyncio.Task] = set()
-        self._active = asyncio.Semaphore(max(1, int(max_active)))
+        self._max_active = max(1, int(max_active))
+        self._active = asyncio.Semaphore(self._max_active)
+        self._running = 0
         self._name = name
 
     @property
     def busy(self) -> int:
         """Lanes with a turn running or queued."""
         return len(self._tails)
+
+    def usage(self) -> dict:
+        """H019 — the slots in use, for ``nerva status``: turns running now against
+        ``max_active`` (``cap``), turns waiting (behind their chat's previous turn or for a
+        free slot) and lanes with work."""
+        running = self._running
+        return {"running": running, "queued": max(0, len(self._live) - running),
+                "lanes": len(self._tails), "cap": self._max_active}
 
     def submit(self, key: Hashable, turn: Callable[[], Awaitable[object]]) -> asyncio.Task:
         """Queue *turn* on *key*'s lane; returns at once. The turn starts when every
@@ -42,12 +52,15 @@ class ChatLanes:
             if before is not None:
                 await asyncio.wait({before})           # its outcome is its own; never raises
             async with self._active:
+                self._running += 1
                 try:
                     await turn()
                 except asyncio.CancelledError:
                     raise
                 except Exception:
                     logger.warning("%s: a turn failed in its chat lane", self._name, exc_info=True)
+                finally:
+                    self._running -= 1
 
         task = asyncio.ensure_future(run())
         self._tails[key] = task
