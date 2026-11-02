@@ -1370,3 +1370,17 @@ async def test_an_unknown_word_says_bundles_are_unreadable_only_when_the_folder_
     reply, _ = await _say(orch, "/status")                               # a command keeps its name
     assert reply.startswith("Nerva ") and len(seen.sent) == sent
     orch.checkpoints.close()
+
+
+def test_a_record_nested_too_deep_to_parse_names_no_path_and_breaks_nothing(tmp_path):
+    # A marketplace package can ship any manifest.json in its folder. One nested past the
+    # JSON parser's depth (RecursionError, not ValueError) must not crash the bundle feature.
+    owner = tmp_path / "home" / "skills"
+    deep = _folder(owner / "deep", "deep")
+    (owner / "deep" / "manifest.json").write_text("[" * 60000, encoding="utf-8")
+    maps = _imported(owner / "maps", "maps", {
+        "source_install": "hermes",
+        "source_path": str(tmp_path / "me" / ".hermes" / "skills" / "productivity" / "maps" / "SKILL.md")})
+    assert bundles.hermes_path(deep) is None
+    assert bundles.find_member([deep, maps], "productivity/maps") == (maps, "")
+    assert bundles.resolve(["productivity/maps", "nowhere/else"], [deep, maps]) == ([maps], ["nowhere/else"])

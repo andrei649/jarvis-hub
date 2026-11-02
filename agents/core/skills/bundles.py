@@ -571,7 +571,9 @@ def hermes_path(skill: Any) -> tuple[str, ...] | None:
             raw = handle.read(_RECORD_MAX_BYTES + 1)
         if len(raw) <= _RECORD_MAX_BYTES:
             parts = _hermes_parts(json.loads(raw.decode("utf-8")))
-    except (OSError, UnicodeDecodeError, ValueError):
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
+        # A record nested past the parser's depth raises RecursionError, not ValueError;
+        # any record that cannot be read names no Hermes path.
         parts = None
     with _LOCK:
         if len(_RECORDS) >= _RECORD_CACHE_MAX:
