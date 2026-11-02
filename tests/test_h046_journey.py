@@ -961,3 +961,97 @@ def test_cli_edits_a_skill_in_the_editor_and_archives_it(hub, monkeypatch):
     code, out, err, _ = _cli(["journey", "delete", f"skill:{name}", "--yes"], hub)
     assert code == EXIT_OK and f"archived skill:{name}" in out and "restore it" in out
     assert name not in hub.loader.skills
+
+
+# ── H046 review round 3: the TODAY card dates a skill by when it was learned ─────
+
+
+def _learn_skill_then(hub, monkeypatch, when, *, approve=True):
+    """The agent learned a skill at *when* (epoch) and the owner approved it then: the
+    sidecar's ``created_at`` and the approval's ``approved_at`` are read off their own
+    clocks, set back here; its SKILL.md is that old too."""
+    from agents.core.skills import approval as approval_mod
+    from agents.core.skills import usage as usage_mod
+
+    class _Then(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromtimestamp(when, tz=tz)
+
+    with monkeypatch.context() as clock:
+        clock.setattr(usage_mod, "_now_iso", lambda: datetime.fromtimestamp(when, tz=UTC).isoformat())
+        clock.setattr(approval_mod, "datetime", _Then)
+        name = _learn_skill(hub, approve=approve)
+    md = Path(hub.loader.skills[name].path) / "SKILL.md"
+    os.utime(md, (when, when))
+    return name
+
+
+def test_using_viewing_or_switching_on_a_skill_does_not_make_it_learned_today(hub, monkeypatch):
+    long_ago = datetime.now(UTC).timestamp() - 40 * 86_400
+    name = _learn_skill_then(hub, monkeypatch, long_ago)
+    assert _learned(hub.client, days=1)[1]["counts"]["learnings"] == 0
+    # Today the model reads it with skill_view, it runs, and it is switched on again.
+    hub.loader.note_usage(name, "view")
+    hub.usage.bump(name, "use")
+    hub.usage.bump(name, "switch_on")
+    for days in (1, 30):
+        learned, body = _learned(hub.client, days=days)
+        assert body["counts"]["learnings"] == 0, body
+        assert f"skill:{name}" not in {it["entry_id"] for it in learned}
+    # The journey list still has it, ordered by its last activity, and says when it was learned.
+    node = _entries(hub, store="skill")["entries"][0]
+    assert node["entry_id"] == f"skill:{name}" and node["epoch"] > long_ago + 39 * 86_400
+    assert node["learned_epoch"] == pytest.approx(long_ago)
+    # A patch today is a change to what it learned: the TODAY card lists it, dated now.
+    path = _skill_path(f"skill:{name}")
+    content = hub.client.get(path).json()["entry"]["content"]
+    edited = hub.client.patch(path, json={"value": content.replace("tidy them", "tidy them, then file them")},
+                              headers=ADMIN)
+    assert edited.status_code == 200 and edited.json()["changed"] is True, edited.text
+    learned, body = _learned(hub.client, days=1)
+    assert body["counts"]["learnings"] == 1 and [it["entry_id"] for it in learned] == [f"skill:{name}"]
+    assert learned[0]["epoch"] > long_ago + 39 * 86_400 and learned[0]["ts"] == learned[0]["learned_ts"]
+
+
+def test_a_skill_the_owner_approves_today_is_learned_today(hub, monkeypatch):
+    long_ago = datetime.now(UTC).timestamp() - 40 * 86_400
+    name = _learn_skill_then(hub, monkeypatch, long_ago, approve=False)    # generated 40 days ago
+    assert _learned(hub.client, days=1)[1]["counts"]["learnings"] == 0
+    assert hub.loader.approve_generated_skill(name)                        # the owner approves it today
+    learned, body = _learned(hub.client, days=1)
+    assert body["counts"]["learnings"] == 1 and [it["entry_id"] for it in learned] == [f"skill:{name}"]
+
+
+def test_skill_item_dates_the_feed_by_learning_and_change_never_by_use():
+    from agents.core.memory.timeline import skill_item
+
+    now = datetime.now(UTC).timestamp()
+    old = datetime.fromtimestamp(now - 40 * 86_400, tz=UTC).isoformat()
+    today = datetime.fromtimestamp(now - 60, tz=UTC).isoformat()
+    rec = {"origin": "agent", "created_at": old, "last_used_at": today, "last_viewed_at": today,
+           "last_switched_on_at": today}
+    used = skill_item("tidy", rec)
+    assert used["epoch"] == pytest.approx(now - 60)                       # the journey: its last activity
+    assert used["learned_epoch"] == pytest.approx(now - 40 * 86_400)
+    assert build_unified_digest(None, [], now=now, days=30, learned=[used])["counts"]["learnings"] == 0
+    for changed in (skill_item("tidy", {**rec, "last_patched_at": today}),
+                    skill_item("tidy", rec, approved_at=today)):
+        out = build_unified_digest(None, [], now=now, learned=[changed])
+        assert out["counts"]["learnings"] == 1 and out["items"][0]["epoch"] == pytest.approx(now - 60)
+    # No record of when it was learned: its SKILL.md's time, never a use.
+    bare = skill_item("tidy", {"last_used_at": today}, file_epoch=now - 40 * 86_400)
+    assert bare["learned_epoch"] == pytest.approx(now - 40 * 86_400)
+    assert build_unified_digest(None, [], now=now, learned=[bare])["items"] == []
+
+
+def test_approval_times_answer_when_each_folder_was_approved(tmp_path):
+    store = SkillApprovalStore(tmp_path / "approvals.json")
+    approved, other = tmp_path / "approved", tmp_path / "other"
+    for folder in (approved, other):
+        folder.mkdir()
+        (folder / "SKILL.md").write_text("# x\n", encoding="utf-8")
+    record = store.approve(approved)
+    assert store.approved_times([approved, other]) == {str(approved): record["approved_at"]}
+    (tmp_path / "approvals.json").write_text("{not json", encoding="utf-8")
+    assert store.approved_times([approved]) == {}                         # unreadable: no dates, no error

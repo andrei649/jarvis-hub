@@ -655,6 +655,12 @@ class SkillLoader:
         for skill in self.skills.values():
             skill.usage_hook = _hook
 
+    def approval_times(self, paths) -> dict[str, str]:
+        """H046 — when the owner last approved each skill folder in ``paths`` (ISO), keyed by
+        the path as given: the approval of a generated skill, or of a patch's bytes. Read
+        only to date what was learned, never to decide trust."""
+        return self._approval_store.approved_times(paths)
+
     def note_usage(self, name: str, kind: str) -> None:
         """H354 — count one ``view`` or ``patch`` of a skill in the attached sidecar.
 

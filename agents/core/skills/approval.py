@@ -228,3 +228,21 @@ class SkillApprovalStore(JsonStore):
 
     def is_approved(self, path: Path) -> bool:
         return self.approved_snapshot(path) is not None
+
+    def approved_times(self, paths) -> dict[str, str]:
+        """When the owner last approved each of ``paths`` (its row's ``approved_at``), keyed
+        by the path as given, from one read of the registry; a path with no row is left out
+        and an unreadable registry answers ``{}``. Only for dating what was learned (H046):
+        it does not check the bytes, so it never says a skill is approved
+        (``approved_snapshot`` does)."""
+        wanted = {str(path): self._canonical_path(Path(path)) for path in paths}
+        with self._registry_lock, _process_registry_lock(self.path):
+            if not self._reload_locked():
+                return {}
+            out: dict[str, str] = {}
+            for given, canonical in wanted.items():
+                record = self._records.get(self._key(canonical))
+                if (isinstance(record, dict) and record.get("canonical_path") == canonical
+                        and isinstance(record.get("approved_at"), str)):
+                    out[given] = record["approved_at"]
+            return out

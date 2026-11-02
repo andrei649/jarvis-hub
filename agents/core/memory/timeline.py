@@ -37,9 +37,11 @@ H046 review — what the assistant really learns is held in three stores, and ea
   list`` then ``journey edit``), and no log that outlives a forget can be matched back
   to a short fact (the memory tool keeps no hash of a fact in the intent log either). An
   id read before a restart answers "not found": list again;
-* the skills it learned (Hermes's agent-created or used skills): ``skill:<name>``, dated
-  by its last use, view or patch (else when the sidecar first saw it, else its
-  ``SKILL.md``), as Hermes dates a skill node;
+* the skills it learned (Hermes's agent-created or used skills): ``skill:<name>``. On the
+  windowed feed one is dated by when it was learned or changed (created, approved by the
+  owner, patched; else its ``SKILL.md``), so using it, the model's ``skill_view`` or a
+  switch-on never lists it as learned again; the journey list orders it by that or its
+  last use, view or switch-on, whichever is newer, as Hermes dates a skill node;
 * the structured fact store (``memory/store.py``): ``learning:<row id>``.
 """
 
@@ -203,18 +205,27 @@ def ring_items(target: str, facts, saved_epoch=None, added=None) -> list[dict]:
     return out
 
 
-def skill_item(name: str, usage: dict | None = None, *, description: str = "", file_epoch=None) -> dict:
+def skill_item(name: str, usage: dict | None = None, *, description: str = "", file_epoch=None,
+               approved_at=None) -> dict:
     """One learned skill as the feed shows it. *usage* is its usage-sidecar record (the
-    counters, ``origin``, ``pinned``, ``state``); its time is the latest use, view, patch
-    or switch-on, else ``created_at``, else *file_epoch* (its ``SKILL.md``), as Hermes
-    dates a skill node."""
+    counters, ``origin``, ``pinned``, ``state``); *approved_at* is when the owner last
+    approved its bytes (ISO, the approval registry's; None: never).
+
+    H046 review round 3 — two times. ``learned_ts`` / ``learned_epoch``: when it was
+    learned or changed, the newest of ``created_at``, *approved_at* and the last patch,
+    else *file_epoch* (its ``SKILL.md``); the TODAY feed dates it by this alone, so a use,
+    a ``skill_view`` or a switch-on never shows it as learned again. ``ts`` / ``epoch``:
+    that or its latest use, view or switch-on, whichever is newer, as Hermes dates a skill
+    node; the journey list orders by it."""
     from agents.core.skills.usage import latest_activity_at
 
     rec = usage if isinstance(usage, dict) else {}
+    changes = (_ts_epoch(rec.get("created_at")), _ts_epoch(rec.get("last_patched_at")), _ts_epoch(approved_at))
+    learned = max((when for when in changes if when is not None), default=None)
+    if learned is None and _iso(file_epoch):
+        learned = float(file_epoch)
     latest = latest_activity_at(rec)
-    epoch = latest.timestamp() if latest is not None else _ts_epoch(rec.get("created_at"))
-    if epoch is None and _iso(file_epoch):
-        epoch = float(file_epoch)
+    epoch = max(latest.timestamp(), learned or 0.0) if latest is not None else learned
     try:
         uses = int(rec.get("use_count") or 0)
     except (TypeError, ValueError):
@@ -223,6 +234,8 @@ def skill_item(name: str, usage: dict | None = None, *, description: str = "", f
         "entry_id": skill_entry_id(name),
         "ts": _iso(epoch),
         "epoch": epoch,
+        "learned_ts": _iso(learned),
+        "learned_epoch": learned,
         "kind": "learning",
         "store": "skill",
         "label": name,
@@ -280,7 +293,8 @@ def build_unified_digest(queue, memory_entries=None, *, now=None, days=1, limit=
         before ``limit`` applies; None keeps every kind. ``counts`` is unchanged.
     learned:
         H046 review — the curated rings' facts and the learned skills, shaped by
-        :func:`ring_items` / :func:`skill_item`: learnings too, windowed by their time.
+        :func:`ring_items` / :func:`skill_item`: learnings too, windowed by their time (a
+        skill's ``learned_epoch``: when it was learned or changed, never its last use).
 
     Returns a JSON-safe dict: ``period`` / ``days`` / ``generated_at`` /
     ``counts`` / ``items``. Every item carries ``entry_id`` / ``ts`` / ``epoch`` /
@@ -325,9 +339,14 @@ def build_unified_digest(queue, memory_entries=None, *, now=None, days=1, limit=
             continue
         items.append(item)
     for item in (learned or []):
+        item = dict(item)
+        if "learned_epoch" in item:
+            # H046 review round 3: a skill is on the feed when it was learned or changed,
+            # never again each time it is used, viewed or switched on (skill_item).
+            item["epoch"], item["ts"] = item["learned_epoch"], item.get("learned_ts")
         if item.get("epoch") is not None and item["epoch"] < cutoff:
             continue
-        items.append(dict(item))
+        items.append(item)
 
     for f in build_caring_followups(queue, memory_entries, now=now, days=days, limit=500):
         if f.get("source") == "task":

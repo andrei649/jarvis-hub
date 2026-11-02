@@ -230,7 +230,8 @@ async def dashboard_today(days: int = Query(1, ge=1, le=30), limit: int = Query(
     the model's ``memory`` tool, the post-turn review and the daily reflection write;
     each dated by when it entered its ring, so a new fact never brings the older ones
     into the window, and one no save dated yet by its ring's last save), the skills it
-    learned (dated by their last use) and the fact store's rows. ``drift`` says a ring
+    learned (dated by when each was learned or changed: created, approved, patched; never
+    by a use, a view or a switch-on) and the fact store's rows. ``drift`` says a ring
     file could not be read back."""
     orch = get_orch()
     if not orch:
@@ -434,12 +435,27 @@ def _learned_skills(orch) -> dict:
     return out
 
 
-def _skill_entry(name: str, skill, rec: dict, file_epoch) -> dict:
+def _skill_approval_times(orch, skills) -> dict:
+    """When the owner last approved each of *skills*' folders (ISO), by its path; one read
+    of the approval registry. Only dates what was learned (H046 review round 3), so a
+    registry that cannot be read leaves every skill dated by its creation and patches."""
+    reader = getattr(getattr(orch, "skills", None), "approval_times", None)
+    if not callable(reader):
+        return {}
+    try:
+        return dict(reader([str(skill.path) for skill in skills]) or {})
+    except Exception:
+        logger.debug("journey: when the skills were approved could not be read", exc_info=True)
+        return {}
+
+
+def _skill_entry(name: str, skill, rec: dict, file_epoch, approved_at=None) -> dict:
     from pathlib import Path
 
     from agents.core.memory.timeline import skill_item
 
-    item = skill_item(name, rec, description=getattr(skill, "description", "") or "", file_epoch=file_epoch)
+    item = skill_item(name, rec, description=getattr(skill, "description", "") or "", file_epoch=file_epoch,
+                      approved_at=approved_at)
     # A skill the agent generated waits in quarantine until the owner approves it: it is
     # listed (it was learned) but a batch does not change it before that.
     item["pending_review"] = (Path(skill.path) / "PENDING_REVIEW").exists()
@@ -450,12 +466,14 @@ def _skill_items(orch) -> list[dict]:
     from pathlib import Path
 
     items = []
-    for name, (skill, rec) in _learned_skills(orch).items():
+    learned = _learned_skills(orch)
+    approved = _skill_approval_times(orch, [skill for skill, _rec in learned.values()])
+    for name, (skill, rec) in learned.items():
         try:
             file_epoch = (Path(skill.path) / "SKILL.md").stat().st_mtime
         except OSError:
             file_epoch = None
-        items.append(_skill_entry(name, skill, rec, file_epoch))
+        items.append(_skill_entry(name, skill, rec, file_epoch, approved.get(str(skill.path))))
     return items
 
 
@@ -538,7 +556,8 @@ def _skill_detail(orch, name: str):
         file_epoch = md.stat().st_mtime
     except OSError:
         file_epoch = None
-    item = _skill_entry(name, skill, rec, file_epoch)
+    approved = _skill_approval_times(orch, [skill]).get(str(skill.path))
+    item = _skill_entry(name, skill, rec, file_epoch, approved)
     item["content"] = None
     if item["pending_review"]:
         item["content_withheld"] = _pending_withheld(name)
