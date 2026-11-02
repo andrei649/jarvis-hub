@@ -136,6 +136,7 @@ python scripts/nerva.py config unset llm.tool_loop_max_iterations   # back to it
 python scripts/nerva.py config edit            # every editable setting in $VISUAL/$EDITOR; only changed values are written, each validated like `config set`
 python scripts/nerva.py config path            # the profile, data root and settings.db these verbs use
 python scripts/nerva.py config env-path        # the .env files and secret store the hub reads (names only, never values)
+python scripts/nerva.py config set plugins.tuya_secret '${env:TUYA_SECRET}'   # H255: name a variable from the hub's .env/environment instead of storing its value; expanded when read, the reference is what stays stored (an unset one stays as written and is warned about in the log)
 python scripts/nerva.py config migrate --dry-run   # what this build would write into an older store: new defaults, retired-model replacements (drop --dry-run to apply)
 python scripts/nerva.py approvals list         # the approval queue (needs JARVIS_ADMIN_TOKEN)
 python scripts/nerva.py approvals accept 7

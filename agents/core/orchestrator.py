@@ -794,6 +794,9 @@ class Orchestrator:
         self._session_id_default: Optional[str] = None
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
+        # H255 — the variables the runtime settings' ${env:…} references name, as digests
+        # at the last load: get_setting loads again once one of them holds something else.
+        self._env_ref_snapshot: dict = {}
         self._channel_sessions: dict[str, str] = {}
         self._channel_lifecycle = None
         self._pending_inputs = None
@@ -1400,7 +1403,14 @@ class Orchestrator:
 
     def load_runtime_settings(self):
         try:
-            all_s = _get_settings()
+            # H255 — the runtime settings are a load cache of values as they are used: a
+            # ${env:…} reference is expanded here, and the variables it names are
+            # snapshotted so a change to one of them invalidates this cache (get_setting).
+            from . import settings_db, settings_interpolation
+
+            stored = _get_settings()
+            self._env_ref_snapshot = settings_interpolation.snapshot(settings_db.env_ref_names(stored))
+            all_s = settings_db.interpolated(stored)
             flat = {}
             for cat, items in all_s.items():
                 for item in items:
@@ -1462,6 +1472,19 @@ class Orchestrator:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 
     def get_setting(self, key: str, default=None):
+        snap = getattr(self, "_env_ref_snapshot", None)
+        if snap:
+            from .settings_interpolation import changed
+
+            if changed(snap):
+                # H255 (Hermes _env_ref_snapshot): a variable a setting names moved — a .env
+                # loaded late, a rotation in this process. One reload per change: a failed
+                # one keeps the last values and the 30 s watcher tries again.
+                self._env_ref_snapshot = {}
+                try:
+                    self.load_runtime_settings()
+                except Exception:  # noqa: BLE001 — a read never fails on a reload; the last values stand
+                    logger.warning("runtime settings: reload after an environment change failed", exc_info=True)
         return self._runtime_settings.get(key, default)
 
     def _telegram_owner_settings(self) -> dict:
