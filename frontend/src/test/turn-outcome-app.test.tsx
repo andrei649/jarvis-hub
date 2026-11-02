@@ -1,8 +1,9 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../app';
-import { StatusStrip, turnOutcome } from '../turn-outcome';
+import { StatusStrip, recallLine, turnOutcome, turnRecall } from '../turn-outcome';
+import recallCases from './recall-line-cases.json';
 
 vi.mock('../voice', () => ({ useVoice: () => ({ active: false, toggle: () => {} }) }));
 vi.mock('../mesh', () => ({
@@ -346,4 +347,39 @@ it('ignores a late live end after the user switches into demo mode', async () =>
   await complete({ latency_ms: 810 });
   expect(readout()).toBeNull();
   expect(screen.queryByText('Completed reply')).toBeNull();
+});
+
+// H430 — the turn's recall indicator. recall-line-cases.json is shared with
+// tests/test_h430_recall_indicator.py, which runs the same statuses through
+// recall_admission.describe_recall: the two renderers cannot drift apart.
+describe('recall indicator', () => {
+  const status = (over: Record<string, unknown> = {}) => ({ schema: 'nerva.recall-status.v1',
+    provider: 'long_term_memory', basis: 'this_turn', recalled: 2, withheld: {}, untrusted: 0, ...over });
+
+  it.each(recallCases.map(c => [c.why, c] as const))('%s', (_why, c) => {
+    const parsed = turnRecall(c.status);
+    expect(parsed === null).toBe(c.why.startsWith('malformed'));
+    expect(parsed ? recallLine(parsed) : '').toBe(c.line);
+  });
+
+  it('shows the last prefetch beside the turn, and nothing for a prefetch with nothing to say', () => {
+    const { unmount } = render(<StatusStrip outcome={turnOutcome({ latency_ms: 5, recall: status() })} />);
+    expect(screen.getByLabelText('Memory recall').textContent).toBe('🧠 Long-term memory — recalled 2 memories');
+    unmount();
+    render(<StatusStrip outcome={turnOutcome({ latency_ms: 5, recall: status({ recalled: 0 }) })} />);
+    expect(screen.queryByLabelText('Memory recall')).toBeNull();
+  });
+
+  it('drops a status that could carry memory text instead of rendering part of it', () => {
+    expect(turnOutcome({ latency_ms: 5, recall: { ...status(), text: 'the dentist is on Tuesday' } }))
+      .toEqual({ latency_ms: 5 });
+  });
+
+  it('renders the stream end outcome in the mounted HUD turn', async () => {
+    await mount('/v2/chat');
+    await send('when is the dentist?');
+    await complete({ latency_ms: 40, recall: status({ withheld: { rejected_taint: 1 }, untrusted: 1 }) });
+    expect((await screen.findByLabelText('Memory recall')).textContent)
+      .toBe('🧠 Long-term memory — recalled 2 memories (1 from an untrusted source), 1 withheld (taint: 1)');
+  });
 });

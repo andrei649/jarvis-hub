@@ -52,7 +52,8 @@ from .action_origin import (
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from .turn_outcome import (measure_turn_latency, record_turn_completion,
                            record_agent_observation, record_synthesis_observation,
-                           settle_agent_turn, record_accepted_compression)
+                           settle_agent_turn, record_accepted_compression,
+                           record_recall_status)
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import (
     ADMIN,
@@ -2046,6 +2047,13 @@ class Orchestrator:
             # read by a machine, opens no collector: the notices stay for the owner.
             carries = channel in _NOTICE_FOOTER_CHANNELS and current_principal().admin is True
             notices, notices_token = open_turn_notices() if carries else ([], None)
+            # H430: the same turn's recall indicator, read from the turn's outcome collector
+            # (the HUD's StatusStrip reads the same one), opened here only when this turn's
+            # reply carries a footer and no caller opened one already.
+            from .turn_outcome import current_turn_outcome, open_turn_outcome, reset_turn_outcome
+            outcome_sink, outcome_token = (current_turn_outcome() if carries else None), None
+            if carries and outcome_sink is None:
+                outcome_sink, outcome_token = open_turn_outcome()
             try:
                 if draft is not None:
                     async def push(token):
@@ -2055,17 +2063,27 @@ class Orchestrator:
                 else:
                     reply = await self.handle_input(text, channel)
             finally:
+                recall = outcome_sink.recall() if outcome_sink is not None else None
+                if outcome_token is not None:
+                    outcome_sink.close()
+                    reset_turn_outcome(outcome_token)
                 reset_turn_notices(notices_token)
                 code_interruptions.reset_conversation(conversation_token)
-            return self._with_channel_notices(reply, notices)
+            return self._with_channel_notices(reply, notices, recall=recall)
 
     @staticmethod
-    def _with_channel_notices(reply, notices: list) -> Optional[str]:
+    def _with_channel_notices(reply, notices: list, *, recall: dict | None = None) -> Optional[str]:
         """The turn's notices as system lines under a channel reply (the HUD's ``ℹ``
-        lines, H674). A silent turn stays silent, and a typed reply (an ephemeral system
-        notice is a ``str`` subclass) is left exactly as it is. Only an owner's turn on a
-        text-chat channel collects any (see ``_channel_turn``)."""
-        lines = [f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
+        lines, H674), after the turn's recall indicator (H430: ``🧠 Long-term memory —
+        recalled 2 memories``, rendered by ``recall_admission.describe_recall`` from the
+        last prefetch's status). A silent turn stays silent, and a typed reply (an
+        ephemeral system notice is a ``str`` subclass) is left exactly as it is. Only an
+        owner's turn on a text-chat channel collects any (see ``_channel_turn``)."""
+        from .memory.recall_admission import describe_recall
+
+        indicator = describe_recall(recall) if recall is not None else ""
+        lines = ([indicator] if indicator else []) + [
+            f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
         if not lines or type(reply) is not str or not reply.strip():
             return reply
         return reply.rstrip() + "\n\n" + "\n".join(lines)
@@ -3829,7 +3847,13 @@ class Orchestrator:
         memory.recall_gate) skips recall entirely, a job-model-pinned turn never
         recalls, and the retrieval is bounded by `memory.recall_timeout_s`
         (default 8 s) through _bounded_recall_hits. The living-memory rerank then
-        runs off the event loop on the hits this turn uses."""
+        runs off the event loop on the hits this turn uses.
+
+        H430: this is also where the turn's recall indicator comes from. Each call is a
+        new prefetch and first unseats whatever an earlier one this turn reported, then
+        reports what IT put in the prompt (``_note_recall``) — so the line beside the
+        reply always describes the last prefetch, from the guard's own verdicts."""
+        record_recall_status(None)
         if not self.get_setting("memory.recall_enabled", False):
             return ""
         from . import safe_mode
@@ -3853,6 +3877,7 @@ class Orchestrator:
             logger.info("recall skipped: memory is being erased")
             return ""
         generation = state.generation  # the generation this recall starts under
+        basis = "this_turn"
         try:
             hits = await self._bounded_recall_hits(text, generation)
             if hits is None:
@@ -3862,6 +3887,7 @@ class Orchestrator:
                 # Those hits were reranked when first served, so they are not again:
                 # a fallback does not reinforce memories this turn never recalled.
                 hits = self._warm_recall() or []
+                basis = "previous_recall" if hits else "unavailable"
                 logger.info("recall unavailable this turn; %s",
                             f"using this session's previous recall ({len(hits)} hits)" if hits
                             else "the turn runs without long-term memory")
@@ -3871,8 +3897,10 @@ class Orchestrator:
                 self._keep_warm_recall(hits, generation)
             if state.generation != generation:
                 hits = []  # a delete landed while this turn was recalling: serve nothing it read
+                basis = "unavailable"
         except Exception as e:
             logger.warning(f"recall failed: {e}")
+            self._note_recall("unavailable")
             return ""
         # CDX-7: retrieved memory is an indirect-injection surface — fence it as scanned,
         # capped, provenance-tagged DATA (never a raw splice) via the rag_guard choke point.
@@ -3887,7 +3915,39 @@ class Orchestrator:
             # handle_input's own origin reset; propagation *through* the model stays out
             # of reach (see security/recall_taint.py).
             mark_turn_recall_tainted()
+        self._note_recall(basis, wrapped)
         return wrapped.block
+
+    @staticmethod
+    def _note_recall(basis: str, wrapped=None) -> None:
+        """H430 — report this prefetch's recall status to the turn (``turn_outcome``), from
+        the guard's per-snippet verdicts: a ``redacted`` snippet is withheld for taint
+        (its body never reached the prompt), ``clean`` and ``untrusted`` were recalled.
+        Counts and closed words only, never a snippet. Only an owner's turn gets one —
+        the same rule as the turn's notices (``_channel_turn``): what the owner's memory
+        held is the owner's to see. Never fails the turn."""
+        if current_principal().admin is not True:
+            return
+        from .memory.recall_admission import admit, recall_status, reject
+        try:
+            if basis == "unavailable":
+                status = recall_status(basis="unavailable")
+            else:
+                verdicts = tuple(getattr(wrapped, "verdicts", ()))
+                if len(verdicts) != getattr(wrapped, "n_items", None) or any(
+                        v not in ("clean", "untrusted", "redacted") for v in verdicts):
+                    raise ValueError("recall verdicts do not account for the rendered block")
+                status = recall_status(
+                    [reject({}, "rejected_taint", "injection-flagged") if v == "redacted" else admit({})
+                     for v in verdicts],
+                    basis=basis, untrusted=verdicts.count("untrusted"))
+        except Exception:
+            logger.debug("recall status uncounted", exc_info=True)
+            # Content went in but cannot be counted: say so ("recalled relevant memory"),
+            # never a guessed number; nothing went in: say nothing.
+            status = (recall_status(basis=basis, counted=False)
+                      if getattr(wrapped, "block", "") and basis != "unavailable" else None)
+        record_recall_status(status)
 
     def _living_memory_rerank_hits(self, hits: list) -> list:
         """Use cognition LivingMemory metadata as a post-fusion recall hint."""

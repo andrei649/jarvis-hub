@@ -67,6 +67,19 @@ Same flow but step 7 calls `backend.generate_stream(..., on_token=on_token)`.
 `_recall_block` is called in both paths. Controlled by `memory.recall_enabled` (default `False`).
 When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k as a prompt prefix.
 
+H430 recall indicator: each `_recall_block` call is one prefetch. It clears the turn's recall
+status, then reports what it put in the prompt (`turn_outcome.record_recall_status`), computed
+from `rag_guard.WrappedMemory.verdicts` (`clean`/`untrusted` recalled, `redacted` withheld as
+`rejected_taint`). The status is a `recall_admission.recall_status` value holding counts and
+closed words only. A turn that recalls twice (the stream path recalls again for secondary
+agents) reports the second prefetch. Only an owner's turn gets a status. `/chat` and the
+stream's `outcome.recall` carry it, and the HUD StatusStrip renders it (`turn-outcome.tsx`
+`recallLine`). An owner's Telegram/Slack/Discord/ntfy reply gets it as a footer line
+(`_channel_turn` → `_with_channel_notices`). Both renderers produce
+`🧠 Long-term memory — recalled 1 memory` / `recalled 3 memories` / `recalled relevant memory`,
+plus withheld reasons, a previous-recall stand-in or "unavailable this turn", and they share
+the cases in `frontend/src/test/recall-line-cases.json`.
+
 ---
 
 ## 3. Module Index

@@ -194,29 +194,160 @@ def explain(admissions: list[RecallAdmission] | tuple[RecallAdmission, ...]) -> 
         return "nothing was recalled"
     if not counts["withheld"]:
         return f"{counts['admitted']} recalled fact(s) used, none withheld"
-    reasons = ", ".join(
-        f"{name.removeprefix('rejected_')}: {count}"
-        for name, count in counts["by_reason"].items()
-        if name != "admitted" and count
-    )
     return (
         f"{counts['admitted']} recalled fact(s) used, "
-        f"{counts['withheld']} withheld ({reasons})"
+        f"{counts['withheld']} withheld ({_reasons(counts['by_reason'])})"
     )
+
+
+def _reasons(by_reason: Mapping[str, int]) -> str:
+    """``taint: 1, stale: 2`` — the withheld reasons in vocabulary order, never a zero."""
+    return ", ".join(
+        f"{name.removeprefix('rejected_')}: {by_reason[name]}"
+        for name in ADMISSION_REASONS
+        if name != "admitted" and by_reason.get(name)
+    )
+
+
+# ── H430: the per-turn recall indicator ────────────────────────────────────────
+#
+# Hermes renders each memory provider's last prefetch as one deterministic status line
+# (``🧠 Provider — recalled 3 memories``) so the owner can see that memory was used this
+# turn whether or not the model mentions it. Nerva's line is built the same way and from
+# the same kind of state — what the recall path itself injected, never the model's text —
+# plus the half Hermes leaves out: what the guard withheld, under which closed reason.
+#
+# A status carries counts and closed words only. No ref, no detail, no text: the line is
+# shown beside a reply, and a line that quoted a memory would be a second, unfenced copy
+# of it.
+
+INDICATOR_GLYPH = "🧠"
+RECALL_STATUS_SCHEMA = "nerva.recall-status.v1"
+#: The recall providers a turn can report, and the label the line names each by. One
+#: today: the orchestrator's pre-turn recall (vector ⊕ graph, ``Orchestrator._recall_block``).
+RECALL_PROVIDERS: Mapping[str, str] = {"long_term_memory": "Long-term memory"}
+#: ``this_turn`` — the turn's own recall ran and its result was used; ``previous_recall``
+#: — it could not run in time and this session's previous recall stood in (H428);
+#: ``unavailable`` — neither: the turn went on without long-term memory.
+RECALL_BASES: tuple[str, ...] = ("this_turn", "previous_recall", "unavailable")
+_WITHHELD_REASONS = tuple(r for r in ADMISSION_REASONS if r != "admitted")
+MAX_RECALL_COUNT = 10_000
+
+
+def recall_status(
+    admissions: list[RecallAdmission] | tuple[RecallAdmission, ...] = (),
+    *,
+    basis: str = "this_turn",
+    untrusted: int = 0,
+    counted: bool = True,
+    provider: str = "long_term_memory",
+) -> dict[str, Any]:
+    """One provider's state after one prefetch: what reached the prompt, what was withheld.
+
+    ``recalled`` is how many memories the prompt received with their content; ``None``
+    when content was injected but could not be counted (the line then says "recalled
+    relevant memory", never a guessed number). ``withheld`` names only the reasons that
+    occurred. ``untrusted`` is how many of the recalled came from an untrusted source
+    (used, datamarked, and why the turn's actions queue for approval). ``unavailable``
+    carries no counts: nothing reached the prompt.
+    """
+    if provider not in RECALL_PROVIDERS:
+        raise AdmissionError("unknown_provider", f"{provider!r} is not a recall provider")
+    if basis not in RECALL_BASES:
+        raise AdmissionError("unknown_basis", f"{basis!r} is not a recall basis")
+    status: dict[str, Any] = {"schema": RECALL_STATUS_SCHEMA, "provider": provider, "basis": basis,
+                              "recalled": 0, "withheld": {}, "untrusted": 0}
+    if basis == "unavailable":
+        return status
+    if not counted:
+        status["recalled"] = None
+        return status
+    counts = summarise(admissions)
+    status["recalled"] = min(counts["admitted"], MAX_RECALL_COUNT)
+    status["withheld"] = {name: min(count, MAX_RECALL_COUNT)
+                          for name, count in counts["by_reason"].items() if name != "admitted" and count}
+    if type(untrusted) is int and untrusted > 0:
+        status["untrusted"] = min(untrusted, status["recalled"])
+    return status
+
+
+def _count(value: Any) -> bool:
+    return type(value) is int and 0 <= value <= MAX_RECALL_COUNT
+
+
+def valid_recall_status(status: Any) -> bool:
+    """Whether *status* is a :func:`recall_status` shape: known keys, closed words, bounded
+    counts and nothing else — so no caller can carry text through it."""
+    if type(status) is not dict or set(status) != {"schema", "provider", "basis", "recalled",
+                                                    "withheld", "untrusted"}:
+        return False
+    recalled, withheld, untrusted = status["recalled"], status["withheld"], status["untrusted"]
+    if (status["schema"] != RECALL_STATUS_SCHEMA or status["provider"] not in RECALL_PROVIDERS
+            or status["basis"] not in RECALL_BASES
+            or not (recalled is None or _count(recalled)) or not _count(untrusted)
+            or type(withheld) is not dict
+            or any(name not in _WITHHELD_REASONS or not _count(count) or not count
+                   for name, count in withheld.items())):
+        return False
+    if recalled is None:
+        return not withheld and not untrusted
+    return untrusted <= recalled and (status["basis"] != "unavailable"
+                                      or (not recalled and not withheld))
+
+
+def describe_recall(status: Any) -> str:
+    """The one-line indicator for a :func:`recall_status`, or ``""`` when there is nothing
+    to say (nothing recalled, nothing withheld). Deterministic: the same status always
+    renders the same line, and a malformed status renders nothing rather than a guess.
+
+    ``recalled 1 memory`` / ``recalled 3 memories`` / ``recalled relevant memory`` (content
+    injected without a discrete count) are Hermes' three phrasings; a zero is never
+    "0 memories". The HUD's renderer (``frontend/src/turn-outcome.tsx``) is pinned to this
+    one by the shared cases in ``frontend/src/test/recall-line-cases.json``.
+    """
+    if not valid_recall_status(status):
+        return ""
+    label, basis = RECALL_PROVIDERS[status["provider"]], status["basis"]
+    if basis == "unavailable":
+        return f"{INDICATOR_GLYPH} {label} — unavailable this turn, no memory used"
+    recalled, withheld, untrusted = status["recalled"], status["withheld"], status["untrusted"]
+    parts: list[str] = []
+    if recalled is None:
+        parts.append("recalled relevant memory")
+    elif recalled:
+        parts.append("recalled 1 memory" if recalled == 1 else f"recalled {recalled} memories")
+    if parts and basis == "previous_recall":
+        parts[0] += " from this session's previous recall"
+    if parts and untrusted:
+        parts[0] += f" ({untrusted} from an untrusted source)"
+    total = sum(withheld.values())
+    if total:
+        parts.append(f"{total} withheld ({_reasons(withheld)})")
+    if not parts:
+        return ""
+    return f"{INDICATOR_GLYPH} {label} — " + ", ".join(parts)
 
 
 __all__ = [
     "ADMISSION_REASONS",
     "AUTHORITY",
+    "INDICATOR_GLYPH",
     "MAX_DETAIL_CHARS",
+    "MAX_RECALL_COUNT",
+    "RECALL_BASES",
+    "RECALL_PROVIDERS",
+    "RECALL_STATUS_SCHEMA",
     "REJECTIONS",
     "SCHEMA",
     "AdmissionError",
     "RecallAdmission",
     "abstain",
     "admit",
+    "describe_recall",
     "explain",
     "hit_ref",
+    "recall_status",
     "reject",
     "summarise",
+    "valid_recall_status",
 ]

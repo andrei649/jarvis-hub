@@ -59,6 +59,7 @@ class TurnOutcomeCollector:
         self._visible_bytes = 0
         self._file_attempts: list[tuple[str, str, str]] = []
         self._file_attribution_unknown = False
+        self._recall: dict | None = None
         self._final: dict | None = None
 
     def claim(self) -> bool:
@@ -233,6 +234,27 @@ class TurnOutcomeCollector:
             self._file_attribution_unknown = True
             return True
 
+    def recall_observation(self, status: dict | None) -> bool:
+        """H430 — the state the turn's LAST memory prefetch left, replacing any earlier
+        one: a turn that recalls twice reports the second, never a stale first count.
+        ``None`` is a prefetch that began (or injected nothing to report). Only a
+        ``recall_admission.recall_status`` shape is kept: counts and closed words."""
+        from .memory.recall_admission import valid_recall_status
+
+        with self._lock:
+            if self._closed or self._completion is not None:
+                return False
+            if status is not None and not valid_recall_status(status):
+                self._recall = None   # an unreadable later prefetch still unseats the earlier one
+                return False
+            self._recall = _copy(status)
+            return True
+
+    def recall(self) -> dict | None:
+        """The recorded recall status (a copy), open or closed."""
+        with self._lock:
+            return _copy(self._recall)
+
     def progress(self, *, usage: dict | None = None, status: dict | None = None) -> dict | None:
         with self._lock:
             if self._closed:
@@ -288,6 +310,8 @@ class TurnOutcomeCollector:
                                     'basis': 'visible_estimate'}
             elif self._completion is not None:
                 result['output'] = {'tokens': None, 'basis': 'unknown'}
+            if self._recall is not None:
+                result['recall'] = _copy(self._recall)
             if type(status) is dict:
                 for name in ('model', 'context_detail', 'context_pct', 'cache_hit', 'tps'):
                     if name in status:
@@ -460,6 +484,13 @@ def record_tool_refused() -> bool:
 def record_visible_output(piece: str) -> bool:
     sink = _current.get()
     return bool(sink and sink.visible_output(piece))
+
+
+def record_recall_status(status: dict | None) -> bool:
+    """H430 — the memory recall path reports what its prefetch injected (``None`` when a
+    prefetch begins). A no-op outside a turn."""
+    sink = _current.get()
+    return bool(sink and sink.recall_observation(status))
 
 
 def measure_turn_latency(fn):

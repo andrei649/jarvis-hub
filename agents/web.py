@@ -1196,6 +1196,17 @@ class TurnFileMutation(TypedDict):
     outcome: Literal['refused', 'unknown', 'applied_unverified']
 
 
+class TurnRecall(TypedDict):
+    # H430: what the turn's LAST memory prefetch put in the prompt (counts and closed words,
+    # never memory text); the HUD renders it as "🧠 Long-term memory — recalled 2 memories".
+    schema: Literal['nerva.recall-status.v1']
+    provider: Literal['long_term_memory']
+    basis: Literal['this_turn', 'previous_recall', 'unavailable']
+    recalled: int | None
+    withheld: dict[str, int]
+    untrusted: int
+
+
 class TurnOutcome(TypedDict):
     # The completion is source-assigned; latency remains an optional display choice.
     latency_ms: NotRequired[int]
@@ -1215,6 +1226,7 @@ class TurnOutcome(TypedDict):
     output: NotRequired[TurnOutputFlow]
     file_mutations: NotRequired[list[TurnFileMutation]]
     file_mutation_attribution: NotRequired[Literal['unknown']]
+    recall: NotRequired[TurnRecall]
 
 
 class ChatResponse(BaseModel):
@@ -1365,7 +1377,7 @@ def _selected_turn_outcome(orchestrator, measured: dict | None, *, usage: dict |
     if measured is None:
         return None
     result = {name: measured[name] for name in (
-        'completion', 'tools', 'output', 'file_mutations', 'file_mutation_attribution')
+        'completion', 'tools', 'output', 'file_mutations', 'file_mutation_attribution', 'recall')
               if name in measured}
     try:
         from agents.core.settings_db import selected_status_fields
