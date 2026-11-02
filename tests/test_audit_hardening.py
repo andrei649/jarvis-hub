@@ -401,3 +401,50 @@ def test_mixed_chain_reports_how_much_is_actually_keyed(tmp_path, monkeypatch):
         assert "predate the key" in status["reason"]
     finally:
         a2.close()
+
+
+def test_close_waits_for_a_write_in_progress_on_another_thread(tmp_path, monkeypatch):
+    """Hub shutdown closes the audit logger while the auth-audit worker may be writing.
+    The close used to skip the lock every other method holds, so it closed the SQLite
+    connection in the middle of that write; on CI that crashed the worker process with a
+    segfault (Orchestrator.aclose -> AuditLogger.close beside auth_audit._run_worker ->
+    AuditLogger.log). It now waits for the write to commit."""
+    import threading
+
+    audit = AuditLogger(str(tmp_path / "audit.db"))
+    inside, release = threading.Event(), threading.Event()
+    original = audit._tail_hash_unlocked
+
+    def slow_tail():
+        inside.set()                 # the write holds the lock and its transaction is open
+        assert release.wait(10)
+        return original()
+
+    monkeypatch.setattr(audit, "_tail_hash_unlocked", slow_tail)
+    errors: list[BaseException] = []
+
+    def write():
+        try:
+            audit.log(SecurityEvent(event_type=SecurityEventType.AUDIT_LOG,
+                                    timestamp=time.time(), content_preview="shutdown race",
+                                    action_taken="logged"))
+        except BaseException as exc:   # pragma: no cover - the assertion below reports it
+            errors.append(exc)
+
+    writer = threading.Thread(target=write, daemon=True)
+    writer.start()
+    assert inside.wait(10)
+    closer = threading.Thread(target=audit.close, daemon=True)
+    closer.start()
+    closer.join(0.3)
+    assert closer.is_alive()            # the close waits for the write in progress
+    release.set()
+    writer.join(10)
+    closer.join(10)
+    assert not writer.is_alive() and not closer.is_alive()
+    assert errors == []
+    conn = sqlite3.connect(tmp_path / "audit.db")
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM security_events").fetchone()[0] == 1
+    finally:
+        conn.close()
