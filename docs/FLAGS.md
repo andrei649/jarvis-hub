@@ -792,7 +792,7 @@ that native payload; listing an adapter does not prove the installed model suppo
 video. There is no frame extraction, Ollama video adapter,
 inbound attachment ingestion, or video generation in this consumer.
 
-The tool is offered through the `video` job toolset when enabled, and every execution
+The `video_analyze` tool is offered through the `video` job toolset when enabled, and every execution
 requires its own Decision Inbox approval and signed task mediation. Configure
 `JARVIS_TASK_MEDIATION=enforce`; other mediation modes refuse video intake and execution.
 The source, question, role configuration

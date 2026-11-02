@@ -31,15 +31,20 @@ the surface describes itself, and every description of it is checked against it:
    only where it is; a module-index row for a file that registers tools names, as its tools,
    only tools that file registers, and at least one, names any other registered tool only as
    another file's, and says only the gate its tools have; every claim doc yields claims, so
-   a form the checker cannot read is a red test, not a silent pass (H325 review r3). Prose no
-   claim form reads is checked too (H325 review r5): every backticked bare name is a
-   registered tool or a name the shipped code uses (``code_vocabulary``; ``NON_CODE_NAMES``
-   says why for the rest), so a tool, parameter or field renamed in a doc to a name nothing
-   defines fails wherever it is written; and ``--update`` records in the snapshot's
+   a form the checker cannot read is a red test, not a silent pass (H325 review r3), unless
+   it names tools only in passing (``IN_PASSING_DOCS``, each with why). The claim docs are
+   the reference docs and every guide and manual-test book that names registered tools
+   (H325 review r6). Prose no claim form reads is checked too (H325 review r5): every
+   backticked bare name is a registered tool, a name the shipped code uses
+   (``code_vocabulary`` — no test of any kind is read, H325 review r6), a name the fixture a
+   module-index row documents defines, a test that exists (``test_…``), or in
+   ``NON_CODE_NAMES`` with why, so a tool, parameter or field renamed in a doc to a name
+   nothing defines fails wherever it is written; and ``--update`` records in the snapshot's
    ``retired`` every tool and input property that left the surface, so a doc that still
    names one after it is renamed or removed in code fails. What the docs say of the job
-   toolset catalog is ``job_toolsets.CATALOG`` (Nerva's ``toolsets.py``), which names only
-   registered tools; the ``register_tool`` contract table in
+   toolset catalog is ``job_toolsets.CATALOG`` (Nerva's ``toolsets.py``) — the whole catalog,
+   what a group holds, and the tool a sentence files under "the `g` job toolset" (H325 review
+   r6) — which names only registered tools; the ``register_tool`` contract table in
    ``docs/developer/adding-a-tool.md`` names every parameter.
 """
 import ast
@@ -97,7 +102,10 @@ HOST_CHOSEN_SURFACES = {
 }
 
 #: The hand-written docs that describe the current tool surface (plans, reviews and
-#: handoffs are history and say what was true then).
+#: handoffs are history and say what was true then): the reference docs, and the guides and
+#: manual-test books that name registered tools (H325 review r6 — a doc naming a tool outside
+#: this set kept naming `image_generate` after it was renamed in code). Every check below
+#: reads every one of them.
 CLAIM_DOCS = (
     "docs/ARCHITECTURE.md",
     "docs/FLAGS.md",
@@ -106,7 +114,20 @@ CLAIM_DOCS = (
     "docs/EXTENSIONS.md",
     "docs/developer/adding-a-tool.md",
     "docs/developer/agent-loop.md",
+    "docs/LOCAL_IMAGE_SETUP.md",
+    "docs/PLAYWRIGHT_OPERATOR.md",
+    "docs/automations-operations.md",
+    "docs/hermes/code-execution-guide.md",
+    "docs/hermes/fal-image-guide.md",
+    "docs/hermes/openai-codex-image-guide.md",
+    "docs/hermes/openrouter-krea-image-guide.md",
+    "docs/MANUAL_TESTING.md",
     "docs/test-manual/01-environment-and-boot.md",
+    "docs/test-manual/02-chat-routing-agents.md",
+    "docs/test-manual/03-hud-shell.md",
+    "docs/test-manual/05-console-panels-b.md",
+    "docs/test-manual/07-autonomy-governance.md",
+    "docs/test-manual/12-aios-owner-host.md",
 )
 #: Each claim doc yields claims — a doc whose tool names the checker cannot parse proves
 #: nothing (H325 review r3) — except these, which name no built-in tool, and why. They
@@ -116,17 +137,45 @@ NO_BUILTIN_TOOL_DOCS = {
     "docs/EXTENSIONS.md": "an extension's tools are qualified `<id>.<tool>` names that register when "
                           "that extension is activated; no built-in tool is named there",
 }
+#: …and these, which name built-in tools only in passing — what a step calls, what a payload
+#: carries, what a script imports — never in a claim form ("the `x` tool", a list after
+#: "tools:", a gate). Every name they backtick is still checked (registered, retired, a name
+#: the code uses, a test that exists), and each must keep naming a registered tool and keep
+#: making no claim: the first claim one makes takes it off this list.
+IN_PASSING_DOCS = {
+    "docs/LOCAL_IMAGE_SETUP.md": "the proposal `image_generate` makes and the approval payload that binds it",
+    "docs/PLAYWRIGHT_OPERATOR.md": "the exact `browser_run` plan the Operator submits",
+    "docs/automations-operations.md": "the tools scheduled model work never gets (`clarify`)",
+    "docs/hermes/code-execution-guide.md": "when to reach for `execute_code`, and the tools a script imports",
+    "docs/hermes/openrouter-krea-image-guide.md": "the existing surfaces (`image_generate`) a provider plugs into",
+    "docs/MANUAL_TESTING.md": "the tool a manual step runs (`execute_code`, `file_read`, `terminal_run`)",
+    "docs/test-manual/02-chat-routing-agents.md": "the `file_read` a web case follows a result footer's path with",
+    "docs/test-manual/03-hud-shell.md": "a HUD mode named like a tool (`memory`) and a turn not offered `canvas_point`",
+    "docs/test-manual/05-console-panels-b.md": "the `execute_code` run a sandbox step makes",
+    "docs/test-manual/07-autonomy-governance.md": "the tool each governance case has the agent call",
+    "docs/test-manual/12-aios-owner-host.md": "the `browser_run` and `desktop_run` surfaces a case drives",
+}
 #: ``(doc, name)`` → why that doc may still name a name no code registers or declares any
 #: more: a removed tool named as a tool, or a name in the snapshot's ``retired`` record (a
 #: removed tool or input property) named at all — named as removed. Anything else a tool
 #: claim names must be registered, and no retired name may stand in a claim doc.
 RETIRED_TOOL_MENTIONS: dict[tuple[str, str], str] = {}
-#: Where a backticked name in a claim doc may be defined: the shipped code, its config, and
-#: the test fixtures and e2e lanes the module index documents — never a test module (the
-#: probes below write made-up tool names on purpose) and never the built HUD bundle.
-VOCABULARY_ROOTS = ("agents", "scripts", "frontend", "tests/support")
+#: Where a backticked name in a claim doc may be defined: the shipped code and its config —
+#: never a test (the probes below write made-up tool names on purpose, and a frontend test
+#: mocks names no shipped code has: H325 review r6 found `web_fetch` defined only by two HUD
+#: tests) and never the built HUD bundle. Nothing under ``tests/`` is read, no test lane
+#: (``VOCABULARY_TEST_LANES``: the vitest and Playwright directories, their helpers and fixture
+#: servers with them) and no test module anywhere (``_TEST_MODULE``). A module-index row for a
+#: test fixture (``tests/support/…``) may still name what that fixture defines, on that row
+#: only (``_row_vocabulary``); a backticked ``test_…`` name is a test that exists (``cited_tests``).
+VOCABULARY_ROOTS = ("agents", "scripts", "frontend")
 VOCABULARY_FILES = ("docker-compose.yml", "docker-compose.quickstart.yml", "requirements.txt", "pyproject.toml")
 VOCABULARY_SKIP = ("agents/web/",)
+#: The frontend's test lanes: the HUD vitest setup and fixtures (``vite.config.ts``), the
+#: native vitest project (``vitest.native.config.ts``) and every Playwright ``testDir``
+#: (``test_every_frontend_test_lane_is_outside_the_vocabulary`` keeps this exhaustive).
+VOCABULARY_TEST_LANES = ("frontend/src/test/", "frontend/native-tests/", "frontend/e2e/",
+                         "frontend/dispatch-e2e/", "frontend/cloud-image-browser/")
 #: A backticked bare name in a claim doc is a registered tool or a name the code uses; these
 #: are neither, and why. ``test_every_non_code_name_is_still_needed`` keeps the list short.
 NON_CODE_NAMES = {
@@ -137,6 +186,29 @@ NON_CODE_NAMES = {
     "http_403": "one value of the provider failure composed as f\"http_{status}\" "
                 "(agents/core/plugins/web_providers.py)",
     "evil_key": "a made-up settings key the test manual sends to show an out-of-spec key is skipped",
+    # H325 review r6: what the guides and manual-test books added to CLAIM_DOCS write that
+    # is not code. Fields composed at run time:
+    **dict.fromkeys(("stdout_file", "stdout_bytes", "stdout_sha256"),
+                    "an execute_code spill field composed as f\"{key}_file\" / f\"{key}_bytes\" / "
+                    "f\"{key}_sha256\", key the stream's label lowercased (agents/core/code_tools.py)"),
+    "deny_count": "named as absent — MANUAL_TESTING.md says the kernel metrics snapshot has no flat "
+                  "deny_count, and to read by_verdict.deny instead",
+    # …what a manual tester types or reads on screen:
+    **dict.fromkeys(("cock", "ckpt", "zzzz", "zzz"),
+                    "a query the manual types into a HUD search box to test matching (03 / 05 test manual)"),
+    "devuser": "the user token the manual sets (JARVIS_USER_TOKEN) and types at the HUD's token prompt "
+               "(03 test manual, SHL-178)",
+    "vundefined": "the broken rendering of `v{x.version}` the manual tells the tester to look for "
+                  "(05 test manual)",
+    "qa": "a source label the manual types into the transcript intake form (05 test manual, PNB-068)",
+    "nonexistent_agent": "an agent id the manual types to provoke the learning panel's 404 (05 test manual)",
+    "netstat": "a host command the manual suggests for a packet check (12 test manual)",
+    # …and example task kinds the governance book submits to the autonomy policy, which
+    # classifies a kind by its verb: no code defines them.
+    **dict.fromkeys(("book_flight", "purchase_item", "withdraw_cash", "cancel_contract", "draft_note",
+                     "read_status"),
+                    "an example task kind the 07 test manual submits to POST /api/autonomy/preview and "
+                    "the queue; the policy classifies a kind by its verb"),
 }
 
 #: Toolset entries that name a tool no code registers yet, and why the entry stays.
@@ -858,18 +930,19 @@ def doc_claims(text: str):
 
 
 _PY_PATH = re.compile(r"`([\w./-]+\.py)`")
+_SOURCE_PATH = re.compile(r"`([\w./-]+\.(?:py|tsx?|m?js|json|ya?ml|toml|sh))`")
 
 
-def module_rows(text: str) -> dict[int, tuple[str, ...]]:
-    """The module-index rows of a doc: line → the ``.py`` files its first cell names
-    (``agents/core/agent_runtime.py`` + ``tool_loop_result.py`` resolves the second
-    beside the first)."""
+def module_rows(text: str, pattern: re.Pattern = _PY_PATH) -> dict[int, tuple[str, ...]]:
+    """The module-index rows of a doc: line → the ``.py`` files (or the files ``pattern``
+    matches) its first cell names (``agents/core/agent_runtime.py`` + ``tool_loop_result.py``
+    resolves the second beside the first)."""
     rows = {}
     for number, row in enumerate(text.split("\n"), 1):
         if not row.startswith("|"):
             continue
         paths, base = [], ""
-        for path in _PY_PATH.findall(row[1:].split("|", 1)[0]):
+        for path in pattern.findall(row[1:].split("|", 1)[0]):
             if "/" in path:
                 base = path.rsplit("/", 1)[0]
             elif base:
@@ -892,6 +965,7 @@ class Truth:
     toolsets: Mapping[str, tuple[str, ...]] | None = None            # ``job_toolsets.CATALOG``
     allowed: Mapping[tuple[str, str], str] = dataclasses.field(default_factory=dict)  # RETIRED_TOOL_MENTIONS
     non_code: Mapping[str, str] = dataclasses.field(default_factory=dict)            # NON_CODE_NAMES
+    tests: frozenset[str] | None = None                              # ``cited_tests()``
 
 
 #: A code span (on one line), and a name inside one that is not part of a path, a dotted
@@ -908,15 +982,36 @@ _GATE_WORD = re.compile(r"\b(?:un)?gated\b", re.IGNORECASE)
 _CATALOG_LIST = re.compile(r"\btoolsets\b[^.;|`]{0,60}?\bcatalog[ \t]*(?:—|:)[ \t]*(?:\n[ \t]*)?")
 _TOOLSET_HOLDS = re.compile(rf"`(?P<group>[a-z][a-z0-9_]*)`\s+holds\s+the\s+(?P<tools>{_GROUP})\s+tools?\b")
 _TOOLSET_NAMED = re.compile(r"`(?P<group>[a-z][a-z0-9_]*)`\s+(?:job\s+)?toolset\b")
+#: Where the sentence (or clause) around a toolset named by name starts and ends: a sentence
+#: or clause end, a blank line, a table cell, a list item.
+_CLAUSE_END = re.compile(r"[.!?;](?=\s|$)|\n[ \t]*\n|\||\n[ \t]*(?:[-*]|\d+\.)[ \t]")
+#: A tool the clause refers to without naming it ("The tool is offered through the `video`
+#: job toolset") — what it files under the group cannot be checked.
+_UNNAMED_TOOL = re.compile(r"\b(?:[Tt]he|[Tt]his|[Tt]hat|[Ii]ts)\s+tools?\b")
 
 
 class ToolsetClaim(NamedTuple):
     """What a doc says of the job toolset catalog: ``kind`` "catalog" (``groups`` is the
-    whole catalog, listed), "holds" (the group holds ``tools``) or "named"."""
+    whole catalog, listed), "holds" (the group holds ``tools``) or "named" (the group by
+    name; ``tools`` is every name the clause around it backticks — the tools it files under
+    the group, once the registry picks them out — and ``unnamed`` says the clause speaks of
+    "the tool" without naming one)."""
     line: int
     kind: str
     groups: tuple[tuple[int, str], ...]     # (line, group) as the doc names them
     tools: tuple[str, ...] = ()
+    unnamed: bool = False
+
+
+def _clause(text: str, start: int, end: int) -> str:
+    """The sentence or clause around ``text[start:end]``, its own words left out."""
+    left = 0
+    for match in _CLAUSE_END.finditer(text, max(0, start - 2000)):
+        if match.end() > start:
+            break
+        left = match.end()
+    right = _CLAUSE_END.search(text, end)
+    return text[left:start] + " " + text[end:right.start() if right else len(text)]
 
 
 def toolset_claims(text: str) -> list[ToolsetClaim]:
@@ -932,7 +1027,10 @@ def toolset_claims(text: str) -> list[ToolsetClaim]:
         claims.append(ToolsetClaim(line(match.start()), "holds", ((line(match.start()), match.group("group")),),
                                    tuple(re.findall(_NAME, match.group("tools")))))
     for match in _TOOLSET_NAMED.finditer(text):
-        claims.append(ToolsetClaim(line(match.start()), "named", ((line(match.start()), match.group("group")),)))
+        clause = _clause(text, match.start(), match.end())
+        names = tuple(dict.fromkeys(span for span in _SPAN.findall(clause) if _BARE_NAME.fullmatch(span)))
+        claims.append(ToolsetClaim(line(match.start()), "named", ((line(match.start()), match.group("group")),),
+                                   names, _UNNAMED_TOOL.search(clause) is not None))
     return claims
 
 
@@ -943,6 +1041,7 @@ class Parsed(NamedTuple):
     rows: dict[int, tuple[str, ...]]        # a module-index row's line → the files it is for
     toolsets: tuple[ToolsetClaim, ...]
     lines: tuple[str, ...]
+    sources: dict[int, tuple[str, ...]]     # a module-index row's line → every source file it is for
 
 
 @functools.lru_cache(maxsize=32)
@@ -962,30 +1061,74 @@ def _parsed(text: str) -> Parsed:
             for name in _SPAN_NAME.findall(span.group(1)):
                 names.setdefault(name, {})[number] = None
     return Parsed(tuple(doc_claims(text)), {name: tuple(at) for name, at in names.items()}, tuple(bare),
-                  module_rows(text), tuple(toolset_claims(text)), lines)
+                  module_rows(text), tuple(toolset_claims(text)), lines, module_rows(text, _SOURCE_PATH))
 
 
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _VOCABULARY_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".json", ".yaml", ".yml", ".toml", ".sh"}
-_VOCABULARY_SKIP_DIRS = {"node_modules", "dist", "public", "__pycache__", ".pytest_cache"}
+_VOCABULARY_SKIP_DIRS = {"node_modules", "dist", "public", "__pycache__", ".pytest_cache", "__tests__"}
+#: A test module wherever it sits: pytest's ``test_*.py`` / ``*_test.py`` / ``conftest.py``
+#: and vitest's or Playwright's ``*.test.*`` / ``*.spec.*``.
+_TEST_MODULE = re.compile(r"(?:test_\w*\.py|\w+_test\.py|conftest\.py|.+\.(?:test|spec)\.[cm]?[jt]sx?)")
 
 
-@functools.lru_cache(maxsize=1)
-def code_vocabulary() -> frozenset[str]:
-    """Every identifier-shaped word in ``VOCABULARY_ROOTS`` and ``VOCABULARY_FILES``."""
+def is_test_path(rel: str) -> bool:
+    """A path (repo-relative, posix) that is test code: under ``tests/``, in a frontend test
+    lane, in a ``__tests__`` folder, or a test module by its name."""
+    parts = rel.split("/")
+    return (parts[0] == "tests" or rel.startswith(VOCABULARY_TEST_LANES) or "__tests__" in parts[:-1]
+            or _TEST_MODULE.fullmatch(parts[-1]) is not None)
+
+
+def _vocabulary_paths() -> list[Path]:
     paths = [REPO / name for name in VOCABULARY_FILES]
     for root in VOCABULARY_ROOTS:
         for folder, dirs, files in os.walk(REPO / root):
             rel = Path(folder).relative_to(REPO).as_posix() + "/"
             dirs[:] = sorted(d for d in dirs if d not in _VOCABULARY_SKIP_DIRS
-                             and not (rel + d + "/").startswith(VOCABULARY_SKIP))
+                             and not (rel + d + "/").startswith(VOCABULARY_SKIP + VOCABULARY_TEST_LANES))
             paths += [Path(folder, name) for name in sorted(files)
-                      if Path(name).suffix in _VOCABULARY_SUFFIXES and name != "package-lock.json"]
-    words = set()
-    for path in paths:
-        if path.is_file():
-            words.update(_WORD.findall(path.read_text(encoding="utf-8", errors="replace")))
-    return frozenset(words)
+                      if Path(name).suffix in _VOCABULARY_SUFFIXES and name != "package-lock.json"
+                      and not is_test_path(rel + name)]
+    return paths
+
+
+def _words(path: Path) -> frozenset[str]:
+    if not path.is_file():
+        return frozenset()
+    return frozenset(_WORD.findall(path.read_text(encoding="utf-8", errors="replace")))
+
+
+@functools.lru_cache(maxsize=1)
+def code_vocabulary() -> frozenset[str]:
+    """Every identifier-shaped word in the shipped code under ``VOCABULARY_ROOTS`` and in
+    ``VOCABULARY_FILES`` — no test lane, no test module (``is_test_path``)."""
+    return frozenset().union(*map(_words, _vocabulary_paths()))
+
+
+@functools.lru_cache(maxsize=256)
+def _row_vocabulary(files: tuple[str, ...]) -> frozenset[str]:
+    """What the files a module-index row documents define — a row for a test fixture
+    (``tests/support/smtp_sink.py``) names that fixture's own names. A test module is no
+    fixture: its words are never read (its probes are made up)."""
+    return frozenset().union(*(_words(REPO / rel) for rel in files
+                               if _TEST_MODULE.fullmatch(rel.rsplit("/", 1)[-1]) is None
+                               and (REPO / rel).resolve().is_relative_to(REPO)))
+
+
+_TEST_DEF = re.compile(r"^[ \t]*(?:async[ \t]+)?def[ \t]+(test_\w+)", re.MULTILINE)
+
+
+@functools.lru_cache(maxsize=1)
+def cited_tests() -> frozenset[str]:
+    """Every pytest test a doc can cite: each ``tests/**/test_*.py`` module (by its stem) and
+    each ``def test_…`` in one. A backticked ``test_…`` name in a claim doc must be one of
+    these — a renamed or deleted test cited by a manual is drift too."""
+    names = set()
+    for path in (REPO / "tests").rglob("test_*.py"):
+        names.add(path.stem)
+        names.update(_TEST_DEF.findall(path.read_text(encoding="utf-8", errors="replace")))
+    return frozenset(names)
 
 
 def _names(names) -> str:
@@ -1065,14 +1208,21 @@ def claim_errors(text: str, truth: Truth, where: str) -> list[str]:
         retired = {*truth.retired.get("tools", ()), *(p for ps in truth.retired.get("properties", {}).values()
                                                        for p in ps)}
         for line, name in dict.fromkeys(parsed.bare):
-            if (name in registry or name in truth.vocabulary or name in truth.non_code or name in retired
+            if (name in registry or name in truth.non_code or name in retired
                     or (line, name) in said or (where, name) in truth.allowed):
+                continue
+            if (name in truth.vocabulary or name in (truth.tests or ())
+                    or (line in parsed.sources and name in _row_vocabulary(parsed.sources[line]))):
+                continue
+            if truth.tests is not None and name.startswith("test_"):
+                errors.append(f"{where}:{line}: `{name}` is cited as a test, but no test module or test "
+                              "function under tests/ has that name — a renamed or deleted test?")
                 continue
             errors.append(f"{where}:{line}: `{name}` is no registered tool and no name the code uses — a "
                           "renamed or removed tool, parameter or field? Correct the doc to the code (a name "
                           "that is not code goes in NON_CODE_NAMES, with the reason)")
     if truth.toolsets is not None:
-        errors += _toolset_errors(parsed, truth.toolsets, where)
+        errors += _toolset_errors(parsed, truth.toolsets, registry, where)
     return list(dict.fromkeys(errors))
 
 
@@ -1111,7 +1261,8 @@ def _retired_errors(parsed: Parsed, truth: Truth, where: str, rows: set[int]) ->
     return errors
 
 
-def _toolset_errors(parsed: Parsed, toolsets: Mapping[str, tuple[str, ...]], where: str) -> list[str]:
+def _toolset_errors(parsed: Parsed, toolsets: Mapping[str, tuple[str, ...]], registry: Mapping[str, bool],
+                    where: str) -> list[str]:
     errors = []
     for claim in parsed.toolsets:
         for line, group in claim.groups:
@@ -1128,6 +1279,19 @@ def _toolset_errors(parsed: Parsed, toolsets: Mapping[str, tuple[str, ...]], whe
                 if tool not in toolsets[group]:
                     errors.append(f"{where}:{claim.line}: `{group}` is said to hold `{tool}`, but "
                                   f"`job_toolsets.CATALOG` gives it {_names(toolsets[group])}")
+        elif claim.kind == "named" and claim.groups[0][1] in toolsets:
+            # H325 review r6 (probe PC): "the `g` job toolset" files a tool under g — the
+            # tools its clause names must be g's, and a clause that only says "the tool"
+            # must name it, or the attribution cannot be checked.
+            group = claim.groups[0][1]
+            filed = [name for name in claim.tools if name in registry and name not in toolsets]
+            for tool in filed:
+                if tool not in toolsets[group]:
+                    errors.append(f"{where}:{claim.line}: `{tool}` is filed under the `{group}` job toolset here, "
+                                  f"but `job_toolsets.CATALOG` gives `{group}` {_names(toolsets[group])}")
+            if not filed and claim.unnamed:
+                errors.append(f"{where}:{claim.line}: the `{group}` job toolset is named for a tool this "
+                              "sentence does not name — name it, so the toolset it is filed under is checked")
     return errors
 
 
@@ -1327,6 +1491,29 @@ def test_what_a_doc_says_of_the_toolset_catalog_is_the_catalog():
         "d:4: `music` is named as a job toolset, but `job_toolsets.CATALOG` has no such group"]
 
 
+def test_a_toolset_named_by_name_holds_the_tool_filed_under_it():
+    """H325 review r6 (probe PC): "the `g` job toolset" files a tool under g, and Hermes filed
+    browser_cdp/browser_dialog under the wrong toolset — so the registered tools the sentence
+    names must be g's, and a sentence that says only "the tool" must name it."""
+    truth = Truth({"video_analyze": True, "image_generate": True, "web_search": False},
+                  toolsets={"video": ("video_analyze",), "image": ("image_generate",), "web": ("web_search",)})
+    good = "The `video_analyze` tool is offered through the `video` job toolset when enabled; the rest waits."
+    assert claim_errors(good, truth, "d") == []
+    assert toolset_claims(good)[0].tools == ("video_analyze",)
+    assert claim_errors(good.replace("`video` job", "`image` job"), truth, "d") == [
+        "d:1: `video_analyze` is filed under the `image` job toolset here, but `job_toolsets.CATALOG` gives "
+        "`image` `image_generate`"]
+    # A tool named in another sentence or clause is not filed under it.
+    assert claim_errors("Use `web_search` first. Then the `video` toolset runs; `image_generate` waits.",
+                        truth, "d") == []
+    # "The tool", unnamed: the attribution cannot be checked, so it is not allowed to stand.
+    assert claim_errors("The tool is offered through the `video` job toolset when enabled.", truth, "d") == [
+        "d:1: the `video` job toolset is named for a tool this sentence does not name — name it, so the "
+        "toolset it is filed under is checked"]
+    # A group named with no tool at all says nothing to check.
+    assert claim_errors("Jobs may name the `web` toolset.", truth, "d") == []
+
+
 def test_a_retired_tool_may_be_named_only_where_it_is_allowlisted():
     truth = Truth({"memory": False})
     text = "The `memory` tool replaced the `notes_write` tool (removed in H314)."
@@ -1349,7 +1536,8 @@ def docs_truth(widest, variants):
     snap = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     return Truth(_registry(rows), orch.registrars,
                  tool_properties(rows, {name: built.changed for name, built in variants.items()}),
-                 snap.get("retired", {}), code_vocabulary(), CATALOG, RETIRED_TOOL_MENTIONS, NON_CODE_NAMES)
+                 snap.get("retired", {}), code_vocabulary(), CATALOG, RETIRED_TOOL_MENTIONS, NON_CODE_NAMES,
+                 cited_tests())
 
 
 def _doc(rel: str) -> str:
@@ -1367,11 +1555,17 @@ def test_the_hand_written_docs_name_registered_tools_with_the_right_gate(widest,
         parsed = _parsed(_doc(rel))
         if rel in NO_BUILTIN_TOOL_DOCS:
             assert parsed.claims == (), f"{rel} names a built-in tool now: drop it from NO_BUILTIN_TOOL_DOCS"
+        elif rel in IN_PASSING_DOCS:
+            assert IN_PASSING_DOCS[rel].strip(), rel
+            assert parsed.claims == (), f"{rel} makes a tool claim now: drop it from IN_PASSING_DOCS"
+            assert {name for _line, name in parsed.bare} & set(docs_truth.registry), (
+                f"{rel} names no registered tool any more: is it still a doc about the tool surface?")
         else:
             assert parsed.claims, f"{rel} names no tool the checker can parse"
         # …and every one has backticked names the vocabulary check reads.
         assert parsed.bare, rel
-    assert set(NO_BUILTIN_TOOL_DOCS) <= set(CLAIM_DOCS)
+    assert set(NO_BUILTIN_TOOL_DOCS) <= set(CLAIM_DOCS) and set(IN_PASSING_DOCS) <= set(CLAIM_DOCS)
+    assert not set(NO_BUILTIN_TOOL_DOCS) & set(IN_PASSING_DOCS)
     # …in every form, and the module index's rows for the files that register tools are
     # the rows checked against those files.
     text = _doc("docs/ARCHITECTURE.md")
@@ -1408,10 +1602,80 @@ def test_every_non_code_name_is_still_needed(docs_truth):
 
 
 def test_the_vocabulary_is_the_code_not_the_tests():
-    """The made-up names the probes here write are in no file the vocabulary reads."""
+    """The made-up names the probes here write are in no file the vocabulary reads — and no
+    test of any kind is read (H325 review r6: 272 frontend test modules added 52 names no
+    shipped code has, `web_fetch` among them, so a tool renamed in prose to a name only a
+    HUD test mocks passed)."""
     vocabulary = code_vocabulary()
-    assert {"register_tool", "file_read", "catalog_gate", "n8n_data", "pyyaml", "make_app"} <= vocabulary
+    assert {"register_tool", "file_read", "catalog_gate", "n8n_data", "pyyaml", "speechText"} <= vocabulary
     assert not {"file_open", "skill_show", "shell_run", "browser_exec", "video_analyse"} & vocabulary
+    # Defined only by tests: frontend test modules (sessions-recap / hermes-runtime-panel
+    # tests mock `web_fetch`) and the pytest fixtures under tests/support (`make_app`).
+    assert not {"web_fetch", "approval_expired", "tool_denied", "kernel_granted", "workspace_unavailable",
+                "make_app", "greeting_gate"} & vocabulary
+    read = [path.relative_to(REPO).as_posix() for path in _vocabulary_paths()]
+    assert read and not [rel for rel in read if is_test_path(rel)]
+    assert not [rel for rel in read if rel.startswith(("tests/", *VOCABULARY_TEST_LANES))]
+    for rel in ("frontend/src/test/sessions-recap.test.tsx", "frontend/src/panels/x.test.tsx",
+                "frontend/e2e/support/workspace_smtp.py", "frontend/native-tests/support/a.ts",
+                "frontend/src/__tests__/a.ts", "tests/support/smtp_sink.py", "agents/core/test_x.py",
+                "agents/core/conftest.py", "frontend/cloud-image-browser/server.py", "frontend/e2e/hud.spec.ts"):
+        assert is_test_path(rel), rel
+    for rel in ("frontend/src/speech-text.ts", "agents/core/web_tools.py", "frontend/src/testing-mode.ts",
+                "agents/core/attestation.py", "scripts/backlog.py"):
+        assert not is_test_path(rel), rel
+
+
+def test_every_frontend_test_lane_is_outside_the_vocabulary():
+    """Each directory the frontend's test runners read — a Playwright ``testDir``, the native
+    vitest project's files, the HUD vitest setup — is a ``VOCABULARY_TEST_LANES`` lane, so a
+    new lane's helpers and fixture servers cannot leak made-up names into the vocabulary."""
+    frontend = REPO / "frontend"
+    playwright = set()
+    for config in frontend.glob("playwright*.config.ts"):
+        playwright.update(re.findall(r"testDir\s*:\s*['\"]\./([\w-]+)['\"]", config.read_text(encoding="utf-8")))
+    assert {"e2e", "dispatch-e2e", "cloud-image-browser"} <= playwright
+    assert {f"frontend/{lane}/" for lane in playwright} <= set(VOCABULARY_TEST_LANES)
+    vitest = []
+    for config in frontend.glob("vite*.config.ts"):
+        text = config.read_text(encoding="utf-8")
+        for key in ("include", "setupFiles"):
+            for block in re.findall(rf"\b{key}\s*:\s*\[([^\]]*)\]", text):
+                vitest += re.findall(r"['\"](?:\./)?([^'\"]+)['\"]", block)
+    files = {path.relative_to(REPO).as_posix() for glob in vitest
+             for path in frontend.glob(re.sub(r"\{([^}]*)\}", "*", glob)) if "node_modules" not in path.parts}
+    assert len(files) > 100 and "frontend/src/test/setup.ts" in files
+    assert sorted(rel for rel in files if not is_test_path(rel)) == []
+    for lane in VOCABULARY_TEST_LANES:
+        assert (REPO / lane).is_dir(), lane
+
+
+def test_a_test_cited_by_name_must_exist():
+    """A backticked ``test_…`` name is a test under tests/ (a module or a function); the
+    vocabulary no longer reads tests, so a cited test is checked against the tests
+    themselves — a renamed or deleted one fails."""
+    truth = Truth({}, vocabulary=frozenset(), tests=frozenset({"test_chat_http", "test_select_backend"}))
+    assert claim_errors("Run `test_chat_http` and `test_select_backend`.", truth, "d") == []
+    assert claim_errors("Run `test_select_backend_strict`.", truth, "d") == [
+        "d:1: `test_select_backend_strict` is cited as a test, but no test module or test function under "
+        "tests/ has that name — a renamed or deleted test?"]
+    tests = cited_tests()
+    assert {"test_chat_http", "test_tool_surface", "test_select_backend_strict_local_never_cloud",
+            "test_the_vocabulary_is_the_code_not_the_tests"} <= tests
+    assert "cited_tests" not in tests
+
+
+def test_a_fixture_row_may_name_what_its_fixture_defines():
+    """The vocabulary reads no tests/support fixture, but the module-index row documenting one
+    names its own names (ARCHITECTURE.md's tests/support row: `make_app`, `greeting_gate`) —
+    on that row only."""
+    truth = Truth({}, vocabulary=frozenset())
+    row = "| `tests/support/workspace_fixtures.py` · `smtp_sink.py` | `make_app`, `greeting_gate` |"
+    assert claim_errors(row, truth, "d") == []
+    assert [e.split(": ", 1)[1].split(" ", 1)[0] for e in claim_errors(row + "\nThen `make_app`.", truth, "d")] == [
+        "`make_app`"]
+    # A test module's words are not a fixture's: its probes are made up.
+    assert _row_vocabulary(("tests/test_tool_surface.py",)) == frozenset()
 
 
 #: The reviewer's probes (H325 review r3), kept: a hand-written module-index row that names
@@ -1481,6 +1745,55 @@ _UNKNOWN = "is no registered tool and no name the code uses"
 ])
 def test_the_r5_doc_probes_fail(docs_truth, doc, old, new, error):
     _assert_probe_fails(docs_truth, doc, old, new, error)
+
+
+#: The reviewer's probes (H325 review r6), kept: each was green on the r5 checker. PV1, a
+#: tool renamed in prose to a name only a HUD test defines; PC, a tool filed under the wrong
+#: job toolset — on the sentence as it reads now, and as it read then ("The tool is offered").
+@pytest.mark.parametrize(("doc", "old", "new", "error"), [
+    ("docs/FLAGS.md", "`web_extract` refuse those sites", "`web_fetch` refuse those sites", f"`web_fetch` {_UNKNOWN}"),
+    ("docs/FLAGS.md", "offered through the `video` job toolset", "offered through the `image` job toolset",
+     "`video_analyze` is filed under the `image` job toolset here, but `job_toolsets.CATALOG` gives `image` "
+     "`image_generate`"),
+    ("docs/FLAGS.md", "The `video_analyze` tool is offered through the `video`", "The tool is offered through the `image`",
+     "the `image` job toolset is named for a tool this sentence does not name"),
+    ("docs/FLAGS.md", "The `video_analyze` tool is offered through the `video`", "The tool is offered through the `video`",
+     "the `video` job toolset is named for a tool this sentence does not name"),
+])
+def test_the_r6_doc_probes_fail(docs_truth, doc, old, new, error):
+    _assert_probe_fails(docs_truth, doc, old, new, error)
+
+
+def test_a_tool_renamed_in_code_turns_the_guides_naming_it_red(widest, variants, docs_truth):
+    """H325 review r6 (probe PB2): `image_generate` renamed in code and ``--update`` run — the
+    guides that describe "the registered `image_generate` tool" were outside the checked set
+    and stayed green. They are claim docs now, and every one of those lines fails."""
+    _orch, rows = widest
+    snap = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    left = [row for row in rows if row["name"] != "image_generate"]
+    changed = {name: [r for r in built.changed if r["name"] != "image_generate"] for name, built in variants.items()}
+    retired = retire(snap, left, changed)
+    assert "image_generate" in retired["tools"]
+    gone = dataclasses.replace(
+        docs_truth, retired=retired, registry=_registry(left),
+        registrars={f: tools - {"image_generate"} for f, tools in docs_truth.registrars.items()},
+        properties=tool_properties(left, changed))
+    flagged = {(rel, int(e.split(":")[1])) for rel in CLAIM_DOCS for e in claim_errors(_doc(rel), gone, rel)
+               if "`image_generate` is a removed tool" in e}
+    assert {("docs/LOCAL_IMAGE_SETUP.md", 3), ("docs/LOCAL_IMAGE_SETUP.md", 53), ("docs/hermes/fal-image-guide.md", 9),
+            ("docs/hermes/openai-codex-image-guide.md", 3),
+            ("docs/hermes/openrouter-krea-image-guide.md", 3)} <= flagged
+
+
+def test_every_guide_the_r6_review_found_naming_a_tool_is_checked():
+    """H325 review r6: the current-surface guides and manual-test books that name registered
+    tools are claim docs — none sits outside the check."""
+    assert {"docs/LOCAL_IMAGE_SETUP.md", "docs/PLAYWRIGHT_OPERATOR.md", "docs/hermes/code-execution-guide.md",
+            "docs/hermes/fal-image-guide.md", "docs/hermes/openai-codex-image-guide.md",
+            "docs/hermes/openrouter-krea-image-guide.md", "docs/automations-operations.md",
+            "docs/MANUAL_TESTING.md", "docs/test-manual/02-chat-routing-agents.md",
+            "docs/test-manual/03-hud-shell.md", "docs/test-manual/05-console-panels-b.md",
+            "docs/test-manual/07-autonomy-governance.md", "docs/test-manual/12-aios-owner-host.md"} <= set(CLAIM_DOCS)
 
 
 def test_renaming_any_tool_anywhere_in_the_claim_docs_fails(docs_truth):
