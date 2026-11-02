@@ -1,6 +1,7 @@
 /* COMPANY ROOM — what the night shift is working on, and what it actually achieved
    (GET /api/company/runs, GET /api/company/runs/{id}, POST /api/company/runs/{id}/stop,
-   POST /api/company/runs/{id}/barrier/clear; all user-guarded).
+   POST /api/company/runs/{id}/barrier/clear, POST /api/company/runs/{id}/subgoals; all
+   user-guarded — and POST /api/company/goals, admin-guarded, H462).
 
    A work run is one owner-approved goal worked across turns and reboots. This card is
    where the owner sees it — and the whole design problem is that a long-running agent
@@ -30,15 +31,24 @@
    would be a second, weaker approval path. Stop is offered, because narrowing never
    needs approval — the same shape as revoking a permission.
 
+   H462 — what IS here is a way to ASK: "propose a goal" composes the same text `/goal`
+   takes in chat (a headline plus verify / scope / step / must not / stop when lines)
+   and sends it to the hub's one front door. The card crosses the Action Kernel and
+   waits in the decision inbox; the note says so and names the task. And a live run
+   takes an extra acceptance criterion ("add criterion", `/subgoal`): narrowing only,
+   it resets nothing, and the run is not done until that criterion holds too — the
+   criteria the owner added are listed under the run in the owner's own words.
+
    NOTE: never spell a route path in this comment unless the panel calls it —
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
 import React, { useState } from 'react';
 import { apiGet } from '../api/client';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act } from '../panel-kit';
+import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, actA, inpS, taS } from '../panel-kit';
 import { ConfirmAction, RISK_TIER } from '../confirm';
 
 const RUNS_PATH = '/api/company/runs';
 const WAITING_PATH = '/api/company/waiting';
+const GOALS_PATH = '/api/company/goals';
 
 const EM = '—';
 
@@ -82,6 +92,38 @@ const refusalText = (err: any) => {
   return reason ? `refused · ${String(reason)}` : `refused · ${err?.status || 'error'}`;
 };
 
+/* The goal form's fields, in the order the text lists them. Each multi-line field
+   becomes one `prefix: value` line per line typed — the same text `/goal` takes. */
+export type GoalFields = {
+  goal: string; verify: string; scope: string; steps: string; mustNot: string; stopWhen: string;
+};
+const EMPTY_GOAL: GoalFields = { goal: '', verify: '', scope: '', steps: '', mustNot: '', stopWhen: '' };
+
+const linesOf = (v: string) => String(v || '').split('\n').map((l) => l.trim()).filter(Boolean);
+
+export const composeGoalText = (f: GoalFields): string => {
+  const out = [String(f.goal || '').trim()];
+  for (const l of linesOf(f.verify)) out.push(`verify: ${l}`);
+  if (String(f.scope || '').trim()) out.push(`scope: ${String(f.scope).trim()}`);
+  for (const l of linesOf(f.steps)) out.push(`step: ${l}`);
+  for (const l of linesOf(f.mustNot)) out.push(`must not: ${l}`);
+  for (const l of linesOf(f.stopWhen)) out.push(`stop when: ${l}`);
+  return out.filter(Boolean).join('\n');
+};
+
+/* A refused proposal says why in the backend's own sentence (`detail`), else its code. */
+const proposalRefusal = (err: any) => {
+  const detail = err?.body?.detail;
+  return typeof detail === 'string' && detail ? `refused · ${detail}` : refusalText(err);
+};
+
+const Field = ({ label, children }: { label: string; children?: any }) => (
+  <label style={{ display: 'block', fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+    {label}
+    <div style={{ marginTop: 2 }}>{children}</div>
+  </label>
+);
+
 export function CompanyRoomPanel() {
   const { d, e, loading, reload } = useApi(RUNS_PATH);
   const waitingApi = useApi(WAITING_PATH);
@@ -95,6 +137,43 @@ export function CompanyRoomPanel() {
   const [note, setNote] = useState(null);
   const [detail, setDetail] = useState(null);
   const [open, setOpen] = useState(null);
+  const [proposing, setProposing] = useState(false);
+  const [fields, setFields] = useState<GoalFields>(EMPTY_GOAL);
+  const [card, setCard] = useState<string[] | null>(null);
+  const [criterion, setCriterion] = useState<Record<string, string>>({});
+  const setField = (k: keyof GoalFields) => (ev: any) => setFields({ ...fields, [k]: ev.target.value });
+
+  /* H462 — ask for a goal. Admin-guarded: it reaches the decision inbox, never a run. */
+  const propose = () => {
+    setNote(null); setCard(null);
+    actA(GOALS_PATH, { text: composeGoalText(fields) },
+      (r: any) => {
+        if (r && r.ok) {
+          setNote(`proposed as task ${r.task_id} · decide it in the decision inbox — nothing runs until you accept it there`);
+          setCard(Array.isArray(r.card) ? r.card : null);
+          setFields(EMPTY_GOAL); setProposing(false);
+        } else {
+          setNote(`refused · ${(r && (r.detail || r.reason)) || 'proposal failed'}`);
+        }
+      },
+      (err: any) => setNote(proposalRefusal(err)));
+  };
+
+  /* H462 — add an acceptance criterion to a live run (`/subgoal`). Narrowing only. */
+  const addCriterion = (id: string) => {
+    const text = String(criterion[id] || '').trim();
+    if (!text) return;
+    setNote(null);
+    act(`/api/company/runs/${id}/subgoals`, { text },
+      (r: any) => {
+        setNote(r && r.ok
+          ? `criterion ${r.subgoal?.id || ''} added to ${id} · the run goes on where it was`
+          : `refused · ${(r && r.reason) || 'criterion not added'}`);
+        if (r && r.ok) setCriterion({ ...criterion, [id]: '' });
+        reload();
+      },
+      (err: any) => { setNote(refusalText(err)); reload(); });
+  };
 
   const stop = (id: string) => {
     setNote(null);
@@ -143,6 +222,53 @@ export function CompanyRoomPanel() {
       onReload={reload}
     >
       <State e={e} loading={loading} n={d ? 1 : 0} />
+      <Row>
+        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>PROPOSE A GOAL</span>
+        <button
+          className="tool-btn" style={{ marginLeft: 'auto' }}
+          title="write a goal and send it to the decision inbox for your approval"
+          onClick={() => setProposing(!proposing)}
+        >{proposing ? 'close' : 'propose a goal'}</button>
+      </Row>
+      {proposing && (
+        <div style={{ padding: '4px 0 8px' }}>
+          <Field label="goal — what you want done">
+            <input aria-label="goal" style={{ ...inpS, width: '100%' }} value={fields.goal} onChange={setField('goal')} />
+          </Field>
+          <Field label="verify — how anyone would know it is done (one per line)">
+            <textarea aria-label="verify" style={{ ...taS, minHeight: 40 }} value={fields.verify} onChange={setField('verify')} />
+          </Field>
+          <Field label="scope — step kinds it may use, e.g. research, write — or unrestricted">
+            <input aria-label="scope" style={{ ...inpS, width: '100%' }} value={fields.scope} onChange={setField('scope')} />
+          </Field>
+          <Field label="steps — the plan you approve, one per line as kind: what">
+            <textarea aria-label="steps" style={{ ...taS, minHeight: 40 }} value={fields.steps} onChange={setField('steps')} />
+          </Field>
+          <Field label="must not — constraints (one per line)">
+            <textarea aria-label="must not" style={{ ...taS, minHeight: 32 }} value={fields.mustNot} onChange={setField('mustNot')} />
+          </Field>
+          <Field label="stop when — when to give up (one per line)">
+            <textarea aria-label="stop when" style={{ ...taS, minHeight: 32 }} value={fields.stopWhen} onChange={setField('stopWhen')} />
+          </Field>
+          <Row>
+            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+              20 steps, a day to run; it waits in the decision inbox until you accept it.
+            </span>
+            <button
+              className="tool-btn" style={{ marginLeft: 'auto' }}
+              title="send this goal to the decision inbox"
+              disabled={!fields.goal.trim()}
+              onClick={propose}
+            >send for approval</button>
+          </Row>
+        </div>
+      )}
+      {card && card.length > 0 && (
+        <>
+          <Head k="PROPOSED — WAITING IN THE INBOX" />
+          {card.map((line, i) => <Note key={i}>{line}</Note>)}
+        </>
+      )}
       {raw && empty && (
         <Note c="var(--ink-2)">{String(raw.reason || 'nothing to report')}.</Note>
       )}
@@ -223,6 +349,27 @@ export function CompanyRoomPanel() {
                 {(run.verdict_lines || []).map((line: string, i: number) => (
                   <Note key={i}>{line}</Note>
                 ))}
+                {(run.subgoals || []).length > 0 && (
+                  <Note>
+                    criteria you added: {(run.subgoals || []).map((s: string) => `“${s}”`).join(' · ')}
+                  </Note>
+                )}
+                {live && run.status !== 'stopping' && (
+                  <Row>
+                    <input
+                      aria-label={`criterion for ${run.run_id}`}
+                      placeholder="add an acceptance criterion (it resets nothing)"
+                      style={{ ...inpS, flex: 1 }}
+                      value={criterion[run.run_id] || ''}
+                      onChange={(ev: any) => setCriterion({ ...criterion, [run.run_id]: ev.target.value })}
+                    />
+                    <button
+                      className="tool-btn" title="add this criterion to the running goal"
+                      disabled={!String(criterion[run.run_id] || '').trim()}
+                      onClick={() => addCriterion(run.run_id)}
+                    >add criterion</button>
+                  </Row>
+                )}
                 {open === run.run_id && detail && detail.steps && (
                   <>
                     <Head k="STEPS" />
@@ -259,7 +406,8 @@ export function CompanyRoomPanel() {
         A run works one <b>owner-approved</b> goal across turns and reboots. Every action it
         takes still enters the approval queue, and only the graders can call a run
         successful — this card never composes a verdict of its own. There is no start
-        control on purpose: a goal is approved in the decision inbox, like everything else.
+        control on purpose: proposing a goal only asks, and a goal is approved in the
+        decision inbox, like everything else.
       </Note>
     </Card>
   );

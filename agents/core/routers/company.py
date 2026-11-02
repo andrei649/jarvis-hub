@@ -1,6 +1,6 @@
-"""Company-mode routes — read the work runs, stop one.
+"""Company-mode routes — read the work runs, stop one, propose a goal.
 
-Five user-guarded routes, three of them read-only:
+Five user-guarded routes from before H462, three of them read-only:
 
 * ``GET /api/company/runs`` — the brief: every run, its honest headline, what is
   waiting on the owner and which runs took unauthorised steps.
@@ -14,11 +14,22 @@ Five user-guarded routes, three of them read-only:
   It grants nothing: the run returns to the cadence it was already approved for,
   still inside its budget, and the clear is on the run's event log as the owner's.
 
-There is no route that *starts* a run, and that omission is the point. Opening a
-run requires an owner-approved `GoalSpec`, and approval happens in the decision
-inbox — the same place every other privileged act is decided. A "start a run"
-button here would be a second, weaker approval path for the most powerful thing
-in the product. Stopping needs no approval, exactly like revoking a permission.
+Two more write routes (H462), and neither one opens a run:
+
+* ``POST /api/company/goals`` — **propose** a goal (admin-guarded). The text goes
+  through ``goal_intake.propose_goal``, the same front door as ``/goal`` and
+  ``nerva goal propose``: the ``goal.approve`` card crosses the Action Kernel and
+  lands in the decision inbox as an ask. Nothing is opened here.
+* ``POST /api/company/runs/{run_id}/subgoals`` — add an acceptance criterion to a
+  running goal (``/subgoal``). **Narrowing only**, like stop: it can make the run
+  harder to pass, never easier, and it resets nothing.
+
+There is still no route that *starts* a run, and that omission is the point.
+Opening a run requires an owner-approved goal, and approval happens in the
+decision inbox — the same place every other privileged act is decided. A "start a
+run" button here would be a second, weaker approval path for the most powerful
+thing in the product; proposing is asking, and the inbox still decides. Stopping
+needs no approval, exactly like revoking a permission.
 
 Reads are honest about the flag: with ``JARVIS_COMPANY_MODE`` off the routes still
 answer (so the HUD can say *why* it is empty) but report ``enabled: false`` and
@@ -31,17 +42,32 @@ import asyncio
 import threading
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from agents.core.app_state import get_orch
 from agents.core.autonomy.company_report import build_company_brief
+from agents.core.autonomy.goal_contract import GoalContractError
+from agents.core.autonomy.goal_intake import MAX_TEXT, propose_goal, refusal_text
 from agents.core.autonomy.run_barriers import RunBarriers, describe
-from agents.core.autonomy.work_runs import FLAG, WorkRunError, WorkRunLedger
-from agents.core.routers._deps import user_guard
+from agents.core.autonomy.work_runs import FLAG, MAX_SUBGOAL_CHARS, WorkRunError, WorkRunLedger
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["company"])
 
 _MAX_RUN_ID = 64
+
+
+class GoalProposalBody(BaseModel):
+    """The goal, as ``/goal`` takes it: a headline and optional field lines."""
+
+    text: str = Field(..., min_length=1, max_length=MAX_TEXT)
+
+
+class SubgoalBody(BaseModel):
+    """One acceptance criterion to add to a running goal."""
+
+    text: str = Field(..., min_length=1, max_length=MAX_SUBGOAL_CHARS)
 
 _default: WorkRunLedger | None = None
 _build_lock = threading.Lock()
@@ -200,3 +226,67 @@ async def company_run_barrier_clear(run_id: str):
         "ok": True, "cleared": bool(cleared), "run": run.as_dict(),
         "waiting_on": describe(barrier) if barrier else None,
     })
+
+
+def _proposal_status(reason: str) -> int:
+    if reason == "company_mode_off":
+        return 409
+    if reason == "intake_unavailable":
+        return 503
+    if reason.startswith("kernel_denied:"):
+        return 403
+    return 400
+
+
+@router.post("/api/company/goals", dependencies=[Depends(admin_guard)])
+async def company_goal_propose(body: GoalProposalBody):
+    """Propose a goal for the owner's approval (H462). Opens nothing.
+
+    The card crosses the Action Kernel and waits in the decision inbox; the run
+    opens only when the owner accepts it there. Answers the card as the owner will
+    read it and the durable task id — never the task payload."""
+    orch = get_orch()
+    if orch is None:
+        return nocache_json({"ok": False, "reason": "orchestrator_unavailable"}, status_code=503)
+    try:
+        # The card is an interrupt: the intake runs off the loop, and pushes the
+        # card on it (captured here, before to_thread).
+        result = await asyncio.to_thread(propose_goal, orch, body.text, requested_by="owner:api",
+                                         push_loop=asyncio.get_running_loop())
+    except GoalContractError as exc:
+        return nocache_json(
+            {"ok": False, "reason": exc.reason, "detail": refusal_text(exc.reason)},
+            status_code=_proposal_status(exc.reason),
+        )
+    except Exception as exc:
+        return nocache_json(
+            {"ok": False, "reason": "intake_refused",
+             "detail": f"the decision inbox refused the goal card ({exc.__class__.__name__})"},
+            status_code=503,
+        )
+    return nocache_json({
+        "ok": True, "task_id": result["task_id"], "title": result["title"],
+        "card": result["card"],
+    })
+
+
+@router.post("/api/company/runs/{run_id}/subgoals", dependencies=[Depends(user_guard)])
+async def company_run_subgoal(run_id: str, body: SubgoalBody):
+    """Add an acceptance criterion to a running goal (H462 ``/subgoal``).
+
+    Narrowing only, so it needs no approval: the run is not reset (its status,
+    budget, steps and fingerprint are untouched), and the verifier will not pass it
+    until this criterion holds too. Refused once a verdict is written on the run;
+    one that arrives while the verifier is still probing is graded too (the ledger
+    refuses a pass that misses it, and the verifier grades again)."""
+    if not _valid(run_id):
+        return nocache_json({"ok": False, "reason": "invalid_run_id"}, status_code=400)
+    ledger = await _get_ledger()
+    try:
+        record = await asyncio.to_thread(ledger.add_subgoal, run_id, body.text, by="owner")
+    except WorkRunError as exc:
+        status = {"unknown_run": 404, "missing_subgoal": 400,
+                  "subgoal_too_long": 400}.get(exc.reason, 409)
+        return nocache_json({"ok": False, "reason": exc.reason}, status_code=status)
+    subgoals = await asyncio.to_thread(ledger.subgoals, run_id)
+    return nocache_json({"ok": True, "subgoal": record, "subgoals": subgoals})

@@ -19,6 +19,7 @@ if __name__ != "agents.core.autonomy.worker":
     raise ImportError("AutonomyWorker authority must be imported as agents.core.autonomy.worker")
 
 import asyncio
+import concurrent.futures
 import inspect
 import logging
 import threading
@@ -54,6 +55,35 @@ from .queue import (
 logger = logging.getLogger("jarvis.autonomy.worker")
 
 INTERRUPT_BUDGET_PER_DAY = 4
+
+# H462 — the hub's event loop, for a governed intake that runs in a worker thread.
+# ``govern_enqueue`` is sync, so a caller that keeps the event loop free runs it under
+# ``asyncio.to_thread``; there ``get_running_loop()`` raises and an interrupt card's
+# push used to be dropped ("waits in the inbox") although the card asked to
+# interrupt. Such a caller captures the running loop BEFORE ``to_thread`` and runs the
+# intake inside :func:`decision_push_loop`; the push is then scheduled on that loop,
+# thread-safely. Unset (the default), the behaviour is unchanged.
+_DECISION_PUSH_LOOP: ContextVar[asyncio.AbstractEventLoop | None] = ContextVar(
+    "autonomy_decision_push_loop", default=None
+)
+
+
+class decision_push_loop:  # noqa: N801 - a context manager used like a function
+    """``with decision_push_loop(loop): worker.govern_enqueue(...)`` — from a worker
+    thread, push an interrupt card on *loop* (the hub's, captured on it before
+    ``asyncio.to_thread``). It schedules a push and nothing else: the card, the
+    kernel decision and the policy are exactly what they would be on the loop."""
+
+    def __init__(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        self._loop = loop
+        self._token = None
+
+    def __enter__(self) -> decision_push_loop:
+        self._token = _DECISION_PUSH_LOOP.set(self._loop)
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        _DECISION_PUSH_LOOP.reset(self._token)
 
 # ── the refusal vocabulary (review round 2, MINOR 2) ─────────────────────────
 #
@@ -647,6 +677,12 @@ class AutonomyWorker:
         self.running_ttl_seconds = float(running_ttl_seconds)
         # Strong refs to fire-and-forget push tasks so they aren't GC'd mid-flight.
         self._bg_tasks: set = set()
+        # H462 — a push a worker thread scheduled onto the hub loop
+        # (``decision_push_loop``), registered BEFORE that thread returns and
+        # resolved when the push has finished, so :meth:`settle_pushes` can await it
+        # even while the loop has not yet run the callback that starts it.
+        self._scheduled_pushes: set[concurrent.futures.Future] = set()
+        self._scheduled_pushes_lock = threading.Lock()
         # E5.0 — the work-run ledger, when company mode has one. A seam rather
         # than a constructor argument: the worker predates company mode and must
         # keep working with no ledger at all, which is also the default.
@@ -1302,27 +1338,86 @@ class AutonomyWorker:
         except Exception:
             logger.warning('model approval grouping unavailable; independent task retained')
         self._schedule_approval_judge(task)
-        try:
-            import asyncio
-
-            if attention_mode == "interrupt":
-                # Keep a reference (else the task can be GC'd mid-flight) and log
-                # any failure — otherwise the push exception vanishes silently.
-                t = asyncio.get_running_loop().create_task(self._maybe_push(task))
-                self._bg_tasks.add(t)
-                t.add_done_callback(self._bg_tasks.discard)
-                t.add_done_callback(
-                    lambda d: (
-                        logger.error(
-                            "decision push failed: %s", d.exception(), exc_info=d.exception()
-                        )
-                        if not d.cancelled() and d.exception()
-                        else None
-                    )
-                )
-        except RuntimeError:
-            logger.debug("no running loop — decision card waits in the inbox")
+        if attention_mode == "interrupt":
+            self._schedule_push(task)
         return task_id
+
+    def _spawn_push(self, task: Task) -> asyncio.Task:
+        """Start the decision push on the running loop. Loop thread only."""
+        # Keep a reference (else the task can be GC'd mid-flight) and log any
+        # failure — otherwise the push exception vanishes silently.
+        t = asyncio.get_running_loop().create_task(self._maybe_push(task))
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
+        t.add_done_callback(
+            lambda d: (
+                logger.error(
+                    "decision push failed: %s", d.exception(), exc_info=d.exception()
+                )
+                if not d.cancelled() and d.exception()
+                else None
+            )
+        )
+        return t
+
+    def _schedule_push(self, task: Task) -> asyncio.Task | concurrent.futures.Future | None:
+        """Push an interrupt card: on this thread's running loop, else on the hub
+        loop a worker-thread caller named (:func:`decision_push_loop`), scheduled
+        thread-safely. With neither, the card waits in the inbox, as before.
+
+        Answers the push's handle: the loop task, or — from a worker thread — a
+        ``concurrent.futures.Future`` that is registered before this returns and
+        resolves once the push has finished on the hub loop. ``None`` when nothing
+        was scheduled."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            hub = _DECISION_PUSH_LOOP.get()
+            if hub is None or hub.is_closed() or not hub.is_running():
+                logger.debug("no running loop — decision card waits in the inbox")
+                return None
+            handle: concurrent.futures.Future = concurrent.futures.Future()
+            with self._scheduled_pushes_lock:
+                self._scheduled_pushes.add(handle)
+            handle.add_done_callback(self._forget_scheduled_push)
+            try:
+                hub.call_soon_threadsafe(self._start_scheduled_push, task, handle)
+            except RuntimeError:   # the loop closed in between
+                handle.cancel()
+                logger.debug("hub loop closed — decision card waits in the inbox")
+                return None
+            return handle
+        return self._spawn_push(task)
+
+    def _forget_scheduled_push(self, handle: concurrent.futures.Future) -> None:
+        with self._scheduled_pushes_lock:
+            self._scheduled_pushes.discard(handle)
+
+    def _start_scheduled_push(self, task: Task, handle: concurrent.futures.Future) -> None:
+        """On the hub loop: start a push a worker thread scheduled, and resolve its
+        handle when the push has finished (the push logs its own failure)."""
+        if not handle.set_running_or_notify_cancel():
+            return
+        try:
+            push = self._spawn_push(task)
+        except BaseException as exc:
+            handle.set_exception(exc)
+            raise
+        push.add_done_callback(lambda _done: handle.set_result(None))
+
+    async def settle_pushes(self) -> None:
+        """Wait until every decision push in flight has finished: the ones started on
+        this loop, and the ones a worker thread scheduled onto it — including a push
+        whose start the loop has not run yet. A failed push is logged where it ran;
+        this never raises for it. Call it on the loop the pushes were scheduled on."""
+        while True:
+            with self._scheduled_pushes_lock:
+                scheduled = [h for h in self._scheduled_pushes if not h.done()]
+            running = [t for t in self._bg_tasks if not t.done()]
+            if not scheduled and not running:
+                return
+            await asyncio.gather(*(asyncio.wrap_future(h) for h in scheduled), *running,
+                                 return_exceptions=True)
 
     # ── intake ────────────────────────────────────────────────────
     async def submit(

@@ -9,6 +9,11 @@ most powerful thing in the product.
 The rest pin the honest-reporting properties: the flag state travels with the
 read (so an empty list can say *why* it is empty), a stop is narrowing-only and
 needs no approval, and no task payload ever reaches the wire.
+
+H462 added two writes and neither opens a run: proposing a goal (admin-guarded) only
+puts a card in the decision inbox — tests/test_h462_goal_intake.py and
+tests/test_h462_goal_entry_e2e.py pin that no run exists until the owner accepts it
+there — and adding a criterion to a running goal only narrows it, like stop.
 """
 
 from __future__ import annotations
@@ -81,21 +86,30 @@ def test_there_is_no_route_that_starts_a_run():
         ("GET", "/api/company/runs"),
         ("GET", "/api/company/runs/{run_id}"),
         ("GET", "/api/company/waiting"),
+        ("POST", "/api/company/goals"),
         ("POST", "/api/company/runs/{run_id}/stop"),
         ("POST", "/api/company/runs/{run_id}/barrier/clear"),
+        ("POST", "/api/company/runs/{run_id}/subgoals"),
     }
-    # Two writes, and both only narrow or restore: stop ends a run, and clearing a
-    # barrier (H464) returns a parked run to the cadence it was already approved
-    # for, still inside its budget. Pinned so a future POST cannot be added here
-    # without this test being re-read.
+    # Four writes, and none opens a run: stop ends one, clearing a barrier (H464)
+    # returns a parked run to the cadence it was already approved for, still inside
+    # its budget, a criterion (H462 /subgoal) only makes a running goal harder to
+    # pass, and proposing a goal (H462) only puts a card in the decision inbox.
+    # Pinned so a future POST cannot be added here without this test being re-read.
     assert sorted(p for m, p in paths if m == "POST") == [
+        "/api/company/goals",
         "/api/company/runs/{run_id}/barrier/clear",
         "/api/company/runs/{run_id}/stop",
+        "/api/company/runs/{run_id}/subgoals",
     ]
+    assert not any("start" in p or "open" in p for _m, p in paths)
 
 
-def test_every_route_is_user_guarded():
-    """Mirror tests/test_route_auth_matrix._runtime_guards: walk the dependant graph."""
+def test_every_route_is_user_guarded_and_proposing_a_goal_is_admin_guarded():
+    """Mirror tests/test_route_auth_matrix._runtime_guards: walk the dependant graph.
+
+    Every read and every narrowing write is user-guarded; proposing a goal (H462)
+    is the one admin-guarded route, like ``/goal`` is an owner command."""
     from tests._route_introspect import iter_effective_routes
 
     guarded = {}
@@ -118,6 +132,8 @@ def test_every_route_is_user_guarded():
         "/api/company/waiting": {"user_guard"},
         "/api/company/runs/{run_id}/stop": {"user_guard"},
         "/api/company/runs/{run_id}/barrier/clear": {"user_guard"},
+        "/api/company/runs/{run_id}/subgoals": {"user_guard"},
+        "/api/company/goals": {"admin_guard"},
     }
 
 
@@ -137,6 +153,7 @@ def test_routes_refuse_without_a_user_token(ledger, monkeypatch):
     assert c.get("/api/company/runs/x").status_code == 401
     assert c.post("/api/company/runs/x/stop").status_code == 401
     assert c.post("/api/company/runs/x/barrier/clear").status_code == 401
+    assert c.post("/api/company/runs/x/subgoals", json={"text": "x"}).status_code == 401
 
 
 # ── the brief ────────────────────────────────────────────────────────────────

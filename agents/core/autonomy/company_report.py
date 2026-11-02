@@ -247,6 +247,12 @@ def build_run_summary(
         "interrupts_used": run.get("interrupts_used"),
         "unauthorised_steps": list(snapshot.get("unauthorised_steps") or ()),
         "verdict_lines": _verdict_lines(snapshot),
+        # H462: the criteria the owner added mid-run (``/subgoal``), in their words.
+        "subgoals": [
+            _clip(row.get("describe"), 200)
+            for row in snapshot.get("subgoals") or ()
+            if isinstance(row, Mapping) and row.get("describe")
+        ],
         # The most recent few, oldest last — enough to see what it is doing without
         # turning a brief into a log.
         "recent": [
