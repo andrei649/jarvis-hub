@@ -9,13 +9,19 @@ the surface describes itself, and every description of it is checked against it:
    register (every default-off one switched on), the description and input schema the
    model is offered, its gate, capability id and untrusted mark, whether a live H296
    override narrows it at runtime, and the capability registry's label for it — the risk
-   and the rollback ``/api/capabilities`` serves. A changed schema or label is a diff in
-   review, not a surprise. Regenerate with ``python tests/test_tool_surface.py --update``
-   (it rewrites the snapshot and the generated table in ``docs/ARCHITECTURE.md``).
+   and the rollback ``/api/capabilities`` serves. Where a host setting makes a registered
+   tool offer another shape (a code image pinned by digest gives ``execute_code`` its
+   session kernel and ``reset``), that shape is pinned too, as a host variant: the rows
+   it changes. A changed schema or label is a diff in review, not a surprise. Regenerate
+   with ``python tests/test_tool_surface.py --update`` (it rewrites the snapshot and the
+   generated table in ``docs/ARCHITECTURE.md``).
 2. The label says what the tool does. Every ungated tool declares its effect at
    registration (``register_tool(risk=…, rollback=…)``), and a structural walk over every
    ``register_tool`` call in ``agents/`` keeps it that way: an ungated writer (memory, the
-   board, a skill proposal, the checklist, a HUD pointer) is never "read_only, no mutation".
+   board, a skill proposal, the checklist, a HUD pointer, a skill view's env grant and usage
+   count) is never "read_only, no mutation". The walk proves a declaration exists, not that
+   it is true; where a handler's writes are easy to miss (``skill_view``), a served call is
+   run and its writes are checked against its label.
 3. The hand-written docs: ``docs/ARCHITECTURE.md`` carries the generated table, which must
    equal the registry; the prose that names a tool as a tool must name a registered one,
    and say "gated"/"ungated" only where it is; the ``register_tool`` contract table in
@@ -48,10 +54,29 @@ END = "<!-- tool-surface:end -->"
 UPDATE_HINT = ("If the change is intended, run `python tests/test_tool_surface.py --update` and review "
                "the diff of tests/_snapshots/tool_surface.json and docs/ARCHITECTURE.md.")
 
-#: Every default-off tool switched on: the snapshot pins the widest registry a host can
-#: present. A tool that is off on a fresh install is not a tool whose schema may drift.
+#: Every default-off tool switched on: the snapshot pins every tool a host can register.
+#: A tool that is off on a fresh install is not a tool whose schema may drift.
 ENV = {"JARVIS_FILE_TOOLS": "1", "JARVIS_MEDIA_DIRECTOR": "1", "JARVIS_VIDEO_ANALYSIS": "1"}
 SETTINGS = {"llm.execute_code": True, "channels.pending_inputs_enabled": True}
+#: Host settings that make an already-registered tool offer another description or schema
+#: (H325 review r1). Each is pinned as the rows it changes against the base registry.
+#: ``session_kernels``: an image pinned by digest composes the K2 kernel manager
+#: (``AutonomyCoordinator._session_kernels``), and ``execute_code`` then registers
+#: ``SESSION_DESCRIPTION``/``SESSION_SCHEMA`` — the persistence promise and ``reset``.
+VARIANTS = {
+    "session_kernels": {"llm.execute_code_image": "python@sha256:" + "a" * 64},
+}
+#: When each variant applies, as the generated table in docs/ARCHITECTURE.md says it.
+VARIANT_WHEN = {
+    "session_kernels": "`llm.execute_code` on and `llm.execute_code_image` pinned by digest",
+}
+#: Each registration that picks its description or schema at registration time (a
+#: conditional expression in the ``register_tool`` call), the tool it registers, and the
+#: variant that pins its other shape. ``test_every_host_chosen_surface_is_pinned`` keeps
+#: this exhaustive, so a new host-dependent shape cannot ship with only one side pinned.
+HOST_CHOSEN_SURFACES = {
+    "agents/core/code_tools.py": ("execute_code", "session_kernels"),
+}
 
 #: The hand-written docs that describe the current tool surface (plans, reviews and
 #: handoffs are history and say what was true then).
@@ -74,21 +99,29 @@ UNBUILT_TOOLS = {
 
 
 @contextmanager
-def widest_orchestrator(root: str):
-    """The coordinator's real ToolRPC wiring with every optional tool switched on.
+def widest_orchestrator(root: str, extra_settings: dict | None = None):
+    """The coordinator's real ToolRPC wiring with every optional tool switched on, and
+    ``extra_settings`` (a host variant) on top.
 
     ``browser_run`` also needs Playwright, a Chromium and the enforcing kernel on this
-    host; what is pinned here is its registration, so the readiness probe answers yes."""
-    from agents.core import browser_runtime
+    host; what is pinned here is its registration, so the readiness probe answers yes.
+    A composed kernel manager takes an owner directory under ``code_sessions`` and sweeps
+    that root on construction, so here that root is under ``root``, never the real data
+    root (``--update`` runs outside pytest's temporary ``JARVIS_HOME``). No interpreter
+    is started: composition launches nothing."""
+    from agents.core import browser_runtime, paths
     from agents.core.autonomy_coordinator import AutonomyCoordinator
 
     keys = (*ENV, "JARVIS_FILE_ROOTS")
     saved = {key: os.environ.get(key) for key in keys}
     ready = browser_runtime.local_browser_ready
+    data_path = paths.data_path
     os.environ.update(ENV)
     os.environ["JARVIS_FILE_ROOTS"] = root
     browser_runtime.local_browser_ready = lambda **_kw: True
-    settings = dict(SETTINGS)
+    paths.data_path = lambda *parts: (Path(root) / ".data" / Path(*parts) if parts == ("code_sessions",)
+                                      else data_path(*parts))
+    settings = {**SETTINGS, **(extra_settings or {})}
     try:
         orch = SimpleNamespace(agents={}, settings=settings,
                                get_setting=lambda key, default=None: settings.get(key, default))
@@ -96,6 +129,7 @@ def widest_orchestrator(root: str):
         yield orch
     finally:
         browser_runtime.local_browser_ready = ready
+        paths.data_path = data_path
         for key, value in saved.items():
             if value is None:
                 os.environ.pop(key, None)
@@ -131,7 +165,13 @@ def surface(orch) -> list[dict]:
     return rows
 
 
-def render_table(rows: list[dict]) -> str:
+def variant_rows(base: list[dict], rows: list[dict]) -> list[dict]:
+    """The rows a host variant changes against the base registry, in registry order."""
+    pinned = {row["name"]: row for row in base}
+    return [row for row in rows if row != pinned.get(row["name"])]
+
+
+def render_table(rows: list[dict], variants: dict[str, list[dict]]) -> str:
     lines = [
         BEGIN,
         "",
@@ -139,15 +179,23 @@ def render_table(rows: list[dict]) -> str:
         "|---|---|---|---|---|---|---|",
     ]
     for row in rows:
+        schema = "narrowed live" if row["live_overrides"] else "static"
+        hosts = [name for name, changed in variants.items() if row["name"] in {r["name"] for r in changed}]
+        if hosts:
+            schema += "; other shape per host: " + ", ".join(f"`{name}`" for name in hosts)
         lines.append("| `{name}` | {gate} | {risk} | {rollback} | {output} | {schema} | `{cap}` |".format(
             name=row["name"],
             gate="gated" if row["gated"] else "ungated",
             risk=row["risk"],
             rollback=row["rollback"]["mode"],
             output="untrusted" if row["untrusted_output"] else "trusted",
-            schema="narrowed live" if row["live_overrides"] else "static",
+            schema=schema,
             cap=row["capability_id"],
         ))
+    for name, changed in variants.items():
+        tools = ", ".join(f"`{row['name']}`" for row in changed)
+        lines.append(f"\nHost variant `{name}` ({VARIANT_WHEN[name]}): {tools} is offered another "
+                     "description and schema, pinned whole in the snapshot's `variants`.")
     lines += ["", END]
     return "\n".join(lines)
 
@@ -163,6 +211,19 @@ def _generated_block(text: str) -> str | None:
 def widest():
     with tempfile.TemporaryDirectory() as root, widest_orchestrator(root) as orch:
         yield orch, surface(orch)
+
+
+@pytest.fixture(scope="module")
+def variants(widest):
+    """Each host variant's registry: its rows, the rows it changes, and its live offer."""
+    _orch, base = widest
+    built = {}
+    for name, extra in VARIANTS.items():
+        with tempfile.TemporaryDirectory() as root, widest_orchestrator(root, extra) as orch:
+            rows = surface(orch)
+            built[name] = SimpleNamespace(rows=rows, changed=variant_rows(base, rows),
+                                          live={tool["name"]: tool for tool in orch.tool_rpc.tools()})
+    return built
 
 
 # ── 1. the snapshot ──────────────────────────────────────────────────────────
@@ -186,15 +247,77 @@ def test_the_snapshot_covers_every_optional_tool(widest):
     assert "/tmp" not in json.dumps(rows) and tempfile.gettempdir() not in json.dumps(rows)
 
 
-def test_the_snapshot_is_the_static_declaration_of_the_live_offer(widest):
+def test_the_snapshot_is_the_static_declaration_of_the_live_offer(widest, variants):
     """The model is offered ``tools()``; it differs from the pinned static row only where a
     live H296 override narrows it, and only in the rows that declare one."""
     orch, rows = widest
-    live = {tool["name"]: tool for tool in orch.tool_rpc.tools()}
-    for row in rows:
-        if not row["live_overrides"]:
-            assert live[row["name"]]["description"] == row["description"]
-            assert live[row["name"]]["input_schema"] == row["input_schema"]
+    offers = [(rows, {tool["name"]: tool for tool in orch.tool_rpc.tools()})]
+    offers += [(built.rows, built.live) for built in variants.values()]
+    for registry, live in offers:
+        for row in registry:
+            if not row["live_overrides"]:
+                assert live[row["name"]]["description"] == row["description"]
+                assert live[row["name"]]["input_schema"] == row["input_schema"]
+
+
+def test_each_host_variant_matches_the_snapshot(widest, variants):
+    """H325 review r1: a host whose settings change what a registered tool offers is
+    pinned too — the rows it changes, whole (description, schema, gate, label)."""
+    _orch, base = widest
+    snap = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    assert sorted(snap.get("variants", {})) == sorted(VARIANTS), "A host variant is not pinned. " + UPDATE_HINT
+    for name, extra in VARIANTS.items():
+        pinned, built = snap["variants"][name], variants[name]
+        assert pinned["settings"] == extra, f"variant {name}'s settings changed. " + UPDATE_HINT
+        # A variant reshapes registered tools; it neither adds one nor removes one.
+        assert [row["name"] for row in built.rows] == [row["name"] for row in base], name
+        assert built.changed, f"variant {name} changes nothing, so it pins nothing"
+        assert [row["name"] for row in built.changed] == [row["name"] for row in pinned["tools"]], (
+            f"The tools variant {name} reshapes changed. " + UPDATE_HINT)
+        for row, pinned_row in zip(built.changed, pinned["tools"], strict=True):
+            assert row == pinned_row, f"The {name} surface of `{row['name']}` changed. " + UPDATE_HINT
+
+
+def test_both_execute_code_shapes_are_pinned(widest, variants):
+    """The one-shot surface in the base registry and the session-kernel one (its
+    persistence promise and ``reset``) in the ``session_kernels`` variant."""
+    from agents.core import code_tools
+
+    _orch, base = widest
+    oneshot = next(row for row in base if row["name"] == code_tools.TOOL)
+    session = next(row for row in variants["session_kernels"].changed if row["name"] == code_tools.TOOL)
+    assert (oneshot["description"], oneshot["input_schema"]) == (code_tools.DESCRIPTION, code_tools.ONESHOT_SCHEMA)
+    assert (session["description"], session["input_schema"]) == (code_tools.SESSION_DESCRIPTION,
+                                                                 code_tools.SESSION_SCHEMA)
+    assert "reset" in session["input_schema"]["properties"]
+    assert "reset" not in oneshot["input_schema"]["properties"]
+    # Same tool, same gate and label: only what the model is shown differs.
+    assert {k: v for k, v in session.items() if k not in {"description", "input_schema"}} == {
+        k: v for k, v in oneshot.items() if k not in {"description", "input_schema"}}
+
+
+def _register_tool_calls():
+    """Every ``register_tool`` call in ``agents/`` (the web bundle aside), with its keywords."""
+    for path in sorted((REPO / "agents").rglob("*.py")):
+        rel = path.relative_to(REPO)
+        if rel.parts[:2] == ("agents", "web"):
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "register_tool"):
+                yield rel.as_posix(), node, {kw.arg: kw.value for kw in node.keywords}
+
+
+def test_every_host_chosen_surface_is_pinned(variants):
+    """Structural: a ``register_tool`` call that picks its description or schema with a
+    conditional expression is listed in ``HOST_CHOSEN_SURFACES``, and the variant named
+    there really reshapes that tool — so neither side of a host-dependent surface ships
+    unpinned."""
+    sites = sorted({rel for rel, _node, keywords in _register_tool_calls()
+                    if any(isinstance(keywords.get(key), ast.IfExp) for key in ("description", "input_schema"))})
+    assert sites == sorted(HOST_CHOSEN_SURFACES)
+    for rel, (tool, variant) in HOST_CHOSEN_SURFACES.items():
+        assert tool in {row["name"] for row in variants[variant].changed}, (rel, tool, variant)
 
 
 # ── 2. the label says what the tool does ─────────────────────────────────────
@@ -206,6 +329,9 @@ UNGATED_WRITERS = {
     "todo": ("reversible", "compensate"),
     "skill_propose": ("reversible", "cancel"),
     "canvas_point": ("reversible", "cancel"),
+    # A served view grants the session's code env names, carries the body, and counts the
+    # view in the persisted usage sidecar (H325 review r1).
+    "skill_view": ("reversible", "revoke"),
     "execute_code": ("sensitive", "implementation_specific"),
     **dict.fromkeys((
         "kanban_attach", "kanban_attach_url", "kanban_block", "kanban_comment", "kanban_complete",
@@ -234,7 +360,7 @@ async def test_the_capability_routes_do_not_call_an_ungated_writer_read_only(wid
             n for n in UNGATED_WRITERS if n.startswith("kanban_")} | {
             "kanban_list", "kanban_show", "kanban_attachments"}
         for name in ("kanban_list", "kanban_show", "kanban_attachments", "file_read", "web_search",
-                     "session_search", "echo", "skill_view"):
+                     "session_search", "echo", "skills_list"):
             assert (records[name]["risk"], records[name]["rollback"]["mode"]) == ("read_only", "none")
 
 
@@ -246,6 +372,7 @@ def test_registry_planning_tells_the_model_what_a_writer_does(widest):
     assert "risk=read_only" not in projected["memory"]["description"]
     assert "risk=sensitive" in projected["kanban_create"]["description"]
     assert "risk=read_only" in projected["kanban_show"]["description"]
+    assert "risk=reversible" in projected["skill_view"]["description"]
 
 
 def test_every_ungated_tool_declares_its_effect(widest):
@@ -263,21 +390,49 @@ def test_every_register_tool_call_declares_its_effect():
     ``risk=`` (``None`` is allowed only where it is gated at run time), so a new ungated
     writer cannot fall back to the read-only label."""
     missing = []
-    for path in sorted((REPO / "agents").rglob("*.py")):
-        rel = path.relative_to(REPO)
-        if rel.parts[:2] == ("agents", "web"):
+    for rel, node, keywords in _register_tool_calls():
+        gated = keywords.get("gated")
+        if isinstance(gated, ast.Constant) and gated.value is True:
             continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "register_tool"):
-                continue
-            keywords = {kw.arg: kw.value for kw in node.keywords}
-            gated = keywords.get("gated")
-            if isinstance(gated, ast.Constant) and gated.value is True:
-                continue
-            if "risk" not in keywords:
-                missing.append(f"{rel}:{node.lineno}")
+        if "risk" not in keywords:
+            missing.append(f"{rel}:{node.lineno}")
     assert missing == []
+
+
+@pytest.mark.asyncio
+async def test_a_served_skill_view_writes_what_its_label_says(tmp_path):
+    """The declaration is checked against what the handler does, not taken on its word
+    (H325 review r1): one served view on an owner turn grants the session's code
+    environment the skill's names and persists a usage count that moves the curator's
+    clock. Either one makes "read_only, no mutation" false."""
+    from agents.core.code_env import CodeEnvRegistry
+    from agents.core.observability.capability_registry import _tool_records
+    from agents.core.skills.loader import Skill
+    from agents.core.skills.tools import VIEW_ROLLBACK, register_skill_tools
+    from agents.core.skills.usage import SkillUsageStore
+
+    skill = Skill("synthetic", tmp_path, {"description": "synthetic example",
+                                          "required_environment_variables": [{"name": "CUSTOM_SERVICE_KEY"}]})
+    skill.owner_vouched = True
+    skill.view_files = {"SKILL.md": b"Use the synthetic service."}
+    usage = SkillUsageStore(tmp_path / "usage.json")
+    loader = SimpleNamespace(skills={skill.name: skill}, catalog_gate=lambda _skill, _actor: "",
+                             note_usage=usage.bump)
+    registry = CodeEnvRegistry()
+    server = ToolRPCServer()
+    register_skill_tools(server, loader=lambda: loader, environment_registry=registry,
+                         principal=lambda: "owner", session_id=lambda: "s-1")
+    reply = await server.handle({"tool": "skill_view", "args": {"name": skill.name}}, actor="agent-1")
+    assert reply["result"]["ok"]
+    # The two writes: an env grant this session's execute_code now receives, and a count on disk.
+    assert registry.resolve_names(agent="agent-1", principal="owner", session_id="s-1") == {"CUSTOM_SERVICE_KEY"}
+    assert SkillUsageStore(tmp_path / "usage.json").get(skill.name)["view_count"] == 1   # read back from disk
+    # …and the label says so, through the capability registry.
+    assert server.declared_effect("skill_view") == ("reversible", VIEW_ROLLBACK)
+    record = next(r for r in _tool_records(SimpleNamespace(tool_rpc=server)) if r.id == "tool:skill_view")
+    assert (record.risk, record.rollback.mode) == ("reversible", "revoke")
+    assert "No mutation" not in record.rollback.description
+    assert "execute_code" in record.rollback.description and "usage" in record.rollback.description
 
 
 def _noop(args):
@@ -338,12 +493,13 @@ def test_a_runtime_registered_tool_is_labelled_by_its_registrar():
 
 # ── 3. the hand-written docs ─────────────────────────────────────────────────
 
-def test_architecture_carries_the_generated_tool_table(widest):
+def test_architecture_carries_the_generated_tool_table(widest, variants):
     _orch, rows = widest
     text = ARCHITECTURE.read_text(encoding="utf-8")
     block = _generated_block(text)
     assert block is not None, "docs/ARCHITECTURE.md lost its tool-surface markers. " + UPDATE_HINT
-    assert block == render_table(rows), "docs/ARCHITECTURE.md's tool table is stale. " + UPDATE_HINT
+    expected = render_table(rows, {name: built.changed for name, built in variants.items()})
+    assert block == expected, "docs/ARCHITECTURE.md's tool table is stale. " + UPDATE_HINT
 
 
 _NAME = r"`([a-z][a-z0-9_]*)`"
@@ -436,12 +592,18 @@ def test_the_job_toolsets_catalog_names_registered_tools(widest):
 def _write_update() -> None:
     with tempfile.TemporaryDirectory() as root, widest_orchestrator(root) as orch:
         rows = surface(orch)
-    SNAPSHOT.write_text(json.dumps({"tools": rows}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    changed = {}
+    for name, extra in VARIANTS.items():
+        with tempfile.TemporaryDirectory() as root, widest_orchestrator(root, extra) as orch:
+            changed[name] = variant_rows(rows, surface(orch))
+    snap = {"tools": rows,
+            "variants": {name: {"settings": VARIANTS[name], "tools": changed[name]} for name in VARIANTS}}
+    SNAPSHOT.write_text(json.dumps(snap, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     text = ARCHITECTURE.read_text(encoding="utf-8")
     block = _generated_block(text)
     if block is None:
         raise SystemExit("docs/ARCHITECTURE.md has no tool-surface markers to fill")
-    ARCHITECTURE.write_text(text.replace(block, render_table(rows)), encoding="utf-8")
+    ARCHITECTURE.write_text(text.replace(block, render_table(rows, changed)), encoding="utf-8")
     print(f"wrote {SNAPSHOT} and the tool table in {ARCHITECTURE}")
 
 

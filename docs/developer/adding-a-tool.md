@@ -84,7 +84,10 @@ Then, depending on what the tool is:
   `docs/ARCHITECTURE.md` with `python tests/test_tool_surface.py --update` and review
   the diff: its description, schema, gate and risk/rollback label are all in it. A doc
   that names a tool as a tool ("the `<name>` tool", "`<name>` ToolRPC tool", "the gated `<name>` …")
-  must name a registered one with its real gate, or that test fails.
+  must name a registered one with its real gate, or that test fails. A registration that
+  picks its description or schema from a host setting (as `execute_code` does when session
+  kernels are composed) needs its other shape pinned as well: add the settings to `VARIANTS`
+  and the file to `HOST_CHOSEN_SURFACES` in that test, or it fails.
 - **A per-agent narrowing.** An agent's `tools:` list in `agents.yaml` (names or
   globs) narrows the posture further; it never widens it.
 

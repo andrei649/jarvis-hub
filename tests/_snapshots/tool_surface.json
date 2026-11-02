@@ -1735,13 +1735,13 @@
       "capability_id": "tool:skill_view",
       "untrusted_output": false,
       "live_overrides": false,
-      "risk": "read_only",
+      "risk": "reversible",
       "rollback": {
-        "mode": "none",
-        "description": "No mutation is performed, so there is nothing to roll back.",
+        "mode": "revoke",
+        "description": "A served view writes three things. On an owner turn it grants this session's execute_code the skill's declared environment names (names, never values): the grant lapses after 60 minutes, stops as soon as the skill's files, its env list, its catalog standing or the owner's vouch for it change, and a later view that finds the skill tainted revokes it. It puts an untainted, owner-vouched body into this session's carry for the next 2 turns, forgotten when the session is archived, deleted or cleared. And it counts the view in the skills usage sidecar.",
         "automatic": false,
         "handler_ref": null,
-        "limitations": ""
+        "limitations": "The count is kept: it restarts the curator's idle clock and returns a stale skill to active, and only the curator marks it stale again, once the skill has idled again."
       },
       "description": "Read a skill's full instructions (its SKILL.md), or with file one of the files it lists (references, templates, scripts). Use it before following a skill whose catalog line is not enough. A skill already loaded and unchanged answers with a pointer to that copy; pass reload=true to read it again.",
       "input_schema": {
@@ -2099,5 +2099,47 @@
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "variants": {
+    "session_kernels": {
+      "settings": {
+        "llm.execute_code_image": "python@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "tools": [
+        {
+          "name": "execute_code",
+          "gated": false,
+          "capability_id": "tool:execute_code",
+          "untrusted_output": true,
+          "live_overrides": false,
+          "risk": "sensitive",
+          "rollback": {
+            "mode": "implementation_specific",
+            "description": "The container keeps nothing (read-only filesystem, no network); each tool a script calls has that tool's effect and rollback, and a gated one still queues for the owner's approval.",
+            "automatic": false,
+            "handler_ref": null,
+            "limitations": "A session kernel keeps interpreter state from cell to cell until it is reset; what a called tool wrote is undone only as that tool allows."
+          },
+          "description": "Run one Python script in the isolated sandbox. Inside it, jarvis_tool_call(name, args) reaches the same tools this turn was offered, so many calls can be filtered and combined without returning here between them. Import offered tools with from jarvis_tools import tool_name; functions accept the tool schema's arguments and return the same RPC envelope. Variables, imports and loaded data persist between calls in this session; the result says whether it continued or started over. Pass reset=true for a fresh interpreter.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "code"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32768
+              },
+              "reset": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }

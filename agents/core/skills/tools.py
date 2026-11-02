@@ -73,6 +73,7 @@ from pathlib import Path
 from typing import Any
 
 from ..capability_manifests import RollbackContract
+from ..code_env import DECLARATION_TTL_SECONDS
 from .batch import ACTIONS as BATCH_ACTIONS
 from .batch import MAX_OPS as BATCH_MAX_OPS
 from .frontmatter import split_frontmatter
@@ -227,6 +228,24 @@ CARRY_BYTES_PER_WINDOW_TOKEN = 0.25
 CARRY_MIN_WINDOW = 8192
 CARRY_HEADER = ("Skills loaded earlier this session (skill_view's answer in an earlier turn, unchanged "
                 "since; follow them as loaded):")
+#: H325 review r1 — skill_view is ungated, but a served view is not a pure read: it grants
+#: env names to the session's execute_code, puts the body into the session's carry, and
+#: counts the view in the persisted usage sidecar (which moves the curator's clock). Each
+#: write ends on its own or is withdrawn; the count is what stays.
+VIEW_ROLLBACK = RollbackContract(
+    mode="revoke",
+    description=("A served view writes three things. On an owner turn it grants this "
+                 "session's execute_code the skill's declared environment names (names, never "
+                 f"values): the grant lapses after {DECLARATION_TTL_SECONDS // 60} minutes, stops as "
+                 "soon as the skill's files, its env list, its catalog standing or the owner's "
+                 "vouch for it change, and a later view that finds the skill tainted revokes it. "
+                 "It puts an untainted, owner-vouched body into this session's carry for the next "
+                 f"{CARRY_TTL_TURNS} turns, forgotten when the session is archived, deleted or "
+                 "cleared. And it counts the view in the skills usage sidecar."),
+    limitations=("The count is kept: it restarts the curator's idle clock and returns a stale "
+                 "skill to active, and only the curator marks it stale again, once the skill has "
+                 "idled again."),
+)
 
 
 def _reply_digest(reply: dict) -> str:
@@ -1042,7 +1061,7 @@ def register_skill_tools(
     server.register_tool(TOOL_VIEW, _view, gated=False, description=VIEW_DESCRIPTION,
                          input_schema=VIEW_SCHEMA, capability_id="tool:skill_view",
                          max_result_bytes=MAX_ENCODED_BYTES + MAX_LISTED_BYTES + MAX_DESCRIPTION_BYTES + 4096,
-                         risk="read_only")
+                         risk="reversible", rollback=VIEW_ROLLBACK)
     server.register_tool(TOOL_PROPOSE, _propose, gated=False, description=PROPOSE_DESCRIPTION,
                          input_schema=PROPOSE_SCHEMA, capability_id="tool:skill_propose",
                          parallel_safe=False,  # H399 — spends the daily budget, queues a card
@@ -1054,5 +1073,5 @@ __all__ = [
     "LEDGER", "LoadedSkillLedger", "Transcript", "bind_transcript", "carry_marker", "note_compacted",
     "carry_budget", "guest_on_shared_session", "render_key", "reset_transcript",
     "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "PROPOSE_ROLLBACK", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW",
-    "register_skill_tools",
+    "VIEW_ROLLBACK", "register_skill_tools",
 ]
