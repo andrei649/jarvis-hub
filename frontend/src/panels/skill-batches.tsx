@@ -6,7 +6,12 @@
    the owner's own batch editor: paste an ordered operations list (create, patch,
    write_file, remove_file, delete), check it (a dry run that shows every diff and changes
    nothing), then apply exactly what was checked. A refused batch shows the failing
-   operation, the hub's hints and the file as the batch had it at that point. */
+   operation, the hub's hints and the file as the batch had it at that point.
+
+   H330 — a delete shares the batch with the edits that update what named it, and can name
+   the skill that absorbs it (absorbed_into). Beside the diffs, each delete shows what moves
+   to that skill (other skills' related_skills, bundle members) and what still names the
+   deleted skill (prose, jobs, the load set, the switches, pending proposals and batches). */
 import React, { useState } from 'react';
 import { Row, Tag, actA, arr, inpS, mono, refusalReason } from '../panel-kit';
 import { ChangeDiff, originLabel } from './skill-changes';
@@ -88,6 +93,46 @@ export function BatchFileDiff({ f }: { f: FileChange }) {
   );
 }
 
+/** H330 — one reference a delete leaves where it is, in the owner's words. */
+export function referenceLine(e: any): string {
+  if (!e || typeof e !== 'object') return '';
+  if (e.unreadable) return `${e.holder} · could not be read`;
+  switch (e.holder) {
+    case 'skill':
+      return e.field === 'related_skills'
+        ? `skill ${e.name} · related_skills${e.why ? ` · ${e.why}` : ''}`
+        : `skill ${e.name} · ${e.file} line ${arr(e, 'lines').join(', ')}`;
+    case 'bundle': return `bundle ${e.name} · lists ${e.member}${e.why ? ` · ${e.why}` : ''}`;
+    case 'job': return `job ${e.name} (${e.id}) · ${e.field}`;
+    case 'load_set': return `${e.setting}${e.warning ? ` · ${e.warning}` : ''}`;
+    case 'switch': return `${e.setting}${e.channel ? ` · ${e.channel}` : ''}`;
+    case 'proposal': return `pending proposal ${e.id}`;
+    case 'batch': return `pending batch ${e.id}`;
+    default: return String(e.holder || '');
+  }
+}
+
+/** H330 — what each delete moves to the skill that absorbs it, and what still names it. */
+export function BatchReferences({ refs }: { refs: any[] }) {
+  if (!Array.isArray(refs) || !refs.length) return null;
+  return <>{refs.map((r: any, i: number) => (
+    <div key={`${r.skill}-${i}`} data-testid="skill-batch-references"
+      style={{ ...mono, fontSize: 10.5, marginTop: 4, color: 'var(--ink-2)' }}>
+      <div>{r.skill} deleted · {r.absorbed_into ? `absorbed into ${r.absorbed_into}` : 'no absorbing skill'}</div>
+      {arr(r, 'migrated').map((m: any, j: number) => <div key={`m${j}`}>
+        → {m.holder === 'bundle'
+          ? `bundle ${m.name}: ${arr(m, 'before').join(', ')} → ${arr(m, 'after').join(', ')}`
+          : `skill ${m.name} · related_skills now names ${r.absorbed_into}`}
+      </div>)}
+      {arr(r, 'left').map((e: any, j: number) => <div key={`l${j}`} style={{ color: 'var(--amber)' }}>
+        · still names it: {referenceLine(e)}
+      </div>)}
+      {r.more > 0 && <div style={{ color: 'var(--amber)' }}>· and {r.more} more</div>}
+      {r.hidden > 0 && <div>· {r.hidden} skill(s) the agent cannot see name it too</div>}
+    </div>
+  ))}</>;
+}
+
 function BatchDiffs({ skills }: { skills: SkillChange[] }) {
   return <>{skills.map((s, i) => (
     <div key={`${s.name}-${i}`} data-testid="skill-batch-skill" style={{ marginTop: 4 }}>
@@ -135,6 +180,7 @@ export function SkillBatchesInbox({ reply, error, onDecided }:
             </span>
           </Row>
           <BatchDiffs skills={arr(b, 'preview')} />
+          <BatchReferences refs={arr(b, 'references')} />
           {outcome[String(b.id || '')] && <div role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>
             {outcome[String(b.id || '')]}
           </div>}
@@ -188,6 +234,7 @@ export function SkillBatchEditor({ onApplied }: { onApplied?: () => void }) {
       </div>
       {status && <div role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>{status}</div>}
       {checked && <BatchDiffs skills={arr(checked.reply, 'skills')} />}
+      {checked && <BatchReferences refs={arr(checked.reply, 'references')} />}
       <BatchLesson body={refusal} />
     </details>
   );

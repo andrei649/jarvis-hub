@@ -39,7 +39,7 @@ class PromotionInstallFailed(PromotionError):
     the tool registry (review round 3, item 1; round 4, item 2)."""
 
 
-def make_skill_install_kernel_gate(action_kernel):
+def make_skill_install_kernel_gate(action_kernel, *, title: str = "Install acquired capability"):
     """Bind the ``skill.install`` kernel gate used by :meth:`PromotionBroker.propose`.
 
     One factory serves both the production wiring (``autonomy_coordinator``) and the
@@ -47,6 +47,8 @@ def make_skill_install_kernel_gate(action_kernel):
     kernel hook is skipped entirely unless ``JARVIS_ACTION_KERNEL`` is set (the same
     call-time ``kernel_enabled()`` discipline every other broker follows) — and even
     a kernel GRANT cannot bypass the permanent owner-approval floor in ``propose``.
+    A skill batch's delete (H330, :mod:`agents.core.skills.batch`) crosses the same
+    gate, titled as what it is.
     """
 
     def _gate(payload):
@@ -58,7 +60,7 @@ def make_skill_install_kernel_gate(action_kernel):
             Action(
                 kind="skill.install",
                 agent="jarvis",
-                title="Install acquired capability",
+                title=title,
                 payload=dict(payload),
                 origin="generated",
             )

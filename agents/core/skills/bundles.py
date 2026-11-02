@@ -400,6 +400,25 @@ def save(name: Any, members: Any, *, description: Any = "", instruction: Any = N
     return bundle, existing is not None
 
 
+def restore_file(path: Path, data: bytes) -> None:
+    """Put a bundle file's earlier bytes back, atomically: an H330 skill batch that
+    rewrote a member for a deleted skill and then could not land undoes it with this."""
+    path = Path(path)
+    with _LOCK:
+        fd, tmp = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+        _refresh(force=True)
+
+
 def delete(name: Any) -> Bundle:
     """Remove one bundle's file. Its skills and their switches are not touched."""
     with _LOCK:

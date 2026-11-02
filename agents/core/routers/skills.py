@@ -1212,7 +1212,12 @@ async def skills_batch(body: SkillBatchBody):
     folders are swapped only when every operation and every resulting SKILL.md passed, and
     any failure in the swap puts every touched skill back. ``dry_run`` answers the diffs
     without changing anything. A refusal is 422 with the failing operation, hints and a
-    preview of the file as the batch had it."""
+    preview of the file as the batch had it.
+
+    H330: a delete may share the batch with edits to other skills and name the skill that
+    absorbs it (``absorbed_into``); the answer's ``references`` say what was migrated to it
+    and what still names the deleted skill. A delete crosses the ``skill.install`` kernel
+    gate before any folder moves (a DENY answers 422 ``skill_batch_kernel_denied``)."""
     import asyncio
 
     from agents.core.skills.batch import run_batch
@@ -1248,6 +1253,7 @@ async def skill_batches():
                 rec = store.get(rec["id"]) or rec
             except Exception:
                 logger.warning("skill batch %s: its card could not be queued", rec.get("id"), exc_info=True)
+        # H330: what the batch's deletes migrate and leave, reviewed with the diffs.
         out.append({k: rec.get(k) for k in ("id", "origin", "status", "ts", "card", "skills", "operations",
-                                            "preview")})
+                                            "preview", "references")})
     return JSONResponse({"batches": out, "count": len(out)}, headers={"Cache-Control": "no-store"})

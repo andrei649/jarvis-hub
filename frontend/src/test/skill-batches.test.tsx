@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { SkillBatchEditor, SkillBatchesInbox, batchOutcome, parseOperations } from '../panels/skill-batches';
+import { SkillBatchEditor, SkillBatchesInbox, batchOutcome, parseOperations, referenceLine } from '../panels/skill-batches';
 import { DecisionInboxPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); localStorage.setItem('hud.admin_token', 'admin'); } catch { /* ignore */ } });
@@ -137,6 +137,59 @@ describe('SkillBatchEditor', () => {
     expect(lesson).toContain('the closest line is 7');
     expect(lesson).toContain('alpha/SKILL.md');
     expect(screen.getByRole('status').textContent).toMatch(/^refused · /);
+  });
+});
+
+describe('H330 — a delete, what absorbs it, and what still names it', () => {
+  const refs = [{
+    skill: 'alpha', absorbed_into: 'omega',
+    migrated: [
+      { holder: 'skill', name: 'rel', field: 'related_skills' },
+      { holder: 'bundle', name: 'research', slug: 'research', before: ['alpha', 'beta'], after: ['omega', 'beta'] },
+    ],
+    left: [
+      { holder: 'skill', name: 'prose', field: 'text', file: 'SKILL.md', lines: [7] },
+      { holder: 'job', id: 'j1', name: 'Daily', field: 'prompt', lines: [1] },
+      { holder: 'load_set', setting: 'loadset.skills_only', skill: 'alpha',
+        warning: "'omega' is not in skills_only, so it does not load after a restart" },
+    ],
+    hidden: 2,
+  }];
+
+  it('shows the inbox owner what moves and what is left beside the diffs', () => {
+    const deleting = { ...batch, operations: [{ name: 'alpha', action: 'delete', absorbed_into: 'omega' }],
+      references: refs };
+    render(<SkillBatchesInbox reply={{ batches: [deleting] }} />);
+    const text = screen.getByTestId('skill-batch-references').textContent;
+    expect(text).toContain('alpha deleted · absorbed into omega');
+    expect(text).toContain('skill rel · related_skills now names omega');
+    expect(text).toContain('bundle research: alpha, beta → omega, beta');
+    expect(text).toContain('still names it: skill prose · SKILL.md line 7');
+    expect(text).toContain('still names it: job Daily (j1) · prompt');
+    expect(text).toContain("'omega' is not in skills_only");
+    expect(text).toContain('2 skill(s) the agent cannot see name it too');
+  });
+
+  it('shows the editor the same report after a check', async () => {
+    global.fetch = vi.fn(async () => ok({ ok: true, dry_run: true, skills: [], references: refs }));
+    render(<SkillBatchEditor />);
+    fireEvent.change(screen.getByLabelText('skill batch operations'),
+      { target: { value: '[{"name":"alpha","action":"delete","absorbed_into":"omega"}]' } });
+    fireEvent.click(screen.getByText('check'));
+    await waitFor(() => expect(screen.getByTestId('skill-batch-references')).toBeTruthy());
+    expect(screen.getByTestId('skill-batch-references').textContent).toContain('absorbed into omega');
+  });
+
+  it('words every holder', () => {
+    expect(referenceLine({ holder: 'bundle', name: 'r', member: 'alpha', why: 'no absorbing skill named' }))
+      .toBe('bundle r · lists alpha · no absorbing skill named');
+    expect(referenceLine({ holder: 'switch', setting: 'skills.channel_disabled', channel: 'voice' }))
+      .toBe('skills.channel_disabled · voice');
+    expect(referenceLine({ holder: 'proposal', id: 'sp-1' })).toBe('pending proposal sp-1');
+    expect(referenceLine({ holder: 'batch', id: 'sb-2' })).toBe('pending batch sb-2');
+    expect(referenceLine({ holder: 'job', unreadable: true })).toBe('job · could not be read');
+    expect(referenceLine({ holder: 'skill', name: 'q', field: 'related_skills', why: 'ships with Nerva' }))
+      .toBe('skill q · related_skills · ships with Nerva');
   });
 });
 
