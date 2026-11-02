@@ -1700,6 +1700,9 @@ class AutonomyCoordinator:
         from .code_env import CodeEnvRegistry
 
         code_environment = CodeEnvRegistry()
+        # H026 — a /<bundle> load declares its members' required_env through the same
+        # registry skill_view uses (Orchestrator._bundle_prompt_block reads it here).
+        bind_external_orchestrator_attribute(self._orch, "code_environment", code_environment)
 
         def _redact_code_project(text):
             # Secret sources may be initialized lazily after tool composition.

@@ -835,12 +835,16 @@ def load_budget(window_tokens: Any) -> int:
 
 
 def turn_block(loader: Any, agent: str, *, session: str, template_vars: Any = None,
-               max_bytes: int = LOAD_MAX_BYTES) -> str:
+               max_bytes: int = LOAD_MAX_BYTES, environment_registry: Any = None,
+               principal_tag: Any = "", current_loader: Any = None) -> str:
     """The turn's bundle load as ``agent`` reads it ("" when the turn loads none): a header
     naming the bundle, what was loaded and skipped, the bundle's instruction and the
     owner's, then each member as skill_view answers ``agent`` now, in a fence its text
     cannot close. A member this agent may not read, or one past ``max_bytes``, is left
-    out and named. Every prompt the turn builds renders the same block."""
+    out and named. Every prompt the turn builds renders the same block. Each member read
+    declares its ``required_env`` for the owner exactly as skill_view's read of it does
+    (``tools.declare_skill_environment``), so a skill loaded by a bundle can run its code
+    with the variables it would have after an individual view."""
     from ..security.recall_taint import mark_turn_recall_tainted
     from ..turn_notices import record_turn_notice
     from . import tools
@@ -860,6 +864,15 @@ def turn_block(loader: Any, agent: str, *, session: str, template_vars: Any = No
         if skill is None:
             late.append((name, _why(loader, (getattr(loader, "skills", None) or {}).get(name), reply, agent)))
             continue
+        if environment_registry is not None:
+            try:
+                tools.declare_skill_environment(
+                    environment_registry, current_loader or (lambda: loader), skill,
+                    getattr(skill, "view_files", None) or {}, str(reply.get("warning") or ""),
+                    actor=agent, tag=principal_tag, session=session)
+            except Exception:
+                # As for skill_view: a declaration that fails never fails the load or grants env.
+                logger.debug("bundle load: environment declaration skipped", exc_info=True)
         attrs = f"name={json.dumps(skill.name)} bundle={json.dumps(load.bundle.slug)}"
         text = tools._fence(tools._carry_text(reply))
         if reply.get("tainted"):

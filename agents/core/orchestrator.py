@@ -622,6 +622,9 @@ class Orchestrator:
         # K3 — the session-kernel manager the coordinator composes. Declared here
         # like the rest of the external slots so the protocol holds before wiring.
         self.session_kernels = None
+        # H026 — the coordinator's skill-environment registry, so a /<bundle> load declares
+        # its members' required_env as skill_view does.
+        self.code_environment = None
 
         # ── optional components via the registry (A2: tames the god-object) ──
         from .component_registry import ComponentRegistry
@@ -4374,7 +4377,10 @@ class Orchestrator:
             return skill_bundles.turn_block(
                 getattr(self, "skills", None), agent_id, session=str(self.session_id or ""),
                 template_vars=self.get_setting(TEMPLATE_VARS_SETTING, {}),
-                max_bytes=skill_bundles.load_budget(window))
+                max_bytes=skill_bundles.load_budget(window),
+                environment_registry=getattr(self, "code_environment", None),
+                principal_tag=current_principal(),
+                current_loader=lambda: getattr(self, "skills", None))
         except Exception:
             logger.warning("skill bundle load failed; none loaded", exc_info=True)
             return ""

@@ -1384,3 +1384,68 @@ def test_a_record_nested_too_deep_to_parse_names_no_path_and_breaks_nothing(tmp_
     assert bundles.hermes_path(deep) is None
     assert bundles.find_member([deep, maps], "productivity/maps") == (maps, "")
     assert bundles.resolve(["productivity/maps", "nowhere/else"], [deep, maps]) == ([maps], ["nowhere/else"])
+
+
+@pytest.mark.asyncio
+async def test_a_bundle_load_declares_its_members_environment_as_skill_view_does(tmp_path, monkeypatch):
+    # Codex review on #1331: a member loaded by /<bundle> must reach execute_code with the
+    # required_env it would have after an individual skill_view, through the same registry.
+    from agents.core.code_env import CodeEnvRegistry
+
+    weather, news = _md_skill("weather"), _md_skill("news")
+    weather.manifest["required_environment_variables"] = [{"name": "WEATHER_API_KEY"}]
+    orch, seen = _hub(tmp_path, monkeypatch, weather, news)
+    registry = CodeEnvRegistry()
+    orch.code_environment = registry
+    _morning(tmp_path)
+    reply, _notices = await _say(orch, "/morning what is on today")
+    assert _answered(reply)
+    assert registry.resolve_names(agent="athena", principal="owner", session_id="s") == {"WEATHER_API_KEY"}
+    # Scoped to this agent and session, like a view; and gone once the member changes.
+    assert not registry.resolve_names(agent="other", principal="owner", session_id="s")
+    assert not registry.resolve_names(agent="athena", principal="owner", session_id="other")
+    weather.owner_vouched = False
+    assert not registry.resolve_names(agent="athena", principal="owner", session_id="s")
+
+
+@pytest.mark.asyncio
+async def test_without_a_registry_a_bundle_load_still_loads(tmp_path, monkeypatch):
+    orch, seen = _hub(tmp_path, monkeypatch, _md_skill("weather"), _md_skill("news"))
+    orch.code_environment = None
+    _morning(tmp_path)
+    reply, _notices = await _say(orch, "/morning what is on today")
+    assert _answered(reply) and "weather helper" in seen.sent[0]
+
+
+def test_skill_view_declares_for_the_turn_principal_the_hub_actually_binds():
+    # The hub passes register_skill_tools a principal() that returns the turn's Principal,
+    # not the string "owner". The declaration must classify it as execute_code does, or a
+    # view (and a bundle load) never declares anything outside a test.
+    import asyncio
+    from types import SimpleNamespace
+
+    from agents.core.code_env import CodeEnvRegistry
+    from agents.core.commands import Principal
+    from agents.core.skills.tools import principal_label, register_skill_tools
+    from agents.core.tool_rpc import ToolRPCServer
+
+    assert principal_label(Principal(channel="web", admin=True)) == "owner"
+    assert principal_label(Principal(channel="web", admin=False)) != "owner"
+    assert principal_label(Principal(channel="telegram", sender="1", admin=False)) != "owner"
+    assert principal_label("owner") == "owner"
+
+    weather = _md_skill("weather")
+    weather.manifest["required_environment_variables"] = [{"name": "WEATHER_API_KEY"}]
+    loader = SimpleNamespace(skills={weather.name: weather}, catalog_gate=lambda skill, actor: "")
+    for who, expected in ((Principal(channel="web", admin=True), {"WEATHER_API_KEY"}),
+                          (Principal(channel="web", admin=False), frozenset())):
+        registry = CodeEnvRegistry()
+        server = ToolRPCServer()
+        register_skill_tools(server, loader=lambda: loader, environment_registry=registry,
+                             principal=lambda who=who: who, session_id=lambda: "s",
+                             posture=lambda: "operator/owner", origin=lambda: "hud",
+                             settings=lambda key, default: default)
+        reply = asyncio.run(server.handle({"tool": "skill_view", "args": {"name": "weather"}},
+                                          actor="athena"))
+        assert reply["ok"] is True, reply
+        assert registry.resolve_names(agent="athena", principal="owner", session_id="s") == expected

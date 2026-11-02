@@ -633,6 +633,50 @@ def read_skill(target: Any, name: Any, *, agent: str = "", session: str = "",
     return reply, skill, rendered
 
 
+def principal_label(identity: Any) -> str:
+    """The principal label code execution keys its environment by ("owner", "guest",
+    "system"): a label passes through; a turn ``Principal`` is classified exactly as
+    execute_code's own binding classifies it (``tool_profiles.classify_turn`` with the
+    turn's action origin), so a declaration and the run that reads it agree."""
+    if isinstance(identity, str):
+        return identity
+    from ..action_origin import current_action_origin
+    from ..tool_profiles import classify_turn
+
+    return str(classify_turn(identity, current_action_origin()).principal or "")
+
+
+def declare_skill_environment(environment_registry: Any, loader: Callable[[], Any], skill: Any,
+                              files: dict, warning: str, *, actor: str, tag: Any, session: str) -> None:
+    """The environment declaration a whole-skill read makes for the owner (skill_view, and
+    a ``/<bundle>`` load of the same skill): its ``required_env`` names, bound to this agent
+    and session and revalidated against the loaded skill on every use; a flagged read
+    revokes instead. Anyone but the owner, or a read without agent and session, declares
+    nothing."""
+    if environment_registry is None or principal_label(tag) != "owner" or not actor or not session:
+        return
+    tag = "owner"
+    if warning:
+        environment_registry.revoke(agent=actor, principal=tag, session_id=session, skill_id=skill.name)
+        return
+    from .visibility import SOFT_GATES
+
+    target = loader()
+    snapshot = dict(files)
+    names = tuple(getattr(skill, "required_env", ()) or ())
+
+    def current_skill():
+        return (loader() is target
+                and getattr(target, "skills", {}).get(skill.name) is skill
+                and getattr(skill, "owner_vouched", False) is True
+                and dict(getattr(skill, "view_files", {}) or {}) == snapshot
+                and tuple(getattr(skill, "required_env", ()) or ()) == names
+                and target.catalog_gate(skill, actor) in (None, "", *SOFT_GATES))
+
+    environment_registry.declare(agent=actor, principal=tag, session_id=session,
+                                 skill_id=skill.name, names=names, validator=current_skill)
+
+
 def register_skill_tools(
     server: Any,
     *,
@@ -780,30 +824,9 @@ def register_skill_tools(
                 reply["warning"] = warning
         if file is None and environment_registry is not None:
             try:
-                identity = principal()
-                tag = str(getattr(identity, "tag", identity) or "")
-                actor, session = _actor(), str(session_id() or "")
-                if tag == "owner" and actor and session:
-                    if warning:
-                        environment_registry.revoke(agent=actor, principal=tag,
-                                                    session_id=session, skill_id=skill.name)
-                    else:
-                        from .visibility import SOFT_GATES
-
-                        target = loader()
-                        snapshot = dict(files)
-                        names = tuple(getattr(skill, "required_env", ()) or ())
-
-                        def current_skill():
-                            return (loader() is target
-                                    and getattr(target, "skills", {}).get(skill.name) is skill
-                                    and getattr(skill, "owner_vouched", False) is True
-                                    and dict(getattr(skill, "view_files", {}) or {}) == snapshot
-                                    and tuple(getattr(skill, "required_env", ()) or ()) == names
-                                    and target.catalog_gate(skill, actor) in (None, "", *SOFT_GATES))
-
-                        environment_registry.declare(agent=actor, principal=tag, session_id=session,
-                            skill_id=skill.name, names=names, validator=current_skill)
+                declare_skill_environment(
+                    environment_registry, loader, skill, files, warning,
+                    actor=_actor(), tag=principal(), session=str(session_id() or ""))
             except Exception:
                 # Invalid/unreadable declarations never make a view fail or grant env.
                 logger.debug("skill_view: environment declaration skipped", exc_info=True)
