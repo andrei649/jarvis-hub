@@ -81,6 +81,8 @@ _MAX_QUEUED = 4 * _MAX_EVENTS
 _EXIT_FLUSH_S = 2.0
 # An idle writer closes its connection and exits; the next event starts a new one.
 _WRITER_IDLE_S = 30.0
+# Forgets remembered for the writer's in-flight batch (one is all a batch can predate).
+_MAX_FORGETS = 16
 
 _URL = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://\S*")
 _HOST_CHARS = re.compile(r"[^A-Za-z0-9._:%\[\]\-]")
@@ -112,6 +114,18 @@ def _persistable(event: dict) -> dict:
     }
 
 
+def _under(path: Path | None, root: Path | None) -> bool:
+    """True when *path* lies in *root* (every path, for ``root=None``)."""
+    if root is None:
+        return True
+    if path is None:
+        return False
+    try:
+        return Path(path).resolve().is_relative_to(Path(root).resolve())
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
 class EgressLedgerStore:
     """The bounded, owner-only, content-free on-disk egress ledger (H381).
 
@@ -123,7 +137,8 @@ class EgressLedgerStore:
     ``-wal``/``-shm`` sidecars the same mode) and a looser file is narrowed. Tallies are
     per row name across every process; events carry the writing process's ``boot``
     token so a reader can tell its own live rows from restored ones. A forget erases it
-    like any other ``*.db`` under the data root (``data_purge`` deletes its rows).
+    like any other ``*.db`` under the data root (``data_purge`` deletes its rows, inside
+    :meth:`EgressMonitor.forgetting`, so no queued write puts them back).
 
     Writes go through :meth:`append_many` on ONE long-lived connection (one transaction
     per batch), so WAL mode does its job: no per-event open/close and no checkpoint plus
@@ -434,6 +449,10 @@ class EgressMonitor:
         self._seq = 0
         self._queued: deque[tuple[Path, int, dict]] = deque()
         self._inflight: list[tuple[int, dict]] = []
+        self._inflight_targets: dict[int, Path] = {}
+        # (highest sequence number recorded before it, data root) per forget: the writer
+        # drops such an event even when it popped it before the forget began.
+        self._forgotten: list[tuple[int, Path | None]] = []
         # Serialises a batch write with reset() (test isolation) — never taken by a reader.
         self._flush_lock = threading.Lock()
         self._writer: threading.Thread | None = None
@@ -544,6 +563,7 @@ class EgressMonitor:
                 batch = [self._queued.popleft()
                          for _ in range(min(_WRITE_BATCH, len(self._queued)))]
                 self._inflight = [(seq, event) for _, seq, event in batch]
+                self._inflight_targets = {seq: target for target, seq, _ in batch}
             try:
                 self._write(batch)
             except Exception:  # pragma: no cover - _write keeps every failure in memory
@@ -554,13 +574,17 @@ class EgressMonitor:
             self._store.close()
 
     def _write(self, batch: list[tuple[Path, int, dict]]) -> None:
-        groups: list[tuple[Path, list[tuple[int, dict]]]] = []
-        for target, seq, event in batch:
-            if groups and groups[-1][0] == target:
-                groups[-1][1].append((seq, event))
-            else:
-                groups.append((target, [(seq, event)]))
         with self._flush_lock:
+            # A forget that ran between this batch leaving the queue and this lock already
+            # erased the file: an event recorded before it must not be written back.
+            with self._cv:
+                batch = [item for item in batch if not self._forgotten_event(item[0], item[1])]
+            groups: list[tuple[Path, list[tuple[int, dict]]]] = []
+            for target, seq, event in batch:
+                if groups and groups[-1][0] == target:
+                    groups[-1][1].append((seq, event))
+                else:
+                    groups.append((target, [(seq, event)]))
             ok = True
             for target, items in groups:
                 try:
@@ -577,9 +601,56 @@ class EgressMonitor:
                         self._inflight = [x for x in self._inflight if x[0] not in done]
             with self._cv:
                 self._inflight = []
+                self._inflight_targets = {}
                 if ok:
                     self._store_error = ""
                 self._cv.notify_all()
+
+    def _forgotten_event(self, target: Path | None, seq: int) -> bool:
+        """Was the event (recorded as *seq*, for *target*) erased by a forget? (Caller
+        holds ``_lock``.)"""
+        return any(seq <= before and _under(target, root) for before, root in self._forgotten)
+
+    @contextlib.contextmanager
+    def forgetting(self, root: str | Path | None = None):
+        """Run a forget of the data root *root* (every root, for ``None``) against the ledger.
+
+        ``data_purge`` erases the ledger file like any other store, from its own connection.
+        Without this, the write-behind writer could put back what the forget just erased:
+        an event still queued, or a batch already popped and about to be written. Inside
+        this block the writer is held off the file (a batch it is writing now commits
+        first, so the purge erases it too), and every event recorded before the block
+        began, for a file under *root*, is dropped: from the queue, from the batch the
+        writer holds, and, when this process's ledger lives under *root*, from the memory
+        tallies and the unsaved list. Events recorded during the forget are new activity
+        and are written once it ends. Another process writing the same file keeps its own
+        queue; a forget runs in the hub, which owns the ledger.
+        """
+        if self._store is None:
+            yield
+            return
+        root_path = None if root is None else Path(root)
+        with self._flush_lock:
+            with self._cv:
+                self._forgotten.append((self._seq, root_path))
+                del self._forgotten[:-_MAX_FORGETS]
+                self._queued = deque(item for item in self._queued
+                                     if not _under(item[0], root_path))
+                self._inflight = [(seq, event) for seq, event in self._inflight
+                                  if not _under(self._inflight_targets.get(seq), root_path)]
+                try:
+                    active = self._store.path
+                except Exception:
+                    active = None
+                if _under(active, root_path):
+                    self._events.clear()
+                    self._stats.clear()
+                    self._unsaved.clear()
+                    self._unsaved_stats.clear()
+                    self._unsaved_total = 0
+                    self._store_error = ""
+                self._cv.notify_all()
+            yield
 
     def flush(self, timeout: float | None = None) -> bool:
         """Wait until every queued event is written (or kept as unsaved); True when done.
@@ -729,8 +800,9 @@ class EgressMonitor:
         """Clear all state, persisted rows included (test isolation only).
 
         Nothing in the product calls this: no route, CLI verb or job erases the ledger.
-        A forget clears the file through ``data_purge`` like any other store. Queued
-        events are written first, so none lands in the file after the clear.
+        A forget clears the file through ``data_purge`` like any other store, inside
+        :meth:`forgetting`. Queued events are written first, so none lands in the file
+        after the clear.
         """
         self.flush(5.0)
         with self._flush_lock:

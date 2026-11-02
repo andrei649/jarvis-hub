@@ -329,6 +329,125 @@ def test_a_forget_erases_the_ledger_like_any_other_store(data_root):
     assert b"api.anthropic.com" not in blob
 
 
+def _ledger_rows(root: Path) -> int:
+    path = root / "egress_ledger.db"
+    if not path.exists():
+        return 0
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _forget(root: Path) -> dict:
+    from agents.core import data_purge
+
+    return data_purge.purge_data(source_root=str(root), backup_first=False)
+
+
+def _monitor_for_forget(monkeypatch) -> EgressMonitor:
+    """A store-backed monitor that ``data_purge`` reaches as the module singleton."""
+    from agents.core.observability import egress_monitor
+
+    monitor = EgressMonitor(store=EgressLedgerStore())
+    monkeypatch.setattr(egress_monitor, "EGRESS_MONITOR", monitor)
+    return monitor
+
+
+def test_a_forget_drops_an_event_still_queued_for_the_writer(data_root, monkeypatch):
+    """Codex review on #1332: a forget used to clear the file while an event waited in the
+    write-behind queue, and the writer then put the pre-forget row back."""
+    earlier = EgressMonitor(store=EgressLedgerStore())    # a row already in the file
+    earlier.record("llm:gemini", "generativelanguage.googleapis.com", "POST",
+                   allowed=True, local=False)
+    assert earlier.flush(10) and _ledger_rows(data_root) == 1
+    monitor = _monitor_for_forget(monkeypatch)
+    monitor._ensure_writer = lambda: None                 # no writer: the event stays queued
+    monitor.record("llm:anthropic", "api.anthropic.com", "POST", allowed=True, local=False)
+    assert monitor._writer is None and len(monitor._queued) == 1
+
+    assert _forget(data_root)["ok"] is True
+    del monitor._ensure_writer
+    monitor.record("llm:openai", "api.openai.com", "POST", allowed=True, local=False)
+    assert monitor.flush(10)
+
+    conn = sqlite3.connect(data_root / "egress_ledger.db")
+    try:
+        hosts = [row[0] for row in conn.execute("SELECT host FROM events")]
+    finally:
+        conn.close()
+    assert hosts == ["api.openai.com"]                    # only what came after the forget
+    snap = monitor.snapshot()
+    assert set(snap["plugins"]) == {"llm:openai"}
+    assert [r["host"] for r in snap["recent"]] == ["api.openai.com"]
+
+
+def test_a_forget_waits_for_a_batch_being_written_and_erases_it(data_root, monkeypatch):
+    """The batch the writer is committing when the forget starts lands first and is erased
+    with the rest: the purge waits for it instead of racing it."""
+    monitor = _monitor_for_forget(monkeypatch)
+    store = monitor._store
+    original = store.append_many
+    entered, release = threading.Event(), threading.Event()
+
+    def paused(*args, **kwargs):
+        entered.set()
+        assert release.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "append_many", paused)
+    monitor.record("llm:anthropic", "api.anthropic.com", "POST", allowed=True, local=False)
+    assert entered.wait(10)                               # the writer holds the batch
+
+    result: dict = {}
+    forget = threading.Thread(target=lambda: result.update(_forget(data_root)))
+    forget.start()
+    time.sleep(0.3)
+    assert forget.is_alive()                              # waiting for the commit
+    release.set()
+    forget.join(30)
+    assert not forget.is_alive() and result["ok"] is True
+    assert monitor.flush(10)
+    assert _ledger_rows(data_root) == 0
+    assert monitor.snapshot()["plugins"] == {}
+
+
+def test_a_batch_popped_before_the_forget_is_not_written_after_it(data_root, monkeypatch):
+    """The writer may already hold a batch it popped before the forget, waiting for the
+    file: whichever of the two gets the file first, nothing from before the forget is left
+    in it afterwards."""
+    monitor = _monitor_for_forget(monkeypatch)
+    with monitor._flush_lock:                             # the writer pops, then waits here
+        monitor.record("llm:anthropic", "api.anthropic.com", "POST", allowed=True, local=False)
+        deadline = time.monotonic() + 10
+        while not monitor._inflight and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert monitor._inflight and not monitor._queued
+        result: dict = {}
+        forget = threading.Thread(target=lambda: result.update(_forget(data_root)))
+        forget.start()
+        time.sleep(0.3)
+    forget.join(30)
+    assert not forget.is_alive() and result["ok"] is True
+    assert monitor.flush(10)
+    assert _ledger_rows(data_root) == 0
+    assert monitor.snapshot()["plugins"] == {}
+
+
+def test_a_forget_of_another_root_keeps_this_ledgers_queue(data_root, tmp_path, monkeypatch):
+    """A forget erases the root it was given: events bound for a ledger elsewhere stay."""
+    monitor = _monitor_for_forget(monkeypatch)
+    monitor._ensure_writer = lambda: None
+    monitor.record("llm:anthropic", "api.anthropic.com", "POST", allowed=True, local=False)
+    other = tmp_path / "other-root"
+    other.mkdir()
+    assert _forget(other)["ok"] is True
+    del monitor._ensure_writer
+    assert monitor.flush(10)
+    assert _ledger_rows(data_root) == 1
+
+
 def test_snapshot_shape_is_unchanged_for_a_memory_only_monitor():
     """Ad-hoc monitors (tests, tools) stay memory-only and report it."""
     monitor = EgressMonitor()
