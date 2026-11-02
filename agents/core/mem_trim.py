@@ -2,8 +2,12 @@
 
 A long-lived hub frees a lot after a turn (prompts, model replies, tool results, a
 compacted history), but glibc keeps the freed pages mapped, so the process's resident
-size only ratchets up. ``malloc_trim(0)`` hands the free pages at the top of each arena
-back to the kernel. This is process RAM, not the memory store: the setting lives under
+size only ratchets up. A trim does what Hermes' ``trim_memory`` does: it first collects
+reference cycles (``gc.collect()``: a history whose entries point back at their parent,
+an exception whose traceback holds its frames — memory CPython frees only when its own
+oldest-generation collection happens to run), then ``malloc_trim(0)`` hands glibc's free
+pages back to the kernel (the top of each arena and, since glibc 2.8, whole free pages
+inside it). This is process RAM, not the memory store: the setting lives under
 ``context.`` (as in Hermes) so it is not mistaken for a ``memory.*`` setting.
 
 - **Where it runs.** Two triggers share one rate limit, as Hermes' turn-completion and
@@ -15,18 +19,27 @@ back to the kernel. This is process RAM, not the memory store: the setting lives
   inside the cooldown (a compaction that freed a large history is not left resident
   overnight) and what non-turn work freed (the lifecycle sweep, ingestion, scheduled
   jobs). Both decide on the event loop (a dictionary lookup and a clock read) and, when
-  a trim is due, run the call on the loop's default executor, so neither a reply nor
-  other requests wait for the allocator.
+  a trim is due, run it on the loop's default executor, so a reply never waits for it
+  (the collection's GIL hold is the one pause other work sees — see **Cost**).
 - **Rate limit.** At most one trim every ``cooldown_seconds`` (60 by default; 0 = after
   every turn), and never two at once: a trigger that fires while one runs skips. The
-  cooldown is stamped when a trim is claimed, so a trim that fails waits it out too.
+  cooldown is stamped when a trim is claimed, so a trim that fails waits it out too. A
+  claimed trim whose awaiting task is cancelled before the executor started it gives
+  the claim back (it never ran), so a cancelled tick cannot switch trimming off.
+- **Cost.** The full collection holds the GIL while it runs — measured at about 150 ms
+  with the hub's modules loaded and an ``Orchestrator`` built (about 200,000 tracked
+  objects; it grows with the heap) — so the event loop waits it out even though the
+  call is on the executor. Hermes accepts the same pause; the cooldown bounds it to one
+  per ``cooldown_seconds``, and each trim's log line carries its duration and how many
+  unreachable objects the collection freed.
 - **One-time probe.** The first due attempt checks, once per process: a Linux host
   (``sys.platform``), glibc (``os.confstr("CS_GNU_LIBC_VERSION")``, which musl does not
   answer), no other allocator preloaded (jemalloc, tcmalloc, mimalloc… in
   ``LD_PRELOAD`` — glibc's arenas are not the heap there), and the ``malloc_trim``
   symbol in the process's own libc through ``ctypes``. Any other answer — macOS,
   Windows, musl, a preloaded allocator, a missing symbol, a probe that raised — makes
-  every later attempt a no-op that touches nothing; :data:`probe_reason` says which.
+  every later attempt a no-op that touches nothing, the collection included (as at the
+  pinned Hermes tag); :data:`probe_reason` says which.
 - **Settings without a copy.** Hermes reads its config through the *no-deepcopy* loader
   because this runs on every attempt, before the cooldown check, and a full-config copy
   per attempt is exactly the garbage the trim exists to release. Here the turn's
@@ -40,7 +53,8 @@ back to the kernel. This is process RAM, not the memory store: the setting lives
   logs at INFO when it is the ``log_every_n``-th completed trim and the resident size
   moved, either way, by at least ``info_log_min_delta_mb`` (or could not be read); with
   the defaults (1 and 0.0) that is every trim that released pages. Every other trim —
-  nothing released, a skipped count, a smaller change — logs the same line at DEBUG.
+  nothing released, a skipped count, a smaller change — logs the same line at DEBUG. A
+  trim that raised logs a WARNING, as Hermes' does.
 
 Governance: read-only. The call changes nothing outside this process's own heap — no
 file, no host state, nothing a user or operator can see but a smaller RSS — so it does
@@ -50,6 +64,8 @@ not cross the Action Kernel; the owner switches it off with
 from __future__ import annotations
 
 import asyncio
+import functools
+import gc
 import logging
 import math
 import os
@@ -57,6 +73,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Mapping
+from time import perf_counter
 from typing import Any, NamedTuple
 
 logger = logging.getLogger("jarvis.mem_trim")
@@ -248,18 +265,22 @@ def _loud(released: bool, number: int, change_mb: float | None, settings: TrimSe
 
 
 def _run(fn: Callable[[int], int], settings: TrimSettings, reason: str) -> bool:
-    """Make the claimed call and log it; releases the claim. Never raises."""
+    """Collect cycles, make the claimed call and log it; releases the claim. Never raises."""
     global _trim_running, _trim_call_count
     number = 0
     try:
         before = _rss_bytes()
+        started = perf_counter()
+        # Hermes' trim_memory: cycles first, so what only they kept alive is free to return.
+        collected = gc.collect()
         released = bool(fn(0))
         after = _rss_bytes()
+        duration_ms = (perf_counter() - started) * 1000
         with _trim_lock:
             _trim_call_count += 1                    # Hermes counts completed trims
             number = _trim_call_count
-    except Exception:
-        logger.debug("heap trim after %s failed", reason, exc_info=True)
+    except Exception as exc:
+        logger.warning("heap trim after %s failed: %s: %s", reason, type(exc).__name__, exc)
         return False
     finally:
         with _trim_lock:
@@ -272,11 +293,43 @@ def _run(fn: Callable[[int], int], settings: TrimSettings, reason: str) -> bool:
             change_mb, sizes = None, "RSS unknown"
         loud = _loud(released, number, change_mb, settings)
         logger.log(logging.INFO if loud else logging.DEBUG,
-                   "heap trim #%d after %s: %s, %s", number, reason, sizes,
-                   "pages released" if released else "nothing to release")
+                   "heap trim #%d after %s: %s, %s, %d unreachable objects collected, %.1f ms",
+                   number, reason, sizes, "pages released" if released else "nothing to release",
+                   collected, duration_ms)
     except Exception:
         pass
     return True
+
+
+class _Ticket:
+    """One claimed trim on its way to the executor; the run and a cancel race to settle it."""
+
+    __slots__ = ("settled",)
+
+    def __init__(self) -> None:
+        self.settled = False
+
+
+def _run_ticket(ticket: _Ticket, fn: Callable[[int], int], settings: TrimSettings, reason: str) -> bool:
+    """The executor's entry: run the claimed trim unless a cancel already gave the claim back."""
+    with _trim_lock:
+        if ticket.settled:
+            return False
+        ticket.settled = True
+    return _run(fn, settings, reason)
+
+
+def _give_back_if_unrun(ticket: _Ticket, future: asyncio.Future) -> None:
+    """The future's done callback: a cancel that came before the executor started the trim
+    (``wrap_future`` then cancels the queued call, so :func:`_run` never releases the claim)
+    releases it here. The cooldown stamp stays, as for any claimed trim."""
+    global _trim_running
+    if not future.cancelled():
+        return
+    with _trim_lock:
+        if not ticket.settled:
+            ticket.settled = True
+            _trim_running = False
 
 
 def maybe_trim(reason: str = "turn", *, get_setting: Callable[..., Any] | None = None,
@@ -317,12 +370,15 @@ def request_trim(orch: Any, reason: str) -> asyncio.Future | None:
         fn = _claim(settings)
         if fn is None:
             return None
+        ticket = _Ticket()
         try:
-            return loop.run_in_executor(None, _run, fn, settings, reason)
+            future = loop.run_in_executor(None, _run_ticket, ticket, fn, settings, reason)
         except Exception:
             # A loop shutting down refuses new work: give the claim back, nothing ran.
             _release_unrun()
             return None
+        future.add_done_callback(functools.partial(_give_back_if_unrun, ticket))
+        return future
     except Exception:
         logger.debug("heap trim: the %s hook failed", reason, exc_info=True)
         return None

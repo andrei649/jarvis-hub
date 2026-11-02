@@ -539,8 +539,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="battery_defer_percent", value=50,               label="On battery below this %, defer heavy background jobs (0 = never)", kind="number"),
     dict(category="system",  key="startup_warmup_timeout_seconds", value=20,      label="At start, wait up to this many seconds for the local model to warm up before accepting messages (0 = don't wait)", kind="number"),
     # H448 — Hermes `context.memory_trim`: after a turn and on the minute housekeeping tick
-    # (the scheduler's memory-trim job), at most every cooldown_seconds, return freed heap
-    # pages to the OS with glibc's malloc_trim(0); a no-op off Linux/glibc. Process RAM,
+    # (the scheduler's memory-trim job), at most every cooldown_seconds, collect reference
+    # cycles (gc.collect) and return freed heap pages to the OS with glibc's malloc_trim(0);
+    # a no-op off Linux/glibc. Process RAM,
     # not the memory store — hence `context`, as in Hermes. Read per attempt from the
     # runtime snapshot, without a copy (agents/core/mem_trim.py); the value must stay
     # mem_trim.DEFAULT_SETTINGS, and its shape is checked by mem_trim.settings_problem.

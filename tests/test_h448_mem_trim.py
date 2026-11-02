@@ -1,18 +1,24 @@
 """H448 — heap trimming (Hermes ``context.memory_trim``).
 
-A long-lived hub returns freed allocator pages to the OS with glibc's ``malloc_trim(0)``
-after a turn and on the scheduler's minute housekeeping tick: probed once, rate-limited
-by one shared cooldown, a no-op off Linux/glibc, and read from the runtime settings
-snapshot without copying it (agents/core/mem_trim.py).
+A long-lived hub collects reference cycles and returns freed allocator pages to the OS
+with glibc's ``malloc_trim(0)`` after a turn and on the scheduler's minute housekeeping
+tick: probed once, rate-limited by one shared cooldown, a no-op off Linux/glibc, and read
+from the runtime settings snapshot without copying it (agents/core/mem_trim.py).
 """
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import copy
 import ctypes
+import gc
 import io
+import itertools
+import os
+import sys
 import threading
 import tracemalloc
+import weakref
 from types import SimpleNamespace
 
 import pytest
@@ -33,14 +39,17 @@ def fresh():
 class _Trim:
     """A stand-in for libc's malloc_trim: records each pad and the thread it ran on."""
 
-    def __init__(self, *, result=1, raises=None, gate=None):
+    def __init__(self, *, result=1, raises=None, gate=None, order=None):
         self.calls: list[int] = []
         self.threads: list[int] = []
         self.result, self.raises, self.gate = result, raises, gate
+        self.order = order
         self.argtypes = None
         self.restype = None
 
     def __call__(self, pad):
+        if self.order is not None:
+            self.order.append("malloc_trim")
         self.threads.append(threading.get_ident())
         if self.gate is not None:
             self.gate.wait(5)
@@ -52,13 +61,25 @@ class _Trim:
 
 @pytest.fixture
 def glibc(monkeypatch):
-    """A Linux/glibc host whose libc exports a fake malloc_trim; counts the libc loads."""
-    host = SimpleNamespace(trim=_Trim(), loads=0, platform="linux")
+    """A Linux/glibc host whose libc exports a fake malloc_trim; counts the libc loads.
+
+    The cycle collection is a recorder too (``host.order`` lists collect and malloc_trim
+    calls in turn; ``host.collected`` is what it reports), and each trim takes 1.5 ms, so
+    log lines are exact. A test that needs the real collector puts ``gc`` back."""
+    order: list[str] = []
+    host = SimpleNamespace(trim=_Trim(order=order), loads=0, platform="linux", order=order, collected=0)
 
     def libc():
         host.loads += 1
         return SimpleNamespace(malloc_trim=host.trim)
 
+    def collect():
+        order.append("collect")
+        return host.collected
+
+    ticks = itertools.count()
+    monkeypatch.setattr(mem_trim, "gc", SimpleNamespace(collect=collect), raising=False)
+    monkeypatch.setattr(mem_trim, "perf_counter", lambda: next(ticks) * 0.0015, raising=False)
     monkeypatch.setattr(mem_trim, "sys", SimpleNamespace(platform="linux"))
     monkeypatch.setattr(mem_trim.os, "confstr", lambda name: "glibc 2.39")
     monkeypatch.delenv("LD_PRELOAD", raising=False)
@@ -83,6 +104,10 @@ def clock(monkeypatch):
 
 def _settings(**fields):
     return mem_trim.read_settings(None)._replace(**fields)
+
+
+#: What every log line of the glibc fixture's trims ends with (nothing collected, 1.5 ms).
+_TAIL = ", 0 unreachable objects collected, 1.5 ms"
 
 
 # ── the one-time symbol probe ────────────────────────────────────────────────
@@ -130,7 +155,7 @@ def test_other_platforms_never_touch_ctypes(glibc, monkeypatch, platform):
     monkeypatch.setattr(mem_trim, "sys", SimpleNamespace(platform=platform))
     monkeypatch.setattr(mem_trim.os, "confstr", lambda name: pytest.fail("confstr asked off Linux"))
     assert mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0)) is False
-    assert glibc.loads == 0 and glibc.trim.calls == []
+    assert glibc.loads == 0 and glibc.trim.calls == [] and glibc.order == []   # no collection either
     assert mem_trim.probe_reason == f"unsupported platform {platform}"
 
 
@@ -152,13 +177,13 @@ def test_musl_is_a_no_op(glibc, monkeypatch, answer):
 def test_a_preloaded_allocator_is_a_no_op(glibc, monkeypatch, preload):
     monkeypatch.setenv("LD_PRELOAD", preload)
     assert mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0)) is False
-    assert glibc.loads == 0 and "is preloaded" in mem_trim.probe_reason
+    assert glibc.loads == 0 and "is preloaded" in mem_trim.probe_reason and glibc.order == []
 
 
 def test_a_libc_without_the_symbol_is_a_no_op(glibc, monkeypatch):
     monkeypatch.setattr(mem_trim, "_libc", lambda: SimpleNamespace())
     assert mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0)) is False
-    assert mem_trim.probe_reason == "glibc 2.39 has no malloc_trim"
+    assert mem_trim.probe_reason == "glibc 2.39 has no malloc_trim" and glibc.order == []
 
 
 def test_switched_off_it_never_probes(glibc):
@@ -210,6 +235,91 @@ def test_a_running_trim_is_never_joined_by_a_second(glibc):
     assert mem_trim.maybe_trim(settings=always) is True
 
 
+# ── cycles first (Hermes' trim_memory: gc.collect(), then malloc_trim(0)) ────
+
+
+def test_every_trim_collects_reference_cycles_before_it_releases_pages(glibc):
+    always = _settings(cooldown_seconds=0.0)
+    assert [mem_trim.maybe_trim(settings=always) for _ in range(2)] == [True, True]
+    assert glibc.order == ["collect", "malloc_trim", "collect", "malloc_trim"]
+
+
+def test_no_collection_runs_when_no_trim_is_due(glibc, clock):
+    assert mem_trim.maybe_trim(settings=_settings(enabled=False)) is False     # switched off
+    assert glibc.order == []
+    assert mem_trim.maybe_trim(settings=_settings()) is True
+    clock.now += 30
+    assert mem_trim.maybe_trim(settings=_settings()) is False                  # cooling down
+    assert glibc.order == ["collect", "malloc_trim"]
+
+
+class _Node:
+    """A history entry that points back at its parent: only the cycle collector frees it."""
+
+    def __init__(self, parent=None):
+        self.parent, self.children, self.buf = parent, [], None
+
+
+def test_a_trim_releases_what_only_reference_cycles_kept_alive(glibc, monkeypatch):
+    """With CPython's automatic collection held off, an unreachable cycle stays allocated
+    until the trim's own collection frees it — before malloc_trim is asked for pages."""
+    monkeypatch.setattr(mem_trim, "gc", gc)                     # the real collector
+    alive_at_malloc_trim = []
+    root = _Node()
+    root.children = [_Node(root) for _ in range(100)]
+    held = weakref.ref(root)
+
+    def malloc_trim(pad):
+        alive_at_malloc_trim.append(held() is not None)
+        return 1
+
+    monkeypatch.setattr(mem_trim, "_libc", lambda: SimpleNamespace(malloc_trim=malloc_trim))
+    automatic = gc.isenabled()
+    gc.disable()
+    try:
+        del root
+        assert held() is not None                               # unreachable, kept by its cycle
+        assert mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0)) is True
+    finally:
+        if automatic:
+            gc.enable()
+    assert alive_at_malloc_trim == [False] and held() is None
+
+
+def _glibc_host():
+    try:
+        glibc_libc = (os.confstr("CS_GNU_LIBC_VERSION") or "").startswith("glibc")
+    except (AttributeError, ValueError, OSError):
+        glibc_libc = False
+    preloaded = any(n in os.environ.get("LD_PRELOAD", "").lower() for n in mem_trim._FOREIGN_ALLOCATORS)
+    return sys.platform.startswith("linux") and glibc_libc and not preloaded
+
+
+@pytest.mark.skipif(not _glibc_host(), reason="malloc_trim is Linux/glibc only")
+def test_on_this_host_one_trim_returns_the_memory_only_cycles_held():
+    """The real allocator: about 40 MB of 20 KB buffers whose owners point back at their
+    parent, dropped while CPython's automatic collection is held off. One trim — the real
+    probe, the real collector, the real malloc_trim — hands most of it back."""
+    automatic = gc.isenabled()
+    gc.collect()
+    gc.disable()
+    try:
+        root = _Node()
+        for _ in range(2000):
+            child = _Node(root)
+            child.buf = bytearray(20_000)
+            root.children.append(child)
+        built = mem_trim._rss_bytes()
+        del root, child
+        assert mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0)) is True
+        after = mem_trim._rss_bytes()
+    finally:
+        if automatic:
+            gc.enable()
+    assert built is not None and after is not None
+    assert built - after >= 30 * 1_048_576, (built, after)
+
+
 def test_log_every_n_and_the_delta_threshold_pick_the_info_lines(glibc, monkeypatch, caplog):
     # MB before / after each trim: 1 odd, 2 even and 100 MB freed, 3 odd, 4 even but 1 MB.
     sizes = iter([300, 200, 300, 200, 300, 200, 300, 299])
@@ -220,7 +330,7 @@ def test_log_every_n_and_the_delta_threshold_pick_the_info_lines(glibc, monkeypa
             assert mem_trim.maybe_trim(settings=s) is True
     lines = [(r.levelname, r.getMessage()) for r in caplog.records if "heap trim #" in r.getMessage()]
     assert [level for level, _ in lines] == ["DEBUG", "INFO", "DEBUG", "DEBUG"]
-    assert lines[1][1] == "heap trim #2 after turn: RSS 300.0 -> 200.0 MB (-100.0 MB), pages released"
+    assert lines[1][1] == "heap trim #2 after turn: RSS 300.0 -> 200.0 MB (-100.0 MB), pages released" + _TAIL
 
 
 def _trim_lines(caplog):
@@ -243,9 +353,9 @@ def test_the_defaults_log_every_trim_that_released_pages_at_info_whichever_way_r
         glibc.trim.result = 0
         assert mem_trim.maybe_trim(settings=always) is True
     assert _trim_lines(caplog) == [
-        ("INFO", "heap trim #1 after turn: RSS 300.0 -> 300.0 MB (+0.0 MB), pages released"),
-        ("INFO", "heap trim #2 after turn: RSS 300.0 -> 299.0 MB (-1.0 MB), pages released"),
-        ("DEBUG", "heap trim #3 after turn: RSS 300.0 -> 300.0 MB (+0.0 MB), nothing to release")]
+        ("INFO", "heap trim #1 after turn: RSS 300.0 -> 300.0 MB (+0.0 MB), pages released" + _TAIL),
+        ("INFO", "heap trim #2 after turn: RSS 300.0 -> 299.0 MB (-1.0 MB), pages released" + _TAIL),
+        ("DEBUG", "heap trim #3 after turn: RSS 300.0 -> 300.0 MB (+0.0 MB), nothing to release" + _TAIL)]
 
 
 def test_the_delta_threshold_is_on_the_absolute_rss_change(glibc, monkeypatch, caplog):
@@ -264,8 +374,8 @@ def test_an_unreadable_rss_logs_a_released_trim_at_info(glibc, monkeypatch, capl
         mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0, info_log_min_delta_mb=5.0))
         glibc.trim.result = 0
         mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0, info_log_min_delta_mb=5.0))
-    assert _trim_lines(caplog) == [("INFO", "heap trim #1 after turn: RSS unknown, pages released"),
-                                   ("DEBUG", "heap trim #2 after turn: RSS unknown, nothing to release")]
+    assert _trim_lines(caplog) == [("INFO", "heap trim #1 after turn: RSS unknown, pages released" + _TAIL),
+                                   ("DEBUG", "heap trim #2 after turn: RSS unknown, nothing to release" + _TAIL)]
 
 
 def test_only_completed_trims_are_counted_for_log_every_n(glibc, monkeypatch, caplog):
@@ -277,8 +387,27 @@ def test_only_completed_trims_are_counted_for_log_every_n(glibc, monkeypatch, ca
         glibc.trim.raises = None
         assert mem_trim.maybe_trim(settings=always) is True
         assert mem_trim.maybe_trim(settings=always) is True
-    assert _trim_lines(caplog) == [("DEBUG", "heap trim #1 after turn: RSS unknown, pages released"),
-                                   ("INFO", "heap trim #2 after turn: RSS unknown, pages released")]
+    assert _trim_lines(caplog) == [("DEBUG", "heap trim #1 after turn: RSS unknown, pages released" + _TAIL),
+                                   ("INFO", "heap trim #2 after turn: RSS unknown, pages released" + _TAIL)]
+
+
+def test_the_log_line_reports_what_the_collection_freed_and_how_long_the_trim_took(
+        glibc, monkeypatch, caplog):
+    glibc.collected = 16002
+    monkeypatch.setattr(mem_trim, "_rss_bytes", lambda: None)
+    with caplog.at_level("INFO", logger="jarvis.mem_trim"):
+        assert mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0)) is True
+    assert _trim_lines(caplog) == [
+        ("INFO", "heap trim #1 after turn: RSS unknown, pages released, "
+                 "16002 unreachable objects collected, 1.5 ms")]
+
+
+def test_a_trim_that_raises_logs_a_warning_as_hermes_does(glibc, caplog):
+    glibc.trim.raises = OSError("boom")
+    with caplog.at_level("DEBUG", logger="jarvis.mem_trim"):
+        assert mem_trim.maybe_trim(reason="housekeeping", settings=_settings(cooldown_seconds=0.0)) is False
+    assert [(r.levelname, r.getMessage()) for r in caplog.records if "failed" in r.getMessage()] == [
+        ("WARNING", "heap trim after housekeeping failed: OSError: boom")]
 
 
 # ── the settings: declared, shape-checked, read in place ─────────────────────
@@ -618,6 +747,77 @@ def test_the_tick_never_raises(glibc, monkeypatch):
 
     assert asyncio.run(run()) == {"skipped": True, "reason": "not_due"}
     assert mem_trim._trim_running is False
+
+
+def test_a_tick_cancelled_before_its_trim_started_gives_the_claim_back(glibc):
+    """The awaiting task is cancelled while the trim still waits for an executor worker:
+    the queued call is dropped, so the claim has to come back here, or no trigger would
+    trim again in this process."""
+    orch = _turn_orch(glibc.trim)                                # cooldown 0
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        loop.set_default_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1))
+        gate = threading.Event()
+        busy = loop.run_in_executor(None, gate.wait, 5)          # the only worker is taken
+        tick = asyncio.ensure_future(mem_trim.housekeeping(orch))
+        for _ in range(500):
+            if mem_trim._trim_running:
+                break
+            await asyncio.sleep(0.01)
+        assert mem_trim._trim_running is True                   # claimed, queued
+        tick.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await tick
+        gate.set()
+        await busy
+        await asyncio.sleep(0)
+        given_back = not mem_trim._trim_running
+        return given_back, await _service(orch).run_memory_trim_tick(), mem_trim.after_turn(orch)
+
+    given_back, later_tick, later_turn = asyncio.run(run())
+    assert given_back is True and later_tick == {"trimmed": True}
+    assert glibc.trim.calls == [0, 0]                            # the cancelled one never ran
+    assert later_turn is not None
+
+
+def test_a_cancel_after_the_trim_started_leaves_the_claim_with_the_running_trim(glibc):
+    gate = threading.Event()
+    glibc.trim.gate = gate
+    orch = _turn_orch(glibc.trim)
+
+    async def run():
+        tick = asyncio.ensure_future(mem_trim.housekeeping(orch))
+        for _ in range(500):
+            if glibc.trim.threads:
+                break
+            await asyncio.sleep(0.01)
+        tick.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await tick
+        await asyncio.sleep(0)
+        held, joined = mem_trim._trim_running, mem_trim.after_turn(orch)
+        gate.set()
+        for _ in range(500):
+            if not mem_trim._trim_running:
+                break
+            await asyncio.sleep(0.01)
+        return held, joined
+
+    held, joined = asyncio.run(run())
+    assert held is True and joined is None                       # never two at once
+    assert glibc.trim.calls == [0] and mem_trim._trim_running is False
+
+
+def test_a_claim_a_cancel_gave_back_is_never_run_late(glibc):
+    """The executor dequeued the call just as the cancel settled it: the call is a no-op."""
+    settings = _settings(cooldown_seconds=0.0)
+    fn = mem_trim._claim(settings)
+    ticket = mem_trim._Ticket()
+    mem_trim._give_back_if_unrun(ticket, SimpleNamespace(cancelled=lambda: True))
+    assert mem_trim._trim_running is False
+    assert mem_trim._run_ticket(ticket, fn, settings, "housekeeping") is False
+    assert glibc.trim.calls == [] and glibc.order == []
 
 
 def test_the_tick_is_scheduled_every_minute_with_the_hub_jobs(monkeypatch):
