@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-01 to 2026-11-02
+
+A plain-language summary of the last two days. The technical detail for each item is in its PR.
+
+**Use the browser on your behalf (#1321)**
+- Nerva can open pages, click and fill in steps in a real browser. Each run is approved by you
+  before it starts, and what a page says is treated as data, never as an instruction.
+- Workspace, the team pilot, ships behind `NERVA_WORKSPACE` and stays off unless you turn it on.
+
+**See what Nerva is doing right now (#1331)**
+- `nerva status` shows what is running, who holds each work slot, and a banner when the
+  emergency stop is engaged.
+
+**Long-term memory with clear limits (#1331)**
+- The core memory has a size budget. You can see how full it is in the HUD or with
+  `nerva memory`, reset it, or switch it off. A write that does not fit is refused, never
+  silently squeezed in.
+
+**Skill bundles (#1331)**
+- Group several skills under one name and load them all with `/<bundle>` or `/bundle <name>`.
+  The Skill Switches panel turns a bundle on or off as one unit.
+
+**Goals in one sentence (#1331)**
+- `/goal prepare the monthly report by Friday` (or `nerva goal`, or the PROPOSE A GOAL form in
+  the Company room) turns a sentence into a proposed goal. Nothing starts until you approve it,
+  and `/subgoal` adds or removes its success criteria.
+
+**Email replies go to the right message (#1329, #1330)**
+- A reply in an email thread now answers the latest message you received, and the email guards
+  refuse a reply that cannot be tied to a real inbound message.
+
+**See when Nerva used its memory (#1332)**
+- Under a reply, a short line says when memory was recalled ("recalled 3 memories"). On
+  Telegram it appears in the text, never in the voice clip.
+
+**Proof of where each request went (#1332)**
+- The Network Monitor panel keeps, across restarts, a record of every model call: which service
+  it went to and whether it stayed on this machine. It records hosts only, never what you wrote.
+- "Forget" now erases that record completely, including entries still waiting to be saved.
+
+**Lighter over long runs (#1332)**
+- After a conversation Nerva hands unused memory back to the operating system (Linux), so a
+  hub that runs for days stays small. The `context.memory_trim` setting controls it.
+
+**Keys stay in your `.env` (#1332)**
+- A setting can refer to `${env:NAME}` instead of holding the key itself. Saving keeps the
+  reference; the expanded secret is never written into the settings store.
+
 ### Webhooks — a workflow hook's answer no longer carries `result` (H153)
 
 A workflow-target webhook answers `{"ok", "steps", "delivery"}`: each step with whether it ran, and
