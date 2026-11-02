@@ -38,7 +38,8 @@ Three ToolRPC tools, all ungated:
     keeps the skill's file list; ``reload: true`` reads it again. A carry rendered with
     other template variables, older than its turns, or bound for an inbound non-owner turn
     on the shared session is not carried, and the view is then served whole.
-    H389: when the loop's compaction folds a served body, it becomes a
+    H389: when the loop's compaction folds a served body (whole, or bounded or spilled when
+    it was inserted, and the spill's pages), it becomes a
     ``[SKILL_PRUNED: <name> ...]`` marker (:func:`pruned_skill_content`), the system prompt
     gains the reload notice and the rule against acting on a pruned body
     (:func:`with_pruned_skill_notice`), and the next view of that skill is served whole with
@@ -293,11 +294,15 @@ def guest_on_shared_session(shared: bool, origin: str, identity: Any) -> bool:
 # work they governed, and keeps a prompt rule that forbids acting on a pruned body. Nerva's
 # compaction is the tool loop's fold (``AgentToolRuntime._compact_context``): a served
 # body it folds becomes the marker (:func:`pruned_skill_content`), never a preview of the
-# body; the system prompt then carries the reload notice and the rule
+# body — also when the loop bounded or spilled that answer at insertion (it keeps
+# :data:`SKILL_COPY_KEY` on the envelope) and for the ``file_read`` pages of such a spill
+# (:func:`skill_text_pages`); the system prompt then carries the reload notice and the rule
 # (:func:`with_pruned_skill_notice`); and ``skill_view`` serves a pruned skill whole again
 # with :data:`PRUNED_RELOAD_NOTICE` (``_once``, reading :func:`pruned_skills` off the live
-# transcript). Everything is derived from the transcript itself, so it is deterministic and
-# a compaction that prunes nothing changes nothing.
+# transcript). Only a new copy or the prompt's carried copy ends a prune; a ``this_turn``
+# pointer names the very copy the fold may have pruned. Everything is derived from the
+# transcript itself, so it is deterministic and a compaction that prunes nothing changes
+# nothing.
 
 SKILL_PRUNED_PREFIX = "[SKILL_PRUNED:"
 #: The skills one reload notice names (Hermes ``_MAX_PRUNED_SKILL_MARKERS``), first pruned first.
@@ -329,14 +334,27 @@ def pruned_marker(name: str, file: str = "") -> str:
             f"skill_view({target}) before acting on anything that depends on it]")
 
 
-def _served_copy(payload: str) -> tuple[str, str] | None:
-    """``(name, file)`` of a ``skill_view`` answer that carried a skill's text (a whole
-    body, or one of its files); None for a pointer, a refusal or anything else."""
+#: The key the tool loop keeps on the bounded or spilled envelope it puts in place of a
+#: ``skill_view`` answer too large for the turn (:func:`skill_copy_tag`), so a compaction
+#: still knows whose text the preview holds. The loop writes that envelope's top-level keys
+#: itself; a skill's own text only ever sits inside its ``preview``.
+SKILL_COPY_KEY = "skill_copy"
+
+
+def _envelope(payload: Any) -> dict | None:
     try:
         envelope = json.loads(payload)
     except (TypeError, ValueError):
         return None
-    if not isinstance(envelope, dict) or envelope.get("tool") != TOOL_VIEW or envelope.get("ok") is not True:
+    return envelope if isinstance(envelope, dict) else None
+
+
+def _served_copy(payload: Any) -> tuple[str, str] | None:
+    """``(name, file)`` of a whole ``skill_view`` answer that carried a skill's text (a
+    whole body, or one of its files); None for a pointer, a refusal or anything else.
+    ``payload`` is the row's text or its parsed envelope."""
+    envelope = payload if isinstance(payload, dict) else _envelope(payload)
+    if envelope is None or envelope.get("tool") != TOOL_VIEW or envelope.get("ok") is not True:
         return None
     result = envelope.get("result")
     if not isinstance(result, dict) or result.get("ok") is not True or not isinstance(result.get("name"), str):
@@ -348,14 +366,37 @@ def _served_copy(payload: str) -> tuple[str, str] | None:
     return None
 
 
-def _pruned_entry(payload: str) -> tuple[str, str] | None:
-    """``(name, file)`` of a marker envelope :func:`pruned_skill_content` wrote; None otherwise.
-    A skill's own text sits under ``result`` and cannot pose as one."""
-    try:
-        envelope = json.loads(payload)
-    except (TypeError, ValueError):
+def skill_copy_tag(encoded: str) -> dict[str, str] | None:
+    """``{"name": ..., ["file": ...]}`` when ``encoded`` is a ``skill_view`` answer that
+    served a skill's text, for the tool loop to keep (under :data:`SKILL_COPY_KEY`) on the
+    bounded or spilled envelope it puts in its place (``AgentToolRuntime._prepare_result``);
+    None for anything else, a pointer or a refusal included."""
+    served = _served_copy(encoded)
+    if served is None:
         return None
-    if (not isinstance(envelope, dict) or envelope.get("tool") != TOOL_VIEW or "result" in envelope
+    name, file = served
+    return {"name": name, "file": file} if file else {"name": name}
+
+
+def _bounded_copy(envelope: dict) -> tuple[str, str] | None:
+    """``(name, file)`` of the loop's bounded or spilled envelope of a served copy (it
+    carries :data:`SKILL_COPY_KEY`); None otherwise. A tool's own answer always nests its
+    payload under ``result``, so it cannot pose as one."""
+    if (envelope.get("tool") != TOOL_VIEW or envelope.get("ok") is not True
+            or envelope.get("truncated") is not True or "result" in envelope):
+        return None
+    tag = envelope.get(SKILL_COPY_KEY)
+    if not isinstance(tag, dict) or not isinstance(tag.get("name"), str):
+        return None
+    file = tag.get("file", "")
+    return tag["name"], file if isinstance(file, str) else ""
+
+
+def _pruned_entry(envelope: dict | None, tool: str = TOOL_VIEW) -> tuple[str, str] | None:
+    """``(name, file)`` of a marker envelope :func:`pruned_skill_content` wrote on a row
+    answering ``tool``; None otherwise. A tool's own answer sits under ``result`` and
+    cannot pose as one."""
+    if (envelope is None or envelope.get("tool") != tool or "result" in envelope
             or not isinstance(envelope.get("pruned"), str) or not envelope["pruned"].startswith(SKILL_PRUNED_PREFIX)
             or not isinstance(envelope.get("name"), str)):
         return None
@@ -363,37 +404,102 @@ def _pruned_entry(payload: str) -> tuple[str, str] | None:
     return envelope["name"], file if isinstance(file, str) else ""
 
 
-def pruned_skill_content(content: str) -> str | None:
-    """What a compaction folds a ``skill_view`` result to: the ``[SKILL_PRUNED: ...]``
-    marker envelope when the result served a skill's text (never a preview of it), fenced
-    again when the result was fenced; None when it served none (a pointer, a refusal), which
-    the caller folds like any other result."""
+def pruned_skill_content(content: str, *, page_of: tuple[str, str] | None = None) -> str | None:
+    """What a compaction folds a row carrying a skill's text to: the ``[SKILL_PRUNED: ...]``
+    marker envelope (never a preview of the text), fenced again when the row was fenced.
+
+    A ``skill_view`` row carries it when it served the text whole, or when the loop had to
+    bound or spill that answer at insertion and kept :data:`SKILL_COPY_KEY` on its envelope;
+    a spilled one's marker keeps the spill's ``result_reference``, so its pages are still
+    known. With ``page_of`` (``(name, file)``, from :func:`skill_text_pages`) the row is a
+    successful ``file_read`` page of such a spill. None when the row carried no skill text
+    (a pointer, a refusal, an unrelated read), which the caller folds like any other."""
     from ..security.quarantine import fence_tool_result, split_fenced_tool_result
+    from ..tool_result_store import READ_TOOL
 
     if not isinstance(content, str):
         return None
     fenced = split_fenced_tool_result(content)
     if fenced is not None:
         source, payload = fenced
-        inner = pruned_skill_content(payload)
+        inner = pruned_skill_content(payload, page_of=page_of)
         return None if inner is None else fence_tool_result(inner, source=source)[0]
-    served = _served_copy(content)
+    envelope = _envelope(content)
+    if envelope is None:
+        return None
+    reference = ""
+    if page_of is not None:
+        if envelope.get("tool") != READ_TOOL or envelope.get("ok") is not True:
+            return None
+        tool, served = READ_TOOL, page_of
+    else:
+        tool, served = TOOL_VIEW, _served_copy(envelope)
+        if served is None:
+            served = _bounded_copy(envelope)
+            spilled = envelope.get("result_reference") if envelope.get("spilled") is True else None
+            reference = spilled if isinstance(spilled, str) and _MARKER_TEXT.fullmatch(spilled) else ""
     if served is None:
         return None
     name, file = served
-    envelope: dict[str, Any] = {"ok": True, "tool": TOOL_VIEW, "name": name}
+    marker: dict[str, Any] = {"ok": True, "tool": tool, "name": name}
     if file:
-        envelope["file"] = file
-    envelope["pruned"] = pruned_marker(name, file)
-    envelope["original_bytes"] = len(content.encode("utf-8"))
-    return json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+        marker["file"] = file
+    marker["pruned"] = pruned_marker(name, file)
+    marker["original_bytes"] = len(content.encode("utf-8"))
+    if reference:
+        marker["result_reference"] = reference
+    return json.dumps(marker, ensure_ascii=False, separators=(",", ":"))
+
+
+def skill_text_pages(messages: Any) -> dict[str, tuple[str, str]]:
+    """``file_read`` call id → ``(name, file)``, for each read in ``messages`` that pages a
+    ``skill_view`` answer the loop spilled at insertion (its ``path`` names that spill's
+    file, as the spill's ``read_with`` does): those pages hold the skill's text too, and a
+    compaction prunes them like the answer (:func:`pruned_skill_content` ``page_of``)."""
+    from ..security.quarantine import split_fenced_tool_result
+    from ..tool_result_store import READ_TOOL
+
+    calls: dict[str, tuple[str, Any]] = {}
+    spills: dict[str, tuple[str, str]] = {}
+    for message in messages if isinstance(messages, list) else ():
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "assistant":
+            for call in message.get("tool_calls") or ():
+                function = call.get("function") if isinstance(call, dict) else None
+                if (isinstance(function, dict) and function.get("name") in (TOOL_VIEW, READ_TOOL)
+                        and isinstance(call.get("id"), str)):
+                    calls[call["id"]] = (function["name"], function.get("arguments"))
+            continue
+        content = message.get("content")
+        called = calls.get(message.get("tool_call_id")) if message.get("role") == "tool" else None
+        if called is None or called[0] != TOOL_VIEW or not isinstance(content, str):
+            continue
+        fenced = split_fenced_tool_result(content)
+        envelope = _envelope(fenced[1] if fenced is not None else content)
+        if envelope is None:
+            continue
+        identity = _bounded_copy(envelope) if envelope.get("spilled") is True else _pruned_entry(envelope)
+        reference = envelope.get("result_reference")
+        if identity is not None and isinstance(reference, str) and reference:
+            spills[reference] = identity
+    pages: dict[str, tuple[str, str]] = {}
+    for call_id, (tool, arguments) in calls.items() if spills else ():
+        if tool != READ_TOOL:
+            continue
+        args = arguments if isinstance(arguments, dict) else _envelope(arguments)
+        path = args.get("path") if isinstance(args, dict) else None
+        if isinstance(path, str) and posixpath.basename(path.replace("\\", "/")) in spills:
+            pages[call_id] = spills[posixpath.basename(path.replace("\\", "/"))]
+    return pages
 
 
 def pruned_skills(messages: Any, *, vetted: bool = False) -> list[tuple[str, str]]:
     """The skills (``(name, file)``, first pruned first) whose served text a compaction
     pruned from ``messages`` and that no later ``skill_view`` answer in it served again or
-    pointed at. ``vetted`` keeps what the system prompt may name: an unfenced marker whose
-    name (and file) is plain and not injection-flagged, at most :data:`MAX_PRUNED_SKILLS`."""
+    pointed at a carried copy of. ``vetted`` keeps what the system prompt may name: an
+    unfenced marker whose name (and file) is plain and not injection-flagged, at most
+    :data:`MAX_PRUNED_SKILLS`."""
     pending = _pending_pruned(messages)
     if not vetted:
         return list(pending)
@@ -407,11 +513,17 @@ def pruned_skills(messages: Any, *, vetted: bool = False) -> list[tuple[str, str
 
 
 def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
-    """``(name, file) → whether its marker is unfenced``, for :func:`pruned_skills`. Only a
-    ``tool`` row answering an assistant's ``skill_view`` call is read."""
+    """``(name, file) → whether its marker is unfenced``, for :func:`pruned_skills`, read in
+    transcript order. Only a ``tool`` row answering an assistant's ``skill_view`` call (or a
+    ``file_read`` page marker) is read. A marker makes its skill pending; a later answer
+    that served the text again (whole, or bounded at insertion with its full copy spilled)
+    or pointed at the copy the prompt carries (``already_loaded: this_session``) clears it.
+    A ``this_turn`` pointer does not: it points at a copy served earlier in this loop, which
+    is the very copy a compaction may have pruned since."""
     from ..security.quarantine import split_fenced_tool_result
+    from ..tool_result_store import READ_TOOL
 
-    views: set[str] = set()
+    calls: dict[str, str] = {}
     pending: dict[tuple[str, str], bool] = {}
     for message in messages if isinstance(messages, list) else ():
         if not isinstance(message, dict):
@@ -419,32 +531,36 @@ def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
         if message.get("role") == "assistant":
             for call in message.get("tool_calls") or ():
                 function = call.get("function") if isinstance(call, dict) else None
-                if isinstance(function, dict) and function.get("name") == TOOL_VIEW and isinstance(call.get("id"), str):
-                    views.add(call["id"])
+                if (isinstance(function, dict) and function.get("name") in (TOOL_VIEW, READ_TOOL)
+                        and isinstance(call.get("id"), str)):
+                    calls[call["id"]] = function["name"]
             continue
         content = message.get("content")
-        if message.get("role") != "tool" or message.get("tool_call_id") not in views or not isinstance(content, str):
+        tool = calls.get(message.get("tool_call_id")) if message.get("role") == "tool" else None
+        if tool is None or not isinstance(content, str):
             continue
         fenced = split_fenced_tool_result(content)
-        payload = fenced[1] if fenced is not None else content
-        entry = _pruned_entry(payload)
+        envelope = _envelope(fenced[1] if fenced is not None else content)
+        if envelope is None:
+            continue
+        entry = _pruned_entry(envelope, tool)
         if entry is not None:
             pending[entry] = pending.get(entry, True) and fenced is None
             continue
-        reread = _served_copy(payload) or _pointer(payload)
+        if tool != TOOL_VIEW:
+            continue
+        reread = _served_copy(envelope) or _bounded_copy(envelope) or _carried_pointer(envelope)
         if reread is not None:
             pending.pop(reread, None)
     return pending
 
 
-def _pointer(payload: str) -> tuple[str, str] | None:
-    """``(name, file)`` of an ``already_loaded`` answer: the model was pointed at an intact copy."""
-    try:
-        envelope = json.loads(payload)
-    except (TypeError, ValueError):
-        return None
-    result = envelope.get("result") if isinstance(envelope, dict) and envelope.get("tool") == TOOL_VIEW else None
-    if not isinstance(result, dict) or not result.get("already_loaded") or not isinstance(result.get("name"), str):
+def _carried_pointer(envelope: dict) -> tuple[str, str] | None:
+    """``(name, file)`` of an ``already_loaded: this_session`` answer: the model was pointed
+    at the copy the session's prompt carries, which a compaction never folds."""
+    result = envelope.get("result") if envelope.get("tool") == TOOL_VIEW else None
+    if (not isinstance(result, dict) or result.get("already_loaded") != "this_session"
+            or not isinstance(result.get("name"), str)):
         return None
     file = result.get("file", "")
     return result["name"], file if isinstance(file, str) else ""
@@ -1350,8 +1466,8 @@ def register_skill_tools(
 
 __all__ = [
     "MAX_PRUNED_SKILLS", "PRUNED_NOTICE_END", "PRUNED_NOTICE_HEADER", "PRUNED_RELOAD_NOTICE", "SKILL_PRUNED_PREFIX",
-    "pruned_marker", "pruned_skill_content", "pruned_skills", "with_pruned_skill_notice",
-    "without_pruned_skill_notice",
+    "SKILL_COPY_KEY", "pruned_marker", "pruned_skill_content", "pruned_skills", "skill_copy_tag",
+    "skill_text_pages", "with_pruned_skill_notice", "without_pruned_skill_notice",
     "LEDGER", "LoadedSkillLedger", "Transcript", "bind_transcript", "carry_marker", "note_compacted",
     "carry_budget", "guest_on_shared_session", "render_key", "reset_transcript",
     "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW", "register_skill_tools",

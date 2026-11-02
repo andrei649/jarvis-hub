@@ -12,7 +12,9 @@ These tests pin, through the real entry points (``AgentToolRuntime.run`` and its
 ``_compact_context``, ``skill_view`` on a ``ToolRPCServer``, ``SkillLoader.prompt_index``
 and ``Orchestrator._build_agent_prompt``):
 
-* a compacted transcript carries the marker, never the body;
+* a compacted transcript carries the marker, never the body — also when the loop bounded
+  or spilled the answer at insertion, and for the ``file_read`` pages of that spill;
+* a ``this_turn`` pointer at the pruned copy does not end the prune;
 * the system prompt then carries the reload notice and the rule, with the optional
   operating guidance on or off, and keeps them when the loop rebuilds it;
 * ``skill_view`` serves a pruned skill whole again with the reload notice;
@@ -295,6 +297,185 @@ def test_under_a_conversation_clock_the_notice_follows_one_clock_block(tmp_path,
     assert system.count("Conversation started:") == 1 and system.count(PRUNED_NOTICE_HEADER) == 1
     assert system.index("Conversation started:") < system.index(PRUNED_NOTICE_HEADER)
     assert "skill_view(name='weather'); skill_view(name='notes')" in system
+
+
+# ── a pointer is not a copy; a bounded or spilled answer is still the skill's text ──
+
+
+def test_a_this_turn_pointer_to_the_pruned_copy_keeps_it_pruned(monkeypatch):
+    """The H326 dedup answers the second view with ``already_loaded: this_turn`` — a
+    pointer at the first copy. When the fold prunes that copy, the pointer dangles: the
+    prompt still gets the notice and the rule, and the next view is a reload."""
+    loader = _loader(_skill("weather"))
+    server = _with_echo(_server(loader))
+    runtime = _runtime(server, monkeypatch)
+    backend = _Backend(
+        ToolTurn(tool_calls=(_call("c1", TOOL_VIEW, {"name": "weather"}),), finish_reason="tool_calls"),
+        ToolTurn(tool_calls=(_call("c2", TOOL_VIEW, {"name": "weather"}),), finish_reason="tool_calls"),
+        ToolTurn(tool_calls=(_call("c3", "echo", {}),), finish_reason="tool_calls"),
+        ToolTurn(tool_calls=(_call("c4", TOOL_VIEW, {"name": "weather"}),), finish_reason="tool_calls"),
+        ToolTurn(content="done", finish_reason="stop"),
+    )
+    asyncio.run(runtime.run(agent_id="jarvis", backend=backend, model="local-model",
+                            prompt="use the weather skill", system="IDENTITY", max_tokens=64))
+    after = backend.seen[3]
+    assert SKILL_PRUNED_PREFIX in _tool_row(after, "c1")
+    assert json.loads(_tool_row(after, "c2"))["result"]["already_loaded"] == "this_turn"
+    system = after[0]["content"]
+    assert PRUNED_NOTICE_HEADER in system and "skill_view(name='weather')" in system
+    assert SKILL_SAFETY_RULE in system
+    reloaded = json.loads(_tool_row(backend.seen[4], "c4"))["result"]
+    assert "check the forecast source" in reloaded["body"] and reloaded["notice"] == PRUNED_RELOAD_NOTICE
+
+
+def _pointer_row(name, where):
+    return json.dumps({"ok": True, "tool": TOOL_VIEW,
+                       "result": {"ok": True, "name": name, "already_loaded": where, "digest": "d" * 16}})
+
+
+def test_only_a_carried_copy_or_a_new_copy_clears_a_pruned_skill():
+    loader = _loader(_skill("weather"))
+    assert pruned_skills(_transcript(("a", _marker("weather")), ("b", _pointer_row("weather", "this_turn")))) \
+        == [("weather", "")]
+    assert pruned_skills(_transcript(("a", _marker("weather")), ("b", _pointer_row("weather", "this_session")))) \
+        == []
+    assert pruned_skills(_transcript(("a", _marker("weather")), ("b", _served(loader, {"name": "weather"})))) == []
+    # A pointer before the marker points at the copy the marker replaced.
+    assert pruned_skills(_transcript(("b", _pointer_row("weather", "this_session")), ("a", _marker("weather")))) \
+        == [("weather", "")]
+
+
+_BIG = "Step: check the forecast source before quoting it. " * 400        # ~20 KB
+
+
+def _small_window_runtime(server, monkeypatch, **kwargs):
+    # A 2048-token window: skill_view's answer is over the turn's per-result allowance, so
+    # the loop bounds it (or, with a store, spills it) when it inserts it.
+    return _runtime(server, monkeypatch, context_window_tokens=lambda: 2048, **kwargs)
+
+
+def test_a_bounded_skill_view_answer_keeps_whose_text_it_was():
+    loader = _loader(_skill("weather", body=_BIG))
+    runtime = AgentToolRuntime(_server(loader), enabled=lambda: True, context_window_tokens=lambda: 2048)
+    served = json.loads(_served(loader, {"name": "weather"}))
+    _, content = runtime._prepare_result(served, TOOL_VIEW, {"bytes": 0})
+    envelope = json.loads(content)
+    assert envelope["truncated"] is True and envelope["skill_copy"] == {"name": "weather"}
+    assert "check the forecast source" in envelope["preview"]["head"]            # what the model sees now
+    # A pointer, a refusal or another tool's answer is bounded as before, without the key.
+    for result, tool in (({"ok": True, "tool": TOOL_VIEW, "result": {"ok": True, "name": "weather",
+                                                                    "already_loaded": "this_turn",
+                                                                    "files": ["f" * 60] * 60}}, TOOL_VIEW),
+                         ({**served, "tool": "echo"}, "echo")):
+        _, other = runtime._prepare_result(result, tool, {"bytes": 10 ** 9})     # allowance spent
+        assert json.loads(other)["truncated"] is True and "skill_copy" not in json.loads(other)
+
+
+def test_a_bounded_skill_view_answer_is_pruned_to_a_marker_at_compaction(monkeypatch):
+    loader = _loader(_skill("weather", body=_BIG))
+    runtime = _small_window_runtime(_with_echo(_server(loader)), monkeypatch)
+    inserted = []
+    real = AgentToolRuntime._prepare_result
+
+    def spy(self, *args, **kwargs):
+        prepared = real(self, *args, **kwargs)
+        inserted.append(prepared[1])
+        return prepared
+
+    monkeypatch.setattr(AgentToolRuntime, "_prepare_result", spy)
+    backend = _Backend(
+        ToolTurn(tool_calls=(_call("c1", TOOL_VIEW, {"name": "weather"}),), finish_reason="tool_calls"),
+        ToolTurn(tool_calls=(_call("c2", "echo", {}),), finish_reason="tool_calls"),
+        ToolTurn(content="done", finish_reason="stop"),
+    )
+    asyncio.run(runtime.run(agent_id="jarvis", backend=backend, model="local-model",
+                            prompt="use the weather skill", system="IDENTITY", max_tokens=64))
+    assert json.loads(inserted[0])["skill_copy"] == {"name": "weather"}       # bounded at insertion
+    last = backend.seen[-1]
+    pruned = _tool_row(last, "c1")
+    assert "check the forecast source" not in pruned and "Step:" not in pruned
+    assert json.loads(pruned)["pruned"].startswith(f"{SKILL_PRUNED_PREFIX} weather")
+    assert PRUNED_NOTICE_HEADER in last[0]["content"] and "skill_view(name='weather')" in last[0]["content"]
+
+
+class _PagingBackend(_Backend):
+    """Follows the spill's ``read_with`` once, then forces a compaction and stops."""
+
+    def __init__(self):
+        super().__init__()
+        self.step = 0
+
+    async def generate_tool_turn(self, **kwargs):
+        messages = kwargs["messages"]
+        self.seen.append([dict(m) for m in messages])
+        self.step += 1
+        if self.step == 1:
+            return ToolTurn(tool_calls=(_call("c1", TOOL_VIEW, {"name": "weather"}),), finish_reason="tool_calls")
+        if self.step == 2:
+            read_with = json.loads(_tool_row(messages, "c1"))["read_with"]
+            args = {**read_with["arguments"], "max_bytes": 3000}
+            return ToolTurn(tool_calls=(_call("c2", read_with["tool"], args),), finish_reason="tool_calls")
+        if self.step == 3:
+            return ToolTurn(tool_calls=(_call("c3", "echo", {}),), finish_reason="tool_calls")
+        return ToolTurn(content="done", finish_reason="stop")
+
+
+def test_a_spilled_skill_view_answer_and_its_pages_are_pruned_at_compaction(tmp_path, monkeypatch):
+    from agents.core.tool_result_store import ToolResultStore
+
+    loader = _loader(_skill("weather", body=_BIG))
+    server = _with_echo(_server(loader))
+
+    async def file_read(args):
+        data = Path(args["path"]).read_bytes()
+        start = int(args.get("offset", 0))
+        page = data[start:start + int(args.get("max_bytes", 3000))]
+        return {"content": page.decode("utf-8", errors="ignore"), "next_offset": start + len(page)}
+
+    server.register_tool("file_read", file_read, description="read",
+                         input_schema={"type": "object", "properties": {}})
+    runtime = _small_window_runtime(server, monkeypatch, result_store=ToolResultStore(tmp_path / "spill"))
+    backend = _PagingBackend()
+    asyncio.run(runtime.run(agent_id="jarvis", backend=backend, model="local-model",
+                            prompt="use the weather skill", system="IDENTITY", max_tokens=64))
+    spilled = json.loads(_tool_row(backend.seen[1], "c1"))
+    assert spilled["spilled"] is True and spilled["skill_copy"] == {"name": "weather"}
+    assert "check the forecast source" in _tool_row(backend.seen[2], "c2")      # the page, before
+    last = backend.seen[-1]
+    view, page = json.loads(_tool_row(last, "c1")), json.loads(_tool_row(last, "c2"))
+    assert view["pruned"].startswith(f"{SKILL_PRUNED_PREFIX} weather")
+    assert view["result_reference"] == spilled["result_reference"]               # pages stay known
+    assert page["tool"] == "file_read" and page["pruned"].startswith(f"{SKILL_PRUNED_PREFIX} weather")
+    for row in (m for m in last if m.get("role") == "tool"):
+        assert "check the forecast source" not in row["content"]
+    assert PRUNED_NOTICE_HEADER in last[0]["content"]
+
+
+def test_only_a_read_of_a_skill_spill_is_a_skill_page():
+    tagged = {"ok": True, "tool": TOOL_VIEW, "truncated": True, "spilled": True,
+              "preview": {"head": "h", "tail": "t"}, "result_reference": "skill_view-0123456789abcdef.json",
+              "skill_copy": {"name": "weather"}}
+    other = {**tagged, "result_reference": "echo-0123456789abcdef.json"}
+    del other["skill_copy"]
+
+    def read(call_id, path):
+        return [{"role": "assistant", "content": "", "tool_calls": [
+            {"id": call_id, "type": "function",
+             "function": {"name": "file_read", "arguments": json.dumps({"path": path})}}]},
+            {"role": "tool", "tool_call_id": call_id, "content": json.dumps(
+                {"ok": True, "tool": "file_read", "result": {"content": "Step: check the forecast"}})}]
+
+    messages = _transcript(("v", json.dumps(tagged)), ("e", json.dumps(other)))
+    messages += read("r1", "/data/workspace/tool_results/skill_view-0123456789abcdef.json")
+    messages += read("r2", "/data/workspace/tool_results/echo-0123456789abcdef.json")
+    messages += read("r3", "/home/owner/notes.md")
+    assert skill_tools.skill_text_pages(messages) == {"r1": ("weather", "")}
+    page = json.loads(pruned_skill_content(messages[-5]["content"], page_of=("weather", "")))
+    assert page["tool"] == "file_read" and page["pruned"].startswith(SKILL_PRUNED_PREFIX)
+    # The key is the loop's own: inside the preview, or on another tool's row, it is nothing.
+    forged = {**other, "preview": {"head": json.dumps({"skill_copy": {"name": "evil"}}), "tail": ""}}
+    assert pruned_skill_content(json.dumps(forged)) is None
+    assert pruned_skill_content(json.dumps({**tagged, "result": {}})) is None
 
 
 # ── the marker, the notice and the rule as functions ─────────────────────────

@@ -1195,9 +1195,11 @@ class AgentToolRuntime:
 
         H389: a ``skill_view`` result that served a skill's text folds to a
         ``[SKILL_PRUNED: <name> ...]`` marker (``skills.tools.pruned_skill_content``), never
-        to a preview of the body, and the system prompt then carries the reload notice and
-        the rule against acting on a pruned body (``skills.tools.with_pruned_skill_notice``),
-        counted in what must fit.
+        to a preview of the body — whether it was inserted whole or bounded/spilled
+        (``_prepare_result`` keeps ``skill_copy`` on that envelope), and so do the
+        ``file_read`` pages of such a spill (``skills.tools.skill_text_pages``). The system
+        prompt then carries the reload notice and the rule against acting on a pruned body
+        (``skills.tools.with_pruned_skill_notice``), counted in what must fit.
         """
         from .conversation_clock import active_clock
         binding = active_clock()
@@ -1244,11 +1246,14 @@ class AgentToolRuntime:
             MAX_PRUNED_SKILLS,
             TOOL_VIEW,
             pruned_skill_content,
+            skill_text_pages,
             with_pruned_skill_notice,
             without_pruned_skill_notice,
         )
-        # H389: the calls whose results are skill_view answers. A served skill body this
-        # fold reaches becomes a [SKILL_PRUNED] marker, never a preview of its text.
+        # H389: the calls whose results are skill_view answers, and the file_read calls that
+        # paged a skill_view answer spilled at insertion. A skill's text this fold reaches
+        # (served whole, bounded or spilled at insertion, or one of the spill's pages)
+        # becomes a [SKILL_PRUNED] marker, never a preview of that text.
         skill_views = {
             call.get("id")
             for message in messages if message.get("role") == "assistant"
@@ -1256,6 +1261,7 @@ class AgentToolRuntime:
             if isinstance(call, dict) and isinstance(call.get("function"), dict)
             and call["function"].get("name") == TOOL_VIEW
         }
+        skill_pages = skill_text_pages(messages)
 
         def fold_pass() -> None:
             nonlocal used, folded
@@ -1287,8 +1293,10 @@ class AgentToolRuntime:
                     risk = output_risks.get(id(message)) if output_risks is not None else None
                     if risk is not None and risk.upstream_elided and encoded.startswith(COMPLETENESS_NOTICE):
                         encoded = encoded[len(COMPLETENESS_NOTICE):]
-                    pruned = (pruned_skill_content(encoded)
-                              if message.get("tool_call_id") in skill_views else None)
+                    call_id = message.get("tool_call_id")
+                    pruned = (pruned_skill_content(encoded) if call_id in skill_views
+                              else pruned_skill_content(encoded, page_of=skill_pages[call_id])
+                              if call_id in skill_pages else None)
                     folded_content = pruned if pruned is not None else self._compacted_content(encoded)
                     if risk is not None and risk.upstream_elided:
                         folded_content = COMPLETENESS_NOTICE + folded_content
@@ -1973,6 +1981,12 @@ class AgentToolRuntime:
 
         ok = isinstance(result, dict) and not _is_failed_result(result)
         reason = _failure_reason(result) if isinstance(result, dict) and not ok else None
+        # H389: a skill_view answer that served a skill's text keeps whose text it was on
+        # the envelope that replaces it, so a later compaction prunes the preview to a
+        # [SKILL_PRUNED] marker instead of folding fragments of the instructions.
+        from .skills.tools import SKILL_COPY_KEY, TOOL_VIEW, skill_copy_tag
+        tag = skill_copy_tag(encoded) if tool_name == TOOL_VIEW else None
+        extra = {SKILL_COPY_KEY: tag} if tag is not None else None
         spill = None
         if self._result_store is not None:
             try:
@@ -1983,7 +1997,7 @@ class AgentToolRuntime:
                 spill = None
         if spill is not None:
             content = preview_envelope(
-                encoded, tool=tool_name, ok=ok, reason=reason, spill=spill)
+                encoded, tool=tool_name, ok=ok, reason=reason, spill=spill, extra=extra)
         else:
             # No store, or the write failed. The old behaviour is still correct — the
             # model gets a bounded, honest answer — it is only lossy.
@@ -1993,6 +2007,7 @@ class AgentToolRuntime:
                 ok=ok,
                 reason=reason,
                 max_bytes=int(min(threshold, self._max_result_bytes)),
+                extra=extra,
             )
         if spent is not None:
             spent["bytes"] = int(spent.get("bytes", 0)) + len(content.encode("utf-8"))
@@ -2367,8 +2382,10 @@ def _bounded_result_envelope(
     reason: Any,
     max_bytes: int,
     notice: str = _TRUNCATED_NOTICE,
+    extra: Mapping[str, Any] | None = None,
 ) -> str:
-    """Return a complete JSON truncation envelope within ``max_bytes``."""
+    """Return a complete JSON truncation envelope within ``max_bytes``. ``extra`` adds the
+    caller's own top-level keys (never the result's), counted in the bound."""
     raw = encoded.encode("utf-8")
     envelope: dict[str, Any] = {
         "ok": ok,
@@ -2379,6 +2396,7 @@ def _bounded_result_envelope(
     }
     if not ok and isinstance(reason, str):
         envelope["reason"] = _bounded_identity(reason)
+    envelope.update(extra or {})
 
     def render(kept_bytes: int | None = None) -> str:
         payload = dict(envelope)
