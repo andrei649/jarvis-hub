@@ -1,4 +1,4 @@
-"""H448 — return freed heap pages to the OS after a turn (Hermes ``context.memory_trim``).
+"""H448 — return freed heap pages to the OS (Hermes ``context.memory_trim``).
 
 A long-lived hub frees a lot after a turn (prompts, model replies, tool results, a
 compacted history), but glibc keeps the freed pages mapped, so the process's resident
@@ -6,13 +6,19 @@ size only ratchets up. ``malloc_trim(0)`` hands the free pages at the top of eac
 back to the kernel. This is process RAM, not the memory store: the setting lives under
 ``context.`` (as in Hermes) so it is not mistaken for a ``memory.*`` setting.
 
-- **Where it runs.** :func:`after_turn` is called from the end of every turn entry point
-  (``Orchestrator.handle_input``, ``handle_input_stream`` and ``process_detailed``) —
-  on a reply, an error and a cancel alike. It decides on the event loop (a dictionary
-  lookup and a clock read) and, when a trim is due, runs the call on the loop's default
-  executor, so neither the reply nor other requests wait for the allocator.
+- **Where it runs.** Two triggers share one rate limit, as Hermes' turn-completion and
+  gateway-housekeeping trims do. :func:`after_turn` is called from the end of every turn
+  entry point (``Orchestrator.handle_input``, ``handle_input_stream`` and
+  ``process_detailed``) — on a reply, an error and a cancel alike. :func:`housekeeping`
+  is the hub scheduler's ``memory-trim`` job, every minute
+  (``SchedulerService.run_memory_trim_tick``): it trims an idle hub, the turn that ended
+  inside the cooldown (a compaction that freed a large history is not left resident
+  overnight) and what non-turn work freed (the lifecycle sweep, ingestion, scheduled
+  jobs). Both decide on the event loop (a dictionary lookup and a clock read) and, when
+  a trim is due, run the call on the loop's default executor, so neither a reply nor
+  other requests wait for the allocator.
 - **Rate limit.** At most one trim every ``cooldown_seconds`` (60 by default; 0 = after
-  every turn), and never two at once: a turn that ends while one runs skips. The
+  every turn), and never two at once: a trigger that fires while one runs skips. The
   cooldown is stamped when a trim is claimed, so a trim that fails waits it out too.
 - **One-time probe.** The first due attempt checks, once per process: a Linux host
   (``sys.platform``), glibc (``os.confstr("CS_GNU_LIBC_VERSION")``, which musl does not
@@ -30,9 +36,11 @@ back to the kernel. This is process RAM, not the memory store: the setting lives
   ``get_all``, no copy. Every read fails open: a missing, malformed or unreadable value
   is the shipped default (``enabled`` true), field by field, so a broken setting never
   breaks a turn.
-- **Logging.** Every trim logs one line: INFO for every ``log_every_n``-th trim whose
-  resident-size drop is at least ``info_log_min_delta_mb`` (defaults 1 and 0.0: every
-  trim that did not grow), DEBUG otherwise.
+- **Logging.** As in Hermes, a trim that released pages (``malloc_trim`` returned 1)
+  logs at INFO when it is the ``log_every_n``-th completed trim and the resident size
+  moved, either way, by at least ``info_log_min_delta_mb`` (or could not be read); with
+  the defaults (1 and 0.0) that is every trim that released pages. Every other trim —
+  nothing released, a skipped count, a smaller change — logs the same line at DEBUG.
 
 Governance: read-only. The call changes nothing outside this process's own heap — no
 file, no host state, nothing a user or operator can see but a smaller RSS — so it does
@@ -203,9 +211,9 @@ def _probe_locked() -> Callable[[int], int] | None:
     return _trim_fn
 
 
-def _claim(settings: TrimSettings) -> tuple[Callable[[int], int], int] | None:
-    """Take the next trim when one is due and the host supports it; the call and its number."""
-    global _last_trim_monotonic, _trim_running, _trim_call_count
+def _claim(settings: TrimSettings) -> Callable[[int], int] | None:
+    """Take the next trim when one is due and the host supports it; the call to make."""
+    global _last_trim_monotonic, _trim_running
     if not settings.enabled:
         return None
     with _trim_lock:
@@ -218,8 +226,7 @@ def _claim(settings: TrimSettings) -> tuple[Callable[[int], int], int] | None:
             return None
         _trim_running = True
         _last_trim_monotonic = now
-        _trim_call_count += 1
-        return fn, _trim_call_count
+        return fn
 
 
 def _rss_bytes() -> int | None:
@@ -231,27 +238,39 @@ def _rss_bytes() -> int | None:
         return None
 
 
-def _run(fn: Callable[[int], int], number: int, settings: TrimSettings, reason: str) -> bool:
+def _loud(released: bool, number: int, change_mb: float | None, settings: TrimSettings) -> bool:
+    """Hermes' ``_should_log_trim``: INFO only for a trim that released pages, on every
+    ``log_every_n``-th trim, when the resident size moved by the threshold either way
+    (an unreadable size counts as moved)."""
+    if not released or number % settings.log_every_n:
+        return False
+    return change_mb is None or abs(change_mb) >= settings.info_log_min_delta_mb
+
+
+def _run(fn: Callable[[int], int], settings: TrimSettings, reason: str) -> bool:
     """Make the claimed call and log it; releases the claim. Never raises."""
-    global _trim_running
+    global _trim_running, _trim_call_count
+    number = 0
     try:
         before = _rss_bytes()
-        released = fn(0)
+        released = bool(fn(0))
         after = _rss_bytes()
+        with _trim_lock:
+            _trim_call_count += 1                    # Hermes counts completed trims
+            number = _trim_call_count
     except Exception:
-        logger.debug("heap trim #%d failed", number, exc_info=True)
+        logger.debug("heap trim after %s failed", reason, exc_info=True)
         return False
     finally:
         with _trim_lock:
             _trim_running = False
     try:
         if before is not None and after is not None:
-            change_mb = (after - before) / 1_048_576
-            delta_mb = -change_mb
+            change_mb: float | None = (after - before) / 1_048_576
             sizes = f"RSS {before / 1_048_576:.1f} -> {after / 1_048_576:.1f} MB ({change_mb:+.1f} MB)"
         else:
-            delta_mb, sizes = 0.0, "RSS unknown"
-        loud = number % settings.log_every_n == 0 and delta_mb >= settings.info_log_min_delta_mb
+            change_mb, sizes = None, "RSS unknown"
+        loud = _loud(released, number, change_mb, settings)
         logger.log(logging.INFO if loud else logging.DEBUG,
                    "heap trim #%d after %s: %s, %s", number, reason, sizes,
                    "pages released" if released else "nothing to release")
@@ -270,21 +289,20 @@ def maybe_trim(reason: str = "turn", *, get_setting: Callable[..., Any] | None =
     try:
         if settings is None:
             settings = read_settings(get_setting)
-        claimed = _claim(settings)
+        fn = _claim(settings)
     except Exception:
         return False
-    if claimed is None:
+    if fn is None:
         return False
-    fn, number = claimed
-    return _run(fn, number, settings, reason)
+    return _run(fn, settings, reason)
 
 
-def after_turn(orch: Any, reason: str = "turn") -> asyncio.Future | None:
-    """The turn-end hook: when a trim is due, start it off the event loop. Never raises.
+def request_trim(orch: Any, reason: str) -> asyncio.Future | None:
+    """When a trim is due, start it off the event loop; the shared body of both triggers.
 
     Reads the setting from *orch*'s runtime snapshot (a stand-in without
     ``get_setting`` is not the hub and is never trimmed for). Returns the executor
-    future of a started trim (tests await it; the turn does not), else None.
+    future of a started trim, else None. Never raises.
     """
     try:
         get_setting = getattr(orch, "get_setting", None)
@@ -296,19 +314,38 @@ def after_turn(orch: Any, reason: str = "turn") -> asyncio.Future | None:
         except RuntimeError:
             maybe_trim(reason, settings=settings)
             return None
-        claimed = _claim(settings)
-        if claimed is None:
+        fn = _claim(settings)
+        if fn is None:
             return None
-        fn, number = claimed
         try:
-            return loop.run_in_executor(None, _run, fn, number, settings, reason)
+            return loop.run_in_executor(None, _run, fn, settings, reason)
         except Exception:
             # A loop shutting down refuses new work: give the claim back, nothing ran.
             _release_unrun()
             return None
     except Exception:
-        logger.debug("heap trim: the turn-end hook failed", exc_info=True)
+        logger.debug("heap trim: the %s hook failed", reason, exc_info=True)
         return None
+
+
+def after_turn(orch: Any, reason: str = "turn") -> asyncio.Future | None:
+    """The turn-end hook: start a due trim off the loop and return at once (the turn
+    does not wait; tests may await the returned future). Never raises."""
+    return request_trim(orch, reason)
+
+
+async def housekeeping(orch: Any) -> bool:
+    """The minute housekeeping tick (the hub scheduler's ``memory-trim`` job): trim when
+    the cooldown has passed since the last trim, whatever the turns did — the Hermes
+    gateway-housekeeping counterpart of :func:`after_turn`. True when a trim ran and
+    returned. Never raises."""
+    future = request_trim(orch, "housekeeping")
+    if future is None:
+        return False
+    try:
+        return bool(await future)
+    except Exception:
+        return False
 
 
 def _release_unrun() -> None:
@@ -329,5 +366,5 @@ def _reset_for_tests() -> None:
         probe_reason = "not probed"
 
 
-__all__ = ["DEFAULT_SETTINGS", "SETTING", "TrimSettings", "after_turn", "maybe_trim",
-           "read_settings", "settings_problem"]
+__all__ = ["DEFAULT_SETTINGS", "SETTING", "TrimSettings", "after_turn", "housekeeping", "maybe_trim",
+           "read_settings", "request_trim", "settings_problem"]

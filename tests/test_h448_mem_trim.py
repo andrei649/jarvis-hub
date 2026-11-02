@@ -1,8 +1,9 @@
-"""H448 — heap trimming after a turn (Hermes ``context.memory_trim``).
+"""H448 — heap trimming (Hermes ``context.memory_trim``).
 
 A long-lived hub returns freed allocator pages to the OS with glibc's ``malloc_trim(0)``
-after a turn: probed once, rate-limited by a cooldown, a no-op off Linux/glibc, and read
-from the runtime settings snapshot without copying it (agents/core/mem_trim.py).
+after a turn and on the scheduler's minute housekeeping tick: probed once, rate-limited
+by one shared cooldown, a no-op off Linux/glibc, and read from the runtime settings
+snapshot without copying it (agents/core/mem_trim.py).
 """
 from __future__ import annotations
 
@@ -222,16 +223,62 @@ def test_log_every_n_and_the_delta_threshold_pick_the_info_lines(glibc, monkeypa
     assert lines[1][1] == "heap trim #2 after turn: RSS 300.0 -> 200.0 MB (-100.0 MB), pages released"
 
 
-def test_the_defaults_log_every_trim_that_did_not_grow_at_info(glibc, monkeypatch, caplog):
-    sizes = iter([300, 300, 300, 301])
-    monkeypatch.setattr(mem_trim, "_rss_bytes", lambda: next(sizes) * 1_048_576)
-    glibc.trim.result = 0
+def _trim_lines(caplog):
+    return [(r.levelname, r.getMessage()) for r in caplog.records if "heap trim #" in r.getMessage()]
+
+
+def test_the_defaults_log_every_trim_that_released_pages_at_info_whichever_way_rss_moved(
+        glibc, monkeypatch, caplog):
+    """Hermes logs a released trim at INFO on the absolute RSS change; a trim that
+    released nothing is never an INFO line."""
+    page = 4096
+    sizes = iter([300 * 1_048_576, 300 * 1_048_576 + page,      # released, RSS up one page
+                  300 * 1_048_576, 299 * 1_048_576,             # released, RSS down 1 MB
+                  300 * 1_048_576, 300 * 1_048_576])            # nothing released
+    monkeypatch.setattr(mem_trim, "_rss_bytes", lambda: next(sizes))
+    always = _settings(cooldown_seconds=0.0)
     with caplog.at_level("DEBUG", logger="jarvis.mem_trim"):
-        mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0))
-        mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0))
-    lines = [(r.levelname, r.getMessage()) for r in caplog.records if "heap trim #" in r.getMessage()]
-    assert lines == [("INFO", "heap trim #1 after turn: RSS 300.0 -> 300.0 MB (+0.0 MB), nothing to release"),
-                     ("DEBUG", "heap trim #2 after turn: RSS 300.0 -> 301.0 MB (+1.0 MB), nothing to release")]
+        assert mem_trim.maybe_trim(settings=always) is True
+        assert mem_trim.maybe_trim(settings=always) is True
+        glibc.trim.result = 0
+        assert mem_trim.maybe_trim(settings=always) is True
+    assert _trim_lines(caplog) == [
+        ("INFO", "heap trim #1 after turn: RSS 300.0 -> 300.0 MB (+0.0 MB), pages released"),
+        ("INFO", "heap trim #2 after turn: RSS 300.0 -> 299.0 MB (-1.0 MB), pages released"),
+        ("DEBUG", "heap trim #3 after turn: RSS 300.0 -> 300.0 MB (+0.0 MB), nothing to release")]
+
+
+def test_the_delta_threshold_is_on_the_absolute_rss_change(glibc, monkeypatch, caplog):
+    sizes = iter([300, 302, 300, 299.5, 300, 297])              # +2 MB, -0.5 MB, -3 MB
+    monkeypatch.setattr(mem_trim, "_rss_bytes", lambda: int(next(sizes) * 1_048_576))
+    s = _settings(cooldown_seconds=0.0, info_log_min_delta_mb=1.0)
+    with caplog.at_level("DEBUG", logger="jarvis.mem_trim"):
+        for _ in range(3):
+            assert mem_trim.maybe_trim(settings=s) is True
+    assert [level for level, _ in _trim_lines(caplog)] == ["INFO", "DEBUG", "INFO"]
+
+
+def test_an_unreadable_rss_logs_a_released_trim_at_info(glibc, monkeypatch, caplog):
+    monkeypatch.setattr(mem_trim, "_rss_bytes", lambda: None)
+    with caplog.at_level("DEBUG", logger="jarvis.mem_trim"):
+        mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0, info_log_min_delta_mb=5.0))
+        glibc.trim.result = 0
+        mem_trim.maybe_trim(settings=_settings(cooldown_seconds=0.0, info_log_min_delta_mb=5.0))
+    assert _trim_lines(caplog) == [("INFO", "heap trim #1 after turn: RSS unknown, pages released"),
+                                   ("DEBUG", "heap trim #2 after turn: RSS unknown, nothing to release")]
+
+
+def test_only_completed_trims_are_counted_for_log_every_n(glibc, monkeypatch, caplog):
+    monkeypatch.setattr(mem_trim, "_rss_bytes", lambda: None)
+    always = _settings(cooldown_seconds=0.0, log_every_n=2)
+    with caplog.at_level("DEBUG", logger="jarvis.mem_trim"):
+        glibc.trim.raises = OSError("boom")
+        assert mem_trim.maybe_trim(settings=always) is False
+        glibc.trim.raises = None
+        assert mem_trim.maybe_trim(settings=always) is True
+        assert mem_trim.maybe_trim(settings=always) is True
+    assert _trim_lines(caplog) == [("DEBUG", "heap trim #1 after turn: RSS unknown, pages released"),
+                                   ("INFO", "heap trim #2 after turn: RSS unknown, pages released")]
 
 
 # ── the settings: declared, shape-checked, read in place ─────────────────────
@@ -481,4 +528,131 @@ def test_the_hub_orchestrator_trims_after_a_real_turn(glibc, monkeypatch):
 
     monkeypatch.setattr(orch, "_handle_input", body)
     assert asyncio.run(orch.handle_input("hi", channel="web")) == "reply"
+    assert glibc.trim.calls == [0]
+
+
+# ── the housekeeping tick (Hermes' gateway-housekeeping trim) ────────────────
+
+
+def _service(orch):
+    from agents.core.scheduler_service import SchedulerService
+
+    return SchedulerService(orch)
+
+
+def test_the_tick_trims_what_a_turn_inside_the_cooldown_left_resident(glibc, clock):
+    """A turn at t=0 trims; a turn at t=30 (say a compaction that freed a large history)
+    is inside the cooldown; the idle hub's tick trims as soon as the cooldown has passed,
+    not at the next turn."""
+    from agents.core.scheduler_health import _returned_status
+
+    orch = _turn_orch(glibc.trim, value=dict(HERMES_DEFAULTS))
+    tick = _service(orch).run_memory_trim_tick
+
+    async def day():
+        loop_thread = threading.get_ident()
+        await Orchestrator.handle_input(orch, "hi")
+        for _ in range(500):                          # the turn's trim finishes off the loop
+            if not mem_trim._trim_running:
+                break
+            await asyncio.sleep(0.01)
+        clock.now += 30
+        await Orchestrator.handle_input(orch, "compact")
+        results = []
+        for step in (15, 15, 30, 30):                 # t = 45, 60, 90, 120: no turns
+            clock.now += step
+            results.append(await tick())
+        return loop_thread, results
+
+    loop_thread, results = asyncio.run(day())
+    not_due, trimmed = {"skipped": True, "reason": "not_due"}, {"trimmed": True}
+    assert results == [not_due, trimmed, not_due, trimmed]
+    assert glibc.trim.calls == [0, 0, 0]               # the t=0 turn, the t=60 and t=120 ticks
+    assert loop_thread not in glibc.trim.threads        # off the event loop, every time
+    assert [_returned_status(r) for r in results] == ["skipped", "ok", "skipped", "ok"]
+
+
+def test_the_tick_and_the_turns_share_one_cooldown(glibc, clock):
+    orch = _turn_orch(glibc.trim, value=dict(HERMES_DEFAULTS))
+    tick = _service(orch).run_memory_trim_tick
+
+    async def run():
+        first = await tick()
+        clock.now += 10
+        await Orchestrator.handle_input(orch, "hi")    # inside the tick's cooldown
+        return first
+
+    assert asyncio.run(run()) == {"trimmed": True}
+    assert glibc.trim.calls == [0]
+
+
+def test_the_tick_honors_the_switch_and_a_running_trim(glibc):
+    off = _turn_orch(glibc.trim, value={**HERMES_DEFAULTS, "enabled": False})
+    assert asyncio.run(_service(off).run_memory_trim_tick()) == {"skipped": True, "reason": "not_due"}
+    assert glibc.loads == 0 and mem_trim.probe_reason == "not probed"
+
+    gate = threading.Event()
+    glibc.trim.gate = gate
+    on = _turn_orch(glibc.trim)                        # cooldown 0
+
+    async def overlap():
+        running = mem_trim.after_turn(on)
+        second = await _service(on).run_memory_trim_tick()
+        gate.set()
+        await running
+        return second
+
+    assert asyncio.run(overlap()) == {"skipped": True, "reason": "not_due"}
+    assert glibc.trim.calls == [0]
+
+
+def test_the_tick_never_raises(glibc, monkeypatch):
+    def broken(*a, **kw):
+        raise RuntimeError("executor gone")
+
+    orch = _turn_orch(glibc.trim)
+
+    async def run():
+        monkeypatch.setattr(asyncio.get_running_loop(), "run_in_executor", broken)
+        return await _service(orch).run_memory_trim_tick()
+
+    assert asyncio.run(run()) == {"skipped": True, "reason": "not_due"}
+    assert mem_trim._trim_running is False
+
+
+def test_the_tick_is_scheduled_every_minute_with_the_hub_jobs(monkeypatch):
+    from agents.core.scheduler_service import SchedulerService
+
+    class _Sched:
+        def __init__(self):
+            self.jobs = {}
+
+        def add_job(self, fn, *a, **kw):
+            self.jobs[kw["id"]] = (fn, a, kw)
+
+    sched = _Sched()
+    service = SchedulerService(SimpleNamespace(heartbeat_scheduler=SimpleNamespace(scheduler=sched)))
+    monkeypatch.setenv("JARVIS_TESTING", "1")
+    service.schedule_memory_trim()
+    assert sched.jobs == {}
+    monkeypatch.delenv("JARVIS_TESTING")
+    service.schedule_memory_trim()
+    fn, args, kw = sched.jobs["memory-trim"]
+    assert fn == service.run_memory_trim_tick and args == ("interval",) and kw["seconds"] == 60
+    assert "schedule_memory_trim" in SchedulerService.schedule_all.__code__.co_names
+
+
+def test_the_hub_orchestrator_schedules_a_tick_that_trims(glibc, monkeypatch):
+    """The hub's own Orchestrator: its scheduler service registers the job, and the job
+    trims with the seeded runtime snapshot, no turn needed."""
+    from agents.core.config import JarvisConfig
+
+    orch = Orchestrator(JarvisConfig())
+    orch.load_runtime_settings()
+    jobs = {}
+    orch.heartbeat_scheduler.scheduler = SimpleNamespace(
+        add_job=lambda fn, *a, **kw: jobs.setdefault(kw["id"], fn))
+    monkeypatch.delenv("JARVIS_TESTING", raising=False)
+    orch._scheduler.schedule_memory_trim()
+    assert asyncio.run(jobs["memory-trim"]()) == {"trimmed": True}
     assert glibc.trim.calls == [0]

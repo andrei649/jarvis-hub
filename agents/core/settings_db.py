@@ -538,14 +538,15 @@ DEFAULTS: list[dict[str, Any]] = [
     # H182: on battery below this percent, the heavy background jobs skip their run (0 = never, 100 = always).
     dict(category="system",  key="battery_defer_percent", value=50,               label="On battery below this %, defer heavy background jobs (0 = never)", kind="number"),
     dict(category="system",  key="startup_warmup_timeout_seconds", value=20,      label="At start, wait up to this many seconds for the local model to warm up before accepting messages (0 = don't wait)", kind="number"),
-    # H448 — Hermes `context.memory_trim`: after a turn, at most every cooldown_seconds,
-    # return freed heap pages to the OS with glibc's malloc_trim(0); a no-op off Linux/glibc.
-    # Process RAM, not the memory store — hence `context`, as in Hermes. Read per turn from
-    # the runtime snapshot, without a copy (agents/core/mem_trim.py); the value must stay
+    # H448 — Hermes `context.memory_trim`: after a turn and on the minute housekeeping tick
+    # (the scheduler's memory-trim job), at most every cooldown_seconds, return freed heap
+    # pages to the OS with glibc's malloc_trim(0); a no-op off Linux/glibc. Process RAM,
+    # not the memory store — hence `context`, as in Hermes. Read per attempt from the
+    # runtime snapshot, without a copy (agents/core/mem_trim.py); the value must stay
     # mem_trim.DEFAULT_SETTINGS, and its shape is checked by mem_trim.settings_problem.
     dict(category="context", key="memory_trim",
          value={"enabled": True, "cooldown_seconds": 60.0, "log_every_n": 1, "info_log_min_delta_mb": 0.0},
-         label="Process heap trim after turns (Linux/glibc; process RAM, not memory): enabled, cooldown_seconds, log_every_n, info_log_min_delta_mb", kind="json"),
+         label="Process heap trim after turns and every minute (Linux/glibc; process RAM, not memory): enabled, cooldown_seconds, log_every_n, info_log_min_delta_mb", kind="json"),
     # mcp
     dict(category="mcp",     key="servers",          value=[],                    label="MCP servers",        kind="json"),
     # H285 — the owner's load set: comma lists of names read at boot (agents/core/load_set.py).
