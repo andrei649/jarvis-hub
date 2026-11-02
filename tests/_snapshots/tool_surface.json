@@ -2141,5 +2141,9 @@
         }
       ]
     }
+  },
+  "retired": {
+    "tools": [],
+    "properties": {}
   }
 }

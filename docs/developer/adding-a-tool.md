@@ -86,8 +86,13 @@ Then, depending on what the tool is:
   that names a tool as a tool ("the `<name>` tool", "`<name>` ToolRPC tool", "the gated `<name>` …",
   a list after "tools:", "tools (…):" or "Registers", "Model-callable `<name>`",
   "registered beside `<name>`") must name a registered one with its real gate, and the
-  `docs/ARCHITECTURE.md` module-index row for your file must name your tools and no other
-  file's, or that test fails. A registration that
+  `docs/ARCHITECTURE.md` module-index row for your file must name your tools, say only the
+  gate they have, and name another file's tool only as one ("registered beside `<name>`",
+  "`<name>`, registered in `<file>.py`"), or that test fails. Every other backticked name in
+  those docs must be a registered tool or a name the code uses, and `--update` records each
+  tool and input property that leaves the surface as retired in the snapshot — so a doc
+  still naming a tool or parameter you renamed or removed goes red until it is corrected
+  (or, named as removed, allowlisted in `RETIRED_TOOL_MENTIONS`). A registration that
   picks its description or schema from a host setting (as `execute_code` does when session
   kernels are composed) needs its other shape pinned as well: add the settings to `VARIANTS`
   and the file to `HOST_CHOSEN_SURFACES` in that test, or it fails.
