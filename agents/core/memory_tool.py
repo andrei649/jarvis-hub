@@ -16,8 +16,21 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
 * every fact is one line of at most :data:`MAX_FACT_CHARS` characters (the core block's
   own cut), free of control and invisible characters, and scanned for injection with the
   normalised scanner; a full ring refuses an add instead of silently dropping the oldest
-  fact (replace or remove one first). The budget is checked on the batch's final state, so
-  an add listed before the remove that makes room is kept (H423); a turn that keeps
+  fact (replace or remove one first). H422: each ring also has its character budget
+  (Hermes's 2200 for the agent notes, 1375 for the user profile: ``core_block.CHAR_BUDGETS``,
+  measured on what the ring holds: ``core_block.stored_chars``, the figure ``GET
+  /api/memory`` reports), and a write that would take a ring past it is refused with the
+  ring's usage and its limit, so a ring the tool wrote renders whole. That refusal, and a
+  full ring's, carries the ring's ``current_entries`` (Hermes's: the entries as the prompt
+  shows them, a flagged one as its [BLOCKED] stub, at most :data:`LISTING_MAX_CHARS`), so
+  the model can pick what to replace or remove; the prompt's section headers carry each
+  ring's usage too (``core_block.usage_figure``). The ring itself
+  refuses the other writers the same way (``CoreMemory.put`` raises
+  ``CoreMemoryOverBudget`` past the budget, the cap or :data:`MAX_FACT_CHARS`, and nothing
+  rotates out; the post-turn review and the daily reflection log it and record it with
+  :func:`note_ring_refusal`); the block's own cut stays as the backstop for a ring saved
+  before the budget or edited by hand. The budget is checked on the batch's final state,
+  so an add listed before the remove that makes room is kept (H423); a turn that keeps
   hitting a full ring gets a terminal refusal after :data:`FULL_ATTEMPTS_PER_TURN` tries,
   so it stops retrying (the refusal sticks: the tool itself refuses every later write of
   that turn; its ``"terminal": true`` is a hint to the model, which the runtime does not
@@ -45,9 +58,18 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   beside the rings (:class:`UndoStore`), so a forget deletes them too. :func:`undo`
   restores a write while nothing has changed since, and is recorded the same way;
   ``POST /api/memory/core/undo`` is the owner's door;
+* H422: :func:`store_sizes` says what each ring holds on disk (``GET /api/memory``) and
+  :func:`reset` erases one ring or both for good, recorded as ``memory.reset``
+  (``POST /api/memory/reset``, ``nerva memory reset``);
 * a write leaves a ``memory_updated`` row in the tool trail (targets and actions, never
   text); a call that changes nothing leaves none;
-* in safe mode (H490) memory reads as switched off: the tool refuses and says so.
+* in safe mode (H490) memory reads as switched off: the tool refuses and says so;
+* H422: the owner's own switch, ``memory.core_enabled`` (:data:`SWITCH_SETTING`), takes the
+  curated memory out of every prompt and makes this tool refuse, whatever the product
+  posture says (the wave-1 postures force ``cognition.memory_enabled`` on, never this row).
+  Off, the post-turn review and the daily reflection put nothing in the rings either.
+  Only ``POST /api/memory/switch`` (``nerva memory off|on``) writes it; the rings stay on
+  disk while it is off.
 
 The prompt's core block is frozen per session (it keeps the prompt cache), so a write
 reaches the system prompt at the next session; the tool answers with both rings as they
@@ -70,6 +92,8 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
+from .learning.core_block import CHAR_BUDGETS
+
 logger = logging.getLogger("jarvis.memory_tool")
 
 TOOL_NAME = "memory"
@@ -87,6 +111,9 @@ FULL_ATTEMPTS_PER_TURN = 3
 _FULL_TURNS_KEEP = 256
 #: How long a write waits for another process's lock on a ring file.
 LOCK_TIMEOUT_S = 5.0
+#: H422 — the most characters of entries a refusal lists (:func:`current_entries`). A ring
+#: the hub keeps (at most 20 facts, each shown in at most 300 characters) always fits whole.
+LISTING_MAX_CHARS = 6_000
 _ARG_FIELDS = frozenset({"operations"})
 _OP_FIELDS = frozenset({"action", "target", "text", "old_text"})
 
@@ -117,18 +144,68 @@ DESCRIPTION = (
     "replace the one fact old_text matches with text, or remove the one fact old_text matches. "
     "Each fact is one short line. Save what will still matter next time; do not save what "
     "belongs to this task only. A call with no operations reads both. Every change is "
-    "recorded and the owner can undo it."
+    "recorded and the owner can undo it. Each target has a character budget (memory "
+    f"{CHAR_BUDGETS['memory']:,}, user {CHAR_BUDGETS['user']:,}), and your prompt's [core memory] and "
+    "[user profile] headers show how full each one was when this conversation's memory was loaded. "
+    "A write that would go past the budget, or past a full target's fact limit, is refused with the "
+    "target's usage and its current_entries, so keep facts short, and replace or remove stale ones "
+    "(merge two related facts into one) before adding."
 )
-OFF_DESCRIPTION = DESCRIPTION + " Memory is switched off on this hub (cognition memory), so every call is refused."
+OFF_DESCRIPTION = DESCRIPTION + (" Memory is switched off on this hub (the owner's memory switch, or cognition "
+                                  "memory), so every call is refused.")
+
+#: H422 — the owner's switch for the curated memory (the core block in the prompt and this
+#: tool): a settings row of its own that no product posture sets, written only by its route.
+SWITCH_CATEGORY = "memory"
+SWITCH_KEY = "core_enabled"
+SWITCH_SETTING = f"{SWITCH_CATEGORY}.{SWITCH_KEY}"
+
+
+def switched_on(get_setting: Any) -> bool:
+    """H422 — the owner's memory switch as the runtime settings hold it. A caller with no
+    settings at all (a bare test double) reads the shipped default, on; a settings read that
+    fails reads off, so an owner's ``off`` is never lost to an error."""
+    if not callable(get_setting):
+        return True
+    try:
+        return get_setting(SWITCH_SETTING, True) is not False
+    except Exception:
+        logger.warning("memory: the owner's memory switch could not be read; memory stays out", exc_info=True)
+        return False
+
+
+def set_switch(enabled: bool, *, audit: Any, actor: str = "owner") -> dict:
+    """H422 — the owner turns the curated memory on or off (Hermes's ``memory off``: the
+    stores stay, the prompt stops carrying them). Writes :data:`SWITCH_SETTING` and records
+    ``memory.switch`` in the intent log (the new and the old value, never a fact). The
+    write stands when the record cannot be saved (an ``off`` must never wait on the log);
+    ``audited`` says so. Blocking: the caller runs it off the event loop."""
+    from .settings_db import get_value, put_category
+
+    if not isinstance(enabled, bool):
+        raise MemoryToolError("memory_bad_switch", "enabled must be true or false")
+    was = get_value(SWITCH_CATEGORY, SWITCH_KEY, True) is not False
+    put_category(SWITCH_CATEGORY, {SWITCH_KEY: enabled})
+    audited = True
+    try:
+        _record(audit, actor, "memory.switch",
+                "the owner switched the curated memory " + ("on" if enabled else "off"), "",
+                {"enabled": enabled, "was": was})
+    except Exception:
+        logger.warning("memory switch: the intent log could not record it", exc_info=True)
+        audited = False
+    return {"enabled": enabled, "changed": was != enabled, "audited": audited}
 
 
 class MemoryToolError(ValueError):
     """A refused call: a named reason and a sentence the model can act on."""
 
-    def __init__(self, reason: str, detail: str) -> None:
+    def __init__(self, reason: str, detail: str, info: Mapping[str, Any] | None = None) -> None:
         super().__init__(detail)
         self.reason = reason
         self.detail = detail
+        #: H422 — fields the refusal carries besides its sentence (a budget's usage).
+        self.info = dict(info or {})
 
 
 # ── the facts ────────────────────────────────────────────────────────────────
@@ -177,11 +254,66 @@ def _match(facts: list[str], old_text: str, index: int) -> int:
     return hits[0]
 
 
-def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]) -> tuple[dict, list[dict]]:
+def usage(facts: list[str], target: str) -> str:
+    """H422 — the characters ring *target* holds against its budget, Hermes's
+    ``"1,234/2,200"`` (``core_block.stored_chars``, as ``GET /api/memory`` reports it)."""
+    from .learning.core_block import stored_chars
+
+    return f"{stored_chars(facts):,}/{CHAR_BUDGETS[target]:,}"
+
+
+def current_entries(facts: list[str], target: str) -> dict:
+    """H422 — ring *target*'s entries for a refusal that asks the model to make room
+    (Hermes's ``current_entries``): in order, as the prompt shows them
+    (``core_block.shown_entries``: one line, at most 300 characters, a flagged one as its
+    [BLOCKED] stub), scanned with the normalised scanner the tool's own writes pass, so a
+    refusal never carries text the prompt keeps out, nor text that would get the result
+    fenced and the turn tainted (and with it the very write that makes room refused).
+    Bounded: at most :data:`LISTING_MAX_CHARS` characters of entries; when the newest do
+    not fit, ``current_entries_omitted`` counts them."""
+    from .learning.core_block import shown_entries
+    from .security.quarantine import detect_injection_normalized
+
+    listed: list[str] = []
+    used = 0
+    entries = shown_entries(list(facts), target, detect_injection_normalized)
+    for entry in entries:
+        if used + len(entry) > LISTING_MAX_CHARS:
+            break
+        listed.append(entry)
+        used += len(entry)
+    out: dict[str, Any] = {"current_entries": listed}
+    if len(listed) < len(entries):
+        out["current_entries_omitted"] = len(entries) - len(listed)
+    return out
+
+
+def _check_budget(target: str, before: list[str], after: list[str], budget: int) -> None:
+    """H422 — refuse a final state that takes ring *target* past its character *budget*
+    (measured on what the ring holds, ``core_block.stored_chars``). A ring already over it
+    (saved before the budget, or edited by hand) may still shrink: only a call that leaves
+    it over the budget *and* larger than it was is refused."""
+    from .learning.core_block import stored_chars
+
+    now, then = stored_chars(before), stored_chars(after)
+    if then <= budget or then <= now:
+        return
+    raise MemoryToolError(
+        "memory_over_budget",
+        f"{target} would take {then:,} of its {budget:,} characters after this call (it holds "
+        f"{now:,}/{budget:,} now); replace or remove facts first (in this call or before it), or "
+        "save a shorter fact; current_entries lists what it holds",
+        {"target": target, "usage": f"{now:,}/{budget:,}", "chars": now, "chars_after": then,
+         "char_budget": budget, **current_entries(before, target)})
+
+
+def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int],
+         budgets: Mapping[str, int] | None = None) -> tuple[dict, list[dict]]:
     """The rings after *operations*, checked in full before anything is written, and one
     row per applied operation (``action``, ``target``: no digest of the fact, which the
     intent log would keep past a forget). Raises :class:`MemoryToolError`; an add that is
-    already saved is recorded as ``unchanged``."""
+    already saved is recorded as ``unchanged``. H422: *budgets* are the rings' character
+    budgets, by target (default ``core_block.CHAR_BUDGETS``)."""
     if not isinstance(operations, list):
         raise MemoryToolError("memory_bad_operations", "operations must be a list")
     if len(operations) > MAX_OPERATIONS:
@@ -230,7 +362,15 @@ def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]
         if len(after[target]) > cap[target]:
             raise MemoryToolError("memory_full",
                                   f"{target} would hold {len(after[target])} facts after this call, over its "
-                                  f"{cap[target]}; replace or remove one first (in this call or before it)")
+                                  f"{cap[target]}; replace or remove one first (in this call or before it); "
+                                  "current_entries lists what it holds",
+                                  {"target": target, "entries": len(rings[target]), "cap": cap[target],
+                                   "usage": usage(list(rings[target]), target) if target in CHAR_BUDGETS else "",
+                                   **current_entries(list(rings[target]), target)})
+    budgets = CHAR_BUDGETS if budgets is None else budgets
+    for target in sorted(after):
+        if target in budgets and after[target] != rings[target]:
+            _check_budget(target, list(rings[target]), after[target], int(budgets[target]))
     return after, rows
 
 
@@ -317,6 +457,25 @@ class UndoStore:
                 return False
             atomic_write_json(self.path(), [])
             return True
+
+    def holding(self, target: str) -> int:
+        """H422 — how many kept writes hold an earlier copy of ring *target*."""
+        with self._lock:
+            return sum(1 for row in self._load() if target in (row.get("before") or {}))
+
+    def drop_targets(self, targets: list[str]) -> int:
+        """H422 — drop every kept write that holds an earlier copy of one of *targets* (a
+        reset): no copy of the erased facts stays here, and none of those writes could be
+        undone over the emptied ring anyway. The number dropped."""
+        from .persistence.json_store import atomic_write_json
+
+        wanted = set(targets)
+        with self._lock:
+            rows = self._load()
+            kept = [row for row in rows if not wanted & set(row.get("before") or {})]
+            if len(kept) != len(rows):
+                atomic_write_json(self.path(), kept)
+            return len(rows) - len(kept)
 
 
 UNDO = UndoStore()
@@ -424,6 +583,25 @@ def _record(audit: Any, actor: str, action: str, why: str, ref: str, metadata: d
     audit.record(actor=actor, action=action, why=why, cause=ref, metadata=metadata)
 
 
+def note_ring_refusal(audit: Any, actor: str, refused: Any) -> bool:
+    """H422 — a background writer (the post-turn review, a /refine, the daily reflection)
+    that a curated ring refused (``CoreMemoryOverBudget``: past its character budget, its
+    cap or :data:`MAX_FACT_CHARS`). Logged with the ring's usage and limit, and recorded in
+    the intent log as ``memory.write_refused`` (the ring, the limit and the sizes: never
+    the fact, nor a hash of it). Best effort, since nothing was written: True when the
+    record was saved."""
+    logger.warning("memory: a %s fact was not kept: %s", actor, refused)
+    if audit is None or not callable(getattr(audit, "record", None)):
+        return False
+    try:
+        audit.record(actor=actor, action="memory.write_refused", why=str(refused), cause="",
+                     metadata=refused.metadata())
+    except Exception:
+        logger.warning("memory: the refusal of a %s fact could not be recorded", actor, exc_info=True)
+        return False
+    return True
+
+
 def _record_put_back(audit: Any, actor: str, action: str, ref: str, targets: list[str]) -> None:
     """Record that a change whose record failed was put back. The intent log appends a
     record before it saves it, so a failed save can still reach the disk with the next
@@ -517,6 +695,98 @@ def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: Undo
     return {"ok": True, "ref": str(ref), "memory": before["memory"], "user": before["user"]}
 
 
+# ── H422: what the owner can see and erase ───────────────────────────────────
+
+#: A reset's ``target`` → the rings it erases (Hermes's ``--target {all,memory,user}``).
+RESET_TARGETS: dict[str, tuple[str, ...]] = {"all": ("memory", "user"), "memory": ("memory",), "user": ("user",)}
+#: The word ``POST /api/memory/reset`` must carry, as ``POST /api/admin/forget`` needs ``FORGET``.
+RESET_CONFIRM = "RESET"
+#: Each ring in the owner's words.
+STORE_LABELS: dict[str, str] = {"memory": "agent notes", "user": "user profile"}
+
+
+def reset_targets(target: Any) -> tuple[str, ...]:
+    """The rings *target* names; :class:`MemoryToolError` for anything else."""
+    rings = RESET_TARGETS.get(target.strip().lower()) if isinstance(target, str) else None
+    if rings is None:
+        raise MemoryToolError("memory_bad_target", "target must be all, memory, or user")
+    return rings
+
+
+def _size(path: Any) -> int:
+    try:
+        return int(path.stat().st_size) if path is not None else 0
+    except OSError:
+        return 0
+
+
+def store_sizes(living: Any, store: UndoStore | None = None) -> dict:
+    """H422 — what a reset of each ring would erase, by target: its file and the bytes it
+    holds on disk (0 when there is none, as Hermes's ``builtin_files``), its entries and
+    cap, the hand-edit ``.bak`` copies kept beside it, and the kept writes that hold an
+    earlier copy of it (a reset drops those too). Read-only; reread the rings first."""
+    store = UNDO if store is None else store
+    out: dict[str, dict] = {}
+    for target, attr in TARGETS.items():
+        ring = getattr(living, attr, None)
+        path = getattr(ring, "path", None)
+        copies = sorted(path.parent.glob(f"{path.name}.*.bak")) if isinstance(path, Path) else []
+        out[target] = {
+            "label": STORE_LABELS[target],
+            "file": path.name if isinstance(path, Path) else None,
+            "bytes": _size(path) if isinstance(path, Path) else 0,
+            "entries": len(ring.list()) if callable(getattr(ring, "list", None)) else 0,
+            "cap": int(getattr(ring, "cap", 0) or 0),
+            "copies": len(copies),
+            "copies_bytes": sum(_size(copy) for copy in copies),
+            "undo_writes": store.holding(target),
+        }
+    return out
+
+
+def reset(target: str, *, living: Any, audit: Any, actor: str = "owner", store: UndoStore | None = None) -> dict:
+    """H422 — the owner erases the agent's notes, the user profile, or both (Hermes's
+    ``memory reset``). Permanent, with no undo: each ring is emptied by its forget path
+    (``CoreMemory.clear``: under the ring's file lock, its hand-edit ``.bak`` copies
+    deleted too) and every kept write holding an earlier copy of it is dropped, so no copy
+    of the erased facts stays beside the rings. Recorded in the intent log as
+    ``memory.reset`` (targets and counts, never text); with no intent log nothing is
+    erased. A ring that cannot be erased (its lock stays held, its file cannot be saved)
+    is named in ``not_erased`` and ``ok`` is False; the others are erased.
+
+    The prompt's frozen block is left alone: a conversation under way keeps its snapshot
+    (the prefix cache), and the next one starts without the erased facts."""
+    rings = reset_targets(target)
+    if living is None:
+        raise MemoryToolError("memory_unavailable", "this hub has no long-term memory module")
+    if audit is None or not callable(getattr(audit, "record", None)):
+        raise MemoryToolError("memory_audit_unavailable",
+                              "a memory reset is recorded in the intent log, which is not available; "
+                              "nothing was erased")
+    store = UNDO if store is None else store
+    erased: dict[str, int] = {}
+    not_erased: list[str] = []
+    with _WRITE_LOCK:
+        for ring in rings:
+            try:
+                erased[ring] = int(getattr(living, TARGETS[ring]).clear())
+            except Exception:
+                logger.warning("memory reset: the %s ring could not be erased", ring, exc_info=True)
+                not_erased.append(ring)
+        dropped = store.drop_targets(sorted(erased))
+    audited = True
+    try:
+        _record(audit, actor, "memory.reset", "the owner erased long-term memory", "",
+                {"targets": sorted(erased), "erased": erased, "not_erased": not_erased,
+                 "undo_dropped": dropped})
+    except Exception:
+        # The facts are gone either way (the owner asked for that); the reply says so.
+        logger.warning("memory reset: the intent log could not record it", exc_info=True)
+        audited = False
+    return {"ok": not not_erased, "targets": list(rings), "erased": erased, "not_erased": not_erased,
+            "undo_dropped": dropped, "audited": audited}
+
+
 # ── the tool ─────────────────────────────────────────────────────────────────
 
 def _record_event(rows: list[dict], changed: list[str]) -> None:
@@ -546,12 +816,15 @@ def register_memory_tool(
     posture: Callable[[], str] | None = None,
     origin: Callable[[], str] = _turn_origin,
     store: UndoStore | None = None,
+    switch: Callable[[], bool] | None = None,
 ) -> str:
     """Expose ``memory`` on a ToolRPC server (ungated, audited, undoable). ``living``
     returns the LivingMemory module, or None when cognition memory is off; ``audit`` the
     intent log; ``posture`` the turn's posture key (only ``operator/owner`` writes);
-    ``origin`` the turn's action origin (an untrusted one is refused). Every getter is
-    read per call and a getter that fails refuses the call."""
+    ``origin`` the turn's action origin (an untrusted one is refused); ``switch`` the
+    owner's memory switch (H422, :func:`switched_on`): off, the tool reads as switched off,
+    whatever cognition memory says. Every getter is read per call and a getter that fails
+    refuses the call."""
     from .security.taint import is_untrusted_source
 
     def _living() -> Any:
@@ -561,6 +834,14 @@ def register_memory_tool(
             # H490: no memory reaches a turn in safe mode, through the prompt or this tool.
             safe_mode.note("memory_injection")
             return None
+        if switch is not None:
+            try:
+                on = switch() is True
+            except Exception:
+                logger.warning("memory: the owner's memory switch could not be read; refused", exc_info=True)
+                on = False
+            if not on:
+                return None              # H422: the owner switched the curated memory off
         try:
             return living()
         except Exception:
@@ -677,15 +958,17 @@ def register_memory_tool(
         try:
             after, rows, changed, ref = await asyncio.to_thread(_write)
         except MemoryToolError as exc:
-            if exc.reason == "memory_full" and _count_full(turn):
+            # H422: a ring over its character budget is as full as one at its fact cap.
+            if exc.reason in ("memory_full", "memory_over_budget") and _count_full(turn):
                 return _terminal()
-            return {"ok": False, "reason": exc.reason, "detail": exc.detail}
+            return {"ok": False, "reason": exc.reason, "detail": exc.detail, **exc.info}
         except Exception:
             logger.warning("memory: the write failed", exc_info=True)
             return {"ok": False, "reason": "memory_write_failed", "detail": "the memory could not be saved"}
         if changed:
             _record_event(rows, changed)
-        reply: dict[str, Any] = {"ok": True, "changed": changed, "memory": after["memory"], "user": after["user"]}
+        reply: dict[str, Any] = {"ok": True, "changed": changed, "memory": after["memory"], "user": after["user"],
+                                 "usage": {target: usage(after[target], target) for target in TARGETS}}
         if ref:
             reply["undo_ref"] = ref
             reply["note"] = "saved; your prompt shows it from the next conversation"
@@ -706,8 +989,10 @@ def register_memory_tool(
 
 
 __all__ = [
-    "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LOCK_TIMEOUT_S",
-    "MAX_FACT_CHARS", "MAX_OPERATIONS",
-    "MemoryToolError", "OFF_DESCRIPTION", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan",
-    "register_memory_tool", "undo",
+    "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LISTING_MAX_CHARS",
+    "LOCK_TIMEOUT_S", "MAX_FACT_CHARS", "MAX_OPERATIONS",
+    "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "SWITCH_CATEGORY",
+    "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan", "register_memory_tool",
+    "current_entries", "note_ring_refusal", "reset", "reset_targets", "set_switch", "store_sizes", "switched_on",
+    "undo", "usage",
 ]

@@ -498,6 +498,25 @@ def build_parser() -> argparse.ArgumentParser:
     pairing_clear.add_argument("--confirm", action="store_true", help="actually drop them")
     pairing_clear.add_argument("--json", action="store_true")
 
+    memory = verbs.add_parser(
+        "memory", help="the long-term memory every prompt carries: what it holds, reset it, switch it off (H422)")
+    memory_verbs = memory.add_subparsers(dest="action", metavar="action")
+    memory_status = memory_verbs.add_parser(
+        "status", help="is memory on, and what the agent notes and the user profile hold (the default)")
+    memory_status.add_argument("--json", action="store_true")
+    memory_reset = memory_verbs.add_parser(
+        "reset", help="erase the agent notes, the user profile or both, for good (admin)")
+    memory_reset.add_argument("--target", choices=_MEMORY_RESET_TARGETS, default="all",
+                              help="which store to erase: all (default), memory (the agent notes) or user")
+    memory_reset.add_argument("--yes", "-y", action="store_true", help="skip the typed confirmation")
+    memory_reset.add_argument("--json", action="store_true")
+    memory_off = memory_verbs.add_parser(
+        "off", help="take the curated memory out of every prompt, whatever the posture; nothing is erased (admin)")
+    memory_off.add_argument("--json", action="store_true")
+    memory_on = memory_verbs.add_parser(
+        "on", help="bring the curated memory back into the prompt after `nerva memory off` (admin)")
+    memory_on.add_argument("--json", action="store_true")
+
     webhook = verbs.add_parser("webhook", help="inbound webhooks: subscribe an external system's events to an agent (admin, H039)")
     webhook_verbs = webhook.add_subparsers(dest="action", required=True, metavar="action")
     webhook_subscribe = webhook_verbs.add_parser(
@@ -3423,6 +3442,162 @@ def cmd_pairing(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+#: H422 — a reset's ``--target`` and the stores each erases (``memory_tool.RESET_TARGETS``).
+_MEMORY_RESET_TARGETS = ("all", "memory", "user")
+_MEMORY_STORES = {"all": ("memory", "user"), "memory": ("memory",), "user": ("user",)}
+#: Both rings' lock waits on the hub (``cognition.memory.CLEAR_LOCK_TIMEOUT_S`` each), and a margin.
+_MEMORY_RESET_TIMEOUT_S = 75.0
+
+
+def _memory_store_line(target: str, store: Mapping[str, Any]) -> str:
+    line = (f"  {target} ({store.get('label') or target}): {int(store.get('entries') or 0)}/"
+            f"{store.get('cap')} entries · {int(store.get('chars') or 0)}/{store.get('char_budget')} chars"
+            f" · {int(store.get('bytes') or 0):,} bytes on disk")
+    if store.get("omitted"):
+        line += f" · {int(store['omitted'])} older not shown (over the budget)"
+    if store.get("blocked"):
+        line += f" · {int(store['blocked'])} blocked as prompt-injection"
+    return line
+
+
+def _memory_erases(target: str, store: Mapping[str, Any]) -> str:
+    line = (f"  - {target} ({store.get('label') or target}): {int(store.get('entries') or 0)} entries,"
+            f" {int(store.get('bytes') or 0):,} bytes")
+    extra = []
+    if store.get("copies"):
+        extra.append(f"{int(store['copies'])} hand-edit copies ({int(store.get('copies_bytes') or 0):,} bytes)")
+    if store.get("undo_writes"):
+        extra.append(f"{int(store['undo_writes'])} undoable writes")
+    return line + (f", and {' and '.join(extra)}" if extra else "")
+
+
+def _memory_holds(store: Any) -> bool:
+    return isinstance(store, Mapping) and any(
+        int(store.get(key) or 0) for key in ("entries", "copies", "undo_writes"))
+
+
+def _memory_switch(client: Any, ctx: Context, on: bool, as_json: bool) -> int:
+    """H422 — ``nerva memory off|on``: post the switch, then reread the status, and claim
+    only what the hub reports."""
+    reply = client.post("/api/memory/switch", {"enabled": on})
+    status = client.get("/api/memory")
+    status = status if isinstance(status, dict) else {}
+    enabled = status.get("enabled") is True
+    if as_json:
+        ctx.dump({"switch": reply, "status": status})
+        return EXIT_OK if enabled is on else EXIT_FAILED
+    if not on:
+        if enabled:
+            ctx.err.write("memory is still on: the hub saved the switch but still reads it as on; "
+                          "check again with `nerva memory` in 30 s\n")
+            return EXIT_FAILED
+        ctx.say("memory off: from the next turn no prompt carries the agent notes or the user profile, "
+                "the memory tool refuses and the background review and reflection add nothing to them; "
+                "nothing was erased (the stores stay on disk). "
+                "Turn it back on with: nerva memory on")
+        return EXIT_OK
+    if enabled:
+        tail = ", but safe mode leaves it out of every prompt" if status.get("safe_mode") else ""
+        ctx.say(f"memory on: the next turn's prompt carries the agent notes and the user profile{tail}")
+        return EXIT_OK
+    if status.get("switch") is True and status.get("cognition") is False:
+        ctx.err.write("the switch is on, but memory stays off: cognition.enabled and cognition.memory_enabled "
+                      "must be on too (nerva config set, or a product posture that sets them)\n")
+    elif status.get("available") is False:
+        ctx.err.write("memory is not available on this hub (no cognition module)\n")
+    else:
+        ctx.err.write("memory is still off: the hub saved the switch but still reads it as off; "
+                      "check again with `nerva memory` in 30 s\n")
+    return EXIT_FAILED
+
+
+def cmd_memory(ns: argparse.Namespace, ctx: Context) -> int:
+    """H422 — the long-term memory every prompt carries (the agent notes and the user
+    profile: LivingMemory's core rings), over the hub's routes.
+
+    ``status`` (the default) reads ``GET /api/memory``: whether the core block reaches the
+    prompt and the memory tool can write, and per store its entries, characters against
+    the section budget and bytes on disk. ``reset`` shows what it would erase, asks for a
+    typed ``yes`` unless ``--yes``, and posts ``POST /api/memory/reset`` (admin; the hub
+    records it in the intent log). ``off`` / ``on`` post the owner's memory switch
+    (``POST /api/memory/switch``, admin), which no product posture overrides; nothing is
+    erased. Each then rereads ``GET /api/memory`` and says what the hub really does: it
+    fails when memory is not in the state asked for.
+    """
+    client = ctx.client()
+    action = ns.action or "status"
+    as_json = bool(getattr(ns, "json", False))
+    if action in ("off", "on"):
+        return _memory_switch(client, ctx, action == "on", as_json)
+    status = client.get("/api/memory")
+    stores = status.get("stores") if isinstance(status, dict) else None
+    if not isinstance(stores, dict):
+        ctx.err.write("unexpected reply from the hub: no memory stores in it\n")
+        return EXIT_FAILED
+    if action == "status":
+        if as_json:
+            ctx.dump(status)
+            return EXIT_OK
+        if not status.get("available"):
+            ctx.say("memory: not available on this hub (no cognition module)")
+            return EXIT_OK
+        if not status.get("enabled"):
+            why = ("switched off by the owner (nerva memory on brings it back)" if status.get("switch") is False
+                   else "cognition.enabled and cognition.memory_enabled must both be on")
+            state = f"off ({why}); the stores stay on disk"
+        elif status.get("safe_mode"):
+            state = "on, but safe mode leaves it out of every prompt and the memory tool refuses"
+        else:
+            state = ("on · the prompt carries it · the memory tool "
+                     + ("writes in owner turns" if status.get("tool") else "is not offered (llm.tool_loop_enabled off)"))
+        ctx.say(f"memory: {state}")
+        for target in ("memory", "user"):
+            if isinstance(stores.get(target), Mapping):
+                ctx.say(_memory_store_line(target, stores[target]))
+        if status.get("drift"):
+            ctx.say(f"note: {status['drift']}")
+        return EXIT_OK
+    targets = _MEMORY_STORES[ns.target]
+    holding = [target for target in targets if _memory_holds(stores.get(target))]
+    if not holding:
+        ctx.say("Nothing to reset — the selected memory is empty.")
+        return EXIT_OK
+    if not as_json or not ns.yes:
+        ctx.say("This will permanently erase:")
+        for target in holding:
+            ctx.say(_memory_erases(target, stores[target]))
+    if not ns.yes:
+        ctx.out.write("Type 'yes' to confirm: ")
+        if callable(getattr(ctx.out, "flush", None)):
+            ctx.out.flush()
+        try:
+            answer = ctx.inp.readline() if ctx.inp is not None else ""
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if (answer or "").strip().lower() != "yes":
+            ctx.say("\nCancelled — nothing was erased.")
+            return EXIT_FAILED
+    # The hub waits up to 30 s for each ring's lock (CoreMemory.clear) before it answers.
+    reply = client.post("/api/memory/reset", {"target": ns.target, "confirm": "RESET"},
+                        timeout=_MEMORY_RESET_TIMEOUT_S)
+    reply = reply if isinstance(reply, dict) else {}
+    if as_json:
+        ctx.dump(reply)
+        return EXIT_OK if reply.get("ok") is True else EXIT_FAILED
+    erased = reply.get("erased") if isinstance(reply.get("erased"), dict) else {}
+    for target, count in erased.items():
+        label = (stores.get(target) or {}).get("label") or target
+        ctx.say(f"  erased {target} ({label}): {int(count or 0)} entries")
+    if reply.get("ok") is not True:
+        ctx.err.write(f"not erased: {', '.join(reply.get('not_erased') or []) or 'unknown'}; run the reset again\n")
+        return EXIT_FAILED
+    ctx.say("Memory reset complete. A conversation under way keeps what it started with; "
+            "the next one starts with a blank slate.")
+    if reply.get("audited") is False:
+        ctx.say("note: the intent log could not record this reset")
+    return EXIT_OK
+
+
 def _json_option(flag: str, text: str, *, an_object: bool = False):
     try:
         value = json.loads(text)
@@ -5405,6 +5580,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "company": cmd_company,
     "goal": cmd_goal,
     "pairing": cmd_pairing,
+    "memory": cmd_memory,
     "provider": cmd_custom_provider,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,

@@ -7666,6 +7666,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Status
+         * @description H422 — the long-term memory's status (Hermes's ``GET /api/memory``): whether the
+         *     curated memory is on (``enabled``: the owner's switch, ``switch``, and cognition
+         *     memory, ``cognition``, as the running hub reads them, a product posture included),
+         *     whether the core block reaches the prompt (``injected``) and the model's memory tool
+         *     can write (``tool``), and per ring (``memory``: the agent's notes, ``user``: the user
+         *     profile) the bytes its file holds, its entries, the characters they take against the
+         *     section's budget, what the next block shows, leaves out and blocks, and what else a
+         *     reset erases with it (``copies``: hand-edit ``.bak`` files, ``undo_writes``). Reported
+         *     with memory switched off too; ``builtin_files`` is Hermes's bytes-per-store shape.
+         */
+        get: operations["memory_status_api_memory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Switch
+         * @description H422 — the owner switches the curated memory off or on (``nerva memory off|on``,
+         *     the Long-Term Memory panel). Off keeps the stores on disk and takes the core block out
+         *     of every prompt from the next turn, the memory tool refusing, whatever product posture
+         *     is selected (it writes ``memory.core_enabled``, which no posture sets); on brings them
+         *     back. Admin-only, JSON only, recorded in the intent log as ``memory.switch``; the hub's
+         *     runtime settings are reloaded at once, and the reply is the status as the hub now
+         *     reads it, so ``enabled`` says whether memory is really on (switched on, it stays off
+         *     while cognition memory is off).
+         */
+        post: operations["memory_switch_api_memory_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Reset
+         * @description H422 — erase the agent's notes, the user profile or both, for good (Hermes's
+         *     ``POST /api/memory/reset``). Body ``{"target": "all"|"memory"|"user", "confirm":
+         *     "RESET"}``: the target defaults to ``all``, and the word is required like the
+         *     forget's ``FORGET``; without it nothing is erased and the reply says what would be
+         *     (``would_erase``). Admin-only, an owner act on the owner's own memory: recorded in the
+         *     intent log as ``memory.reset`` (no intent log, nothing erased). A conversation under
+         *     way keeps its frozen prompt snapshot; the next one starts without the facts.
+         */
+        post: operations["memory_reset_api_memory_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/remember": {
         parameters: {
             query?: never;
@@ -14774,6 +14855,11 @@ export interface components {
             /** Valid */
             valid: boolean;
             stats: components["schemas"]["MediationCounts"] | null;
+        };
+        /** MemorySwitchBody */
+        MemorySwitchBody: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** MicArmBody */
         MicArmBody: {
@@ -28560,6 +28646,94 @@ export interface operations {
         };
     };
     memory_core_undo_api_memory_core_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_status_api_memory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_switch_api_memory_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySwitchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_reset_api_memory_reset_post: {
         parameters: {
             query?: never;
             header?: never;

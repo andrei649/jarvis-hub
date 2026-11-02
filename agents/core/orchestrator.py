@@ -1145,22 +1145,8 @@ class Orchestrator:
             ]
             self.event_watcher = EventWatcher(self.autonomy, event_probes)
 
-            async def _reflect_llm(prompt: str) -> str:
-                return await self.process(prompt, agent="jarvis", channel="reflection")
-
-            def _reflection_living_memory():
-                cog = getattr(self, "cognition", None)
-                if cog is None or not cog.sub_enabled("memory_enabled"):
-                    return None
-                return cog.module("memory")
-
             from .paths import data_path
-            self.reflector = DailyReflector(
-                self.memory,
-                _reflect_llm,
-                run_store=ReflectionRunStore(data_path("reflection", "daily_reflector.json")),
-                living_memory=_reflection_living_memory,
-            )
+            self.reflector = self._build_daily_reflector()
 
             # Proactive Technology Scout (Self-Improvement) — reuses the same
             # WebSearchPlugin the assistant's own websearch feature calls; None if
@@ -1216,7 +1202,6 @@ class Orchestrator:
         # no local backend up ⇒ the review pass just skips; NEVER the cloud-
         # preferring HybridRouter.backend property).
         try:
-            from .learning.background_review import BackgroundReviewer
             from .skills.proposals import SkillProposalStore
             from .paths import data_path as _dp
             self.skill_proposals = SkillProposalStore(
@@ -1225,22 +1210,7 @@ class Orchestrator:
             from .skills.batch import SkillBatchStore
             self.skill_batches = SkillBatchStore(path=_dp("learning", "skill_batches.json"))
 
-            def _review_living():
-                cog = getattr(self, "cognition", None)
-                if cog is None or not cog.sub_enabled("memory_enabled"):
-                    return None
-                return cog.module("memory")
-
-            self.reviewer = BackgroundReviewer(
-                self._review_llm,
-                living=_review_living,
-                skills=self.skills,
-                learning=(self.cognition.module("learning")
-                          if getattr(self, "cognition", None) is not None else None),
-                proposals=self.skill_proposals,
-                approvals=getattr(self, "action_approvals", None),
-                get_setting=self.get_setting,
-            )
+            self.reviewer = self._build_background_reviewer()
 
             # H20.5 — usage telemetry (sidecar, best-effort) + the nightly skill
             # curator (lifecycle + approved-patch application; gated at the tick).
@@ -1411,6 +1381,59 @@ class Orchestrator:
             safe_mode.note("plugins")
             return
         self.plugin_manager.build(self)
+
+    def _build_background_reviewer(self):
+        """The per-turn learning reviewer as the hub runs it: the strict-local review
+        model, the living memory while cognition memory is on, and the runtime settings,
+        through which it reads the owner's memory switch (H422, ``memory.core_enabled``:
+        off, no reviewed fact reaches the curated rings, whatever the posture says), and the
+        intent log, which records a fact a full ring refused (H422)."""
+        from .learning.background_review import BackgroundReviewer
+
+        def _review_living():
+            cog = getattr(self, "cognition", None)
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return None
+            return cog.module("memory")
+
+        cognition = getattr(self, "cognition", None)
+        return BackgroundReviewer(
+            self._review_llm,
+            living=_review_living,
+            skills=getattr(self, "skills", None),
+            learning=cognition.module("learning") if cognition is not None else None,
+            proposals=getattr(self, "skill_proposals", None),
+            approvals=getattr(self, "action_approvals", None),
+            get_setting=self.get_setting,
+            audit=lambda: getattr(self, "intent_log", None),
+        )
+
+    def _build_daily_reflector(self) -> DailyReflector:
+        """The nightly reflection as the hub runs it: the conversation memory, a jarvis
+        turn on the reflection channel, the living memory while cognition memory is on and,
+        H422, the owner's memory switch (``memory.core_enabled``, which no posture sets),
+        which keeps the nightly lessons out of the curated core ring when it is off, and the
+        intent log, which records a lesson a full ring refused."""
+        from .memory_tool import switched_on
+        from .paths import data_path
+
+        async def _reflect_llm(prompt: str) -> str:
+            return await self.process(prompt, agent="jarvis", channel="reflection")
+
+        def _reflection_living_memory():
+            cog = getattr(self, "cognition", None)
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return None
+            return cog.module("memory")
+
+        return DailyReflector(
+            getattr(self, "memory", None),
+            _reflect_llm,
+            run_store=ReflectionRunStore(data_path("reflection", "daily_reflector.json")),
+            living_memory=_reflection_living_memory,
+            core_enabled=lambda: switched_on(getattr(self, "get_setting", None)),
+            audit=lambda: getattr(self, "intent_log", None),
+        )
 
     def load_runtime_settings(self):
         try:
@@ -4031,9 +4054,17 @@ class Orchestrator:
         ``freeze=False`` (H227, the inspector) answers what the next turn would send
         without being what freezes it: the frozen block when a turn already froze
         one, else a fresh render that is not kept.
+
+        H422: the owner's memory switch (``memory.core_enabled``, which no product
+        posture sets) keeps the block out from the next turn on, a conversation under
+        way included; switched back on, the session's frozen block returns.
         """
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
+            return ""
+        from .memory_tool import switched_on
+
+        if not switched_on(getattr(self, "get_setting", None)):
             return ""
         from . import safe_mode
 
@@ -4071,6 +4102,10 @@ class Orchestrator:
         cog = getattr(self, "cognition", None)
         try:
             if cog is None or not cog.sub_enabled("memory_enabled"):
+                return
+            from .memory_tool import switched_on
+
+            if not switched_on(getattr(self, "get_setting", None)):
                 return
             from . import safe_mode
 
