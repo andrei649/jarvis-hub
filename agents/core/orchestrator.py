@@ -1093,18 +1093,17 @@ class Orchestrator:
 
         for agent_id, agent_config in self.config.agents.items():
             if agent_config.status == "active":
-                agent_dict = {
-                    "name": agent_config.name,
-                    "model": agent_config.model,
-                    "heartbeat": agent_config.has_heartbeat,
-                    "channel": agent_config.channel,
-                    "plugins": agent_config.plugins,
-                    "tier": agent_config.tier,
-                }
+                agent_dict = self.agent_dict(agent_config)
                 agent = Agent(agent_id, agent_dict, self.llm_router, permission_gate=self.permission_gate)
                 agent.guardrails = self.security
                 self.agents[agent_id] = agent
                 logger.info(f"Loaded: {agent_id}")
+                # H202: an agent the owner created is wake-word routable like a shipped one.
+                if agent_id not in self.router.ROUTING_TABLE:
+                    self.router.ROUTING_TABLE[agent_id] = [agent_id]
+            elif agent_config.status == "retired" and self.router.ROUTING_TABLE.get(agent_id) == [agent_id]:
+                # H202: an agent the owner retired is not addressed by its wake word.
+                del self.router.ROUTING_TABLE[agent_id]
 
         self._configure_cognition_roster()
         _record_identity_version(self)
@@ -5926,22 +5925,52 @@ class Orchestrator:
             "plugins": [],
             "tier": "foundation",
         }
-        agent = Agent(bench_id, agent_dict, self.llm_router, permission_gate=self.permission_gate)
-        # Propagate guardrails if available (same pattern as load_agents).
-        agent.guardrails = self.security  # may be None — Agent checks truthiness
-        # Bench agents are loaded after autonomy wiring; inherit the same governed
-        # default-off runtime as agents that were present at boot.
-        agent.tool_runtime = getattr(self, "agent_tool_runtime", None)
-
-        self.agents[bench_id] = agent
-
-        # Register in router so the agent is wake-word routable.
-        if bench_id not in self.router.ROUTING_TABLE:
-            self.router.ROUTING_TABLE[bench_id] = [bench_id]
-            logger.info(f"promote_bench_agent: added {bench_id} to ROUTING_TABLE")
+        self.register_live_agent(bench_id, agent_dict)
 
         logger.info(f"promote_bench_agent: {bench_id} ({name}) is now active")
         return True
+
+    @staticmethod
+    def agent_dict(agent_config) -> dict:
+        """The constructor config ``load_agents`` builds an ``Agent`` from, for one
+        ``AgentConfig`` row of the registry."""
+        return {
+            "name": agent_config.name,
+            "model": agent_config.model,
+            "heartbeat": agent_config.has_heartbeat,
+            "channel": agent_config.channel,
+            "plugins": agent_config.plugins,
+            "tier": agent_config.tier,
+        }
+
+    def register_live_agent(self, agent_id: str, agent_dict: dict) -> Agent:
+        """Instantiate *agent_dict* as agent *agent_id* after boot and make it live and
+        wake-word routable: a promoted bench agent, and an agent the owner creates or
+        brings back (H202, ``agent_roster``)."""
+        agent = Agent(agent_id, agent_dict, self.llm_router, permission_gate=self.permission_gate)
+        # Propagate guardrails if available (same pattern as load_agents).
+        agent.guardrails = self.security  # may be None — Agent checks truthiness
+        # Agents added after boot come after autonomy wiring; inherit the same governed
+        # default-off runtime as agents that were present at boot.
+        agent.tool_runtime = getattr(self, "agent_tool_runtime", None)
+
+        self.agents[agent_id] = agent
+
+        # Register in router so the agent is wake-word routable.
+        if agent_id not in self.router.ROUTING_TABLE:
+            self.router.ROUTING_TABLE[agent_id] = [agent_id]
+            logger.info(f"register_live_agent: added {agent_id} to ROUTING_TABLE")
+        return agent
+
+    def retire_live_agent(self, agent_id: str):
+        """H202 — take *agent_id* out of the running hub: no longer loaded, routable or
+        addressable. Nothing it left behind is touched (persona, versions, history, memory).
+        Returns the agent that was live, or None."""
+        agent = self.agents.pop(agent_id, None)
+        if self.router.ROUTING_TABLE.get(agent_id) == [agent_id]:
+            del self.router.ROUTING_TABLE[agent_id]
+        logger.info(f"retire_live_agent: {agent_id} is no longer live")
+        return agent
 
     def _record_interactions(self, text: str, responses: dict, synthesized: str, route_name: str = "", channel: str = "web"):
         # H8.1b: index named entities from the user's turn (best-effort, offline).

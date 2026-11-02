@@ -517,6 +517,35 @@ def build_parser() -> argparse.ArgumentParser:
         "on", help="bring the curated memory back into the prompt after `nerva memory off` (admin)")
     memory_on.add_argument("--json", action="store_true")
 
+    agents = verbs.add_parser(
+        "agents", help="the owner's roster: create, rename, retire and restore agents (admin, H202)")
+    agent_verbs = agents.add_subparsers(dest="action", metavar="action")
+    agents_list = agent_verbs.add_parser(
+        "list", help="every agent, active and retired, and what the owner changed (the default)")
+    agents_list.add_argument("--json", action="store_true")
+    agents_create = agent_verbs.add_parser(
+        "create", help="create an agent from a template or blank, kept across restarts")
+    agents_create.add_argument("name", help="the display name")
+    agents_create.add_argument("--template", default="",
+                               help="a template key (nerva agents list shows them); default: blank")
+    agents_create.add_argument("--id", dest="agent_id", default="", help="the agent id; default: from the name")
+    agents_create.add_argument("--tier", default="", choices=("", *_AGENT_TIERS),
+                               help="the roster tier; default: the template's")
+    agents_create.add_argument("--json", action="store_true")
+    agents_rename = agent_verbs.add_parser("rename", help="give an agent a new display name for good; the id stays")
+    agents_rename.add_argument("agent_id")
+    agents_rename.add_argument("name")
+    agents_rename.add_argument("--json", action="store_true")
+    agents_retire = agent_verbs.add_parser(
+        "retire", help="take an agent out of the hub; nothing is deleted and restore brings it back")
+    agents_retire.add_argument("agent_id")
+    agents_retire.add_argument("--reason", default="", help="why, kept with the roster entry")
+    agents_retire.add_argument("--yes", "-y", action="store_true", help="skip the typed confirmation")
+    agents_retire.add_argument("--json", action="store_true")
+    agents_restore = agent_verbs.add_parser("restore", help="bring a retired agent back as it was")
+    agents_restore.add_argument("agent_id")
+    agents_restore.add_argument("--json", action="store_true")
+
     webhook = verbs.add_parser("webhook", help="inbound webhooks: subscribe an external system's events to an agent (admin, H039)")
     webhook_verbs = webhook.add_subparsers(dest="action", required=True, metavar="action")
     webhook_subscribe = webhook_verbs.add_parser(
@@ -3598,6 +3627,102 @@ def cmd_memory(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+#: H202 — the roster tiers ``agents.core.agent_roster.TIERS`` accepts.
+_AGENT_TIERS = ("command", "business", "tech", "foundation")
+
+
+def _agent_line(agent: Mapping[str, Any]) -> str:
+    tags = []
+    if agent.get("status") == "retired":
+        tags.append("retired")
+    elif not agent.get("live"):
+        tags.append("not live")
+    if agent.get("created"):
+        tags.append(f"created from {agent.get('template') or 'blank'}")
+    if agent.get("protected"):
+        tags.append("protected")
+    if agent.get("revision"):
+        tags.append(f"rev {agent['revision']}")
+    return f"{agent.get('id')}  {agent.get('name')}" + (f"  ({', '.join(tags)})" if tags else "")
+
+
+def cmd_agents(ns: argparse.Namespace, ctx: Context) -> int:
+    """H202 — the owner's roster over the hub's admin routes (the Agents roster and the
+    Dossier in the HUD call the same ones; ``agents/core/agent_roster.py``).
+
+    ``list`` (the default) reads ``GET /api/admin/agents/roster``. ``create`` posts a new
+    agent from a template or blank (``POST /api/admin/agents``): kept in the roster, live at
+    once and at every boot, no plugins or heartbeat granted. ``rename`` changes the display
+    name for good; the id stays. ``retire`` shows what stops and what is kept, asks for the
+    agent's id typed back unless ``--yes``, and posts the id as the hub's confirmation;
+    nothing is deleted, and ``restore`` brings the agent back as it was.
+    """
+    client = ctx.client()
+    action = ns.action or "list"
+    as_json = bool(getattr(ns, "json", False))
+    if action == "list":
+        reply = client.get("/api/admin/agents/roster")
+        rows = reply.get("agents") if isinstance(reply, dict) else None
+        if not isinstance(rows, list):
+            ctx.err.write("unexpected reply from the hub: no list of agents in it\n")
+            return EXIT_FAILED
+        if as_json:
+            ctx.dump(reply)
+            return EXIT_OK
+        for agent in rows:
+            if isinstance(agent, Mapping):
+                ctx.say(_agent_line(agent))
+        templates = [t.get("key") for t in reply.get("templates") or [] if isinstance(t, Mapping)]
+        if templates:
+            ctx.say("templates: " + ", ".join(str(t) for t in templates))
+        if reply.get("error") == "roster_unreadable":
+            ctx.say("note: the roster file could not be read; changes are refused until it is fixed")
+        return EXIT_OK
+    if action == "create":
+        body = {"name": ns.name, "template": ns.template, "agent_id": ns.agent_id, "tier": ns.tier}
+        reply = client.post("/api/admin/agents", body)
+        verb = "created"
+    elif action == "rename":
+        reply = client.post(f"/api/admin/agents/{quote(ns.agent_id, safe='')}/rename", {"name": ns.name})
+        verb = "renamed" if (reply or {}).get("changed", True) else "unchanged"
+    elif action == "restore":
+        reply = client.post(f"/api/admin/agents/{quote(ns.agent_id, safe='')}/restore")
+        verb = "restored"
+    else:
+        ident = ns.agent_id.strip().lower()
+        if not ns.yes:
+            rows = (client.get("/api/admin/agents/roster") or {}).get("agents") or []
+            agent = next((a for a in rows if isinstance(a, Mapping) and a.get("id") == ident), None)
+            if agent is None:
+                ctx.err.write(f"no agent {ident!r} on the roster\n")
+                return EXIT_FAILED
+            ctx.say(f"Retiring {agent.get('id')} ({agent.get('name')}) takes it out of the hub now and at "
+                    "every boot. Nothing is deleted: its persona, persona versions, run history and memory "
+                    "stay, and `nerva agents restore` brings it back as it was.")
+            ctx.out.write(f"Type '{ident}' to confirm: ")
+            if callable(getattr(ctx.out, "flush", None)):
+                ctx.out.flush()
+            try:
+                answer = ctx.inp.readline() if ctx.inp is not None else ""
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+            if (answer or "").strip().lower() != ident:
+                ctx.say("\nCancelled — nothing changed.")
+                return EXIT_FAILED
+        reply = client.post(f"/api/admin/agents/{quote(ident, safe='')}/retire",
+                            {"confirm": ident, "reason": ns.reason})
+        verb = "retired"
+    reply = reply if isinstance(reply, dict) else {}
+    if as_json:
+        ctx.dump(reply)
+        return EXIT_OK if reply.get("ok") is True else EXIT_FAILED
+    agent = reply.get("agent") if isinstance(reply.get("agent"), Mapping) else {}
+    ctx.say(f"{verb} {_agent_line(agent)}")
+    if reply.get("audited") is False and verb != "unchanged":
+        ctx.say("note: the hub's audit log could not record this change")
+    return EXIT_OK if reply.get("ok") is True else EXIT_FAILED
+
+
 def _json_option(flag: str, text: str, *, an_object: bool = False):
     try:
         value = json.loads(text)
@@ -5581,6 +5706,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "goal": cmd_goal,
     "pairing": cmd_pairing,
     "memory": cmd_memory,
+    "agents": cmd_agents,
     "provider": cmd_custom_provider,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,

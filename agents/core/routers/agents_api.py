@@ -8,6 +8,10 @@ Covers the agent-facing reads:
   — H156: make an edited persona live (admin), and have the local model draft a description.
 - `GET /api/agents/history` + `GET /api/agents/{agent_id}/history` — H10.17 run-history rollups.
 - `GET /api/agent-templates` + `POST /api/agent-templates/instantiate` — H10.29 template catalog/preview.
+- `GET /api/admin/agents/roster`, `POST /api/admin/agents`, `POST /api/admin/agents/{agent_id}/rename`,
+  `/retire` and `/restore` — H202: the owner's roster (`agent_roster`): create an agent from a template
+  or blank, rename one for good, retire it (reversible, nothing deleted) and bring it back. Admin-only,
+  each change crossing the Action Kernel (`admin.agent_roster`), versioned in the roster and audited.
 
 State that stays in web.py (read here via `sys.modules`): `_enrich_agents()` and the
 `_AGENT_SETTINGS` global it reads are multi-domain (the dashboard/status routers and the
@@ -24,7 +28,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 import agents as _agents_pkg
 from agents.core import soul_edit
@@ -88,6 +92,11 @@ async def get_agent_soul(agent_id: str):
         (d for d in _AGENTS_DIR.iterdir() if d.is_dir() and d.name == agent_id),
         None,
     )
+    if agent_dir is None:
+        # H202: an agent the owner created has no shipped folder; its persona folder is
+        # found the same enumerated way (``soul_edit.agent_folder``).
+        created = soul_edit.agent_folder(agent_id)
+        agent_dir = Path(created) if created is not None else None
     soul_path = None
     if agent_dir is not None:
         # Resolved by `Agent.soul_path_for`, the SAME function `Agent._load_soul`
@@ -144,6 +153,133 @@ async def put_agent_soul(agent_id: str, body: SoulEditBody):
     except soul_edit.SoulEditError as exc:
         return JSONResponse(exc.body(), status_code=exc.status)
     return nocache_json(result)
+
+
+# ── H202: the owner's roster — create, rename, retire, restore ───────────────
+
+#: The Action Kernel kind every roster change crosses (registered in kernel/registry.py).
+ROSTER_KIND = "admin.agent_roster"
+
+
+def _roster_kernel_denial(orch, op: str, agent: str, req: Request):
+    """Mediate a roster change through the Action Kernel like the other admin escalations
+    (``routers.security._admin_kernel_denial``: DENY only, a token minted for the
+    already-admin caller, default-off). The payload carries the op and the id, never a
+    name or persona text."""
+    from agents.core.routers.security import _admin_kernel_denial
+
+    return _admin_kernel_denial(orch, ROSTER_KIND, "admin:agent_roster",
+                                {"op": op, "target": str(agent or "").strip().lower()[:64]},
+                                req.headers.get("x-capability-token", ""))
+
+
+async def _roster_change(req: Request, op: str, agent: str, change, *, status_code: int = 200):
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    denied = _roster_kernel_denial(orch, op, agent, req)
+    if denied is not None:
+        return JSONResponse({"error": "kernel_denied", "detail": f"kernel denied: {denied}"}, status_code=403)
+    try:
+        result = await asyncio.to_thread(change, orch)
+    except soul_edit.SoulEditError as exc:
+        return JSONResponse(exc.body(), status_code=exc.status)
+    return nocache_json({"ok": True, **result}, status_code=status_code)
+
+
+class AgentCreateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=64)
+    template: str = Field("", max_length=64)
+    agent_id: str = Field("", max_length=64)
+    tier: str = Field("", max_length=16)
+    soul: str | None = None
+
+
+class AgentRenameBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=64)
+
+
+class AgentRetireBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirm: str = Field("", max_length=64)
+    reason: str = Field("", max_length=200)
+
+
+@router.get("/api/admin/agents/roster", dependencies=[Depends(admin_guard)])
+async def agent_roster_view():
+    """H202 — every agent the registry knows, active and retired: whether it is live, made
+    by the owner (and from which template), protected, and its last roster revisions; with
+    the templates and tiers a new agent can take."""
+    from agents.core import agent_roster
+
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        body = await asyncio.to_thread(agent_roster.roster, orch)
+    except soul_edit.SoulEditError as exc:
+        return JSONResponse(exc.body(), status_code=exc.status)
+    return nocache_json(body)
+
+
+@router.post("/api/admin/agents", dependencies=[Depends(admin_guard)])
+async def agent_create(body: AgentCreateBody, req: Request):
+    """H202 — create an agent from a template (``GET /api/agent-templates``) or blank, and
+    keep it: written to the owner's roster (``agent_roster.json``), loaded now and at every
+    boot, its persona made live through the SOUL editor's own path (guard-scanned, version
+    1, audited). No plugins, heartbeat or model pin are granted. 201; 409 a taken or
+    reserved id, too many created agents or safe mode; 404 an unknown template; 413/422 a
+    persona the guard refuses or a bad name, id or tier; 503 an unreadable roster."""
+    from agents.core import agent_roster
+
+    return await _roster_change(req, "create", body.agent_id, lambda orch: agent_roster.create(
+        orch, name=body.name, template=body.template, agent_id=body.agent_id, tier=body.tier,
+        persona=body.soul), status_code=201)
+
+
+@router.post("/api/admin/agents/{agent_id}/rename", dependencies=[Depends(admin_guard)])
+async def agent_rename(agent_id: str, body: AgentRenameBody, req: Request):
+    """H202 — rename an agent for good (its id, the key of its persona and history,
+    stays): saved in the roster, applied to the running agent, versioned and audited. The
+    in-memory display override of ``PUT /api/admin/agents/{id}`` no longer hides it. 409 a
+    name another agent has."""
+    from agents.core import agent_roster
+
+    reply = await _roster_change(req, "rename", agent_id,
+                                 lambda orch: agent_roster.rename(orch, agent_id, body.name))
+    web = sys.modules.get("agents.web")
+    if reply.status_code == 200 and web is not None:
+        overrides = web._get_agent_settings().get(agent_id.strip().lower())
+        if isinstance(overrides, dict):
+            overrides.pop("name", None)
+    return reply
+
+
+@router.post("/api/admin/agents/{agent_id}/retire", dependencies=[Depends(admin_guard)])
+async def agent_retire(agent_id: str, body: AgentRetireBody, req: Request):
+    """H202 — retire an agent: out of the running hub and every later boot, nothing deleted
+    (its persona, persona versions, run history and memory stay; ``/restore`` brings it
+    back as it was). ``{"confirm": "<agent id>"}`` is required: without it nothing changes
+    and the 400 says what would stop and what is kept. Jarvis cannot be retired (409)."""
+    from agents.core import agent_roster
+
+    return await _roster_change(req, "retire", agent_id, lambda orch: agent_roster.retire(
+        orch, agent_id, confirm=body.confirm, reason=body.reason))
+
+
+@router.post("/api/admin/agents/{agent_id}/restore", dependencies=[Depends(admin_guard)])
+async def agent_restore(agent_id: str, req: Request):
+    """H202 — bring a retired agent back, live now and at every boot, with the persona and
+    history it had. 409 for an agent that is not retired."""
+    from agents.core import agent_roster
+
+    return await _roster_change(req, "restore", agent_id,
+                                lambda orch: agent_roster.restore(orch, agent_id))
 
 
 @router.post("/api/admin/agents/{agent_id}/description/draft", dependencies=[Depends(admin_guard)])
@@ -221,8 +357,8 @@ async def agent_templates_instantiate(req: Request):
     """H10.29 — render a ready-to-save agent config from a template.
 
     Body: {"template": "researcher", "name": "Vega", "overrides": {...}}.
-    Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); the
-    caller persists it via the normal agent-creation flow.
+    Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); nothing is
+    saved. ``POST /api/admin/agents`` (H202) is the agent-creation flow that keeps one.
     """
     from agents.core.agent_templates import build_agent_config
     try:
