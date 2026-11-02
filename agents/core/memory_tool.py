@@ -20,7 +20,11 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   (Hermes's 2200 for the agent notes, 1375 for the user profile: ``core_block.CHAR_BUDGETS``,
   measured on what the ring holds: ``core_block.stored_chars``, the figure ``GET
   /api/memory`` reports), and a write that would take a ring past it is refused with the
-  ring's usage and its limit, so a ring the tool wrote renders whole. The ring itself
+  ring's usage and its limit, so a ring the tool wrote renders whole. That refusal, and a
+  full ring's, carries the ring's ``current_entries`` (Hermes's: the entries as the prompt
+  shows them, a flagged one as its [BLOCKED] stub, at most :data:`LISTING_MAX_CHARS`), so
+  the model can pick what to replace or remove; the prompt's section headers carry each
+  ring's usage too (``core_block.usage_figure``). The ring itself
   refuses the other writers the same way (``CoreMemory.put`` raises
   ``CoreMemoryOverBudget`` past the budget, the cap or :data:`MAX_FACT_CHARS`, and nothing
   rotates out; the post-turn review and the daily reflection log it and record it with
@@ -107,6 +111,9 @@ FULL_ATTEMPTS_PER_TURN = 3
 _FULL_TURNS_KEEP = 256
 #: How long a write waits for another process's lock on a ring file.
 LOCK_TIMEOUT_S = 5.0
+#: H422 — the most characters of entries a refusal lists (:func:`current_entries`). A ring
+#: the hub keeps (at most 20 facts, each shown in at most 300 characters) always fits whole.
+LISTING_MAX_CHARS = 6_000
 _ARG_FIELDS = frozenset({"operations"})
 _OP_FIELDS = frozenset({"action", "target", "text", "old_text"})
 
@@ -138,8 +145,11 @@ DESCRIPTION = (
     "Each fact is one short line. Save what will still matter next time; do not save what "
     "belongs to this task only. A call with no operations reads both. Every change is "
     "recorded and the owner can undo it. Each target has a character budget (memory "
-    f"{CHAR_BUDGETS['memory']:,}, user {CHAR_BUDGETS['user']:,}); a write that would go past it is "
-    "refused with the target's usage, so keep facts short and replace or remove stale ones."
+    f"{CHAR_BUDGETS['memory']:,}, user {CHAR_BUDGETS['user']:,}), and your prompt's [core memory] and "
+    "[user profile] headers show how full each one was when this conversation's memory was loaded. "
+    "A write that would go past the budget, or past a full target's fact limit, is refused with the "
+    "target's usage and its current_entries, so keep facts short, and replace or remove stale ones "
+    "(merge two related facts into one) before adding."
 )
 OFF_DESCRIPTION = DESCRIPTION + (" Memory is switched off on this hub (the owner's memory switch, or cognition "
                                   "memory), so every call is refused.")
@@ -252,6 +262,32 @@ def usage(facts: list[str], target: str) -> str:
     return f"{stored_chars(facts):,}/{CHAR_BUDGETS[target]:,}"
 
 
+def current_entries(facts: list[str], target: str) -> dict:
+    """H422 — ring *target*'s entries for a refusal that asks the model to make room
+    (Hermes's ``current_entries``): in order, as the prompt shows them
+    (``core_block.shown_entries``: one line, at most 300 characters, a flagged one as its
+    [BLOCKED] stub), scanned with the normalised scanner the tool's own writes pass, so a
+    refusal never carries text the prompt keeps out, nor text that would get the result
+    fenced and the turn tainted (and with it the very write that makes room refused).
+    Bounded: at most :data:`LISTING_MAX_CHARS` characters of entries; when the newest do
+    not fit, ``current_entries_omitted`` counts them."""
+    from .learning.core_block import shown_entries
+    from .security.quarantine import detect_injection_normalized
+
+    listed: list[str] = []
+    used = 0
+    entries = shown_entries(list(facts), target, detect_injection_normalized)
+    for entry in entries:
+        if used + len(entry) > LISTING_MAX_CHARS:
+            break
+        listed.append(entry)
+        used += len(entry)
+    out: dict[str, Any] = {"current_entries": listed}
+    if len(listed) < len(entries):
+        out["current_entries_omitted"] = len(entries) - len(listed)
+    return out
+
+
 def _check_budget(target: str, before: list[str], after: list[str], budget: int) -> None:
     """H422 — refuse a final state that takes ring *target* past its character *budget*
     (measured on what the ring holds, ``core_block.stored_chars``). A ring already over it
@@ -266,9 +302,9 @@ def _check_budget(target: str, before: list[str], after: list[str], budget: int)
         "memory_over_budget",
         f"{target} would take {then:,} of its {budget:,} characters after this call (it holds "
         f"{now:,}/{budget:,} now); replace or remove facts first (in this call or before it), or "
-        "save a shorter fact",
+        "save a shorter fact; current_entries lists what it holds",
         {"target": target, "usage": f"{now:,}/{budget:,}", "chars": now, "chars_after": then,
-         "char_budget": budget})
+         "char_budget": budget, **current_entries(before, target)})
 
 
 def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int],
@@ -326,7 +362,11 @@ def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]
         if len(after[target]) > cap[target]:
             raise MemoryToolError("memory_full",
                                   f"{target} would hold {len(after[target])} facts after this call, over its "
-                                  f"{cap[target]}; replace or remove one first (in this call or before it)")
+                                  f"{cap[target]}; replace or remove one first (in this call or before it); "
+                                  "current_entries lists what it holds",
+                                  {"target": target, "entries": len(rings[target]), "cap": cap[target],
+                                   "usage": usage(list(rings[target]), target) if target in CHAR_BUDGETS else "",
+                                   **current_entries(list(rings[target]), target)})
     budgets = CHAR_BUDGETS if budgets is None else budgets
     for target in sorted(after):
         if target in budgets and after[target] != rings[target]:
@@ -949,9 +989,10 @@ def register_memory_tool(
 
 
 __all__ = [
-    "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LOCK_TIMEOUT_S",
-    "MAX_FACT_CHARS", "MAX_OPERATIONS",
+    "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LISTING_MAX_CHARS",
+    "LOCK_TIMEOUT_S", "MAX_FACT_CHARS", "MAX_OPERATIONS",
     "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "SWITCH_CATEGORY",
     "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan", "register_memory_tool",
-    "note_ring_refusal", "reset", "reset_targets", "set_switch", "store_sizes", "switched_on", "undo", "usage",
+    "current_entries", "note_ring_refusal", "reset", "reset_targets", "set_switch", "store_sizes", "switched_on",
+    "undo", "usage",
 ]
