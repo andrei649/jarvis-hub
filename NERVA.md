@@ -209,7 +209,7 @@ curl.exe http://127.0.0.1:8080/status
 - 745 HTTP routes; parity-snapshot-derived
 - Tests: backend **31,203** · frontend **2,753** · mobile **359**
 - Version: **v1.0.0** · source commit `784df0a06c9a`
-- Backlog ledger: 289 done · 22 open or blocked of 311 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
+- Backlog ledger: 289 done · 23 open or blocked of 312 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
 - H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6
 <!-- project-status:jarvis-stats:end -->
 

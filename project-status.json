@@ -4,9 +4,9 @@
     "blocked": 1,
     "delivered": 0,
     "done": 289,
-    "open": 21,
-    "open_or_blocked": 22,
-    "total": 311
+    "open": 22,
+    "open_or_blocked": 23,
+    "total": 312
   },
   "horizons": {
     "H10": {
@@ -69,8 +69,8 @@
       "blocked": 0,
       "delivered": 0,
       "done": 22,
-      "open": 13,
-      "total": 35
+      "open": 14,
+      "total": 36
     },
     "H19": {
       "blocked": 0,
