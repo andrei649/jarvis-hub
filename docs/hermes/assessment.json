@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "daa6c6863624c723bd37a1a163b417205745acf8",
-  "assessed_at": "2026-11-02T19:28:30Z",
+  "base_sha": "4f69265e6f5d97ceb325ae6fdcc778439f90daa3",
+  "assessed_at": "2026-11-02T21:36:47Z",
   "reviews": [
     {
       "id": "H001",
@@ -23802,7 +23802,7 @@
         },
         {
           "path": "agents/core/security/audit.py",
-          "sha256": "6b61698630d508ccebfa2b13e838c6776c991b1ea009954911e71391b85c7b33"
+          "sha256": "37b3443da80ffe5f3aec3fafbd26e305b664b84a2234e4c8597fed872fcfc4ab"
         },
         {
           "path": "agents/core/security/types.py",
