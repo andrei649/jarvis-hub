@@ -289,6 +289,11 @@ CLEAR_LOCK_TIMEOUT_S = 30.0
 PROMPT_REREAD_LOCK_TIMEOUT_S = 0.2
 
 
+def _now() -> float:
+    """The clock a ring dates a fact by (a seam the tests move)."""
+    return time.time()
+
+
 class CoreMemoryLocked(TimeoutError):
     """Another writer held a core ring's file lock for longer than the wait allowed."""
 
@@ -502,7 +507,15 @@ class CoreMemory(JsonStore):
     deleting a curated fact to make room. A ring already over its budget (saved before it,
     or edited by hand) is never trimmed: it stays as it is, the block's own cut is the
     backstop, and every put is refused until it is under the budget. A ring built without
-    a budget (the H21.3 bounded ring) still rotates its oldest fact out at the cap."""
+    a budget (the H21.3 bounded ring) still rotates its oldest fact out at the cap.
+
+    H046 review: every save also records when each fact entered the ring, beside it
+    (``<ring>.json.added``: a sha256 of each fact and the epoch it was first saved), so
+    the learning timeline dates a fact by when it was learned, not by the ring's last
+    save. The record holds only the facts the ring holds (each save rewrites it), a clear
+    empties it, and the data purge removes it with the ring. A fact that was already in
+    the file when a save first dated it (a ring saved before this record existed, a hand
+    edit) is dated by the file's time before that save: the latest it can have entered."""
 
     def __init__(self, cap: int = 20, path: str | Path | None = None, *,
                  char_budget: "int | None" = None, budget_target: str = "memory",
@@ -519,6 +532,9 @@ class CoreMemory(JsonStore):
         #: exactly (a process that started over a hand edit it cannot take): its facts are
         #: then not a "last good copy" of anything, and a prompt note says so.
         self.has_good_copy = True
+        #: H046 review — when each fact entered the ring, by :meth:`_fact_key` (the record
+        #: of a ring with no file; a ring with one keeps it beside it).
+        self._added: dict[str, float] = {}
         super().__init__(path)
         self._baseline()
         self._strict_boot()
@@ -534,6 +550,68 @@ class CoreMemory(JsonStore):
     def lock_path(self) -> "Path | None":
         """H423 — the file every writer of this ring locks (``<ring>.json.lock``)."""
         return None if self.path is None else self.path.with_name(self.path.name + ".lock")
+
+    def added_path(self) -> "Path | None":
+        """H046 review — the record of when each fact entered the ring (``<ring>.json.added``)."""
+        return None if self.path is None else self.path.with_name(self.path.name + ".added")
+
+    @staticmethod
+    def _fact_key(fact: str) -> str:
+        return hashlib.sha256(fact.encode("utf-8")).hexdigest()[:32]
+
+    def _read_added(self) -> "dict[str, float]":
+        """The recorded first-save epoch of each fact, by :meth:`_fact_key` ({} when none)."""
+        if self.path is None:
+            return dict(self._added)
+        try:
+            raw = json.loads(self.added_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        rows = raw.get("added") if isinstance(raw, dict) else None
+        if not isinstance(rows, dict):
+            return {}
+        return {key: float(value) for key, value in rows.items()
+                if isinstance(key, str) and isinstance(value, (int, float)) and not isinstance(value, bool)
+                and math.isfinite(value)}
+
+    def _dates_for_save(self) -> "dict[str, float]":
+        """Under the locks, with the new ring in memory and the file still the one just
+        reread: when each fact of the new ring entered it. A recorded fact keeps its
+        time; one the file already held unrecorded takes the file's time (the latest it
+        can have entered); a fact this save adds takes now."""
+        known = self._read_added()
+        before: "list[str]" = []
+        before_epoch = None
+        if self.path is not None:
+            try:
+                data = self.path.read_bytes()
+                before_epoch = self.path.stat().st_mtime
+            except OSError:
+                pass
+            else:
+                facts, problem = self._strict_facts(data)
+                before = facts if problem is None else []
+        now = _now()
+        dates: dict[str, float] = {}
+        for fact in self._facts[-self.cap:]:
+            key = self._fact_key(fact)
+            if key in known:
+                dates[key] = known[key]
+            elif before_epoch is not None and fact in before:
+                dates[key] = float(before_epoch)
+            else:
+                dates[key] = now
+        return dates
+
+    def added_at(self) -> "dict[str, float | None]":
+        """H046 review — each fact of the ring (in ring order) with the epoch it entered
+        the ring, or None when no save has dated it yet (a ring last saved before this
+        record existed, or a hand edit not saved since): its file's time is then the
+        latest it can have entered."""
+        with self._lock:
+            facts = list(self._facts)
+            known = self._read_added()
+        return {fact: known.get(self._fact_key(fact)) for fact in facts}
 
     @contextmanager
     def locked(self, timeout: "float | None" = None) -> Iterator[None]:
@@ -553,7 +631,15 @@ class CoreMemory(JsonStore):
     def _save(self) -> None:
         # Called only under locked(): the ring and its digest never tear for a reader that
         # holds the lock.
+        try:
+            added = self._dates_for_save()
+        except Exception:
+            logger.warning("core memory: when the facts of %s were added could not be worked out",
+                           self.path, exc_info=True)
+            added = None
         super()._save()
+        if added is not None:
+            self._added = added
         if self.path is None:
             return
         try:
@@ -562,6 +648,17 @@ class CoreMemory(JsonStore):
             # The ring is saved; a stale digest only makes the next write keep a copy of
             # it and take it as the ring, which is the safe side.
             logger.warning("core memory: the digest of %s could not be saved", self.path, exc_info=True)
+        if added is None:
+            return
+        from agents.core.persistence import json_store
+
+        try:
+            # H046 review: rewritten whole on every save, so it never names a fact the ring
+            # no longer holds; a fact it misses is dated by the ring file's time instead.
+            json_store.atomic_write_json(self.added_path(), {"added": added})
+        except OSError:
+            logger.warning("core memory: when the facts of %s were added could not be saved",
+                           self.path, exc_info=True)
 
     def _write_digest(self, digest: str) -> None:
         from agents.core.persistence import json_store

@@ -3812,6 +3812,8 @@ const TODAY_FORGET = {
   memory: { tier: RISK_TIER.REVERSIBLE, label: 'forget', prompt: (n) => `forget ${n}? (an undo is kept in Long-Term Memory)` },
   user: { tier: RISK_TIER.REVERSIBLE, label: 'forget', prompt: (n) => `forget ${n}? (an undo is kept in Long-Term Memory)` },
   skill: { tier: RISK_TIER.REVERSIBLE, label: 'archive', prompt: (n) => `archive ${n}? (its folder is kept; it can be restored)` },
+  // A skill still awaiting the owner's review is discarded, as the review's reject does.
+  pending: { tier: RISK_TIER.REVERSIBLE, label: 'discard', prompt: (n) => `discard ${n}? (it awaits review; it is never loaded, its folder is kept)` },
   facts: { tier: RISK_TIER.IRREVERSIBLE_OR_MONEY, label: 'forget', prompt: (n) => `forget ${n} for good? type FORGET` },
 };
 
@@ -3854,7 +3856,11 @@ export function TodayPanel() {
       .catch(refused);
   };
   const forget = (it) => apiDelete(path(it), { admin: true })
-    .then(() => { if (editing === it.entry_id) setEditing(null); setMsg(`${it.store === 'skill' ? 'archived' : 'forgot'} · ${todayName(it)}`); reload(); })
+    .then((r: any) => {
+      if (editing === it.entry_id) setEditing(null);
+      const done = r && r.discarded ? 'discarded' : it.store === 'skill' ? 'archived' : 'forgot';
+      setMsg(`${done} · ${todayName(it)}`); reload();
+    })
     .catch(refused);
   return (
     <Card title="TODAY" live={asLive(d)} sub={d ? `${c.actions || 0} did · ${c.learnings || 0} learned` : null} onReload={reload}>
@@ -3863,7 +3869,7 @@ export function TodayPanel() {
         const [tag, colour] = TODAY_TAGS[it.kind] || [String(it.kind || '?'), 'var(--ink-2)'];
         const changeable = it.kind === 'learning' && !!it.entry_id;
         const editable = changeable && it.store !== 'skill';
-        const how = TODAY_FORGET[it.store] || TODAY_FORGET.facts;
+        const how = (it.store === 'skill' && it.pending_review ? TODAY_FORGET.pending : TODAY_FORGET[it.store]) || TODAY_FORGET.facts;
         const name = todayName(it);
         return (
           <React.Fragment key={it.entry_id || i}>

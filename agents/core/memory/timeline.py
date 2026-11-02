@@ -26,9 +26,13 @@ H046 review — what the assistant really learns is held in three stores, and ea
 * the two curated rings every prompt carries (Hermes's ``MEMORY.md`` / ``USER.md``
   cards, ``cognition.memory.CoreMemory``: the agent's notes and the user profile, which
   the model's ``memory`` tool, the post-turn review and the daily reflection write):
-  ``memory:<memory|user>:<digest>``. A ring keeps no time per fact, so a fact carries the
-  time its ring was last saved, as Hermes dates a card by its file's mtime, and its place
-  in the ring orders it. The digest is a keyed hash of the fact under a key drawn when
+  ``memory:<memory|user>:<digest>``. A fact carries the time it entered its ring (each
+  save of a ring records it beside the ring, ``CoreMemory.added_at``), so one new fact
+  never re-dates the others; a fact no save has dated yet (a ring last saved before that
+  record existed, a hand edit not saved since) carries its ring's last save, the latest
+  it can have entered, as Hermes dates a card by its file's mtime (``dated`` says
+  which), and its place in the ring orders facts of one time. The digest is a keyed hash
+  of the fact under a key drawn when
   the process starts and never written down: stable while the hub runs (``journey
   list`` then ``journey edit``), and no log that outlives a forget can be matched back
   to a short fact (the memory tool keeps no hash of a fact in the intent log either). An
@@ -164,20 +168,30 @@ def learning_item(row: dict) -> dict:
     }
 
 
-def ring_items(target: str, facts, saved_epoch=None) -> list[dict]:
-    """The facts of curated ring *target* (``memory`` | ``user``), oldest first, as the
-    feed shows them. *saved_epoch* is when the ring's file was last written (None: no
-    file yet): the time every fact of it carries, its place in the ring (``order``)
-    ordering them, as Hermes dates its memory cards."""
+def ring_items(target: str, facts, saved_epoch=None, added=None) -> list[dict]:
+    """The facts of curated ring *target* (``memory`` | ``user``), in ring order, as the
+    feed shows them. *added* maps a fact to the epoch it entered the ring
+    (``CoreMemory.added_at``; None for one no save dated); *saved_epoch* is when the
+    ring's file was last written (None: no file yet), the time a fact *added* does not
+    date carries, as Hermes dates its memory cards. ``dated`` says which time a fact
+    carries (``added`` | ``ring_saved``) and its place in the ring (``order``) orders
+    facts of one time."""
     label = RING_LABELS[target]
+    added = added if isinstance(added, dict) else {}
     out = []
     for position, fact in enumerate(facts or ()):
         if not isinstance(fact, str) or not fact:
             continue
+        epoch, dated = added.get(fact), "added"
+        if _iso(epoch) is None:
+            epoch, dated = saved_epoch, "ring_saved"
+        if _iso(epoch) is None:
+            epoch, dated = None, None
         out.append({
             "entry_id": ring_fact_id(target, fact),
-            "ts": _iso(saved_epoch),
-            "epoch": float(saved_epoch) if _iso(saved_epoch) else None,
+            "ts": _iso(epoch),
+            "epoch": float(epoch) if epoch is not None else None,
+            "dated": dated,
             "order": position,
             "kind": "learning",
             "store": target,

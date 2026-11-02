@@ -561,8 +561,9 @@ def test_a_fact_the_model_saves_with_its_memory_tool_is_on_the_timeline(hub):
     for it in learned:
         assert parse_entry_id(it["entry_id"]) == ("memory", it["entry_id"].split(":", 1)[1])
         assert it["label"] == {"memory": "agent notes", "user": "user profile"}[it["store"]]
-        assert it["epoch"] == pytest.approx((hub.tmp / ("user.json" if it["store"] == "user" else "core.json"))
-                                            .stat().st_mtime)
+        # Dated by when it entered its ring (the save records it), not by the ring's last save.
+        ring = hub.living.user_core if it["store"] == "user" else hub.living.core
+        assert it["dated"] == "added" and it["epoch"] == ring.added_at()[it["value"]]
     # Within a ring, its order is the ring's: the newest fact first on the feed.
     notes = [it["value"] for it in learned if it["store"] == "memory"]
     assert notes == ["prefers short replies", "the repo uses uv"]
@@ -710,9 +711,9 @@ def test_a_skill_the_agent_learns_is_a_journey_node(hub):
     assert node["entry_id"] == f"skill:{name}" and node["origin"] == "agent" and node["pending_review"] is True
     assert node["epoch"] == pytest.approx(datetime.fromisoformat(hub.usage.get(name)["created_at"]).timestamp())
     assert f"skill:{name}" in {it["entry_id"] for it in _learned(hub.client, days=1)[0]}
-    # Quarantined until the owner approves it: a batch does not change it before.
+    # Quarantined until the owner approves it: not changed before (its text is reviewed whole).
     pending = hub.client.patch(_skill_path(f"skill:{name}"), json={"value": "x"}, headers=ADMIN)
-    assert pending.status_code == 422 and pending.json()["reason"] == "skill_batch_pending_review"
+    assert pending.status_code == 409 and pending.json()["reason"] == "skill_pending_review"
     assert hub.loader.approve_generated_skill(name)
     assert _entries(hub, store="skill")["entries"][0]["pending_review"] is False
 
@@ -775,6 +776,124 @@ def test_builder_items_and_order():
     listed = journey_entries([], rings + ring_items("user", ["undated"], None))
     assert [it["value"] for it in listed] == ["undated", "older", "newer"]           # undated first, as Hermes
     assert timeline_mod.LEARNED_STORES == ("facts", "memory", "user", "skill")
+
+
+# ── H046 review round 2: a ring fact is dated by when it was learned ─────────────
+
+
+def test_one_new_fact_does_not_bring_the_older_facts_of_its_ring_into_today(hub, monkeypatch):
+    from agents.core.cognition import memory as cognition_memory
+
+    long_ago = datetime.now(UTC).timestamp() - 40 * 86_400
+    with monkeypatch.context() as clock:          # the model saved them 40 days ago
+        clock.setattr(cognition_memory, "_now", lambda: long_ago)
+        _remember(hub, *[{"action": "add", "target": "user", "text": f"old fact number {i}"} for i in range(8)])
+    os.utime(hub.tmp / "user.json", (long_ago, long_ago))
+    assert _learned(hub.client, days=1)[1]["counts"]["learnings"] == 0
+    # Today the post-turn review learns ONE new fact: the ring file is saved now ...
+    hub.living.user_core.put("started learning Romanian")
+    learned, body = _learned(hub.client, days=1)
+    # ... and the TODAY card says one thing was learned today, not nine.
+    assert [it["value"] for it in learned] == ["started learning Romanian"] and body["counts"]["learnings"] == 1
+    # The journey list still has every fact, each with its own date.
+    dated = {it["value"]: it for it in _entries(hub, store="user")["entries"]}
+    assert len(dated) == 9 and dated["old fact number 3"]["epoch"] == pytest.approx(long_ago)
+    assert all(it["dated"] == "added" for it in dated.values())
+    assert [it["value"] for it in _entries(hub, store="user")["entries"]][-1] == "started learning Romanian"
+
+
+def test_a_ring_saved_before_the_record_existed_keeps_its_facts_old(hub):
+    # Saved by an older Nerva: the facts and no record of when each was added.
+    long_ago = datetime.now(UTC).timestamp() - 40 * 86_400
+    (hub.tmp / "user.json").write_text(json.dumps({"facts": [f"fact {i}" for i in range(5)]}), encoding="utf-8")
+    os.utime(hub.tmp / "user.json", (long_ago, long_ago))
+    hub.living.user_core.sync_from_disk()
+    undated = _entries(hub, store="user")["entries"]
+    assert {it["dated"] for it in undated} == {"ring_saved"}            # no save dated them yet
+    assert all(it["epoch"] == pytest.approx(long_ago) for it in undated)
+    hub.living.user_core.put("a new fact")
+    learned, body = _learned(hub.client, days=1)
+    assert [it["value"] for it in learned] == ["a new fact"] and body["counts"]["learnings"] == 1
+    added = hub.living.user_core.added_at()
+    assert added["fact 2"] == pytest.approx(long_ago)                   # the file's time before the save
+    assert added["a new fact"] > long_ago + 39 * 86_400
+
+
+def test_the_added_record_holds_only_what_the_ring_holds_and_goes_with_it(tmp_path):
+    from agents.core import data_purge
+    from agents.core.cognition.memory import CoreMemory
+
+    root = tmp_path / "data"
+    ring = CoreMemory(cap=20, path=root / "cognition" / "user_core.json")
+    assert ring.put("lives in Bucharest") and ring.put("has a cat")
+    record = root / "cognition" / "user_core.json.added"
+    assert (record.stat().st_mode & 0o777) == 0o600
+    assert ring.compare_and_set(["lives in Bucharest", "has a cat"], ["has a cat"])
+    assert len(json.loads(record.read_text())["added"]) == 1             # the removed fact's line is gone
+    assert "lives in Bucharest" not in record.read_text() and "has a cat" not in record.read_text()
+    ring.clear()
+    assert json.loads(record.read_text()) == {"added": {}}               # a forget empties it
+    assert ring.put("again")
+    report = data_purge._purge_memory_at_rest(root)
+    assert not record.exists() and "cognition/user_core.json.added" in report["files"]
+
+
+# ── H046 review round 2: a quarantined skill ─────────────────────────────────────
+
+
+def test_a_quarantined_skill_body_is_never_served_by_the_journey(hub, monkeypatch):
+    monkeypatch.setattr(web, "USER_TOKEN", "u")
+    user = {"X-User-Token": "u"}
+    name = _learn_skill(hub, approve=False)
+    path = _skill_path(f"skill:{name}")
+    assert hub.client.get(f"/api/skills/pending/{name}", headers=user).status_code == 401   # the admin review
+    for headers in (user, ADMIN):
+        got = hub.client.get(path, headers=headers)
+        assert got.status_code == 200, got.text
+        entry = got.json()["entry"]
+        assert entry["pending_review"] is True and entry["content"] is None
+        assert "awaits the owner's review" in entry["content_withheld"]
+        assert "## Steps" not in got.text and "open the notes" not in got.text
+    assert hub.loader.approve_generated_skill(name)
+    approved = hub.client.get(path, headers=user).json()["entry"]
+    assert approved["content"].startswith(f"# {name}") and "content_withheld" not in approved
+
+
+def test_forgetting_a_quarantined_skill_discards_it(hub, monkeypatch):
+    monkeypatch.setattr(skills_router, "_discard_archive", lambda: hub.tmp / "discarded")
+    name = _learn_skill(hub, approve=False)
+    path = _skill_path(f"skill:{name}")
+    gone = hub.client.delete(path, headers=ADMIN)
+    assert gone.status_code == 200, gone.text
+    assert gone.json()["discarded"] is True and gone.json()["deleted"] == f"skill:{name}"
+    kept = Path(gone.json()["archived_to"])
+    assert kept.parent == hub.tmp / "discarded" and (kept / "SKILL.md").is_file()     # kept, never loaded
+    assert name not in hub.loader.skills and hub.client.get(path).status_code == 404
+    assert _entries(hub, store="skill")["entries"] == []
+
+
+def test_a_halted_kernel_refuses_discarding_a_quarantined_skill(hub, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    name = _learn_skill(hub, approve=False)
+    hub.orch.kill_switch.engage("global", "test halt")
+    refused = hub.client.delete(_skill_path(f"skill:{name}"), headers=ADMIN)
+    assert refused.status_code == 403 and refused.json()["error"].startswith("kernel denied")
+    assert name in hub.loader.skills
+
+
+def test_cli_on_a_quarantined_skill(hub, monkeypatch):
+    monkeypatch.setattr(skills_router, "_discard_archive", lambda: hub.tmp / "discarded")
+    name = _learn_skill(hub, approve=False)
+    code, out, _err, _ = _cli(["journey", "show", f"skill:{name}"], hub)
+    assert code == EXIT_OK and "awaits the owner's review" in out and "open the notes" not in out
+    opened = []
+    monkeypatch.setattr("agents.cli.nerva._run_editor", lambda argv, path: opened.append(path) or 0)
+    code, _out, err, app_hub = _cli(["journey", "edit", f"skill:{name}"], hub)
+    assert code == EXIT_FAILED and "nothing changed" in err and opened == []            # no editor on an empty file
+    assert [m for m, _ in app_hub.calls] == ["GET"]
+    code, out, _err, _ = _cli(["journey", "delete", f"skill:{name}"], hub, stdin="yes\n")
+    assert code == EXIT_OK and "This discards" in out and f"discarded skill:{name}" in out
+    assert name not in hub.loader.skills
 
 
 # ── nerva journey over the rings and the skills ──────────────────────────────────

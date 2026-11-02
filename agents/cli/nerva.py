@@ -544,7 +544,8 @@ def build_parser() -> argparse.ArgumentParser:
     journey_show.add_argument("entry", help=_JOURNEY_ENTRY_HELP)
     journey_show.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     journey_delete = journey_verbs.add_parser(
-        "delete", help="forget one learned entry (a skill is archived, recoverable); admin, crosses kg.write")
+        "delete", help="forget one learned entry (a skill is archived, recoverable; one awaiting review is "
+                       "discarded); admin, crosses kg.write")
     journey_delete.add_argument("entry", help=_JOURNEY_ENTRY_HELP)
     journey_delete.add_argument("--yes", "-y", action="store_true", help="skip the typed confirmation")
     journey_delete.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
@@ -3783,7 +3784,8 @@ def cmd_journey(ns: argparse.Namespace, ctx: Context) -> int:
     the agent's notes and the user profile every prompt carries, the skills it learned,
     and the stored facts, each with the id ``show``, ``edit`` and ``delete`` take.
     ``show`` reads one (a skill: its SKILL.md). ``delete`` forgets one (after a typed
-    ``yes`` unless ``--yes``: a skill is archived, recoverable; a note or profile fact
+    ``yes`` unless ``--yes``: a skill is archived, recoverable, and one still awaiting the
+    owner's review is discarded, as the review's reject does; a note or profile fact
     keeps an undo) and ``edit`` changes what it says, in ``$VISUAL``/``$EDITOR`` or from
     ``--text``: both are admin memory writes and cross ``kg.write`` on the hub (the Action
     Kernel, when it is on, decides; a refusal is printed and nothing changes). Only a
@@ -3811,6 +3813,9 @@ def cmd_journey(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say("")
             for line in entry["content"].splitlines():
                 ctx.say(_plain(line, 10_000))
+        elif entry.get("content_withheld"):
+            # H046 review: a quarantined skill's text is read only in the owner's review.
+            ctx.say(f"note: {_plain(entry['content_withheld'], 400)}")
         return EXIT_OK
 
     if action == "delete":
@@ -3823,6 +3828,11 @@ def cmd_journey(ns: argparse.Namespace, ctx: Context) -> int:
     else:
         entry = _journey_reply(client.get(path))
         skill = entry.get("store") == "skill"
+        if skill and entry.get("pending_review"):
+            # Never an editor on an empty file in place of a SKILL.md the hub withholds.
+            ctx.err.write(f"{_plain(entry.get('content_withheld') or 'this skill awaits the owner review', 400)}; "
+                          "nothing changed\n")
+            return EXIT_FAILED
         before = str((entry.get("content") if skill else entry.get("value")) or "")
         edited = _journey_edit_in_editor(ctx, before, suffix=".md" if skill else ".txt")
         if edited is None:
@@ -3855,10 +3865,12 @@ def cmd_journey(ns: argparse.Namespace, ctx: Context) -> int:
 def _journey_delete(ns: argparse.Namespace, ctx: Context, client: HubClient, path: str, as_json: bool) -> int:
     entry = _journey_reply(client.get(path))
     skill = entry.get("store") == "skill"
+    pending = skill and bool(entry.get("pending_review"))
     if not ns.yes:
         # With --json the reply alone goes to stdout: the question goes to stderr.
         ask = ctx.err if as_json else ctx.out
-        what = "archives (recoverable)" if skill else "forgets"
+        what = ("discards (rejects the skill awaiting review; its folder is kept)" if pending
+                else "archives (recoverable)" if skill else "forgets")
         ask.write(f"This {what}: {_plain(_journey_text(entry), 400)}\nType 'yes' to confirm: ")
         if callable(getattr(ask, "flush", None)):
             ask.flush()
@@ -3880,6 +3892,10 @@ def _journey_delete(ns: argparse.Namespace, ctx: Context, client: HubClient, pat
         return EXIT_FAILED
     if skill:
         where = reply.get("archived_to")
+        if reply.get("discarded"):
+            ctx.say(f"discarded {_plain(reply.get('deleted'), 160)}"
+                    + (f" — never loaded again; its folder is kept in {_plain(where, 300)}" if where else ""))
+            return EXIT_OK
         ctx.say(f"archived {_plain(reply.get('deleted'), 160)}"
                 + (f" — its folder is kept in {_plain(where, 300)}; move it back into the skills folder to "
                    "restore it" if where else ""))

@@ -228,7 +228,8 @@ async def dashboard_today(days: int = Query(1, ge=1, le=30), limit: int = Query(
     H046 review: the learned half is what the assistant really keeps — the facts of the
     two curated rings every prompt carries (the agent's notes and the user profile, which
     the model's ``memory`` tool, the post-turn review and the daily reflection write;
-    dated by their ring's last save, as Hermes dates its memory cards), the skills it
+    each dated by when it entered its ring, so a new fact never brings the older ones
+    into the window, and one no save dated yet by its ring's last save), the skills it
     learned (dated by their last use) and the fact store's rows. ``drift`` says a ring
     file could not be read back."""
     orch = get_orch()
@@ -372,10 +373,24 @@ def _ring_saved_epoch(ring) -> float | None:
         return None
 
 
+def _ring_fact_items(target: str, ring) -> list[dict]:
+    """The facts of one ring as timeline items, each dated by when it entered the ring
+    (``CoreMemory.added_at``), a fact no save dated yet by the ring's last save."""
+    from agents.core.memory.timeline import ring_items
+
+    added = None
+    if callable(getattr(ring, "added_at", None)):
+        try:
+            added = ring.added_at()
+        except Exception:
+            logger.warning("journey: when the facts of the %s ring were added could not be read", target,
+                           exc_info=True)
+    return ring_items(target, ring.list(), _ring_saved_epoch(ring), added)
+
+
 def _read_rings_items(orch) -> tuple[list[dict], str | None]:
     """Every fact of both rings, reread from their files first (another process, a hand
     edit), as timeline items; and the drift a ring that cannot be read back reports."""
-    from agents.core.memory.timeline import ring_items
     from agents.core.memory_tool import TARGETS, MemoryToolError, _read_rings
 
     living = _rings_module(orch)
@@ -390,7 +405,7 @@ def _read_rings_items(orch) -> tuple[list[dict], str | None]:
     for target, attr in TARGETS.items():
         ring = getattr(living, attr, None)
         if ring is not None and callable(getattr(ring, "list", None)):
-            items.extend(ring_items(target, ring.list(), _ring_saved_epoch(ring)))
+            items.extend(_ring_fact_items(target, ring))
     return items, drift
 
 
@@ -500,8 +515,18 @@ def _find_ring_fact(orch, store: str, entry_id: str):
     return None
 
 
+def _pending_withheld(name: str) -> str:
+    return (f"{name!r} awaits the owner's review (quarantined, never run): its files are read in the "
+            f"review (GET /api/skills/pending/{name}, admin); approve it or discard it (delete this entry)")
+
+
 def _skill_detail(orch, name: str):
-    """A learned skill as the entry routes answer it, with its whole SKILL.md, else None."""
+    """A learned skill as the entry routes answer it, with its whole SKILL.md, else None.
+
+    H046 review: a skill the agent generated that still awaits the owner's review is the
+    model's text, quarantined: only the admin review (``GET /api/skills/pending/{name}``)
+    reads it, and the model's ``skill_view`` does not serve it. Its entry therefore carries
+    no ``content`` and says why (``content_withheld``)."""
     from pathlib import Path
 
     found = _learned_skills(orch).get(name)
@@ -510,12 +535,18 @@ def _skill_detail(orch, name: str):
     skill, rec = found
     md = Path(skill.path) / "SKILL.md"
     try:
-        content = md.read_text(encoding="utf-8")
         file_epoch = md.stat().st_mtime
-    except (OSError, UnicodeError):
-        content, file_epoch = None, None
+    except OSError:
+        file_epoch = None
     item = _skill_entry(name, skill, rec, file_epoch)
-    item["content"] = content
+    item["content"] = None
+    if item["pending_review"]:
+        item["content_withheld"] = _pending_withheld(name)
+        return item
+    try:
+        item["content"] = md.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        logger.debug("journey: the SKILL.md of %s could not be read", name, exc_info=True)
     return item
 
 
@@ -537,7 +568,8 @@ def _ring_written(orch) -> None:
 @router.get("/api/dashboard/today/entries/{entry_id}", dependencies=[Depends(user_guard)])
 async def dashboard_today_entry(entry_id: str):
     """One learned entry, whatever its age: a ring fact, a learned skill (with its whole
-    SKILL.md as ``content``) or a fact-store row."""
+    SKILL.md as ``content``; for one still awaiting the owner's review, none: only the admin
+    review reads a quarantined skill, and ``content_withheld`` says so) or a fact-store row."""
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
@@ -573,7 +605,8 @@ async def dashboard_today_entry_edit(entry_id: str, body: TimelineEntryEdit, req
     A ring fact is replaced in place, by the memory tool's own write (one clean line of at
     most 300 characters, scanned; the ring's budget; an undo ref; the intent log): its id
     follows its text, so the reply carries the new one. A skill's ``value`` is its whole
-    SKILL.md, applied by the owner's skill batch (checked first; the old folder archived).
+    SKILL.md, applied by the owner's skill batch (checked first; the old folder archived);
+    one still awaiting the owner's review is refused (409 ``skill_pending_review``).
     A fact-store row (at most 2000 characters) keeps its id, category and key and moves to
     now on the timeline. An unchanged value writes nothing (``changed: false``)."""
     orch = get_orch()
@@ -617,7 +650,6 @@ async def dashboard_today_entry_edit(entry_id: str, body: TimelineEntryEdit, req
 
 
 async def _edit_ring_fact(orch, store: str, entry_id: str, value: str):
-    from agents.core.memory.timeline import ring_items
     from agents.core.memory_tool import MemoryToolError, owner_change
 
     def _change():
@@ -642,7 +674,7 @@ async def _edit_ring_fact(orch, store: str, entry_id: str, value: str):
     from agents.core.memory_tool import TARGETS
 
     ring = getattr(living, TARGETS[store], None)
-    entry = next((it for it in ring_items(store, ring.list(), _ring_saved_epoch(ring))
+    entry = next((it for it in _ring_fact_items(store, ring)
                   if it["value"] == result["fact"]), None) if ring is not None else None
     return nocache_json({"ok": True, "changed": True, "entry": entry, "previous_id": entry_id,
                          "undo_ref": result.get("undo_ref"), "usage": result.get("usage")})
@@ -660,6 +692,10 @@ async def _edit_skill(orch, entry_id: str, name: str, content: str, req: Request
     current = await asyncio.to_thread(_skill_detail, orch, name)
     if current is None:
         return _no_learned_skill(name)
+    if current.get("pending_review"):
+        # A batch never changes a quarantined skill; its text is reviewed whole, then
+        # approved or discarded (what it says is the model's, not yet the owner's).
+        return JSONResponse({"error": _pending_withheld(name), "reason": "skill_pending_review"}, status_code=409)
     if (current.get("content") or "").strip() == content.strip():
         return nocache_json({"ok": True, "changed": False, "entry": current})
     from agents.core.routers.skills import _batch_archive
@@ -681,8 +717,10 @@ async def dashboard_today_entry_delete(entry_id: str, req: Request = None):
     (an undo ref keeps the ring as it was beside the rings, as for the model's own remove;
     ``POST /api/memory/core/undo`` puts it back, a reset erases it); a learned skill is
     archived, as Hermes archives one (its folder moved to the skills batch archive,
-    recoverable; a pinned skill is refused); a fact-store row leaves the store (and its
-    search index and write-ahead log), so it leaves the timeline and every brief."""
+    recoverable; a pinned skill is refused), and one still awaiting the owner's review is
+    discarded as the review's reject does (its folder kept in the discard archive); a
+    fact-store row leaves the store (and its search index and write-ahead log), so it
+    leaves the timeline and every brief."""
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
@@ -732,11 +770,29 @@ async def _delete_ring_fact(orch, store: str, entry_id: str):
                          "usage": result.get("usage")})
 
 
+async def _discard_pending_skill(orch, entry_id: str, name: str):
+    """A learned skill still in quarantine is forgotten the way the owner rejects one
+    (``POST /api/skills/{name}/discard``, the loader's own move): its folder leaves the
+    skills tree for the discard archive (kept, never loaded again), with its registry entry
+    and any approval bound to its path."""
+    from agents.core.routers.skills import _discard_archive
+
+    dest = await asyncio.to_thread(orch.skills.discard_generated_skill, name, _discard_archive())
+    if dest is None:
+        return _no_learned_skill(name)
+    return nocache_json({"ok": True, "deleted": entry_id, "store": "skill", "discarded": True,
+                         "archived_to": str(dest)})
+
+
 async def _delete_skill(orch, entry_id: str, name: str):
+    from pathlib import Path
+
     found = await asyncio.to_thread(lambda: _learned_skills(orch).get(name))
     if found is None:
         return _no_learned_skill(name)
-    _skill, rec = found
+    skill, rec = found
+    if await asyncio.to_thread(lambda: (Path(skill.path) / "PENDING_REVIEW").exists()):
+        return await _discard_pending_skill(orch, entry_id, name)
     if rec.get("pinned"):
         return JSONResponse({"error": f"{name!r} is pinned: unpin it first", "reason": "skill_pinned"},
                             status_code=409)

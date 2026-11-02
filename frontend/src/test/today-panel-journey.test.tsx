@@ -4,7 +4,8 @@
    under /api/dashboard/today/entries/{entry_id}, as the admin. What it learned is kept in
    three stores, and forgetting costs what the store says: a note or profile fact keeps an
    undo (two steps), a skill is archived (two steps, no inline edit: its text is a whole
-   SKILL.md), a stored fact is gone for good (a typed FORGET). The hub crosses kg.write, so
+   SKILL.md) and one still awaiting review is discarded, a stored fact is gone for good (a
+   typed FORGET). The hub crosses kg.write, so
    a halted kernel refuses: the refusal must be shown, never read as a success. An action
    is the hub's record of what it did and has no controls. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -99,6 +100,25 @@ describe('TodayPanel (H046) — what it learned, edited and forgotten by id', ()
     fireEvent.click(screen.getByText('confirm archive'));
     await waitFor(() => expect(screen.getByText('archived · skill tidy-notes')).toBeTruthy());
     asAdmin(calls(fn, 'DELETE')[0]);
+  });
+
+  it('discards a learned skill still awaiting review (the hub rejects it, never archives it)', async () => {
+    const PENDING = { entry_id: 'skill:new-idea', ts: '2026-06-27T11:40:00+00:00', kind: 'learning', store: 'skill', label: 'new-idea', category: 'skill', key: 'new-idea', value: 'Use when ideating', pending_review: true };
+    const fn = hub({
+      'GET /api/dashboard/today': { status: 200, body: { ...FEED, items: [PENDING, ...FEED.items] } },
+      [`DELETE ${path('skill:new-idea')}`]: { status: 200, body: { ok: true, deleted: 'skill:new-idea', discarded: true, archived_to: '/d' } },
+    });
+    render(<TodayPanel />);
+    await waitFor(() => expect(screen.getByText('skill new-idea: Use when ideating')).toBeTruthy());
+    expect(screen.queryByLabelText('archive skill new-idea')).toBeNull();
+    fireEvent.click(screen.getByLabelText('discard skill new-idea'));
+    expect(screen.getByText(/it awaits review/)).toBeTruthy();
+    fireEvent.click(screen.getByText('confirm discard'));
+    await waitFor(() => expect(screen.getByText('discarded · skill new-idea')).toBeTruthy());
+    const del = calls(fn, 'DELETE');
+    expect(del.length).toBe(1);
+    expect(String(del[0][0])).toContain(path('skill:new-idea'));
+    asAdmin(del[0]);
   });
 
   it('forgets a stored fact for good only once FORGET is typed', async () => {
