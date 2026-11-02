@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import stat
 from pathlib import Path
 
 PRIVATE_MODE = 0o600
@@ -23,19 +24,25 @@ _SIDECARS = ("-journal", "-wal", "-shm")
 def ensure_private(path: Path) -> None:
     """Create *path* owner-only when missing, and narrow it and its sidecars to
     :data:`PRIVATE_MODE` when they exist. A symlink is never followed (``O_NOFOLLOW``);
-    a chmod the filesystem refuses (Windows, a foreign owner) is left to the connect."""
+    a chmod the filesystem refuses (Windows, a foreign owner) is left to the connect.
+
+    Only regular files are narrowed. A directory (or a socket, FIFO, device) at the
+    path is left exactly as it is: ``0600`` on a directory drops its search bit and
+    locks its owner out of everything inside it, and the connect fails on it anyway."""
     path = Path(path)
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     with contextlib.suppress(OSError):
         os.close(os.open(path, flags, PRIVATE_MODE))
     for candidate in (path, *(Path(str(path) + suffix) for suffix in _SIDECARS)):
         try:
-            if candidate.is_symlink() or not candidate.exists():
-                continue
-            if candidate.stat().st_mode & 0o777 != PRIVATE_MODE:
-                os.chmod(candidate, PRIVATE_MODE)
+            info = os.lstat(candidate)
         except OSError:
             continue
+        if not stat.S_ISREG(info.st_mode):     # symlink, directory or special file
+            continue
+        if stat.S_IMODE(info.st_mode) != PRIVATE_MODE:
+            with contextlib.suppress(OSError):
+                os.chmod(candidate, PRIVATE_MODE)
 
 
 __all__ = ["PRIVATE_MODE", "ensure_private"]

@@ -234,6 +234,54 @@ async def test_an_unwritable_store_never_breaks_egress_and_says_so(tmp_path, mon
     assert snap["ledger"]["error"]
 
 
+def test_a_directory_at_the_ledger_path_keeps_its_mode_and_contents_reachable(tmp_path, monkeypatch):
+    """The ledger path resolves through ``data_path`` on every write. When it lands on an
+    existing directory (a test that points ``data_path`` at a board home, or a stray
+    directory under the data root), the write fails and the event stays unsaved; the
+    directory itself must not be narrowed to ``0600``. It used to be: ``ensure_private``
+    chmodded whatever was there, the directory lost its search bit, and every file in it
+    became unopenable for a non-root owner (the kanban attachment DB in
+    tests/test_hermes_kanban_network_wiring.py)."""
+    from agents.core import paths
+
+    home = tmp_path / "board"
+    home.mkdir(mode=0o755)
+    inner = home / "kanban.db"
+    sqlite3.connect(inner).close()
+    monkeypatch.setattr(paths, "data_path", lambda *parts: home)
+    monitor = EgressMonitor(store=EgressLedgerStore())
+    monitor.record("kanban.network", "example.com", "GET", allowed=True, local=False)
+    assert monitor.flush(10)
+
+    assert stat.S_IMODE(home.stat().st_mode) == 0o755
+    sqlite3.connect(inner).close()                       # still reachable
+    snap = monitor.snapshot()
+    assert snap["plugins"]["kanban.network"]["total"] == 1
+    assert snap["ledger"]["unsaved_events"] == 1 and snap["ledger"]["error"]
+
+
+def test_ensure_private_narrows_regular_files_only(tmp_path):
+    from agents.core.memory.private_db import PRIVATE_MODE, ensure_private
+
+    directory = tmp_path / "a-directory"
+    directory.mkdir(mode=0o755)
+    ensure_private(directory)
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o755
+
+    loose = tmp_path / "loose.db"
+    loose.write_bytes(b"")
+    loose.chmod(0o644)
+    sidecar_dir = tmp_path / "loose.db-wal"
+    sidecar_dir.mkdir(mode=0o755)
+    ensure_private(loose)
+    assert stat.S_IMODE(loose.stat().st_mode) == PRIVATE_MODE
+    assert stat.S_IMODE(sidecar_dir.stat().st_mode) == 0o755
+
+    fresh = tmp_path / "fresh.db"
+    ensure_private(fresh)
+    assert fresh.is_file() and stat.S_IMODE(fresh.stat().st_mode) == PRIVATE_MODE
+
+
 def test_a_failed_write_is_kept_as_unsaved_beside_persisted_rows(tmp_path):
     store = EgressLedgerStore(tmp_path / "ledger.db")
     monitor = EgressMonitor(store=store)
