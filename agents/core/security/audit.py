@@ -392,4 +392,13 @@ class AuditLogger:
         return deleted
 
     def close(self):
-        self._conn.close()
+        """Close the connection once no other thread is using it.
+
+        Every other method holds ``_lock`` for as long as it touches ``_conn``; closing
+        it without the lock let hub shutdown (``Orchestrator.aclose``) close the
+        connection while the auth-audit worker thread was inside ``log()``, and SQLite
+        then crashed the process (a segfault, not an exception). Under the lock the close
+        waits for that write to commit; a ``log()`` after it raises ``ProgrammingError``,
+        which every caller already treats as a failed write."""
+        with self._lock:
+            self._conn.close()
