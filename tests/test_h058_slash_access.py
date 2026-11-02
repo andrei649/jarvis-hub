@@ -808,3 +808,168 @@ async def test_the_principal_scope_follows_the_adapters_chat_type():
     finally:
         reset_turn_principal(token)
 
+
+
+# ── the gate answers before any input or configuration check ─────────────────────
+
+
+async def test_a_guests_oversized_owner_command_gets_the_audited_denial_not_a_length_reply(hub, web_chat, store):
+    """``/kanban``, ``/goal``, ``/subgoal`` and the checkpoint commands refuse a text over the
+    2,000-character cap. For a non-owner that check must not answer first: it would say
+    nothing about access and write no audit row, so a stranger probing owner commands with
+    long arguments would leave no trace. The owner's oversized command keeps its reply."""
+    probes = {"kanban": "x", "goal": "y", "subgoal": "s", "rollback": "r", "checkpoints": "c"}
+    for name, filler in probes.items():
+        reply = await hub.say(f"/{name} " + filler * 2100)
+        assert reply.startswith(f"⛔ /{name} is admin-only here. You can run: /help, /whoami. "), reply
+        assert f"/{name} is an owner command" in reply and "too long" not in reply
+    assert sorted((row["command"], row["reason"]) for row in _denials(hub.orch.audit)) == sorted(
+        (name, "owner_tier") for name in probes)
+    web = await web_chat.chat("/goal " + "z" * 2100)
+    assert web.startswith("⛔ /goal is admin-only here") and "longer than" not in web
+    assert [(row["command"], row["channel"]) for row in _denials(web_chat.orch.audit)] == [("goal", "web")]
+    # The owner is let through, and only then does the input check answer (no audit row).
+    assert await hub.say("/kanban " + "x" * 2100, user=OWNER_ID) == "Kanban command is too long; nothing changed."
+    assert await web_chat.chat("/goal " + "z" * 2100, owner=True) == (
+        "/goal is longer than 2000 characters; nothing was proposed or added.")
+    assert len(_denials(hub.orch.audit)) == len(probes) and len(_denials(web_chat.orch.audit)) == 1
+
+
+async def test_the_registry_judges_access_before_the_length_check_for_every_capped_command(store, monkeypatch):
+    """The same order straight on ``CommandRegistry.dispatch`` (the cold path every entry
+    path reaches), with the denial observed as ``command.completed``."""
+    from agents.core.extensions.events import EXTENSION_EVENTS
+
+    registry = build_default_registry()
+    emitted = []
+    monkeypatch.setattr(EXTENSION_EVENTS, "emit", lambda event, **fields: emitted.append((event, fields)))
+    capped = ("kanban", "goal", "subgoal", "rollback", "checkpoints")
+    for name in capped:
+        outcome = await registry.dispatch(f"/{name} " + "q" * 2100, orch=None,
+                                          principal=Principal(channel="widget"))
+        assert outcome.status == "refused" and outcome.reply.startswith(f"⛔ /{name} is admin-only here")
+    assert emitted == [("command.completed", {"command": name, "status": "refused"}) for name in capped]
+
+
+async def test_a_malformed_quick_command_store_answers_a_guest_with_the_denial_first(hub, store):
+    """A stored ``commands.quick_commands`` value that fails validation (written past the
+    Admin check) makes the owner's ``/deploy`` say the configuration is invalid. A non-owner
+    must get the audited denial instead — on the cold path and beside a running turn — and
+    never a reply about the owner's store."""
+    store(quick_commands={"deploy": {"type": "exec"}})          # no command: malformed
+    denied = await hub.say("/deploy")
+    assert denied.startswith("⛔ /deploy is admin-only here. You can run: /help, /whoami. ")
+    assert "/deploy is an owner command" in denied and "configuration" not in denied
+    assert [(row["command"], row["reason"]) for row in _denials(hub.orch.audit)] == [("deploy", "owner_tier")]
+    assert await hub.say("/deploy", user=OWNER_ID) == "Invalid quick-command configuration; nothing changed."
+    # The pre-lane probe and the busy path see the stored name too.
+    assert hub.orch.command_refused_here(channel="telegram", sender=str(GUEST_ID), chat_id=GUEST_ID,
+                                         text="/deploy") is True
+    assert hub.orch.command_refused_here(channel="telegram", sender=str(OWNER_ID), chat_id=OWNER_ID,
+                                         text="/deploy") is False
+    hub.orch._turn_lease_max_wait = 30
+    assert (await _while_busy(hub, "/deploy")).startswith("⛔ /deploy is admin-only here")
+    # A name the store does not hold is still an unknown command, with no audit row.
+    assert (await hub.say("/nothing")).startswith("Unknown command /nothing")
+    assert len(_denials(hub.orch.audit)) == 2
+
+
+# ── refused beside the running work, whatever shape the command has ───────────────
+
+
+async def test_a_guests_plain_text_reset_trigger_skips_the_telegram_chat_lane(hub, store):
+    """A custom ``sessions.reset_triggers`` text need not start with ``/``. A non-owner's is
+    refused beside the chat's running turn, like any other command it may not run — not
+    queued behind it until that turn ends."""
+    from agents.core.channels.chat_lanes import ChatLanes
+    from agents.core.channels.session import SessionSource, build_session_key
+
+    hub.orch._runtime_settings["sessions.reset_triggers"] = ["/new", "/reset", "start over"]
+    hub.orch._turn_lease_max_wait = 30
+    hub.channel._lanes = ChatLanes(name="telegram")
+    base = build_session_key(SessionSource(channel="telegram", sender=str(GUEST_ID), thread_id=str(GUEST_ID)))
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def running_turn():
+        async with hub.orch.turn_lease(base) as held:
+            assert held
+            started.set()
+            await release.wait()
+
+    hub.channel._lanes.submit(GUEST_ID, running_turn)
+    await asyncio.wait_for(started.wait(), 5)
+    try:
+        before = len(hub.sent)
+        await hub.say("start over")                              # held for the batch window …
+        await hub.channel._flush_all_turns()                     # … which the poll loop closes
+        refused = await _reply_to(hub, GUEST_ID, before)
+        assert refused.startswith("⛔ /new is admin-only here") and "/new is an owner command" in refused
+        assert not release.is_set()
+        assert [(row["command"], row["reason"]) for row in _denials(hub.orch.audit)] == [("new", "owner_tier")]
+    finally:
+        release.set()
+    # Plain chat is never judged a command: the probe says no.
+    assert hub.orch.command_refused_here(channel="telegram", sender=str(GUEST_ID), chat_id=GUEST_ID,
+                                         text="how are you") is False
+
+
+async def test_a_refused_telegram_command_never_waits_behind_a_running_side_question(hub, store):
+    """A ``/btw`` runs beside the chat's lane, on a lane of its own, while its auxiliary
+    model call lasts. A refused command is handed over beside the lane too — on yet another
+    lane, so it is answered at once and not after that model call."""
+    from agents.core.channels.chat_lanes import ChatLanes
+
+    store({"telegram": {"dm": ["status"]}})
+    hub.channel._lanes = ChatLanes(name="telegram")
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def side_question_model_call():
+        started.set()
+        await release.wait()
+
+    hub.channel._lanes.submit(("side-question", GUEST_ID), side_question_model_call)
+    await asyncio.wait_for(started.wait(), 5)
+    try:
+        before = len(hub.sent)
+        await hub.say("/sessions")
+        refused = await _reply_to(hub, GUEST_ID, before)
+        assert refused.startswith("⛔ /sessions is admin-only here. You can run: /help, /whoami, /status.")
+        assert not release.is_set()
+    finally:
+        release.set()
+    assert [row["command"] for row in _denials(hub.orch.audit)] == ["sessions"]
+
+
+async def test_a_guests_plain_text_reset_trigger_does_not_wait_behind_the_discord_authors_turn(store):
+    """The batcher Discord and Slack share asks the hub for plain text too, so a custom reset
+    trigger that is no ``/command`` is handed over beside the author's running turn."""
+    from agents.core.channels.discord import DiscordChannel
+    from tests.test_slash_commands import _bare_orchestrator
+
+    orch, _seen = _bare_orchestrator()
+    orch._runtime_settings["sessions.reset_triggers"] = ["/new", "/reset", "start over"]
+    gateway = Gateway(handler=None, command_probe=orch.command_refused_here)
+    delivered, release = [], asyncio.Event()
+
+    async def handler(text, **_kwargs):
+        delivered.append(text)
+        if text == "a long question":
+            await release.wait()
+
+    channel = DiscordChannel(token="fake", handler=handler, pre_turn_refused=gateway.pre_lane_refused)
+    author = SimpleNamespace(id=7, bot=False)
+
+    def message(text):
+        return SimpleNamespace(author=author, channel=SimpleNamespace(id=900, parent_id=None),
+                               guild=None, content=text, webhook_id=None, edited_at=None)
+
+    running = asyncio.create_task(channel._handle_message(message("a long question")))
+    while delivered != ["a long question"]:
+        await asyncio.sleep(0.01)
+    try:
+        await asyncio.wait_for(channel._handle_message(message("start over")), 5)
+        assert delivered == ["a long question", "start over"] and not release.is_set()
+    finally:
+        release.set()
+    await asyncio.wait_for(running, 5)
+    assert gateway.pre_lane_refused(channel="discord", sender="7", chat_id=900, text="how are you") is False

@@ -1665,7 +1665,10 @@ Use /whoami for the full list.` (at most 12 names), plus, for an owner command, 
 an owner command and where to send it. Every denial is logged, written to the security
 audit log (`audit_log` event, action `slash_command_denied`: command, channel, scope,
 sender id, reason — never the arguments) and emitted as the `command.completed` extension
-event with status `refused` — on the cold path and the busy path alike. A custom
+event with status `refused` — on the cold path and the busy path alike. The gate answers
+before any input check: a non-owner's oversized `/goal`, `/subgoal`, `/kanban` or
+checkpoint command, and a quick command whose stored configuration is malformed, get the
+audited denial, never the length or configuration reply (that one is the owner's). A custom
 `sessions.reset_triggers` text (`/fresh`) is an owner command too: a non-owner's gets the
 same audited denial under its own name (or `/new` when the trigger is not slash-shaped).
 `/whoami` reports the platform, scope, sender id, tier and the exact list of commands the
@@ -1676,8 +1679,13 @@ the busy path — a command that arrives while a turn holds its session is refus
 before the running-work interrupt and the session lease: in `Orchestrator.channel_handler`
 for every channel; on Telegram it is first handed over beside the chat's lane, and on
 Discord and Slack beside the author's batch lock (`Gateway.pre_lane_refused` →
-`Orchestrator.command_refused_here`), so it does not queue behind the running turn nor hold
-Slack's event dispatcher behind it; on the web door in `POST /chat` and `/chat/stream`
+`Orchestrator.command_refused_here`, asked for plain text too, so a non-owner's custom
+reset trigger such as `start over` is caught), so it does not queue behind the running turn
+nor hold Slack's event dispatcher behind it — on Telegram on a lane of its own, never behind
+a `/btw` still waiting on its model call. With inbound batching off
+(`JARVIS_INBOUND_BATCH_MS=0`) Slack's event dispatcher is held by every running turn, as it
+was before batching (its bounded ingress queue is the only buffer), so there a refused Slack
+command is read — and refused — only once that turn ends; on the web door in `POST /chat` and `/chat/stream`
 (`Orchestrator.busy_command_refusal`); a `/btw` side question is judged as it is answered
 beside a running turn, and before a route with no conversation yet says so — and again for
 quick commands, on the raw typed name (`quick_commands.dispatch_quick`), with an alias

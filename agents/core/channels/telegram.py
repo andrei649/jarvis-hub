@@ -1354,19 +1354,21 @@ class TelegramChannel(ChannelAdapter):
         mark = (chat_id, str(uid))
         if session_meta.get("message_thread_id") is not None:
             mark += (session_meta["message_thread_id"],)
-        if side_question_command_name(turn) is not None or self._refused_here(chat_id, uid, turn, session_meta):
+        side_question = side_question_command_name(turn) is not None
+        if side_question or self._refused_here(chat_id, uid, turn, session_meta):
             # H414: a /btw is asked beside the running turn, so it does not queue behind
             # that chat's lane. It has a lane of its own (still counted by settle/drain),
             # takes no voice mark, and the held pieces were already flushed in order.
             # H058: so is a command this sender may not run here — it changes nothing, and
-            # its refusal is answered at once instead of after the chat's running turn.
+            # its refusal is answered at once instead of after the chat's running turn, on
+            # a lane of its own: never behind a /btw still waiting on its model call.
             def work():
                 return self._run_turn(chat_id, uid, turn, spoken=False, **session_meta)
 
             if chat_id is None or self._lanes is None:
                 await work()
             else:
-                self._lanes.submit(("side-question", chat_id), work)
+                self._lanes.submit(("side-question" if side_question else "refused", chat_id), work)
             return
         spoken = mark in self._voice_pending
         self._voice_pending.discard(mark)
@@ -1374,9 +1376,11 @@ class TelegramChannel(ChannelAdapter):
 
     def _refused_here(self, chat_id, uid, turn: str, session_meta: dict) -> bool:
         """H058 — whether *turn* is a command this sender may not run in this chat (judged by
-        the hub through ``pre_turn_refused``; a missing or failing probe says no)."""
+        the hub through ``pre_turn_refused``; a missing or failing probe says no). Plain text
+        is asked too: the owner's ``sessions.reset_triggers`` may name a text that is no
+        ``/command`` ("start over"), and only the hub knows them."""
         probe = self.pre_turn_refused
-        if not callable(probe) or not is_command(turn):
+        if not callable(probe) or not isinstance(turn, str):
             return False
         try:
             return probe(channel="telegram", sender=str(uid), chat_id=chat_id, text=turn,

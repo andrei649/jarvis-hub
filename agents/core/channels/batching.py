@@ -202,7 +202,9 @@ class AsyncBatcher:
             task.add_done_callback(self._tasks.discard)
 
     def _refused_beside(self, key: Hashable, text: str, meta: dict) -> bool:
-        if self._beside is None or not is_command(text):
+        # Plain text is asked too: a custom ``sessions.reset_triggers`` text ("start over")
+        # is an owner command no ``/`` marks, and only the hub knows the triggers.
+        if self._beside is None:
             return False
         try:
             return self._beside(key, text, dict(meta)) is True

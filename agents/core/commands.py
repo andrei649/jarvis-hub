@@ -115,6 +115,24 @@ class CommandOutcome:
     reply: str
 
 
+def _oversized(name: str, text: str) -> CommandOutcome | None:
+    """The refusal for a command whose text is longer than it may be, or None. Asked only
+    once the access gate let the sender reach *name* (H058): input checks never answer
+    in place of a denial."""
+    if len(text.strip()) <= _MAX_ARGS:
+        return None
+    if name in {"rollback", "checkpoints"}:
+        return CommandOutcome(name, "refused", "Checkpoint command is too long; nothing changed.")
+    if name == "kanban":
+        return CommandOutcome(name, "refused", "Kanban command is too long; nothing changed.")
+    if name in {"goal", "subgoal"}:
+        # H462: a goal cut short is a different goal — a dropped "must not" line
+        # would reach the approval card looking complete.
+        return CommandOutcome(
+            name, "refused", f"/{name} is longer than {_MAX_ARGS} characters; nothing was proposed or added.")
+    return None
+
+
 class CommandRegistry:
     def __init__(self) -> None:
         self._commands: dict[str, SlashCommand] = {}
@@ -168,37 +186,32 @@ class CommandRegistry:
     async def dispatch(self, text: str, *, orch: Any, principal: Principal,
                        _quick_seen: frozenset[str] = frozenset()) -> CommandOutcome | None:
         """Answer a slash command, or return None when *text* is not one."""
-        checkpoint_name = checkpoint_command_name(text)
-        if checkpoint_name and len(text.strip()) > _MAX_ARGS:
-            return self._observed(CommandOutcome(checkpoint_name, "refused",
-                                  "Checkpoint command is too long; nothing changed."))
         parsed = self.parse(text)
         if parsed is None:
             return None
         name, args = parsed
-        if name == "kanban" and len(text.strip()) > _MAX_ARGS:
-            return self._observed(CommandOutcome(name, "refused", "Kanban command is too long; nothing changed."))
-        if name in {"goal", "subgoal"} and len(text.strip()) > _MAX_ARGS:
-            # H462: a goal cut short is a different goal — a dropped "must not" line
-            # would reach the approval card looking complete.
-            return self._observed(CommandOutcome(
-                name, "refused", f"/{name} is longer than {_MAX_ARGS} characters; nothing was proposed or added."))
         command = self.get(name)
         if command is None:
             from .quick_commands import dispatch_quick
 
+            # A quick command is judged by the access gate inside dispatch_quick, first.
             quick = await dispatch_quick(self, name, args, text=text,
                                          orch=orch, principal=principal, seen=_quick_seen)
             if quick is not None:
                 return self._observed(quick)
+            oversized = _oversized(name, text)
+            if oversized is not None:
+                return self._observed(oversized)        # a fixed name, not the sender's text
             # Deliberately NOT observed. `name` here is whatever the sender typed, so
             # emitting it would push arbitrary message text through a field that
             # promises to carry command names — a body leak wearing a safe label.
             return CommandOutcome(name, "unknown", f"Unknown command /{name}. Try /help.")
         from .slash_access import refusal
 
-        # H058, the cold path: the access gate answers before any handler is reached
-        # (audited); it stands in front of the kernel kinds handlers cross, never for them.
+        # H058, the cold path: the access gate answers first — before any handler, and
+        # before the input checks below, so a non-owner's oversized owner command gets the
+        # audited denial, not a validation reply that skips the audit log. It stands in
+        # front of the kernel kinds handlers cross, never for them.
         denied = await refusal(self, name, orch=orch, principal=principal)
         if denied is not None:
             # Observed: this name came from the registry, not from the sender.
@@ -210,6 +223,9 @@ class CommandRegistry:
                 "refused",
                 f"/{name} is an owner command — send it from the owner's channel or with an admin token.",
             ))
+        oversized = _oversized(name, text)
+        if oversized is not None:
+            return self._observed(oversized)
         try:
             result = command.handler(CommandContext(orch=orch, principal=principal, name=name, args=args))
             if inspect.isawaitable(result):

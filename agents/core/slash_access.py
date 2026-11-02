@@ -30,11 +30,14 @@ platform, scope, sender id, tier and the exact command list. The orchestrator as
 module on the cold path (``CommandRegistry.dispatch``), on the busy path (a channel command
 is judged before the session lease and the running-work interrupt, and on Telegram, Discord
 and Slack a refused one is handed over beside the chat's lane or the author's batch lock
-instead of behind its running turn; the web door's ``/chat`` and ``/chat/stream`` judge it
+instead of behind its running turn — except on Slack with inbound batching off, whose event
+dispatcher every running turn holds, as before batching; the web door's ``/chat`` and ``/chat/stream`` judge it
 before their interrupt and lease; the ``/btw`` side question is judged as it is answered
 beside a running turn, before a route with no conversation says so) and again for quick
-commands, on the raw typed name. A custom ``sessions.reset_triggers`` text is judged as the
-owner command it is.
+commands, on the raw typed name. The gate answers before any input or configuration check
+(an oversized ``/goal``, a malformed quick-command store), so such a check never stands in
+for an audited denial. A custom ``sessions.reset_triggers`` text is judged as the owner
+command it is.
 """
 
 from __future__ import annotations
@@ -223,9 +226,9 @@ async def _audit(orch: Any, principal, name: str, reason: str) -> None:
 async def refusal(registry, name: str, *, orch: Any, principal, quick: bool = False):
     """None when *principal* may run ``/name``; otherwise the audited denial outcome.
 
-    *name* is a registry command name or a configured quick-command name — never text
-    the sender typed that names nothing — so the log line and the audit row carry only
-    command names."""
+    *name* is a registry command name or a name the owner stored as a quick command —
+    never text the sender typed that names nothing — so the log line and the audit row
+    carry only command names."""
     if can_run(registry, principal, name, quick=quick):
         return None
     from .commands import ADMIN, CommandOutcome
@@ -248,10 +251,10 @@ def gated_name(registry, text: str) -> tuple[str, bool] | None:
     name = parsed[0]
     if registry.get(name) is not None:
         return name, False
-    from .quick_commands import configured
+    from .quick_commands import named
 
     try:
-        quick = name in configured()
+        quick = named(name)         # a stored value that fails validation names it too
     except Exception:  # noqa: BLE001 — unreadable quick commands: the registry decides later
         quick = False
     return (name, True) if quick else None
