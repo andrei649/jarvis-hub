@@ -79,6 +79,24 @@ a sender instance or client handed in as a parameter is not typed either (whoeve
 is the finding); a host returned by a function of another module counts as coming from that
 call's arguments.
 
+**…and a ledgered client turned bare** (round-5 review): httpx replaces every hook when
+``client.event_hooks`` is assigned, so a backend adding its own logging hook that way drops the
+egress recorder. Every store to, mutation of, deletion from or hand-off of a client's hooks
+(``event_hooks`` / ``_event_hooks``: assignment, subscript store, ``.clear/.pop/.remove/.append``
+…, ``del``, ``setattr``, ``vars()``/``__dict__``, any local or attribute alias of the hook dict or
+of a hook list) is a finding anywhere in ``agents/`` unless its exact ``(file, qualname)`` is on
+:data:`HOOK_REWIRING_ALLOWLIST`. ``sys.modules["httpx"]`` (or a model SDK key) counts like
+``import_module``; a name another repo module re-exports from another HTTP stack (``from
+.direct_transport import httpcore``) counts as importing that stack, and the four modules that
+may import httpcore for identity checks may use it only in a type/identity position.
+
+**Stated limit.** This is a static scan without types, so it does not catch every possible bare
+client. A client built from a ledgered client's class (``type(client)(…)``,
+``client.__class__(…)``) is a bare ``httpx.AsyncClient`` the scan does not follow, and a class
+classified here because its host comes from a constructor argument is only a finding where it
+is built *with* that argument: an instance built without it and given a host attribute
+afterwards (``q = QdrantVectorStore(dimension=1); q.url = …``, ``setattr`` included) is not.
+
 A finding in the **prompt-carrying scope** — ``agents/core/llm/**`` plus every provider
 module (any module that builds model clients through the ledgered constructor, the
 admitted native transport or the direct-transport proof, and the provider roots named
@@ -244,7 +262,7 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         "Frigate NVR API on the owner's LAN", frozenset({"_FrigateHTTP.request_bytes"})),
     "agents/core/house/home_assistant.py": (
         "Home Assistant REST API on the owner's LAN. _HttpxREST.request refuses any destination "
-        "but a literal LAN address before a client exists (test_ha_rest_transport_refuses_"
+        "but a literal LAN address before a client exists (test_the_house_transports_refuse_"
         "every_non_lan_destination); its callers are checked: __init__ builds it, snapshot "
         "hands it the validated origin pinned to its resolved LAN address (_runtime_endpoint)",
         frozenset({"_HttpxREST.request", "HomeAssistantAdapter.__init__",
@@ -256,7 +274,7 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"HomeAssistantServiceDriver._adapter_service_call"})),
     "agents/core/house/wled.py": (
         "WLED light controller JSON API on the LAN. HttpxJSONTransport refuses any destination "
-        "whose origin fails validate_wled_origin (test_wled_transport_refuses_every_non_lan_"
+        "whose origin fails validate_wled_origin (test_the_house_transports_refuse_every_non_lan_"
         "destination); its callers are checked: __init__ builds it with the bridge's allowlist, "
         "_apply hands it the validated origin + /json/state",
         frozenset({"HttpxJSONTransport.__call__", "WLEDBridge.__init__", "WLEDBridge._apply"})),
@@ -321,6 +339,42 @@ _PINNED_DESTINATIONS: dict[tuple[str, str], str] = {
     ("agents/core/cameras/frigate.py", "_FrigateHTTP._resolve_pinned"):
         "re-resolves the configured Frigate origin before every attempt and refuses it unless "
         "every address is an allowed LAN IP (lan_origin_required); the send is pinned to it",
+}
+
+
+# Functions that store into, mutate or hand on a client's event hooks (round-5 review: a
+# ledgered client whose hooks are replaced is a bare client). Anywhere in agents/, in or out
+# of the prompt scope; (file, qualname) -> why that rewiring cannot drop the egress recorder or
+# slip a hook past it. A stale key fails `test_every_exemption_is_still_needed_and_justified`.
+HOOK_REWIRING_ALLOWLIST: dict[tuple[str, str], str] = {
+    ("agents/core/llm/providers/native_transport.py", "native_admitted_client"):
+        "replaces llm_async_client's last request hook with the same egress recorder labelled "
+        "with the native protocol backend and wraps the quota hook so a refusal is recorded; then "
+        "guard.seal_hooks() freezes both hook tuples and AdmittedNativeTransport._check refuses "
+        "any request whose hooks differ from them or carry other than one recorder (hooks_intact)",
+    ("agents/core/llm/deepinfra.py", "DeepInfraBackend.__init__"):
+        "inserts the DeepInfra physical-request check BEFORE the egress recorder, after refusing "
+        "a client whose last hook is not the recorder; _send and the stream refuse to send unless "
+        "hooks[-2] is that check and hooks[-1] the recorder",
+    ("agents/core/llm/video_policy.py", "native_video_request_scope"):
+        "for one native video send: appends a final request hook after the egress recorder that "
+        "refuses if any hook was added after it, wraps the response hooks so a failing one "
+        "refuses (each wrapper calls the original), and restores both on exit; no request hook "
+        "llm_async_client installed is removed or replaced",
+    ("agents/core/llm/vision_policy.py", "_native_request_scope"):
+        "for one vision send: appends a final request hook after the egress recorder that refuses "
+        "if any hook was added after it, and removes only that hook on exit",
+    ("agents/core/ingestion/embedding_policy.py", "install_hook"):
+        "appends the ledger's own llm_sync_request_hook(provider) to the embedder's LM Studio "
+        "client when it is missing; it only ever adds the ledger hook",
+    ("agents/core/media_backends/local_openai_image.py", "LocalOpenAIImageBackend.generate"):
+        "appends the physical-request check (direct transport, exact URL and body, no "
+        "credentials) to its own literal-loopback image client, which has no ledger hook to drop "
+        "(local image generation is outside the ledger; see PROMPT_SCOPE_ALLOWLIST)",
+    ("agents/core/video_analysis.py", "VideoHTTPClient._pinned_client"):
+        "appends the current-approval and no-credential request check to the plugin's pinned "
+        "client; plugin egress rows are recorded by PluginHTTPClient._guard before the send, not "
+        "by a hook, so no ledger hook is there to drop",
 }
 
 
@@ -777,6 +831,13 @@ class _Module:
         self.globals: list[tuple[str, ast.AST, _Function | None]] = [
             (t.id, v, None) for node in self.tree.body for t, v in _assignments(node)
             if isinstance(t, ast.Name)]
+        # Names bound to the sys module (`import sys as _s`) and to sys.modules (`from sys
+        # import modules`): a lookup through either can hand on httpx without an import.
+        self.sys_names = {alias.asname or "sys" for node in self.imports if isinstance(node, ast.Import)
+                          for alias in node.names if alias.name == "sys"}
+        self.sys_modules_names = {alias.asname or "modules" for node in self.imports
+                                  if isinstance(node, ast.ImportFrom) and node.module == "sys"
+                                  and not node.level for alias in node.names if alias.name == "modules"}
         self._index(self.tree.body, [], None, False, None)
         top = {name for name, _, _ in self.globals} | {n for fn in self.functions for n in fn.globals}
         for fn in self.functions:
@@ -987,6 +1048,187 @@ class _Bindings:
         return {name: kind for name, (kind, _) in self.names.items() if kind != _REPO}
 
 
+# ── a ledgered client turned bare (round-5 review) ──────────────────────────
+# httpx replaces every hook when ``client.event_hooks`` is assigned, so a backend that adds its
+# own logging hook that way drops the egress recorder llm_async_client installed, and a hook
+# list cleared, popped or handed to a helper loses it the same way; a hook appended after the
+# recorder can still rewrite the request it recorded. Every store to, mutation of, deletion
+# from or hand-off of a client's hooks is a finding unless its exact (file, qualname) is on
+# HOOK_REWIRING_ALLOWLIST. The hooks are reached through the attribute (``event_hooks`` or
+# httpx's private ``_event_hooks``), ``getattr``/``setattr``/``vars()``/``__dict__``, and every
+# local or attribute alias of the hook dict or of one of its hook lists.
+_HOOK_ATTRS = frozenset({"event_hooks", "_event_hooks"})
+_HOOK_MUTATORS = frozenset({"append", "extend", "insert", "remove", "pop", "clear", "update",
+                            "setdefault", "popitem", "sort", "reverse", "__setitem__",
+                            "__delitem__", "__iadd__", "__ior__", "__init__"})
+# Calls that only read (or copy) a hook container handed to them.
+_HOOK_READERS = frozenset({"tuple", "list", "dict", "len", "zip", "any", "all", "iter",
+                           "reversed", "enumerate", "sorted", "set", "frozenset", "id", "type",
+                           "repr", "str", "bool", "next", "isinstance", "getattr", "hasattr",
+                           "callable"})
+_HOOK_SETTERS = frozenset({"setattr", "delattr", "__setattr__", "__delattr__"})
+_HOOKS_REWIRED = "rewires a client's event hooks (the egress ledger hook can be dropped or bypassed)"
+
+
+def _callee(func: ast.AST) -> str:
+    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+
+
+def _const_str(node: ast.AST | None) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _instance_dict(node: ast.AST) -> bool:
+    """``vars(obj)`` or ``obj.__dict__``: the dict httpx keeps ``_event_hooks`` in."""
+    return ((isinstance(node, ast.Call) and _callee(node.func) == "vars")
+            or (isinstance(node, ast.Attribute) and node.attr == "__dict__"))
+
+
+class _HookRewirings:
+    """Every place one module stores into, mutates, deletes from or hands on a client's event
+    hooks. Flow-insensitive, like the rest of the scan: a name bound anywhere in a function
+    (or an enclosing one) to the hook dict or to one hook list is an alias of it everywhere in
+    that function, and an attribute chain bound to one (``self._hooks = c.event_hooks["request"]``)
+    is an alias everywhere in the module."""
+
+    def __init__(self, tree: ast.Module) -> None:
+        self.findings: list[tuple[str, int, str]] = []
+        self.chains: dict[tuple[str, ...], int] = {}
+        self._scope: list[str] = []
+        self._collect = True
+        for _ in range(5):       # an attribute alias bound in one method and used in another
+            before = dict(self.chains)
+            self._visit(tree.body, {})
+            if self.chains == before:
+                break
+        self._collect = False
+        self._visit(tree.body, {})
+
+    def depth(self, node: ast.AST, names: dict[str, int]) -> int | None:
+        """0: a client's hook dict, 1: one of its hook lists, None: anything else (one hook, a
+        copy, an unrelated value)."""
+        if isinstance(node, ast.NamedExpr):
+            return self.depth(node.value, names)
+        if isinstance(node, ast.Attribute):
+            if node.attr in _HOOK_ATTRS:
+                return 0
+            chain = tuple(_attr_chain(node))
+            return self.chains.get(chain) if chain else None
+        if isinstance(node, ast.Name):
+            return names.get(node.id)
+        if isinstance(node, ast.Subscript):
+            if _instance_dict(node.value) and _const_str(node.slice) in _HOOK_ATTRS:
+                return 0
+            return 1 if self.depth(node.value, names) == 0 else None
+        if isinstance(node, ast.Call):
+            name = _callee(node.func)
+            if name == "getattr" and len(node.args) >= 2 and _const_str(node.args[1]) in _HOOK_ATTRS:
+                return 0
+            if isinstance(node.func, ast.Attribute) and name in {"get", "setdefault"} and node.args:
+                if _instance_dict(node.func.value) and _const_str(node.args[0]) in _HOOK_ATTRS:
+                    return 0
+                if self.depth(node.func.value, names) == 0:
+                    return 1
+            return None
+        if isinstance(node, (ast.IfExp, ast.BoolOp)):
+            options = [node.body, node.orelse] if isinstance(node, ast.IfExp) else node.values
+            found = [d for d in (self.depth(o, names) for o in options) if d is not None]
+            return min(found) if found else None
+        return None
+
+    def _aliases(self, nodes: list[ast.AST], inherited: dict[str, int]) -> dict[str, int]:
+        names = dict(inherited)
+        pairs = [pair for node in nodes if type(node) in _BINDERS for pair in _assignments(node)]
+        pairs += [(node.target, node.value) for node in nodes if isinstance(node, ast.NamedExpr)]
+        changed = True
+        while changed:
+            changed = False
+            for target, value in pairs:
+                depth = self.depth(value, names)
+                if depth is None:
+                    continue
+                if isinstance(target, ast.Name):
+                    key, store = target.id, names
+                else:
+                    key, store = tuple(_attr_chain(target)), self.chains
+                    if len(key) < 2:
+                        continue
+                if store.get(key, 2) > depth:
+                    store[key] = depth
+                    changed = True
+        return names
+
+    def _visit(self, body: list[ast.AST], inherited: dict[str, int]) -> None:
+        nodes = list(_own_nodes(body))
+        names = self._aliases(nodes, inherited)
+        for node in nodes:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                self._scope.append(node.name)
+                self._visit(node.body, names)
+                self._scope.pop()
+            elif isinstance(node, ast.Lambda):
+                if not self._collect and self.depth(node.body, names) is not None:
+                    self._hit(node, "a lambda hands a hook container out")
+                self._visit([node.body], names)
+            elif not self._collect:
+                self._check(node, names)
+
+    def _hit(self, node: ast.AST, how: str) -> None:
+        self.findings.append((".".join(self._scope) or "<module>", getattr(node, "lineno", 0),
+                              f"{_HOOKS_REWIRED}: {how}"))
+
+    def _check(self, node: ast.AST, names: dict[str, int]) -> None:
+        def depth(value: ast.AST) -> int | None:
+            return self.depth(value, names)
+
+        if isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            verb = "deletes" if isinstance(node.ctx, ast.Del) else "assigns"
+            if isinstance(node, ast.Attribute) and node.attr in _HOOK_ATTRS:
+                self._hit(node, f"{verb} .{node.attr}")
+            elif isinstance(node, ast.Subscript) and (
+                    depth(node.value) is not None
+                    or (_instance_dict(node.value) and _const_str(node.slice) in _HOOK_ATTRS)):
+                self._hit(node, f"{verb} an entry of a hook container")
+        elif (isinstance(node, ast.AugAssign) and isinstance(node.target, (ast.Name, ast.Attribute))
+              and getattr(node.target, "attr", None) not in _HOOK_ATTRS and depth(node.target) is not None):
+            self._hit(node, "extends a hook container in place")
+        elif (isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load)
+              and node.attr in _HOOK_MUTATORS and depth(node.value) is not None):
+            self._hit(node, f"reaches .{node.attr} of a hook container")
+        elif isinstance(node, (ast.Return, ast.Yield)) and node.value is not None and depth(node.value) is not None:
+            self._hit(node, "hands a hook container out of the function")
+        elif isinstance(node, (ast.List, ast.Tuple, ast.Set, ast.Dict)) and isinstance(
+                getattr(node, "ctx", ast.Load()), ast.Load) and any(
+                v is not None and depth(v) is not None
+                for v in (node.values if isinstance(node, ast.Dict) else node.elts)):
+            self._hit(node, "puts a hook container in another container")
+        elif isinstance(node, ast.Call):
+            name = _callee(node.func)
+            consts = {c for c in map(_const_str, node.args) if c is not None}
+            if name in _HOOK_SETTERS and consts & _HOOK_ATTRS:
+                self._hit(node, f"{name}s the hooks attribute by name")
+            elif name == "getattr" and len(node.args) >= 2 and depth(node.args[0]) is not None and (
+                    _const_str(node.args[1]) in _HOOK_MUTATORS):
+                self._hit(node, f"reaches .{_const_str(node.args[1])} of a hook container by name")
+            elif (isinstance(node.func, ast.Attribute) and _instance_dict(node.func.value)
+                  and name in _HOOK_MUTATORS
+                  and (consts | {k.arg for k in node.keywords if k.arg}) & _HOOK_ATTRS):
+                self._hit(node, f"rewrites the hooks through the instance dict (.{name})")
+            elif name not in _HOOK_READERS and not (
+                    isinstance(node.func, ast.Attribute) and depth(node.func.value) is not None):
+                handed = [a.value if isinstance(a, ast.Starred) else a for a in node.args]
+                handed += [k.value for k in node.keywords]
+                if any(depth(arg) is not None for arg in handed):
+                    self._hit(node, f"hands a hook container to {name or 'a call'}")
+
+
+def _hook_findings(module: _Module) -> list[tuple[str, int, str]]:
+    found = getattr(module, "hook_findings", None)
+    if found is None:
+        found = module.hook_findings = _HookRewirings(module.tree).findings
+    return found
+
+
 class _Scanner:
     """Collect (qualname, line, shape) for every bare-client path in one module.
 
@@ -998,8 +1240,8 @@ class _Scanner:
         self.b = bindings
         # What no reference resolves (a destination handed to a sender instance) comes from
         # the analysis; everything else is found by walking the module.
-        self.findings: list[tuple[str, int, str]] = list(
-            bindings.facts.calls.get(bindings.module.rel, ()))
+        self.findings: list[tuple[str, int, str]] = [
+            *bindings.facts.calls.get(bindings.module.rel, ()), *_hook_findings(bindings.module)]
         self._scope: list[str] = []
         self._transport: list[bool] = []
         self._call: list[ast.Call] = []               # the call whose func is being visited
@@ -1136,8 +1378,32 @@ class _Scanner:
             return      # a member that is not a client: `httpx.Timeout`, `egress.llm_async_client`
         self.visit(node.value)
 
+    def _sys_modules(self, node: ast.AST, container: ast.AST, key: ast.AST | None) -> None:
+        """``sys.modules["httpx"]`` (``.get``, ``.setdefault``, ``.pop``, through any alias of
+        ``sys`` or ``from sys import modules``): the httpx package or a model SDK reached without
+        an import statement, exactly like ``import_module``."""
+        name = _const_str(key)
+        if name is None:
+            return
+        module = self.b.module
+        if isinstance(container, ast.Attribute) and container.attr == "modules":
+            base = container.value
+            via_sys = ((_attr_chain(base) or [""])[-1] == "sys" or (
+                isinstance(base, ast.Name) and base.id in module.sys_names) or (
+                isinstance(base, ast.Call) and _callee(base.func) in {"__import__", "import_module"}
+                and base.args and _const_str(base.args[0]) == "sys"))
+        else:
+            via_sys = isinstance(container, ast.Name) and container.id in module.sys_modules_names
+        if not via_sys:
+            return
+        if name.split(".")[0] == "httpx":
+            self._hit(node, "reaches httpx through sys.modules")
+        elif _model_sdk(name):
+            self._hit(node, "reaches a model SDK through sys.modules")
+
     def _v_Subscript(self, node, safe, role):
         key = node.slice
+        self._sys_modules(node, node.value, key)
         if (isinstance(node.ctx, ast.Load) and isinstance(key, ast.Constant)
                 and isinstance(key.value, str)):
             self._member(node, node.value, key.value)   # `vars(obj)["_client"]`, `obj.__dict__[…]`
@@ -1216,6 +1482,9 @@ class _Scanner:
                     self._hit(node, "reaches the bare client by name")
                 elif name == "getattr":
                     self._member(node, node.args[0], attr.value)
+        elif (name in {"get", "setdefault", "pop", "__getitem__"} and node.args
+              and isinstance(node.func, ast.Attribute)):
+            self._sys_modules(node, node.func.value, node.args[0])
         elif name in {"import_module", "__import__"} and node.args:
             first = node.args[0]
             if isinstance(first, ast.Constant) and str(first.value).split(".")[0] == "httpx":
@@ -2023,7 +2292,8 @@ _PROVIDER_IMPORT_HINTS = ("egress", "direct_transport", "native_transport", "cus
 
 _SDK_TOPS = sorted({name.split(".")[0] for name in (*_MODEL_SDKS, *_UNLEDGERED_MODEL_SDKS)})
 # Text that can only be an import (static or dynamic) of a model SDK.
-_SDK_HINT = re.compile(r"(?:\b(?:import|from)\s+|import_module\(\s*['\"]|__import__\(\s*['\"])"
+_SDK_HINT = re.compile(r"(?:\b(?:import|from)\s+|import_module\(\s*['\"]|__import__\(\s*['\"]"
+                       r"|\bmodules\s*(?:\[|\.\w+\()\s*['\"])"
                        r"(?:" + "|".join(_SDK_TOPS) + r")\b")
 
 
@@ -2039,7 +2309,7 @@ def _scan_repo(extra: dict[str, str] | None = None):
     # parsed module binds to a bare constructor, helper, model SDK, bare-client factory or
     # carrier class (a re-export under a name that never mentions httpx), a factory method
     # (``._get_client``), or a private client attribute read off another object.
-    hints = ("httpx", *_RAW_SENDS, *_PRIVATE_SENDS, *_PROVIDER_IMPORT_HINTS)
+    hints = ("httpx", "event_hooks", *_RAW_SENDS, *_PRIVATE_SENDS, *_PROVIDER_IMPORT_HINTS)
     wanted = {rel for rel, src in sources.items()
               if rel.startswith(("agents/core/llm/", *PROVIDER_ROOTS))
               or any(h in src for h in hints) or _SDK_HINT.search(src)}
@@ -2118,12 +2388,18 @@ def _scan():
 
 # ── the rule ─────────────────────────────────────────────────────────────────
 
+def _rewires_hooks(shape: str) -> bool:
+    """A hook-rewiring finding: only HOOK_REWIRING_ALLOWLIST exempts it, in or out of scope."""
+    return shape.startswith(_HOOKS_REWIRED)
+
+
 def _prompt_offenders(in_scope) -> list[str]:
     """What fails the prompt-scope rule: a finding whose (file, qualname) is not allowlisted."""
     return [f"{rel}:{line} {qual} — {shape}"
             for rel, findings in in_scope.items()
             for qual, line, shape in findings
-            if (rel, qual) not in PROMPT_SCOPE_ALLOWLIST]
+            if (rel, qual) not in (HOOK_REWIRING_ALLOWLIST if _rewires_hooks(shape)
+                                   else PROMPT_SCOPE_ALLOWLIST)]
 
 
 def _unclassified(outside) -> list[str]:
@@ -2131,7 +2407,8 @@ def _unclassified(outside) -> list[str]:
     return [f"{rel}:{line} {qual} — {shape}"
             for rel, findings in outside.items()
             for qual, line, shape in findings
-            if qual not in NOT_A_MODEL_PROVIDER.get(rel, ("", frozenset()))[1]]
+            if ((rel, qual) not in HOOK_REWIRING_ALLOWLIST if _rewires_hooks(shape)
+                else qual not in NOT_A_MODEL_PROVIDER.get(rel, ("", frozenset()))[1])]
 
 
 def test_no_prompt_carrying_module_dials_a_bare_httpx_client():
@@ -2157,10 +2434,16 @@ def test_every_bare_client_outside_the_scope_is_classified():
 
 def test_every_exemption_is_still_needed_and_justified():
     in_scope, outside, provider_modules = _scan()
-    used = {(rel, qual) for rel, findings in in_scope.items() for qual, _, _ in findings}
+    used = {(rel, qual) for rel, findings in in_scope.items() for qual, _, shape in findings
+            if not _rewires_hooks(shape)}
     stale = sorted(set(PROMPT_SCOPE_ALLOWLIST) - used)
     assert stale == [], f"allowlist entries that no longer match a bare client: {stale}"
-    seen = {(rel, qual) for rel, findings in outside.items() for qual, _, _ in findings}
+    rewired = {(rel, qual) for bucket in (in_scope, outside) for rel, findings in bucket.items()
+               for qual, _, shape in findings if _rewires_hooks(shape)}
+    stale_hooks = sorted(set(HOOK_REWIRING_ALLOWLIST) - rewired)
+    assert stale_hooks == [], f"hook-rewiring entries that no longer rewire a client's hooks: {stale_hooks}"
+    seen = {(rel, qual) for rel, findings in outside.items() for qual, _, shape in findings
+            if not _rewires_hooks(shape)}
     classified = {(rel, qual) for rel, (_, quals) in NOT_A_MODEL_PROVIDER.items() for qual in quals}
     stale_classified = sorted(classified - seen)
     assert stale_classified == [], f"classified functions with no bare client left: {stale_classified}"
@@ -2168,10 +2451,48 @@ def test_every_exemption_is_still_needed_and_justified():
     assert misfiled == [], f"a provider module cannot be classified as not-a-provider: {misfiled}"
     stale_pins = sorted(set(_PINNED_DESTINATIONS) - _scan().facts.pins)
     assert stale_pins == [], f"pinned destinations no destination flows into any more: {stale_pins}"
-    reasons = [*PROMPT_SCOPE_ALLOWLIST.items(), *_PINNED_DESTINATIONS.items(),
-               *((rel, why) for rel, (why, _) in NOT_A_MODEL_PROVIDER.items())]
+    reasons = _reasons()
     for key, why in reasons:
         assert isinstance(why, str) and len(why.strip()) >= 30, f"{key} needs a real reason"
+    # A reason that rests on a test must name one that exists (round-5 review: two cited
+    # tests that were never written passed the length check).
+    assert _citation_errors(reasons) == [], _citation_errors(reasons)
+
+
+def _reasons() -> list[tuple[object, str]]:
+    return [*PROMPT_SCOPE_ALLOWLIST.items(), *_PINNED_DESTINATIONS.items(),
+            *HOOK_REWIRING_ALLOWLIST.items(),
+            *((rel, why) for rel, (why, _) in NOT_A_MODEL_PROVIDER.items())]
+
+
+_CITED_FILE = re.compile(r"\btests/[\w/]+\.py\b")
+_CITED_TEST = re.compile(r"\btest_\w+")
+_DEFINED_TESTS: frozenset[str] | None = None
+
+
+def _defined_tests() -> frozenset[str]:
+    """Every test function name defined under tests/."""
+    global _DEFINED_TESTS
+    if _DEFINED_TESTS is None:
+        _DEFINED_TESTS = frozenset(
+            name for path in (REPO / "tests").rglob("test_*.py")
+            for name in re.findall(r"^[ \t]*(?:async[ \t]+)?def[ \t]+(test_\w+)",
+                                   path.read_text(encoding="utf-8", errors="replace"), re.M))
+    return _DEFINED_TESTS
+
+
+def _citation_errors(reasons) -> list[str]:
+    """Each ``tests/…py`` a reason cites must exist, and each ``test_…`` it names must be a
+    test function some file under tests/ defines."""
+    errors = []
+    for key, why in reasons:
+        for cited in _CITED_FILE.findall(why):
+            if not (REPO / cited).is_file():
+                errors.append(f"{key} cites {cited}, which does not exist")
+        for name in _CITED_TEST.findall(_CITED_FILE.sub("", why)):
+            if name not in _defined_tests():
+                errors.append(f"{key} cites {name}, which no test defines")
+    return errors
 
 
 # Libraries a provider could dial with instead of httpx, including the model SDKs that do
@@ -2186,28 +2507,212 @@ _HTTPCORE_IDENTITY_ONLY = frozenset({"agents/core/llm/direct_transport.py",
                                      "agents/core/ingestion/embedding_policy.py"})
 
 
-def _other_stack_imports(module: _Module) -> list[str]:
+def _is_stack(name: str) -> bool:
+    return name.startswith(_OTHER_HTTP_STACKS)
+
+
+def _module_level(body):
+    """The statements of a module outside every def and class (if/try/with blocks included):
+    what another module can import from it."""
+    pending = list(body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        yield node
+        for field in ("body", "orelse", "finalbody", "handlers", "cases"):
+            pending.extend(getattr(node, field, ()) or ())
+
+
+_TREES: dict[tuple[str, str], ast.Module] = {}
+
+
+def _repo_module(name: str, extra: dict[str, str]) -> tuple[str, ast.Module] | None:
+    """(rel, tree) of a repo module by its dotted name (a probe module before the disk)."""
+    if not (name == "agents" or name.startswith("agents.")):
+        return None
+    for rel in (name.replace(".", "/") + ".py", name.replace(".", "/") + "/__init__.py"):
+        if rel in extra:
+            source = extra[rel]
+        elif (REPO / rel).is_file():
+            source = (REPO / rel).read_text(encoding="utf-8")
+        else:
+            continue
+        parsed = _PARSED.get((rel, source))       # the scan parsed most of them already
+        tree = parsed.tree if parsed is not None else _TREES.get((rel, source))
+        if tree is None:
+            tree = _TREES[(rel, source)] = ast.parse(source)
+        return rel, tree
+    return None
+
+
+def _reexported_stack(name: str, attr: str, extra: dict[str, str], seen: frozenset = frozenset()) -> str | None:
+    """The other HTTP stack repo module ``name`` binds at module level under ``attr`` — imported
+    there, re-exported there from another repo module (absolute, relative or ``*``), or
+    assigned there from one of those — so ``from <name> import <attr>`` or ``<name>.<attr>``
+    hands it on (round-5 review: ``from .direct_transport import httpcore``)."""
+    found = _repo_module(name, extra) if (name, attr) not in seen else None
+    if found is None:
+        return None
+    rel, tree = found
+    seen = seen | {(name, attr)}
+    here, package = _module_name(rel), rel.endswith("/__init__.py")
+    for node in _module_level(tree.body):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if (alias.asname or alias.name.split(".")[0]) == attr and _is_stack(alias.name):
+                    return alias.name
+        elif isinstance(node, ast.ImportFrom):
+            source = _import_source(here, package, node)
+            for alias in node.names:
+                if alias.name == "*" or (alias.asname or alias.name) == attr:
+                    member = attr if alias.name == "*" else alias.name
+                    if _is_stack(source) or _is_stack(f"{source}.{member}"):
+                        return source if _is_stack(source) else f"{source}.{member}"
+                    if (inner := _reexported_stack(source, member, extra, seen)) is not None:
+                        return inner
+        else:
+            for target, value in _assignments(node):
+                chain = _attr_chain(value)
+                if (isinstance(target, ast.Name) and target.id == attr and chain
+                        and (inner := _reexported_stack(name, chain[0], extra, seen)) is not None):
+                    return inner     # `_hc = httpcore`, `Pool = httpcore.AsyncConnectionPool`
+    return None
+
+
+def _star_names(name: str, extra: dict[str, str], seen: frozenset = frozenset()) -> set[str]:
+    """The names ``from <name> import *`` binds: its ``__all__``, else every public name it
+    binds at module level (star imports of other repo modules included)."""
+    found = _repo_module(name, extra) if name not in seen else None
+    if found is None:
+        return set()
+    rel, tree = found
+    names: set[str] = set()
+    for node in _module_level(tree.body):
+        if isinstance(node, ast.Import):
+            names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            source = _import_source(_module_name(rel), rel.endswith("/__init__.py"), node)
+            for alias in node.names:
+                names.update(_star_names(source, extra, seen | {name}) if alias.name == "*"
+                             else {alias.asname or alias.name})
+        else:
+            for target, value in _assignments(node):
+                if isinstance(target, ast.Name) and target.id == "__all__" and isinstance(
+                        value, (ast.List, ast.Tuple)):
+                    return {c for c in map(_const_str, value.elts) if c is not None}
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+    return {n for n in names if not n.startswith("_")}
+
+
+def _httpcore_reads(module: _Module) -> list[str]:
+    """In a module allowed to import httpcore for identity checks: every read of it that is not
+    a type/identity position (an ``is``/``==``/``in`` operand, ``isinstance``'s class, an
+    annotation, an ``except`` clause) — a call, a subclass, a hand-off, a patch."""
+    bound = set()
+    for node in module.imports:
+        if isinstance(node, ast.Import):
+            bound.update(alias.asname or alias.name.split(".")[0] for alias in node.names
+                         if alias.name.split(".")[0] == "httpcore")
+        elif not node.level and (node.module or "").split(".")[0] == "httpcore":
+            bound.update(alias.asname or alias.name for alias in node.names)
+    offenders: list[str] = []
+
+    def visit(node: ast.AST, safe: bool = False) -> None:
+        if isinstance(node, (ast.Name, ast.Attribute)) and (chain := _attr_chain(node)) and chain[0] in bound:
+            if not (safe and isinstance(node.ctx, ast.Load)):
+                offenders.append(f"{module.rel}:{node.lineno} uses {'.'.join(chain)} "
+                                 "outside a type/identity check")
+            return
+        if isinstance(node, ast.Compare):
+            identity = all(isinstance(op, _IDENTITY_OPS) for op in node.ops)
+            for operand in [node.left, *node.comparators]:
+                visit(operand, identity)
+            return
+        if isinstance(node, ast.Call) and _callee(node.func) in {"isinstance", "issubclass"}:
+            visit(node.func)
+            for index, arg in enumerate(node.args):
+                visit(arg, index >= 1)
+            return
+        typed = {"annotation", "returns"} | ({"type"} if isinstance(node, ast.ExceptHandler) else set())
+        keep = safe and isinstance(node, (ast.Tuple, ast.BinOp))   # `(A, B)`, `A | None`
+        for field, value in ast.iter_fields(node):
+            for child in value if isinstance(value, list) else [value]:
+                if isinstance(child, ast.AST):
+                    visit(child, keep or field in typed)
+
+    visit(module.tree)
+    return offenders
+
+
+def _other_stack_imports(module: _Module, extra: dict[str, str] | None = None) -> list[str]:
+    """Every way one provider module reaches another HTTP stack: an import of it (absolute or
+    relative), a name another repo module re-exports from it (``from .direct_transport import
+    httpcore``, ``direct_transport.httpcore``), and — in a module allowed to import httpcore
+    for identity checks — any use of httpcore but such a check."""
+    extra = extra or {}
     offenders = []
+    repo: dict[str, str] = {}     # local name -> the repo module it is bound to
     for node in module.imports:
         if isinstance(node, ast.Import):
             names = [alias.name for alias in node.names]
-        elif node.level:
-            continue          # a repo-relative import
+            for alias in node.names:
+                if _repo_module(alias.name, extra) is not None:
+                    repo[alias.asname or alias.name.split(".")[0]] = (
+                        alias.name if alias.asname else alias.name.split(".")[0])
         else:                 # `from google import generativeai` names google.generativeai
-            names = [node.module or "", *(f"{node.module}.{alias.name}" for alias in node.names)]
-        name = next((n for n in names if n.startswith(_OTHER_HTTP_STACKS)), None)
-        top_level_httpcore = (name if isinstance(node, ast.Import) else node.module) == "httpcore"
+            source = _import_source(module.name, module.is_package, node)
+            names = [source, *(f"{source}.{alias.name}" for alias in node.names)]
+            for alias in node.names:
+                members = sorted(_star_names(source, extra)) if alias.name == "*" else [alias.name]
+                if _repo_module(f"{source}.{alias.name}", extra) is not None:
+                    repo[alias.asname or alias.name] = f"{source}.{alias.name}"
+                    continue
+                for member in members:
+                    if (stack := _reexported_stack(source, member, extra)) is not None:
+                        offenders.append(f"{module.rel}:{node.lineno} imports {stack} re-exported by {source}")
+        name = next((n for n in names if _is_stack(n)), None)
+        top_level_httpcore = (name if isinstance(node, ast.Import) else source) == "httpcore"
         if name and not (top_level_httpcore and module.rel in _HTTPCORE_IDENTITY_ONLY):
             offenders.append(f"{module.rel}:{node.lineno} imports {name}")
-    return offenders
+    for node in ast.walk(module.tree):     # `direct_transport.httpcore`, `getattr(dt, "httpcore")`
+        if isinstance(node, ast.Attribute):
+            chain = _attr_chain(node)
+        elif (isinstance(node, ast.Call) and _callee(node.func) == "getattr" and len(node.args) >= 2
+              and _const_str(node.args[1]) is not None):
+            chain = [*_attr_chain(node.args[0]), _const_str(node.args[1])]
+        else:
+            continue
+        if len(chain) < 2 or chain[0] not in repo:
+            continue
+        current = repo[chain[0]]
+        for attr in chain[1:]:
+            if _repo_module(f"{current}.{attr}", extra) is not None:
+                current = f"{current}.{attr}"
+                continue
+            if (stack := _reexported_stack(current, attr, extra)) is not None:
+                offenders.append(f"{module.rel}:{node.lineno} reads {stack} re-exported by {current}")
+            break
+    if module.rel in _HTTPCORE_IDENTITY_ONLY:
+        offenders += _httpcore_reads(module)
+    return list(dict.fromkeys(offenders))
+
+
+def _other_stack_offenders(provider_modules, extra: dict[str, str] | None = None) -> list[str]:
+    extra = extra or {}
+    return [line for rel in sorted(provider_modules)
+            for line in _other_stack_imports(
+                _parsed(rel, extra[rel] if rel in extra else (REPO / rel).read_text(encoding="utf-8")),
+                extra)]
 
 
 def test_no_provider_module_switches_to_another_http_stack():
     """The httpx rule cannot be dodged by dialling with a different library, nor with a
-    model SDK that does not dial through httpx."""
+    model SDK that does not dial through httpx, nor with httpcore handed on by a module that
+    may import it for identity checks."""
     _, _, provider_modules = _scan()
-    offenders = [line for rel in sorted(provider_modules)
-                 for line in _other_stack_imports(_Module(rel, (REPO / rel).read_text(encoding="utf-8")))]
+    offenders = _other_stack_offenders(provider_modules)
     assert offenders == [], "\n".join(offenders)
 
 
@@ -3260,3 +3765,255 @@ def test_the_comfyui_backend_refuses_a_non_loopback_config(tmp_path):
             asyncio.run(backend.generate("a secret image prompt", {}))
         assert refused.value.reason == "invalid_endpoint"
     assert sent == []
+
+
+# ── round-5 review: a ledgered client turned bare, and the other ways in ─────
+
+_ANTHROPIC = "agents/core/llm/anthropic.py"
+_ANTHROPIC_LEDGERED = '                       else llm_async_client("anthropic", timeout=120.0))\n'
+_HOOKS_PROBES = {
+    # A new llm/ module stripping the request hooks off its own ledgered client.
+    "agents/core/llm/zz_probe_hooks.py": (
+        "from agents.core.llm.egress import llm_async_client\n"
+        "async def ask(prompt):\n"
+        "    c = llm_async_client('openai')\n"
+        "    c._event_hooks['request'] = []\n"
+        "    return await c.post('https://api.openai.com/v1/chat/completions', json={'p': prompt})\n"),
+    # A module outside the scope that never names httpx, quietening the hub's backend.
+    "agents/core/tools/zz_probe_hooks_outside.py": (
+        "def quiet(orchestrator, log):\n"
+        "    orchestrator.llm.client.event_hooks = {'request': [log]}\n"),
+    # A model SDK reached through sys.modules, without an import statement.
+    "agents/core/tools/zz_probe_sysmod.py": (
+        "import sys\n"
+        "def ask(prompt):\n"
+        "    return sys.modules['openai'].OpenAI().chat.completions.create(model='m', messages=[prompt])\n"),
+}
+_VLM_SYSMOD_SEND = (
+    "        import sys as _s\n"
+    "        async with _s.modules['httpx'].AsyncClient(timeout=60.0) as _bare:\n"
+    "            resp = await _bare.post(self.base_url.rstrip('/') + endpoint, json=payload,\n"
+    "                                    headers=self._headers())")
+
+
+def test_the_round_five_probes_fail_the_repo_rule():
+    """Round-5 review's mutations, made permanent through the whole pipeline (parse filter,
+    scope, rule, allowlists): the real Claude backend overwriting ``self.client.event_hooks``
+    (httpx replaces every hook, so the egress recorder llm_async_client installed is gone),
+    the real VLM backend clearing its request hooks, a new llm/ module storing into
+    ``_event_hooks``, a module outside the scope rewiring a backend's hooks, and the httpx
+    package or a model SDK reached through ``sys.modules`` — each passed all 25 structural
+    tests before."""
+    source = (REPO / _ANTHROPIC).read_text(encoding="utf-8")
+    vlm = (REPO / _VLM).read_text(encoding="utf-8")
+    assert source.count(_ANTHROPIC_LEDGERED) == 1, f"{_ANTHROPIC} changed; update this mutation"
+    assert vlm.count(_VLM_SEND) == 1, f"{_VLM} changed; update this mutation"
+    swaps = {
+        _ANTHROPIC: source.replace(_ANTHROPIC_LEDGERED, _ANTHROPIC_LEDGERED
+                                   + '        self.client.event_hooks = {"response": []}\n'),
+        _VLM: vlm.replace(_VLM_SEND, "        self.client.event_hooks['request'].clear()\n" + _VLM_SEND),
+        "agents/core/llm/zz_vlm_sysmod.py": vlm.replace(_VLM_SEND, _VLM_SYSMOD_SEND),
+    }
+    in_scope, outside, provider_modules = _scan_repo({**swaps, **_HOOKS_PROBES})
+    offenders = _prompt_offenders(in_scope)
+
+    def failing(rel, bucket=offenders):
+        return sorted(o.split(" ", 1)[1] for o in bucket if o.startswith(rel + ":"))
+
+    rewired = f"— {_HOOKS_REWIRED}: "
+    assert failing(_ANTHROPIC) == [f"ClaudeBackend.__init__ {rewired}assigns .event_hooks"]
+    assert failing(_VLM) == [
+        f"VLMBackend.generate_vision_checked {rewired}reaches .clear of a hook container"]
+    assert failing("agents/core/llm/zz_probe_hooks.py") == [
+        f"ask {rewired}assigns an entry of a hook container"]
+    assert failing("agents/core/llm/zz_vlm_sysmod.py") == [
+        "VLMBackend.generate_vision_checked — reaches httpx through sys.modules"]
+    unclassified = _unclassified(outside)
+    assert failing("agents/core/tools/zz_probe_hooks_outside.py", unclassified) == [
+        f"quiet {rewired}assigns .event_hooks"]
+    assert failing("agents/core/tools/zz_probe_sysmod.py", unclassified) == [
+        "ask — reaches a model SDK through sys.modules"]
+    assert not {"agents/core/tools/zz_probe_hooks_outside.py",
+                "agents/core/tools/zz_probe_sysmod.py"} & provider_modules
+    # A function allowlisted for a bare client is not thereby allowed to rewire hooks.
+    assert not set(HOOK_REWIRING_ALLOWLIST) & {(_ANTHROPIC, "ClaudeBackend.__init__"),
+                                               (_VLM, "VLMBackend.generate_vision_checked")}
+
+
+_HOOK_SHAPES = {
+    "assigned": "def f(c, log):\n    c.event_hooks = {'request': [log]}\n",
+    "private attribute": "def f(c):\n    c._event_hooks = {}\n",
+    "one event replaced": "def f(c):\n    c.event_hooks['request'] = []\n",
+    "one hook replaced": "def f(c, log):\n    c.event_hooks['request'][-1] = log\n",
+    "slice replaced": "def f(c):\n    c.event_hooks['request'][:] = []\n",
+    "cleared": "def f(c):\n    c.event_hooks['request'].clear()\n",
+    "popped": "def f(c):\n    c.event_hooks['request'].pop()\n",
+    "removed": "def f(c, h):\n    c.event_hooks['request'].remove(h)\n",
+    "event popped": "def f(c):\n    c.event_hooks.pop('request')\n",
+    "dict updated": "def f(c):\n    c.event_hooks.update(request=[])\n",
+    "appended after the recorder": "def f(c, log):\n    c.event_hooks['request'].append(log)\n",
+    "deleted": "def f(c):\n    del c.event_hooks['request']\n",
+    "attribute deleted": "def f(c):\n    del c._event_hooks\n",
+    "augmented": "def f(c, log):\n    c.event_hooks['request'] += [log]\n",
+    "local alias": "def f(c):\n    hooks = c.event_hooks['request']\n    hooks.clear()\n",
+    "get alias": "def f(c):\n    hooks = c.event_hooks.get('request', [])\n    del hooks[0]\n",
+    "alias of an alias": "def f(c):\n    h = c.event_hooks\n    r = h['request']\n    r.pop()\n",
+    "alias extended": "def f(c, log):\n    hooks = c.event_hooks['request']\n    hooks += [log]\n",
+    "walrus alias": "def f(c):\n    if (h := c.event_hooks['request']):\n        h.clear()\n",
+    "conditional alias": "def f(c, x):\n    h = c.event_hooks['request'] if x else []\n    h.clear()\n",
+    "closure alias": ("def f(c):\n    hooks = c.event_hooks['request']\n    def g():\n"
+                      "        hooks.clear()\n    return g\n"),
+    "attribute alias in another method": (
+        "class B:\n    def __init__(self, c):\n        self._h = c.event_hooks['request']\n"
+        "    def reset(self):\n        self._h.clear()\n"),
+    "setattr": "def f(c):\n    setattr(c, 'event_hooks', {})\n",
+    "object.__setattr__": "def f(c):\n    object.__setattr__(c, '_event_hooks', {})\n",
+    "delattr": "def f(c):\n    delattr(c, '_event_hooks')\n",
+    "getattr then stored": "def f(c):\n    getattr(c, 'event_hooks')['request'] = []\n",
+    "vars stored": "def f(c):\n    vars(c)['_event_hooks'] = {}\n",
+    "__dict__ stored": "def f(c):\n    c.__dict__['_event_hooks'] = {}\n",
+    "__dict__ updated": "def f(c):\n    c.__dict__.update(_event_hooks={})\n",
+    "vars get then cleared": "def f(c):\n    vars(c).get('_event_hooks')['request'].clear()\n",
+    "bound mutator uncalled": "def f(c):\n    wipe = c.event_hooks['request'].clear\n    wipe()\n",
+    "mutator by name": "def f(c):\n    getattr(c.event_hooks['request'], 'clear')()\n",
+    "handed to a helper": "import operator\ndef f(c):\n    operator.setitem(c.event_hooks, 'request', [])\n",
+    "unbound list method": "def f(c):\n    list.clear(c.event_hooks['request'])\n",
+    "handed out": "def hooks(c):\n    return c.event_hooks['request']\n",
+    "put in a container": "def f(c):\n    pair = (c.event_hooks['request'], 1)\n    pair[0].clear()\n",
+    "in a lambda": "def f(c):\n    return lambda: c.event_hooks['request'].clear()\n",
+    "at module level": "import app\napp.client.event_hooks = {}\n",
+}
+
+# Reads of a client's hooks (and a hook dict that is not a client's): none is a finding.
+_HOOK_READS = (
+    "from agents.core.llm.egress import llm_async_client\n"
+    "def f(c, log, **kwargs):\n"
+    "    hooks = c.event_hooks.get('request', ())\n"
+    "    if not hooks or getattr(hooks[-1], '_nerva_egress_recorder', False) is not True:\n"
+    "        raise ValueError('no recorder')\n"
+    "    sealed = tuple(c.event_hooks['request'])\n"
+    "    assert len(c.event_hooks['request']) == len(sealed) and c.event_hooks['request'][-1] is not log\n"
+    "    assert all(a is b for a, b in zip(c.event_hooks['request'], sealed, strict=True))\n"
+    "    assert sum(bool(getattr(h, '_x', False)) for h in hooks) == 1\n"
+    "    for hook in c.event_hooks['response']:\n"
+    "        print(hook)\n"
+    "    final = hooks[-1]\n"
+    "    copy = list(c.event_hooks['request'])\n"
+    "    copy.append(log)\n"
+    "    copy.clear()\n"
+    "    event_hooks = dict(kwargs.pop('event_hooks', None) or {})\n"
+    "    event_hooks['request'] = [*event_hooks.get('request', []), log]\n"
+    "    return final, llm_async_client('openai', event_hooks=event_hooks)\n"
+)
+
+
+def test_the_scanner_catches_every_hook_rewiring_shape():
+    """Every way to drop the egress recorder off a ledgered client (or slip a hook after it)
+    is a hook-rewiring finding; reading the hooks, copying them and building a client's own
+    hook dict are not."""
+    for name, source in _HOOK_SHAPES.items():
+        found = [shape for _, _, shape in scan_source(source)]
+        assert any(_rewires_hooks(shape) for shape in found), f"the scanner misses the {name!r} shape"
+    assert scan_source(_HOOK_READS) == []
+    # The realistic regression: a backend adding a logging hook by assignment.
+    assert [q for q, _, s in scan_source(
+        "from agents.core.llm.egress import llm_async_client\nclass B:\n    def __init__(self, log):\n"
+        "        self.client = llm_async_client('openai')\n"
+        "        self.client.event_hooks = {'response': [log]}\n") if _rewires_hooks(s)] == ["B.__init__"]
+
+
+_HC_SEND = ("async def ask(prompt):\n"
+            "    async with _hc.AsyncConnectionPool() as pool:\n"
+            "        return await pool.request('POST', 'https://llm.example.com/v1/chat/completions',\n"
+            "                                  content=prompt.encode())\n")
+_DIRECT = "agents/core/llm/direct_transport.py"
+_HC_PROBES = {
+    # The reviewer's probe: httpcore re-exported by the identity-only direct_transport.
+    "agents/core/llm/zz_probe_hc.py": "from .direct_transport import httpcore as _hc\n" + _HC_SEND,
+    "agents/core/llm/zz_probe_hc_abs.py": (
+        "from agents.core.llm.direct_transport import httpcore as _hc\n" + _HC_SEND),
+    "agents/core/llm/zz_probe_hc_attr.py": (
+        "from . import direct_transport\n_hc = direct_transport.httpcore\n" + _HC_SEND),
+    "agents/core/llm/zz_probe_hc_getattr.py": (
+        "import agents.core.llm.direct_transport as dt\n_hc = getattr(dt, 'httpcore')\n" + _HC_SEND),
+    "agents/core/llm/zz_probe_hc_star.py": (
+        "from .direct_transport import *\n" + _HC_SEND.replace("_hc.", "httpcore.")),
+    # ... and through a relay outside the scope (never checked itself) of another one of them.
+    "agents/core/zz_hc_relay.py": "from agents.core.ingestion.embedding_policy import httpcore as hc\n",
+    "agents/core/llm/zz_probe_hc_relayed.py": "from ..zz_hc_relay import hc as _hc\n" + _HC_SEND,
+}
+
+
+def test_httpcore_handed_on_by_an_identity_module_is_caught():
+    """Round-5 review: the other-HTTP-stack rule skipped every relative import and let the four
+    identity-check modules use httpcore however they liked, so ``from .direct_transport import
+    httpcore`` in a new llm/ module, or a send appended to direct_transport.py itself, posted a
+    prompt through httpcore and the rule stayed green. A name re-exported from another repo
+    module counts as importing the stack, and in an identity module only a type/identity check
+    of httpcore is admitted."""
+    source = (REPO / _DIRECT).read_text(encoding="utf-8")
+    assert "\nimport httpcore\n" in source, f"{_DIRECT} changed; update this probe"
+    appended = {
+        "send": source + "\n\n" + _HC_SEND.replace("_hc.", "httpcore."),
+        "alias": source + "\n_POOL = httpcore.AsyncConnectionPool\n",
+        "subclass": source + "\nclass _Pool(httpcore.AsyncConnectionPool):\n    pass\n",
+    }
+    for how, mutated in appended.items():
+        assert [line.split(" ", 1)[1] for line in _httpcore_reads(_Module(_DIRECT, mutated))] == [
+            "uses httpcore.AsyncConnectionPool outside a type/identity check"], how
+    assert _httpcore_reads(_Module(_DIRECT, source)) == []
+    probes = {rel: src for rel, src in _HC_PROBES.items() if rel.startswith("agents/core/llm/")}
+    assert all(_is_provider_module(_Module(rel, src)) for rel, src in probes.items())
+    assert not _is_provider_module(_Module("agents/core/zz_hc_relay.py", _HC_PROBES["agents/core/zz_hc_relay.py"]))
+    offenders = _other_stack_offenders({*_scan()[2], *probes, _DIRECT},
+                                       {**_HC_PROBES, _DIRECT: appended["send"]})
+    for rel in probes:
+        assert any(o.startswith(rel + ":") and "httpcore" in o for o in offenders), (rel, offenders)
+    assert [o for o in offenders if o.startswith(_DIRECT + ":")] != []
+    assert {o.split(":")[0] for o in offenders} == {*probes, _DIRECT}, offenders
+
+
+def test_sys_modules_is_caught_like_import_module():
+    """Round-5 review: ``sys.modules['httpx']`` handed the httpx package on without an import,
+    and the real VLM backend posted its prompt through a bare client built that way."""
+    shapes = {
+        "subscript": "import sys\ndef f():\n    return sys.modules['httpx'].AsyncClient()\n",
+        ".get": "import sys\ndef f():\n    return sys.modules.get('httpx').Client()\n",
+        "sys alias": "import sys as _s\ndef f():\n    return _s.modules['httpx']\n",
+        "from sys import modules": "from sys import modules as m\ndef f():\n    return m['httpx._client'].AsyncClient()\n",
+        "os.sys": "import os\ndef f():\n    return os.sys.modules.setdefault('httpx', None)\n",
+        "__import__('sys')": "def f():\n    return __import__('sys').modules['httpx']\n",
+        "model SDK": "import sys\ndef f():\n    return sys.modules['openai'].OpenAI()\n",
+        "model SDK submodule": "import sys\ndef f():\n    return sys.modules.get('google.genai').Client()\n",
+    }
+    for name, source in shapes.items():
+        assert [s for _, _, s in scan_source(source) if "sys.modules" in s], name
+    assert scan_source("import sys\ndef f():\n    return sys.modules.get('agents.web'), sys.modules[__name__]\n") == []
+    assert _SDK_HINT.search("x = sys.modules['openai']") and _SDK_HINT.search("modules.get('ollama')")
+    vlm = (REPO / _VLM).read_text(encoding="utf-8")
+    assert vlm.count(_VLM_SEND) == 1, f"{_VLM} changed; update this mutation"
+    assert scan_source(vlm, _VLM) == []
+    assert [(q, s) for q, _, s in scan_source(vlm.replace(_VLM_SEND, _VLM_SYSMOD_SEND), _VLM)] == [
+        ("VLMBackend.generate_vision_checked", "reaches httpx through sys.modules")]
+
+
+def test_a_reason_must_cite_a_test_that_exists():
+    """Round-5 review: two NOT_A_MODEL_PROVIDER reasons cited tests that were never written and
+    the reason checker only measured length. A cited test name or tests/ file must exist."""
+    old = [("agents/core/house/home_assistant.py",
+            "refuses any destination but a literal LAN address before a client exists "
+            "(test_ha_rest_transport_refuses_every_non_lan_destination)"),
+           ("agents/core/house/wled.py",
+            "refuses any destination whose origin fails validate_wled_origin "
+            "(test_wled_transport_refuses_every_non_lan_destination)"),
+           ("x", "pinned in code (tests/test_no_such_file.py)")]
+    assert _citation_errors(old) == [
+        "agents/core/house/home_assistant.py cites test_ha_rest_transport_refuses_every_non_lan_"
+        "destination, which no test defines",
+        "agents/core/house/wled.py cites test_wled_transport_refuses_every_non_lan_destination, "
+        "which no test defines",
+        "x cites tests/test_no_such_file.py, which does not exist"]
+    for rel in ("agents/core/house/home_assistant.py", "agents/core/house/wled.py"):
+        assert "test_the_house_transports_refuse_every_non_lan_destination" in NOT_A_MODEL_PROVIDER[rel][0]
+    assert _citation_errors([("y", "see tests/test_plugin_egress.py and "
+                                   "test_the_house_transports_refuse_every_non_lan_destination")]) == []
