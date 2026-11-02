@@ -24,12 +24,18 @@ the surface describes itself, and every description of it is checked against it:
    a served call is run and its writes are checked against its label, and the board tools
    labelled read-only are run and shown to change no row.
 3. The hand-written docs: ``docs/ARCHITECTURE.md`` carries the generated table, which must
-   equal the registry; the prose that names a tool as a tool must name a registered one,
-   and say "gated"/"ungated" only where it is; the ``register_tool`` contract table in
+   equal the registry; the prose that names a tool as a tool — "the `x` tool", "`x` ToolRPC
+   tool", a list after "tools:" / "tools (…):" / "Registers", "Model-callable `x`",
+   "registered beside `x`", "`x` is ungated" — must name a registered one (or a removed one
+   allowlisted with its reason), and say "gated"/"ungated" only where it is; a module-index
+   row for a file that registers tools names only tools that file registers, and at least
+   one; every claim doc yields claims, so a form the checker cannot read is a red test, not
+   a silent pass (H325 review r3); the ``register_tool`` contract table in
    ``docs/developer/adding-a-tool.md`` names every parameter; ``job_toolsets.CATALOG``
    (Nerva's ``toolsets.py``) names only registered tools.
 """
 import ast
+import functools
 import inspect
 import json
 import os
@@ -39,6 +45,7 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NamedTuple
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -91,6 +98,17 @@ CLAIM_DOCS = (
     "docs/developer/agent-loop.md",
     "docs/test-manual/01-environment-and-boot.md",
 )
+#: Each claim doc yields claims — a doc whose tool names the checker cannot parse proves
+#: nothing (H325 review r3) — except these, which name no built-in tool, and why. They
+#: are checked all the same, and must keep naming none: the first tool claim one makes
+#: takes it off this list.
+NO_BUILTIN_TOOL_DOCS = {
+    "docs/EXTENSIONS.md": "an extension's tools are qualified `<id>.<tool>` names that register when "
+                          "that extension is activated; no built-in tool is named there",
+}
+#: ``(doc, name)`` → why that doc may name, as a tool, a name no code registers (a removed
+#: tool, named as removed). Anything else a tool claim names must be registered.
+RETIRED_TOOL_MENTIONS: dict[tuple[str, str], str] = {}
 
 #: Toolset entries that name a tool no code registers yet, and why the entry stays.
 UNBUILT_TOOLS = {
@@ -109,7 +127,11 @@ def widest_orchestrator(root: str, extra_settings: dict | None = None):
     A composed kernel manager takes an owner directory under ``code_sessions`` and sweeps
     that root on construction, so here that root is under ``root``, never the real data
     root (``--update`` runs outside pytest's temporary ``JARVIS_HOME``). No interpreter
-    is started: composition launches nothing."""
+    is started: composition launches nothing.
+
+    ``orch.registrars`` maps each file that called ``register_tool`` during the wiring to
+    the tools it registered (the last registration of a name wins), which is what a
+    module-index row for that file may name as its tools."""
     from agents.core import browser_runtime, paths
     from agents.core.autonomy_coordinator import AutonomyCoordinator
 
@@ -126,7 +148,23 @@ def widest_orchestrator(root: str, extra_settings: dict | None = None):
     try:
         orch = SimpleNamespace(agents={}, settings=settings,
                                get_setting=lambda key, default=None: settings.get(key, default))
-        orch.agent_tool_runtime = AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+        registered_by = {}
+        register = ToolRPCServer.register_tool
+
+        @functools.wraps(register)
+        def recording(self, name, *args, **kwargs):
+            caller = Path(sys._getframe(1).f_code.co_filename).resolve()
+            registered_by[name] = caller.relative_to(REPO).as_posix() if caller.is_relative_to(REPO) else str(caller)
+            return register(self, name, *args, **kwargs)
+
+        ToolRPCServer.register_tool = recording
+        try:
+            orch.agent_tool_runtime = AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+        finally:
+            ToolRPCServer.register_tool = register
+        orch.registrars = {}
+        for tool in orch.tool_rpc.tools(live=False):
+            orch.registrars.setdefault(registered_by[tool["name"]], set()).add(tool["name"])
         yield orch
     finally:
         browser_runtime.local_browser_ready = ready
@@ -583,32 +621,184 @@ _TOOLRPC_CLAIM = re.compile(
     r"(?P<post>\s*\((?:un)?gated\b)?")
 #: "the `memory` tool", "`web_search` tool" — a tool by name, never "`x` tool event".
 _TOOL_CLAIM = re.compile(rf"(?P<group>{_GROUP})\s+tools?\b(?![/\w-])(?!\.\w)(?!\s+(?:event|events)\b)")
+#: "`a` / `b` are ungated", "`a` / `b` are **gated**", "`x` itself is ungated".
+_GATE_CLAIM = re.compile(rf"(?P<group>{_GROUP})(?:\s+(?:itself|also|still))?\s+(?:is|are)\s+\**(?P<gate>(?:un)?gated)\b")
+#: Where a list of tools starts — the order the module index and the guides mostly write
+#: them in (H325 review r3): "Governed file tools: `a` (…)/`b`", "skills as tools (H318):
+#: `a` (…), `b` (…) and `c`", "the ungated tools: `a`, `b`, file reading, `c`",
+#: "Approval-bound tools — `a`, `b`, desktop control —", "the tools the agent already has
+#: (`a`, `b`, ...)", "Registers `a`/`b` (ungated …) and gated `c`", "Model-callable `a`",
+#: "the session-scoped tools (`a`)" (a parenthetical that is nothing but names; any other
+#: parenthetical after "tools" describes them, as in "ToolRPC tools (ungated, …)"), and
+#: "registered beside `a`/`b`" (tools registered elsewhere, named as neighbours).
+_LIST_INTRO = re.compile(
+    r"(?:\b(?P<gate>(?:un)?gated|[Aa]pproval-bound)\s+(?:[\w-]+\s+){0,2}?)?"
+    r"(?:\btools?\b(?:[ \t]+[a-z][\w-]*){0,3}?(?:\s*\([^()`\n]{0,40}\))?\s*(?::|—)"
+    r"|\btools\s+[a-z][^.;:|`()\n]{0,40}\("
+    rf"|\btools\s*\((?={_GROUP}\s*\))"
+    r"|(?P<form>\b[Rr]egisters|\bregistered\s+beside|\b[Mm]odel-callable)\b)[ \t]*")
+#: Whitespace inside a list: a soft line break, never a blank line.
+_WS = r"[ \t]*(?:\n[ \t]*)?"
+_LIST_SEP = re.compile(rf"{_WS}(?:[,/]{_WS}(?:(?:and|or)\b{_WS})?|(?:and|or)\b{_WS})")
+_LIST_NAMES = re.compile(rf"(?:(?P<gate>(?:un)?gated)[ \t]+)?`[a-z][a-z0-9_]*`(?:{_WS}/{_WS}`[a-z][a-z0-9_]*`)*")
+#: An item that names no tool ("file reading and search", "the skill readers", "desktop control").
+_LIST_PHRASE = re.compile(r"(?!(?:and|or)\b)[A-Za-z][\w'-]*(?:[ \t]+(?!(?:and|or)\b)[A-Za-z][\w'-]*){0,3}")
+_TRAILING_GATE = re.compile(r"[ \t]+((?:un)?gated)\b")
+_PAREN_OPEN = re.compile(rf"{_WS}\(")
+_PAREN_GATE = re.compile(r"\(((?:un)?gated)\b")
+
+
+class Claim(NamedTuple):
+    """One tool a doc names as a tool: where, which, the gate it is given beside it
+    ("gated"/"ungated"/None), and the form it is named in ("beside" names a tool
+    registered elsewhere; every other form names a tool the passage is about)."""
+    line: int
+    name: str
+    gate: str | None
+    form: str
+
+
+def _paren_end(text: str, start: int) -> int | None:
+    """The index after the parenthesis that closes ``text[start]`` — balanced, backtick
+    spans skipped, never across a blank line or a table row."""
+    depth, i = 0, start
+    while i < len(text) and i - start < 8000:
+        char = text[i]
+        if char == "`":
+            close = text.find("`", i + 1)
+            if close < 0:
+                return None
+            i = close + 1
+            continue
+        if char == "\n" and (text.startswith("\n\n", i) or text.startswith("\n|", i)):
+            return None
+        depth += {"(": 1, ")": -1}.get(char, 0)
+        i += 1
+        if depth == 0:
+            return i
+    return None
+
+
+def _list_items(text: str, pos: int):
+    """Yield ``(position, name, gate)`` for each tool in the list that starts at ``pos``:
+    items joined by "," / "/" / "and" / "or", each a backticked name (or a "/" group of
+    them, optionally "gated"/"ungated" in front) or a short phrase, each optionally
+    followed by a parenthetical that is skipped whole (its backticks are not items; a
+    leading "(gated"/"(ungated" gates the group before it). The list ends at the first
+    thing that is not a separator and an item; a "gated"/"ungated" right after it gates
+    every item that said nothing itself."""
+    items = []
+    while True:
+        group = _LIST_NAMES.match(text, pos)
+        if group is not None:
+            names = [(group.start() + m.start(), m.group(1)) for m in re.finditer(_NAME, group.group(0))]
+            gate, pos = group.group("gate"), group.end()
+        else:
+            phrase = _LIST_PHRASE.match(text, pos)
+            if phrase is None:
+                break
+            names, gate, pos = [], None, phrase.end()
+        paren = _PAREN_OPEN.match(text, pos)
+        if paren is not None and (end := _paren_end(text, paren.end() - 1)) is not None:
+            said = _PAREN_GATE.match(text, paren.end() - 1)
+            gate = gate or (said.group(1) if said else None)
+            pos = end
+        items += [(at, name, gate) for at, name in names]
+        sep = _LIST_SEP.match(text, pos)
+        if sep is None or not (_LIST_NAMES.match(text, sep.end()) or _LIST_PHRASE.match(text, sep.end())):
+            break
+        pos = sep.end()
+    trailing = _TRAILING_GATE.match(text, pos)
+    for at, name, gate in items:
+        yield at, name, gate or (trailing.group(1) if trailing else None)
 
 
 def doc_claims(text: str):
-    """Yield ``(line, name, gate)`` for each tool a text names as a tool; ``gate`` is
-    "gated"/"ungated" when the text says so next to it, else None."""
+    """Yield a ``Claim`` for each tool a text names as a tool."""
+    def line(at):
+        return text.count("\n", 0, at) + 1
+
     for match in _TOOLRPC_CLAIM.finditer(text):
         said = (match.group("pre") or "") + match.group("mid") + (match.group("post") or "")
         gate = re.search(r"\b(?:un)?gated\b", said)
-        line = text.count("\n", 0, match.start()) + 1
-        for name in re.findall(_NAME, match.group("group")):
-            yield line, name, gate.group(0) if gate else None
+        for name in re.finditer(_NAME, match.group("group")):
+            yield Claim(line(match.start("group") + name.start()), name.group(1),
+                        gate.group(0) if gate else None, "toolrpc")
     for match in _TOOL_CLAIM.finditer(text):
-        line = text.count("\n", 0, match.start()) + 1
-        for name in re.findall(_NAME, match.group("group")):
-            yield line, name, None
+        for name in re.finditer(_NAME, match.group("group")):
+            yield Claim(line(match.start("group") + name.start()), name.group(1), None, "tool")
+    for match in _GATE_CLAIM.finditer(text):
+        for name in re.finditer(_NAME, match.group("group")):
+            yield Claim(line(match.start("group") + name.start()), name.group(1), match.group("gate"), "gate")
+    for match in _LIST_INTRO.finditer(text):
+        form = "beside" if "beside" in (match.group("form") or "") else "list"
+        intro_gate = match.group("gate")
+        if intro_gate is not None:
+            intro_gate = "ungated" if intro_gate == "ungated" else "gated"   # "Approval-bound" is gated
+        for at, name, gate in _list_items(text, match.end()):
+            yield Claim(line(at), name, gate or intro_gate, form)
 
 
-def claim_errors(text: str, registry: dict[str, bool], where: str) -> list[str]:
+_PY_PATH = re.compile(r"`([\w./-]+\.py)`")
+
+
+def module_rows(text: str) -> dict[int, tuple[str, ...]]:
+    """The module-index rows of a doc: line → the ``.py`` files its first cell names
+    (``agents/core/agent_runtime.py`` + ``tool_loop_result.py`` resolves the second
+    beside the first)."""
+    rows = {}
+    for number, row in enumerate(text.split("\n"), 1):
+        if not row.startswith("|"):
+            continue
+        paths, base = [], ""
+        for path in _PY_PATH.findall(row[1:].split("|", 1)[0]):
+            if "/" in path:
+                base = path.rsplit("/", 1)[0]
+            elif base:
+                path = f"{base}/{path}"
+            paths.append(path)
+        if paths:
+            rows[number] = tuple(paths)
+    return rows
+
+
+def claim_errors(text: str, registry: dict[str, bool], where: str,
+                 registrars: dict[str, set[str]] | None = None,
+                 retired: dict[tuple[str, str], str] | None = None) -> list[str]:
+    """Every way a doc's tool claims disagree with the registry.
+
+    ``registry``: tool → gated. ``registrars``: file → the tools that file registers; a
+    module-index row for a registrar file must name only tools that file registers (a
+    neighbour is named "registered beside `x`"), and must name at least one, so the row is
+    checked at all. ``retired``: ``(doc, name)`` → why that doc may still name a tool no
+    code registers (a removed one, named as removed)."""
     errors = []
-    for line, name, gate in doc_claims(text):
-        if name not in registry:
-            errors.append(f"{where}:{line}: `{name}` is named as a tool but no tool by that name is registered")
-        elif gate is not None and (gate == "gated") is not registry[name]:
-            actual = "gated" if registry[name] else "ungated"
-            errors.append(f"{where}:{line}: `{name}` is documented as {gate} but is {actual}")
-    return errors
+    rows = {line: files for line, files in module_rows(text).items()
+            if any(registrars.get(f) for f in files)} if registrars else {}
+    named_own = set()
+    for claim in doc_claims(text):
+        if claim.name not in registry:
+            if (where, claim.name) not in (retired or {}):
+                errors.append(f"{where}:{claim.line}: `{claim.name}` is named as a tool but no tool by "
+                              "that name is registered")
+            continue
+        if claim.gate is not None and (claim.gate == "gated") is not registry[claim.name]:
+            actual = "gated" if registry[claim.name] else "ungated"
+            errors.append(f"{where}:{claim.line}: `{claim.name}` is documented as {claim.gate} but is {actual}")
+        if claim.line in rows and claim.form != "beside":
+            own = set().union(*(registrars.get(f, set()) for f in rows[claim.line]))
+            if claim.name in own:
+                named_own.add(claim.line)
+            else:
+                errors.append(f"{where}:{claim.line}: the row for {' + '.join(rows[claim.line])} names "
+                              f"`{claim.name}` as its tool, but that file registers only "
+                              + ", ".join(f"`{n}`" for n in sorted(own)))
+    for line, files in rows.items():
+        if line not in named_own:
+            own = set().union(*(registrars.get(f, set()) for f in files))
+            errors.append(f"{where}:{line}: the row for {' + '.join(files)} names none of the tools it "
+                          "registers (" + ", ".join(f"`{n}`" for n in sorted(own)) + ") as a tool")
+    return list(dict.fromkeys(errors))
 
 
 def test_the_claim_checker_catches_hermes_style_drift():
@@ -622,22 +812,183 @@ def test_the_claim_checker_catches_hermes_style_drift():
         "d:1: `memory` is documented as gated but is ungated"]
     assert claim_errors("with the `memory` tool off;\nthe `browser_exec` tool.", registry, "d") == [
         "d:2: `browser_exec` is named as a tool but no tool by that name is registered"]
+    # The same drift written as a list (H325 review r3): a removed tool kept in a toolset's
+    # list, a gate said for the whole list.
+    assert claim_errors("The project tools: `memory`, `project_create` and `web_search`.", registry, "d") == [
+        "d:1: `project_create` is named as a tool but no tool by that name is registered"]
+    assert claim_errors("Offered the ungated tools: `memory`,\n  file reading, `terminal_run`.", registry, "d") == [
+        "d:2: `terminal_run` is documented as ungated but is gated"]
+    assert claim_errors("Approval-bound tools — `terminal_run`, `memory`, desktop control — wait", registry, "d") == [
+        "d:1: `memory` is documented as gated but is ungated"]
+    assert claim_errors("`memory` / `web_search` are **gated** ask-tier tasks", registry, "d") == [
+        "d:1: `memory` is documented as gated but is ungated",
+        "d:1: `web_search` is documented as gated but is ungated"]
     # Not claims: an event, a module path, a setting.
     assert claim_errors("a `todo_updated` tool event; `file_tools`/x; `llm.kanban` tools", registry, "d") == []
 
 
+def _claimed(text: str) -> list[tuple[str, str | None, str]]:
+    return [(claim.name, claim.gate, claim.form) for claim in doc_claims(text)]
+
+
+@pytest.mark.parametrize(("text", "claims"), [
+    # "tools: `a`, `b`" — a parenthetical after an item is skipped whole, its names too.
+    ("Governed file tools: `file_read` (a `.pdf` as text; `offset` (0…`MAX`) pages)/`file_list`/"
+     "`file_search` (bounded) ungated inside `JARVIS_FILE_ROOTS`; `x_y` is not in it.",
+     [("file_read", "ungated", "list"), ("file_list", "ungated", "list"), ("file_search", "ungated", "list")]),
+    # "tools (…): `a` (…), `b` (…) and `c` (…)" — `warning` inside a parenthetical is no tool.
+    ("The model's own skills as tools (H318): `skills_list` (paged), `skill_view` (tainted with a "
+     "`warning`, H351) and `skill_propose` (pending). The owner reviews `diff_text`.",
+     [("skills_list", None, "list"), ("skill_view", None, "list"), ("skill_propose", None, "list")]),
+    # A gate before "tools" covers the list; phrases are items that name no tool; a soft line
+    # break is inside the list, a full stop ends it.
+    ("it is offered the ungated tools: `echo`, `time`,\n  file reading and search, `a_b`/`c_d`,\n"
+     "  the skill readers, `todo` and `canvas_point`.\n  Then `after_it` is prose.",
+     [("echo", "ungated", "list"), ("time", "ungated", "list"), ("a_b", "ungated", "list"),
+      ("c_d", "ungated", "list"), ("todo", "ungated", "list"), ("canvas_point", "ungated", "list")]),
+    ("Approval-bound tools — `file_write`, `video_analyze`,\n  desktop control — are offered only when `x_y`",
+     [("file_write", "gated", "list"), ("video_analyze", "gated", "list")]),
+    # A list inside the parenthetical "tools … (" opens, ending at its ")".
+    ("the tools the agent already has (`file_read`,\n  `terminal_run`, ...); through `not_this`",
+     [("file_read", None, "list"), ("terminal_run", None, "list")]),
+    ("the session-scoped tools (`todo`) are offered; the ToolRPC tools (ungated, `untrusted_output`) are not a list",
+     [("todo", None, "list")]),
+    # "Registers `a`/`b` (ungated …) and gated `c`/`d` …" — a leading "(ungated" gates its group.
+    ("Registers `file_read`/`file_list` (ungated inside the roots) and gated `file_write`/`file_delete` "
+     "ask-tier tasks; `x_y`",
+     [("file_read", "ungated", "list"), ("file_list", "ungated", "list"), ("file_write", "gated", "list"),
+      ("file_delete", "gated", "list")]),
+    ("Registers ungated `execute_code`: one script per call", [("execute_code", "ungated", "list")]),
+    ("| `speak_tool.py` | Model-callable `speak` (H313): TTS clip | `SpeakTool` |", [("speak", None, "list")]),
+    # A neighbour: named, so it must be registered, but not the passage's own tool.
+    ("`session_search` ToolRPC tool (registered beside `echo`/`time`): keyword search",
+     [("session_search", None, "toolrpc"), ("echo", None, "beside"), ("time", None, "beside")]),
+    ("**ON:** `file_read` / `file_list` are ungated *inside* the roots; the reason `execute_code` itself is ungated",
+     [("file_read", "ungated", "gate"), ("file_list", "ungated", "gate"), ("execute_code", "ungated", "gate")]),
+    # Not a list: "tools" before a description, a function list, a toolset.
+    ("file tools (`agents/core/file_tools.py`); next to `register_todo_tool`, `register_memory_tool`; "
+     "toolsets: `basic`, `files`", []),
+])
+def test_the_claim_checker_reads_the_list_forms_the_docs_use(text, claims):
+    """H325 review r3: the module index and the guides mostly name tools after "tools:" or
+    "tools (…):", beside a neighbour, or as "Model-callable `x`" — each form is parsed."""
+    assert _claimed(text) == claims
+
+
+def test_a_module_row_names_only_the_tools_its_file_registers():
+    registry = {"file_read": False, "file_list": False, "web_search": False, "echo": False}
+    registrars = {"agents/core/file_tools.py": {"file_read", "file_list"},
+                  "agents/core/web_tools.py": {"web_search"}}
+    row = "| `agents/core/file_tools.py` | Governed file tools: `file_read`/`file_list` (bounded) | `x` |"
+    assert claim_errors(row, registry, "d", registrars) == []
+    # Another file's tool listed as this file's: registered, still wrong here.
+    assert claim_errors(row.replace("`file_list`", "`web_search`"), registry, "d", registrars) == [
+        "d:1: the row for agents/core/file_tools.py names `web_search` as its tool, but that file "
+        "registers only `file_list`, `file_read`"]
+    # A neighbour is named as one, and a row naming none of its tools is not checked at all.
+    assert claim_errors(row.replace("(bounded)", "(registered beside `echo`)"), registry, "d", registrars) == []
+    assert claim_errors("| `agents/core/web_tools.py` | Search over `WebSearchPlugin` | `x` |", registry, "d",
+                        registrars) == [
+        "d:1: the row for agents/core/web_tools.py names none of the tools it registers (`web_search`) as a tool"]
+    # A row for a file that registers nothing, or one beside a registrar ("+ name.py").
+    assert claim_errors("| `agents/core/tool_profiles.py` | the `web_search` tool |", registry, "d", registrars) == []
+    assert module_rows("| `agents/core/agent_runtime.py` + `tool_loop_result.py` | x |\nno | `a.py` |") == {
+        1: ("agents/core/agent_runtime.py", "agents/core/tool_loop_result.py")}
+
+
+def test_a_retired_tool_may_be_named_only_where_it_is_allowlisted():
+    registry = {"memory": False}
+    text = "The `memory` tool replaced the `notes_write` tool (removed in H314)."
+    assert claim_errors(text, registry, "d") == [
+        "d:1: `notes_write` is named as a tool but no tool by that name is registered"]
+    retired = {("d", "notes_write"): "named as removed"}
+    assert claim_errors(text, registry, "d", retired=retired) == []
+    assert claim_errors(text, registry, "elsewhere", retired=retired) != []
+
+
+def _registry(rows):
+    return {row["name"]: row["gated"] for row in rows}
+
+
 def test_the_hand_written_docs_name_registered_tools_with_the_right_gate(widest):
-    _orch, rows = widest
-    registry = {row["name"]: row["gated"] for row in rows}
+    orch, rows = widest
+    registry = _registry(rows)
     errors = []
     for rel in CLAIM_DOCS:
-        errors += claim_errors((REPO / rel).read_text(encoding="utf-8"), registry, rel)
+        errors += claim_errors((REPO / rel).read_text(encoding="utf-8"), registry, rel,
+                               orch.registrars, RETIRED_TOOL_MENTIONS)
     assert errors == []
-    # The checked docs really do make claims (a regex that matches nothing proves nothing).
-    arch = list(doc_claims(ARCHITECTURE.read_text(encoding="utf-8")))
-    assert {"memory", "todo", "session_search", "web_search", "web_extract", "canvas_point",
-            "file_write", "file_delete"} <= {name for _line, name, _gate in arch}
-    assert {gate for _line, _name, gate in arch} >= {"gated", "ungated"}
+    # Every claim doc really does make claims (a parser that matches nothing proves nothing)…
+    for rel in CLAIM_DOCS:
+        claims = list(doc_claims((REPO / rel).read_text(encoding="utf-8")))
+        if rel in NO_BUILTIN_TOOL_DOCS:
+            assert claims == [], f"{rel} names a built-in tool now: drop it from NO_BUILTIN_TOOL_DOCS"
+        else:
+            assert claims, f"{rel} names no tool the checker can parse"
+    assert set(NO_BUILTIN_TOOL_DOCS) <= set(CLAIM_DOCS)
+    # …in every form, and the module index's rows for the files that register tools are
+    # the rows checked against those files.
+    text = ARCHITECTURE.read_text(encoding="utf-8")
+    arch = list(doc_claims(text))
+    assert {"memory", "todo", "session_search", "web_search", "web_extract", "canvas_point", "file_write",
+            "file_delete", "file_read", "file_list", "file_search", "skills_list", "skill_view",
+            "skill_propose", "speak", "search_memory", "echo", "time"} <= {claim.name for claim in arch}
+    assert {claim.gate for claim in arch} >= {"gated", "ungated"}
+    assert {claim.form for claim in arch} >= {"toolrpc", "tool", "list", "beside"}
+    checked = {files for files in module_rows(text).values() if any(orch.registrars.get(f) for f in files)}
+    assert {files[0] for files in checked} >= {
+        "agents/core/file_tools.py", "agents/core/skills/tools.py", "agents/core/voice/speak_tool.py",
+        "agents/core/memory/session_search.py", "agents/core/memory/rag_tool.py", "agents/core/web_tools.py",
+        "agents/core/todo_tool.py", "agents/core/memory_tool.py", "agents/core/pointer_tool.py"}
+
+
+def test_retired_tool_mentions_are_still_retired_and_still_named(widest):
+    _orch, rows = widest
+    for (rel, name), reason in RETIRED_TOOL_MENTIONS.items():
+        assert reason.strip(), (rel, name)
+        assert name not in _registry(rows), f"`{name}` is registered again: drop it from RETIRED_TOOL_MENTIONS"
+        assert name in {claim.name for claim in doc_claims((REPO / rel).read_text(encoding="utf-8"))}, (rel, name)
+
+
+#: The reviewer's probe (H325 review r3), kept: a hand-written module-index row that names
+#: a tool no code registers, or another file's tool, or keeps a removed one, fails.
+@pytest.mark.parametrize(("doc", "old", "new", "error"), [
+    ("docs/ARCHITECTURE.md", "Governed file tools: `file_read`", "Governed file tools: `file_open`",
+     "`file_open` is named as a tool but no tool by that name is registered"),
+    ("docs/ARCHITECTURE.md", "paged), `skill_view`", "paged), `skill_show`",
+     "`skill_show` is named as a tool but no tool by that name is registered"),
+    ("docs/ARCHITECTURE.md", "registered beside `echo`/`time`", "registered beside `echo`/`clock`",
+     "`clock` is named as a tool but no tool by that name is registered"),
+    ("docs/ARCHITECTURE.md", "Model-callable `speak`", "Model-callable `say`",
+     "`say` is named as a tool but no tool by that name is registered"),
+    ("docs/ARCHITECTURE.md", "Governed file tools: `file_read`", "Governed file tools: `web_search`",
+     "the row for agents/core/file_tools.py names `web_search` as its tool"),
+    ("docs/TROUBLESHOOTING.md", "Approval-bound tools — `file_write`", "Approval-bound tools — `memory`",
+     "`memory` is documented as gated but is ungated"),
+    ("docs/WEB_SEARCH.md", "two ToolRPC tools: `web_search`", "two ToolRPC tools: `web_lookup`",
+     "`web_lookup` is named as a tool but no tool by that name is registered"),
+    ("docs/developer/adding-a-tool.md", "already has (`file_read`,", "already has (`file_open`,",
+     "`file_open` is named as a tool but no tool by that name is registered"),
+])
+def test_renaming_a_tool_in_a_hand_written_doc_fails(widest, doc, old, new, error):
+    orch, rows = widest
+    text = (REPO / doc).read_text(encoding="utf-8")
+    assert text.count(old) == 1, f"the probe's anchor moved in {doc}: {old!r}"
+    line = text.count("\n", 0, text.index(old)) + 1
+    errors = claim_errors(text.replace(old, new), _registry(rows), doc, orch.registrars, RETIRED_TOOL_MENTIONS)
+    assert any(e.startswith(f"{doc}:{line}: {error}") for e in errors), errors
+
+
+def test_a_removed_tool_left_in_its_module_row_fails(widest):
+    """``--update`` regenerates the table when a tool goes; the hand-written row that still
+    names it must go red, not stay green."""
+    orch, rows = widest
+    registry = {name: gated for name, gated in _registry(rows).items() if name != "file_list"}
+    registrars = {f: tools - {"file_list"} for f, tools in orch.registrars.items()}
+    text = ARCHITECTURE.read_text(encoding="utf-8")
+    line = text.count("\n", 0, text.index("Governed file tools:")) + 1
+    assert f"docs/ARCHITECTURE.md:{line}: `file_list` is named as a tool but no tool by that name is registered" in (
+        claim_errors(text, registry, "docs/ARCHITECTURE.md", registrars, RETIRED_TOOL_MENTIONS))
 
 
 def test_the_register_tool_contract_table_names_every_parameter():

@@ -28,7 +28,7 @@ module, that the owner can install, switch off, sign and review.
 
 A Markdown skill is a `SKILL.md` (frontmatter or heading dialect, checked by
 `agents/core/skills/validate.py::validate_skill_md`); the model reads it through
-`skills_list` / `skill_view` (`agents/core/skills/tools.py::register_skill_tools`). A
+the `skills_list` / `skill_view` tools (`agents/core/skills/tools.py::register_skill_tools`). A
 command skill is `skills/<name>/SKILL.md` plus `skills/<name>/main.py` (see the "Add a
 skill" recipe in `docs/ARCHITECTURE.md`). `nerva skills lint PATH` checks one before you
 ship it.
@@ -42,7 +42,7 @@ ship it.
 - it handles binary data, streaming or real-time events (images, audio, a camera);
 - it acts on the hub's own state (the canvas, memory, the session's checklist) where
   the owner needs the approval queue, the audit log and the tool profiles to apply;
-- examples in the tree: `canvas_point` (`agents/core/pointer_tool.py`), `todo`
+- example tools in the tree: `canvas_point` (`agents/core/pointer_tool.py`), `todo`
   (`agents/core/todo_tool.py`), `memory` (`agents/core/memory_tool.py`), the file
   tools (`agents/core/file_tools.py`).
 
@@ -83,8 +83,11 @@ Then, depending on what the tool is:
   `tests/_snapshots/tool_surface.json` and the generated tool table in
   `docs/ARCHITECTURE.md` with `python tests/test_tool_surface.py --update` and review
   the diff: its description, schema, gate and risk/rollback label are all in it. A doc
-  that names a tool as a tool ("the `<name>` tool", "`<name>` ToolRPC tool", "the gated `<name>` …")
-  must name a registered one with its real gate, or that test fails. A registration that
+  that names a tool as a tool ("the `<name>` tool", "`<name>` ToolRPC tool", "the gated `<name>` …",
+  a list after "tools:", "tools (…):" or "Registers", "Model-callable `<name>`",
+  "registered beside `<name>`") must name a registered one with its real gate, and the
+  `docs/ARCHITECTURE.md` module-index row for your file must name your tools and no other
+  file's, or that test fails. A registration that
   picks its description or schema from a host setting (as `execute_code` does when session
   kernels are composed) needs its other shape pinned as well: add the settings to `VARIANTS`
   and the file to `HOST_CHOSEN_SURFACES` in that test, or it fails.
