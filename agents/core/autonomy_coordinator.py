@@ -1434,7 +1434,7 @@ class AutonomyCoordinator:
                 "required": ["kind"],
                 "additionalProperties": False,
             },
-            capability_id="tool:desktop_plan",
+            capability_id="tool:desktop_plan", risk="read_only",  # H325: plans; desktop_run acts
         )
 
         async def _rpc_operator_plan(args):
@@ -1474,7 +1474,7 @@ class AutonomyCoordinator:
                 "required": ["goal"],
                 "additionalProperties": False,
             },
-            capability_id="tool:operator_plan",
+            capability_id="tool:operator_plan", risk="read_only",  # H325: selects; never acts
         )
 
         async def _rpc_osint_enrich(args):
@@ -1541,7 +1541,7 @@ class AutonomyCoordinator:
                 "required": ["value"],
                 "additionalProperties": False,
             },
-            capability_id="tool:echo",
+            capability_id="tool:echo", risk="read_only",
         )
         server.register_tool(
             "time",
@@ -1552,7 +1552,7 @@ class AutonomyCoordinator:
                 "properties": {},
                 "additionalProperties": False,
             },
-            capability_id="tool:time",
+            capability_id="tool:time", risk="read_only",
         )
         # Hermes absorption 3a — the model may search what was actually said. Read-only,
         # inside the data root, bounded, and every hit is scanned for injection before it

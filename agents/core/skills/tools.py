@@ -72,6 +72,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ..capability_manifests import RollbackContract
 from .batch import ACTIONS as BATCH_ACTIONS
 from .batch import MAX_OPS as BATCH_MAX_OPS
 from .frontmatter import split_frontmatter
@@ -95,6 +96,16 @@ MAX_STEPS = 20
 MAX_STEP = 300
 MAX_COMMAND = 120
 MAX_PROPOSALS_PER_DAY = 10
+#: H325 — skill_propose is ungated and writes: a pending proposal and its card, or a new
+#: skill in quarantine. No live SKILL.md moves until the owner decides.
+PROPOSE_ROLLBACK = RollbackContract(
+    mode="cancel",
+    description=("Nothing live changes until the owner approves: rejecting the card in the "
+                 "Decision Inbox discards the proposal, and a requested new skill waits in "
+                 "quarantine (pending review) and never runs unless the owner approves it."),
+    limitations=(f"Each proposal spends one of the process's {MAX_PROPOSALS_PER_DAY} a day and "
+                 "supersedes the same agent's older pending one."),
+)
 #: The file list skill_view shows beside a body, in bytes of names (review-H318b m-4): a
 #: skill with thousands of files cannot push the answer past its declared budget.
 MAX_LISTED_BYTES = 3 * 1024
@@ -1027,18 +1038,21 @@ def register_skill_tools(
                           "Decision Inbox"}
 
     server.register_tool(TOOL_LIST, _list, gated=False, description=LIST_DESCRIPTION,
-                         input_schema=LIST_SCHEMA, capability_id="tool:skills_list")
+                         input_schema=LIST_SCHEMA, capability_id="tool:skills_list", risk="read_only")
     server.register_tool(TOOL_VIEW, _view, gated=False, description=VIEW_DESCRIPTION,
                          input_schema=VIEW_SCHEMA, capability_id="tool:skill_view",
-                         max_result_bytes=MAX_ENCODED_BYTES + MAX_LISTED_BYTES + MAX_DESCRIPTION_BYTES + 4096)
+                         max_result_bytes=MAX_ENCODED_BYTES + MAX_LISTED_BYTES + MAX_DESCRIPTION_BYTES + 4096,
+                         risk="read_only")
     server.register_tool(TOOL_PROPOSE, _propose, gated=False, description=PROPOSE_DESCRIPTION,
                          input_schema=PROPOSE_SCHEMA, capability_id="tool:skill_propose",
-                         parallel_safe=False)  # H399 — spends the daily budget, queues a card
+                         parallel_safe=False,  # H399 — spends the daily budget, queues a card
+                         risk="reversible", rollback=PROPOSE_ROLLBACK)
     return TOOL_LIST, TOOL_VIEW, TOOL_PROPOSE
 
 
 __all__ = [
     "LEDGER", "LoadedSkillLedger", "Transcript", "bind_transcript", "carry_marker", "note_compacted",
     "carry_budget", "guest_on_shared_session", "render_key", "reset_transcript",
-    "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW", "register_skill_tools",
+    "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "PROPOSE_ROLLBACK", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW",
+    "register_skill_tools",
 ]

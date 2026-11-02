@@ -34,6 +34,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
+from agents.core.capability_manifests import RollbackContract
 from agents.core.mcp.schema_normalize import PROVIDER_NAME_PREFIX
 
 logger = logging.getLogger("jarvis.mcp.bridge")
@@ -41,6 +42,13 @@ logger = logging.getLogger("jarvis.mcp.bridge")
 #: Bound on the description a third-party server can put in front of the model.
 MAX_DESCRIPTION_CHARS = 1024
 CAPABILITY_PREFIX = "tool:mcp."
+#: H325 — the capability registry's word on a tool its server marked read-only.
+UNGATED_ROLLBACK = RollbackContract(
+    mode="implementation_specific",
+    description=("Its server marked it read-only (readOnlyHint), which the MCP spec calls "
+                 "untrusted, so Nerva does not claim a call changes nothing."),
+    limitations="A call's effect on the server's side is not undone from here.",
+)
 
 
 class MCPBridgeError(RuntimeError):
@@ -129,16 +137,22 @@ class MCPModelBridge:
             for name, row in wanted.items():
                 if name in self._registered or self._rpc.allows(name):
                     continue
+                gated = bool(row.get("gated", True))
                 try:
                     self._rpc.register_tool(
                         name,
                         self._handler(name),
-                        gated=bool(row.get("gated", True)),
+                        gated=gated,
                         description=_description(row),
                         input_schema=row.get("input_schema"),
                         capability_id=CAPABILITY_PREFIX + name,
                         untrusted_output=True,
                         parallel_safe=False,
+                        # H325 — "ungated" rests on the server's own readOnlyHint, which
+                        # the MCP spec calls untrusted: the registry does not repeat it
+                        # as "no mutation". A gated one keeps the gated contract.
+                        risk=None if gated else "sensitive",
+                        rollback=None if gated else UNGATED_ROLLBACK,
                     )
                 except Exception:
                     logger.warning("MCP tool %s could not be offered", name, exc_info=True)

@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from itertools import chain
 
+from ..capability_manifests import RollbackContract
 from ..native_human_wait import native_human_wait_window
 from .clarify_protocol import _normalize_questions
 from .ephemeral import EphemeralReply
@@ -634,5 +635,13 @@ def register_clarify_tool(server, orch):
         },
         capability_id="tool:clarify",
         max_result_bytes=65536,
+        # H325 — it asks the turn's own user and waits; it writes nothing the owner keeps.
+        risk="read_only",
+        rollback=RollbackContract(
+            mode="none",
+            description=("It sends this conversation's own user one question and waits for the "
+                         "answer; it writes no state the owner keeps, so there is nothing to "
+                         "roll back."),
+        ),
     )
     return True

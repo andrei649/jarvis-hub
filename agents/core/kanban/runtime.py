@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+from agents.core.capability_manifests import RollbackContract
 from agents.core.tool_profiles import classify_turn
 from agents.core.tool_rpc import current_tool_actor
 
@@ -76,6 +77,15 @@ def _validate_scope(context, name, args):
 #: H399 — the board tools that only read it. Every other kanban tool changes the board
 #: (create, comment, block, link, attach, heartbeat, …) and runs alone in a model step.
 KANBAN_READ_TOOLS = frozenset({"kanban_list", "kanban_show", "kanban_attachments"})
+#: H325 — what the capability registry says a board write leaves behind. The tools are
+#: ungated, so without this the registry called every one of them read-only.
+WRITE_ROLLBACK = RollbackContract(
+    mode="compensate",
+    description=("A later board call moves the task again (unblock, request changes, a new "
+                 "comment or a completion); nothing is erased."),
+    limitations=("The board keeps every comment, link, attachment and run event, so a write "
+                 "is answered by another write, never undone."),
+)
 
 
 def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda: None,
@@ -118,6 +128,12 @@ def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda
                 return await asyncio.to_thread(_invoke, args)
 
         schema = spec["schema"]
+        reads = name in KANBAN_READ_TOOLS
         server.register_tool(name, handler, description=schema.get("description", ""),
                              input_schema=schema["parameters"], untrusted_output=True,
-                             parallel_safe=None if name in KANBAN_READ_TOOLS else False)
+                             # H325 — an identity, so the capability board lists the
+                             # board tools at all, under what they really do.
+                             capability_id=f"tool:{name}",
+                             parallel_safe=None if reads else False,
+                             risk="read_only" if reads else "sensitive",
+                             rollback=None if reads else WRITE_ROLLBACK)

@@ -56,6 +56,7 @@ from typing import Awaitable, Callable, Optional
 from . import project_context
 from .automation_contracts import ContractTemplate, predicate
 from .autonomy.consent_registration import trusted_registration_key
+from .capability_manifests import RISK_LEVELS, RollbackContract
 from .security.quarantine import strip_invisible, strip_invisible_deep
 from .turn_approvals import record_pending_approval
 
@@ -444,6 +445,33 @@ class ToolRPCValidationError(ValueError):
         super().__init__(normalized)
 
 
+def _effect_declaration(
+    risk: str | None, rollback: RollbackContract | None, *, gated: bool,
+) -> tuple[str, RollbackContract | None] | None:
+    """H325 — check one ``register_tool(risk=…, rollback=…)`` declaration.
+
+    A rollback without a risk, an unknown risk, a gated tool that calls itself
+    read-only, a read-only tool that claims to roll something back, and a tool that
+    changes state without saying how it is rolled back are all refused at
+    registration, so the capability registry never has to guess."""
+    if risk is None:
+        if rollback is not None:
+            raise ValueError("a rollback contract needs a declared risk")
+        return None
+    if type(risk) is not str or risk not in RISK_LEVELS:
+        raise ValueError(f"risk must be one of {sorted(RISK_LEVELS)}")
+    if rollback is not None and not isinstance(rollback, RollbackContract):
+        raise ValueError("rollback must be a RollbackContract")
+    if risk == "read_only":
+        if gated:
+            raise ValueError("a gated tool is external or mutating, never read_only")
+        if rollback is not None and rollback.mode != "none":
+            raise ValueError("a read_only tool has nothing to roll back")
+    elif rollback is None or rollback.mode == "none":
+        raise ValueError("a tool that changes state declares how it is rolled back")
+    return risk, rollback
+
+
 class ToolRPCServer:
     """Allowlisted, risk-gated, secret-scrubbed tool surface for sandboxed code."""
 
@@ -457,6 +485,10 @@ class ToolRPCServer:
         # hashed for consent registration and the offer rows are snapshotted, and a
         # scheduling hint must move neither.
         self._parallel_safe: dict[str, bool] = {}
+        # H325 — what a call does to state, in the capability vocabulary. Beside the
+        # spec for the same reason as ``_parallel_safe``: the consent hash and the
+        # snapshotted offer rows must not move when a tool says what it writes.
+        self._effects: dict[str, tuple[str, RollbackContract | None]] = {}
         self._secrets = secret_broker
         self._enqueue = enqueue
         self._audit = audit
@@ -494,6 +526,8 @@ class ToolRPCServer:
         gated_review: GatedReview | None = None,
         consent_revision: str | None = None,
         parallel_safe: bool | None = None,
+        risk: str | None = None,
+        rollback: RollbackContract | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -539,9 +573,21 @@ class ToolRPCServer:
         since a gated review may run the effect inside the step — and stays
         concurrent for an ungated one. Like ``max_result_bytes`` it is not part of
         :meth:`tools`.
+
+        ``risk`` and ``rollback`` (H325) say what a call does to state, in the
+        capability vocabulary (``capability_manifests.RISK_LEVELS`` and
+        :class:`RollbackContract`). The capability registry labels the tool with them,
+        so an ungated tool that writes (the owner's memory, the board, a pending
+        proposal) is not described as read-only. ``read_only`` takes no rollback, or a
+        ``none`` one; any other risk names how its effect is rolled back; a gated tool
+        is never ``read_only``. Every ungated built-in declares one
+        (``tests/test_tool_surface.py``). Like ``parallel_safe`` it is not part of
+        :meth:`tools` or of the consent registration: read it with
+        :meth:`declared_effect`.
         """
         if parallel_safe is not None and type(parallel_safe) is not bool:
             raise ValueError("parallel_safe must be a bool or None")
+        effect = _effect_declaration(risk, rollback, gated=bool(gated))
         if max_result_bytes is not None:
             try:
                 max_result_bytes = int(max_result_bytes)
@@ -621,6 +667,10 @@ class ToolRPCServer:
             self._parallel_safe.pop(name, None)
         else:
             self._parallel_safe[name] = parallel_safe
+        if effect is None:
+            self._effects.pop(name, None)
+        else:
+            self._effects[name] = effect
         return self
 
     async def unregister_tool(
@@ -642,6 +692,7 @@ class ToolRPCServer:
         if spec is None:
             return False
         self._parallel_safe.pop(str(name or ""), None)
+        self._effects.pop(key, None)
         current = asyncio.current_task()
         tasks = [task for task in tuple(spec.get("active_tasks", ())) if task is not current]
         if cancel_inflight:
@@ -712,6 +763,10 @@ class ToolRPCServer:
     def declares_parallel_safe(self, name: str) -> bool | None:
         """H399 — the tool's declared parallel safety, or None when it said nothing."""
         return getattr(self, "_parallel_safe", {}).get(str(name or ""))
+
+    def declared_effect(self, name: str) -> tuple[str, RollbackContract | None] | None:
+        """H325 — the ``(risk, rollback)`` the tool declared, or None when it said nothing."""
+        return getattr(self, "_effects", {}).get(str(name or ""))
 
     def declares_untrusted_output(self, name: str) -> bool:
         """Whether this tool said what it returns comes from outside the box."""

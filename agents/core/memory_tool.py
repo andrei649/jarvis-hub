@@ -70,6 +70,8 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
+from .capability_manifests import RollbackContract
+
 logger = logging.getLogger("jarvis.memory_tool")
 
 TOOL_NAME = "memory"
@@ -87,6 +89,16 @@ FULL_ATTEMPTS_PER_TURN = 3
 _FULL_TURNS_KEEP = 256
 #: How long a write waits for another process's lock on a ring file.
 LOCK_TIMEOUT_S = 5.0
+#: H325 — ungated, and it writes what the owner keeps: the capability registry says so,
+#: and names the undo this module already has, instead of "no mutation".
+ROLLBACK = RollbackContract(
+    mode="restore",
+    description=("Each write keeps the rings as they were in a purgeable undo store; "
+                 "POST /api/memory/core/undo (memory_tool.undo) puts them back."),
+    handler_ref="agents.core.memory_tool:undo",
+    limitations=(f"Only while nothing changed those rings since, and only the last {UNDO_KEEP} "
+                 "writes; a forget empties the undo store."),
+)
 _ARG_FIELDS = frozenset({"operations"})
 _OP_FIELDS = frozenset({"action", "target", "text", "old_text"})
 
@@ -701,6 +713,8 @@ def register_memory_tool(
         schema_overrides=schema_overrides,
         # H399 — a write to the owner's memory file; never overlapped with another call.
         parallel_safe=False,
+        risk="reversible",
+        rollback=ROLLBACK,
     )
     return TOOL_NAME
 
@@ -708,6 +722,6 @@ def register_memory_tool(
 __all__ = [
     "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LOCK_TIMEOUT_S",
     "MAX_FACT_CHARS", "MAX_OPERATIONS",
-    "MemoryToolError", "OFF_DESCRIPTION", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan",
+    "MemoryToolError", "OFF_DESCRIPTION", "ROLLBACK", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "plan",
     "register_memory_tool", "undo",
 ]

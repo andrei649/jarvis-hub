@@ -1021,6 +1021,7 @@ def register_web_tools(
         preflight=preflight_search,
         untrusted_output=True,
         max_result_bytes=MAX_SEARCH_RESULT_BYTES,
+        risk="read_only",  # H325 — it reads search results; it writes nothing the owner keeps
     )
     server.register_tool(
         TOOL_EXTRACT,
@@ -1032,6 +1033,7 @@ def register_web_tools(
         preflight=preflight_extract,
         untrusted_output=True,
         max_result_bytes=MAX_RESULT_BYTES,
+        risk="read_only",  # H325 — a cut page's full text goes to the expiring spill store only
     )
     return (TOOL_SEARCH, TOOL_EXTRACT)
 

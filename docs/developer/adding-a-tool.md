@@ -79,6 +79,12 @@ Then, depending on what the tool is:
   `agents/core/tool_profiles.py::OWNER_OPERATOR_TOOLS`. Regenerate the pinned offer
   with `python tests/test_tool_profiles.py --update` and review the diff: a tool
   reaching a surface you did not intend is exactly what that snapshot is for.
+- **What it looks like to the model and the capability board.** Regenerate
+  `tests/_snapshots/tool_surface.json` and the generated tool table in
+  `docs/ARCHITECTURE.md` with `python tests/test_tool_surface.py --update` and review
+  the diff: its description, schema, gate and risk/rollback label are all in it. A doc
+  that names a tool as a tool ("the `<name>` tool", "`<name>` ToolRPC tool", "the gated `<name>` …")
+  must name a registered one with its real gate, or that test fails.
 - **A per-agent narrowing.** An agent's `tools:` list in `agents.yaml` (names or
   globs) narrows the posture further; it never widens it.
 
@@ -88,9 +94,12 @@ Then, depending on what the tool is:
 
 | argument | what it decides |
 |---|---|
+| `description` | The one paragraph the model reads to decide whether to call the tool. Pinned, with the schema, in `tests/_snapshots/tool_surface.json`. |
 | `gated` | `True` = external or mutating. The call never runs in the turn: it is enqueued as an ask-tier task, the model gets `{"ok": false, "reason": "approval_required", "task_id": ...}`, and the handler runs from `ToolRPCServer.execute` only after the owner approves. `False` = runs inline. |
 | `input_schema` | JSON Schema the model sees. Use `"additionalProperties": false` and `required`; arguments that are not strict JSON objects are refused as `bad_tool_arguments` before your handler runs. |
-| `capability_id` | A unique machine id (`tool:<name>`), read by the capability registry and planning. |
+| `capability_id` | A unique machine id (`tool:<name>`), read by the capability registry and planning. A tool without one is not on the capability board at all. |
+| `risk`, `rollback` | What a call does to state, in the capability vocabulary (`agents/core/capability_manifests.py::RISK_LEVELS`, `agents/core/capability_manifests.py::RollbackContract`); the capability registry labels the tool with them (H325). **Every ungated tool declares one**: `risk="read_only"` for a pure read, otherwise the risk plus the contract that says how a call is put back (`agents/core/memory_tool.py::ROLLBACK` restores from its undo store, `agents/core/todo_tool.py::ROLLBACK` compensates). A gated tool may leave both out and keeps the gated contract; `register_tool` refuses a gated `read_only`, a read with a rollback, and a write without one. |
+| `preflight` | An argument check that may also normalise: it runs on every call before approval intake or the handler, and again when an approved call executes. Return the arguments to use, or raise `agents/core/tool_rpc.py::ToolRPCValidationError` with a machine reason, so a malformed proposal never becomes an approval card. |
 | `untrusted_output` | `True` when the result is content from outside the box (a page, a search hit). The loop fences it as data and raises the turn's taint, so an action built from it queues for approval. |
 | `max_result_bytes` | How much of the context window one result may take before it is spilled to a file the model can page back with `file_read` (`agents/core/tool_result_store.py`). |
 | `parallel_safe` | `False` makes every call a barrier the loop runs alone (a writer two concurrent calls could interleave on). Undeclared stays concurrent for an ungated tool and fails closed (barrier) for a gated one. |
@@ -142,8 +151,10 @@ with a scripted backend that returns a `ToolTurn` carrying your `ToolCall`, as
 - [ ] It really is a tool, not a skill or an extension (the rule above).
 - [ ] `agents/core/<name>_tool.py` with constants, schema and `register_<name>_tool`.
 - [ ] Wired in `_wire_agent_tool_runtime`; job toolset entry if jobs may use it.
-- [ ] `gated` / `untrusted_output` / `parallel_safe` declared on purpose.
+- [ ] `gated` / `untrusted_output` / `parallel_safe` declared on purpose; an ungated tool
+      declares `risk` (and `rollback` when it writes).
 - [ ] Refusals are `{"ok": False, "reason": ...}` dicts with machine reasons.
-- [ ] `tests/_snapshots/tool_profiles.json` regenerated and the diff reviewed.
+- [ ] `tests/_snapshots/tool_profiles.json` and `tests/_snapshots/tool_surface.json`
+      (with the `docs/ARCHITECTURE.md` table) regenerated and the diffs reviewed.
 - [ ] Offline tests for schema, refusals and identity.
 - [ ] A row in `docs/ARCHITECTURE.md`'s module index.
