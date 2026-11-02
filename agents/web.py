@@ -1197,10 +1197,11 @@ class TurnFileMutation(TypedDict):
 
 
 class TurnRecall(TypedDict):
-    # H430: what the turn's LAST memory prefetch put in the prompt (counts and closed words,
-    # never memory text); the HUD renders it as "🧠 Long-term memory — recalled 2 memories".
+    # H430: what one memory provider's LAST prefetch this turn put in the prompt (counts and
+    # closed words, never memory text); the HUD renders each as one line, e.g.
+    # "🧠 Long-term memory — recalled 2 memories".
     schema: Literal['nerva.recall-status.v1']
-    provider: Literal['long_term_memory']
+    provider: Literal['long_term_memory', 'message_archive']
     basis: Literal['this_turn', 'previous_recall', 'unavailable']
     recalled: int | None
     withheld: dict[str, int]
@@ -1226,7 +1227,7 @@ class TurnOutcome(TypedDict):
     output: NotRequired[TurnOutputFlow]
     file_mutations: NotRequired[list[TurnFileMutation]]
     file_mutation_attribution: NotRequired[Literal['unknown']]
-    recall: NotRequired[TurnRecall]
+    recall: NotRequired[list[TurnRecall]]   # one per provider that prefetched, in display order
 
 
 class ChatResponse(BaseModel):
@@ -1596,9 +1597,9 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         with turn_usage_scope() as collector, turn_stops_scope() as stops:
             collector.observe_progress(usage_progress)
             live_usage = collector
-            await run_in_scope(collector, stops)
+            await run_in_scope(collector, stops, usage_progress)
 
-    async def run_in_scope(collector, stops):
+    async def run_in_scope(collector, stops, progress):
         # The principal is bound inside the task: a ContextVar set on the endpoint would
         # not reliably reach a generator Starlette drives later. The approval collector
         # is bound here for the same reason.
@@ -1610,6 +1611,9 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         notices, notices_token = open_turn_notices()             # H674
         from agents.core.turn_outcome import open_turn_outcome, reset_turn_outcome
         outcome_sink, outcome_token = open_turn_outcome()
+        # H430: a memory prefetch's recall line goes out when the prefetch finishes, not
+        # with the first token — a slow first token must not hold the indicator back.
+        outcome_sink.observe_progress(lambda: progress(collector.snapshot()))
         attached_token = context_refs.bind_attached(attached)   # H579: bound in the task, as above
         words_token = session_titles.bind_own_words(message, message if own_words is None else own_words)  # H413
 

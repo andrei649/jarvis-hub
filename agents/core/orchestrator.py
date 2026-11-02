@@ -2063,7 +2063,7 @@ class Orchestrator:
                 else:
                     reply = await self.handle_input(text, channel)
             finally:
-                recall = outcome_sink.recall() if outcome_sink is not None else None
+                recall = outcome_sink.recall() if outcome_sink is not None else []
                 if outcome_token is not None:
                     outcome_sink.close()
                     reset_turn_outcome(outcome_token)
@@ -2072,17 +2072,17 @@ class Orchestrator:
             return self._with_channel_notices(reply, notices, recall=recall)
 
     @staticmethod
-    def _with_channel_notices(reply, notices: list, *, recall: dict | None = None) -> Optional[str]:
+    def _with_channel_notices(reply, notices: list, *, recall: list | None = None) -> Optional[str]:
         """The turn's notices as system lines under a channel reply (the HUD's ``ℹ``
-        lines, H674), after the turn's recall indicator (H430: ``🧠 Long-term memory —
-        recalled 2 memories``, rendered by ``recall_admission.describe_recall`` from the
-        last prefetch's status). A silent turn stays silent, and a typed reply (an
-        ephemeral system notice is a ``str`` subclass) is left exactly as it is. Only an
-        owner's turn on a text-chat channel collects any (see ``_channel_turn``)."""
-        from .memory.recall_admission import describe_recall
+        lines, H674), after the turn's recall indicator (H430: one line per memory
+        provider, e.g. ``🧠 Long-term memory — recalled 2 memories``, rendered by
+        ``recall_admission.describe_recalls`` from each provider's last prefetch). A
+        silent turn stays silent, and a typed reply (an ephemeral system notice is a
+        ``str`` subclass) is left exactly as it is. Only an owner's turn on a text-chat
+        channel collects any (see ``_channel_turn``)."""
+        from .memory.recall_admission import describe_recalls
 
-        indicator = describe_recall(recall) if recall is not None else ""
-        lines = ([indicator] if indicator else []) + [
+        lines = describe_recalls(recall or []) + [
             f"ℹ {n['text']}" for n in notices if isinstance(n, dict) and str(n.get("text") or "").strip()]
         if not lines or type(reply) is not str or not reply.strip():
             return reply
@@ -3849,11 +3849,12 @@ class Orchestrator:
         (default 8 s) through _bounded_recall_hits. The living-memory rerank then
         runs off the event loop on the hits this turn uses.
 
-        H430: this is also where the turn's recall indicator comes from. Each call is a
-        new prefetch and first unseats whatever an earlier one this turn reported, then
-        reports what IT put in the prompt (``_note_recall``) — so the line beside the
-        reply always describes the last prefetch, from the guard's own verdicts."""
-        record_recall_status(None)
+        H430: this is also where the turn's ``long_term_memory`` recall indicator comes
+        from. Each call is a new prefetch and first unseats whatever an earlier one this
+        turn reported, then reports what IT put in the prompt (``_note_recall``) — so that
+        line always describes the last long-term prefetch, from the guard's own verdicts.
+        Howard's message-archive recall reports its own line (``Agent.build_prompt``)."""
+        record_recall_status(None, provider="long_term_memory")
         if not self.get_setting("memory.recall_enabled", False):
             return ""
         from . import safe_mode
@@ -3920,34 +3921,18 @@ class Orchestrator:
 
     @staticmethod
     def _note_recall(basis: str, wrapped=None) -> None:
-        """H430 — report this prefetch's recall status to the turn (``turn_outcome``), from
-        the guard's per-snippet verdicts: a ``redacted`` snippet is withheld for taint
-        (its body never reached the prompt), ``clean`` and ``untrusted`` were recalled.
-        Counts and closed words only, never a snippet. Only an owner's turn gets one —
-        the same rule as the turn's notices (``_channel_turn``): what the owner's memory
-        held is the owner's to see. Never fails the turn."""
-        if current_principal().admin is not True:
-            return
-        from .memory.recall_admission import admit, recall_status, reject
+        """H430 — report this prefetch's long-term recall status to the turn
+        (``turn_outcome``), from the guard's per-snippet verdicts
+        (``recall_admission.guarded_recall_status``): counts and closed words only, never
+        a snippet. Only an owner's turn keeps one (``record_recall_status``). Never fails
+        the turn."""
+        from .memory.recall_admission import guarded_recall_status
+
         try:
-            if basis == "unavailable":
-                status = recall_status(basis="unavailable")
-            else:
-                verdicts = tuple(getattr(wrapped, "verdicts", ()))
-                if len(verdicts) != getattr(wrapped, "n_items", None) or any(
-                        v not in ("clean", "untrusted", "redacted") for v in verdicts):
-                    raise ValueError("recall verdicts do not account for the rendered block")
-                status = recall_status(
-                    [reject({}, "rejected_taint", "injection-flagged") if v == "redacted" else admit({})
-                     for v in verdicts],
-                    basis=basis, untrusted=verdicts.count("untrusted"))
+            record_recall_status(guarded_recall_status(wrapped, basis=basis, provider="long_term_memory"),
+                                 provider="long_term_memory")
         except Exception:
-            logger.debug("recall status uncounted", exc_info=True)
-            # Content went in but cannot be counted: say so ("recalled relevant memory"),
-            # never a guessed number; nothing went in: say nothing.
-            status = (recall_status(basis=basis, counted=False)
-                      if getattr(wrapped, "block", "") and basis != "unavailable" else None)
-        record_recall_status(status)
+            logger.debug("recall status unavailable", exc_info=True)
 
     def _living_memory_rerank_hits(self, hits: list) -> list:
         """Use cognition LivingMemory metadata as a post-fusion recall hint."""

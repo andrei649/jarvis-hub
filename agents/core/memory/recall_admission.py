@@ -223,13 +223,22 @@ def _reasons(by_reason: Mapping[str, int]) -> str:
 
 INDICATOR_GLYPH = "🧠"
 RECALL_STATUS_SCHEMA = "nerva.recall-status.v1"
-#: The recall providers a turn can report, and the label the line names each by. One
-#: today: the orchestrator's pre-turn recall (vector ⊕ graph, ``Orchestrator._recall_block``).
-RECALL_PROVIDERS: Mapping[str, str] = {"long_term_memory": "Long-term memory"}
+#: Every source that puts memory into a turn's prompt, in the order the lines are shown,
+#: and the label each line names it by. Each reports its own last prefetch:
+#:
+#: * ``long_term_memory`` — the orchestrator's pre-turn recall (vector ⊕ graph,
+#:   ``Orchestrator._recall_block``), shared by every agent the turn runs;
+#: * ``message_archive`` — the owner's imported message archive, which Howard's prompt
+#:   recalls as few-shot examples (``Agent.build_prompt``, ``search_similar(only_me=True)``).
+RECALL_PROVIDERS: Mapping[str, str] = {"long_term_memory": "Long-term memory",
+                                       "message_archive": "Message archive"}
 #: ``this_turn`` — the turn's own recall ran and its result was used; ``previous_recall``
 #: — it could not run in time and this session's previous recall stood in (H428);
-#: ``unavailable`` — neither: the turn went on without long-term memory.
+#: ``unavailable`` — neither: the turn went on without that provider's memory.
 RECALL_BASES: tuple[str, ...] = ("this_turn", "previous_recall", "unavailable")
+#: The guard's per-snippet verdicts (``rag_guard.WrappedMemory.verdicts``): ``clean`` and
+#: ``untrusted`` reached the prompt, ``redacted`` was withheld behind the redaction marker.
+GUARD_VERDICTS: tuple[str, ...] = ("clean", "untrusted", "redacted")
 _WITHHELD_REASONS = tuple(r for r in ADMISSION_REASONS if r != "admitted")
 MAX_RECALL_COUNT = 10_000
 
@@ -269,6 +278,32 @@ def recall_status(
     if type(untrusted) is int and untrusted > 0:
         status["untrusted"] = min(untrusted, status["recalled"])
     return status
+
+
+def guarded_recall_status(wrapped: Any, *, basis: str = "this_turn",
+                          provider: str = "long_term_memory") -> dict[str, Any] | None:
+    """The status of one prefetch whose snippets went through ``rag_guard.wrap_memory``,
+    read from the guard's own per-snippet verdicts: ``redacted`` is withheld for taint (its
+    body never reached the prompt), ``clean`` and ``untrusted`` were recalled. It never
+    re-reads or re-scans a snippet.
+
+    When the verdicts do not account for the rendered block, the status says "recalled
+    relevant memory" if content went in and nothing at all if none did — never a guessed
+    number. ``basis="unavailable"`` reports that the provider could not run.
+    """
+    if basis == "unavailable":
+        return recall_status(basis="unavailable", provider=provider)
+    verdicts = getattr(wrapped, "verdicts", ())
+    verdicts = tuple(verdicts) if isinstance(verdicts, (tuple, list)) else None
+    if (verdicts is None or len(verdicts) != getattr(wrapped, "n_items", None)
+            or any(v not in GUARD_VERDICTS for v in verdicts)):
+        injected = getattr(wrapped, "block", "")
+        return (recall_status(basis=basis, counted=False, provider=provider)
+                if type(injected) is str and injected.strip() else None)
+    return recall_status(
+        [reject({}, "rejected_taint", "injection-flagged") if v == "redacted" else admit({})
+         for v in verdicts],
+        basis=basis, untrusted=verdicts.count("untrusted"), provider=provider)
 
 
 def _count(value: Any) -> bool:
@@ -328,9 +363,23 @@ def describe_recall(status: Any) -> str:
     return f"{INDICATOR_GLYPH} {label} — " + ", ".join(parts)
 
 
+def describe_recalls(statuses: Any) -> list[str]:
+    """One line per provider that has something to say, in :data:`RECALL_PROVIDERS`
+    order — the indicator for a whole turn, which may have recalled from several sources.
+    A malformed entry, a repeated provider and a silent status render no line."""
+    if not isinstance(statuses, (list, tuple)):
+        return []
+    by_provider: dict[str, str] = {}
+    for status in statuses:
+        if valid_recall_status(status) and status["provider"] not in by_provider:
+            by_provider[status["provider"]] = describe_recall(status)
+    return [by_provider[p] for p in RECALL_PROVIDERS if by_provider.get(p)]
+
+
 __all__ = [
     "ADMISSION_REASONS",
     "AUTHORITY",
+    "GUARD_VERDICTS",
     "INDICATOR_GLYPH",
     "MAX_DETAIL_CHARS",
     "MAX_RECALL_COUNT",
@@ -344,7 +393,9 @@ __all__ = [
     "abstain",
     "admit",
     "describe_recall",
+    "describe_recalls",
     "explain",
+    "guarded_recall_status",
     "hit_ref",
     "recall_status",
     "reject",

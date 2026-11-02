@@ -2,7 +2,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../app';
-import { StatusStrip, recallLine, turnOutcome, turnRecall } from '../turn-outcome';
+import { StatusStrip, recallLine, recallLines, turnOutcome, turnRecall, turnRecalls } from '../turn-outcome';
 import recallCases from './recall-line-cases.json';
 
 vi.mock('../voice', () => ({ useVoice: () => ({ active: false, toggle: () => {} }) }));
@@ -349,37 +349,68 @@ it('ignores a late live end after the user switches into demo mode', async () =>
   expect(screen.queryByText('Completed reply')).toBeNull();
 });
 
-// H430 — the turn's recall indicator. recall-line-cases.json is shared with
-// tests/test_h430_recall_indicator.py, which runs the same statuses through
-// recall_admission.describe_recall: the two renderers cannot drift apart.
+// H430 — the turn's recall indicator: one line per memory provider (long-term recall and
+// Howard's message archive). recall-line-cases.json is shared with
+// tests/test_h430_recall_indicator.py, which runs the same statuses and turns through
+// recall_admission.describe_recall / describe_recalls: the two renderers cannot drift apart.
 describe('recall indicator', () => {
   const status = (over: Record<string, unknown> = {}) => ({ schema: 'nerva.recall-status.v1',
     provider: 'long_term_memory', basis: 'this_turn', recalled: 2, withheld: {}, untrusted: 0, ...over });
+  const archive = (over: Record<string, unknown> = {}) => status({ provider: 'message_archive', recalled: 5, ...over });
+  const lines = () => Array.from(screen.getByLabelText('Memory recall').querySelectorAll('output'))
+    .map(node => node.textContent);
 
-  it.each(recallCases.map(c => [c.why, c] as const))('%s', (_why, c) => {
+  it.each(recallCases.statuses.map(c => [c.why, c] as const))('%s', (_why, c) => {
     const parsed = turnRecall(c.status);
     expect(parsed === null).toBe(c.why.startsWith('malformed'));
     expect(parsed ? recallLine(parsed) : '').toBe(c.line);
   });
 
-  it('shows the last prefetch beside the turn, and nothing for a prefetch with nothing to say', () => {
-    const { unmount } = render(<StatusStrip outcome={turnOutcome({ latency_ms: 5, recall: status() })} />);
-    expect(screen.getByLabelText('Memory recall').textContent).toBe('🧠 Long-term memory — recalled 2 memories');
+  it.each(recallCases.turns.map(c => [c.why, c] as const))('turn: %s', (_why, c) => {
+    const parsed = turnRecalls(c.recall);
+    expect(parsed ? recallLines(parsed) : []).toEqual(c.lines);
+  });
+
+  it('shows each provider\'s last prefetch beside the turn, and nothing for a prefetch with nothing to say', () => {
+    const { unmount } = render(<StatusStrip outcome={turnOutcome({ latency_ms: 5, recall: [archive(), status()] })} />);
+    expect(lines()).toEqual(['🧠 Long-term memory — recalled 2 memories', '🧠 Message archive — recalled 5 memories']);
     unmount();
-    render(<StatusStrip outcome={turnOutcome({ latency_ms: 5, recall: status({ recalled: 0 }) })} />);
+    render(<StatusStrip outcome={turnOutcome({ latency_ms: 5, recall: [status({ recalled: 0 })] })} />);
     expect(screen.queryByLabelText('Memory recall')).toBeNull();
   });
 
   it('drops a status that could carry memory text instead of rendering part of it', () => {
-    expect(turnOutcome({ latency_ms: 5, recall: { ...status(), text: 'the dentist is on Tuesday' } }))
+    expect(turnOutcome({ latency_ms: 5, recall: [{ ...status(), text: 'the dentist is on Tuesday' }] }))
       .toEqual({ latency_ms: 5 });
+    expect(turnOutcome({ latency_ms: 5, recall: status() })).toEqual({ latency_ms: 5 });   // not a list
   });
 
   it('renders the stream end outcome in the mounted HUD turn', async () => {
     await mount('/v2/chat');
-    await send('when is the dentist?');
-    await complete({ latency_ms: 40, recall: status({ withheld: { rejected_taint: 1 }, untrusted: 1 }) });
-    expect((await screen.findByLabelText('Memory recall')).textContent)
-      .toBe('🧠 Long-term memory — recalled 2 memories (1 from an untrusted source), 1 withheld (taint: 1)');
+    await send('ce ai ales?');
+    await complete({ latency_ms: 40, recall: [status({ withheld: { rejected_taint: 1 }, untrusted: 1 }),
+      archive({ recalled: 2 })] });
+    await screen.findByLabelText('Memory recall');
+    expect(lines()).toEqual(['🧠 Long-term memory — recalled 2 memories (1 from an untrusted source), 1 withheld (taint: 1)',
+      '🧠 Message archive — recalled 2 memories']);
+  });
+
+  it('shows the line from the live progress event, before any token arrives', async () => {
+    await mount('/v2/chat');
+    await send('ce ai ales?');
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+    await act(async () => streams.shift()!(new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })));
+    await act(async () => {
+      controller.enqueue(new TextEncoder().encode(event({ type: 'start', agent: 'howard' })
+        + event({ type: 'outcome_progress', outcome: { recall: [archive({ recalled: 2 })] } })));
+    });
+    await screen.findByLabelText('Memory recall');
+    expect(lines()).toEqual(['🧠 Message archive — recalled 2 memories']);
+    await act(async () => {
+      controller.enqueue(new TextEncoder().encode(event({ type: 'end', text: 'Am ales.', session_id: 'topic_a',
+        outcome: { latency_ms: 20, recall: [archive({ recalled: 2 })] } })));
+      controller.close();
+    });
   });
 });

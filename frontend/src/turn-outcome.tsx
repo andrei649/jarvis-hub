@@ -19,13 +19,14 @@ export type TurnOutcome = {
   output?: { tokens: number | null; basis: 'provider_complete' | 'visible_estimate' | 'unknown' };
   file_mutations?: Array<{ attempt: number; operation: 'write' | 'delete'; outcome: 'refused' | 'unknown' | 'applied_unverified' }>;
   file_mutation_attribution?: 'unknown';
-  recall?: TurnRecall;
+  recall?: TurnRecall[];
 };
 
-/** H430: what the turn's last memory prefetch put in the prompt — counts and closed words. */
+/** H430: what one memory provider's last prefetch this turn put in the prompt — counts
+ *  and closed words. A turn carries one per provider that prefetched. */
 export type TurnRecall = {
   schema: 'nerva.recall-status.v1';
-  provider: 'long_term_memory';
+  provider: 'long_term_memory' | 'message_archive';
   basis: 'this_turn' | 'previous_recall' | 'unavailable';
   recalled: number | null;
   withheld: Partial<Record<WithheldReason, number>>;
@@ -36,7 +37,10 @@ export type TurnRecall = {
 const WITHHELD_REASONS = ['rejected_taint', 'rejected_privacy', 'rejected_stale',
   'rejected_contradiction', 'abstained'] as const;
 type WithheldReason = typeof WITHHELD_REASONS[number];
-const RECALL_PROVIDERS: Record<TurnRecall['provider'], string> = { long_term_memory: 'Long-term memory' };
+// recall_admission.RECALL_PROVIDERS, in its (display) order.
+const RECALL_PROVIDERS: Record<TurnRecall['provider'], string> = {
+  long_term_memory: 'Long-term memory', message_archive: 'Message archive' };
+const PROVIDER_ORDER = Object.keys(RECALL_PROVIDERS) as TurnRecall['provider'][];
 const MAX_RECALL_COUNT = 10_000;
 const recallCount = (value: unknown): value is number => count(value) && value <= MAX_RECALL_COUNT;
 
@@ -45,7 +49,8 @@ export function turnRecall(value: unknown): TurnRecall | null {
   if (!object(value)) return null;
   const keys = Object.keys(value).sort().join(',');
   if (keys !== 'basis,provider,recalled,schema,untrusted,withheld') return null;
-  if (value.schema !== 'nerva.recall-status.v1' || value.provider !== 'long_term_memory') return null;
+  if (value.schema !== 'nerva.recall-status.v1'
+    || !(PROVIDER_ORDER as readonly string[]).includes(String(value.provider))) return null;
   if (!['this_turn', 'previous_recall', 'unavailable'].includes(String(value.basis))) return null;
   const { recalled, untrusted, withheld } = value;
   if (!(recalled === null || recallCount(recalled)) || !recallCount(untrusted) || !object(withheld)) return null;
@@ -74,6 +79,24 @@ export function recallLine(recall: TurnRecall): string {
   if (total) parts.push(`${total} withheld (${reasons.map(name =>
     `${name.replace(/^rejected_/, '')}: ${recall.withheld[name]}`).join(', ')})`);
   return parts.length ? `🧠 ${label} — ${parts.join(', ')}` : '';
+}
+
+/** The turn's statuses: the well-formed ones, the first per provider, in display order
+ *  (a malformed or repeated entry is dropped, never rendered in part). */
+export function turnRecalls(value: unknown): TurnRecall[] | null {
+  if (!Array.isArray(value)) return null;
+  const byProvider = new Map<TurnRecall['provider'], TurnRecall>();
+  for (const item of value) {
+    const recall = turnRecall(item);
+    if (recall && !byProvider.has(recall.provider)) byProvider.set(recall.provider, recall);
+  }
+  const recalls = PROVIDER_ORDER.flatMap(provider => byProvider.has(provider) ? [byProvider.get(provider)!] : []);
+  return recalls.length ? recalls : null;
+}
+
+/** Mirror of recall_admission.describe_recalls: one line per provider with something to say. */
+export function recallLines(recalls: readonly TurnRecall[]): string[] {
+  return recalls.map(recallLine).filter(Boolean);
 }
 
 const count = (value: unknown): value is number =>
@@ -137,7 +160,7 @@ export function turnOutcome(value: unknown): TurnOutcome | null {
       result.file_mutations = items;
   }
   if (value.file_mutation_attribution === 'unknown') result.file_mutation_attribution = 'unknown';
-  const recall = turnRecall(value.recall);
+  const recall = turnRecalls(value.recall);
   if (recall) result.recall = recall;
   return Object.keys(result).length ? result : null;
 }
@@ -157,7 +180,7 @@ function outputText(output: NonNullable<TurnOutcome['output']>): string {
 /** Whole-turn result and live output flow; no objective-success claim. */
 export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; power?: PowerState }) {
   if (!outcome) return null;
-  const recall = outcome.recall ? recallLine(outcome.recall) : '';
+  const recall = outcome.recall ? recallLines(outcome.recall) : [];
   return <section aria-label="Turn outcome" style={{ display: 'block', padding: '4px 8px',
     color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 10,
     width: '100%', maxWidth: '100%', minWidth: 0, minHeight: 0, flexShrink: 1, boxSizing: 'border-box',
@@ -200,7 +223,9 @@ export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; 
     {outcome.output && <output aria-label="Output token flow" style={{ display: 'block' }}>
       {outputText(outcome.output)}
     </output>}
-    {recall && <output aria-label="Memory recall" style={{ display: 'block' }}>{recall}</output>}
+    {recall.length > 0 && <div aria-label="Memory recall">
+      {recall.map(line => <output key={line} style={{ display: 'block' }}>{line}</output>)}
+    </div>}
     {outcome.tools && <div aria-label="Tool call accounting">
       Tools proposed {outcome.tools.proposed}, queued {outcome.tools.queued}; executed{' '}
       {outcome.tools.executed ?? 'unknown'}, failed {outcome.tools.failures ?? 'unknown'} ({outcome.tools.basis})

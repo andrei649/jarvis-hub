@@ -15608,7 +15608,8 @@ export interface components {
              * @constant
              */
             file_mutation_attribution?: "unknown";
-            recall?: components["schemas"]["TurnRecall"];
+            /** Recall */
+            recall?: components["schemas"]["TurnRecall"][];
         };
         /** TurnOutputFlow */
         TurnOutputFlow: {
@@ -15629,9 +15630,9 @@ export interface components {
             schema: "nerva.recall-status.v1";
             /**
              * Provider
-             * @constant
+             * @enum {string}
              */
-            provider: "long_term_memory";
+            provider: "long_term_memory" | "message_archive";
             /**
              * Basis
              * @enum {string}
