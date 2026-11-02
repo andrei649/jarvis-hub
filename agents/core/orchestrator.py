@@ -68,6 +68,7 @@ from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from . import project_context  # H594: the project's convention files
 from . import power  # H182: keep awake while a turn runs
+from . import mem_trim  # H448: give freed heap pages back after a turn
 from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
@@ -2328,6 +2329,7 @@ class Orchestrator:
         finally:
             reset_action_origin(origin_token)
             power.release_for_turn(awake)
+            mem_trim.after_turn(self)            # H448: at most every cooldown, off the loop
         resp = responses.get(agent_id, "") if responses else ""
         # _call_agents_parallel returns structured error/timeout markers instead
         # of raising; treat those as a soft failure and return "".
@@ -2543,6 +2545,7 @@ class Orchestrator:
             close_approval_turn(state["context"] if state else None, outcome_token)
             _TURN_CHAT_OUTCOMES.reset(snapshot_token)
             power.release_for_turn(awake)
+            mem_trim.after_turn(self)            # H448: at most every cooldown, off the loop
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
             reset_carry_turn(carry_token)
@@ -2806,6 +2809,7 @@ class Orchestrator:
             close_approval_turn(state["context"] if state else None, outcome_token)
             _TURN_CHAT_OUTCOMES.reset(snapshot_token)
             power.release_for_turn(awake)
+            mem_trim.after_turn(self)            # H448: at most every cooldown, off the loop
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
             reset_carry_turn(carry_token)
