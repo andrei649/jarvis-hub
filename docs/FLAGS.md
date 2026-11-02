@@ -1610,3 +1610,62 @@ signed state remains available for explicit owner review. Local synthetic Kernel
 Vault, DNS and TLS tests establish this source behavior. Live provider availability,
 billing, Docker worker, native platform and HUD/mobile controls remain separate
 acceptance requirements; the production flag remains off by default.
+
+## H058 — who may run which slash command
+
+A **runtime setting**, like `llm.execute_code`: it lives in the settings store (Admin →
+Settings → `commands`) and is re-read on every command, so a change applies to the next
+message without a restart.
+
+### `commands.user_allowed_commands`
+
+**Default: `{}`** (`agents/core/slash_access.py`; declared in `agents/core/settings_db.py`).
+
+The chat command plane has two tiers. The **owner** — the principal the turn established
+as the owner: the Telegram owner, a configured Slack/Discord/ntfy owner (`channels.owner_senders`),
+an admin token on the web door — runs every command. Everyone else a channel admitted is the
+**user** tier. This setting decides which user-tier commands a non-owner may run, per
+channel and per scope:
+
+```json
+{"telegram": {"dm": ["status", "voice"], "group": []},
+ "*":        {"dm": ["status", "sessions", "recap", "btw", "jobs", "voice"]}}
+```
+
+- **Keys** are channel names (`telegram`, `slack`, `discord`, `ntfy`, `web`, …) or `"*"` for
+  every channel without an entry of its own. Each holds a `dm` and/or a `group` list.
+  A DM is a private chat (Telegram `private`, a Slack `D…` channel, a Discord DM, the web
+  chat, a channel that reports no chat type); a group, supergroup, guild channel or thread
+  is a group.
+- **Resolution:** the channel's own entry, then `"*"`; a `dm` list that is not set uses the
+  same entry's `group` list (Hermes' rule — a DM never gets a wider list by accident); a
+  channel and scope nobody configured keeps the whole user tier (`/status`, `/sessions`,
+  `/recap`, `/btw`, `/jobs`, `/voice` — what a non-owner could run before this setting).
+- **Floor:** `/help` and `/whoami` always answer; no list removes them. `[]` leaves exactly
+  the floor.
+- **Never the owner tier:** a list naming an owner command (`/pause`, `/new`, `/remind`,
+  `/checkpoints`, …) is refused by the Admin write with 422, and a stored value that names
+  one anyway is ignored whole (the floor only). Owner quick commands
+  (`commands.quick_commands`) stay the owner's whatever the list says.
+- **Fails closed:** an unreadable settings store or a malformed value leaves non-owners the
+  floor only. Hermes fails open here (no admin list for a scope = everyone runs everything);
+  this gate has no off state.
+
+**What a denial looks like:** `⛔ /<cmd> is admin-only here. You can run: /help, /whoami, …
+Use /whoami for the full list.` (at most 12 names), plus, for an owner command, that it is
+an owner command and where to send it. Every denial is logged and written to the security
+audit log (`audit_log` event, action `slash_command_denied`: command, channel, scope,
+sender id, reason — never the arguments). `/whoami` reports the platform, scope, sender id,
+tier and the exact list of commands the sender may run there.
+
+**Where it is checked:** on the cold path (`CommandRegistry.dispatch`, inside the turn); on
+the busy path — a channel command that arrives while a turn holds its route is judged at
+once in `Orchestrator.channel_handler`, before the session lease and the running-work
+interrupt, and a `/btw` side question is judged as it is answered beside a running turn;
+and again for quick commands, on the raw typed name (`quick_commands.dispatch_quick`), with
+an alias target judged once more when it re-enters the registry. The gate decides who may
+*reach* a handler; it is in front of the Action Kernel, never instead of it — a command that
+acts still crosses its own kernel kind and approval.
+
+**Revert:** set it back to `{}` (every non-owner keeps the user tier); owner commands stay
+the owner's either way.

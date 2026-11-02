@@ -107,7 +107,7 @@ def configuration_problem(value: Any) -> str | None:
     return None
 
 
-def _policy() -> dict:
+def _policy() -> dict | None:
     """The stored policy, ``{}`` when the owner never set one; None fails closed."""
     from . import settings_db
 
@@ -229,7 +229,7 @@ async def refusal(registry, name: str, *, orch: Any, principal, quick: bool = Fa
     command = None if quick else registry.get(name)
     owner_tier = quick or (command is not None and command.tier == ADMIN)
     logger.info("Slash command /%s denied for %s:%s (%s, not the owner, not in %s)",
-                name, principal.channel, principal.sender or "?", principal.scope, SETTING)
+                name, _safe(principal.channel, 32), _safe(principal.sender) or "?", principal.scope, SETTING)
     await _audit(orch, principal, name, "owner_tier" if owner_tier else "not_allowed")
     allowed = allowed_names(registry, principal) or list(FLOOR)
     return CommandOutcome(name, "refused", denial_reply(
@@ -264,7 +264,7 @@ def whoami(registry, principal) -> str:
         try:
             names += sorted(name for name in configured() if registry.get(name) is None)
         except Exception:  # noqa: BLE001 — the owner still sees the registry
-            pass
+            logger.debug("quick commands unreadable for /whoami", exc_info=True)
         lines += ["Tier: admin (the owner) — every command answers you here",
                   "Slash commands you can run: " + ", ".join(f"/{name}" for name in names)]
     else:

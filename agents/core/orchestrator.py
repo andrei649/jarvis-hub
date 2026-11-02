@@ -1803,10 +1803,15 @@ class Orchestrator:
             return False
 
     def interrupt_channel_message(self, *, channel: str, sender: str,
-                                  chat_id=None, message_thread_id=None, text: str = "") -> bool:
+                                  chat_id=None, message_thread_id=None, text: str = "",
+                                  chat_type=None) -> bool:
         """Trusted adapter hook, before its chat lane occupies the turn queue. A ``/btw``
-        side question (H414) is asked beside the running work and never interrupts it."""
+        side question (H414) is asked beside the running work and never interrupts it, and
+        nor does a command this sender may not run here (H058): it changes nothing, so it
+        disturbs nothing — the turn that answers it says why."""
         if side_question_command_name(text) is not None:
+            return False
+        if self._command_denied_quietly(channel, sender, chat_id, chat_type, text):
             return False
         thread_id = str(chat_id) if chat_id is not None else None
         if channel == "telegram" and message_thread_id:
@@ -2033,6 +2038,24 @@ class Orchestrator:
         except Exception:
             logger.warning("slash command access check failed; the registry decides", exc_info=True)
             return None
+
+    def _command_denied_quietly(self, channel, sender, chat_id, chat_type, text) -> bool:
+        """H058 — whether *text* is a command this channel sender may not run here, judged
+        without an answer or an audit row (the turn that answers it writes both)."""
+        registry = getattr(self, "commands", None)
+        if not isinstance(registry, CommandRegistry) or not isinstance(text, str):
+            return False
+        try:
+            from .slash_access import can_run, gated_name
+
+            target = gated_name(registry, text)
+            if target is None:
+                return False
+            principal = self._channel_principal(channel, sender, chat_id, chat_type)
+            return not can_run(registry, principal, target[0], quick=target[1])
+        except Exception:
+            logger.debug("command access probe unavailable; the turn decides", exc_info=True)
+            return False
 
     async def _dispatch_command(self, text: str):
         """Answer a slash command from the registry, or None when *text* is not one."""

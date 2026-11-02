@@ -1282,7 +1282,7 @@ class TelegramChannel(ChannelAdapter):
             self.pre_turn_interrupt(
                 channel="telegram", sender=str(uid), chat_id=chat_id,
                 message_thread_id=topic if type(topic) is int and topic > 0 else None,
-                text=decision.text)
+                text=decision.text, chat_type=chat.get("type", "private"))
         turn = decision.text
         if attachment is not None:
             logger.info("Telegram inbound media: %s", attachment.to_dict())
