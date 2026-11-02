@@ -152,7 +152,11 @@ class WhatsAppChannel(WebhookChannel):
         sender = msg.get("from", "")
         if not text or not sender:
             return None
-        return {"text": text, "sender": sender, "to": sender}
+        parsed = {"text": text, "sender": sender, "to": sender}
+        if msg.get("group_id"):
+            # H058: the Cloud API names the group a participant wrote in; judged in group scope.
+            parsed["chat_type"] = "group"
+        return parsed
 
 
 class SignalChannel(WebhookChannel):

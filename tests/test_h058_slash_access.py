@@ -152,15 +152,35 @@ async def hub(tmp_path, store):
 # ── the tiers, keyed by channel and scope ─────────────────────────────────────────
 
 
-async def test_unconfigured_a_guest_keeps_the_user_tier_and_never_an_owner_command(hub):
-    status = await hub.say("/status")
-    assert "backend lm-studio" in status
+async def test_unconfigured_a_guest_runs_only_the_floor_and_never_an_owner_command(hub):
+    """Fail closed, where Hermes fails open: until the owner sets the list, an admitted
+    non-owner runs /help and /whoami and nothing else — in a DM and in a group."""
+    for where in ({}, {"chat": GROUP_CHAT, "kind": "group"}):
+        status = await hub.say("/status", **where)
+        assert status.startswith("⛔ /status is admin-only here. You can run: /help, /whoami. "
+                                 "Use /whoami for the full list.")
+        assert "The owner can allow it in" in status and "commands.user_allowed_commands" in status
+        assert (await hub.say("/whoami", **where)).splitlines()[-1] == "Slash commands you can run: /help, /whoami"
     denied = await hub.say("/pause")
-    assert denied.startswith("⛔ /pause is admin-only here. You can run: /help, /whoami, ")
-    assert "/status" in denied and "Use /whoami for the full list." in denied
+    assert denied.startswith("⛔ /pause is admin-only here. You can run: /help, /whoami. ")
     assert "/pause is an owner command" in denied
     owner = await hub.say("/status", user=OWNER_ID)
     assert "backend lm-studio" in owner
+    assert "backend lm-studio" in await hub.say("/status", user=OWNER_ID, chat=GROUP_CHAT, kind="group")
+
+
+async def test_a_scope_the_owner_left_out_is_never_wider_than_the_one_restricted(hub, store):
+    """Restricting the DM must not leave the less trusted group open: a scope nobody
+    configured — for this channel or "*" — keeps only the floor."""
+    store({"telegram": {"dm": ["status"]}})
+    assert "backend lm-studio" in await hub.say("/status")
+    group = await hub.say("/status", chat=GROUP_CHAT, kind="group")
+    assert group.startswith("⛔ /status is admin-only here. You can run: /help, /whoami. ")
+    registry = build_default_registry()
+    group_guest = Principal(channel="telegram", sender=str(GUEST_ID), scope="group")
+    assert slash_access.allowed_names(registry, group_guest) == ["help", "whoami"]
+    other_channel = Principal(channel="discord", sender="9", scope="dm")
+    assert slash_access.allowed_names(registry, other_channel) == ["help", "whoami"]
 
 
 async def test_the_allowlist_is_keyed_separately_for_a_dm_and_a_group(hub, store):
@@ -192,8 +212,9 @@ async def test_a_dm_list_left_unset_uses_the_same_channels_group_list_and_star_c
     registry = build_default_registry()
     discord_dm = Principal(channel="discord", sender="9", scope="dm")
     assert slash_access.allowed_names(registry, discord_dm) == ["help", "whoami", "jobs", "status"]
+    # "*" sets no group list, so a Discord group keeps the floor only.
     assert slash_access.allowed_names(registry, Principal(channel="discord", sender="9", scope="group")) \
-        == ["help", "whoami", "btw", "jobs", "recap", "sessions", "status", "voice"]
+        == ["help", "whoami"]
 
 
 async def test_no_list_grants_an_owner_command_and_a_broken_store_fails_closed(hub, store, monkeypatch):
@@ -212,7 +233,8 @@ async def test_no_list_grants_an_owner_command_and_a_broken_store_fails_closed(h
     assert "You — telegram (DM)" in await hub.say("/whoami")
 
 
-async def test_the_preview_shows_twelve_commands_then_points_at_whoami():
+async def test_the_preview_shows_twelve_commands_then_points_at_whoami(store):
+    store({"web": {"dm": [f"c{index:02d}" for index in range(15)]}})
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "help", lambda ctx: "h"))
     registry.register(SlashCommand("whoami", "who", lambda ctx: "w"))
@@ -447,6 +469,119 @@ async def test_the_web_door_refuses_a_command_at_once_while_its_session_runs_a_t
     assert sorted(row["command"] for row in _denials(web_chat.orch.audit)) == ["pause", "sessions"]
 
 
+async def test_a_refused_slack_command_does_not_hold_the_dispatcher_behind_the_members_turn(store):
+    """Slack's batcher runs a member's turn on its timer while the event dispatcher keeps
+    reading, and holds that member's next command behind the running turn — the dispatcher
+    with it. A command the member may not run is handed over beside it through the same
+    Gateway probe the hub wires (a ``D`` channel judged as a DM); one it may run still waits."""
+    from agents.core.channels.slack import SlackChannel
+    from tests.test_slash_commands import _bare_orchestrator
+
+    store({"slack": {"dm": ["status"]}})
+    orch, _seen = _bare_orchestrator()
+    gateway = Gateway(handler=None, command_probe=orch.command_refused_here)
+    delivered, release = [], asyncio.Event()
+
+    async def handler(text, **_kwargs):
+        delivered.append(text)
+        if text == "a long question":
+            await release.wait()
+
+    channel = SlackChannel(token="fake", handler=handler, pre_turn_refused=gateway.pre_lane_refused)
+    assert channel._batch.enabled                   # the default: batched, so a turn runs on a timer
+    member = {"channel": "D0123", "user": "T0001:U0007"}
+    await asyncio.wait_for(channel.receive_event("a long question", **member), 5)   # returns at once
+    while delivered != ["a long question"]:
+        await asyncio.sleep(0.01)
+    try:
+        await asyncio.wait_for(channel.receive_event("/pause", **member), 5)
+        assert delivered == ["a long question", "/pause"] and not release.is_set()
+        allowed = asyncio.create_task(channel.receive_event("/status", **member))
+        await asyncio.sleep(0.2)
+        assert delivered == ["a long question", "/pause"]          # it waits its turn
+        # In a room the member's /status is not on the DM list: refused, so beside too.
+        await asyncio.wait_for(channel.receive_event("/status", channel="C0456", user="T0001:U0007"), 5)
+        assert delivered == ["a long question", "/pause", "/status"] and not release.is_set()
+    finally:
+        release.set()
+    await asyncio.wait_for(allowed, 5)
+    assert delivered == ["a long question", "/pause", "/status", "/status"]
+    assert gateway.pre_lane_refused(channel="slack", sender="T0001:U0007", chat_id="D0123",
+                                    text="/status") is False
+    assert gateway.pre_lane_refused(channel="slack", sender="T0001:U0007", chat_id="C0456",
+                                    text="/status") is True
+
+
+async def test_a_busy_path_refusal_still_goes_out_as_the_command_completed_event(hub, web_chat, store, monkeypatch):
+    """Extensions watching ``command.completed`` see a denial whether the registry answered
+    it inside the turn or an entry path answered it beside a running one — name and status."""
+    from agents.core.extensions.events import EXTENSION_EVENTS
+
+    store({"telegram": {"dm": ["status"]}, "web": {"dm": ["status"]}})
+    emitted = []
+    monkeypatch.setattr(EXTENSION_EVENTS, "emit", lambda event, **fields: emitted.append((event, fields)))
+    hub.orch._turn_lease_max_wait = 30
+    assert (await _while_busy(hub, "/sessions")).startswith("⛔ /sessions is admin-only here")
+    web_chat.orch._turn_lease_max_wait = 30
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def running_turn():
+        async with web_chat.orch.turn_lease() as held:
+            assert held
+            started.set()
+            await release.wait()
+
+    holder = asyncio.create_task(running_turn())
+    await asyncio.wait_for(started.wait(), 5)
+    try:
+        assert (await asyncio.wait_for(web_chat.chat("/jobs"), 5)).startswith("⛔ /jobs is admin-only here")
+        assert (await asyncio.wait_for(web_chat.stream("/pause"), 5)).startswith("⛔ /pause is admin-only here")
+    finally:
+        release.set()
+        await holder
+    assert emitted == [("command.completed", {"command": "sessions", "status": "refused"}),
+                       ("command.completed", {"command": "jobs", "status": "refused"}),
+                       ("command.completed", {"command": "pause", "status": "refused"})]
+
+
+async def test_a_side_question_on_a_route_with_no_conversation_is_judged_first(hub, store):
+    """Whether this route has a conversation is not said to a sender who may not ask: the
+    refusal comes first, audited, on a route nobody has written to yet."""
+    store({"telegram": {"dm": ["status"]}})
+    reply = await hub.say("/btw what did I ask?")
+    assert reply.startswith("⛔ /btw is admin-only here. You can run: /help, /whoami, /status.")
+    assert [row["command"] for row in _denials(hub.orch.audit)] == ["btw"]
+    store({"telegram": {"dm": ["btw"]}})                       # allowed: the honest answer
+    assert await hub.say("/btw what did I ask?") == "There is no conversation here to ask about yet."
+    assert len(_denials(hub.orch.audit)) == 1
+
+
+@pytest.mark.parametrize("pending_inputs", [False, True])
+async def test_a_custom_reset_trigger_is_judged_as_the_owner_command_it_is(hub, store, pending_inputs):
+    """``sessions.reset_triggers`` may name texts that are no registry command. A non-owner's
+    is the same audited owner-command denial — under its own ``/name``, or ``/new`` (what it
+    does) when it is not slash-shaped — on the conversation-change runtime and without it."""
+    hub.orch._runtime_settings["sessions.reset_triggers"] = ["/fresh", "start over"]
+    hub.orch._runtime_settings["channels.pending_inputs_enabled"] = pending_inputs
+    fresh = await hub.say("/fresh")
+    assert fresh.startswith("⛔ /fresh is admin-only here. You can run: /help, /whoami. ")
+    assert "/fresh is an owner command" in fresh
+    before = len(hub.sent)
+    await hub.say("start over")                              # plain text: held for the batch window …
+    await hub.channel._flush_all_turns()                     # … which the poll loop closes
+    over = await _reply_to(hub, GUEST_ID, before)
+    assert over.startswith("⛔ /new is admin-only here") and "/new is an owner command" in over
+    assert sorted((row["command"], row["reason"]) for row in _denials(hub.orch.audit)) == [
+        ("fresh", "owner_tier"), ("new", "owner_tier")]
+    # A guest's custom trigger is refused beside a running turn too, never behind it.
+    hub.orch._turn_lease_max_wait = 30
+    assert (await _while_busy(hub, "/fresh")).startswith("⛔ /fresh is admin-only here")
+    assert hub.orch.command_refused_here(channel="telegram", sender=str(GUEST_ID), chat_id=GUEST_ID,
+                                         text="/fresh") is True
+    assert hub.orch.command_refused_here(channel="telegram", sender=str(OWNER_ID), chat_id=OWNER_ID,
+                                         text="/fresh") is False
+
+
 # ── quick commands are judged again, on the raw typed name ─────────────────────────
 
 
@@ -454,7 +589,7 @@ async def test_a_quick_command_is_gated_on_its_raw_name_and_its_alias_target_aga
     store(quick_commands={"deploy": {"type": "exec", "command": "echo deploy"},
                           "st": {"type": "alias", "target": "/status"}})
     denied = await hub.say("/deploy")
-    assert denied.startswith("⛔ /deploy is admin-only here. You can run: /help, /whoami, ")
+    assert denied.startswith("⛔ /deploy is admin-only here. You can run: /help, /whoami. ")
     assert "/deploy is an owner command" in denied
     assert [(row["command"], row["reason"]) for row in _denials(hub.orch.audit)] == [("deploy", "owner_tier")]
     asked = []
@@ -653,6 +788,19 @@ async def test_the_principal_scope_follows_the_adapters_chat_type():
     assert scope(SignalChannel(), signal) == "dm"
     assert scope(SignalChannel(), {"envelope": {"source": "+1555", "dataMessage": {
         "message": "/status", "groupInfo": {"groupId": "g1"}}}}) == "group"
+    # WhatsApp's Cloud API names the group a participant wrote in.
+    from agents.core.channels.webhook_channels import MatrixChannel, WhatsAppChannel
+
+    def whatsapp(**extra):
+        return {"entry": [{"changes": [{"value": {"messages": [
+            {"from": "40700000000", "type": "text", "text": {"body": "/status"}, **extra}]}}]}]}
+
+    assert scope(WhatsAppChannel(), whatsapp()) == "dm"
+    assert scope(WhatsAppChannel(), whatsapp(group_id="120363000000000000")) == "group"
+    # A Matrix room event never says whether its room is a DM: the less trusted scope.
+    matrix = {"events": [{"type": "m.room.message", "sender": "@u:hs", "room_id": "!r:hs",
+                          "content": {"body": "/status"}}]}
+    assert scope(MatrixChannel(), matrix) == "group"
     token = bind_turn_principal(Principal(channel="web"))
     try:
         assert (await orch._slash_access_denial("hello there")) is None

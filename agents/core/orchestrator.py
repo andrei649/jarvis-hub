@@ -1703,7 +1703,7 @@ class Orchestrator:
             # waits behind nor disturbs the running turn. Otherwise the registry judges it
             # on the cold path, inside the turn.
             denied = (None if observe_only or not self._route_busy(source)
-                      else await self._slash_access_denial(text))
+                      else await self._slash_access_denial(text, reset_trigger=self._reset_trigger(text)))
             if pending is not None and not observe_only and denied is None:
                 command_reply = await pending.command(source, text, kwargs)
                 if command_reply is not None:
@@ -1746,7 +1746,7 @@ class Orchestrator:
                 if denied is not None:
                     response = denied.reply
                 elif (reset or undo) and not observe_only and not current_principal().admin:
-                    refused = await self._slash_access_denial(text.strip())   # H058: audited
+                    refused = await self._slash_access_denial(text.strip(), reset_trigger=reset)   # H058
                     response = refused.reply if refused is not None else (
                         f"{text.strip()} is an owner command — send it from the owner's channel or with an admin token.")
                 elif undo and not observe_only:
@@ -1796,6 +1796,17 @@ class Orchestrator:
             return self._lease_held(base, *([selected] if selected else []))
         except Exception:
             logger.debug("route lease state unavailable; the command takes the cold path", exc_info=True)
+            return False
+
+    def _reset_trigger(self, text: str) -> bool:
+        """Whether *text* is one of the owner's ``sessions.reset_triggers`` (H058 judges a
+        custom one as the owner command it is); False when they cannot be read — the
+        session lifecycle then refuses the turn itself."""
+        from .channels.session_lifecycle import reset_triggered
+
+        try:
+            return reset_triggered(self.get_setting, text) is True
+        except Exception:
             return False
 
     def _lease_held(self, *keys) -> bool:
@@ -1986,10 +1997,15 @@ class Orchestrator:
     @staticmethod
     def _principal_chat_type(channel: str, kwargs: dict):
         """The chat type the adapter reported, before any thread override: what decides
-        a command's DM or group scope (H058). Slack names a DM by its ``D`` channel."""
+        a command's DM or group scope (H058). Slack names a DM by its ``D`` channel. A Matrix
+        room event never says whether its room is a DM (that lives in the account's
+        ``m.direct`` data), so a Matrix command is judged in group scope: the less trusted
+        one, never a DM list handed to a room of strangers."""
         kind = kwargs.get("chat_type")
         if channel == "slack" and not kind:
             kind = "private" if str(kwargs.get("slack_channel") or "").startswith("D") else "group"
+        elif channel == "matrix" and not kind:
+            kind = "group"
         return kind
 
     def _channel_principal(self, channel: str, sender, chat_id, chat_type=None) -> Principal:
@@ -2035,11 +2051,19 @@ class Orchestrator:
             scope=scope_for_chat_type(chat_type),
         )
 
-    async def _slash_access_denial(self, text: str):
+    async def _slash_access_denial(self, text: str, *, reset_trigger: bool = False):
         """H058 — the audited refusal when this turn's principal may not run the registry or
         quick command *text* asks for; None for anything else (plain chat, an unknown
         ``/word``, a command it may run). Reads settings and writes one audit row; holds no
-        lease and appends nothing, so an entry path can ask before its own work."""
+        lease and appends nothing, so an entry path can ask before its own work.
+
+        *reset_trigger*: *text* is one of the owner's ``sessions.reset_triggers`` — an owner
+        command even when it names no registry command (``/fresh``), judged in the owner's
+        tier under its own ``/name`` (``/new``, what it does, when it is not slash-shaped).
+
+        Every path that asks here answers the refusal itself, outside the registry, so the
+        refusal also goes out as the ``command.completed`` extension event the registry
+        emits for the same denial on the cold path (name and status, never the reply)."""
         registry = getattr(self, "commands", None)
         if not isinstance(registry, CommandRegistry) or not isinstance(text, str):
             return None
@@ -2047,13 +2071,18 @@ class Orchestrator:
             from .slash_access import gated_name, refusal
 
             target = gated_name(registry, text)
+            if target is None and reset_trigger:
+                parsed = registry.parse(text)
+                # The owner wrote this trigger, so its name is the owner's text, not the sender's.
+                target = (parsed[0] if parsed is not None and len(parsed[0]) <= 64 else "new", True)
             if target is None:
                 return None
             name, quick = target
-            return await refusal(registry, name, orch=self, principal=current_principal(), quick=quick)
+            outcome = await refusal(registry, name, orch=self, principal=current_principal(), quick=quick)
         except Exception:
             logger.warning("slash command access check failed; the registry decides", exc_info=True)
             return None
+        return None if outcome is None else CommandRegistry._observed(outcome)
 
     def command_refused_here(self, *, channel: str, sender, chat_id=None, chat_type=None,
                              text: str = "") -> bool:
@@ -2068,9 +2097,15 @@ class Orchestrator:
             from .slash_access import can_run, gated_name
 
             target = gated_name(registry, text)
+            if target is None and self._reset_trigger(text):
+                target = ("new", True)                         # a custom reset trigger: the owner's
             if target is None:
                 return False
-            principal = self._channel_principal(channel, sender, chat_id, chat_type)
+            reported = {"chat_type": chat_type}
+            if channel == "slack":
+                reported["slack_channel"] = chat_id            # a Slack DM is its ``D`` channel
+            principal = self._channel_principal(channel, sender, chat_id,
+                                                self._principal_chat_type(channel, reported))
             return not can_run(registry, principal, target[0], quick=target[1])
         except Exception:
             logger.debug("command access probe unavailable; the turn decides", exc_info=True)

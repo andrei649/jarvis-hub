@@ -239,7 +239,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),
     dict(category="commands", key="quick_commands", value={}, label="Owner quick commands — JSON aliases or fixed shell commands (execution always needs approval)", kind="json"),
     # H058 — which user-tier slash commands a non-owner may run, per channel ("*" = any)
-    # and per scope; {} keeps the user tier everywhere, [] leaves only /help and /whoami.
+    # and per scope. Fails closed: {} (and any channel/scope left out) leaves /help and /whoami.
     dict(category="commands", key="user_allowed_commands", value={}, label="Slash commands non-owners may run — JSON {\"telegram\": {\"dm\": [\"status\"], \"group\": []}, \"*\": {...}}; /help and /whoami always, owner commands never", kind="json"),
     # H063 — durable channel route generations. The reset policy is off by default;
     # explicit owner /new and /reset remain available regardless of this mode.

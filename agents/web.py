@@ -650,6 +650,7 @@ async def lifespan(application: FastAPI):
             pairing=gateway.pairing,
             pending_reply_handler=gateway.route_pending,
             pending_callback_handler=gateway.route_pending_callback,
+            pre_turn_refused=gateway.pre_lane_refused,
         )
         await orch.register_channel(slack_ch)
         logger.info("Slack channel wired")

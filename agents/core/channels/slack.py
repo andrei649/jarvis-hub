@@ -108,8 +108,11 @@ class SlackChannel(ChannelAdapter):
     )
 
     def __init__(self, token: str = "", handler=None, *, app_token: str = "",
-                 pairing=None, pending_reply_handler=None, pending_callback_handler=None):
+                 pairing=None, pending_reply_handler=None, pending_callback_handler=None,
+                 pre_turn_refused=None):
         super().__init__("slack", handler)
+        # H058: a probe (Gateway.pre_lane_refused) for a command its sender may not run here.
+        self.pre_turn_refused = pre_turn_refused
         self.token = token
         self.app_token = app_token
         self.pairing = pairing
@@ -121,9 +124,12 @@ class SlackChannel(ChannelAdapter):
         self._pending_fast_serial = 0
         # H117: a burst from one member in one channel (and thread) is one turn. One batch
         # on its way at a time: the dispatcher is held while a turn runs, as it was before
-        # batching, so the bounded ingress queue stays the only buffer.
+        # batching, so the bounded ingress queue stays the only buffer. H058: a command the
+        # member may not run here is handed over beside the key's running turn (like /btw),
+        # so its refusal neither waits for that turn nor holds the dispatcher behind it.
         from .batching import AsyncBatcher, configured
-        self._batch = AsyncBatcher(self._deliver_turn, *configured(), max_pending=1)
+        self._batch = AsyncBatcher(self._deliver_turn, *configured(), max_pending=1,
+                                   beside=self._refused_here)
         self._client: Optional[WebClient] = None
         self._socket_client = None
         self._team_id = ""
@@ -648,6 +654,15 @@ class SlackChannel(ChannelAdapter):
         # H117: held for the batch window, keyed by channel, member and thread.
         key = (str(channel), sender, str(kwargs.get("thread_ts") or ""))
         return await self._batch.submit(key, text, slack_channel=channel, sender=sender, **kwargs)
+
+    def _refused_here(self, _key, text: str, meta: dict) -> bool:
+        """H058 — whether *text* is a command this member may not run in this conversation
+        (judged by the hub through ``pre_turn_refused``; a missing probe says no). The hub
+        reads a ``D`` channel as a DM, as it does for the turn itself."""
+        probe = self.pre_turn_refused
+        return callable(probe) and probe(
+            channel="slack", sender=meta.get("sender"), chat_id=meta.get("slack_channel"),
+            text=text, chat_type=meta.get("chat_type")) is True
 
     async def _deliver_turn(self, key, text: str, meta: dict):
         if not self.handler:

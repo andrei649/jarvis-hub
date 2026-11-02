@@ -89,11 +89,7 @@ class ChannelSessionLifecycle:
         return selected
 
     def reset_requested(self, text: str) -> bool:
-        triggers = self.orch.get_setting("sessions.reset_triggers", ["/new", "/reset"])
-        if (not isinstance(triggers, list) or len(triggers) > 32
-                or any(not isinstance(t, str) or not t.strip() or len(t) > 120 for t in triggers)):
-            raise SessionResetError("Invalid reset triggers")
-        return text.strip() in triggers
+        return reset_triggered(self.orch.get_setting, text)
 
     @contextmanager
     def track(self, base):
@@ -201,7 +197,14 @@ class ChannelSessionLifecycle:
         route's activity clock (it must not extend the idle window), never rotates or
         creates a session (so it cannot answer about a fresh empty one), and appends
         nothing. A route whose session is not loaded is resumed only when the route is
-        already known; an unknown route has no conversation to ask about."""
+        already known; an unknown route has no conversation to ask about.
+
+        H058: a sender who may not run ``/btw`` here gets the access gate's audited refusal
+        first — before anything about this route (whether it has a conversation) is said."""
+        judge = getattr(self.orch, "_slash_access_denial", None)
+        denied = await judge(text) if callable(judge) else None
+        if denied is not None:
+            return denied.reply
         none_yet = "There is no conversation here to ask about yet."
         state = self.store.state(base)
         default = self.orch._session_id_default
@@ -345,6 +348,15 @@ class ChannelSessionLifecycle:
         notice = f"Nerva has made no progress on a pending conversation for {minutes} min."
         result = await send_to_target(self.orch, target, notice, source="session.stall", plain=True)
         return bool(result.get("ok"))
+
+
+def reset_triggered(get_setting, text: str) -> bool:
+    """Whether *text* is exactly one of the owner's ``sessions.reset_triggers``."""
+    triggers = get_setting("sessions.reset_triggers", ["/new", "/reset"])
+    if (not isinstance(triggers, list) or len(triggers) > 32
+            or any(not isinstance(t, str) or not t.strip() or len(t) > 120 for t in triggers)):
+        raise SessionResetError("Invalid reset triggers")
+    return text.strip() in triggers
 
 
 def lifecycle(orch) -> ChannelSessionLifecycle:

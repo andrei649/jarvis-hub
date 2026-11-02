@@ -11,28 +11,30 @@ plus the user-tier commands the owner allows for that channel and scope in
      "*":        {"dm": ["status", "sessions", "recap", "btw", "jobs", "voice"]}}
 
 A channel's own entry wins over ``"*"``; a DM list that is not set falls back to the same
-entry's group list (Hermes' rule — a DM is never given a wider list by accident); a channel
-and scope nobody configured keeps the registry's user tier, which is what a non-owner could
-run before this gate existed. An unreadable store or a malformed value reads as an empty
-list: the floor only. The list can never grant an owner command (or an owner quick command)
-— that tier is the owner's, whatever the setting says.
+entry's group list (Hermes' rule — a DM is never given a wider list by accident). The gate
+fails closed where Hermes fails open (``enabled = bool(admin_ids)``: no admin list = everyone
+runs everything): an install whose owner never set the list, a channel and scope nobody
+configured, an unreadable store and a malformed value all leave a non-owner the floor and
+nothing else. The list can never grant an owner command (or an owner quick command) — that
+tier is the owner's, whatever the setting says — and the gate has no off state.
 
-Where Hermes fails open (no admin list for a scope = everyone runs everything), this gate
-has no off state: an owner command answers only the owner on every surface, configured or
-not. The gate decides who may *reach* a handler; it is in front of the Action Kernel, never
+The gate decides who may *reach* a handler; it is in front of the Action Kernel, never
 instead of it — a handler that acts still crosses its own kernel kind and approval.
 
 A denial reads ``⛔ /<cmd> is admin-only here. You can run: …`` (Hermes' text, at most 12
-names, then ``Use /whoami for the full list``), is logged, and is written to the security
+names, then ``Use /whoami for the full list``), is logged, is written to the security
 audit log (``SecurityEventType.AUDIT_LOG``, ``slash_command_denied``) — the audit row the
-Hermes rebuild note asked for and never shipped. ``/whoami`` reports the platform, scope,
-sender id, tier and the exact command list. The orchestrator asks this module on the cold
-path (``CommandRegistry.dispatch``), on the busy path (a channel command is judged before
-the session lease and the running-work interrupt, and on Telegram and Discord a refused one
-is handed over beside the chat's lane instead of behind its running turn; the web door's ``/chat``
-and ``/chat/stream`` judge it before their interrupt and lease; the ``/btw`` side question
-is judged as it is answered beside a running turn) and again for quick commands, on the
-raw typed name.
+Hermes rebuild note asked for and never shipped — and goes out as the ``command.completed``
+extension event (status ``refused``) on every path that answers it. ``/whoami`` reports the
+platform, scope, sender id, tier and the exact command list. The orchestrator asks this
+module on the cold path (``CommandRegistry.dispatch``), on the busy path (a channel command
+is judged before the session lease and the running-work interrupt, and on Telegram, Discord
+and Slack a refused one is handed over beside the chat's lane or the author's batch lock
+instead of behind its running turn; the web door's ``/chat`` and ``/chat/stream`` judge it
+before their interrupt and lease; the ``/btw`` side question is judged as it is answered
+beside a running turn, before a route with no conversation says so) and again for quick
+commands, on the raw typed name. A custom ``sessions.reset_triggers`` text is judged as the
+owner command it is.
 """
 
 from __future__ import annotations
@@ -148,18 +150,17 @@ def allowed_names(registry, principal) -> list[str] | None:
     """The commands *principal* may run here, floor first; None for the owner (all)."""
     if principal.admin is True:
         return None
-    user_tier = _user_tier(registry)
     policy = _policy()
     listed = None
     if policy is not None:
         listed = _scope_list(policy.get(principal.channel), principal.scope)
         if listed is None:
             listed = _scope_list(policy.get(ANY_CHANNEL), principal.scope)
-    if policy is None:
-        granted: set[str] = set()
-    elif listed is None:
-        granted = set(user_tier)
-    else:
+    granted: set[str] = set()
+    if listed is not None:
+        # Fail closed (where Hermes fails open): a channel and scope nobody configured,
+        # like an unreadable store, grants nothing above the floor.
+        user_tier = set(_user_tier(registry))
         granted = {name for name in (_name(raw) for raw in listed) if name in user_tier}
     return [*FLOOR, *sorted(granted - set(FLOOR))]
 

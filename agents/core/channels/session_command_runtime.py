@@ -111,8 +111,8 @@ class SessionCommandRuntime:
             from ..orchestrator import current_principal
 
             judge = getattr(self.orch, "_slash_access_denial", None)
-            denied = (await judge(text) if callable(judge) and current_principal().admin is not True
-                      else None)
+            denied = (await judge(text, reset_trigger=operation == "reset")
+                      if callable(judge) and current_principal().admin is not True else None)
             return EphemeralReply(denied.reply if denied is not None
                                   else "Only the current owner can confirm this conversation change.")
         from ..orchestrator import TURN_BUSY_REPLY

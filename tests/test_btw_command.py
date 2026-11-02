@@ -30,6 +30,7 @@ from agents.core.commands import (
 from agents.core.llm import auxiliary_text
 from agents.core.llm.providers import get_profile
 from agents.core.orchestrator import Orchestrator, bind_turn_principal, reset_turn_principal
+from tests.h058_access_fixture import user_tier_allowed  # noqa: F401 — a fixture (H058: the owner allowed /btw)
 
 OWNER = Principal(channel="telegram", sender="42", admin=True)
 GUEST = Principal(channel="telegram", sender="7", admin=False)
@@ -122,7 +123,7 @@ async def test_btw_bounds_the_question(rail):
     assert len(call["prompt"]) < auxiliary_text.BTW_SNAPSHOT_CHARS + auxiliary_text.BTW_QUESTION_CHARS + 200
 
 
-async def test_btw_on_the_owners_shared_session_answers_only_the_owner(rail):
+async def test_btw_on_the_owners_shared_session_answers_only_the_owner(rail, user_tier_allowed):
     orch = _orch(rail, shared=True)
     guest = await orch.commands.dispatch("/btw what did I ask?", orch=orch, principal=GUEST)
     assert guest.status == "answered" and "only for the owner" in guest.reply
@@ -220,7 +221,7 @@ async def test_btw_model_failures_are_reported_not_raised(rail):
     assert orch.written == []
 
 
-async def test_btw_is_listed_with_its_siblings(rail):
+async def test_btw_is_listed_with_its_siblings(rail, user_tier_allowed):
     orch = _orch(rail)
     listed = await orch.commands.dispatch("/help", orch=orch, principal=GUEST)
     assert "/btw <question> — ask a side question about this conversation; nothing is added to it" in listed.reply
@@ -289,7 +290,7 @@ async def test_handle_input_stream_answers_btw_before_the_turn_is_appended(rail)
     assert written == []
 
 
-async def test_a_refused_or_failed_side_question_still_adds_no_turn(rail):
+async def test_a_refused_or_failed_side_question_still_adds_no_turn(rail, user_tier_allowed):
     orch, written = _bare(rail)
     orch.on_shared_session = lambda: True
     token = bind_turn_principal(GUEST)

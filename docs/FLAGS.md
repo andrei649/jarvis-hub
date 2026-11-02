@@ -1619,7 +1619,8 @@ message without a restart.
 
 ### `commands.user_allowed_commands`
 
-**Default: `{}`** (`agents/core/slash_access.py`; declared in `agents/core/settings_db.py`).
+**Default: `{}` — non-owners run `/help` and `/whoami` only** (`agents/core/slash_access.py`;
+declared in `agents/core/settings_db.py`).
 
 The chat command plane has two tiers. The **owner** — the principal the turn established
 as the owner: the Telegram owner, a configured Slack/Discord/ntfy owner (`channels.owner_senders`),
@@ -1635,45 +1636,58 @@ channel and per scope:
 - **Keys** are channel names (`telegram`, `slack`, `discord`, `ntfy`, `web`, …) or `"*"` for
   every channel without an entry of its own. Each holds a `dm` and/or a `group` list.
   A DM is a private chat (Telegram `private`, a Slack `D…` channel, a Discord DM, a Teams
-  `personal` conversation, a Google Chat direct message, a Signal message outside a group,
-  the web chat, and any channel that reports no chat type — voice, email, ntfy, WhatsApp,
-  Matrix); a group, supergroup, guild channel, thread, Teams group chat or channel, Google
-  Chat space or Signal group is a group.
+  `personal` conversation, a Google Chat direct message, a Signal or WhatsApp message outside
+  a group, the web chat, and any channel that has no groups — voice, email, ntfy); a group,
+  supergroup, guild channel, thread, Teams group chat or channel, Google Chat space, Signal
+  group or WhatsApp group (`group_id`) is a group. **Every Matrix room is judged as a group**:
+  a Matrix room event does not say whether the room is a DM (that lives in the account's
+  `m.direct` data), so the less trusted scope applies there and a Matrix `dm` list is never
+  used.
 - **Resolution:** the channel's own entry, then `"*"`; a `dm` list that is not set uses the
   same entry's `group` list (Hermes' rule — a DM never gets a wider list by accident); a
-  channel and scope nobody configured keeps the whole user tier (`/status`, `/sessions`,
-  `/recap`, `/btw`, `/jobs`, `/voice` — what a non-owner could run before this setting).
+  channel and scope nobody configured gets the floor only. Restricting a DM therefore never
+  leaves the group of the same channel wider. To give non-owners what they could run before
+  this setting, list the user tier (`/status`, `/sessions`, `/recap`, `/btw`, `/jobs`,
+  `/voice`) under `"*"` for `dm` and `group`.
 - **Floor:** `/help` and `/whoami` always answer; no list removes them. `[]` leaves exactly
   the floor.
 - **Never the owner tier:** a list naming an owner command (`/pause`, `/new`, `/remind`,
   `/checkpoints`, …) is refused by the Admin write with 422, and a stored value that names
   one anyway is ignored whole (the floor only). Owner quick commands
   (`commands.quick_commands`) stay the owner's whatever the list says.
-- **Fails closed:** an unreadable settings store or a malformed value leaves non-owners the
-  floor only. Hermes fails open here (no admin list for a scope = everyone runs everything);
-  this gate has no off state.
+- **Fails closed:** an install whose owner never set the list, a channel or scope left out
+  of it, an unreadable settings store and a malformed value all leave non-owners the floor
+  only. Hermes fails open here (`enabled = bool(admin_ids)`: no admin list for a scope =
+  everyone runs everything); this gate has no off state.
 
 **What a denial looks like:** `⛔ /<cmd> is admin-only here. You can run: /help, /whoami, …
 Use /whoami for the full list.` (at most 12 names), plus, for an owner command, that it is
-an owner command and where to send it. Every denial is logged and written to the security
+an owner command and where to send it. Every denial is logged, written to the security
 audit log (`audit_log` event, action `slash_command_denied`: command, channel, scope,
-sender id, reason — never the arguments). `/whoami` reports the platform, scope, sender id,
-tier and the exact list of commands the sender may run there.
+sender id, reason — never the arguments) and emitted as the `command.completed` extension
+event with status `refused` — on the cold path and the busy path alike. A custom
+`sessions.reset_triggers` text (`/fresh`) is an owner command too: a non-owner's gets the
+same audited denial under its own name (or `/new` when the trigger is not slash-shaped).
+`/whoami` reports the platform, scope, sender id, tier and the exact list of commands the
+sender may run there.
 
 **Where it is checked:** on the cold path (`CommandRegistry.dispatch`, inside the turn); on
 the busy path — a command that arrives while a turn holds its session is refused at once,
 before the running-work interrupt and the session lease: in `Orchestrator.channel_handler`
 for every channel; on Telegram it is first handed over beside the chat's lane, and on
-Discord beside the author's batch lock (`Gateway.pre_lane_refused` →
-`Orchestrator.command_refused_here`), so it does not queue behind the running turn (Slack
-reads one event at a time while a turn runs, so a Slack command is read after it); on the
-web door in `POST /chat` and `/chat/stream`
-(`Orchestrator.busy_command_refusal`); and a `/btw` side question is judged as it is
-answered beside a running turn — and again for quick commands, on the raw typed name
-(`quick_commands.dispatch_quick`), with an alias target judged once more when it re-enters
-the registry. A command the sender may run keeps its place in the queue. The gate decides who may
-*reach* a handler; it is in front of the Action Kernel, never instead of it — a command that
-acts still crosses its own kernel kind and approval.
+Discord and Slack beside the author's batch lock (`Gateway.pre_lane_refused` →
+`Orchestrator.command_refused_here`), so it does not queue behind the running turn nor hold
+Slack's event dispatcher behind it; on the web door in `POST /chat` and `/chat/stream`
+(`Orchestrator.busy_command_refusal`); a `/btw` side question is judged as it is answered
+beside a running turn, and before a route with no conversation yet says so — and again for
+quick commands, on the raw typed name (`quick_commands.dispatch_quick`), with an alias
+target judged once more when it re-enters the registry. A command the sender may run keeps
+its place in the queue. The gate decides who may *reach* a handler; it is in front of the
+Action Kernel, never instead of it — a command that acts still crosses its own kernel kind
+and approval.
 
-**Revert:** set it back to `{}` (every non-owner keeps the user tier); owner commands stay
-the owner's either way.
+**Upgrading / revert:** `{}` is the default, so after this change a non-owner who used to
+run `/status` and the rest of the user tier keeps `/help` and `/whoami` only until the owner
+lists more. The behaviour from before this setting is
+`{"*": {"dm": ["btw", "jobs", "recap", "sessions", "status", "voice"], "group": ["btw", "jobs", "recap", "sessions", "status", "voice"]}}`;
+owner commands stay the owner's either way.
