@@ -7680,9 +7680,11 @@ export interface paths {
          *     memory, ``cognition``, as the running hub reads them, a product posture included),
          *     whether the core block reaches the prompt (``injected``) and the model's memory tool
          *     can write (``tool``), and per ring (``memory``: the agent's notes, ``user``: the user
-         *     profile) the bytes its file holds, its entries, the characters they take against the
-         *     section's budget, what the next block shows, leaves out and blocks, and what else a
-         *     reset erases with it (``copies``: hand-edit ``.bak`` files, ``undo_writes``). Reported
+         *     profile) the bytes its file holds, its entries, the characters it holds (``chars``: the
+         *     figure every writer is refused past, ``core_block.stored_chars``) against the section's
+         *     budget, what the next block shows, leaves out and blocks (``rendered_chars``: what the
+         *     section takes in the prompt), and what else a reset erases with it (``copies``:
+         *     hand-edit ``.bak`` files, ``undo_writes``). Reported
          *     with memory switched off too; ``builtin_files`` is Hermes's bytes-per-store shape.
          */
         get: operations["memory_status_api_memory_get"];
@@ -8564,6 +8566,17 @@ export interface paths {
          *     Still not instrumented at all (recorded so this docstring does not overclaim in the
          *     other direction): cloud TTS in `voice/tts.py`, `skills/importer.py`,
          *     `cameras/frigate.py`, `house/home_assistant.py` and `channels/telegram.py`.
+         *
+         *     H381 — the ledger survives a restart. Tallies and `recent` are read back from the
+         *     owner-only, bounded `egress_ledger.db` under the data root, so rows recorded before
+         *     this process started (or by another process on the same root, e.g. a CLI turn) are
+         *     served with this process's live ones; each row's `origin` is `live`, `restored` or
+         *     `unsaved` (its write failed and it is held in memory), and `ledger` reports
+         *     `persistent`, `since`, the stored/restored/live/queued/unsaved counts and any store
+         *     error. No prompt content is stored: time, row name, host, method, flags, a
+         *     URL-redacted reason. Events are written by a background thread (`queued` ones are
+         *     already served as `live`), and the file is read in a worker thread, so neither a
+         *     request hook nor this route waits for SQLite on the event loop.
          */
         get: operations["admin_network_calls_api_admin_network_calls_get"];
         put?: never;
