@@ -106,7 +106,15 @@ class SessionCommandRuntime:
             return None
         if (delivery.get("pending_input_eligible", True) is not True
                 or not self._owner(source, delivery)):
-            return EphemeralReply("Only the current owner can confirm this conversation change.")
+            # H058: a non-owner's /new, /reset or /undo gets the access gate's audited
+            # refusal; an owner turn that is not eligible here (an attachment) keeps this one.
+            from ..orchestrator import current_principal
+
+            judge = getattr(self.orch, "_slash_access_denial", None)
+            denied = (await judge(text) if callable(judge) and current_principal().admin is not True
+                      else None)
+            return EphemeralReply(denied.reply if denied is not None
+                                  else "Only the current owner can confirm this conversation change.")
         from ..orchestrator import TURN_BUSY_REPLY
 
         shared = self.orch.get_setting("memory.cross_channel_sessions", False)

@@ -70,8 +70,14 @@ async def dispatch_quick(registry, name, args, *, text, orch, principal, seen):
     mapping = {key.lower(): spec for key, spec in raw.items()}
     if name not in mapping:
         return None
-    if not principal.admin:
-        return CommandOutcome(name, "refused", f"/{name} is an owner command.")
+    from .slash_access import refusal
+
+    # H058: quick commands are never in the registry, so the access gate is asked again
+    # here on the raw typed name (Hermes #44727); an alias target is judged once more
+    # when it re-enters the registry below.
+    denied = await refusal(registry, name, orch=orch, principal=principal, quick=True)
+    if denied is not None:
+        return denied
     if name in seen or len(seen) >= 8 or len(text.strip()) > _MAX_TEXT:
         return CommandOutcome(name, "refused", "Quick-command alias cycle or oversized input; nothing changed.")
     spec = mapping[name]

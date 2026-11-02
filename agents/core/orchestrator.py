@@ -57,6 +57,7 @@ from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import (
     ADMIN,
     CommandOutcome,
+    CommandRegistry,
     Principal,
     build_default_registry,
     checkpoint_command_name,
@@ -1652,7 +1653,8 @@ class Orchestrator:
         observe_only = bool(kwargs.pop("observe_only", False))
         origin_token = bind_action_origin(action_origin)
         principal_token = bind_turn_principal(
-            self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"))
+            self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"),
+                                    self._principal_chat_type(channel, kwargs))
         )
         # DRA-08: one description of *who is talking to us*, built from the
         # identity metadata the adapters already put on the wire (telegram
@@ -1695,6 +1697,14 @@ class Orchestrator:
                         else:
                             await self.channel_manager.send(channel, intercepted, **kwargs)
                     return intercepted
+            # H058, the busy path: while a turn holds this route's session, a command this
+            # sender may not run here is answered at once — before the conversation-change
+            # runtime, the running-work interrupt and the session lease — so it neither
+            # waits behind nor disturbs the running turn. Otherwise the registry judges it
+            # on the cold path, inside the turn.
+            denied = (None if observe_only or not self._route_busy(source)
+                      else await self._slash_access_denial(text))
+            if pending is not None and not observe_only and denied is None:
                 command_reply = await pending.command(source, text, kwargs)
                 if command_reply is not None:
                     if channel in {"slack", "discord"}:
@@ -1719,10 +1729,11 @@ class Orchestrator:
             cross_channel = self.get_setting("memory.cross_channel_sessions", False)
             from . import code_interruptions
             # H414: a /btw side question asks beside the running work; it must not interrupt it.
-            if (not observe_only and code_interruptions.is_admitted_channel(channel)
+            if (not observe_only and denied is None and code_interruptions.is_admitted_channel(channel)
                     and side_question_command_name(text) is None):
                 self._interrupt_for_channel_source(source, cross_channel=cross_channel)
-            draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
+            draft = (None if observe_only or denied is not None
+                     else self._begin_channel_draft(channel, source, kwargs))
             from .channels.session_lifecycle import UNAVAILABLE, lifecycle
             from .channels.session_reset import SessionResetError
 
@@ -1732,8 +1743,12 @@ class Orchestrator:
                     source.thread_id or source.sender or source.client_id)
                 reset = service.reset_requested(text)
                 undo = text.strip() == "/undo"
-                if (reset or undo) and not observe_only and not current_principal().admin:
-                    response = f"{text.strip()} is an owner command — send it from the owner's channel or with an admin token."
+                if denied is not None:
+                    response = denied.reply
+                elif (reset or undo) and not observe_only and not current_principal().admin:
+                    refused = await self._slash_access_denial(text.strip())   # H058: audited
+                    response = refused.reply if refused is not None else (
+                        f"{text.strip()} is an owner command — send it from the owner's channel or with an admin token.")
                 elif undo and not observe_only:
                     response = await service.undo(source, shared=shared)
                 else:
@@ -1765,6 +1780,27 @@ class Orchestrator:
             pending_scope.close()
             reset_turn_principal(principal_token)
             reset_action_origin(origin_token)
+
+    def _route_busy(self, source: SessionSource) -> bool:
+        """H058 — whether a turn holds this channel route's session lease right now: the
+        route's base key (what ``ChannelSessionLifecycle.run`` takes first) or the session
+        it is on. A command that arrives then is on the busy path."""
+        from .channels.session import build_session_key
+
+        try:
+            default = getattr(self, "_session_id_default", None)
+            shared = (self.get_setting("memory.cross_channel_sessions", False)
+                      or not (source.thread_id or source.sender or source.client_id))
+            base = default if shared else build_session_key(source)
+            keys = {str(base)}
+            selected = self.__dict__.get("_channel_sessions", {}).get(base)
+            if selected:
+                keys.add(str(selected))
+            table = self.__dict__.get("_turn_leases", {})
+            return any(table[key].locked() for key in keys if key in table)
+        except Exception:
+            logger.debug("route lease state unavailable; the command takes the cold path", exc_info=True)
+            return False
 
     def interrupt_channel_message(self, *, channel: str, sender: str,
                                   chat_id=None, message_thread_id=None, text: str = "") -> bool:
@@ -1816,7 +1852,8 @@ class Orchestrator:
                                client_id=kwargs.get("client_id"))
         origin_token = bind_action_origin(origin_for_channel(channel))
         principal_token = bind_turn_principal(
-            self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"))
+            self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"),
+                                    self._principal_chat_type(channel, kwargs))
         )
         try:
             from .channels.pending_input_runtime import pending_key
@@ -1925,8 +1962,19 @@ class Orchestrator:
         except Exception:
             logger.warning("Workspace reply request failed closed", exc_info=True)
 
-    def _channel_principal(self, channel: str, sender, chat_id) -> Principal:
+    @staticmethod
+    def _principal_chat_type(channel: str, kwargs: dict):
+        """The chat type the adapter reported, before any thread override: what decides
+        a command's DM or group scope (H058). Slack names a DM by its ``D`` channel."""
+        kind = kwargs.get("chat_type")
+        if channel == "slack" and not kind:
+            kind = "private" if str(kwargs.get("slack_channel") or "").startswith("D") else "group"
+        return kind
+
+    def _channel_principal(self, channel: str, sender, chat_id, chat_type=None) -> Principal:
         """Bind admin authority to an explicit current owner identity."""
+        from .slash_access import scope_for_chat_type
+
         sender_text = None if sender is None else str(sender)
         admin = False
         if channel == "telegram":
@@ -1963,7 +2011,28 @@ class Orchestrator:
         return Principal(
             channel=channel, sender=sender_text, admin=admin,
             chat=None if chat_id is None else str(chat_id),
+            scope=scope_for_chat_type(chat_type),
         )
+
+    async def _slash_access_denial(self, text: str):
+        """H058 — the audited refusal when this turn's principal may not run the registry or
+        quick command *text* asks for; None for anything else (plain chat, an unknown
+        ``/word``, a command it may run). Reads settings and writes one audit row; holds no
+        lease and appends nothing, so an entry path can ask before its own work."""
+        registry = getattr(self, "commands", None)
+        if not isinstance(registry, CommandRegistry) or not isinstance(text, str):
+            return None
+        try:
+            from .slash_access import gated_name, refusal
+
+            target = gated_name(registry, text)
+            if target is None:
+                return None
+            name, quick = target
+            return await refusal(registry, name, orch=self, principal=current_principal(), quick=quick)
+        except Exception:
+            logger.warning("slash command access check failed; the registry decides", exc_info=True)
+            return None
 
     async def _dispatch_command(self, text: str):
         """Answer a slash command from the registry, or None when *text* is not one."""
@@ -2042,8 +2111,9 @@ class Orchestrator:
         from .turn_notices import record_turn_notice
 
         if not current_principal().admin:
-            outcome = CommandOutcome(name, "refused", f"/{name} is an owner command — "
-                                     "send it from the owner's channel or with an admin token.")
+            outcome = await self._slash_access_denial(text) or CommandOutcome(
+                name, "refused", f"/{name} is an owner command — "
+                "send it from the owner's channel or with an admin token.")
             record_turn_notice("checkpoint.refused", outcome.reply)
             return outcome
         if len(text.strip()) > 2_000:
@@ -2092,7 +2162,9 @@ class Orchestrator:
         if command not in {"/new", "/reset", "/undo"}:
             return None
         if not current_principal().admin:
-            return f"{command} is an owner command — send it from the owner's channel or with an admin token."
+            denied = await self._slash_access_denial(command)
+            return denied.reply if denied is not None else (
+                f"{command} is an owner command — send it from the owner's channel or with an admin token.")
         try:
             async with self.turn_lease(base) as acquired:
                 if not acquired:

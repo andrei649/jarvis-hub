@@ -238,6 +238,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),
     dict(category="commands", key="quick_commands", value={}, label="Owner quick commands — JSON aliases or fixed shell commands (execution always needs approval)", kind="json"),
+    # H058 — which user-tier slash commands a non-owner may run, per channel ("*" = any)
+    # and per scope; {} keeps the user tier everywhere, [] leaves only /help and /whoami.
+    dict(category="commands", key="user_allowed_commands", value={}, label="Slash commands non-owners may run — JSON {\"telegram\": {\"dm\": [\"status\"], \"group\": []}, \"*\": {...}}; /help and /whoami always, owner commands never", kind="json"),
     # H063 — durable channel route generations. The reset policy is off by default;
     # explicit owner /new and /reset remain available regardless of this mode.
     dict(category="sessions", key="reset_mode", value="none", label="Conversation reset mode", kind="select", opts=["none", "idle", "daily", "both"]),
@@ -1272,6 +1275,10 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             from .quick_commands import configuration_problem
 
             err = configuration_problem(value)
+        if err is None and (cat, key) == ("commands", "user_allowed_commands"):
+            from .slash_access import configuration_problem as access_problem
+
+            err = access_problem(value)
         if err is None and (cat, key) == ("skills", "template_vars"):
             err = _template_vars_problem(value)
         if err is None and (cat, key) == ("skills", "channel_disabled"):

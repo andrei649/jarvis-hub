@@ -9,7 +9,10 @@ stop it, or lift the emergency stop from the conversation they were already in.
 Commands carry an access tier. `user` commands answer anyone the channel already admitted;
 `admin` commands answer only a principal the turn established as the owner (the Telegram
 owner allowlist / owner chat, or an admin token on the web endpoint). A non-owner asking
-for an owner command is told so — never silently ignored, never quietly obeyed.
+for an owner command is told so — never silently ignored, never quietly obeyed. Which
+user-tier commands a non-owner may run in a DM or a group of each channel is the owner's
+`commands.user_allowed_commands` (H058, `slash_access.py`), above a floor of `/help` and
+`/whoami` that no setting removes.
 
 Handlers here never perform a privileged effect themselves except through the same
 module the HTTP routes call (the e-stop sentinel), and they never reach the model.
@@ -72,6 +75,9 @@ class Principal:
     #: has one. Per-chat commands such as ``/voice`` act on it; a channel with no
     #: conversation identity leaves it None and those commands say so.
     chat: str | None = None
+    #: H058: ``dm`` or ``group`` — which list of ``commands.user_allowed_commands`` a
+    #: non-owner's commands are judged against (a channel with no chat type is a DM).
+    scope: str = "dm"
 
 
 @dataclass
@@ -135,11 +141,21 @@ class CommandRegistry:
     def get(self, name: str) -> SlashCommand | None:
         return self._commands.get(name.lower())
 
+    def commands(self) -> list[SlashCommand]:
+        """Every registered command, by name — tier unfiltered (H058's policy reads it)."""
+        return [command for _name, command in sorted(self._commands.items())]
+
     def visible(self, principal: Principal) -> list[SlashCommand]:
+        """What *principal* may run here: every command for the owner; for anyone else
+        the user-tier commands ``commands.user_allowed_commands`` allows in this channel
+        and scope, and always ``/help`` and ``/whoami`` (H058)."""
+        from .slash_access import allowed_names
+
+        allowed = allowed_names(self, principal)
         return [
             command
             for _name, command in sorted(self._commands.items())
-            if command.tier == USER or principal.admin
+            if (command.tier == USER or principal.admin) and (allowed is None or command.name in allowed)
         ]
 
     @staticmethod
@@ -179,8 +195,16 @@ class CommandRegistry:
             # emitting it would push arbitrary message text through a field that
             # promises to carry command names — a body leak wearing a safe label.
             return CommandOutcome(name, "unknown", f"Unknown command /{name}. Try /help.")
-        if command.tier == ADMIN and not principal.admin:
+        from .slash_access import refusal
+
+        # H058, the cold path: the access gate answers before any handler is reached
+        # (audited); it stands in front of the kernel kinds handlers cross, never for them.
+        denied = await refusal(self, name, orch=orch, principal=principal)
+        if denied is not None:
             # Observed: this name came from the registry, not from the sender.
+            return self._observed(denied)
+        if command.tier == ADMIN and not principal.admin:
+            # The tier invariant stands even if the policy above ever misjudged.
             return self._observed(CommandOutcome(
                 name,
                 "refused",
@@ -225,6 +249,16 @@ def _help(ctx: CommandContext) -> str:
         lines.append("Owner commands (such as /pause, /resume, /stop, /remind and /refine) answer only "
                      "the owner's channel.")
     return "\n".join(lines) if lines else "No commands are registered."
+
+
+def _whoami(ctx: CommandContext) -> str:
+    """H058 — who this hub takes you for here, and the exact commands you can run."""
+    from .slash_access import whoami
+
+    registry = getattr(ctx.orch, "commands", None)
+    if not isinstance(registry, CommandRegistry):
+        registry = CommandRegistry()
+    return whoami(registry, ctx.principal)
 
 
 def _status(ctx: CommandContext) -> str:
@@ -671,6 +705,8 @@ def build_default_registry() -> CommandRegistry:
 
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
+    registry.register(SlashCommand("whoami", "your platform, scope, sender id, tier and the commands you can run",
+                                   _whoami))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
     registry.register(SlashCommand("new", "start a fresh conversation and save this one", _session_change, tier=ADMIN))
