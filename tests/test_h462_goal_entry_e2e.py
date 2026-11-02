@@ -24,6 +24,7 @@ The properties pinned:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import hmac
 import sys
@@ -285,17 +286,45 @@ def _recording_notifier(worker):
 
 
 async def _settle_pushes(worker):
-    """Wait for every push the worker has in flight (none is left pending)."""
-    for _ in range(20):
-        pending = [t for t in list(worker._bg_tasks) if not t.done()]
-        if not pending:
-            return
-        await asyncio.gather(*pending, return_exceptions=True)
+    """Wait for every push the worker has in flight — including one a worker thread
+    scheduled onto this loop that the loop has not started yet."""
+    await asyncio.wait_for(worker.settle_pushes(), timeout=30)
 
 
-async def test_an_interrupt_goal_card_from_chat_is_pushed_to_the_owner(governed):
+class _FinishedBeforeHandoff(concurrent.futures.ThreadPoolExecutor):
+    """The ordering a loaded machine produces (round-3 review): the pool thread
+    finishes the intake before the loop thread has chained the result, so
+    ``await asyncio.to_thread(...)`` returns without ever yielding to the loop, and
+    the push the thread scheduled has not started when the caller resumes."""
+
+    def submit(self, fn, /, *args, **kwargs):
+        future = super().submit(fn, *args, **kwargs)
+        concurrent.futures.wait([future])
+        return future
+
+
+@pytest.fixture(params=["pool", "finished_before_handoff"])
+def handoff(request):
+    """Run the worker-thread intake both ways: the default pool, and the pool thread
+    finishing before the loop thread resumes (the order that made these tests flaky)."""
+    if request.param == "pool":
+        yield request.param
+        return
+    executor = _FinishedBeforeHandoff(max_workers=1)
+    yield executor
+    executor.shutdown(wait=True)
+
+
+def _use_handoff(handoff):
+    """Make *handoff* the default executor of the test's own loop (``to_thread``'s)."""
+    if isinstance(handoff, concurrent.futures.Executor):
+        asyncio.get_running_loop().set_default_executor(handoff)
+
+
+async def test_an_interrupt_goal_card_from_chat_is_pushed_to_the_owner(governed, handoff):
     orch, queue, worker, _ledger, _kernel_calls = governed
     pushed = _recording_notifier(worker)
+    _use_handoff(handoff)
     outcome = await orch.commands.dispatch(f"/goal {GOAL}", orch=orch, principal=OWNER)
     task_id = _task_id(outcome.reply)
     await _settle_pushes(worker)
@@ -306,7 +335,8 @@ async def test_an_interrupt_goal_card_from_chat_is_pushed_to_the_owner(governed)
 
 
 async def test_an_interrupt_goal_card_from_the_route_is_pushed_to_the_owner(governed,
-                                                                             monkeypatch):
+                                                                             monkeypatch,
+                                                                             handoff):
     import httpx
     from fastapi import FastAPI
 
@@ -315,6 +345,7 @@ async def test_an_interrupt_goal_card_from_the_route_is_pushed_to_the_owner(gove
 
     orch, queue, worker, _ledger, _kernel_calls = governed
     pushed = _recording_notifier(worker)
+    _use_handoff(handoff)
     monkeypatch.setattr(company_routes, "get_orch", lambda: orch)
     app = FastAPI()
     app.include_router(company_routes.router)
