@@ -234,6 +234,21 @@ def _message_id_of(resp) -> int:
     return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+TELEGRAM_API_HOST = "api.telegram.org"
+
+
+class TelegramHostRefused(RuntimeError):
+    """The Bot API client was asked to dial a host other than the Telegram Bot API."""
+
+
+async def _bot_api_only(request: httpx.Request) -> None:
+    """Request hook (H381): the channel's client is reachable as ``channel.client``, so it
+    refuses, before transport entry, every request that is not HTTPS to the Bot API host;
+    it cannot be used to carry anything elsewhere."""
+    if request.url.scheme != "https" or request.url.host != TELEGRAM_API_HOST:
+        raise TelegramHostRefused("telegram_host_refused")
+
+
 class TelegramChannel(ChannelAdapter):
     descriptor = ChannelDescriptor(
         dialect=DIALECT_TELEGRAM_HTML,
@@ -262,8 +277,8 @@ class TelegramChannel(ChannelAdapter):
         self._batch = Coalescer(*configured())
         self._batch_session_meta: dict = {}
         self.token = token
-        self.api_base = f"https://api.telegram.org/bot{token}"
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.api_base = f"https://{TELEGRAM_API_HOST}/bot{token}"
+        self.client = httpx.AsyncClient(timeout=15.0, event_hooks={"request": [_bot_api_only]})
         self.allowed_users = allowed_user_ids or []
         # Hermes absorption 0.4: what to do with a message that arrives in a group.
         # Default is fail-closed — answer only when mentioned or replied to.
@@ -358,7 +373,7 @@ class TelegramChannel(ChannelAdapter):
 
     async def start(self):
         if self.client.is_closed:
-            self.client = httpx.AsyncClient(timeout=15.0)
+            self.client = httpx.AsyncClient(timeout=15.0, event_hooks={"request": [_bot_api_only]})
         if self._ephemeral_deletes._closed:
             self._ephemeral_deletes = EphemeralDeletes()
         self._pending_callback_generation = object()
@@ -1618,7 +1633,7 @@ class TelegramChannel(ChannelAdapter):
         if not path:
             logger.warning("Telegram getFile returned an unusable file_path")
             return b""
-        url = f"https://api.telegram.org/file/bot{self.token}/{path}"
+        url = f"https://{TELEGRAM_API_HOST}/file/bot{self.token}/{path}"
         buf = bytearray()
         async with self.client.stream("GET", url, timeout=httpx.Timeout(15.0, read=60.0)) as r:
             r.raise_for_status()

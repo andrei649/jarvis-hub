@@ -42,19 +42,42 @@ counts as another HTTP stack.
 
 **A bare client is followed out of the code that builds it** (round-3 review): a repo
 function or method that returns or yields one — directly, in a tuple, through a local or a
-``self`` attribute, from a ``with`` block, wrapped in a class/``dict``/``partial``, or as
-another factory's client — is itself a constructor. Every call or uncalled read of it,
-through any alias, re-export or module attribute, is a finding in the caller (in-class
-callers included), so each caller needs its own exemption and no allowlist reason can rest
-on "the callers behave". A factory method is matched by name (``._http_client``,
-``._get_client``, ``._pinned_client`` …, as an attribute or through ``getattr``) unless it
-is the reading class's own non-factory member; a private attribute a class keeps a bare
-client in (``._client``) is a finding read off another object or inherited by a subclass;
-a class whose construction leaves a bare client on the instance (or whose body holds one)
-is a finding wherever it is built or subclassed; a module global holding one wherever it is
-read. Stated limit: a *public* attribute holding a bare client (``TelegramChannel.client``)
-is followed only through that construction gate — ``backend.client`` is the ledgered client
-of every LLM backend, and the scanner has no types.
+``self`` attribute, from a ``with`` block, wrapped in a class/``dict``/``partial``/
+``closing``, through a same-module helper that returns its argument, as a nested def's
+closure, or as another factory's client — is itself a constructor. Every call or uncalled
+read of it, through any alias, re-export or module attribute, is a finding in the caller
+(in-class callers included), so each caller needs its own exemption and no allowlist reason
+can rest on "the callers behave". A factory method is matched by name (``._http_client``,
+``._get_client``, ``._pinned_client`` …, as an attribute, through ``getattr`` or as a string
+such as ``methodcaller("_http")``) unless it is the reading class's own non-factory member;
+an attribute a bare client is kept in — a class's private one (``._client``, ``setattr``
+included) or any one planted on another object — is a finding read off another object
+(``vars(o).get(...)`` / ``o.__dict__`` included) or by a subclass, even one that sets it
+too; a class whose construction leaves a bare client on a public attribute (or whose body
+holds one) is a finding wherever it is built or subclassed; a module global holding one
+(set at import, through ``global``, or filled into a module dict by a function) wherever it
+is read.
+
+**…and by where it is pointed** (round-4 review): a classified generic sender —
+``_HttpxREST.request(method, url, **kw)`` — sent a caller's prompt to a caller's host, and
+its callers were never findings. The host every bare-client send dials is now traced back
+through locals, f-strings, concatenations, ``urlunsplit``, the client's ``base_url``,
+factories, other senders, same-module helpers and the class's own attributes; only the part
+of a URL that can move the host counts (a parameter in the path, query or body of a fixed
+origin does not; ``base + path`` does). A function whose host one of its parameters decides
+is a *sender*: every call of it that passes that parameter is a finding (a caller handing it
+its own parameter is a sender in turn), a private sender method is matched by name like a
+factory method, a class with a public one is gated like a client (built, subclassed, its
+instances followed into locals and attributes), and a class whose host an attribute set from
+a constructor parameter decides is a finding wherever it is built with that parameter. A
+function on :data:`_PINNED_DESTINATIONS` refuses (or ledgers) every destination in its own
+code, so a trace ends there. Stated limit: a *public* attribute holding a bare client is
+followed only through that construction gate (``backend.client`` is the ledgered client of
+every LLM backend, and the scanner has no types), so the set of them is closed and each one
+refuses every other host in code (``test_every_public_bare_client_attribute_is_pinned_in_code``);
+a sender instance or client handed in as a parameter is not typed either (whoever builds it
+is the finding); a host returned by a function of another module counts as coming from that
+call's arguments.
 
 A finding in the **prompt-carrying scope** — ``agents/core/llm/**`` plus every provider
 module (any module that builds model clients through the ledgered constructor, the
@@ -70,6 +93,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections import ChainMap
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -144,6 +168,39 @@ PROMPT_SCOPE_ALLOWLIST: dict[tuple[str, str], str] = {
         "router health check: header-less GET on the configured LM Studio/Ollama URL; no prompt",
     ("agents/core/llm/router.py", "LLMRouter._fetch_loaded_model"):
         "router model detection: header-less GET /v1/models or /api/tags; no prompt",
+    # The callers of every send-through (a sender whose host its caller decides), checked
+    # one by one: none of these reasons rests on a further caller (it passes no parameter
+    # of its own as the host, or that caller is a finding too).
+    ("agents/core/llm/router.py", "LLMRouter.detect"):
+        "hands _check/_fetch_loaded_model the router's own lm_studio_url/ollama_url (default "
+        "localhost) + /v1/models or /api/tags: header-less GETs, no prompt",
+    ("agents/core/llm/router.py", "LLMRouter.refresh_availability"):
+        "hands _check the router's own lm_studio_url/ollama_url + /v1/models or /api/tags",
+    ("agents/core/llm/router.py", "LLMRouter.refresh_active_model"):
+        "hands _fetch_loaded_model the router's own lm_studio_url/ollama_url + /v1/models or "
+        "/api/tags to adopt the loaded model id; no prompt",
+    ("agents/core/llm/hybrid_router.py", "HybridRouter.detect"):
+        "calls the inherited LLMRouter._check on its own ollama_url + /api/tags (availability); "
+        "header-less GET, no prompt",
+    ("agents/core/llm/providers/packages.py", "ProviderPackageStore.authorize_native_egress"):
+        "calls transport._check(request), the admitted native transport's own request check, not "
+        "LLMRouter._check: private send-through methods are matched by name and the name is shared",
+    ("agents/core/llm/lmstudio_control.py", "LMStudioController._available_models"):
+        "hands _default_models the controller's own server_url (default loopback LM Studio) for "
+        "GET /v1/models; header-less, no prompt",
+    ("agents/core/llm/local_model_inventory.py", "_refresh_raw_provider_cache"):
+        "hands _probe_providers the LM Studio/Ollama URLs it was given by _raw_provider_snapshot "
+        "(itself a finding); catalog/residency GETs only",
+    ("agents/core/llm/local_model_inventory.py", "_raw_provider_snapshot"):
+        "forwards the LM Studio/Ollama URLs get_local_model_inventory read off the hub router "
+        "(itself a finding) to the cache refresh; catalog/residency GETs only",
+    ("agents/core/llm/local_model_inventory.py", "get_local_model_inventory"):
+        "reads lm_studio_url/ollama_url off the hub router (the one handed in, else the "
+        "orchestrator's; default localhost) for catalog/residency GETs; no prompt, image or "
+        "credential (a caller passing router= is a finding of its own)",
+    ("agents/core/workspace/llm.py", "HubEngine.posture"):
+        "hands _server_answers the hub router's active backend: _probe_target admits only an LM "
+        "Studio/Ollama backend and reads that backend's own base_url; a liveness GET, no prompt",
     ("agents/core/workspace/llm.py", "_server_answers"):
         "workspace posture liveness GET (/v1/models or /api/tags) of an LM Studio/Ollama "
         "backend only (_probe_target returns None for every other backend); no prompt or "
@@ -186,9 +243,33 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
     "agents/core/cameras/frigate.py": (
         "Frigate NVR API on the owner's LAN", frozenset({"_FrigateHTTP.request_bytes"})),
     "agents/core/house/home_assistant.py": (
-        "Home Assistant REST API on the owner's LAN", frozenset({"_HttpxREST.request"})),
+        "Home Assistant REST API on the owner's LAN. _HttpxREST.request refuses any destination "
+        "but a literal LAN address before a client exists (test_ha_rest_transport_refuses_"
+        "every_non_lan_destination); its callers are checked: __init__ builds it, snapshot "
+        "hands it the validated origin pinned to its resolved LAN address (_runtime_endpoint)",
+        frozenset({"_HttpxREST.request", "HomeAssistantAdapter.__init__",
+                   "HomeAssistantAdapter.snapshot"})),
+    "agents/core/house/actuation.py": (
+        "POSTs an approved Home Assistant service call through the adapter's REST transport to "
+        "the adapter's validated origin pinned to its resolved LAN address (_runtime_endpoint); "
+        "the transport refuses any non-LAN destination itself",
+        frozenset({"HomeAssistantServiceDriver._adapter_service_call"})),
     "agents/core/house/wled.py": (
-        "WLED light controller JSON API on the LAN", frozenset({"HttpxJSONTransport.__call__"})),
+        "WLED light controller JSON API on the LAN. HttpxJSONTransport refuses any destination "
+        "whose origin fails validate_wled_origin (test_wled_transport_refuses_every_non_lan_"
+        "destination); its callers are checked: __init__ builds it with the bridge's allowlist, "
+        "_apply hands it the validated origin + /json/state",
+        frozenset({"HttpxJSONTransport.__call__", "WLEDBridge.__init__", "WLEDBridge._apply"})),
+    "agents/core/routers/onboarding.py": (
+        "local model inventory of the hub's own router (get_local_model_inventory(router="
+        "llm_router)): catalog/residency GETs of its configured LM Studio/Ollama servers; no prompt",
+        frozenset({"_model_snapshot"})),
+    "agents/core/image_generation_runtime.py": (
+        "hands the local image backend classes to the provider, which builds them from the "
+        "registry config it re-checks (provider.config(args) == config); both backends refuse a "
+        "non-loopback base_url before any send (ComfyUIBackend.generate, "
+        "LocalOpenAIImageBackend.generate), so the image prompt stays on the machine",
+        frozenset({"LocalImageRuntime.execute.comfyui"})),
     "agents/core/memory/graph.py": (
         "Neo4j HTTP transaction endpoint (graph database)",
         frozenset({"Neo4jGraph._check_connection", "Neo4jGraph._call_neo4j", "Neo4jGraph.clear"})),
@@ -211,6 +292,35 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         "hosts and restores the originals; every request it lets through runs the original "
         "send, request hooks (the ledger) included, and it sends nothing itself",
         frozenset({"_apply_llm_down", "_apply_llm_down.restore"})),
+}
+
+
+# Functions whose own code refuses every destination outside a fixed set (or records it in
+# the egress ledger under its row and checks it against that row's policy) before transport
+# entry, so a host handed to them is not a caller-supplied hole: a destination's trace ends
+# there (a factory on this list is still a finding to call). (file, qualname) -> the code that
+# pins it and the test that proves it. A stale entry fails
+# `test_every_exemption_is_still_needed_and_justified`.
+_PINNED_DESTINATIONS: dict[tuple[str, str], str] = {
+    ("agents/core/llm/model_setup.py", "_client"):
+        "a non-loopback URL raises OllamaURLNotLoopback, and the client's request hook refuses "
+        "every non-loopback destination before transport entry "
+        "(test_the_model_setup_factory_refuses_every_non_loopback_destination)",
+    ("agents/core/http_client.py", "PluginHTTPClient._request_pinned"):
+        "the plugin egress choke point: _guard checks the host against the plugin's policy and "
+        "records the plugin's ledger row before the pinned send (tests/test_plugin_egress.py)",
+    ("agents/core/http_client.py", "PluginHTTPClient.stream"):
+        "the streaming twin of _request_pinned: the same _guard policy check and plugin ledger "
+        "row before the pinned send (tests/test_plugin_egress.py)",
+    ("agents/core/house/home_assistant.py", "_validated_origin"):
+        "returns only an owner-allowlisted or LAN-literal origin whose every resolved address is "
+        "on the LAN, else raises HAConfigError (tests/test_h30_house_adapter.py)",
+    ("agents/core/house/wled.py", "validate_wled_origin"):
+        "the same LAN-only origin rule for the WLED strip, else WLEDConfigError "
+        "(tests/test_wled_bridge.py)",
+    ("agents/core/cameras/frigate.py", "_FrigateHTTP._resolve_pinned"):
+        "re-resolves the configured Frigate origin before every attempt and refuses it unless "
+        "every address is an allowed LAN IP (lan_origin_required); the send is pinned to it",
 }
 
 
@@ -287,15 +397,91 @@ _SDK, _SDK_CTOR, _NS, _LEDGER = "sdk:", "sdkctor:", "ns:", "ledger:"
 # construction. "factory:<rel>:<qualname>" is a repo function or method that returns or
 # yields one, or a module global holding one: every non-type read of it is a finding, exactly
 # like a constructor's, and its value is a bare client wherever it flows. "holder:<rel>:<qual>"
-# is a class whose construction leaves one on the instance (or whose body holds one): building
-# or subclassing it is a finding, but the instance is not itself a client (what reaches inside
-# it is checked by name). "carrier:<rel>:<qualname>" is a class whose factory methods or
-# private client attributes hold one: constructing it and calling its other methods is fine.
+# is a class whose construction leaves one on a public attribute of the instance (or whose
+# body holds one): building or subclassing it is a finding, but the instance is not itself a
+# client (what reaches inside it is checked by name). "carrier:<rel>:<qualname>" is a class
+# whose factory methods or private client attributes hold one: constructing it and calling
+# its other methods is fine.
 _FACTORY, _HOLDER, _CARRIER = "factory:", "holder:", "carrier:"
+# A bare client is also followed by where it is pointed (round-4 review: a classified function
+# that sends a caller's method, URL and body through a client it builds). The host a send
+# dials is traced back through locals, f-strings, concatenations, urlunsplit, a client's
+# base_url, factories, other senders and a class's own attributes. "sender:<rel>:<qualname>" is
+# a repo function whose bare client dials a host one of its parameters decides: every read of
+# it is a finding, like a factory's, and a caller handing it its own parameter is a sender too.
+# "sendercls:<rel>:<qual>" is a class with such a method: building, subclassing or reading it is
+# a finding, and its instances are followed like a client (a private attribute holding one, a
+# method returning one). "injected:<rel>:<qual>" is a class whose bare client dials a host an
+# attribute set from a method parameter decides (a constructor-injected URL): building or
+# subclassing it is a finding.
+_SENDER, _SENDER_CLS, _INJECTED = "sender:", "sendercls:", "injected:"
+_CLASS_GATES = (_HOLDER, _SENDER_CLS, _INJECTED)    # building or subclassing one is a finding
 _SELF = frozenset({"self", "cls"})
 # Calls that wrap their arguments into the value they return (a class, ``dict``,
-# ``functools.partial``): a bare client handed to one is handed out with it.
-_WRAPPERS = frozenset({"dict", "partial"})
+# ``functools.partial``, ``contextlib.closing``, an ``ExitStack``): a bare client handed to
+# one is handed out with it.
+_WRAPPERS = frozenset({"dict", "partial", "closing", "aclosing", "nullcontext", "cast",
+                       "enter_context", "enter_async_context", "proxy", "SimpleNamespace"})
+# httpx client methods that send (or build the request that is sent) to their URL argument.
+_SEND_VERBS = frozenset({"get", "post", "put", "patch", "delete", "head", "options",
+                         "request", "stream", "send", "build_request"})
+_METHOD_FIRST = frozenset({"request", "stream", "build_request"})   # (method, url, …)
+# Keywords that point a client (httpx ``base_url``, an SDK's ``base_url`` / ``host``).
+_BASE_KEYWORDS = ("base_url", "host")
+
+
+def _pieces(node: ast.AST) -> list:
+    """A URL expression as the pieces it concatenates: str constants and expressions."""
+    if isinstance(node, ast.JoinedStr):
+        return [v.value for v in node.values]    # Constant -> its str, FormattedValue -> its expr
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return [*_pieces(node.left), *_pieces(node.right)]
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    return [node]
+
+
+def _host_parts(node: ast.AST) -> list[ast.AST]:
+    """The sub-expressions of a URL that can decide the host it dials: everything before the
+    first ``/``, ``?`` or ``#`` after the scheme (a parameter only in the path or query
+    cannot move the request), the scheme and netloc of ``urlunsplit``/``urlunparse``, the
+    whole of any other expression."""
+    if isinstance(node, ast.Call):
+        name = (_attr_chain(node.func) or [""])[-1]
+        if (name in {"urlunsplit", "urlunparse"} and node.args
+                and isinstance(node.args[0], (ast.Tuple, ast.List))):
+            return [p for e in node.args[0].elts[:2] for p in _host_parts(e)]
+        if name in {"rstrip", "strip", "lower", "removesuffix"} and isinstance(node.func, ast.Attribute):
+            return _host_parts(node.func.value)
+        if name in {"str", "URL"} and len(node.args) == 1 and not node.keywords:
+            return _host_parts(node.args[0])
+        return [node]
+    parts: list[ast.AST] = []
+    scheme = False
+    for piece in _pieces(node):
+        if isinstance(piece, str):
+            text = piece
+            if not scheme and "://" in text:
+                text, scheme = text.split("://", 1)[1], True
+            if any(c in text for c in "/?#"):
+                break
+        else:
+            parts.append(piece)
+    return parts
+
+
+def _url_args(call: ast.Call, verb: str) -> list[ast.AST]:
+    """The URL argument of a client send (``url=``, by position, or a splat)."""
+    url = _keyword(call, "url")
+    if url is not None:
+        return [url]
+    index = 1 if verb in _METHOD_FIRST else 0
+    for i, arg in enumerate(call.args):
+        if isinstance(arg, ast.Starred):
+            return [arg.value]
+        if i == index:
+            return [arg]
+    return [k.value for k in call.keywords if k.arg is None]    # only a splat can carry it
 
 
 def _sdk_root(path: str) -> str | None:
@@ -344,35 +530,84 @@ def _is_ctor(kind: str) -> bool:
 
 def _is_client_path(kind: str) -> bool:
     """A kind whose reads the scanner reports (re-exports of these are followed)."""
-    return kind in (_CTOR, _HELPER) or kind.startswith((_SDK_CTOR, _SDK, _FACTORY, _HOLDER, _CARRIER))
+    return kind in (_CTOR, _HELPER) or kind.startswith(
+        (_SDK_CTOR, _SDK, _FACTORY, _CARRIER, _SENDER, *_CLASS_GATES))
 
 
 def _hands_out_kind(kind: str) -> bool:
-    """A resolved reference that is a bare client, or builds one when called."""
-    return kind in (_CTOR, _HELPER, _HTTPX) or kind.startswith((_SDK_CTOR, _SDK, _FACTORY))
+    """A resolved reference that is a bare client (or a sender), or builds one when called."""
+    return kind in (_CTOR, _HELPER, _HTTPX) or kind.startswith(
+        (_SDK_CTOR, _SDK, _FACTORY, _SENDER, _SENDER_CLS))
 
 
 def _names(quals) -> str:
     return ", ".join(sorted(quals))
 
 
+_GATE_WHAT = {
+    _FACTORY: "hands out a bare client",
+    _SENDER: "sends through a bare client to a host its caller decides",
+    _HOLDER: "whose instances hold a bare client",
+    _SENDER_CLS: "whose methods send through a bare client to a host their caller decides",
+    _INJECTED: "whose bare client dials a host its constructor's caller decides",
+}
+_CLASS_KINDS = (_CARRIER, *_CLASS_GATES)
+
+
+def _target(kind: str) -> str:
+    """``rel:qual`` of a factory/sender/class kind."""
+    return kind.split(":", 1)[1]
+
+
+def _inherited(bindings, classdef: ast.ClassDef, facts) -> frozenset[str]:
+    """Every carrier/holder/sender class ``classdef`` inherits from, at any depth."""
+    out: set[str] = set()
+    for base in classdef.bases:
+        kind = bindings.resolve(base)
+        if kind is not None and kind[0].startswith(_CLASS_KINDS):
+            out.add(_target(kind[0]))
+            out |= facts.ancestors.get(_target(kind[0]), frozenset())
+    return frozenset(out)
+
+
 class _Facts:
     """Where bare clients leave the code that builds them. Computed from every scanned
     module to a fixed point (a factory that returns another factory's client is one)."""
 
-    def __init__(self, defs=None, methods=None, attrs=None, owners=frozenset()) -> None:
-        # rel -> {name bound at module level: factory/holder/carrier kind}
+    def __init__(self, defs=None, methods=None, attrs=None, owners=frozenset(), dest=None,
+                 calls=None, ancestors=None, pins=frozenset(), sends=None) -> None:
+        # rel -> {name bound at module level: factory/holder/carrier/sender kind}
         self.defs: dict[str, dict[str, str]] = defs or {}
         # method name -> {"rel:Class.method"} that return/yield a bare client
         self.methods: dict[str, frozenset[str]] = methods or {}
-        # private attribute name -> {"rel:Class"} that store a bare client in it
+        # attribute name -> {"rel:Class" or "rel:function"} that store a bare client (or a
+        # sender instance) in it: a private attribute of a class, any attribute planted on
+        # another object
         self.attrs: dict[str, frozenset[str]] = attrs or {}
         # (rel, Class, attribute): the class stores a bare client in that attribute itself
         self.owners: frozenset[tuple[str, str, str]] = owners
+        # "rel:qual" of a sender, a factory pointed by a parameter, a sender method or an
+        # injected class -> (its signature, the parameters that decide the host, whether a
+        # call binds the first parameter)
+        self.dest: dict[str, tuple[tuple, frozenset[str], bool]] = dest or {}
+        # rel -> findings no reference resolves: a destination handed to a sender instance's
+        # method or to the class's own sender method
+        self.calls: dict[str, tuple[tuple[str, int, str], ...]] = calls or {}
+        # "rel:Class" -> every carrier/holder/sender class it inherits from, at any depth
+        self.ancestors: dict[str, frozenset[str]] = ancestors or {}
+        # (rel, qual) of _PINNED_DESTINATIONS a destination actually flowed into
+        self.pins: frozenset[tuple[str, str]] = pins
+        # private method name -> {"rel:Class.method"} that send through a bare client to a
+        # host their caller decides (matched by name, like a factory method; a public one
+        # makes its class a sender class instead)
+        self.sends: dict[str, frozenset[str]] = sends or {}
+
+    def _key(self):
+        return (self.defs, self.methods, self.attrs, self.owners, self.dest, self.calls,
+                self.ancestors, self.pins, self.sends)
 
     def __eq__(self, other) -> bool:
-        return isinstance(other, _Facts) and (self.defs, self.methods, self.attrs, self.owners) == (
-            other.defs, other.methods, other.attrs, other.owners)
+        return isinstance(other, _Facts) and self._key() == other._key()
 
     __hash__ = None
 
@@ -450,20 +685,57 @@ def _assignments(node: ast.AST) -> list[tuple[ast.AST, ast.AST]]:
 
 
 class _Function:
-    """One ``def`` and what its own body (not a nested scope) binds, returns and stores."""
+    """One ``def`` and what its own body (not a nested scope) binds, returns, stores and
+    calls. ``scope`` sees the enclosing defs' locals too (a closure)."""
 
-    __slots__ = ("qual", "node", "cls", "method", "local", "returns", "stores")
+    __slots__ = ("qual", "node", "cls", "method", "bound", "parent", "positional", "params",
+                 "signature", "local", "scope", "returns", "stores", "calls", "globals", "plain")
 
-    def __init__(self, qual: str, node: ast.AST, cls: str | None, method: bool) -> None:
-        self.qual, self.node, self.cls, self.method = qual, node, cls, method
+    def __init__(self, qual: str, node: ast.AST, cls: str | None, method: bool,
+                 parent: _Function | None = None) -> None:
+        self.qual, self.node, self.cls, self.method, self.parent = qual, node, cls, method, parent
+        args = node.args
+        self.positional = tuple(a.arg for a in (*args.posonlyargs, *args.args))
+        static = any((_attr_chain(d) or [""])[-1] == "staticmethod" for d in node.decorator_list)
+        self.bound = method and not static and bool(self.positional)
+        # every parameter a caller fills (the bound ``self`` / ``cls`` is not one)
+        self.params = frozenset((*self.positional[1 if self.bound else 0:],
+                                 *(a.arg for a in args.kwonlyargs),
+                                 *(a.arg for a in (args.vararg, args.kwarg) if a is not None)))
+        # (positional, keyword-only, *args name, **kwargs name): how a call fills them
+        self.signature = (self.positional, tuple(a.arg for a in args.kwonlyargs),
+                          args.vararg.arg if args.vararg else None,
+                          args.kwarg.arg if args.kwarg else None)
         self.local: dict[str, list[ast.AST]] = {}       # local name -> every value bound to it
+        self.scope = ChainMap(self.local, *(parent.scope.maps if parent else ()))
         self.returns: list[ast.AST] = []                # every returned or yielded value
         self.stores: list[tuple[tuple[str, ...], ast.AST]] = []   # attribute chain <- value
+        self.calls: list[ast.Call] = []                 # every call its own body makes
+        self.globals: set[str] = set()                  # names it declares ``global``
+        self.plain: set[str] = set()                    # names it binds as plain locals
 
 
 _SCOPES = frozenset({ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda})
 _RETURNS = frozenset({ast.Return, ast.Yield, ast.YieldFrom})
 _BINDERS = frozenset({ast.Assign, ast.AnnAssign, ast.With, ast.AsyncWith})
+_LOOP_BINDERS = frozenset({ast.For, ast.AsyncFor, ast.comprehension})
+
+
+class _Item(ast.expr):
+    """A value stored as an element of a container (``pool[key] = client``): the container
+    holds a client, but is not one (``pool.get(key)`` is a dict read, not a send)."""
+
+    _fields = ("value",)
+
+
+def _own_nodes(body):
+    """Every node of a body that is not inside a nested scope (the scope node itself is)."""
+    pending = list(body)
+    while pending:
+        node = pending.pop()
+        yield node
+        if type(node) not in _SCOPES:
+            pending.extend(ast.iter_child_nodes(node))
 
 
 class _Module:
@@ -490,43 +762,67 @@ class _Module:
                 pending.extend(getattr(node, field, ()) or ())
         # What a bare client can escape through: defs, classes and module globals.
         self.functions: list[_Function] = []
+        self.fn_of: dict[int, _Function] = {}               # id(def node) -> its _Function
+        self.defs: dict[str, _Function] = {}                # module-level def name -> function
+        self.method_of: dict[tuple[str, str], _Function] = {}   # (class, method) -> function
         self.classes: dict[str, ast.ClassDef] = {}
         self.methods: dict[str, set[str]] = {}              # class -> method names it defines
         self.self_attrs: dict[str, set[str]] = {}           # class -> attributes it assigns on self
         self.self_values: dict[str, dict[tuple[str, ...], list[ast.AST]]] = {}
+        # class -> attribute -> every (function that sets it or None for the class body, value)
+        self.self_sources: dict[str, dict[str, list[tuple[_Function | None, ast.AST]]]] = {}
         self.class_body: dict[str, list[tuple[str, ast.AST]]] = {}
-        self.globals = [(t.id, v) for node in self.tree.body for t, v in _assignments(node)
-                        if isinstance(t, ast.Name)]
-        self._index(self.tree.body, [], None, False)
+        # (global name, value, the function binding it or None at module level): a lazily set
+        # ``global`` and a module dict/object a function fills count as module globals too
+        self.globals: list[tuple[str, ast.AST, _Function | None]] = [
+            (t.id, v, None) for node in self.tree.body for t, v in _assignments(node)
+            if isinstance(t, ast.Name)]
+        self._index(self.tree.body, [], None, False, None)
+        top = {name for name, _, _ in self.globals} | {n for fn in self.functions for n in fn.globals}
+        for fn in self.functions:
+            for chain, value in fn.stores:
+                head = chain[0]
+                if (head in top and head not in fn.params and head not in fn.plain
+                        and head not in fn.globals and head not in _SELF):
+                    self.globals.append((head, value, fn))      # `_POOL[k] = …`, `_REG.c = …`
 
-    def _index(self, body, scope: list[str], cls: str | None, in_class: bool) -> None:
+    def _index(self, body, scope: list[str], cls: str | None, in_class: bool,
+               parent: _Function | None) -> None:
         for node in body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 qual = [*scope, node.name]
-                self.functions.append(self._function(".".join(qual), node, cls, in_class))
+                fn = self._function(".".join(qual), node, cls, in_class, parent)
+                self.functions.append(fn)
+                self.fn_of[id(node)] = fn
                 if in_class:
                     self.methods[cls].add(node.name)
-                self._index(node.body, qual, cls, False)
+                    self.method_of[(cls, node.name)] = fn
+                elif parent is None and cls is None:
+                    self.defs[node.name] = fn
+                self._index(node.body, qual, cls, False, fn)
             elif isinstance(node, ast.ClassDef):
                 qual = ".".join([*scope, node.name])
                 self.classes[qual] = node
                 self.methods.setdefault(qual, set())
                 self.self_attrs.setdefault(qual, set())
+                self.self_sources.setdefault(qual, {})
                 values = self.self_values.setdefault(qual, {})
                 self.class_body[qual] = [(t.id, v) for stmt in node.body
                                          for t, v in _assignments(stmt) if isinstance(t, ast.Name)]
                 for name, value in self.class_body[qual]:
                     values.setdefault(("self", name), []).append(value)
-                self._index(node.body, [*scope, node.name], qual, True)
+                    self.self_sources[qual].setdefault(name, []).append((None, value))
+                self._index(node.body, [*scope, node.name], qual, True, parent)
             else:
                 for field in ("body", "orelse", "finalbody", "handlers", "cases"):
-                    self._index(getattr(node, field, ()) or (), scope, cls, in_class)
+                    self._index(getattr(node, field, ()) or (), scope, cls, in_class, parent)
 
-    def _function(self, qual: str, node: ast.AST, cls: str | None, method: bool) -> _Function:
-        fn = _Function(qual, node, cls, method)
-        pending = list(node.body)
-        while pending:
-            child = pending.pop()
+    def _function(self, qual: str, node: ast.AST, cls: str | None, method: bool,
+                  parent: _Function | None) -> _Function:
+        fn = _Function(qual, node, cls, method, parent)
+        own = list(_own_nodes(node.body))
+        fn.globals.update(n for child in own if isinstance(child, ast.Global) for n in child.names)
+        for child in own:
             kind = type(child)
             if kind in _RETURNS:
                 if child.value is not None:
@@ -536,8 +832,19 @@ class _Module:
             elif kind in _BINDERS:
                 for target, value in _assignments(child):
                     self._bind(target, value, fn)
-            if kind not in _SCOPES:
-                pending.extend(ast.iter_child_nodes(child))
+            elif kind in _LOOP_BINDERS:      # `for x in …`: x is a plain local, not a global
+                fn.plain.update(n.id for n in ast.walk(child.target) if isinstance(n, ast.Name))
+            elif kind in (ast.FunctionDef, ast.AsyncFunctionDef):
+                fn.local.setdefault(child.name, []).append(child)   # a nested def is a value
+                fn.plain.add(child.name)
+            elif kind is ast.Call:
+                fn.calls.append(child)
+                args = child.args
+                if (isinstance(child.func, ast.Name) and child.func.id == "setattr" and len(args) == 3
+                        and isinstance(args[1], ast.Constant) and isinstance(args[1].value, str)):
+                    # `setattr(self, "_c", client)` binds like `self._c = client`
+                    self._bind(ast.Attribute(value=args[0], attr=args[1].value, ctx=ast.Store()),
+                               args[2], fn)
         return fn
 
     def _bind(self, target: ast.AST, value: ast.AST, fn: _Function) -> None:
@@ -545,18 +852,26 @@ class _Module:
             target = target.value
         if isinstance(target, ast.Name):
             fn.local.setdefault(target.id, []).append(value)
+            if target.id in fn.globals:
+                self.globals.append((target.id, value, fn))     # `global _C; _C = …`
+            else:
+                fn.plain.add(target.id)
             return
         if isinstance(target, (ast.Tuple, ast.List)):     # an unpaired unpack: any name may be it
             for element in target.elts:
                 self._bind(element, value, fn)
             return
+        if isinstance(target, ast.Subscript):
+            value = _Item(value=value)
         chain = tuple(_attr_chain(target.value if isinstance(target, ast.Subscript) else target))
         if len(chain) == 1:                                # `clients[key] = client`
             fn.local.setdefault(chain[0], []).append(value)
+            fn.stores.append((chain, value))
         elif chain:
             if chain[0] in _SELF and fn.cls is not None:   # `self._client = …`, `self._pool[k] = …`
                 self.self_attrs[fn.cls].add(chain[1])
                 self.self_values[fn.cls].setdefault(("self", *chain[1:]), []).append(value)
+                self.self_sources[fn.cls].setdefault(chain[1], []).append((fn, value))
             fn.stores.append((chain, value))
 
 
@@ -654,8 +969,8 @@ class _Bindings:
             if sub in _MODEL_SDKS:
                 return (f"{_SDK}{sub}", node.attr)
             return (f"{_NS}{sub}", node.attr) if any(p.startswith(sub + ".") for p in _MODEL_SDKS) else None
-        if base[0].startswith((_FACTORY, _HOLDER)):
-            return base     # a member of a factory, client-holding class or client global reaches it
+        if base[0].startswith((_FACTORY, _SENDER, *_CLASS_GATES)):
+            return base     # a member of a factory, sender, gated class or client global reaches it
         if base[0].startswith(_CARRIER):
             return None     # `PluginHTTPClient.for_plugin`: what reaches inside is checked by name
         if base[0] == _REPO:
@@ -681,10 +996,15 @@ class _Scanner:
 
     def __init__(self, bindings: _Bindings) -> None:
         self.b = bindings
-        self.findings: list[tuple[str, int, str]] = []
+        # What no reference resolves (a destination handed to a sender instance) comes from
+        # the analysis; everything else is found by walking the module.
+        self.findings: list[tuple[str, int, str]] = list(
+            bindings.facts.calls.get(bindings.module.rel, ()))
         self._scope: list[str] = []
         self._transport: list[bool] = []
-        self._classes: list[tuple[str, bool]] = []    # (class qualname, inherits a carrier)
+        self._call: list[ast.Call] = []               # the call whose func is being visited
+        # (class qualname, every carrier/holder/sender class it inherits from)
+        self._classes: list[tuple[str, frozenset[str]]] = []
 
     def _qual(self) -> str:
         return ".".join(self._scope) or "<module>"
@@ -739,26 +1059,36 @@ class _Scanner:
                       else "references a module-level httpx request helper")
         elif kind[0] == _HTTPX:
             self._hit(node, "hands the httpx module object on")
-        elif kind[0].startswith(_FACTORY):
-            target = kind[0][len(_FACTORY):]
+        elif kind[0].startswith((_FACTORY, _SENDER)):
+            prefix = _FACTORY if kind[0].startswith(_FACTORY) else _SENDER
+            target, what = kind[0][len(prefix):], _GATE_WHAT[prefix]
             if role == "call":
-                self._hit(node, f"calls {target}, which hands out a bare client")
+                if prefix == _FACTORY or self._points(target):
+                    self._hit(node, f"calls {target}, which {what}")
             elif not safe:
-                self._hit(node, f"reads {target}, which hands out a bare client")
-        elif kind[0].startswith(_HOLDER):
-            target = kind[0][len(_HOLDER):]
+                self._hit(node, f"reads {target}, which {what}")
+        elif kind[0].startswith(_CLASS_GATES):
+            prefix = next(p for p in _CLASS_GATES if kind[0].startswith(p))
+            target, what = kind[0][len(prefix):], _GATE_WHAT[prefix]
             if role == "call":
-                self._hit(node, f"constructs {target}, whose instances hold a bare client")
+                if prefix != _INJECTED or self._points(target):
+                    self._hit(node, f"constructs {target}, {what}")
             elif role == "base":
-                self._hit(node, f"subclasses {target}, whose instances hold a bare client")
+                self._hit(node, f"subclasses {target}, {what}")
             elif not safe:
-                self._hit(node, f"reads {target}, whose instances hold a bare client")
+                self._hit(node, f"reads {target}, {what}")
         return True     # resolved (a repo module or a carrier class included): nothing below
 
-    def _class(self) -> tuple[str | None, bool]:
-        return self._classes[-1] if self._classes else (None, False)
+    def _points(self, target: str) -> bool:
+        """The call being visited hands a sender (or an injected class) one of the parameters
+        that decide its host, or a splat: one that passes none dials the callee's own default."""
+        info = self.b.facts.dest.get(target)
+        return info is None or not self._call or _passes(self._call[-1], info)
 
-    def _member(self, node: ast.AST, recv: ast.AST, attr: str) -> None:
+    def _class(self) -> tuple[str | None, frozenset[str]]:
+        return self._classes[-1] if self._classes else (None, frozenset())
+
+    def _member(self, node: ast.AST, recv: ast.AST, attr: str, role: str = "") -> None:
         """``recv.<attr>`` (or ``getattr(recv, "<attr>")``): a bare-client factory method
         read anywhere but as the reading class's own non-factory member, and a private
         client attribute read off another object or inherited from a carrier class."""
@@ -767,12 +1097,21 @@ class _Scanner:
         if attr in facts.methods and not _own_member(module, facts, cls, recv, attr):
             self._hit(node, f"reaches .{attr}, which hands out a bare client "
                             f"({_names(facts.methods[attr])})")
+        own = isinstance(recv, ast.Name) and recv.id in _SELF and (
+            attr in module.methods.get(cls, ()) or attr in module.self_attrs.get(cls, ()))
+        # The class's own call is judged where it passes a host (the analysis's finding);
+        # its own sender handed on uncalled (``register(cap, self._send)``) is a finding.
+        if attr in facts.sends and not (own and (role == "call" or attr in module.self_attrs.get(cls, ()))):
+            self._hit(node, f"reaches .{attr}, which sends through a bare client to a host its "
+                            f"caller decides ({_names(facts.sends[attr])})")
         if attr in facts.attrs:
             if not (isinstance(recv, ast.Name) and recv.id in _SELF):
                 self._hit(node, f"reads .{attr}, the bare client {_names(facts.attrs[attr])} holds")
-            elif inherits and attr not in module.self_attrs.get(cls, ()):
+            elif facts.attrs[attr] & inherits:
+                # inherited, even where the subclass sets it too: the base's own methods may
+                # (re)build the bare client in it at any time
                 self._hit(node, f"reads self.{attr}, a bare client inherited from "
-                                f"{_names(facts.attrs[attr])}")
+                                f"{_names(facts.attrs[attr] & inherits)}")
 
     def _v_Name(self, node, safe, role):
         self._reference(node, safe, role)
@@ -785,7 +1124,7 @@ class _Scanner:
         if node.attr in _PRIVATE_SENDS:
             self._hit(node, "skips the client's request hooks through a private send step")
         if isinstance(node.ctx, ast.Load):
-            self._member(node, node.value, node.attr)
+            self._member(node, node.value, node.attr, role)
         base = self.b.resolve(node.value)
         if base is not None and _is_ctor(base[0]):
             if not isinstance(node.ctx, ast.Load):
@@ -858,14 +1197,18 @@ class _Scanner:
         kind = self.b.resolve(node.func)
         ledgered = (kind is not None and kind[0].startswith(_SDK_CTOR)
                     and self._sdk_call_ledgered(node, kind[0]))
+        self._call.append(node)
         self.visit(node.func, False, "ledgered" if ledgered else "call")
+        self._call.pop()
         type_args: set[int] = set()
+        named: set[int] = set()       # an attribute name argument, judged by _member
         if name in {"isinstance", "issubclass"}:
             type_args = set(range(1, len(node.args)))
         elif name == "cast":
             type_args = {0}
         elif name in {"getattr", "hasattr", "setattr"} and len(node.args) >= 2:
             attr = node.args[1]
+            named = {1}
             if isinstance(attr, ast.Constant) and isinstance(attr.value, str):
                 if attr.value in _RAW_SENDS and not self._in_transport():
                     self._hit(node, "reaches a raw transport send by name")
@@ -880,9 +1223,27 @@ class _Scanner:
             elif isinstance(first, ast.Constant) and _model_sdk(str(first.value)):
                 self._hit(node, "imports a model SDK dynamically")
         for index, arg in enumerate(node.args):
-            self.visit(arg, index in type_args)
+            self.visit(arg, index in type_args, "named" if index in named else "")
         for keyword in node.keywords:
             self.visit(keyword.value, name == "TypeVar" and keyword.arg == "bound")
+
+    def _v_Constant(self, node, safe, role):
+        """A string naming a client attribute or a factory method (``vars(o).get("_c")``,
+        ``o.__dict__.get("_c")``, ``operator.methodcaller("_http")``, ``attrgetter``):
+        a finding unless the reading class names its own member."""
+        value, facts = node.value, self.b.facts
+        if role == "named" or not isinstance(value, str) or (
+                value not in facts.attrs and value not in facts.methods and value not in facts.sends):
+            return
+        cls, inherits = self._class()
+        module = self.b.module
+        own = cls is not None and (value in module.self_attrs.get(cls, ())
+                                   or value in module.methods.get(cls, ()))
+        if own and not (facts.attrs.get(value, frozenset()) & inherits) and (
+                f"{module.rel}:{cls}.{value}" not in facts.methods.get(value, ())
+                | facts.sends.get(value, frozenset())):
+            return
+        self._hit(node, f"names .{value} as a string, which holds or hands out a bare client")
 
     # ── definitions ──────────────────────────────────────────────────────────
     def _arguments(self, args: ast.arguments) -> None:
@@ -922,8 +1283,7 @@ class _Scanner:
         for keyword in node.keywords:
             self.visit(keyword.value)
         is_transport = any((_attr_chain(b) or [""])[-1] in _TRANSPORT_BASES for b in node.bases)
-        inherits = any((kind := self.b.resolve(b)) is not None
-                       and kind[0].startswith((_HOLDER, _CARRIER)) for b in node.bases)
+        inherits = _inherited(self.b, node, self.b.facts)
         for param in getattr(node, "type_params", ()):
             self.visit(param)
         self._transport.append(is_transport)
@@ -956,20 +1316,83 @@ def _repo_module_names(rels) -> set[str]:
     return names
 
 
+def _argument(call: ast.Call, signature, bound: bool, name: str) -> ast.AST | None:
+    """The expression a call passes for parameter ``name`` of a callee with ``signature``
+    (``*`` = any of them; a splat may fill any parameter it can reach)."""
+    positional, kwonly, vararg, kwarg = signature
+    names = positional[1:] if bound else positional
+    if name == "*":
+        values = [a.value if isinstance(a, ast.Starred) else a for a in call.args]
+        values += [k.value for k in call.keywords]
+        return ast.Tuple(elts=values, ctx=ast.Load()) if values else None
+    for keyword in call.keywords:
+        if keyword.arg == name:
+            return keyword.value
+    if name == vararg:
+        extra = call.args[len(names):]
+        return ast.Tuple(elts=list(extra), ctx=ast.Load()) if extra else None
+    if name == kwarg:
+        extra = [k.value for k in call.keywords if k.arg not in (*names, *kwonly)]
+        return ast.Tuple(elts=extra, ctx=ast.Load()) if extra else None
+    if name in names:
+        index = names.index(name)
+        for position, arg in enumerate(call.args):
+            if isinstance(arg, ast.Starred):
+                return arg.value
+            if position == index:
+                return arg
+    splat = [k.value for k in call.keywords if k.arg is None]
+    return splat[0] if splat and (name in names or name in kwonly) else None
+
+
+def _passes(call: ast.Call, info) -> bool:
+    """The call hands its callee one of the parameters that decide the host (or a splat)."""
+    signature, names, bound = info
+    return any(_argument(call, signature, bound, name) is not None for name in names)
+
+
+def _split(source: str) -> tuple[str, str]:
+    kind, _, name = source.partition(":")
+    return kind, name
+
+
+_DEFS = (ast.FunctionDef, ast.AsyncFunctionDef)
+_NONE: frozenset[str] = frozenset()
+
+
 class _Detector:
-    """Which defs, classes and globals of one module hand a bare client out of themselves.
+    """Which defs, classes and globals of one module hand a bare client out of themselves,
+    and which host every bare client it builds is pointed at.
 
     A value hands one out when it is (or holds, as a tuple/list/dict element, a branch of a
-    conditional, an awaited or subscripted value, a comprehension element, or an argument
-    to a class/``dict``/``partial`` that wraps it) a bare construction, an unledgered model
-    SDK client, a call of a factory, a read of one uncalled, or a name or ``self`` attribute
-    this function or class binds to one. Calls of any other function are uses, not
-    hand-outs: ``return await probe(client)`` keeps the client inside."""
+    conditional, an awaited or subscripted value, a comprehension element, or an argument to
+    a class/``dict``/``partial``/``closing`` that wraps it, or to a same-module helper that
+    returns its argument) a bare construction, an unledgered model SDK client, a sender
+    instance, a call of a factory, a read of one uncalled, a nested def returning one, or a
+    name or ``self`` attribute this function or class binds to one. Calls of any other
+    function are uses, not hand-outs: ``return await probe(client)`` keeps the client inside.
+
+    The host a send dials is traced to its *sources*: ``p:<name>`` (a parameter of the
+    sending function or of a def enclosing it), ``ctor:<name>`` / ``ctor:*`` (an attribute
+    its class sets from a parameter of ``__init__`` / of another method) and ``base:<name>``
+    (the base_url of a client handed in as parameter ``<name>``). Only the parts of a URL
+    that can move the host are followed (a parameter in the path or query cannot), and a
+    function on :data:`_PINNED_DESTINATIONS` (its code refuses, or records in the ledger,
+    every destination before transport entry) ends a trace."""
 
     def __init__(self, module: _Module, bindings: _Bindings, facts: _Facts) -> None:
         self.m, self.b, self.f = module, bindings, facts
         self.sdk = _Scanner(bindings)
+        self._sends: dict[int, tuple[frozenset[str], dict[str, frozenset[str]]]] = {}
+        self._busy: set[int] = set()
+        self._memo: dict[tuple, bool] = {}
+        self.pins: set[tuple[str, str]] = set()
+        self.calls: dict[int, tuple[str, int, str]] = {}
+        # the method names a sender instance can be pointed through (a cheap prefilter)
+        classes = {_target(k) for d in facts.defs.values() for k in d.values() if k.startswith(_SENDER_CLS)}
+        self._sender_methods = {t.rsplit(".", 1)[1] for t in facts.dest if t.rsplit(".", 1)[0] in classes}
 
+    # ── what hands a bare client out ──────────────────────────────────────────
     def _method(self, node: ast.Attribute, cls: str | None) -> bool:
         return (node.attr in self.f.methods
                 and not _own_member(self.m, self.f, cls, node.value, node.attr))
@@ -977,7 +1400,7 @@ class _Detector:
     def _client_call(self, call: ast.Call, cls: str | None) -> bool:
         kind = self.b.resolve(call.func)
         if kind is not None:
-            if kind[0] == _CTOR or kind[0].startswith(_FACTORY):
+            if kind[0] == _CTOR or kind[0].startswith((_FACTORY, _SENDER_CLS)):
                 return True
             if kind[0].startswith(_SDK_CTOR):
                 return not self.sdk._sdk_call_ledgered(call, kind[0])
@@ -996,15 +1419,67 @@ class _Detector:
                        for v in self.m.self_values.get(cls, {}).get(("self", *chain[1:]), ()))
         return False
 
-    def hands_out(self, node: ast.AST, local, cls, seen=frozenset()) -> bool:
+    def _callee(self, func: ast.AST, local, cls: str | None) -> tuple[_Function, bool] | None:
+        """The def of this module a call reaches: a nested def, a module-level def by name, or
+        a method of this class through ``self``; with whether the call binds ``self``."""
+        if isinstance(func, ast.Name):
+            values = local.get(func.id) if local else None
+            if values:
+                defs = [v for v in values if isinstance(v, _DEFS)]
+                target = self.m.fn_of.get(id(defs[-1])) if defs else None
+                return (target, False) if target is not None else None
+            target = self.m.defs.get(func.id)
+            return (target, False) if target is not None else None
+        if (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                and func.value.id in _SELF and cls is not None):
+            target = self.m.method_of.get((cls, func.attr))
+            if target is not None:
+                return target, target.bound
+        return None
+
+    def _identity(self, node: ast.AST, fn: _Function, seen=frozenset()) -> set[str]:
+        """The parameters of ``fn`` an expression can be, as is (``return c`` of ``_cfg(c)``)."""
+        if isinstance(node, (ast.Await, ast.NamedExpr)):
+            return self._identity(node.value, fn, seen)
+        if isinstance(node, ast.IfExp):
+            return self._identity(node.body, fn, seen) | self._identity(node.orelse, fn, seen)
+        if isinstance(node, (ast.BoolOp, ast.Tuple, ast.List)):
+            items = node.values if isinstance(node, ast.BoolOp) else node.elts
+            return set().union(*(self._identity(v, fn, seen) for v in items))
+        if not isinstance(node, ast.Name):
+            return set()
+        if node.id in fn.params:
+            return {node.id}
+        key = ("id", id(fn), node.id)
+        if key in seen:
+            return set()
+        return set().union(*(self._identity(v, fn, seen | {key}) for v in fn.local.get(node.id, ())))
+
+    def hands_out(self, node: ast.AST, local, cls, seen=frozenset(), strict=False) -> bool:
+        """``node`` is (or, unless ``strict``, holds) a bare client or a sender instance."""
+        if seen:
+            return self._hands_out(node, local, cls, seen, strict)
+        key = (id(node), id(local), cls, strict)
+        if key not in self._memo:
+            self._memo[key] = self._hands_out(node, local, cls, seen, strict)
+        return self._memo[key]
+
+    def _hands_out(self, node: ast.AST, local, cls, seen, strict) -> bool:
         def again(child):
-            return self.hands_out(child, local, cls, seen)
+            return self.hands_out(child, local, cls, seen, strict)
         if isinstance(node, (ast.Await, ast.Starred, ast.NamedExpr)):
             return again(node.value)
         if isinstance(node, ast.IfExp):
             return again(node.body) or again(node.orelse)
         if isinstance(node, ast.BoolOp):
             return any(map(again, node.values))
+        if isinstance(node, ast.Subscript):     # an element of a container holding one is one
+            return self.hands_out(node.value, local, cls, seen)
+        if strict and isinstance(node, (_Item, ast.Tuple, ast.List, ast.Set, ast.Dict, ast.ListComp,
+                                        ast.SetComp, ast.GeneratorExp, ast.DictComp, ast.Lambda)):
+            return False                        # a container (or a factory), not a client
+        if isinstance(node, _Item):
+            return again(node.value)
         if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
             return any(map(again, node.elts))
         if isinstance(node, ast.Dict):
@@ -1013,86 +1488,429 @@ class _Detector:
             return again(node.elt)
         if isinstance(node, ast.DictComp):
             return again(node.value)
-        if isinstance(node, ast.Subscript):
-            return again(node.value)
         if isinstance(node, ast.Lambda):
             return again(node.body)
+        if isinstance(node, _DEFS):              # a nested def handed out: what it returns
+            inner, key = self.m.fn_of.get(id(node)), ("def", id(node))
+            if inner is None or key in seen:
+                return False
+            return any(self.hands_out(v, inner.scope, inner.cls, seen | {key}) for v in inner.returns)
         if isinstance(node, ast.Call):
             if self._client_call(node, cls):
                 return True
             name = (_attr_chain(node.func) or [""])[-1]
-            return ((name[:1].isupper() or name in _WRAPPERS)
-                    and any(map(again, [*node.args, *(k.value for k in node.keywords)])))
+            if (not strict and (name[:1].isupper() or name in _WRAPPERS)
+                    and any(map(again, [*node.args, *(k.value for k in node.keywords)]))):
+                return True
+            callee = self._callee(node.func, local, cls)
+            if callee is None or ("call", id(callee[0])) in seen:
+                return False
+            target, bound = callee
+            deeper = seen | {("call", id(target))}
+            if target.parent is not None and any(       # a nested def returning a client
+                    self.hands_out(v, target.scope, target.cls, deeper) for v in target.returns):
+                return True
+            for param in set().union(*(self._identity(r, target) for r in target.returns)):
+                arg = _argument(node, target.signature, bound, param)   # `_cfg(client)`
+                if arg is not None and self.hands_out(arg, local, cls, deeper, strict):
+                    return True
+            return False
         if not isinstance(node, (ast.Name, ast.Attribute)):
             return False
         kind = self.b.resolve(node)
         if kind is not None:
             return _hands_out_kind(kind[0])
         if isinstance(node, ast.Attribute) and self._method(node, cls):
-            return True                          # a bound factory method handed on uncalled
+            return not strict                    # a bound factory method handed on uncalled
         chain = tuple(_attr_chain(node))
         if not chain or chain in seen:
             return False
         if len(chain) == 1:
-            values = local.get(chain[0], ())
+            values = local.get(chain[0], ()) if local else ()
         elif chain[0] in _SELF and cls is not None:
             values = self.m.self_values.get(cls, {}).get(("self", *chain[1:]), ())
         else:
             return False
-        return any(self.hands_out(v, local, cls, seen | {chain}) for v in values)
+        return any(self.hands_out(v, local, cls, seen | {chain}, strict) for v in values)
 
+    # ── where a bare client is pointed ────────────────────────────────────────
+    def _pinned(self, fn: _Function, flows=True) -> bool:
+        """``fn`` ends a trace (recorded as used when a destination would flow into it)."""
+        key = (self.m.rel, fn.qual)
+        if key not in _PINNED_DESTINATIONS:
+            return False
+        if flows:
+            self.pins.add(key)
+        return True
+
+    def _sources(self, node: ast.AST, fn: _Function, seen) -> frozenset[str]:
+        """Where the host a URL expression dials can come from."""
+        out: set[str] = set()
+        for part in _host_parts(node):
+            out |= self._origin(part, fn, seen)
+        return frozenset(out)
+
+    def _param(self, name: str, fn: _Function) -> bool:
+        """``name`` is a parameter of ``fn`` or of a def enclosing it (not shadowed)."""
+        scope: _Function | None = fn
+        while scope is not None:
+            if name in scope.params:
+                return True
+            if name in scope.local:
+                return False
+            scope = scope.parent
+        return False
+
+    def _origin(self, node: ast.AST, fn: _Function, seen) -> frozenset[str]:
+        """Where any part of an expression's value can come from."""
+        if isinstance(node, ast.Name):
+            if self._param(node.id, fn):
+                return frozenset({f"p:{node.id}"})
+            key = ("name", id(fn), node.id)
+            if key in seen or node.id not in fn.scope:
+                return _NONE
+            return frozenset().union(*(self._sources(v, fn, seen | {key}) for v in fn.scope[node.id]
+                                       if not isinstance(v, _DEFS)))
+        chain = _attr_chain(node)
+        if len(chain) >= 2 and chain[0] in _SELF and fn.cls is not None:
+            return self._attribute(fn.cls, chain[1], seen, self._sources)
+        if isinstance(node, ast.Call):
+            return self._call_origin(node, fn, seen)
+        if isinstance(node, (ast.Lambda, *_DEFS)):
+            return _NONE
+        out: set[str] = set()
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.expr, ast.comprehension, ast.keyword)):
+                out |= self._origin(child, fn, seen)
+        return frozenset(out)
+
+    def _attribute(self, cls: str, attr: str, seen, follow) -> frozenset[str]:
+        """``self.<attr>``: what any value the class stores in it comes from, as ``ctor:``."""
+        key = (follow.__name__, cls, attr)
+        if key in seen:
+            return _NONE
+        out: set[str] = set()
+        for owner, value in self.m.self_sources.get(cls, {}).get(attr, ()):
+            if owner is None:
+                continue
+            for source in follow(value, owner, seen | {key}):
+                kind, name = _split(source)
+                # A host a parameter decides; not a client object handed in (``rest=``,
+                # ``client=``): whoever builds a bare client to hand in is a finding there.
+                if kind == "p":
+                    out.add(f"ctor:{name}" if owner.node.name == "__init__" and owner.parent is None
+                            else "ctor:*")
+                elif kind == "ctor":
+                    out.add(source)
+        return frozenset(out)
+
+    def _map(self, sources, call: ast.Call, signature, bound: bool, fn: _Function, seen,
+             keep_ctor: bool) -> frozenset[str]:
+        """A callee's sources at one call: its parameters become the arguments passed."""
+        out: set[str] = set()
+        for source in sources:
+            kind, name = _split(source)
+            if kind in ("p", "base"):
+                arg = _argument(call, signature, bound, name)
+                if arg is not None:
+                    out |= (self._sources if kind == "p" else self._base)(arg, fn, seen)
+            elif kind == "ctor" and keep_ctor:
+                out.add(source)
+        return frozenset(out)
+
+    def _call_origin(self, call: ast.Call, fn: _Function, seen) -> frozenset[str]:
+        callee = self._callee(call.func, fn.scope, fn.cls)
+        if callee is not None:
+            target, bound = callee
+            key = ("ret", id(target))
+            if key in seen:
+                return _NONE
+            returned = frozenset().union(*(self._sources(r, target, seen | {key}) for r in target.returns))
+            if self._pinned(target, bool(returned)):
+                return _NONE        # a validator: what it returns is a checked destination
+            return self._map(returned, call, target.signature, bound, fn, seen,
+                             bound and target.cls == fn.cls)
+        out: set[str] = set()
+        if isinstance(call.func, ast.Attribute):
+            out |= self._origin(call.func.value, fn, seen)
+        for arg in call.args:
+            out |= self._origin(arg.value if isinstance(arg, ast.Starred) else arg, fn, seen)
+        for keyword in call.keywords:
+            out |= self._origin(keyword.value, fn, seen)
+        return frozenset(out)
+
+    def _dest(self, target: str) -> frozenset[str]:
+        info = self.f.dest.get(target)
+        return frozenset(f"p:{n}" for n in info[1]) if info else _NONE
+
+    def _base(self, node: ast.AST, fn: _Function, seen) -> frozenset[str]:
+        """Where the base_url of a client value comes from."""
+        def again(child):
+            return self._base(child, fn, seen)
+        if isinstance(node, (ast.Await, ast.NamedExpr, ast.Starred, _Item)):
+            return again(node.value)
+        if isinstance(node, ast.IfExp):
+            return again(node.body) | again(node.orelse)
+        if isinstance(node, (ast.BoolOp, ast.Tuple, ast.List, ast.Set, ast.Dict)):
+            items = (node.values if isinstance(node, (ast.BoolOp, ast.Dict)) else node.elts)
+            return frozenset().union(*map(again, items))
+        if isinstance(node, ast.Subscript):
+            return again(node.value)
+        if isinstance(node, ast.Call):
+            kind = self.b.resolve(node.func)
+            if kind is not None:
+                if kind[0] == _CTOR or kind[0].startswith(_SDK_CTOR):
+                    out: set[str] = set()
+                    for key in _BASE_KEYWORDS:
+                        value = _keyword(node, key)
+                        if value is not None:
+                            out |= self._sources(value, fn, seen)
+                    return frozenset(out)
+                if kind[0].startswith((_FACTORY, *_CLASS_GATES)):
+                    info = self.f.dest.get(_target(kind[0]))
+                    return (self._map(self._dest(_target(kind[0])), node, info[0], info[2], fn, seen,
+                                      False) if info else _NONE)
+                return _NONE
+            callee = self._callee(node.func, fn.scope, fn.cls)
+            if callee is not None:
+                target, bound = callee
+                key = ("base", id(target))
+                if key in seen:
+                    return _NONE
+                inner = frozenset().union(*(self._base(r, target, seen | {key}) for r in target.returns))
+                if self._pinned(target, bool(inner)):
+                    return _NONE
+                return self._map(inner, node, target.signature, bound, fn, seen,
+                                 bound and target.cls == fn.cls)
+            name = (_attr_chain(node.func) or [""])[-1]
+            if name[:1].isupper() or name in _WRAPPERS:
+                return frozenset().union(*map(again, [*node.args, *(k.value for k in node.keywords)]))
+            return _NONE
+        if isinstance(node, ast.Name):
+            if self._param(node.id, fn):
+                return frozenset({f"base:{node.id}"})
+            key = ("bname", id(fn), node.id)
+            if key in seen or node.id not in fn.scope:
+                return _NONE
+            return frozenset().union(*(self._base(v, fn, seen | {key}) for v in fn.scope[node.id]
+                                       if not isinstance(v, _DEFS)))
+        chain = _attr_chain(node)
+        if len(chain) >= 2 and chain[0] in _SELF and fn.cls is not None:
+            return self._attribute(fn.cls, chain[1], seen, self._base)
+        return _NONE
+
+    def _instances(self, node: ast.AST, local, cls, seen=frozenset()) -> set[str]:
+        """The sender classes an expression can be an instance of."""
+        if isinstance(node, (ast.Await, ast.NamedExpr, ast.Starred)):
+            return self._instances(node.value, local, cls, seen)
+        if isinstance(node, ast.IfExp):
+            return self._instances(node.body, local, cls, seen) | self._instances(node.orelse, local, cls, seen)
+        if isinstance(node, ast.BoolOp):
+            return set().union(*(self._instances(v, local, cls, seen) for v in node.values))
+        if isinstance(node, ast.Call):
+            kind = self.b.resolve(node.func)
+            return {_target(kind[0])} if kind is not None and kind[0].startswith(_SENDER_CLS) else set()
+        chain = tuple(_attr_chain(node))
+        if not chain or chain in seen:
+            return set()
+        if len(chain) == 1:
+            return set().union(*(self._instances(v, local, cls, seen | {chain})
+                                 for v in (local.get(chain[0], ()) if local else ())))
+        if len(chain) == 2 and chain[0] in _SELF and cls is not None:
+            return set().union(*(self._instances(v, owner.scope if owner else {}, cls, seen | {chain})
+                                 for owner, v in self.m.self_sources.get(cls, {}).get(chain[1], ())))
+        return set()
+
+    def _note(self, call: ast.Call, fn: _Function, target: str, info) -> None:
+        """A finding no reference resolves: this call points a sender (it passes one of the
+        parameters that decide the host, or a splat)."""
+        if _passes(call, info):
+            self.calls.setdefault(id(call), (fn.qual, call.lineno, (
+                f"hands a host to {target}, which sends to it through a bare client")))
+
+    def _send(self, call: ast.Call, fn: _Function):
+        """The sources of the host one call dials through a bare client: a client send, a
+        sender's call, a sender instance's method, or a def of this module that sends."""
+        direct: set[str] = set()
+        via: dict[str, set[str]] = {}
+        func, seen = call.func, frozenset()
+        if isinstance(func, ast.Attribute) and func.attr in _SEND_VERBS:
+            recv = func.value
+            urls = frozenset().union(*(self._sources(a, fn, seen) for a in _url_args(call, func.attr)))
+            if isinstance(recv, ast.Name) and self._param(recv.id, fn):
+                via.setdefault(recv.id, set()).update(urls | {f"base:{recv.id}"})   # a client handed in
+            elif self.hands_out(recv, fn.scope, fn.cls, strict=True):
+                direct |= urls | self._base(recv, fn, seen)
+        kind = self.b.resolve(func)
+        if kind is not None and kind[0].startswith((_SENDER, *_CLASS_GATES)):
+            info = self.f.dest.get(_target(kind[0]))
+            if info:
+                direct |= self._map(self._dest(_target(kind[0])), call, info[0], info[2], fn, seen, False)
+        forms = [(func, "__call__")]                  # `transport(url, body)`
+        if isinstance(func, ast.Attribute):
+            forms.append((func.value, func.attr))     # `rest.request("POST", url)`
+        for recv, method in forms:
+            if method not in self._sender_methods:
+                continue
+            for cls in self._instances(recv, fn.scope, fn.cls):
+                target = f"{cls}.{method}"
+                info = self.f.dest.get(target)
+                if info:
+                    self._note(call, fn, target, info)
+                    direct |= self._map(self._dest(target), call, info[0], info[2], fn, seen, False)
+        callee = self._callee(func, fn.scope, fn.cls)
+        if callee is not None:
+            target, bound = callee
+            inner, inner_via = self._fn_sends(target)
+            same = bound and target.cls == fn.cls
+            names = frozenset(n for k, n in map(_split, inner) if k == "p")
+            if bound and names:                       # the class's own sender method
+                self._note(call, fn, f"{self.m.rel}:{target.qual}", (target.signature, names, bound))
+            direct |= self._map(inner, call, target.signature, bound, fn, seen, same)
+            for param, sources in inner_via.items():
+                arg = _argument(call, target.signature, bound, param)
+                if arg is None:
+                    continue
+                mapped = self._map(sources, call, target.signature, bound, fn, seen, same)
+                if isinstance(arg, ast.Name) and self._param(arg.id, fn):
+                    via.setdefault(arg.id, set()).update(mapped)
+                elif self.hands_out(arg, fn.scope, fn.cls):
+                    direct |= mapped
+        return direct, via
+
+    def _fn_sends(self, fn: _Function):
+        key = id(fn)
+        if key in self._sends:
+            return self._sends[key]
+        if key in self._busy:
+            return _NONE, {}
+        self._busy.add(key)
+        direct: set[str] = set()
+        via: dict[str, set[str]] = {}
+        for call in fn.calls:
+            d, v = self._send(call, fn)
+            direct |= d
+            for name, sources in v.items():
+                via.setdefault(name, set()).update(sources)
+        self._busy.discard(key)
+        result = (_NONE, {}) if self._pinned(fn, bool(direct or via)) else (
+            frozenset(direct), {k: frozenset(v) for k, v in via.items()})
+        self._sends[key] = result
+        return result
+
+    # ── the module's facts ────────────────────────────────────────────────────
     def detect(self):
-        m, rel = self.m, self.m.rel
+        m, rel, facts = self.m, self.m.rel, self.f
         defs: dict[str, str] = {}
         methods: dict[str, set[str]] = {}
         attrs: dict[str, set[str]] = {}
         owners: set[tuple[str, str, str]] = set()
-        constructing: set[str] = set()      # classes whose instances (or body) hold a client
+        dest: dict[str, tuple[tuple, frozenset[str], bool]] = {}
+        ancestors: dict[str, frozenset[str]] = {}
+        constructing: set[str] = set()      # classes holding a client in a public attribute
         carrying: set[str] = set()          # classes with factory methods or client attributes
+        sending: set[str] = set()           # classes with a public method its caller points
+        sends: dict[str, set[str]] = {}     # private method name -> methods its caller points
+        injected: dict[str, set[str]] = {}  # classes pointed by an attribute: ctor parameters
         ledger = _LEDGER_SOURCES.get(m.name, frozenset())
+
+        def point(fn: _Function, names) -> None:
+            entry = dest.get(f"{rel}:{fn.qual}")
+            old = entry[1] if entry else frozenset()
+            dest[f"{rel}:{fn.qual}"] = (fn.signature, old | frozenset(names), fn.bound)
+
         for fn in m.functions:
             if fn.qual in ledger:
                 continue                    # the ledgered constructors themselves
-            returns = any(self.hands_out(v, fn.local, fn.cls) for v in fn.returns)
-            stored = False
+            returns = any(self.hands_out(v, fn.scope, fn.cls) for v in fn.returns)
+            stored = public = False
             for chain, value in fn.stores:
-                if not self.hands_out(value, fn.local, fn.cls):
+                if len(chain) < 2 or not self.hands_out(value, fn.scope, fn.cls):
                     continue
                 if chain[0] in _SELF and fn.cls is not None:
                     owners.add((rel, fn.cls, chain[1]))
                     stored = True
-                elif chain[-1].startswith("_"):     # planted on another object
+                    public |= not chain[1].startswith("_")
+                else:                       # planted on another object, public or private
                     attrs.setdefault(chain[-1], set()).add(f"{rel}:{fn.qual}")
             if returns:
                 if fn.method:
                     methods.setdefault(fn.node.name, set()).add(f"{rel}:{fn.qual}")
-                else:
+                elif fn.parent is None:
                     defs[fn.node.name] = f"{_FACTORY}{rel}:{fn.qual}"
+                if not self._pinned(fn):    # a factory its caller points (base_url=<param>)
+                    pointed = frozenset().union(*(self._base(r, fn, frozenset()) for r in fn.returns))
+                    names = {n for k, n in map(_split, pointed) if k == "p"}
+                    if names:
+                        point(fn, names)
+                    if fn.cls is not None and any(_split(s)[0] == "ctor" for s in pointed):
+                        injected.setdefault(fn.cls, set()).update(
+                            n for k, n in map(_split, pointed) if k == "ctor")
             if fn.cls is not None and (stored or (returns and fn.method)):
                 carrying.add(fn.cls)
-                if stored and not returns:
+                if public and not returns:
                     constructing.add(fn.cls)        # nothing hands it out: the instance does
+            direct, _ = self._fn_sends(fn)
+            names = {n for k, n in map(_split, direct) if k == "p"}
+            for name in names:                       # a parameter of an enclosing def
+                owner = fn
+                while owner is not None and name not in owner.params:
+                    owner = owner.parent
+                if owner is None:
+                    continue
+                point(owner, {name})
+                method = owner.node.name
+                if owner.cls is not None and owner.method and method == "__init__":
+                    injected.setdefault(owner.cls, set()).add(name)  # a constructor argument
+                elif owner.cls is not None and owner.method and (
+                        method.startswith("_") and not method.endswith("__")):
+                    sends.setdefault(method, set()).add(f"{rel}:{owner.qual}")
+                elif owner.cls is not None and owner.method:
+                    sending.add(owner.cls)
+                elif owner.parent is None and owner.cls is None:
+                    defs.setdefault(owner.node.name, f"{_SENDER}{rel}:{owner.qual}")
+            ctor = {n for k, n in map(_split, direct) if k == "ctor"}
+            if ctor and fn.cls is not None:
+                injected.setdefault(fn.cls, set()).update(ctor)
         for cls, node in m.classes.items():
             for name, value in m.class_body[cls]:
                 if self.b.resolve(value) is None and self.hands_out(value, {}, cls):
                     owners.add((rel, cls, name))
-                    constructing.add(cls)
+                    constructing.add(cls)    # a class-attribute client: shared and public
+            inherited = _inherited(self.b, node, facts)
+            if inherited:
+                ancestors[f"{rel}:{cls}"] = inherited
             for base in node.bases:
                 kind = self.b.resolve(base)
-                if kind is not None and kind[0].startswith(_HOLDER):
+                if kind is None:
+                    continue
+                if kind[0].startswith(_HOLDER):
                     constructing.add(cls)           # constructing it runs the base's __init__
-                elif kind is not None and kind[0].startswith(_CARRIER):
+                elif kind[0].startswith(_SENDER_CLS):
+                    sending.add(cls)
+                elif kind[0].startswith(_INJECTED):
+                    injected.setdefault(cls, set()).add("*")
+                elif kind[0].startswith(_CARRIER):
                     carrying.add(cls)
         for _, cls, attr in owners:
             if attr.startswith("_"):
                 attrs.setdefault(attr, set()).add(f"{rel}:{cls}")
-        for cls in carrying | constructing:
-            prefix = _HOLDER if cls in constructing else _CARRIER
+        for cls in carrying | constructing | sending | set(injected):
+            prefix = (_SENDER_CLS if cls in sending else _HOLDER if cls in constructing
+                      else _INJECTED if cls in injected else _CARRIER)
             defs[cls.rsplit(".", 1)[-1]] = f"{prefix}{rel}:{cls}"
-        for name, value in m.globals:
-            if self.b.resolve(value) is None and self.hands_out(value, {}, None):
+        for cls, names in injected.items():
+            init = m.method_of.get((cls, "__init__"))
+            signature = init.signature if init is not None else (("self",), (), None, None)
+            if "*" in names:
+                names = {"*"}
+            dest[f"{rel}:{cls}"] = (signature, frozenset(names), True)
+        for name, value, owner in m.globals:
+            local = owner.scope if owner is not None else {}
+            if self.b.resolve(value) is None and self.hands_out(value, local, owner.cls if owner else None):
                 defs[name] = f"{_FACTORY}{rel}:{name}"      # a module-level client object
-        return defs, methods, attrs, owners
+        calls = tuple(sorted(self.calls.values()))
+        return defs, methods, attrs, owners, dest, calls, ancestors, self.pins, sends
 
 
 def _bind_all(modules: dict[str, _Module], repo_modules: set[str] | None = None,
@@ -1109,16 +1927,21 @@ def _bind_all(modules: dict[str, _Module], repo_modules: set[str] | None = None,
 
 
 def _analyse(modules: dict[str, _Module], repo_modules: set[str] | None = None,
-             ) -> tuple[dict[str, _Bindings], _Facts]:
-    """Bindings and bare-client facts together, to a joint fixed point: a factory found in
-    one round is a constructor in the next, so whatever returns its client is one too."""
+             start: _Facts = _NO_FACTS) -> tuple[dict[str, _Bindings], _Facts]:
+    """Bindings and bare-client facts together, to a joint fixed point: a factory or sender
+    found in one round is a constructor in the next, so whatever returns its client, or hands
+    it its own parameter, is one too. ``start`` is a fixed point of a subset of ``modules``
+    (the facts only grow as modules are added, so it is below this one)."""
     repo_modules = repo_modules if repo_modules is not None else _repo_module_names(modules)
-    facts = _NO_FACTS
+    facts = start
     for _ in range(50):
         bindings = _bind_all(modules, repo_modules, facts)
-        defs, methods, attrs, owners = {}, {}, {}, set()
+        defs, methods, attrs, owners, dest, calls, ancestors, pins = {}, {}, {}, set(), {}, {}, {}, set()
+        sends: dict[str, set[str]] = {}
         for rel, module in modules.items():
-            d, mth, att, own = _Detector(module, bindings[rel], facts).detect()
+            d, mth, att, own, dst, cl, anc, pin, snd = _Detector(module, bindings[rel], facts).detect()
+            for name, quals in snd.items():
+                sends.setdefault(name, set()).update(quals)
             if d:
                 defs[rel] = d
             for name, quals in mth.items():
@@ -1126,8 +1949,14 @@ def _analyse(modules: dict[str, _Module], repo_modules: set[str] | None = None,
             for name, quals in att.items():
                 attrs.setdefault(name, set()).update(quals)
             owners |= own
+            dest.update(dst)
+            if cl:
+                calls[rel] = cl
+            ancestors.update(anc)
+            pins |= pin
         found = _Facts(defs, {k: frozenset(v) for k, v in methods.items()},
-                       {k: frozenset(v) for k, v in attrs.items()}, frozenset(owners))
+                       {k: frozenset(v) for k, v in attrs.items()}, frozenset(owners), dest, calls,
+                       ancestors, frozenset(pins), {k: frozenset(v) for k, v in sends.items()})
         if found == facts:
             return bindings, facts
         facts = found
@@ -1215,9 +2044,10 @@ def _scan_repo(extra: dict[str, str] | None = None):
               if rel.startswith(("agents/core/llm/", *PROVIDER_ROOTS))
               or any(h in src for h in hints) or _SDK_HINT.search(src)}
     modules: dict[str, _Module] = {}
+    facts = _NO_FACTS
     while True:
         modules.update({rel: _parsed(rel, sources[rel]) for rel in wanted - modules.keys()})
-        bindings, facts = _analyse(modules, repo_modules)
+        bindings, facts = _analyse(modules, repo_modules, facts)
         reach = _named_pattern(bindings, facts)
         if reach is None:
             break
@@ -1235,7 +2065,15 @@ def _scan_repo(extra: dict[str, str] | None = None):
         scanner.visit(module.tree)
         if scanner.findings:
             (in_scope if rel in provider_modules else outside)[rel] = scanner.findings
-    return in_scope, outside, provider_modules
+    scan = _RepoScan((in_scope, outside, provider_modules))
+    scan.facts = facts
+    return scan
+
+
+class _RepoScan(tuple):
+    """(in_scope, outside, provider_modules), with the facts the scan reached."""
+
+    facts: _Facts
 
 
 _TOKENS: dict[tuple[str, str], frozenset[str]] = {}
@@ -1257,14 +2095,15 @@ def _named_pattern(bindings: dict[str, _Bindings], facts: _Facts,
              if _is_client_path(kind)}
     if bound:   # `self.<name>` is an attribute, never the bound name
         alternatives.append(r"(?<!\bself\.)(?<!\bcls\.)\b(?:" + "|".join(map(re.escape, sorted(bound))) + r")\b")
-    if facts.methods:
-        alternatives.append(r"\b(?:" + "|".join(map(re.escape, sorted(facts.methods))) + r")\b")
+    methods = {*facts.methods, *facts.sends}
+    if methods:
+        alternatives.append(r"\b(?:" + "|".join(map(re.escape, sorted(methods))) + r")\b")
     if facts.attrs:
         attrs = "|".join(map(re.escape, sorted(facts.attrs)))
         alternatives.append(r"(?<!\bself)(?<!\bcls)\.(?:" + attrs + r")\b|[\"'](?:" + attrs + r")[\"']")
     if not alternatives:
         return None
-    return frozenset(bound) | frozenset(facts.methods) | frozenset(facts.attrs), re.compile("|".join(alternatives))
+    return frozenset(bound) | frozenset(methods) | frozenset(facts.attrs), re.compile("|".join(alternatives))
 
 
 _SCAN = None
@@ -1327,7 +2166,9 @@ def test_every_exemption_is_still_needed_and_justified():
     assert stale_classified == [], f"classified functions with no bare client left: {stale_classified}"
     misfiled = sorted(set(NOT_A_MODEL_PROVIDER) & provider_modules)
     assert misfiled == [], f"a provider module cannot be classified as not-a-provider: {misfiled}"
-    reasons = [*PROMPT_SCOPE_ALLOWLIST.items(),
+    stale_pins = sorted(set(_PINNED_DESTINATIONS) - _scan().facts.pins)
+    assert stale_pins == [], f"pinned destinations no destination flows into any more: {stale_pins}"
+    reasons = [*PROMPT_SCOPE_ALLOWLIST.items(), *_PINNED_DESTINATIONS.items(),
                *((rel, why) for rel, (why, _) in NOT_A_MODEL_PROVIDER.items())]
     for key, why in reasons:
         assert isinstance(why, str) and len(why.strip()) >= 30, f"{key} needs a real reason"
@@ -1811,8 +2652,10 @@ def test_the_reviewer_factory_probes_fail_the_repo_rule():
         "(agents/core/http_client.py:PluginHTTPClient._get_client)",
     ]
     reach = {line.split(" — ")[0] for line in failing("agents/core/llm/zz_probe_reach.py")}
+    # ProbeController itself: OllamaController's host is its constructor's server_url, so
+    # subclassing it is a finding as well (round 4).
     assert reach == {"via_re_export", "via_module_attribute", "via_client_attribute",
-                     "via_getattr", "ProbeController.ask", "via_holder"}, reach
+                     "via_getattr", "ProbeController", "ProbeController.ask", "via_holder"}, reach
     assert "agents/core/zz_probe_compat.py" not in in_scope     # a re-export alone sends nothing
     outside_hits = [o for o in _unclassified(outside)
                     if o.startswith("agents/core/tools/zz_probe_outside.py:")]
@@ -1951,8 +2794,8 @@ class Ctl:
         return self._c
     def getter(self):
         return self._http
-    async def request(self, path):
-        return await self._http().get(path)
+    async def request(self):
+        return await self._http().get("/api/tags")
 
 class Holder:
     def __init__(self):
@@ -1976,9 +2819,35 @@ class Build:
 def ledgered():
     return llm_async_client("x")
 
-async def probe(u):
+async def probe():
     async with httpx.AsyncClient() as c:
-        return (await c.get(u)).json()
+        return (await c.get("http://127.0.0.1:11434/api/tags")).json()
+
+async def show(name):
+    async with httpx.AsyncClient(base_url="http://127.0.0.1:11434") as c:
+        return await c.post(f"/api/show/{name}", json={"name": name})
+
+async def send(url, body):
+    async with httpx.AsyncClient() as c:
+        return await c.post(url, json=body)
+
+def at(origin):
+    return httpx.AsyncClient(base_url=origin)
+
+async def relay(url, body):
+    return await send(url, body)
+
+class REST:
+    async def request(self, method, url, **kw):
+        async with httpx.AsyncClient() as c:
+            return await c.request(method, url, **kw)
+
+class Pinned:
+    def __init__(self, url="http://127.0.0.1:6333"):
+        self.url = url
+        self._c = httpx.Client()
+    def upsert(self, points):
+        return self._c.put(f"{self.url}/collections/x/points", json=points)
 
 async def _go(c):
     return await c.get("/")
@@ -2032,11 +2901,20 @@ _FACTORY_USERS = {
     "class attribute client": "from agents.core.netx import Shared\ndef f():\n    return Shared.pool\n",
     "static factory method": "from agents.core.netx import Build\ndef f():\n    return Build.build()\n",
     "property factory": "def f(b):\n    return b.http\n",
+    # ── round-4 review: a bare client followed by where it is pointed ──
+    "send-through function": "from agents.core.netx import send\nasync def f(p):\n    return await send('https://api.openai.com/v1/x', p)\n",
+    "send-through forwarded": "from agents.core.netx import relay\nasync def f(p):\n    return await relay('https://api.openai.com/v1/x', p)\n",
+    "send-through method": ("from agents.core.netx import REST\nasync def f(p):\n"
+                            "    return await REST().request('POST', 'https://api.openai.com/v1/x', json=p)\n"),
+    "send-through instance kept": ("from agents.core.netx import REST\nasync def f(p):\n"
+                                   "    rest = REST()\n    return await rest.request('POST', 'https://x.test', json=p)\n"),
+    "pointed factory": "from agents.core.netx import at\nasync def f(p):\n    return await at('https://api.openai.com').post('/v1/x', json=p)\n",
+    "injected destination": "from agents.core.netx import Pinned\ndef f(p):\n    return Pinned('https://api.openai.com').upsert(p)\n",
 }
 # Uses of the same module that hand nothing out: none is a finding.
 _FACTORY_SAFE_USER = '''\
 from agents.core.llm.egress import llm_async_client
-from agents.core.netx import Ctl, Holder, ledgered, probe, use
+from agents.core.netx import Ctl, Holder, Pinned, ledgered, probe, show, use
 
 class Mine(Ctl):
     pass
@@ -2056,9 +2934,11 @@ async def ask(p, h: Holder | None = None):
     if isinstance(h, Holder):
         pass
     ctl = Ctl()
-    await ctl.request("/api/tags")
-    await probe("http://127.0.0.1:1")
+    await ctl.request()
+    await probe()
+    await show("llama3")            # a parameter in the path or body never moves the host
     await use("http://127.0.0.1:1")
+    Pinned().upsert(p)              # the injected class at its own default destination
     return await ledgered().post("/", json=p)
 '''
 
@@ -2074,3 +2954,309 @@ def test_the_scanner_follows_a_bare_client_out_of_its_factory():
     netx = {qual for qual, _, shape in findings[_NETX] if "hands out a bare client" in shape}
     assert netx == {"Ctl.request", "Ctl.getter"}, netx      # getter hands the bound factory on
     assert {qual for qual, _, _ in findings[_NETX2]} == {"again"}
+    # A sender's own forwarding caller is a sender too (its callers are checked in turn).
+    relays = [s for q, _, s in findings[_NETX] if q == "relay"]
+    assert relays == ["calls agents/core/netx.py:send, which sends through a bare client to a "
+                      "host its caller decides"], relays
+
+
+# ── round-4 review: a bare client followed by where it is pointed ────────────
+
+_VLM = "agents/core/llm/vlm.py"
+_VLM_SEND = "        resp = await self.client.post(endpoint, json=payload, headers=self._headers())"
+_VLM_IMPORT = "from .egress import llm_async_client\n"
+_SEND_THROUGH = {
+    # The reviewer's probes on the real VLM backend: its cloud prompt sent through the bare
+    # client inside a classified generic sender instead of its ledgered client.
+    "home assistant REST": (
+        "        resp = await _HttpxREST().request('POST', self.base_url.rstrip('/') + endpoint, "
+        "json=payload, headers=self._headers())",
+        "from ..house.home_assistant import _HttpxREST\n"),
+    "wled JSON transport": (
+        "        resp = await HttpxJSONTransport()(endpoint, payload)",
+        "from ..house.wled import HttpxJSONTransport\n"),
+}
+_SEND_PROBES = {
+    # ... and a new llm/ module posting a prompt through each of them.
+    "agents/core/llm/zz_probe_send.py": (
+        "from agents.core.house.home_assistant import _HttpxREST\n"
+        "from agents.core.house.wled import HttpxJSONTransport\n"
+        "async def ask_rest(prompt):\n"
+        "    return await _HttpxREST().request('POST', 'https://api.openai.com/v1/chat/completions',\n"
+        "        json={'messages': [{'role': 'user', 'content': prompt}]})\n"
+        "async def ask_wled(prompt):\n"
+        "    return await HttpxJSONTransport()('https://api.openai.com/v1/chat/completions',\n"
+        "        {'messages': [{'role': 'user', 'content': prompt}]})\n"),
+    # A forwarding helper outside llm/ is a sender itself, so the llm/ module that hands it
+    # the cloud URL is a finding even if the helper were ever classified.
+    "agents/core/tools/zz_probe_relay.py": (
+        "from agents.core.house.home_assistant import _HttpxREST\n"
+        "async def relay(url, body):\n"
+        "    return await _HttpxREST().request('POST', url, json=body)\n"),
+    "agents/core/llm/zz_probe_relayed.py": (
+        "from agents.core.tools.zz_probe_relay import relay\n"
+        "async def ask(prompt):\n"
+        "    return await relay('https://api.openai.com/v1/chat/completions', {'prompt': prompt})\n"),
+}
+_HA_SENDER = "agents/core/house/home_assistant.py:_HttpxREST"
+_WLED_SENDER = "agents/core/house/wled.py:HttpxJSONTransport"
+
+
+def test_the_reviewer_send_through_probes_fail_the_repo_rule():
+    """Round-4 review's mutation, made permanent through the whole pipeline: the real VLM
+    backend sending its prompt through ``_HttpxREST.request`` or
+    ``HttpxJSONTransport.__call__`` (classified generic senders that take the method, URL and
+    body from their caller) passed all 17 structural tests, because only a client leaving
+    its function was followed. A function whose bare client dials a host its caller decides
+    is a sender now, and every caller is a finding of its own."""
+    source = (REPO / _VLM).read_text(encoding="utf-8")
+    assert source.count(_VLM_SEND) == 1 and source.count(_VLM_IMPORT) == 1, (
+        f"{_VLM} changed; update this mutation")
+    # One scan: the HA swap in the real vlm.py, the WLED swap in a copy of it beside it.
+    swaps = {}
+    for (send, imported), rel in zip(_SEND_THROUGH.values(), (_VLM, "agents/core/llm/zz_vlm_copy.py"),
+                                     strict=True):
+        swaps[rel] = source.replace(_VLM_SEND, send).replace(_VLM_IMPORT, _VLM_IMPORT + imported)
+    in_scope, outside, _ = _scan_repo({**swaps, **_SEND_PROBES})
+    offenders = _prompt_offenders(in_scope)
+    for rel, target in zip(swaps, (_HA_SENDER, _WLED_SENDER), strict=True):
+        failing = [o for o in offenders if o.startswith(rel + ":")]
+        assert any("VLMBackend.generate_vision_checked" in o and f"constructs {target}" in o
+                   for o in failing), (rel, failing)
+        assert any("VLMBackend.generate_vision_checked" in o and f"hands a host to {target}" in o
+                   for o in failing), (rel, failing)
+    probe = {o.split(" — ")[0].split(" ", 1)[1] for o in offenders
+             if o.startswith("agents/core/llm/zz_probe_send.py:")}
+    assert probe == {"ask_rest", "ask_wled"}, offenders
+    relayed = [o.split(" — ")[1] for o in offenders if o.startswith("agents/core/llm/zz_probe_relayed.py:")]
+    assert relayed == ["calls agents/core/tools/zz_probe_relay.py:relay, which sends through a "
+                       "bare client to a host its caller decides"], relayed
+    assert [o.split(" — ")[0].split(" ", 1)[1] for o in _unclassified(outside)
+            if o.startswith("agents/core/tools/zz_probe_relay.py:")] == ["relay", "relay"]
+
+
+def test_every_caller_of_a_send_through_is_checked():
+    """No exemption rests on its callers: a new caller of a classified or allowlisted sender
+    is a finding until it is exempted itself, in-class callers included, and a sender's own
+    bound method handed on uncalled is one too."""
+    rel = "agents/core/llm/router.py"
+    source = (REPO / rel).read_text(encoding="utf-8")
+    anchor = "    async def _check(self, url: str) -> bool:\n"
+    assert source.count(anchor) == 1, f"{rel} changed; update this mutation"
+    added = source.replace(anchor, (
+        "    async def ping(self, url):\n"
+        "        return await self._check(url)\n\n"
+        "    def checker(self):\n"
+        "        return self._check\n\n") + anchor)
+    found = {q for q, _, s in scan_source(added, rel) if "sends" in s or "hands a host" in s}
+    assert {"LLMRouter.ping", "LLMRouter.checker"} <= found, found
+    assert not {(rel, "LLMRouter.ping"), (rel, "LLMRouter.checker")} & set(PROMPT_SCOPE_ALLOWLIST)
+    # A new caller of the classified Home Assistant transport, in its own module.
+    rel = "agents/core/house/home_assistant.py"
+    source = (REPO / rel).read_text(encoding="utf-8") + (
+        "\n\nasync def _raw(url, body):\n"
+        "    return await _HttpxREST().request('POST', url, json=body)\n")
+    new = {q for q, _, _ in scan_source(source, rel)} - NOT_A_MODEL_PROVIDER[rel][1]
+    assert new == {"_raw"}, new
+
+
+# The reviewer's further shapes (round 4): each user module must be a finding.
+_ROUND4_NET, _ROUND4_USER = "agents/core/netq.py", "agents/core/llm/zz_user.py"
+_ROUND4_SHAPES = {
+    "nested closure factory": (
+        "import httpx\ndef make():\n    c = httpx.AsyncClient()\n    def get():\n        return c\n    return get\n",
+        "from agents.core.netq import make\nasync def f(p):\n    return await make()().post('https://api.openai.com/v1/x', json=p)\n"),
+    "lazy module global read off the module": (
+        "import httpx\n_C = None\ndef init():\n    global _C\n    _C = httpx.AsyncClient()\n",
+        "from agents.core import netq\nasync def f(p):\n    return await netq._C.post('https://api.openai.com/v1/x', json=p)\n"),
+    "lazy module dict pool read off the module": (
+        "import httpx\n_POOL = {}\ndef warm(k):\n    _POOL[k] = httpx.AsyncClient()\n",
+        "from agents.core import netq\nasync def f(p):\n    return await netq._POOL['x'].post('https://api.openai.com/v1/x', json=p)\n"),
+    "client returned through a configuring helper": (
+        "import httpx\ndef _cfg(c):\n    c.headers['x'] = 'y'\n    return c\ndef make():\n    return _cfg(httpx.AsyncClient())\n",
+        "from agents.core.netq import make\nasync def f(p):\n    return await make().post('https://api.openai.com/v1/x', json=p)\n"),
+    "contextlib.closing wrapper": (
+        "import contextlib, httpx\ndef make():\n    return contextlib.closing(httpx.Client())\n",
+        "from agents.core.netq import make\ndef f(p):\n    with make() as c:\n        return c.post('https://api.openai.com/v1/x', json=p)\n"),
+    "generic send-through function": (
+        "import httpx\nasync def send(url, body):\n    async with httpx.AsyncClient() as c:\n        return await c.post(url, json=body)\n",
+        "from agents.core.netq import send\nasync def f(p):\n    return await send('https://api.openai.com/v1/x', p)\n"),
+    "generic send-through method": (
+        "import httpx\nclass REST:\n    async def request(self, m, url, **kw):\n        async with httpx.AsyncClient() as c:\n            return await c.request(m, url, **kw)\n",
+        "from agents.core.netq import REST\nasync def f(p):\n    return await REST().request('POST', 'https://api.openai.com/v1/x', json=p)\n"),
+    "setattr on self (private)": (
+        "import httpx\nclass H:\n    def __init__(self):\n        setattr(self, '_c', httpx.AsyncClient())\n",
+        "from agents.core.netq import H\nasync def f(p):\n    return await H()._c.post('https://api.openai.com/v1/x', json=p)\n"),
+    "public attribute planted on another object": (
+        "import httpx\ndef install(registry):\n    registry.clients = {'x': httpx.AsyncClient()}\n",
+        "async def f(registry, p):\n    return await registry.clients['x'].post('https://api.openai.com/v1/x', json=p)\n"),
+    "vars().get private attr": (
+        "import httpx\nclass Ctl:\n    def __init__(self):\n        self._c = httpx.AsyncClient()\n",
+        "async def f(ctl, p):\n    return await vars(ctl).get('_c').post('https://api.openai.com/v1/x', json=p)\n"),
+    "__dict__.get private attr": (
+        "import httpx\nclass Ctl:\n    def __init__(self):\n        self._c = httpx.AsyncClient()\n",
+        "async def f(ctl, p):\n    return await ctl.__dict__.get('_c').post('https://api.openai.com/v1/x', json=p)\n"),
+    "subclass sets own private attr then reads inherited client": (
+        "import httpx\nclass Ctl:\n    def _http(self):\n        if getattr(self, '_c', None) is None:\n"
+        "            self._c = httpx.AsyncClient()\n        return self._c\n"
+        "    async def tags(self):\n        return await self._http().get('/api/tags')\n",
+        "from agents.core.netq import Ctl\nclass Mine(Ctl):\n    def reset(self):\n        self._c = None\n"
+        "    async def ask(self, p):\n        await self.tags()\n"
+        "        return await self._c.post('https://api.openai.com/v1/x', json=p)\n"),
+    "operator.methodcaller of a factory method": (
+        "import httpx\nclass Ctl:\n    def _http(self):\n        return httpx.AsyncClient()\n",
+        "import operator\ndef f(ctl):\n    return operator.methodcaller('_http')(ctl)\n"),
+}
+
+
+def test_the_scanner_catches_the_round_four_shapes():
+    """The 13 further hand-off shapes the round-4 review found missed, made permanent: every
+    user module is a finding once its builder is exempted."""
+    missed = [name for name, (net, user) in _ROUND4_SHAPES.items()
+              if not scan_modules({_ROUND4_NET: net, _ROUND4_USER: user})[_ROUND4_USER]]
+    assert missed == [], f"the scanner misses: {missed}"
+
+
+def test_only_a_host_moving_parameter_makes_a_sender():
+    """The host a send dials is traced through what can move it: a parameter in the path,
+    query or body of a fixed origin does not (``f"{BASE}/api/show/{name}"``), one before the
+    first ``/`` does (``f"http://{host}/x"``, ``base + path`` — a path can graft on
+    ``@host``), and so does a client's ``base_url``."""
+    def senders(source):
+        found = scan_modules({_ROUND4_NET: source, _ROUND4_USER: (
+            "from agents.core.netq import go\ndef f(x):\n    return go(x)\n")})
+        return [s for _, _, s in found[_ROUND4_USER] if "sends through" in s]
+    fixed = ("import httpx\nBASE = 'http://127.0.0.1:11434'\n"
+             "async def go(name):\n    async with httpx.AsyncClient() as c:\n"
+             "        await c.get(f'{BASE}/api/show/{name}', params={'q': name})\n"
+             "        await c.post(BASE + '/api/x/' + name, json={'name': name})\n"
+             "        await c.get(urlunsplit(('http', '127.0.0.1:1', name, name, '')))\n")
+    assert senders(fixed) == []
+    for moving in ("        await c.get(f'http://{name}/x')\n",
+                   "        await c.get(BASE + name)\n",
+                   "        await c.get(urlunsplit(('http', name, '/x', '', '')))\n",
+                   "        await c.request('GET', str(name).rstrip('/'))\n"):
+        assert senders(fixed + moving), moving
+    based = ("import httpx\nasync def go(origin):\n"
+             "    async with httpx.AsyncClient(base_url=origin) as c:\n        await c.get('/api/tags')\n")
+    assert senders(based)
+
+
+_PUBLIC_CLIENT_PINS = {
+    # (module, class, public attribute) -> the request hook that refuses every other host
+    ("agents/core/channels/telegram.py", "TelegramChannel", "client"): "_bot_api_only",
+}
+
+
+def test_every_public_bare_client_attribute_is_pinned_in_code():
+    """A bare client in a public attribute (``orch.channels["telegram"].client``) is reached
+    through objects the scanner cannot type (the stated limit), so the set is closed: a new
+    one fails here, and each one listed refuses every other host before transport entry in
+    every construction stored in it."""
+    public = {(rel, cls, attr) for rel, cls, attr in _scan().facts.owners if not attr.startswith("_")}
+    assert public == set(_PUBLIC_CLIENT_PINS), sorted(public ^ set(_PUBLIC_CLIENT_PINS))
+    for (rel, cls, attr), hook in _PUBLIC_CLIENT_PINS.items():
+        module = _Module(rel, (REPO / rel).read_text(encoding="utf-8"))
+        stored = [value for _, value in module.self_sources[cls][attr]]
+        assert stored, (rel, cls, attr)
+        for value in stored:
+            hooks = _keyword(value, "event_hooks")
+            request = _keyword(hooks, "request") if hooks is not None else None
+            assert isinstance(request, ast.List) and any(
+                isinstance(h, ast.Name) and h.id == hook for h in request.elts), (
+                f"{rel}:{value.lineno} stores a {cls}.{attr} without the {hook} request hook")
+
+
+def test_the_telegram_client_dials_only_the_bot_api(monkeypatch):
+    """Round-4 review: ``orch.channels["telegram"].client`` posted a prompt to a cloud host
+    unseen. The channel's client now refuses any host but HTTPS api.telegram.org."""
+    import asyncio
+
+    import httpx
+    import pytest
+
+    from agents.core.channels.telegram import TelegramChannel, TelegramHostRefused
+
+    sent: list[str] = []
+
+    async def wire(self, request):
+        sent.append(str(request.url))
+        return httpx.Response(200, json={"ok": True, "result": {}}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", wire)
+    prompt = {"messages": [{"role": "user", "content": "secret prompt"}]}
+
+    async def run():
+        channel = TelegramChannel("123:abc")
+        try:
+            for url in ("https://api.openai.com/v1/chat/completions",
+                        "http://api.telegram.org/bot123:abc/getMe",
+                        "https://api.telegram.org.evil.test/x"):
+                with pytest.raises(TelegramHostRefused):
+                    await channel.client.post(url, json=prompt)
+            assert (await channel.client.post(channel.api_base + "/getMe")).status_code == 200
+        finally:
+            await channel.client.aclose()
+
+    asyncio.run(run())
+    assert sent == ["https://api.telegram.org/bot123:abc/getMe"]
+
+
+def test_the_house_transports_refuse_every_non_lan_destination(monkeypatch):
+    """Round-4 review's runtime probe: both house transports POSTed a prompt to
+    api.openai.com. Each now checks the destination itself, before a client exists."""
+    import asyncio
+
+    import httpx
+    import pytest
+
+    from agents.core.house import home_assistant as ha
+    from agents.core.house import wled
+
+    sent: list[str] = []
+
+    async def wire(self, request):
+        sent.append(str(request.url))
+        return httpx.Response(200, json={"on": False}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", wire)
+    prompt = {"messages": [{"role": "user", "content": "secret prompt"}]}
+    public = wled.HttpxJSONTransport(resolver=lambda host, port: ["203.0.113.9"])
+
+    async def run():
+        for url in ("https://api.openai.com/v1/chat/completions", "http://8.8.8.8:8123/api",
+                    "http://ha.home.local:8123/api/states", "http://user@192.168.1.44/api"):
+            with pytest.raises(ha._RESTDestinationRefused):
+                await ha._HttpxREST().request("POST", url, json=prompt)
+        assert (await ha._HttpxREST().request("GET", "http://192.168.1.44:8123/api/states")).status_code == 200
+        for url in ("https://api.openai.com/v1/chat/completions", "http://8.8.8.8/json/state",
+                    "http://wled.local/json/state", "http://192.168.1.40/json/state?x=1"):
+            assert await public(url, prompt) == {"ok": False, "reason": "wled_url_rejected"}, url
+        assert (await wled.HttpxJSONTransport()("http://192.168.1.40/json/state", {"on": False}))["ok"]
+
+    asyncio.run(run())
+    assert sent == ["http://192.168.1.44:8123/api/states", "http://192.168.1.40/json/state"]
+
+
+def test_the_comfyui_backend_refuses_a_non_loopback_config(tmp_path):
+    """``ComfyUIConfig`` is a plain dataclass: only ``from_env`` admitted loopback alone, so a
+    directly built config could point the image prompt anywhere. The backend checks it."""
+    import asyncio
+
+    import httpx
+    import pytest
+
+    from agents.core.media_backends.comfyui import (
+        ComfyUIBackend,
+        ComfyUIConfig,
+        ImageGenerationError,
+    )
+
+    sent: list[str] = []
+    transport = httpx.MockTransport(lambda request: sent.append(str(request.url)) or httpx.Response(200))
+    for url in ("https://api.openai.com", "http://192.168.1.9:8188"):
+        backend = ComfyUIBackend(ComfyUIConfig(url, "a.safetensors", tmp_path), transport=transport)
+        with pytest.raises(ImageGenerationError) as refused:
+            asyncio.run(backend.generate("a secret image prompt", {}))
+        assert refused.value.reason == "invalid_endpoint"
+    assert sent == []

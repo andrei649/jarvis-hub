@@ -213,8 +213,32 @@ def load_ha_config(
     )
 
 
+class _RESTDestinationRefused(_AdapterError):
+    """The REST transport was asked to dial something other than a LAN IP literal."""
+
+
+def _lan_literal_url(url: str) -> bool:
+    """``url`` is an http(s) URL whose host is a literal LAN address and nothing else."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme.lower() not in {"http", "https"} or parsed.username or parsed.password:
+        return False
+    return _is_lan_address((parsed.hostname or "").split("%", 1)[0])
+
+
 class _HttpxREST:
-    async def request(self, method: str, url: str, **kwargs):  # pragma: no cover - host seam
+    async def request(self, method: str, url: str, **kwargs):
+        """One request to the IP-pinned Home Assistant origin (H381).
+
+        Every caller pins the validated origin to a resolved LAN address first
+        (``_runtime_endpoint``), so the destination is checked here too rather than
+        trusted: anything but a literal LAN address is refused before a client exists,
+        and redirects are off, so this transport can never carry a request off the LAN.
+        """
+        if not isinstance(url, str) or not _lan_literal_url(url):
+            raise _RESTDestinationRefused("rest_destination_refused")
         import httpx
 
         async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
