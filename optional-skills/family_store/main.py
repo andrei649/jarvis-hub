@@ -11,7 +11,7 @@ Skill contract (see agents/core/skills/loader.py):
 
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger("jarvis.skills.family_store")
@@ -54,7 +54,7 @@ async def log_sleep(args: str, context: dict = None) -> str:
     conn = _conn()
     conn.execute(
         "INSERT INTO sleep_log (person, hours, ts) VALUES (?, ?, ?)",
-        (person, hours, datetime.now(timezone.utc).isoformat()),
+        (person, hours, datetime.now(UTC).isoformat()),
     )
     conn.commit()
     conn.close()

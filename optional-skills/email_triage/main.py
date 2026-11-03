@@ -10,7 +10,7 @@ Commands (see get_commands):
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger("jarvis.skills.email_triage")
 
@@ -80,7 +80,7 @@ def _priority_score(msg: dict) -> int:
         else:
             msg_date = None
         if msg_date:
-            age = datetime.now(timezone.utc) - msg_date
+            age = datetime.now(UTC) - msg_date
             if age < timedelta(hours=1):
                 score += 15
             elif age < timedelta(hours=6):
@@ -125,7 +125,7 @@ async def triage(args: str = "", context: dict = None) -> str:
     lines = ["📧 Triage email — inbox priorizat:"]
     lines.append("")
 
-    for i, (score, msg) in enumerate(scored):
+    for _i, (score, msg) in enumerate(scored):
         sender = msg.get("from", "necunoscut")
         subject = msg.get("subject", "(fără subiect)")
         snippet = (msg.get("snippet", "") or "")[:100]
