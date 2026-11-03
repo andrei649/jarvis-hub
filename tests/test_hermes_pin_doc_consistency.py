@@ -10,6 +10,7 @@ actually current".
 """
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -54,3 +55,68 @@ def test_the_frozen_pin_is_stated_as_deliberate_not_as_drift() -> None:
     assert _upstream_tag() in text
     assert "v2026.8.3" in text and "3c27eb6" in text
     assert "deliberately stays" in text or "deliberately remains" in text
+
+
+def test_generated_catalog_covers_every_pinned_skill_and_reference() -> None:
+    from scripts import gen_hermes_catalog_docs as generator
+
+    pin = json.loads((REPO / "agents/core/skills/hermes_pin_v2.json").read_text(encoding="utf-8"))
+    catalog = REPO / "docs/hermes/catalog"
+    slugs = {entry["slug"] for entry in pin["skills"]}
+    assert len(slugs) == 190
+    assert {path.stem for path in catalog.glob("*.md") if path.name != "README.md"} == slugs
+    assert generator.main(["--check"]) == 0
+    for entry in pin["skills"]:
+        page = (catalog / f"{entry['slug']}.md").read_text(encoding="utf-8")
+        assert entry["path"] in page
+        assert entry["tier"] in page
+        assert entry["content_sha256"] in page
+        for reference in entry["files"]:
+            assert reference["path"] in page
+            assert reference["content_sha256"] in page
+
+
+def test_catalog_check_detects_drift_without_deleting_unrelated_files(tmp_path, monkeypatch) -> None:
+    from scripts import gen_hermes_catalog_docs as generator
+
+    monkeypatch.setattr(generator, "OUTPUT_DIR", tmp_path / "catalog")
+    assert generator.main([]) == 0
+    catalog = tmp_path / "catalog"
+    assert generator.main(["--check"]) == 0
+    unrelated = catalog / "owner-notes.md"
+    unrelated.write_text("Keep this unrelated note.\n", encoding="utf-8")
+    stale = catalog / "old-generated.md"
+    stale.write_text(generator.GENERATED_MARKER + "\nold\n", encoding="utf-8")
+    linked = catalog / "old-linked.md"
+    if os.name != "nt":
+        linked.symlink_to(stale)
+    assert generator.main(["--check"]) == 1
+    assert unrelated.read_text(encoding="utf-8") == "Keep this unrelated note.\n"
+    assert stale.exists()
+    assert generator.main([]) == 0
+    assert generator.main(["--check"]) == 0
+    assert not stale.exists()
+    if os.name != "nt":
+        assert linked.is_symlink()  # A link to our deleted page is still not ours to delete.
+    assert unrelated.read_text(encoding="utf-8") == "Keep this unrelated note.\n"
+    page = catalog / "github.md"
+    original = page.read_text(encoding="utf-8")
+    page.write_text(original + "stale\n", encoding="utf-8")
+    assert generator.main(["--check"]) == 1
+    assert generator.main([]) == 0
+    assert page.read_text(encoding="utf-8") == original
+    (catalog / "grill-me.md").unlink()
+    assert generator.main(["--check"]) == 1
+    assert unrelated.read_text(encoding="utf-8") == "Keep this unrelated note.\n"
+
+
+def test_catalog_writer_refuses_to_replace_an_unowned_page(tmp_path, monkeypatch) -> None:
+    from scripts import gen_hermes_catalog_docs as generator
+
+    monkeypatch.setattr(generator, "OUTPUT_DIR", tmp_path / "catalog")
+    assert generator.main([]) == 0
+    owner_page = generator.OUTPUT_DIR / "github.md"
+    owner_page.write_text("Owner's unrelated page.\n", encoding="utf-8")
+    assert generator.main(["--check"]) == 1
+    assert generator.main([]) == 2
+    assert owner_page.read_text(encoding="utf-8") == "Owner's unrelated page.\n"

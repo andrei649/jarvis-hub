@@ -20,6 +20,14 @@ references; `github` consolidated, `grill-me` optional). The four
 Anthropic-terms productivity subtrees and historical `blogwatcher` are excluded.
 These counts are a local index measurement, not an inference throughput result.
 
+The [generated pinned source catalog](hermes/catalog/README.md) has one page
+for each of the 190 eligible upstream skills, including moved and newly added
+names. Each page records the upstream tier, exact release/commit/tree, SKILL.md
+digest and pinned reference paths/digests. It documents source identity and the
+owner's import/review path; a page is not evidence of installation or executable
+activation. Regenerate locally with `python scripts/gen_hermes_catalog_docs.py`
+and verify drift with `python scripts/gen_hermes_catalog_docs.py --check`.
+
 **Sprint curent, directivă 2026-09-09 → [Statusul tuturor celor 697 de capabilități](../HERMES_STATUS.md).**
 [Reguli, livrări reunite și următorii pași](HERMES_SPRINT.md). Cifrele de inventar
 de mai jos sunt auditul din 7 septembrie; progresul curent se citește în pagina de status.
