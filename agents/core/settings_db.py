@@ -239,6 +239,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),
     dict(category="commands", key="quick_commands", value={}, label="Owner quick commands — JSON aliases or fixed shell commands (execution always needs approval)", kind="json"),
+    # H058 — which user-tier slash commands a non-owner may run, per channel ("*" = any)
+    # and per scope. Fails closed: {} (and any channel/scope left out) leaves /help and /whoami.
+    dict(category="commands", key="user_allowed_commands", value={}, label="Slash commands non-owners may run — JSON {\"telegram\": {\"dm\": [\"status\"], \"group\": []}, \"*\": {...}}; /help and /whoami always, owner commands never", kind="json"),
     # H063 — durable channel route generations. The reset policy is off by default;
     # explicit owner /new and /reset remain available regardless of this mode.
     dict(category="sessions", key="reset_mode", value="none", label="Conversation reset mode", kind="select", opts=["none", "idle", "daily", "both"]),
@@ -1246,6 +1249,14 @@ def _session_setting_problem(key: str, value: Any) -> str | None:
                 not isinstance(item, str) or not item.strip() or len(item) > 120 for item in value
             ):
                 return f"{key}: expected up to 32 non-empty commands of at most 120 characters"
+            from .slash_access import floor_command
+
+            # H058: the floor always wins — /help and /whoami answer every sender.
+            for item in value:
+                floor = floor_command(item)
+                if floor is not None:
+                    return (f"{key}: {item!r} is /{floor} — /help and /whoami answer every sender "
+                            "and no setting takes them away, so neither can be a reset trigger")
         elif key == "stall_seconds":
             if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value <= 86400:
                 return f"{key}: expected a number between 1 and 86400 seconds"
@@ -1451,6 +1462,10 @@ def validate_category(cat: str, data: dict[str, Any], *, references: bool = True
             from .quick_commands import configuration_problem
 
             err = configuration_problem(value)
+        if err is None and (cat, key) == ("commands", "user_allowed_commands"):
+            from .slash_access import configuration_problem as access_problem
+
+            err = access_problem(value)
         if err is None and (cat, key) == ("skills", "template_vars"):
             err = _template_vars_problem(value)
         if err is None and (cat, key) == ("skills", "channel_disabled"):

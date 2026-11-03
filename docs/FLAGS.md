@@ -1610,3 +1610,106 @@ signed state remains available for explicit owner review. Local synthetic Kernel
 Vault, DNS and TLS tests establish this source behavior. Live provider availability,
 billing, Docker worker, native platform and HUD/mobile controls remain separate
 acceptance requirements; the production flag remains off by default.
+
+## H058 — who may run which slash command
+
+A **runtime setting**, like `llm.execute_code`: it lives in the settings store (Admin →
+Settings → `commands`) and is re-read on every command, so a change applies to the next
+message without a restart.
+
+### `commands.user_allowed_commands`
+
+**Default: `{}` — non-owners run `/help` and `/whoami` only** (`agents/core/slash_access.py`;
+declared in `agents/core/settings_db.py`).
+
+The chat command plane has two tiers. The **owner** — the principal the turn established
+as the owner: the Telegram owner, a configured Slack/Discord/ntfy owner (`channels.owner_senders`),
+an admin token on the web door — runs every command. Everyone else a channel admitted is the
+**user** tier. This setting decides which user-tier commands a non-owner may run, per
+channel and per scope:
+
+```json
+{"telegram": {"dm": ["status", "voice"], "group": []},
+ "*":        {"dm": ["status", "sessions", "recap", "btw", "jobs", "voice"]}}
+```
+
+- **Keys** are channel names (`telegram`, `slack`, `discord`, `ntfy`, `web`, …) or `"*"` for
+  every channel without an entry of its own. Each holds a `dm` and/or a `group` list.
+  A DM is a private chat (Telegram `private`, a Slack `D…` channel, a Discord DM, a Teams
+  `personal` conversation, a Google Chat direct message, a Signal or WhatsApp message outside
+  a group, the web chat, and any channel that has no groups — voice, email, ntfy); a group,
+  supergroup, guild channel, thread, Teams group chat or channel, Google Chat space, Signal
+  group or WhatsApp group (`group_id`) is a group. **A Matrix room is a DM only when the
+  homeserver proves it:** a room event does not say whether its room is a DM, so for a
+  slash command the Matrix adapter asks the homeserver (`/account/whoami` once, then the
+  room's `members` other than those who left, with the adapter's own token and egress-gated
+  transport, bounded at 5 s) and judges the room a DM when its members are exactly the
+  sender and this bot, both joined. Anything it cannot prove — no `homeserver` or `token`
+  configured, an error or non-200 reply, a timeout, a malformed reply, a third member
+  joined, invited, knocking or banned — is judged as a group, the less trusted scope. Plain
+  chat is never looked up.
+- **Resolution:** the channel's own entry, then `"*"`; a `dm` list that is not set uses the
+  same entry's `group` list (Hermes' rule — a DM never gets a wider list by accident); a
+  channel and scope nobody configured gets the floor only. Restricting a DM therefore never
+  leaves the group of the same channel wider. To give non-owners what they could run before
+  this setting, list the user tier (`/status`, `/sessions`, `/recap`, `/btw`, `/jobs`,
+  `/voice`) under `"*"` for `dm` and `group`.
+- **Floor:** `/help` and `/whoami` always answer; no list removes them. `[]` leaves exactly
+  the floor. No `sessions.reset_triggers` text takes them away either: the settings write
+  refuses `/help` or `/whoami` as a reset trigger (in any casing, with the bot's `@name` or
+  arguments) with 422, and a value already stored that names one is ignored for it at
+  dispatch, for the owner and everyone else.
+- **Never the owner tier:** a list naming an owner command (`/pause`, `/new`, `/remind`,
+  `/checkpoints`, …) is refused by the Admin write with 422, and a stored value that names
+  one anyway is ignored whole (the floor only). Owner quick commands
+  (`commands.quick_commands`) stay the owner's whatever the list says.
+- **Fails closed:** an install whose owner never set the list, a channel or scope left out
+  of it, an unreadable settings store and a malformed value all leave non-owners the floor
+  only. Hermes fails open here (`enabled = bool(admin_ids)`: no admin list for a scope =
+  everyone runs everything); this gate has no off state.
+
+**What a denial looks like:** `⛔ /<cmd> is admin-only here. You can run: /help, /whoami, …
+Use /whoami for the full list.` (at most 12 names), plus, for an owner command, that it is
+an owner command and where to send it. Every denial is logged, written to the security
+audit log (`audit_log` event, action `slash_command_denied`: command, channel, scope,
+sender id, reason — never the arguments) and emitted as the `command.completed` extension
+event with status `refused` — on the cold path and the busy path alike. The gate answers
+before any input check: a non-owner's oversized `/goal`, `/subgoal`, `/kanban` or
+checkpoint command, and a quick command whose stored configuration is malformed, get the
+audited denial, never the length or configuration reply (that one is the owner's). A custom
+`sessions.reset_triggers` text (`/fresh`) is an owner command too, whatever it is spelled
+like: a non-owner's gets the same audited denial under its own name (or `/new` when the
+trigger is not slash-shaped) — also when the owner made a user-tier command's text a
+trigger (`/status`), since on a channel that text resets the conversation; the denial then
+does not offer that name back.
+`/whoami` reports the platform, scope, sender id, tier and the exact list of commands the
+sender may run there. On a channel (where reset triggers are judged), that list, `/help`
+and a denial's "You can run" leave out a user-tier command whose bare `/name` is a reset
+trigger, since the channel refuses that text; with unreadable reset triggers they list the
+floor only. The web door's `/chat` judges no reset trigger, so it lists and runs it.
+
+**Where it is checked:** on the cold path (`CommandRegistry.dispatch`, inside the turn); on
+the busy path — a command that arrives while a turn holds its session is refused at once,
+before the running-work interrupt and the session lease: in `Orchestrator.channel_handler`
+for every channel; on Telegram it is first handed over beside the chat's lane, and on
+Discord and Slack beside the author's batch lock (`Gateway.pre_lane_refused` →
+`Orchestrator.command_refused_here`, asked for plain text too, so a non-owner's custom
+reset trigger such as `start over` is caught), so it does not queue behind the running turn
+nor hold Slack's event dispatcher behind it — on Telegram on a lane of its own, never behind
+a `/btw` still waiting on its model call. With inbound batching off
+(`JARVIS_INBOUND_BATCH_MS=0`) Slack's event dispatcher is held by every running turn, as it
+was before batching (its bounded ingress queue is the only buffer), so there a refused Slack
+command is read — and refused — only once that turn ends; on the web door in `POST /chat` and `/chat/stream`
+(`Orchestrator.busy_command_refusal`); a `/btw` side question is judged as it is answered
+beside a running turn, and before a route with no conversation yet says so — and again for
+quick commands, on the raw typed name (`quick_commands.dispatch_quick`), with an alias
+target judged once more when it re-enters the registry. A command the sender may run keeps
+its place in the queue. The gate decides who may *reach* a handler; it is in front of the
+Action Kernel, never instead of it — a command that acts still crosses its own kernel kind
+and approval.
+
+**Upgrading / revert:** `{}` is the default, so after this change a non-owner who used to
+run `/status` and the rest of the user tier keeps `/help` and `/whoami` only until the owner
+lists more. The behaviour from before this setting is
+`{"*": {"dm": ["btw", "jobs", "recap", "sessions", "status", "voice"], "group": ["btw", "jobs", "recap", "sessions", "status", "voice"]}}`;
+owner commands stay the owner's either way.

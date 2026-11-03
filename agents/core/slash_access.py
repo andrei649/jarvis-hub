@@ -1,0 +1,330 @@
+"""H058 — per-command access tiers on the chat command plane (Hermes ``gateway/slash_access.py``).
+
+Of the people a channel already lets talk to the hub, the **owner** (the admin tier: the
+principal the turn established as the owner — the Telegram owner, a configured Slack/
+Discord/ntfy owner, an admin token on the web door) may run every command. Everyone else is
+the **user** tier and runs the floor — ``/help`` and ``/whoami``, which no setting removes —
+plus the user-tier commands the owner allows for that channel and scope in
+``commands.user_allowed_commands``, keyed separately for a DM and a group::
+
+    {"telegram": {"dm": ["status", "voice"], "group": []},
+     "*":        {"dm": ["status", "sessions", "recap", "btw", "jobs", "voice"]}}
+
+A channel's own entry wins over ``"*"``; a DM list that is not set falls back to the same
+entry's group list (Hermes' rule — a DM is never given a wider list by accident). The gate
+fails closed where Hermes fails open (``enabled = bool(admin_ids)``: no admin list = everyone
+runs everything): an install whose owner never set the list, a channel and scope nobody
+configured, an unreadable store and a malformed value all leave a non-owner the floor and
+nothing else. The list can never grant an owner command (or an owner quick command) — that
+tier is the owner's, whatever the setting says — and the gate has no off state.
+
+The gate decides who may *reach* a handler; it is in front of the Action Kernel, never
+instead of it — a handler that acts still crosses its own kernel kind and approval.
+
+A denial reads ``⛔ /<cmd> is admin-only here. You can run: …`` (Hermes' text, at most 12
+names, then ``Use /whoami for the full list``), is logged, is written to the security
+audit log (``SecurityEventType.AUDIT_LOG``, ``slash_command_denied``) — the audit row the
+Hermes rebuild note asked for and never shipped — and goes out as the ``command.completed``
+extension event (status ``refused``) on every path that answers it. ``/whoami`` reports the
+platform, scope, sender id, tier and the exact command list. The orchestrator asks this
+module on the cold path (``CommandRegistry.dispatch``), on the busy path (a channel command
+is judged before the session lease and the running-work interrupt, and on Telegram, Discord
+and Slack a refused one is handed over beside the chat's lane or the author's batch lock
+instead of behind its running turn — except on Slack with inbound batching off, whose event
+dispatcher every running turn holds, as before batching; the web door's ``/chat`` and ``/chat/stream`` judge it
+before their interrupt and lease; the ``/btw`` side question is judged as it is answered
+beside a running turn, before a route with no conversation says so) and again for quick
+commands, on the raw typed name. The gate answers before any input or configuration check
+(an oversized ``/goal``, a malformed quick-command store), so such a check never stands in
+for an audited denial. A custom ``sessions.reset_triggers`` text is judged as the owner
+command it is, even one spelled like a user-tier command — but the floor always wins: a
+floor command (``floor_command``: ``/help`` or ``/whoami`` in any casing, with the bot's
+``@name`` or arguments) is never a reset trigger, so the settings write refuses one and a
+stored one is ignored at dispatch. On a channel, where reset triggers are judged,
+``/whoami``, ``/help`` and a denial's "You can run" list (``listed_names``) leave out a
+user-tier command whose bare ``/name`` is a reset trigger, since the channel refuses that
+text. A Matrix room is a DM only when the Matrix adapter's homeserver lookup proves it;
+otherwise its commands are judged in group scope.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+import time
+from functools import lru_cache
+from typing import Any
+
+logger = logging.getLogger("jarvis.commands.access")
+
+CATEGORY = "commands"
+KEY = "user_allowed_commands"
+SETTING = f"{CATEGORY}.{KEY}"
+#: The commands every admitted sender may run, whatever the setting says.
+FLOOR = ("help", "whoami")
+SCOPES = ("dm", "group")
+ANY_CHANNEL = "*"
+#: Hermes ``_DM_CHAT_TYPES`` (plus Slack's ``im``): everything else is a group.
+DM_CHAT_TYPES = frozenset({"", "dm", "direct", "private", "im"})
+PREVIEW = 12
+AUDIT_ACTION = "slash_command_denied"
+
+_CHANNEL = re.compile(r"[a-z][a-z0-9_.-]{0,31}\Z")
+_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}\Z")
+_MAX_CHANNELS = 64
+_MAX_NAMES = 128
+_OWNER_HINT = "send it from the owner's channel or with an admin token"
+
+
+def scope_for_chat_type(chat_type: Any) -> str:
+    """``dm`` for a direct chat (or a channel that reports no chat type), else ``group``."""
+    return "dm" if str(chat_type or "").strip().lower() in DM_CHAT_TYPES else "group"
+
+
+def _name(raw: Any) -> str | None:
+    if type(raw) is not str:
+        return None
+    name = raw[1:] if raw.startswith("/") else raw
+    return name.lower() if _NAME.fullmatch(name) else None
+
+
+@lru_cache(maxsize=1)
+def _owner_commands() -> frozenset[str]:
+    """The built-in owner commands, which no list may grant."""
+    from .commands import ADMIN, build_default_registry
+
+    return frozenset(command.name for command in build_default_registry().commands()
+                     if command.tier == ADMIN)
+
+
+def configuration_problem(value: Any) -> str | None:
+    """Why a ``commands.user_allowed_commands`` write is refused, or None."""
+    if type(value) is not dict or len(value) > _MAX_CHANNELS:
+        return f"{KEY}: expected an object of at most {_MAX_CHANNELS} channels"
+    owner = _owner_commands()
+    for channel, entry in value.items():
+        if type(channel) is not str or not (channel == ANY_CHANNEL or _CHANNEL.fullmatch(channel)):
+            return f"{KEY}: {channel!r} is not a channel name (lower-case letters, digits, _ . -) or \"*\""
+        if type(entry) is not dict or not set(entry) <= set(SCOPES):
+            return f"{KEY}: {channel}: expected an object with \"dm\" and/or \"group\" lists"
+        for scope, names in entry.items():
+            if type(names) is not list or len(names) > _MAX_NAMES:
+                return f"{KEY}: {channel}.{scope}: expected a list of at most {_MAX_NAMES} command names"
+            for raw in names:
+                name = _name(raw)
+                if name is None:
+                    return f"{KEY}: {channel}.{scope}: {raw!r} is not a slash-command name"
+                if name in owner:
+                    return (f"{KEY}: {channel}.{scope}: /{name} is an owner command; this list "
+                            "grants only user-tier commands")
+    return None
+
+
+def _policy() -> dict | None:
+    """The stored policy, ``{}`` when the owner never set one; None fails closed."""
+    from . import settings_db
+
+    try:
+        found, value = settings_db.read_setting(CATEGORY, KEY)
+    except settings_db.SettingsUnreadable:
+        logger.warning("%s unreadable; non-owners keep only /help and /whoami", SETTING)
+        return None
+    if not found:
+        return {}
+    problem = configuration_problem(value)
+    if problem is not None:
+        logger.warning("%s ignored (%s); non-owners keep only /help and /whoami", SETTING, problem)
+        return None
+    return value
+
+
+def _scope_list(entry: Any, scope: str) -> list | None:
+    if type(entry) is not dict:
+        return None
+    if scope in entry:
+        return entry[scope]
+    if scope == "dm" and "group" in entry:
+        return entry["group"]       # Hermes: an unset DM list uses the group list
+    return None
+
+
+def _user_tier(registry) -> list[str]:
+    from .commands import USER
+
+    return [command.name for command in registry.commands() if command.tier == USER]
+
+
+def allowed_names(registry, principal) -> list[str] | None:
+    """The commands *principal* may run here, floor first; None for the owner (all)."""
+    if principal.admin is True:
+        return None
+    policy = _policy()
+    listed = None
+    if policy is not None:
+        listed = _scope_list(policy.get(principal.channel), principal.scope)
+        if listed is None:
+            listed = _scope_list(policy.get(ANY_CHANNEL), principal.scope)
+    granted: set[str] = set()
+    if listed is not None:
+        # Fail closed (where Hermes fails open): a channel and scope nobody configured,
+        # like an unreadable store, grants nothing above the floor.
+        user_tier = set(_user_tier(registry))
+        granted = {name for name in (_name(raw) for raw in listed) if name in user_tier}
+    return [*FLOOR, *sorted(granted - set(FLOOR))]
+
+
+def floor_command(text: Any) -> str | None:
+    """The floor command *text* asks for — ``help`` or ``whoami``, however the registry
+    reads it (any casing, the bot's ``@name``, arguments) — or None. Such a text is never a
+    reset trigger: the floor answers every sender, so no setting turns it into an owner
+    command."""
+    from .commands import CommandRegistry
+
+    parsed = CommandRegistry.parse(text) if isinstance(text, str) else None
+    return parsed[0] if parsed is not None and parsed[0] in FLOOR else None
+
+
+def listed_names(registry, principal, *, orch: Any = None) -> list[str] | None:
+    """What ``/whoami``, ``/help`` and a denial offer *principal* as runnable here, floor
+    first; None for the owner (all).
+
+    ``allowed_names``, less — on a turn that came through a channel, where the owner's
+    ``sessions.reset_triggers`` are judged — a user-tier command whose bare ``/name`` is
+    one of them: the channel refuses that text as the owner command it is, so it is not
+    offered. Triggers that cannot be read leave the floor alone, since the channel then
+    answers nothing else. The web door judges no reset trigger and lists ``allowed_names``."""
+    allowed = allowed_names(registry, principal)
+    get_setting = getattr(orch, "get_setting", None)
+    if allowed is None or not callable(get_setting):
+        return allowed
+    from .orchestrator import reset_triggers_judged
+
+    if not reset_triggers_judged():
+        return allowed
+    from .channels.session_lifecycle import reset_triggered
+
+    try:
+        return [name for name in allowed if name in FLOOR or reset_triggered(get_setting, f"/{name}") is not True]
+    except Exception:  # noqa: BLE001 — unreadable triggers: the channel answers only the floor
+        logger.debug("reset triggers unreadable; only the floor is listed", exc_info=True)
+        return list(FLOOR)
+
+
+def can_run(registry, principal, name: str, *, quick: bool = False) -> bool:
+    """Whether *principal* may run ``/name``. A quick command is the owner's tier."""
+    if principal.admin is True:
+        return True
+    if quick:
+        return False
+    from .commands import ADMIN
+
+    command = registry.get(name)
+    if command is not None and command.tier == ADMIN:
+        return False                # the setting can never widen the owner tier
+    return name in allowed_names(registry, principal)
+
+
+def _commands_line(names: list[str]) -> str:
+    shown = ", ".join(f"/{name}" for name in names[:PREVIEW])
+    return shown + (", …" if len(names) > PREVIEW else "")
+
+
+def denial_reply(name: str, allowed: list[str], *, owner_tier: bool, scope: str) -> str:
+    reply = (f"⛔ /{name} is admin-only here. You can run: {_commands_line(allowed)}. "
+             "Use /whoami for the full list.")
+    if owner_tier:
+        return reply + f" /{name} is an owner command — {_OWNER_HINT}."
+    where = "a DM" if scope == "dm" else "a group"
+    return reply + f" The owner can allow it in {where} here with {SETTING}."
+
+
+def _safe(value: Any, limit: int = 64) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if len(text) <= limit and text.isprintable() else "unprintable"
+
+
+async def _audit(orch: Any, principal, name: str, reason: str) -> None:
+    """One audit row per denial: command, channel, scope, sender, why — never the args."""
+    from .security.types import SecurityEvent, SecurityEventType
+
+    audit = getattr(orch, "audit", None) if orch is not None else None
+    log = getattr(audit, "log", None)
+    if not callable(log):
+        logger.warning("slash command denial not audited: no audit log on this hub")
+        return
+    preview = json.dumps({"command": name, "channel": _safe(principal.channel, 32),
+                          "scope": principal.scope, "sender": _safe(principal.sender),
+                          "tier": "user", "reason": reason}, sort_keys=True, separators=(",", ":"))
+    try:
+        await asyncio.to_thread(log, SecurityEvent(
+            event_type=SecurityEventType.AUDIT_LOG, timestamp=time.time(),
+            content_preview=preview, action_taken=AUDIT_ACTION))
+    except Exception:  # noqa: BLE001 — the denial stands; a lost audit row is logged
+        logger.warning("slash command denial for /%s could not be audited", name, exc_info=True)
+
+
+async def refusal(registry, name: str, *, orch: Any, principal, quick: bool = False):
+    """None when *principal* may run ``/name``; otherwise the audited denial outcome.
+
+    *name* is a registry command name or a name the owner stored as a quick command —
+    never text the sender typed that names nothing — so the log line and the audit row
+    carry only command names."""
+    if can_run(registry, principal, name, quick=quick):
+        return None
+    from .commands import ADMIN, CommandOutcome
+
+    command = None if quick else registry.get(name)
+    owner_tier = quick or (command is not None and command.tier == ADMIN)
+    logger.info("Slash command /%s denied for %s:%s (%s, not the owner, not in %s)",
+                name, _safe(principal.channel, 32), _safe(principal.sender) or "?", principal.scope, SETTING)
+    await _audit(orch, principal, name, "owner_tier" if owner_tier else "not_allowed")
+    # Never offer the refused name back, nor one this channel refuses as a reset trigger:
+    # an owner's reset trigger spelled like an allowed command (``/status``) is refused here
+    # as the owner command it is.
+    allowed = [allowed_name for allowed_name in listed_names(registry, principal, orch=orch) or FLOOR
+               if allowed_name != name]
+    return CommandOutcome(name, "refused", denial_reply(
+        name, allowed, owner_tier=owner_tier, scope=principal.scope))
+
+
+def gated_name(registry, text: str) -> tuple[str, bool] | None:
+    """``(name, quick)`` when *text* asks for a registry or quick command, else None."""
+    parsed = registry.parse(text)
+    if parsed is None:
+        return None
+    name = parsed[0]
+    if registry.get(name) is not None:
+        return name, False
+    from .quick_commands import named
+
+    try:
+        quick = named(name)         # a stored value that fails validation names it too
+    except Exception:  # noqa: BLE001 — unreadable quick commands: the registry decides later
+        quick = False
+    return (name, True) if quick else None
+
+
+def whoami(registry, principal, *, orch: Any = None) -> str:
+    """Hermes ``/whoami``: platform, scope, sender id, tier and the exact command list —
+    what this door will run for the sender (``listed_names``)."""
+    scope = "DM" if principal.scope == "dm" else "group"
+    lines = [f"You — {principal.channel or '?'} ({scope})", f"Sender ID: {principal.sender or '?'}"]
+    if principal.admin is True:
+        from .quick_commands import configured
+
+        names = sorted(command.name for command in registry.commands())
+        try:
+            names += sorted(name for name in configured() if registry.get(name) is None)
+        except Exception:  # noqa: BLE001 — the owner still sees the registry
+            logger.debug("quick commands unreadable for /whoami", exc_info=True)
+        lines += ["Tier: admin (the owner) — every command answers you here",
+                  "Slash commands you can run: " + ", ".join(f"/{name}" for name in names)]
+    else:
+        names = listed_names(registry, principal, orch=orch) or list(FLOOR)
+        lines += [f"Tier: user — owner commands answer only the owner; {SETTING} sets the rest",
+                  "Slash commands you can run: " + ", ".join(f"/{name}" for name in names)]
+    return "\n".join(lines)

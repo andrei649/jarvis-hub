@@ -9,7 +9,10 @@ stop it, or lift the emergency stop from the conversation they were already in.
 Commands carry an access tier. `user` commands answer anyone the channel already admitted;
 `admin` commands answer only a principal the turn established as the owner (the Telegram
 owner allowlist / owner chat, or an admin token on the web endpoint). A non-owner asking
-for an owner command is told so — never silently ignored, never quietly obeyed.
+for an owner command is told so — never silently ignored, never quietly obeyed. Which
+user-tier commands a non-owner may run in a DM or a group of each channel is the owner's
+`commands.user_allowed_commands` (H058, `slash_access.py`), above a floor of `/help` and
+`/whoami` that no setting removes.
 
 Handlers here never perform a privileged effect themselves except through the same
 module the HTTP routes call (the e-stop sentinel), and they never reach the model.
@@ -72,6 +75,9 @@ class Principal:
     #: has one. Per-chat commands such as ``/voice`` act on it; a channel with no
     #: conversation identity leaves it None and those commands say so.
     chat: str | None = None
+    #: H058: ``dm`` or ``group`` — which list of ``commands.user_allowed_commands`` a
+    #: non-owner's commands are judged against (a channel with no chat type is a DM).
+    scope: str = "dm"
 
 
 @dataclass
@@ -109,6 +115,24 @@ class CommandOutcome:
     reply: str
 
 
+def _oversized(name: str, text: str) -> CommandOutcome | None:
+    """The refusal for a command whose text is longer than it may be, or None. Asked only
+    once the access gate let the sender reach *name* (H058): input checks never answer
+    in place of a denial."""
+    if len(text.strip()) <= _MAX_ARGS:
+        return None
+    if name in {"rollback", "checkpoints"}:
+        return CommandOutcome(name, "refused", "Checkpoint command is too long; nothing changed.")
+    if name == "kanban":
+        return CommandOutcome(name, "refused", "Kanban command is too long; nothing changed.")
+    if name in {"goal", "subgoal"}:
+        # H462: a goal cut short is a different goal — a dropped "must not" line
+        # would reach the approval card looking complete.
+        return CommandOutcome(
+            name, "refused", f"/{name} is longer than {_MAX_ARGS} characters; nothing was proposed or added.")
+    return None
+
+
 class CommandRegistry:
     def __init__(self) -> None:
         self._commands: dict[str, SlashCommand] = {}
@@ -135,11 +159,21 @@ class CommandRegistry:
     def get(self, name: str) -> SlashCommand | None:
         return self._commands.get(name.lower())
 
+    def commands(self) -> list[SlashCommand]:
+        """Every registered command, by name — tier unfiltered (H058's policy reads it)."""
+        return [command for _name, command in sorted(self._commands.items())]
+
     def visible(self, principal: Principal) -> list[SlashCommand]:
+        """What *principal* may run here: every command for the owner; for anyone else
+        the user-tier commands ``commands.user_allowed_commands`` allows in this channel
+        and scope, and always ``/help`` and ``/whoami`` (H058)."""
+        from .slash_access import allowed_names
+
+        allowed = allowed_names(self, principal)
         return [
             command
             for _name, command in sorted(self._commands.items())
-            if command.tier == USER or principal.admin
+            if (command.tier == USER or principal.admin) and (allowed is None or command.name in allowed)
         ]
 
     @staticmethod
@@ -152,40 +186,46 @@ class CommandRegistry:
     async def dispatch(self, text: str, *, orch: Any, principal: Principal,
                        _quick_seen: frozenset[str] = frozenset()) -> CommandOutcome | None:
         """Answer a slash command, or return None when *text* is not one."""
-        checkpoint_name = checkpoint_command_name(text)
-        if checkpoint_name and len(text.strip()) > _MAX_ARGS:
-            return self._observed(CommandOutcome(checkpoint_name, "refused",
-                                  "Checkpoint command is too long; nothing changed."))
         parsed = self.parse(text)
         if parsed is None:
             return None
         name, args = parsed
-        if name == "kanban" and len(text.strip()) > _MAX_ARGS:
-            return self._observed(CommandOutcome(name, "refused", "Kanban command is too long; nothing changed."))
-        if name in {"goal", "subgoal"} and len(text.strip()) > _MAX_ARGS:
-            # H462: a goal cut short is a different goal — a dropped "must not" line
-            # would reach the approval card looking complete.
-            return self._observed(CommandOutcome(
-                name, "refused", f"/{name} is longer than {_MAX_ARGS} characters; nothing was proposed or added."))
         command = self.get(name)
         if command is None:
             from .quick_commands import dispatch_quick
 
+            # A quick command is judged by the access gate inside dispatch_quick, first.
             quick = await dispatch_quick(self, name, args, text=text,
                                          orch=orch, principal=principal, seen=_quick_seen)
             if quick is not None:
                 return self._observed(quick)
+            oversized = _oversized(name, text)
+            if oversized is not None:
+                return self._observed(oversized)        # a fixed name, not the sender's text
             # Deliberately NOT observed. `name` here is whatever the sender typed, so
             # emitting it would push arbitrary message text through a field that
             # promises to carry command names — a body leak wearing a safe label.
             return CommandOutcome(name, "unknown", f"Unknown command /{name}. Try /help.")
-        if command.tier == ADMIN and not principal.admin:
+        from .slash_access import refusal
+
+        # H058, the cold path: the access gate answers first — before any handler, and
+        # before the input checks below, so a non-owner's oversized owner command gets the
+        # audited denial, not a validation reply that skips the audit log. It stands in
+        # front of the kernel kinds handlers cross, never for them.
+        denied = await refusal(self, name, orch=orch, principal=principal)
+        if denied is not None:
             # Observed: this name came from the registry, not from the sender.
+            return self._observed(denied)
+        if command.tier == ADMIN and not principal.admin:
+            # The tier invariant stands even if the policy above ever misjudged.
             return self._observed(CommandOutcome(
                 name,
                 "refused",
                 f"/{name} is an owner command — send it from the owner's channel or with an admin token.",
             ))
+        oversized = _oversized(name, text)
+        if oversized is not None:
+            return self._observed(oversized)
         try:
             result = command.handler(CommandContext(orch=orch, principal=principal, name=name, args=args))
             if inspect.isawaitable(result):
@@ -215,9 +255,14 @@ class CommandRegistry:
 
 def _help(ctx: CommandContext) -> str:
     from .quick_commands import help_lines
+    from .slash_access import listed_names
 
     registry = getattr(ctx.orch, "commands", None)
     commands = registry.visible(ctx.principal) if isinstance(registry, CommandRegistry) else []
+    if commands and not ctx.principal.admin:
+        # H058: what this door will run — on a channel, not a command whose text is a reset trigger.
+        listed = listed_names(registry, ctx.principal, orch=ctx.orch)
+        commands = [command for command in commands if listed is None or command.name in listed]
     lines = [command.summary for command in commands]
     if ctx.principal.admin and isinstance(registry, CommandRegistry):
         lines.extend(help_lines(registry))
@@ -225,6 +270,16 @@ def _help(ctx: CommandContext) -> str:
         lines.append("Owner commands (such as /pause, /resume, /stop, /remind and /refine) answer only "
                      "the owner's channel.")
     return "\n".join(lines) if lines else "No commands are registered."
+
+
+def _whoami(ctx: CommandContext) -> str:
+    """H058 — who this hub takes you for here, and the exact commands you can run."""
+    from .slash_access import whoami
+
+    registry = getattr(ctx.orch, "commands", None)
+    if not isinstance(registry, CommandRegistry):
+        registry = CommandRegistry()
+    return whoami(registry, ctx.principal, orch=ctx.orch)
 
 
 def _status(ctx: CommandContext) -> str:
@@ -671,6 +726,8 @@ def build_default_registry() -> CommandRegistry:
 
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
+    registry.register(SlashCommand("whoami", "your platform, scope, sender id, tier and the commands you can run",
+                                   _whoami))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
     registry.register(SlashCommand("new", "start a fresh conversation and save this one", _session_change, tier=ADMIN))

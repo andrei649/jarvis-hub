@@ -54,8 +54,11 @@ class DiscordChannel(ChannelAdapter):
     )
 
     def __init__(self, token: str | None = None, handler=None,
-                 pending_reply_handler=None, pending_callback_handler=None, pairing=None):
+                 pending_reply_handler=None, pending_callback_handler=None, pairing=None,
+                 pre_turn_refused=None):
         super().__init__("discord", handler)
+        # H058: a probe (Gateway.pre_lane_refused) for a command its sender may not run here.
+        self.pre_turn_refused = pre_turn_refused
         self.token = token or ""
         self._client: Optional[discord.Client] = None
         self.pending_reply_handler = pending_reply_handler
@@ -69,7 +72,14 @@ class DiscordChannel(ChannelAdapter):
         self._ephemeral_deletes = EphemeralDeletes()
         # H117: a burst from one author in one channel is handed over as one turn.
         from .batching import AsyncBatcher, configured
-        self._batch = AsyncBatcher(self._deliver_turn, *configured())
+        self._batch = AsyncBatcher(self._deliver_turn, *configured(), beside=self._refused_here)
+
+    def _refused_here(self, _key, text: str, meta: dict) -> bool:
+        """H058 — whether *text* is a command this author may not run in this channel."""
+        probe = self.pre_turn_refused
+        return callable(probe) and probe(
+            channel="discord", sender=meta.get("sender"), chat_id=meta.get("channel_id"), text=text,
+            chat_type=meta.get("chat_type", "private")) is True
 
     async def start(self):
         if not DISCORD_AVAILABLE:
