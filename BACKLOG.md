@@ -2719,6 +2719,13 @@
   (31,501 collected); all 2,791 frontend tests, both TypeScript checks, build, Ruff and Bandit
   pass. The earlier runtime cases also passed unchanged in the complete rerun; their initial
   full-load causes remain unproven. This does not claim live provider or native-device acceptance.
+  **Read-privacy follow-up (2026-11-03):** the 132 rows affected by guarded reads, the public
+  safety projection, client compatibility and regenerated metadata were reread against source.
+  False open-read claims, moved citations and the obsolete missing-code claim for locally
+  implemented mobile session transitions were corrected; capability verdicts were retained.
+  Headline remains 148/697 with `needs_review` 0. Complete React/legacy/mobile suites pass
+  2,803/246/363 cases; the final checkpoint collects 31,515 backend cases, with its fresh complete
+  run tracked separately from the earlier batch-4 result. SEC-B6 post-merge acceptance stays open.
 
 ## Darwin feature absorption — 2026-09-09
 
