@@ -9207,7 +9207,8 @@ export interface paths {
          *     (an undo ref keeps the ring as it was beside the rings, as for the model's own remove;
          *     ``POST /api/memory/core/undo`` puts it back, a reset erases it); a learned skill is
          *     archived, as Hermes archives one (its folder moved to the skills batch archive,
-         *     recoverable; a pinned skill is refused), and one still awaiting the owner's review is
+         *     recoverable; a pinned skill is refused; ``references`` says what still names it, as a
+         *     skill batch's delete reports it, H330), and one still awaiting the owner's review is
          *     discarded as the review's reject does (its folder kept in the discard archive); a
          *     fact-store row leaves the store (and its search index and write-ahead log), so it
          *     leaves the timeline and every brief.
