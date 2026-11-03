@@ -146,12 +146,14 @@ def test_an_import_refused_for_its_skill_md_answers_422(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "DEV_MODE", True)
     client = _client(monkeypatch, SimpleNamespace(skill_importer=importer,
                                                   skills=SimpleNamespace(discover=lambda: None)))
-    got = client.post("/skills/import", json={"source": "someuser/repo", "skill": "notes"})
+    got = client.post("/skills/import", json={"source": "someuser/repo", "skill": "notes"},
+                      headers={"X-Admin-Token": "adm-h350b"})
     assert got.status_code == 422, got.text
     assert got.json()["ok"] is False and got.json()["reason"] == "invalid_skill_md"
     assert got.json()["problems"][0]["field"] == "description"
     # A later refusal for another reason is not reported with the stale problems.
-    got = client.post("/skills/import", json={"source": "someuser/repo", "skill": "../notes"})
+    got = client.post("/skills/import", json={"source": "someuser/repo", "skill": "../notes"},
+                      headers={"X-Admin-Token": "adm-h350b"})
     assert got.status_code == 404, got.text
     assert importer.last_refusal == []
 

@@ -93,7 +93,7 @@ def test_injection_in_command_name_is_blocked(loader, tmp_path):
 # ── owner approval promotes it to active ──────────────────────────────────────
 def test_approve_activates_the_skill(loader, tmp_path):
     name = _gen(loader)
-    assert loader.approve_generated_skill(name) is True
+    assert loader.approve_generated_skill(name, loader.pending_skill_fingerprint(name)) is True
     skill_dir = tmp_path / name
     assert not (skill_dir / "PENDING_REVIEW").exists()  # marker cleared
     assert (skill_dir / "SKILL.sig").exists()  # now signed
@@ -105,7 +105,7 @@ def test_approve_activates_the_skill(loader, tmp_path):
 
 def test_approval_persists_across_loader_restart(loader, tmp_path):
     name = _gen(loader)
-    assert loader.approve_generated_skill(name) is True
+    assert loader.approve_generated_skill(name, loader.pending_skill_fingerprint(name)) is True
     skill_dir = tmp_path / name
 
     restarted = SkillLoader(
@@ -131,7 +131,7 @@ def test_legacy_marker_requires_explicit_owner_reapproval(loader, tmp_path):
     skill = _registered(loader, skill_dir)
     assert skill is not None and skill.module is None and skill.sandboxed is True
 
-    assert loader.approve_generated_skill(name) is True
+    assert loader.approve_generated_skill(name, signing.source_snapshot(skill_dir).fingerprint) is True
 
     skill = _registered(loader, skill_dir)
     assert skill is not None and skill.module is not None
@@ -140,7 +140,7 @@ def test_legacy_marker_requires_explicit_owner_reapproval(loader, tmp_path):
 
 def test_approved_skill_change_returns_to_quarantine(loader, tmp_path):
     name = _gen(loader)
-    assert loader.approve_generated_skill(name) is True
+    assert loader.approve_generated_skill(name, loader.pending_skill_fingerprint(name)) is True
     skill_dir = tmp_path / name
     (skill_dir / "main.py").write_text(
         'raise RuntimeError("changed code executed under stale approval")\n',
@@ -157,7 +157,7 @@ def test_approved_skill_change_returns_to_quarantine(loader, tmp_path):
 
 
 def test_approve_is_safe_on_unknown_or_non_pending(loader):
-    assert loader.approve_generated_skill("does-not-exist") is False
+    assert loader.approve_generated_skill("does-not-exist", loader.pending_skill_fingerprint("does-not-exist")) is False
     name = _gen(loader)
-    loader.approve_generated_skill(name)
-    assert loader.approve_generated_skill(name) is False  # already promoted → idempotent
+    loader.approve_generated_skill(name, loader.pending_skill_fingerprint(name))
+    assert loader.approve_generated_skill(name, loader.pending_skill_fingerprint(name)) is False  # already promoted → idempotent

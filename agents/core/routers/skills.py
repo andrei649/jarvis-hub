@@ -926,8 +926,12 @@ async def list_pending_skills():
     return JSONResponse({"pending": pending, "count": len(pending)})
 
 
+class ReviewedSkillBody(BaseModel):
+    expected_fingerprint: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+
+
 @router.post("/api/skills/{name}/approve", dependencies=[Depends(admin_guard)])
-async def approve_generated_skill(name: str):
+async def approve_generated_skill(name: str, body: ReviewedSkillBody):
     """CDX-8: owner-approve a quarantined auto-generated skill — sign + activate it. Only an
     admin can promote LLM-authored code from pending to executable, and the promotion
     crosses the ``skill.generation`` action kernel gate (H330): a halt answers 403
@@ -935,7 +939,7 @@ async def approve_generated_skill(name: str):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    if orch.skills.approve_generated_skill(name):
+    if orch.skills.approve_generated_skill(name, body.expected_fingerprint):
         from agents.core import safe_mode
 
         if safe_mode.enabled():
@@ -945,8 +949,10 @@ async def approve_generated_skill(name: str):
         return {"approved": True, "skill": name}
     refused = str(getattr(orch.skills, "last_approval_refusal", "") or "")
     if refused:
-        return JSONResponse({"error": f"the action kernel refused to approve '{name}'", "reason": refused,
-                             "skill": name}, status_code=403 if refused == "kernel_denied" else 503)
+        status = (403 if refused == "kernel_denied" else 409 if refused == "reviewed_source_changed"
+                  else 422 if refused == "review_fingerprint_required" else 503)
+        return JSONResponse({"error": f"skill '{name}' was not approved", "reason": refused,
+                             "skill": name}, status_code=status)
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
 
 
@@ -1005,6 +1011,7 @@ class BulkReviewBody(BaseModel):
 
     approved: bool
     skills: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
+    skill_fingerprints: dict[str, str] = Field(default_factory=dict)
     proposals: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
     batches: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
     reason: str | None = Field(default=None, max_length=500)
@@ -1041,7 +1048,7 @@ def _bulk_review(orch, body: BulkReviewBody) -> dict:
             continue
         try:
             if body.approved:
-                ok = bool(loader.approve_generated_skill(name))
+                ok = bool(loader.approve_generated_skill(name, body.skill_fingerprints.get(name)))
                 done = {"approved": True}
             else:
                 dest = loader.discard_generated_skill(name, _discard_archive())
@@ -1153,6 +1160,18 @@ async def bulk_review(body: BulkReviewBody):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    if body.approved and body.skills:
+        loader = getattr(orch, "skills", None)
+        if loader is None:
+            return JSONResponse({"error": "skills are not available"}, status_code=503)
+        for name in dict.fromkeys(body.skills):
+            expected = body.skill_fingerprints.get(name)
+            if not isinstance(expected, str) or not expected.startswith("sha256:"):
+                return JSONResponse({"error": "reviewed fingerprint required for every skill",
+                                     "reason": "review_fingerprint_required", "skill": name}, status_code=422)
+            if loader.pending_skill_fingerprint(name) != expected:
+                return JSONResponse({"error": "a skill changed since review; nothing was approved",
+                                     "reason": "reviewed_source_changed", "skill": name}, status_code=409)
     out = await asyncio.to_thread(_bulk_review, orch, body)
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
 

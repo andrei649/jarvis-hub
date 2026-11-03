@@ -1205,8 +1205,11 @@ export function SelfImprovementPanel() {
    they share a mechanism they do not. */
 const reviewKey = (kind, id) => `${kind}:${id}`;
 
-function PendingSkillDetail({ name }) {
+function PendingSkillDetail({ name, onReviewed }) {
   const { d, e, loading } = useApi(`/api/skills/pending/${encodeURIComponent(name)}`, true, true);
+  React.useEffect(() => {
+    if (!e && !loading && typeof d?.fingerprint === 'string') onReviewed(name, d.fingerprint);
+  }, [d, e, loading, name, onReviewed]);
   const files = arr(d, 'files');
   const warnings = arr(d, 'warnings');
   return (
@@ -1243,8 +1246,11 @@ export function PendingSkillsPanel() {
   const batches = arr(bats.d, 'batches');
   const [open, setOpen] = useState('');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [reviewed, setReviewed] = useState<Record<string, string>>({});
   const [note, setNote] = useState(null);
-  const reloadAll = () => { reload(); props.reload(); bats.reload(); };
+  const reloadAll = () => { setReviewed({}); reload(); props.reload(); bats.reload(); };
+  const recordReview = React.useCallback((name: string, fingerprint: string) =>
+    setReviewed((prev) => prev[name] === fingerprint ? prev : { ...prev, [name]: fingerprint }), []);
   const toggle = (key) => setPicked((prev) => {
     const next = new Set<string>(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -1256,7 +1262,14 @@ export function PendingSkillsPanel() {
     .catch((err) => { failed(err); return false; });
   const bulk = (approved) => {
     const of = (kind) => [...picked].filter((k) => k.startsWith(kind + ':')).map((k) => k.slice(kind.length + 1));
-    return apiPost<any>('/api/skills/review/bulk', { approved, skills: of('skill'), proposals: of('proposal'), batches: of('batch') },
+    const skills = of('skill');
+    if (approved && skills.some((name) => !reviewed[name])) {
+      setNote({ bad: true, text: 'review every selected skill before approving it' });
+      return Promise.resolve(false);
+    }
+    return apiPost<any>('/api/skills/review/bulk', { approved, skills,
+      skill_fingerprints: approved ? Object.fromEntries(skills.map((name) => [name, reviewed[name]])) : {},
+      proposals: of('proposal'), batches: of('batch') },
       { admin: true })
       .then((r) => {
         const bad = arr(r, 'results').filter((x) => !x.ok);
@@ -1277,7 +1290,9 @@ export function PendingSkillsPanel() {
       {pending.slice(0, 10).map((s, i) => (
         <React.Fragment key={i}>
           <Row>
-            <Pick k={reviewKey('skill', s.name)} label={s.name} />
+            <input type="checkbox" aria-label={`select ${s.name}`}
+              checked={picked.has(reviewKey('skill', s.name))}
+              onChange={() => toggle(reviewKey('skill', s.name))} />
             <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
             <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(s.description || '').slice(0, 40)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -1288,14 +1303,16 @@ export function PendingSkillsPanel() {
               <button
                 className="tool-btn"
                 title="approve — sign and activate this generated skill"
-                onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`, {}, reloadAll, failed)}
+                disabled={!reviewed[s.name]}
+                onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`,
+                  { expected_fingerprint: reviewed[s.name] }, reloadAll, failed)}
               >✓</button>
               <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="✕" title="discard — reject this generated skill"
                 ariaLabel={`discard ${s.name}`} armedLabel="discard" prompt="moves it out of the skills tree"
                 onConfirm={() => discard(s.name)} />
             </span>
           </Row>
-          {open === reviewKey('skill', s.name) && <PendingSkillDetail name={s.name} />}
+          {open === reviewKey('skill', s.name) && <PendingSkillDetail name={s.name} onReviewed={recordReview} />}
         </React.Fragment>
       ))}
       {proposals.slice(0, 10).map((p) => (

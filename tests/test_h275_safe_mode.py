@@ -200,7 +200,7 @@ def test_a_skill_approved_in_safe_mode_is_said_to_load_on_the_next_normal_boot(t
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path)
     monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: None)
     monkeypatch.setattr(loader_mod, "_skill_generation_allowed", lambda _contract: True)
-    monkeypatch.setattr(loader_mod.signing, "sign_skill", lambda _path: "signed")
+    monkeypatch.setattr(loader_mod.signing, "sign_skill", lambda _path, **_kwargs: "signed")
     loader = loader_mod.SkillLoader.__new__(loader_mod.SkillLoader)
     loader.skills = {}
     loader._approval_store = MagicMock()
@@ -208,7 +208,9 @@ def test_a_skill_approved_in_safe_mode_is_said_to_load_on_the_next_normal_boot(t
     monkeypatch.setattr(skills_routes, "get_orch", lambda: SimpleNamespace(skills=loader))
     _on(monkeypatch)
     with caplog.at_level(logging.INFO, logger=loader_mod.logger.name):
-        body = asyncio.run(skills_routes.approve_generated_skill("tidy"))
+        body = asyncio.run(skills_routes.approve_generated_skill(
+            "tidy", skills_routes.ReviewedSkillBody(
+                expected_fingerprint=loader.pending_skill_fingerprint("tidy"))))
     assert body["approved"] is True and body["loaded"] is False and "normal boot" in body["message"]
     assert "activated" not in caplog.text and "normal boot" in caplog.text
 

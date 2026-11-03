@@ -1325,7 +1325,7 @@ def register(skill):
         )
         return skill_name
 
-    def approve_generated_skill(self, name: str) -> bool:
+    def approve_generated_skill(self, name: str, expected_fingerprint: str | None = None) -> bool:
         """Persist an owner approval outside the skill tree, then activate it.
 
         Pending generated skills and quarantined legacy approvals are eligible.
@@ -1364,6 +1364,17 @@ def register(skill):
         )
         if not pending_marker.exists() and not legacy_reapproval:
             return False
+        if not isinstance(expected_fingerprint, str) or not expected_fingerprint.startswith("sha256:"):
+            self.last_approval_refusal = "review_fingerprint_required"
+            return False
+        try:
+            reviewed_snapshot = signing.source_snapshot(skill_dir)
+        except OSError:
+            self.last_approval_refusal = "reviewed_source_unavailable"
+            return False
+        if reviewed_snapshot.fingerprint != expected_fingerprint:
+            self.last_approval_refusal = "reviewed_source_changed"
+            return False
         if not _skill_generation_allowed(
             {
                 "kind": SKILL_GENERATION_CONTRACT_KIND,
@@ -1386,8 +1397,19 @@ def register(skill):
             self.last_approval_refusal = refused
             logger.warning("Generated skill '%s' not approved: the action kernel said %s", name, refused)
             return False
-        signing.sign_skill(skill_dir)
-        self._approval_store.approve(skill_dir)
+        try:
+            current = signing.source_snapshot(skill_dir)
+            if current.fingerprint != expected_fingerprint:
+                self.last_approval_refusal = "reviewed_source_changed"
+                return False
+            signing.sign_skill(skill_dir, snapshot=current)
+            if signing.source_snapshot(skill_dir).fingerprint != expected_fingerprint:
+                self.last_approval_refusal = "reviewed_source_changed"
+                return False
+            self._approval_store.approve(skill_dir, snapshot=current)
+        except OSError:
+            self.last_approval_refusal = "reviewed_source_unavailable"
+            return False
         legacy_marker.unlink(missing_ok=True)
         pending_marker.unlink(missing_ok=True)
         self._load_skill(skill_dir)
@@ -1443,10 +1465,17 @@ def register(skill):
         skill_dir = self._pending_skill_dir(name)
         if skill_dir is None:
             return None
+        try:
+            snapshot = signing.source_snapshot(skill_dir)
+        except OSError:
+            snapshot = None
+        captured = {item.relative_path: item.content for item in snapshot.files} if snapshot else {}
+        paths = ([skill_dir / rel for rel in sorted(captured)] if snapshot is not None
+                 else sorted(skill_dir.rglob("*")))
         files: list[dict] = []
         shown = 0
         more = 0
-        for path in sorted(skill_dir.rglob("*")):
+        for path in paths:
             rel = path.relative_to(skill_dir).as_posix()
             if rel == "PENDING_REVIEW" or (path.is_dir() and not path.is_symlink()):
                 continue
@@ -1458,12 +1487,15 @@ def register(skill):
                 entry["symlink"] = True
                 files.append(entry)
                 continue
-            try:
-                raw = path.read_bytes()
-            except OSError:
-                entry["unreadable"] = True
-                files.append(entry)
-                continue
+            if snapshot is not None:
+                raw = captured[rel]
+            else:
+                try:
+                    raw = path.read_bytes()
+                except OSError:
+                    entry["unreadable"] = True
+                    files.append(entry)
+                    continue
             entry["size"] = len(raw)
             entry["sha256"] = hashlib.sha256(raw).hexdigest()
             try:
@@ -1500,7 +1532,18 @@ def register(skill):
             "files": files,
             "more_files": more,
             "warnings": warnings,
+            "fingerprint": snapshot.fingerprint if snapshot is not None else None,
         }
+
+    def pending_skill_fingerprint(self, name: str) -> str | None:
+        """Current stable source identity of one still-quarantined skill."""
+        skill_dir = self._pending_skill_dir(name)
+        if skill_dir is None:
+            return None
+        try:
+            return signing.source_snapshot(skill_dir).fingerprint
+        except OSError:
+            return None
 
     def discard_generated_skill(self, name: str, archive_dir: Path) -> Optional[Path]:
         """Reject a quarantined skill (H331): its folder leaves the skills tree for

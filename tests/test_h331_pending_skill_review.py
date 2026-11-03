@@ -162,7 +162,7 @@ def test_discard_never_touches_a_skill_that_awaits_no_review(hub):
 
 def test_an_approved_skill_can_no_longer_be_discarded(hub):
     folder, name = _gen(hub)
-    assert hub.loader.approve_generated_skill(name) is True
+    assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name)) is True
     assert hub.loader.discard_generated_skill(name, hub.discarded) is None
     assert (hub.root / folder / "main.py").exists()
 
@@ -215,6 +215,27 @@ def test_the_detail_route_serves_the_whole_content(hub, client):
     assert client.get("/api/skills/pending/nothing-here", headers=ADMIN).status_code == 404
 
 
+def test_approve_requires_exact_reviewed_snapshot_after_a_disk_edit(hub, client):
+    folder, name = _gen(hub)
+    reviewed = client.get(f"/api/skills/pending/{name}", headers=ADMIN).json()
+    fingerprint = reviewed["fingerprint"]
+    assert fingerprint.startswith("sha256:")
+    assert client.post(f"/api/skills/{name}/approve", headers=ADMIN, json={}).status_code == 422
+    main = hub.root / folder / "main.py"
+    main.write_bytes(main.read_bytes() + b"\n# changed after review\n")
+    stale = client.post(f"/api/skills/{name}/approve", headers=ADMIN,
+                        json={"expected_fingerprint": fingerprint})
+    assert stale.status_code == 409
+    assert stale.json()["reason"] == "reviewed_source_changed"
+    assert (hub.root / folder / "PENDING_REVIEW").exists()
+    assert not (hub.root / folder / "SKILL.sig").exists()
+    current = client.get(f"/api/skills/pending/{name}", headers=ADMIN).json()
+    assert current["fingerprint"] != fingerprint
+    approved = client.post(f"/api/skills/{name}/approve", headers=ADMIN,
+                           json={"expected_fingerprint": current["fingerprint"]})
+    assert approved.status_code == 200
+
+
 def test_the_discard_route_rejects_a_pending_skill(hub, client):
     folder, name = _gen(hub)
     assert client.post(f"/api/skills/{name}/discard").status_code == 401
@@ -247,7 +268,10 @@ def test_bulk_approve_across_skills_proposals_and_batches(hub, client):
     proposal = _proposal(hub, "plan")
     batch = _batch(hub, "notes")
     reply = client.post("/api/skills/review/bulk", headers=ADMIN, json={
-        "approved": True, "skills": [a, b], "proposals": [proposal], "batches": [batch]})
+        "approved": True, "skills": [a, b],
+        "skill_fingerprints": {a: hub.loader.pending_skill_fingerprint(a),
+                               b: hub.loader.pending_skill_fingerprint(b)},
+        "proposals": [proposal], "batches": [batch]})
     assert reply.status_code == 200, reply.text
     out = reply.json()
     assert out["ok"] is True and out["failed"] == 0 and out["decided"] == 4
@@ -281,17 +305,27 @@ def test_bulk_reject_discards_skills_and_closes_proposals_and_batches(hub, clien
     assert hub.batches.get(batch)["status"] == "rejected"
 
 
-def test_bulk_reports_each_item_and_one_failure_does_not_undo_the_rest(hub, client):
+def test_bulk_missing_skill_fingerprint_refuses_before_any_approval(hub, client):
     _, a = _gen(hub)
     reply = client.post("/api/skills/review/bulk", headers=ADMIN, json={
         "approved": True, "skills": [a, "no-such-skill"], "proposals": ["p-missing"], "batches": ["b-missing"]})
     out = reply.json()
-    assert reply.status_code == 200 and out["ok"] is False and out["decided"] == 1 and out["failed"] == 3
-    by = {(r["kind"], r["id"]): r for r in out["results"]}
-    assert by[("skill", a)]["ok"] is True
-    assert by[("skill", "no-such-skill")]["error"] == "not_pending"
-    assert by[("proposal", "p-missing")]["error"] == "not_found"
-    assert by[("batch", "b-missing")]["error"] == "not_found"
+    assert reply.status_code == 422 and out["reason"] == "review_fingerprint_required"
+    assert hub.loader.pending_skill_fingerprint(a) is not None
+
+
+def test_bulk_stale_fingerprint_refuses_all_skills(hub, client):
+    _, a = _gen(hub)
+    _, b = _gen(hub, cmd="file_receipts", task="file receipts")
+    first = hub.loader.pending_skill_fingerprint(a)
+    second = hub.loader.pending_skill_fingerprint(b)
+    path = Path(hub.loader.skills[b].path) / "main.py"
+    path.write_bytes(path.read_bytes() + b"\n# changed\n")
+    reply = client.post("/api/skills/review/bulk", headers=ADMIN, json={
+        "approved": True, "skills": [a, b], "skill_fingerprints": {a: first, b: second}})
+    assert reply.status_code == 409 and reply.json()["reason"] == "reviewed_source_changed"
+    assert hub.loader.pending_skill_fingerprint(a) == first
+    assert (Path(hub.loader.skills[a].path) / "PENDING_REVIEW").exists()
 
 
 def test_bulk_is_admin_only_and_validates_its_body(client):

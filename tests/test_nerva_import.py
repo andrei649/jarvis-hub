@@ -446,7 +446,8 @@ async def test_apply_update_reimports_changed_skill_into_quarantine_and_revokes_
 
     # The owner reviews and approves the quarantined import (the real approve path).
     loader._load_skill(target)
-    assert loader.approve_generated_skill("github-issues") is True
+    from agents.core.skills.signing import source_snapshot
+    assert loader.approve_generated_skill("github-issues", source_snapshot(target).fingerprint) is True
     assert store.is_approved(target) and not (target / "PENDING_REVIEW").exists()
     assert (target / "SKILL.sig").exists()
 
@@ -1165,7 +1166,8 @@ def test_cli_update_reimports_changed_skills_only_with_apply(home, tmp_path, mon
     assert "1 imported" in capsys.readouterr().out
     loader = loader_mod.SkillLoader()  # the default registry under $JARVIS_HOME, as the CLI uses
     loader._load_skill(target)
-    assert loader.approve_generated_skill("github-issues") is True
+    from agents.core.skills.signing import source_snapshot
+    assert loader.approve_generated_skill("github-issues", source_snapshot(target).fingerprint) is True
     assert SkillApprovalStore().is_approved(target)
 
     new = _edit_source(_hermes(home).skill_dirs[0])
