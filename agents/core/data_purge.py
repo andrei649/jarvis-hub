@@ -157,10 +157,13 @@ PURGE_MEMORY_FILES: tuple[str, ...] = (
     # H423 review: both core rings and their digests are removed, never reset: a missing
     # ring is an empty one, while the sweep's "{}" reset of the user ring (it used to be
     # missing here) plus a deleted digest left a file every later write refused as drift.
+    # H046 review: and the record of when each of their facts was added (``.added``).
     "cognition/core_memory.json",
     "cognition/core_memory.json.sha256",
+    "cognition/core_memory.json.added",
     "cognition/user_core.json",
     "cognition/user_core.json.sha256",
+    "cognition/user_core.json.added",
     "cognition/living_tiers.json",
     "house/private_graph.enc",
     "house/private_graph.cipher.salt",
@@ -463,14 +466,19 @@ def _purge_everything_but_keep(root: Path) -> dict:
 _CORE_RING_FILES: tuple[str, ...] = ("cognition/core_memory.json", "cognition/user_core.json")
 
 
+#: The files kept beside a core ring that go with it: its digest and when its facts were added.
+_CORE_RING_SIDECARS: tuple[str, ...] = (".sha256", ".added")
+
+
 def _unlink_core_ring(root: Path, ring: str) -> list[str]:
-    """Remove *ring* and its ``.sha256`` digest under the ring's file lock. Returns the
-    names removed. When the lock stays held past ``CLEAR_LOCK_TIMEOUT_S`` the files are
-    removed anyway (a forget must erase them) and a warning says so."""
+    """Remove *ring*, its ``.sha256`` digest and its ``.added`` record under the ring's
+    file lock. Returns the names removed. When the lock stays held past
+    ``CLEAR_LOCK_TIMEOUT_S`` the files are removed anyway (a forget must erase them) and
+    a warning says so."""
     from agents.core.cognition.memory import CLEAR_LOCK_TIMEOUT_S, CoreMemoryLocked, _path_lock
 
     path = root / ring
-    names = [ring, ring + ".sha256"]
+    names = [ring, *(ring + suffix for suffix in _CORE_RING_SIDECARS)]
     if not any((root / name).exists() for name in names):
         return []
     lock = _path_lock(path.with_name(path.name + ".lock"))
@@ -505,8 +513,8 @@ def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> d
     report: dict = {"files": [], "dirs": [], "sessions": []}
 
     for name in PURGE_MEMORY_FILES:
-        if name.removesuffix(".sha256") in _CORE_RING_FILES:
-            continue                      # removed below, under the ring's lock
+        if any(name.removesuffix(sfx) in _CORE_RING_FILES for sfx in _CORE_RING_SIDECARS):
+            continue                      # a ring or a file beside it: removed below, under its lock
         p = root / name
         if p.exists():
             p.unlink()

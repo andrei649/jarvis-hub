@@ -760,6 +760,24 @@ Reads: `GET /api/kg/map`, `GET /api/kg/facts/as-of?axis=known|valid`, `GET /skil
 
 Not live-proven by these rows: personal memory content on the owner's install, a Neo4j server (statement shapes only), and a real browser (jsdom only).
 
+## 09.13 The learning journey: `nerva journey` and the TODAY card (H046)
+
+What the assistant learned, over time (Hermes `hermes journey`, aliases `learning` / `memory-graph`). The learned entries are the facts of
+the two curated rings every prompt carries (agent notes and user profile: the model's `memory` tool, the post-turn review and the daily
+reflection write them), the skills it learned (not shipped; created by the agent or used at least once) and the fact store's rows. Reads:
+`GET /api/dashboard/today` (the timeline, 1–30 days) and `GET /api/dashboard/today/entries` (every learned entry, whatever its age, with its
+id), user tier. Writes: `PATCH` / `DELETE /api/dashboard/today/entries/{id}`, **admin**, crossing `kg.write` (contract + kernel; the kernel is
+off by default, so the refusal rows need `JARVIS_ACTION_KERNEL=1`).
+
+| ID | Case | Do | Expect | Fail | Auto |
+|----|------|----|--------|------|------|
+| MEM-230 | What it learns shows up | In chat: `Remember that I live in Bucharest.` (the model saves it with its memory tool); then `nerva journey`, `nerva journey list`, and the HUD TODAY card | The fact is listed as `user profile: lives in Bucharest` with an id `memory:user:<16 hex>`, dated when it was saved; the older facts of that ring keep their own dates (the TODAY card counts only the new one); `nerva journey list` prints it with every older learned entry (no 30-day cut) and the counts per store | MAJOR if a fact the memory tool saved is missing from the journey, or one new fact makes the older ones read as learned today | ✅tests/test_h046_journey.py |
+| MEM-231 | Edit and forget a note by its id | `nerva journey edit <id>` (editor, or `--text`), then `nerva journey delete <id>`; then the Long-Term Memory panel | The edit replaces that one fact (not one that merely contains its text), prints its new id and an undo ref; the panel's Undo puts it back; delete asks for `yes` (on stderr with `--json`) and removes it; injection-looking, over-300-character or duplicate text is refused with the memory tool's reason | MAJOR if another fact changes, or a refused text is saved | ✅tests/test_h046_journey.py |
+| MEM-232 | A learned skill is a journey node | Let the agent learn a skill (`[learn:]`), approve it; `nerva journey list --store skill`; `nerva journey edit skill:<name>`; `nerva journey delete skill:<name>` | Listed while still in quarantine (`pending_review`) without its SKILL.md (`journey show` says it awaits review; only the admin review reads it), not editable until approved, and a delete discards it (kept in the discard archive); once approved, the editor opens the whole SKILL.md (`.md`); a delete archives the folder (path printed, recoverable); a pinned skill is refused. The TODAY card lists it the day it was learned, approved or patched, never again when it is only used, viewed or switched on | MAJOR if a skill is deleted outright, a pinned one is archived, a user token reads a quarantined SKILL.md, or using an old skill shows it as learned today | ✅tests/test_h046_journey.py |
+| MEM-233 | Writes are admin and kernel-mediated | Without `JARVIS_ADMIN_TOKEN`, then with `JARVIS_ACTION_KERNEL=1` and a halt, try edit and delete from the CLI and the TODAY card | Without the admin token: refused (401/403), nothing changes; under a halt: `kernel denied: …; nothing changed`, also for an id that does not exist (no existence leak); the TODAY card shows the refusal | MAJOR if a write goes through without the admin token or under a halt | ✅tests/test_h046_journey.py, frontend/src/test/today-panel-journey.test.tsx |
+
+Not live-proven by these rows: a real model turn writing the ring (the tests call the memory tool's handler directly) and a real browser.
+
 ---
 
 ## 09.Z Coverage ledger
@@ -779,6 +797,7 @@ Not live-proven by these rows: personal memory content on the owner's install, a
 | 09.11 Retention, size, durability | 10 (MEM-170…179) | ⏱ | 3 | Almost entirely manual — this is what the offline suite cannot prove |
 | 09.Y Negative & adversarial | 24 (MEM-180…203) | 🌐 👁 ⏱ | 11 | Traversal/Cypher/injection are well covered offline; concurrency, clock skew, disk-full and test-fixture bleed are not |
 | 09.12 Memory graph explorer (H206) | 16 (MEM-207…222) | 🖥 👁 🔑 | 16 | Needs a browser for the canvas; the Neo4j relabel statement is asserted offline but not against a live server |
+| 09.13 The learning journey (H046) | 4 (MEM-230…233) | 🤖 👁 | 4 | The tests call the memory tool's handler directly, not through a model turn; the TODAY card is jsdom only |
 | **Total** | **203 cases (MEM-001…203, no gaps, no duplicates)** | — | **~146 with some offline coverage** | 🔑 27 · 🤖 41 · 👁 14 · ⏱ 22 · 🌐 6 · 🖥 3 |
 
 ---
