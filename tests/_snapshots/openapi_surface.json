@@ -269,6 +269,7 @@
   "GET /api/security/capabilities/check": "capabilities_check_api_security_capabilities_check_get",
   "GET /api/security/governance": "security_governance_api_security_governance_get",
   "GET /api/security/kill-switch": "kill_switch_status_api_security_kill_switch_get",
+  "GET /api/security/kill-switch/details": "kill_switch_details_api_security_kill_switch_details_get",
   "GET /api/security/loop-breaker": "loop_breaker_status_api_security_loop_breaker_get",
   "GET /api/security/posture": "security_posture_api_security_posture_get",
   "GET /api/self-improvement/status": "self_improvement_status_api_self_improvement_status_get",

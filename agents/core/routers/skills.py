@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from agents.core.routers._deps import user_guard, admin_guard
 from agents.core.routers._component import component_unavailable, require_component
 
-from agents.core.web_helpers import error_json, logger
+from agents.core.web_helpers import error_json, logger, nocache_json
 from agents.core import app_state
 from agents.core.app_state import get_orch
 from agents.core.skills.marketplace import BrokerOnlyInstall
@@ -802,12 +802,12 @@ async def skills_import(req: Request):
     return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
 
 
-@router.get("/skills/imported")
+@router.get("/skills/imported", dependencies=[Depends(user_guard)])
 async def skills_imported():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {"imported": orch.skill_importer.list_imported()}
+    return nocache_json({"imported": orch.skill_importer.list_imported()})
 
 
 # ── Agent Marketplace Endpoints (H5.8) ───────────────────────────

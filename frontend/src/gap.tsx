@@ -768,44 +768,42 @@ function SecretsPanel() {
 }
 export function KillSwitchPanel() {
   const { d, e, loading, reload } = useApi('/api/security/kill-switch');
-  // /api/security/kill-switch returns {global: bool, halted: {agent: reason}}. `halted`
-  // is a MAP, not a bool — `d?.halted ?? d?.engaged` returned {} (truthy) and showed a
-  // false "ENGAGED · all agents halted" alarm (2026-07-24 QA finding). Derive it: engaged
-  // iff the global switch is on OR at least one agent is in the halted map.
-  const halted = !!(d?.global || Object.keys(d?.halted || {}).length || d?.engaged);
+  const known = !!d && !e && typeof d.global === 'boolean' &&
+    typeof d.any_halted === 'boolean' && Number.isSafeInteger(d.halted_count) && d.halted_count >= 0;
+  const globalHalted = known && d.global;
+  const halted = known && (d.global || d.any_halted);
   // Whether we actually READ the state. Without this, `halted` is false while the
   // status is still in flight or the read failed outright, and the row below
   // rendered a green "ARMED · operational" — telling the operator the safety
   // system is fine on the strength of a request that never came back. For a
   // kill-switch that is the worst possible default.
-  const known = !!d && !e;
   // A halt that silently fails is worse than no button: the operator believes the system
   // is stopped. Always re-read state after the attempt, and say so loudly if it was refused.
   const [actErr, setActErr] = useState('');
   const toggle = () => {
     setActErr('');
-    actA('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' },
+    actA('/api/security/kill-switch', { engage: !globalHalted, scope: 'global', reason: 'hud' },
       reload,
       (err) => { setActErr(String(err?.message || err || 'request failed')); reload(); });
   };
-  return <Card title="KILL-SWITCH" live={asLive(d)} onReload={reload}>
+  return <Card title="KILL-SWITCH" live={asLive(known ? d : null)} onReload={reload}>
     <State e={e} loading={loading} n={known ? 1 : 0} />
     <Row><span style={{ color: !known ? 'var(--amber)' : halted ? 'var(--red)' : 'var(--green)' }}>
       {!known ? 'UNKNOWN · could not read kill-switch state'
-        : halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
-      {/* The button stays live even when the state is unknown: with `halted` false
-          it sends engage=true, and halting on an unknown state is the safe
-          direction. Only the claim about current state is withheld. H168: halting is
-          one click (a stop never waits for a second one); disengaging lets every agent
-          act again, so it takes the typed phrase. */}
+        : globalHalted ? 'ENGAGED · all agents halted'
+        : halted ? `ENGAGED · ${d.halted_count} scoped halt${d.halted_count === 1 ? '' : 's'} active`
+        : 'ARMED · operational'}</span>
+      {/* Unknown state still offers global engage=true, the safe direction. H168:
+          halting is one click; global disengage keeps its typed confirmation.
+          Scoped halts remain independently active after global disengage. */}
       <span style={{ marginLeft: 'auto' }}>
-        {halted
+        {globalHalted
           ? <ConfirmAction tier={RISK_TIER.EXTERNAL} label="disengage" phrase="DISENGAGE"
-              prompt="type DISENGAGE to let every agent act again:" onConfirm={toggle} />
+              prompt="type DISENGAGE to release the global halt; scoped halts may remain:" onConfirm={toggle} />
           : <ConfirmAction tier={RISK_TIER.READ_ONLY} label="HALT ALL" onConfirm={toggle} />}
       </span></Row>
     {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
-      {halted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
+      {globalHalted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
     </span></Row>}
   </Card>;
 }

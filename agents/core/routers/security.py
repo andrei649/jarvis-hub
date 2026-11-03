@@ -178,7 +178,16 @@ async def capabilities_check(token: str, capability: str):
 
 @router.get("/api/security/kill-switch")
 async def kill_switch_status():
-    """Out-of-band kill-switch status."""
+    """Public content-free out-of-band kill-switch status."""
+    _, kill, err = require_component("kill_switch", "kill-switch not available")
+    if err is not None:
+        return err
+    return nocache_json(kill.public_status())
+
+
+@router.get("/api/security/kill-switch/details", dependencies=[Depends(admin_guard)])
+async def kill_switch_details():
+    """The existing full halt map for authenticated owner diagnostics."""
     _, kill, err = require_component("kill_switch", "kill-switch not available")
     if err is not None:
         return err
