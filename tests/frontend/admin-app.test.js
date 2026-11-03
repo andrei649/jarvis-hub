@@ -68,7 +68,7 @@ describe('AdminApp (full mount + nav sweep)', () => {
     }
   });
 
-  it('sends the entered admin credential on newly guarded Agents and Oracle reads', async () => {
+  it('sends the entered admin credential on guarded Agents and both Oracle reads', async () => {
     const fetcher = adminBackend();
     env = loadHud({ files: ['i18n', 'data', 'components', 'admin'], fetch: fetcher, lang: 'ro' });
     await env.flush();
@@ -87,6 +87,9 @@ describe('AdminApp (full mount + nav sweep)', () => {
     const oracle = fetcher.mock.calls.find((c) => c[0] === '/api/oracle/status');
     expect(oracle).toBeTruthy();
     expect(oracle[1].headers['X-Admin-Token']).toBe('owner-admin');
+    const conflicts = fetcher.mock.calls.find((c) => c[0] === '/api/oracle/conflicts');
+    expect(conflicts).toBeTruthy();
+    expect(conflicts[1].headers['X-Admin-Token']).toBe('owner-admin');
   });
 
   it('marks a setting dirty and saves it to the category endpoint', async () => {

@@ -696,7 +696,7 @@ function OraclePage() {
 
   const fetchData = () => {
     afetch('/api/oracle/status').then(r=>r.json()).then(d=>setData(d)).catch(()=>{});
-    fetch('/api/oracle/conflicts').then(r=>r.json()).then(d=>setConflicts(d.conflicts||[])).catch(()=>{});
+    afetch('/api/oracle/conflicts').then(r=>r.json()).then(d=>setConflicts(d.conflicts||[])).catch(()=>{});
   };
 
   useEffect(() => { fetchData(); const id = setInterval(fetchData, 15000); return ()=>clearInterval(id); }, []);
