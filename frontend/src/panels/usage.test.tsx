@@ -1,9 +1,15 @@
 // @ts-nocheck
 import React from 'react';
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ConsoleOverlay } from '../gap';
 import { CONSOLE_PANEL_MAP } from '../console-routes';
+
+beforeEach(() => {
+  localStorage.clear();
+  localStorage.setItem('hud.user_token', 'synthetic-user');
+  localStorage.setItem('hud.admin_token', 'synthetic-owner');
+});
 
 it('makes Usage a reachable Command Center section', () => {
   expect(CONSOLE_PANEL_MAP.get('usage')?.label).toBe('Usage');
@@ -37,7 +43,11 @@ it('shows the actual APM response totals and breakdowns in the console', async (
   expect(screen.getByText('cloud').parentElement!.textContent).toContain('3,000 tokens');
   expect(screen.getByRole('meter', { name: 'Token locality' })).toBeTruthy();
   expect(screen.getByRole('meter', { name: 'Known estimated cost locality' })).toBeTruthy();
-  expect(global.fetch.mock.calls.filter(([url]) => String(url).includes('/api/admin/apm'))).toHaveLength(1);
+  const apmCalls = global.fetch.mock.calls.filter(([url]) => String(url).includes('/api/admin/apm'));
+  expect(apmCalls).toHaveLength(1);
+  expect(apmCalls[0][1].headers).toMatchObject({
+    'X-User-Token': 'synthetic-user', 'X-Admin-Token': 'synthetic-owner',
+  });
 });
 
 it('opens the read-only Billing tab in Settings', async () => {
@@ -46,4 +56,10 @@ it('opens the read-only Billing tab in Settings', async () => {
   fireEvent.click(screen.getByRole('tab', { name: 'Billing' }));
   expect(screen.getByRole('tab', { name: 'Billing' }).getAttribute('aria-selected')).toBe('true');
   await waitFor(() => expect(screen.getByText('USAGE')).toBeTruthy());
+  await waitFor(() => expect(global.fetch.mock.calls.filter(([url]) =>
+    String(url).includes('/api/admin/apm'))).toHaveLength(1));
+  const apmCall = global.fetch.mock.calls.find(([url]) => String(url).includes('/api/admin/apm'));
+  expect(apmCall[1].headers).toMatchObject({
+    'X-User-Token': 'synthetic-user', 'X-Admin-Token': 'synthetic-owner',
+  });
 });

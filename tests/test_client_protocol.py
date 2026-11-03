@@ -80,14 +80,24 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
     schemas = payload["components"]["schemas"]
     assert set(schemas) == {
         "ChatRequest", "ChatResponse", "TurnNotice", "TurnOutcome", "TurnCompletion",
-        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall",
+        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall", "TurnUsageDetail",
     }
     assert schemas["ChatRequest"] == source["components"]["schemas"]["ChatRequest"]
     assert schemas["ChatResponse"] == source["components"]["schemas"]["ChatResponse"]
     assert schemas["TurnNotice"] == source["components"]["schemas"]["TurnNotice"]
     for name in ("TurnOutcome", "TurnCompletion", "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation",
-                 "TurnRecall"):
+                 "TurnRecall", "TurnUsageDetail"):
         assert schemas[name] == source["components"]["schemas"][name]
+    # H220: current-turn usage preserves uncertainty and qualified cost provenance.
+    detail = schemas["TurnUsageDetail"]["properties"]
+    assert set(detail) == {
+        "input_tokens", "output_tokens", "estimated_cost_usd", "usage_basis", "cost_basis",
+    }
+    assert detail["usage_basis"]["enum"] == ["provider_complete", "measured_zero", "unknown"]
+    assert detail["cost_basis"]["enum"] == ["price_table", "local_zero", "measured_zero", "unknown"]
+    for field in ("input_tokens", "output_tokens"):
+        assert detail[field]["anyOf"] == [{"type": "integer"}, {"type": "null"}]
+    assert detail["estimated_cost_usd"]["anyOf"] == [{"type": "number"}, {"type": "null"}]
     # H430: the recall status the descriptor publishes is counts and closed words only.
     assert set(schemas["TurnRecall"]["properties"]) == {
         "schema", "provider", "basis", "recalled", "withheld", "untrusted"}

@@ -43,7 +43,7 @@ function UsageRow({ label, row }: { label: string; row: Counts }) {
 
 /** Read-only usage snapshot from the existing APM rollup; each call is classified at record time. */
 export function UsagePanel() {
-  const { d, e, loading, reload } = useApi('/api/admin/apm');
+  const { d, e, loading, reload } = useApi('/api/admin/apm', true, true);
   const summary = d as Summary | null;
   const totals = summary?.totals;
   return <Card title="USAGE" live={asLive(d)} onReload={reload}>
