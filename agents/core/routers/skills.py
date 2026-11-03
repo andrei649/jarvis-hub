@@ -24,6 +24,7 @@ from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
 from agents.core.app_state import get_orch
 from agents.core.skills.marketplace import BrokerOnlyInstall
+from agents.core.skills.bundles import MAX_MEMBER_PATH_CHARS
 from agents.core.skills.signing import SkillSourceSnapshotError
 from agents.core.skills.validate import SkillDocumentInvalid
 
@@ -285,7 +286,7 @@ async def show_skill_bundle(name: str = PathParam(..., min_length=1, max_length=
 
 class SkillBundleBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
-    skills: list[Annotated[str, Field(max_length=128)]] = Field(..., min_length=1, max_length=64)
+    skills: list[Annotated[str, Field(max_length=MAX_MEMBER_PATH_CHARS)]] = Field(..., min_length=1, max_length=64)
     description: str = Field("", max_length=200)
     # Hermes' `instruction`: guidance put before the skills when the bundle is loaded into a
     # turn. Left out (null), a replaced bundle keeps its own; "" drops it.
