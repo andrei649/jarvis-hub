@@ -37,7 +37,9 @@ beside a running turn, before a route with no conversation says so) and again fo
 commands, on the raw typed name. The gate answers before any input or configuration check
 (an oversized ``/goal``, a malformed quick-command store), so such a check never stands in
 for an audited denial. A custom ``sessions.reset_triggers`` text is judged as the owner
-command it is.
+command it is, even one spelled like a user-tier command. A Matrix room is a DM only when
+the Matrix adapter's homeserver lookup proves it; otherwise its commands are judged in
+group scope.
 """
 
 from __future__ import annotations
@@ -238,7 +240,10 @@ async def refusal(registry, name: str, *, orch: Any, principal, quick: bool = Fa
     logger.info("Slash command /%s denied for %s:%s (%s, not the owner, not in %s)",
                 name, _safe(principal.channel, 32), _safe(principal.sender) or "?", principal.scope, SETTING)
     await _audit(orch, principal, name, "owner_tier" if owner_tier else "not_allowed")
-    allowed = allowed_names(registry, principal) or list(FLOOR)
+    # Never offer the refused name back: an owner's reset trigger spelled like an allowed
+    # command (``/status``) is refused here as the owner command it is.
+    allowed = [allowed_name for allowed_name in allowed_names(registry, principal) or FLOOR
+               if allowed_name != name]
     return CommandOutcome(name, "refused", denial_reply(
         name, allowed, owner_tier=owner_tier, scope=principal.scope))
 

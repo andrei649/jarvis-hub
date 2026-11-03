@@ -20,12 +20,23 @@ surface and belongs to a host bridge, not this layer.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
+from urllib.parse import quote
 
 from .base import ChannelAdapter
 
 logger = logging.getLogger("jarvis.channels.webhook")
+
+#: How long a Matrix command waits for the homeserver to say whether its room is a DM.
+_MATRIX_LOOKUP_SECONDS = 5.0
+
+
+def _matrix_id(value: Any, sigil: str) -> bool:
+    """A Matrix room (``!``) or user (``@``) id as the spec bounds it: 255 printable chars."""
+    return (isinstance(value, str) and 1 < len(value) <= 255 and value.startswith(sigil)
+            and value.isprintable() and not any(ch.isspace() for ch in value))
 
 
 class WebhookChannel(ChannelAdapter):
@@ -107,8 +118,14 @@ class WebhookChannel(ChannelAdapter):
         text = parsed.get("text", "")
         if not text:
             return None
+        parsed = await self.enrich_inbound(parsed)
         meta = {k: v for k, v in parsed.items() if k != "text"}
         return await self.receive(text, **meta)
+
+    async def enrich_inbound(self, parsed: dict) -> dict:
+        """Provider hook: what the payload alone does not say but the provider's API does
+        (Matrix: whether the room is a DM). Never raises; the default adds nothing."""
+        return parsed
 
     async def _get_transport(self):
         if self._transport is None:  # pragma: no cover - real network path
@@ -193,6 +210,8 @@ class MatrixChannel(WebhookChannel):
 
     channel_id = "matrix"
     _DYNAMIC_HOST_CONFIG_KEYS = ("homeserver",)
+    #: This bot's own user id, from ``/account/whoami`` (read once, on the first command).
+    _own_user_id: Optional[str] = None
 
     def build_send(self, message, kwargs):
         room = kwargs.get("room_id") or self.config.get("default_room")
@@ -217,6 +236,63 @@ class MatrixChannel(WebhookChannel):
         if not text or not sender:
             return None
         return {"text": text, "sender": sender, "room_id": room}
+
+    async def enrich_inbound(self, parsed):
+        """H058 — the scope a command is judged in. A room event never says whether its room
+        is a DM, so for slash-shaped text (the only text the command gate judges by scope)
+        the homeserver is asked: a room whose members are exactly the sender and this bot,
+        both joined, is a DM. Anything not proven so — no homeserver or token, an error, a
+        timeout, a malformed reply, a third member joined, invited, knocking or banned —
+        stays group scope, the less trusted one."""
+        text = parsed.get("text")
+        if not (isinstance(text, str) and text.lstrip().startswith("/")):
+            return parsed
+        try:
+            direct = await asyncio.wait_for(
+                self._direct_room(parsed.get("room_id"), parsed.get("sender")), _MATRIX_LOOKUP_SECONDS)
+        except Exception:  # noqa: BLE001 — unknown is group scope
+            logger.debug("matrix room membership unavailable; judged as a group", exc_info=True)
+            direct = False
+        return {**parsed, "chat_type": "private"} if direct is True else parsed
+
+    async def _direct_room(self, room, sender) -> bool:
+        hs = (self.config.get("homeserver", "") or "").rstrip("/")
+        token = self.config.get("token", "")
+        if not (hs and isinstance(token, str) and token
+                and _matrix_id(room, "!") and _matrix_id(sender, "@")):
+            return False
+        if self._own_user_id is None:
+            body = await self._get_json(f"{hs}/_matrix/client/v3/account/whoami", token)
+            me = body.get("user_id") if body is not None else None
+            if not _matrix_id(me, "@"):
+                return False
+            self._own_user_id = me
+        # Every membership but "leave": an invited user can join and read what is said here.
+        body = await self._get_json(
+            f"{hs}/_matrix/client/v3/rooms/{quote(room, safe='')}/members?not_membership=leave", token)
+        chunk = body.get("chunk") if body is not None else None
+        if not isinstance(chunk, list):
+            return False
+        members = {}
+        for event in chunk:
+            if not isinstance(event, dict) or event.get("type") != "m.room.member":
+                return False                   # a reply it cannot read proves nothing
+            content, user = event.get("content"), event.get("state_key")
+            membership = content.get("membership") if isinstance(content, dict) else None
+            if not _matrix_id(user, "@") or not isinstance(membership, str):
+                return False
+            if membership != "leave":
+                members[user] = membership
+        return (sender != self._own_user_id
+                and members == {sender: "join", self._own_user_id: "join"})
+
+    async def _get_json(self, url: str, token: str) -> Optional[dict]:
+        transport = await self._get_transport()
+        resp = await transport.request("GET", url, headers={"Authorization": f"Bearer {token}"}, json=None)
+        if getattr(resp, "status_code", None) != 200:
+            return None
+        body = resp.json()
+        return body if isinstance(body, dict) else None
 
 
 class TeamsChannel(WebhookChannel):

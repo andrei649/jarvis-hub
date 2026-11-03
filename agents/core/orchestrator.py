@@ -1998,9 +1998,10 @@ class Orchestrator:
     def _principal_chat_type(channel: str, kwargs: dict):
         """The chat type the adapter reported, before any thread override: what decides
         a command's DM or group scope (H058). Slack names a DM by its ``D`` channel. A Matrix
-        room event never says whether its room is a DM (that lives in the account's
-        ``m.direct`` data), so a Matrix command is judged in group scope: the less trusted
-        one, never a DM list handed to a room of strangers."""
+        room event never says whether its room is a DM; the Matrix adapter reports
+        ``private`` only when the homeserver proves it (the room's members are the sender
+        and the bot, both joined), and every other Matrix command is judged in group scope: the
+        less trusted one, never a DM list handed to a room of strangers."""
         kind = kwargs.get("chat_type")
         if channel == "slack" and not kind:
             kind = "private" if str(kwargs.get("slack_channel") or "").startswith("D") else "group"
@@ -2058,8 +2059,10 @@ class Orchestrator:
         lease and appends nothing, so an entry path can ask before its own work.
 
         *reset_trigger*: *text* is one of the owner's ``sessions.reset_triggers`` — an owner
-        command even when it names no registry command (``/fresh``), judged in the owner's
-        tier under its own ``/name`` (``/new``, what it does, when it is not slash-shaped).
+        command whatever it names: no registry command (``/fresh``), or one the sender may
+        otherwise run (``/status`` made a trigger shadows the user-tier ``/status``). It is
+        judged in the owner's tier under its own ``/name`` (``/new``, what it does, when it is
+        not slash-shaped).
 
         Every path that asks here answers the refusal itself, outside the registry, so the
         refusal also goes out as the ``command.completed`` extension event the registry
@@ -2070,11 +2073,14 @@ class Orchestrator:
         try:
             from .slash_access import gated_name, refusal
 
-            target = gated_name(registry, text)
-            if target is None and reset_trigger:
+            if reset_trigger:
                 parsed = registry.parse(text)
-                # The owner wrote this trigger, so its name is the owner's text, not the sender's.
+                # The owner wrote this trigger, so its name is the owner's text, not the
+                # sender's; it resets the conversation here, so it is the owner's tier even
+                # when it is spelled like a command the sender's list allows.
                 target = (parsed[0] if parsed is not None and len(parsed[0]) <= 64 else "new", True)
+            else:
+                target = gated_name(registry, text)
             if target is None:
                 return None
             name, quick = target
@@ -2096,9 +2102,8 @@ class Orchestrator:
         try:
             from .slash_access import can_run, gated_name
 
-            target = gated_name(registry, text)
-            if target is None and self._reset_trigger(text):
-                target = ("new", True)                         # a custom reset trigger: the owner's
+            # A reset trigger is the owner's, whatever command it is spelled like.
+            target = ("new", True) if self._reset_trigger(text) else gated_name(registry, text)
             if target is None:
                 return False
             reported = {"chat_type": chat_type}

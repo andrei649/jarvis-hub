@@ -1639,10 +1639,15 @@ channel and per scope:
   `personal` conversation, a Google Chat direct message, a Signal or WhatsApp message outside
   a group, the web chat, and any channel that has no groups — voice, email, ntfy); a group,
   supergroup, guild channel, thread, Teams group chat or channel, Google Chat space, Signal
-  group or WhatsApp group (`group_id`) is a group. **Every Matrix room is judged as a group**:
-  a Matrix room event does not say whether the room is a DM (that lives in the account's
-  `m.direct` data), so the less trusted scope applies there and a Matrix `dm` list is never
-  used.
+  group or WhatsApp group (`group_id`) is a group. **A Matrix room is a DM only when the
+  homeserver proves it:** a room event does not say whether its room is a DM, so for a
+  slash command the Matrix adapter asks the homeserver (`/account/whoami` once, then the
+  room's `members` other than those who left, with the adapter's own token and egress-gated
+  transport, bounded at 5 s) and judges the room a DM when its members are exactly the
+  sender and this bot, both joined. Anything it cannot prove — no `homeserver` or `token`
+  configured, an error or non-200 reply, a timeout, a malformed reply, a third member
+  joined, invited, knocking or banned — is judged as a group, the less trusted scope. Plain
+  chat is never looked up.
 - **Resolution:** the channel's own entry, then `"*"`; a `dm` list that is not set uses the
   same entry's `group` list (Hermes' rule — a DM never gets a wider list by accident); a
   channel and scope nobody configured gets the floor only. Restricting a DM therefore never
@@ -1669,8 +1674,11 @@ event with status `refused` — on the cold path and the busy path alike. The ga
 before any input check: a non-owner's oversized `/goal`, `/subgoal`, `/kanban` or
 checkpoint command, and a quick command whose stored configuration is malformed, get the
 audited denial, never the length or configuration reply (that one is the owner's). A custom
-`sessions.reset_triggers` text (`/fresh`) is an owner command too: a non-owner's gets the
-same audited denial under its own name (or `/new` when the trigger is not slash-shaped).
+`sessions.reset_triggers` text (`/fresh`) is an owner command too, whatever it is spelled
+like: a non-owner's gets the same audited denial under its own name (or `/new` when the
+trigger is not slash-shaped) — also when the owner made a user-tier command's text a
+trigger (`/status`), since on a channel that text resets the conversation; the denial then
+does not offer that name back.
 `/whoami` reports the platform, scope, sender id, tier and the exact list of commands the
 sender may run there.
 

@@ -582,6 +582,32 @@ async def test_a_custom_reset_trigger_is_judged_as_the_owner_command_it_is(hub, 
                                          text="/fresh") is False
 
 
+@pytest.mark.parametrize("pending_inputs", [False, True])
+async def test_a_reset_trigger_spelled_like_an_allowed_command_is_still_the_owners(hub, store, pending_inputs):
+    """The owner may make a user-tier command's text a reset trigger (``/status``). On a
+    channel that text resets the conversation, so a non-owner whose list allows ``/status``
+    gets the audited owner-command denial — not the session lifecycle's bare refusal, which
+    has no ⛔ line and writes no audit row — and the denial does not offer ``/status`` back.
+    The pre-lane probe and the busy path say the same; any other text still runs it."""
+    store({"telegram": {"dm": ["status"]}})
+    hub.orch._runtime_settings["sessions.reset_triggers"] = ["/new", "/reset", "/status"]
+    hub.orch._runtime_settings["channels.pending_inputs_enabled"] = pending_inputs
+    refused = await hub.say("/status")
+    assert refused.startswith("⛔ /status is admin-only here. You can run: /help, /whoami. "), refused
+    assert "/status is an owner command" in refused
+    assert [(row["command"], row["reason"]) for row in _denials(hub.orch.audit)] == [("status", "owner_tier")]
+    assert hub.orch.command_refused_here(channel="telegram", sender=str(GUEST_ID), chat_id=GUEST_ID,
+                                         text="/status") is True
+    assert hub.orch.command_refused_here(channel="telegram", sender=str(OWNER_ID), chat_id=OWNER_ID,
+                                         text="/status") is False
+    hub.orch._turn_lease_max_wait = 30
+    assert (await _while_busy(hub, "/status")).startswith("⛔ /status is admin-only here")
+    assert len(_denials(hub.orch.audit)) == 2
+    # Not the exact trigger text: the user-tier command the list allows, with no audit row.
+    assert "backend lm-studio" in await hub.say("/status now")
+    assert len(_denials(hub.orch.audit)) == 2
+
+
 # ── quick commands are judged again, on the raw typed name ─────────────────────────
 
 
@@ -801,6 +827,8 @@ async def test_the_principal_scope_follows_the_adapters_chat_type():
     matrix = {"events": [{"type": "m.room.message", "sender": "@u:hs", "room_id": "!r:hs",
                           "content": {"body": "/status"}}]}
     assert scope(MatrixChannel(), matrix) == "group"
+    assert orch._channel_principal("matrix", "@u:hs", None, orch._principal_chat_type(
+        "matrix", {"room_id": "!r:hs", "chat_type": "private"})).scope == "dm"
     token = bind_turn_principal(Principal(channel="web"))
     try:
         assert (await orch._slash_access_denial("hello there")) is None
@@ -808,6 +836,97 @@ async def test_the_principal_scope_follows_the_adapters_chat_type():
     finally:
         reset_turn_principal(token)
 
+
+
+class _Homeserver:
+    """The Matrix adapter's injected transport, standing in for the homeserver: who this
+    bot is, and each room's member events (``None`` = the request fails)."""
+
+    BOT = "@nerva:hs.example"
+
+    def __init__(self):
+        self.rooms: dict[str, list | None] = {}
+        self.calls: list[str] = []
+        self.status = 200
+
+    @staticmethod
+    def member(user, membership="join"):
+        return {"type": "m.room.member", "state_key": user, "content": {"membership": membership}}
+
+    async def request(self, method, url, headers=None, json=None):
+        from urllib.parse import unquote
+
+        assert method == "GET" and headers == {"Authorization": "Bearer matrix-token"}
+        self.calls.append(url)
+        path = url.removeprefix("https://hs.example/_matrix/client/v3/")
+        if path == "account/whoami":
+            body = {"user_id": self.BOT}
+        else:
+            room, _, rest = path.removeprefix("rooms/").partition("/")
+            assert rest == "members?not_membership=leave"
+            events = self.rooms[unquote(room)]
+            if events is None:
+                raise OSError("homeserver unreachable")
+            body = {"chunk": events}
+        return SimpleNamespace(status_code=self.status, json=lambda: body)
+
+
+async def test_a_matrix_room_is_a_dm_only_when_the_homeserver_proves_it(hub, store):
+    """A Matrix room event never says whether its room is a DM. For a command, the adapter
+    asks the homeserver it already sends through: a room whose members are exactly the
+    sender and this bot, both joined, is a DM, so the DM list applies; a third member —
+    joined or only invited — an unreachable or erroring homeserver, and an adapter with no
+    homeserver configured are all judged as a group, the less trusted scope. Plain chat is
+    never looked up, and this bot's own id is read once."""
+    from agents.core.channels.webhook_channels import MatrixChannel
+
+    store({"matrix": {"dm": ["status"], "group": []}})
+    homeserver = _Homeserver()
+    guest, bot = "@guest:hs.example", _Homeserver.BOT
+    homeserver.rooms = {
+        "!dm:hs.example": [homeserver.member(guest), homeserver.member(bot),
+                           homeserver.member("@gone:hs.example", "leave")],
+        "!trio:hs.example": [homeserver.member(guest), homeserver.member(bot),
+                             homeserver.member("@third:hs.example")],
+        "!invite:hs.example": [homeserver.member(guest), homeserver.member(bot),
+                               homeserver.member("@later:hs.example", "invite")],
+        "!down:hs.example": None,
+    }
+    pairing = SimpleNamespace(is_allowed=lambda channel, sender: True,
+                              gate_inbound=lambda channel, sender, code=None: {"allowed": True})
+    gateway = Gateway(handler=hub.orch.channel_handler, pairing=pairing)
+    matrix = MatrixChannel(handler=gateway.route, transport=homeserver,
+                           config={"homeserver": "https://hs.example", "token": "matrix-token"})
+
+    async def say(room, text, adapter=matrix):
+        return await adapter.handle_inbound({"events": [{
+            "type": "m.room.message", "sender": guest, "room_id": room, "content": {"body": text}}]})
+
+    assert "backend lm-studio" in await say("!dm:hs.example", "/status")
+    assert (await say("!dm:hs.example", "/whoami")).startswith("You — matrix (DM)")
+    assert _denials(hub.orch.audit) == []
+    for room in ("!trio:hs.example", "!invite:hs.example", "!down:hs.example"):
+        refused = await say(room, "/status")
+        assert refused.startswith("⛔ /status is admin-only here. You can run: /help, /whoami. "), room
+        assert "allow it in a group here" in refused
+    homeserver.status = 403
+    assert (await say("!dm:hs.example", "/status")).startswith("⛔ /status is admin-only here")
+    unconfigured = MatrixChannel(handler=gateway.route, transport=homeserver)
+    calls = len(homeserver.calls)
+    assert (await say("!dm:hs.example", "/status", unconfigured)).startswith("⛔ /status is admin-only here")
+    assert len(homeserver.calls) == calls                      # nothing to ask, nothing asked
+    assert [(row["command"], row["scope"]) for row in _denials(hub.orch.audit)] == [("status", "group")] * 5
+    # One whoami for this adapter; one membership read per command; none for plain chat.
+    assert [url.rsplit("/", 1)[-1] for url in homeserver.calls].count("whoami") == 1
+    assert len(homeserver.calls) == 1 + 6
+    homeserver.status = 200
+    enriched = await matrix.enrich_inbound({"text": "hello there", "sender": guest, "room_id": "!dm:hs.example"})
+    assert "chat_type" not in enriched and len(homeserver.calls) == 7
+    # A room id from the payload never leaves its path segment.
+    assert "chat_type" not in await matrix.enrich_inbound(
+        {"text": "/status", "sender": guest, "room_id": "../../admin"})
+    assert len(homeserver.calls) == 7
+    assert "rooms/%21dm%3Ahs.example/members" in homeserver.calls[1]
 
 
 # ── the gate answers before any input or configuration check ─────────────────────
