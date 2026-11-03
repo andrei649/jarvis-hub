@@ -1647,7 +1647,7 @@
         "handler_ref": null,
         "limitations": "Each proposal spends one of the process's 10 a day and supersedes the same agent's older pending one."
       },
-      "description": "Propose a skill change for the owner to review; nothing changes until they approve. {name, content}: a new SKILL.md for an existing skill. {description, steps}: a new skill from a procedure that worked. {operations}: an ordered batch across several skills, applied atomically on approval (any failure rolls every touched skill back); each op is {name, action} with action create (content: the whole SKILL.md; must come before that skill's other ops), patch (old_string/new_string, replace_all, file_path; or content to rewrite the file), write_file / remove_file (file_path under references/, templates/, scripts/ or assets/; file_content), or delete (only as the sole op). A failing op comes back with hints and a file_preview to correct it from.",
+      "description": "Propose a skill change for the owner to review; nothing changes until they approve. {name, content}: a new SKILL.md for an existing skill. {description, steps}: a new skill from a procedure that worked. {operations}: an ordered batch across several skills, applied atomically on approval (any failure rolls every touched skill back); each op is {name, action} with action create (content: the whole SKILL.md; must come before that skill's other ops), patch (old_string/new_string, replace_all, file_path; or content to rewrite the file), write_file / remove_file (file_path under references/, templates/, scripts/ or assets/; file_content), or delete (that skill's only op; absorbed_into: the skill taking its place, so other skills' related_skills and bundles that name it move there, and references that do not move come back under references to patch in the same batch). A failing op comes back with hints and a file_preview to correct it from.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1716,6 +1716,11 @@
                 },
                 "file_content": {
                   "type": "string"
+                },
+                "absorbed_into": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
                 }
               },
               "required": [
