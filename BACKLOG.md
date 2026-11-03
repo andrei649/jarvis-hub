@@ -2715,8 +2715,10 @@
   Usage/Billing now sends stored admin credentials. Bulk fingerprint preflight and approval
   use one loader/orchestrator, proved with two real loaders. All 115 combined affected cases
   pass; 52 affected ledger rows were re-read again, with verdicts retained and `needs_review` 0.
-  A fresh complete backend milestone is pending; earlier runtime readiness/probe failures
-  passed unchanged focused runs without proving their full-load cause.
+  The fresh complete backend run passed 31,381 tests with 120 existing skips and zero failures
+  (31,501 collected); all 2,791 frontend tests, both TypeScript checks, build, Ruff and Bandit
+  pass. The earlier runtime cases also passed unchanged in the complete rerun; their initial
+  full-load causes remain unproven. This does not claim live provider or native-device acceptance.
 
 ## Darwin feature absorption — 2026-09-09
 
