@@ -120,6 +120,31 @@ describe('ObserveMode — north-star meter is live', () => {
 });
 
 describe('TrustMode — audit chain is verified live', () => {
+  it('offers safe global engage after disengage POST succeeds but verification GET fails', async () => {
+    let reads = 0;
+    const fetcher = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/security/kill-switch')) {
+        if (init?.method === 'POST') return Promise.resolve({ ok: true, status: 200, json: async () => ({ engaged: false }) });
+        reads += 1;
+        return Promise.resolve(reads === 1
+          ? { ok: true, status: 200, json: async () => ({ global: true, any_halted: true, halted_count: 1 }) }
+          : { ok: false, status: 503, json: async () => ({ error: 'unavailable' }) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ valid: true, first_invalid_id: null, entries: 1 }) });
+    });
+    global.fetch = fetcher as any;
+    render(<TrustMode t={t} />);
+    await waitFor(() => expect(screen.getByText(t.engaged)).toBeTruthy());
+    fireEvent.click(document.querySelector('.killbtn'));
+    await waitFor(() => expect(screen.getByText(/kill-switch status unknown/)).toBeTruthy());
+    expect(screen.getByText(/kill-switch status unknown/).className).not.toContain('armed');
+    expect(screen.queryByText(t.armed)).toBeNull();
+    fireEvent.click(document.querySelector('.killbtn'));
+    await waitFor(() => expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST').length).toBe(2));
+    const posts = fetcher.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts.map(([, init]) => JSON.parse(init.body).engage)).toEqual([false, true]);
+  });
+
   it('warns on a scoped halt while the global control still engages global', async () => {
     const fn = mockJson({
       '/api/security/audit/verify': { valid: true, first_invalid_id: null, entries: 1 },

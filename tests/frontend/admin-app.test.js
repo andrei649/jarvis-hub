@@ -68,6 +68,27 @@ describe('AdminApp (full mount + nav sweep)', () => {
     }
   });
 
+  it('sends the entered admin credential on newly guarded Agents and Oracle reads', async () => {
+    const fetcher = adminBackend();
+    env = loadHud({ files: ['i18n', 'data', 'components', 'admin'], fetch: fetcher, lang: 'ro' });
+    await env.flush();
+    env.window.localStorage.setItem('hud.admin_token', 'owner-admin');
+    const root = env.document.getElementById('root');
+    const open = async (label) => {
+      env.click([...root.querySelectorAll('.admin-nav button')].find((b) => b.textContent.includes(label)));
+      await env.flush();
+    };
+    await open('Management Agenți');
+    const agents = fetcher.mock.calls.find((c) => c[0] === '/api/agents');
+    expect(agents).toBeTruthy();
+    expect(agents[1].headers['X-Admin-Token']).toBe('owner-admin');
+    expect(root.textContent).toContain('Gecko');
+    await open('Integrare Claude');
+    const oracle = fetcher.mock.calls.find((c) => c[0] === '/api/oracle/status');
+    expect(oracle).toBeTruthy();
+    expect(oracle[1].headers['X-Admin-Token']).toBe('owner-admin');
+  });
+
   it('marks a setting dirty and saves it to the category endpoint', async () => {
     const fetch = adminBackend();
     env = loadHud({ files: ['i18n', 'data', 'components', 'admin'], fetch, lang: 'ro' });

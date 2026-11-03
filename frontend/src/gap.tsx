@@ -9,6 +9,7 @@ import { FIRST_RUN_DISMISS_KEY } from './onboarding-state';
 import { CONSOLE_PANELS, CONSOLE_PANEL_MAP } from './console-routes';
 import { navigateHud, routeHref } from './hud-routing';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
+import { isKillSwitchState } from './api/actions';
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
@@ -768,8 +769,7 @@ function SecretsPanel() {
 }
 export function KillSwitchPanel() {
   const { d, e, loading, reload } = useApi('/api/security/kill-switch');
-  const known = !!d && !e && typeof d.global === 'boolean' &&
-    typeof d.any_halted === 'boolean' && Number.isSafeInteger(d.halted_count) && d.halted_count >= 0;
+  const known = !e && isKillSwitchState(d);
   const globalHalted = known && d.global;
   const halted = known && (d.global || d.any_halted);
   // Whether we actually READ the state. Without this, `halted` is false while the
@@ -1880,7 +1880,7 @@ export function SystemMapPanel() {
    panels: the model arena leaderboard (read-only) + the answer-quality gate (read +
    admin set-threshold). Honesty: real ELO/scores; empty-state when no matches yet. */
 export function ArenaPanel() {
-  const { d, e, loading, reload } = useApi('/api/arena/leaderboard');  // open
+  const { d, e, loading, reload } = useApi('/api/arena/leaderboard');  // user: stored candidate labels
   const rows = arr(d, 'leaderboard');
   return (
     <Card title="MODEL ARENA" live={asLive(d)} sub={d ? `${rows.length} models` : null} onReload={reload}>

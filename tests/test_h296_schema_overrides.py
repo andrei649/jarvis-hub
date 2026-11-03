@@ -258,9 +258,9 @@ def test_the_capability_registry_projection_carries_the_live_schema():
     assert record.description == "Live." and record.inputs["properties"]["target"]["enum"] == ["a"]
 
 
-async def test_the_open_routes_serve_the_static_schema_never_the_live_one(monkeypatch):
-    """``/sandbox/status`` and ``/api/metrics/capabilities`` answer without a token; the
-    live answer names the owner's speakers, rooms and machines, so they never carry it."""
+async def test_the_user_routes_serve_the_static_schema_never_the_live_one(monkeypatch):
+    """The guarded catalog routes retain the static schema; live answers name the
+    owner's speakers, rooms and machines and stay in the model's tool offer."""
     from types import SimpleNamespace
 
     server = ToolRPCServer()
@@ -274,7 +274,9 @@ async def test_the_open_routes_serve_the_static_schema_never_the_live_one(monkey
     monkeypatch.setattr(skills, "get_orch", lambda: orch)
     monkeypatch.setattr(analytics, "get_orch", lambda: orch)
 
-    status = await skills.sandbox_status()
+    status_response = await skills.sandbox_status()
+    assert "no-store" in status_response.headers["cache-control"]
+    status = json.loads(status_response.body)
     metrics = json.loads((await analytics.metrics_capabilities()).body)
     for body in (json.dumps(status), json.dumps(metrics)):
         assert "sonos-master-bedroom" not in body and "kids_bedroom" not in body

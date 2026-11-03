@@ -8,7 +8,7 @@
    backup-panel.test.tsx. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { KillSwitchPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -145,5 +145,21 @@ describe('KillSwitchPanel — an unread state is never reported as ARMED', () =>
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText(/UNKNOWN/)).toBeTruthy());
     expect(screen.queryByText(/ARMED · operational/)).toBeNull();
+  });
+
+  it.each([
+    { global: false, any_halted: false, halted_count: 1 },
+    { global: false, any_halted: true, halted_count: 0 },
+    { global: true, any_halted: false, halted_count: 0 },
+  ])('keeps contradictory state UNKNOWN and offers safe engage: %j', async (state) => {
+    const fn = mockFetch(state, 200);
+    render(<KillSwitchPanel />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText(/UNKNOWN/)).toBeTruthy();
+    expect(screen.queryByText(/ARMED · operational/)).toBeNull();
+    fireEvent.click(screen.getByText('HALT ALL'));
+    await waitFor(() => expect(fn.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true));
+    const post = fn.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(JSON.parse(post[1].body).engage).toBe(true);
   });
 });

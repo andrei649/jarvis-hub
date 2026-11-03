@@ -12,9 +12,9 @@
 
    What the two handlers actually do, and what this panel is therefore forbidden to imply:
 
-   1. GET /skills/imported carries NO Depends() guard at all (contrast POST /skills/import,
-      which carries Depends(user_guard)). So it is read with useApi(path) — not admin,
-      not user-flagged. Its ONLY refusal is 503 {"error":"not initialized"} (skills.py:160).
+   1. GET /skills/imported is user-guarded; useApi(path) supplies the existing
+      user token and prompts on 401. POST /skills/import retains its separate admin
+      authority. The read can also return 503 {"error":"not initialized"} (skills_imported).
       apiGet throws BEFORE reading the body (client.ts:106-110), so the backend's literal
       "not initialized" never reaches this panel — only the message "GET /skills/imported
       -> 503". The status is therefore read off that message and the panel says
@@ -459,7 +459,7 @@ export function SkillsImportPanel() {
       )}
 
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
-        GET {IMPORTED_PATH} is <b>unguarded</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·
+        GET {IMPORTED_PATH} is <b>user tier</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·
         POST {IMPORT_PATH} is <b>admin tier</b> (X-Admin-Token) and DEV_MODE-gated; it crosses skill.install and lands pending review · optional install is <b>admin tier</b> · a real remote import makes
         outbound requests to raw.githubusercontent.com and api.github.com. Marketplace registry rows, review status
         and rollback are a different store and live in the SKILLS MARKETPLACE panels.

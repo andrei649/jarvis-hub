@@ -307,6 +307,20 @@ describe('panel flows', () => {
     expect(read[1].headers.get('X-Admin-Token')).toBeNull();
   });
 
+  it('Arena leaderboard read carries the existing v1 user token', async () => {
+    env.cleanup();
+    const fetcher = backend();
+    env = loadHud({ files: ['auth', 'i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+    env.window.localStorage.setItem('hud.user_token', 'user-token');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Model Arena');
+    await env.flush();
+    const read = fetcher.mock.calls.find((c) => c[0] === '/api/arena/leaderboard');
+    expect(read).toBeTruthy();
+    expect(read[1].headers.get('X-User-Token')).toBe('user-token');
+  });
+
   it('Eval Datasets — renders the dataset and Run posts its name', async () => {
     const { container } = overlay();
     await env.flush();

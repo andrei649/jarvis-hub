@@ -442,6 +442,9 @@ function normalizeSecurityKillSwitch(raw: Record<string, unknown>): SecurityKill
       typeof raw.halted_count !== 'number' || !Number.isSafeInteger(raw.halted_count) || raw.halted_count < 0) {
     throw new ApiError('Invalid kill-switch status');
   }
+  if (raw.any_halted !== (raw.halted_count > 0) || (raw.global && !raw.any_halted)) {
+    throw new ApiError('Invalid kill-switch status');
+  }
   return {
     global: raw.global,
     any_halted: raw.any_halted,

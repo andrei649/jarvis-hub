@@ -619,7 +619,7 @@ function AgentsPage({ onUpdate }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(()=>{
-    fetch('/api/agents').then(r=>r.json()).then(d=>{
+    afetch('/api/agents').then(r=>r.json()).then(d=>{
       if (d.agents) setList(d.agents);
       setLoading(false);
     }).catch(()=>setLoading(false));
@@ -695,7 +695,7 @@ function OraclePage() {
   const [tab, setTab] = useState('status');
 
   const fetchData = () => {
-    fetch('/api/oracle/status').then(r=>r.json()).then(d=>setData(d)).catch(()=>{});
+    afetch('/api/oracle/status').then(r=>r.json()).then(d=>setData(d)).catch(()=>{});
     fetch('/api/oracle/conflicts').then(r=>r.json()).then(d=>setConflicts(d.conflicts||[])).catch(()=>{});
   };
 

@@ -8,7 +8,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from agents.core.arena import Arena
+from agents.core.kernel import metrics as kernel_metrics_module
+from agents.core.kernel.metrics import KernelMetrics
 from agents.core.learning.loop import LearningLoop
+from agents.core.mcp.model_bridge import _description as mcp_tool_description
+from agents.core.observability.capability_registry import snapshot as capability_snapshot
 from agents.core.observability.datasets import DatasetStore
 from agents.core.routers import _deps
 from agents.core.routers import eval as eval_router
@@ -16,6 +21,7 @@ from agents.core.routers import onboarding as onboarding_router
 from agents.core.security.capability import KillSwitch
 from agents.core.security.token_store import TokenStore
 from agents.core.skills.importer import SkillImporter
+from agents.core.tool_rpc import ToolRPCServer
 
 USER = {"X-User-Token": "sec-b6-user"}
 BAD_USER = {"X-User-Token": "wrong-user"}
@@ -34,6 +40,9 @@ PRIVATE_FOLDER = "/owner/private/documents/notes-secret"
 PRIVATE_BASENAME = "owner_secret_document.pdf"
 PRIVATE_IMPORT_NOTE = "import_owner_private_note"
 PRIVATE_IMPORT_PATH = "/owner/private/skills/notes"
+PRIVATE_ARENA_MODEL = "arena_owner_private_candidate"
+PRIVATE_KERNEL_REASON = "kernel_owner_house_scope_private_reason"
+PRIVATE_MCP_DESCRIPTION = "connected_owner_private_server_description"
 
 
 @pytest.fixture
@@ -255,3 +264,102 @@ def test_imported_skill_manifest_requires_real_user_credential_and_preserves_pay
     assert allowed.json() == {"imported": [manifest]}
     assert "no-store" in allowed.headers["cache-control"]
     assert client.get("/skills/imported", headers=ADMIN).json() == allowed.json()
+
+
+def test_arena_leaderboard_requires_real_user_credential_and_preserves_saved_scores(
+    private_reads, tmp_path
+):
+    from agents import web
+
+    arena_path = tmp_path / "arena.json"
+    arena = Arena(arena_path)
+    match = arena.create_match("local comparison", {
+        PRIVATE_ARENA_MODEL: "first response", "other-model": "second response",
+    })
+    arena.vote(match["id"], "A")
+    assert Arena(arena_path).leaderboard() == arena.leaderboard()
+    assert PRIVATE_ARENA_MODEL in {row["model"] for row in arena.leaderboard()}
+    web.orch.arena = arena
+
+    client = private_reads.client
+    for headers in ({}, BAD_USER):
+        denied = client.get("/api/arena/leaderboard", headers=headers)
+        assert denied.status_code == 401
+        assert PRIVATE_ARENA_MODEL not in denied.text
+    allowed = client.get("/api/arena/leaderboard", headers=USER)
+    assert allowed.status_code == 200
+    assert allowed.json() == {"leaderboard": arena.leaderboard()}
+    assert all(row["games"] == 1 for row in allowed.json()["leaderboard"])
+    assert "no-store" in allowed.headers["cache-control"]
+    assert client.get("/api/arena/leaderboard", headers=ADMIN).json() == allowed.json()
+
+
+def test_kernel_metrics_requires_real_user_credential_and_preserves_denial_counters(
+    private_reads, monkeypatch
+):
+    meter = KernelMetrics()
+    meter.record("house.control", "deny", PRIVATE_KERNEL_REASON)
+    monkeypatch.setattr(kernel_metrics_module, "KERNEL_METRICS", meter)
+    expected = meter.snapshot()
+    assert expected["total"] == 1
+    assert expected["by_verdict"]["deny"] == 1
+    assert expected["recent_denials"] == [{
+        "kind": "house.control", "reason": PRIVATE_KERNEL_REASON,
+    }]
+
+    client = private_reads.client
+    for headers in ({}, BAD_USER):
+        denied = client.get("/api/metrics/kernel", headers=headers)
+        assert denied.status_code == 401
+        assert PRIVATE_KERNEL_REASON not in denied.text
+    allowed = client.get("/api/metrics/kernel", headers=USER)
+    assert allowed.status_code == 200
+    assert allowed.json() == expected
+    assert "no-store" in allowed.headers["cache-control"]
+    assert client.get("/api/metrics/kernel", headers=ADMIN).json() == allowed.json()
+
+
+def test_tool_catalog_reads_require_user_for_connected_tool_description(private_reads):
+    from agents import web
+
+    rpc = ToolRPCServer()
+    rpc.register_tool(
+        "mcp__owner__read", lambda _args: {"unused": True},
+        description=mcp_tool_description({
+            "qualified_name": "mcp__owner__read",
+            "description": PRIVATE_MCP_DESCRIPTION,
+        }),
+        capability_id="tool:mcp__owner__read",
+    )
+    web.orch.tool_rpc = rpc
+    expected = capability_snapshot(web.orch, live_schemas=False)
+    connected = next(row for row in expected["capabilities"]
+                     if row["id"] == "tool:mcp__owner__read")
+    assert PRIVATE_MCP_DESCRIPTION in connected["description"]
+    assert expected["total"] > 0
+    assert sum(expected["by_state"].values()) == expected["total"]
+    web.orch.sandbox = SimpleNamespace(
+        _has_docker=True, docker_image="isolated-test", timeout=30,
+        security_status=lambda: {"isolation": "locked"},
+    )
+    expected_by_path = {
+        "/api/metrics/capabilities": json.loads(json.dumps(expected)),
+        "/sandbox/status": {
+            "available": True, "docker_image": "isolated-test", "timeout": 30,
+            "isolation": "locked",
+            "tool_rpc": {"available": True, "tools": rpc.tools(live=False)},
+        },
+    }
+    assert PRIVATE_MCP_DESCRIPTION in expected_by_path["/sandbox/status"]["tool_rpc"]["tools"][0]["description"]
+
+    client = private_reads.client
+    for path, expected_payload in expected_by_path.items():
+        for headers in ({}, BAD_USER):
+            denied = client.get(path, headers=headers)
+            assert denied.status_code == 401
+            assert PRIVATE_MCP_DESCRIPTION not in denied.text
+        allowed = client.get(path, headers=USER)
+        assert allowed.status_code == 200
+        assert allowed.json() == expected_payload
+        assert "no-store" in allowed.headers["cache-control"]
+        assert client.get(path, headers=ADMIN).json() == allowed.json()

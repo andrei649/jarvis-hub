@@ -42,6 +42,15 @@ describe('kill-switch wiring', () => {
     await expect(getKillSwitch()).rejects.toThrow(/kill-switch/i);
   });
 
+  it.each([
+    { global: false, any_halted: false, halted_count: 1 },
+    { global: false, any_halted: true, halted_count: 0 },
+    { global: true, any_halted: false, halted_count: 0 },
+  ])('rejects contradictory public halt state %j', async (state) => {
+    mockFetch(state);
+    await expect(getKillSwitch()).rejects.toThrow(/kill-switch/i);
+  });
+
   it('POST engages with {engage:true, scope:"global"} to /api/security/kill-switch', async () => {
     const fn = mockFetch({ ok: true, engaged: true });
     await setKillSwitch(true);

@@ -472,7 +472,7 @@ async def reload_skill_bundles():
     return {"ok": True, **report}
 
 
-@router.get("/sandbox/status")
+@router.get("/sandbox/status", dependencies=[Depends(user_guard)])
 async def sandbox_status():
     orch = get_orch()
     if not orch:
@@ -481,7 +481,7 @@ async def sandbox_status():
     # exactly which tools a script may reach. Honest and additive: `available`
     # false + an empty list means `tools: true` will be refused, not downgraded.
     server = getattr(orch, "tool_rpc", None)
-    return {
+    return nocache_json({
         "available": orch.sandbox._has_docker,
         "docker_image": orch.sandbox.docker_image,
         "timeout": orch.sandbox.timeout,
@@ -489,10 +489,10 @@ async def sandbox_status():
         **orch.sandbox.security_status(),
         "tool_rpc": {
             "available": server is not None,
-            # Open route: the static schemas, never the live H296 answers.
+            # Keep static H296 schemas; connected descriptions still need the user guard.
             "tools": server.tools(live=False) if server is not None else [],
         },
-    }
+    })
 
 
 # ── K3: the owner's window onto their own session kernels ────────────────────

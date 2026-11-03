@@ -1,5 +1,5 @@
 // @ts-nocheck
-/* SKILLS IMPORT panel — GET /skills/imported (unguarded) + POST /skills/import (admin tier,
+/* SKILLS IMPORT panel — GET /skills/imported (user tier) + POST /skills/import (admin tier,
    DEV_MODE-gated). fetch is mocked, like src/panels/marketplace-admin.test.tsx.
 
    The traps this file exists to pin:
@@ -68,6 +68,19 @@ async function enableImport() {
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } vi.restoreAllMocks(); });
 
 describe('SkillsImportPanel — imported sidecars and the DEV_MODE-gated import', () => {
+  it('uses the existing user token for the imported-manifest read', async () => {
+    localStorage.setItem('hud.user_token', 'owner-user');
+    const fn = mockRoutes(() => null);
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+    const read = gets(fn).find(([url]) => String(url) === '/skills/imported');
+    expect(read).toBeTruthy();
+    expect(read[1].headers['X-User-Token']).toBe('owner-user');
+    expect(read[1].headers['X-Admin-Token']).toBeUndefined();
+    expect(screen.getByText(/GET \/skills\/imported is/).textContent).toContain('user tier');
+    expect(screen.queryByText(/unguarded/)).toBeNull();
+  });
+
   it('renders a hermes sidecar with its provenance, and a legacy row defensively', async () => {
     mockRoutes(() => null, { imported: [HERMES_ROW, LEGACY_ROW] });
     render(<SkillsImportPanel />);

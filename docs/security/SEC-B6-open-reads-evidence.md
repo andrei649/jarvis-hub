@@ -1,7 +1,7 @@
 # SEC-B6 — open-read classification evidence
 
 Local remediation candidate, 2026-11-03. Base `3faa9e2d`, branch
-`security/open-read-projections`. Eight further content-bearing reads now require
+`security/open-read-projections`. Twelve further content-bearing reads now require
 the existing user guard; public kill-switch status has an aggregate projection
 and full details require admin access. Final independent source acceptance is
 pending. This does not assert a post-merge/current-main PASS.
@@ -28,7 +28,6 @@ pending. This does not assert a post-merge/current-main PASS.
 | `GET /api/security/kill-switch` | exactly `global: bool`, `any_halted: bool`, `halted_count: int`, read under one lock | safety state remains inspectable, without scope keys, reasons or arbitrary persisted timestamps. Full `{global, halted}` status is served only by admin `GET /api/security/kill-switch/details`; POST authority/storage are unchanged |
 | `GET /api/security/capabilities/check` | boolean admissibility of a *proposed* capability action | evaluates a hypothetical; returns no stored user data |
 | `GET /api/oauth/status`, `/api/oauth/auth-url` | connect-flow presence booleans + public provider auth URLs | pre-auth by nature (you call them *before* you have a token); no token value returned. Oracle session/conflict status is a separate content-bearing surface and is guarded |
-| `GET /api/worldview/status` | liveness booleans (connected, api_url) | **Contrast:** `/api/worldview/overview` returns recon/alert content → guarded (`user`) |
 
 ## Group justifications
 
@@ -44,19 +43,18 @@ pending. This does not assert a post-merge/current-main PASS.
   `/api/health/components`, `/api/status`, `/status`) — process/health aggregates
   and degradation flags; no user content.
 - **Catalogs shipped in code** (`/api/agent-templates`, `/api/memory/tool-spec`,
-  `/api/memory/eval/corpus`, `/api/voice/capabilities`, `/api/voice/wyoming`,
-  `/sandbox/status`) — static/derived catalogs. `/skills` already requires a user credential;
+  `/api/memory/eval/corpus`, `/api/voice/capabilities`, `/api/voice/wyoming`) — static/derived catalogs. `/skills` already requires a user credential;
   imported owner manifests are not a shipped catalog and now also require it. `/api/memory/eval/corpus` is the
   **owned synthetic** eval corpus (`DEFAULT_CORPUS`), never live user memory.
 - **Aggregate observability** (`/api/analytics/{cost,locality,model-tiers}`,
-  `/api/metrics/{capabilities,kernel,north-star}`, `/api/quality`, `/api/review/stats`,
+  `/api/metrics/north-star`, `/api/quality`, `/api/review/stats`,
   `/bench`, `/bench/stats`, `/memory/stats`, `/heartbeat/status`,
-  `/api/arena/leaderboard`, `/api/autonomy/escalation/targets`) — counts, rates,
+  `/api/autonomy/escalation/targets`) — counts, rates,
   percentiles, scores, channel *names*. No message/turn/memory content. **Contrasts that were
   guarded:** `/api/quality/scores` (per-request scores), `/api/arena/match/{id}` (match body),
   `/learning` (per-agent optimizations) → all now `user`.
 
-## Eight additional content reads guarded by this local remediation
+## Twelve additional content reads guarded by this local remediation
 
 | Route | Stored owner content retained for authorized users | Source |
 |---|---|---|
@@ -68,6 +66,10 @@ pending. This does not assert a post-merge/current-main PASS.
 | `GET /learning/stats` | prompt optimizations containing failed-turn response/error text | `routers/learning.py::learning_stats`, `LearningLoop.optimize_prompt` |
 | `GET /api/local-docs` | last indexed absolute folder, skipped document basenames and configured folder keys | `routers/onboarding.py::local_docs_status`, `LocalDocsIndexer.index` |
 | `GET /skills/imported` | entire owner-writable local manifest, including arbitrary extra fields and local provenance paths | `routers/skills.py::skills_imported`, `SkillImporter.list_imported` |
+| `GET /api/arena/leaderboard` | persisted caller-supplied candidate labels beside scores | `routers/arena.py::arena_leaderboard`, `Arena.create_match`, `Arena.leaderboard` |
+| `GET /api/metrics/kernel` | raw recent denial reasons, including owner-specific action/device scopes | `routers/analytics.py::metrics_kernel`, `KernelMetrics.snapshot`, kernel halt decisions |
+| `GET /api/metrics/capabilities` | dynamically registered connected-tool descriptions, including third-party MCP text | `routers/analytics.py::metrics_capabilities`, capability registry `_tool_records`, `MCPBridge._description` |
+| `GET /sandbox/status` | registered tool descriptions/input schemas from connected tools | `routers/skills.py::sandbox_status`, `ToolRPCServer.tools(live=False)` |
 
 These reads use the shared `user_guard` before handler execution and retain their
 full successful bodies with no-store headers. Missing/invalid credentials cannot
@@ -76,6 +78,9 @@ credentials retain the original payloads. `tests/test_sec_b6_read_content.py`
 exercises those boundaries with isolated data and the actual guards, including
 public kill-state exclusion, admin-only details and persisted private reasons.
 Matrix membership alone is not acceptance of these response bodies.
+Disabling live schema overrides does not turn connected-tool metadata into a
+static catalog: registered descriptions and input schemas can still contain
+private local-server context, so both tool catalog reads require the user guard.
 
 ## The original 13 routes moved to `user_guard`
 

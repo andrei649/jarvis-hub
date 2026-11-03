@@ -139,4 +139,14 @@ describe('mobile security posture API', () => {
     await expect(fetchSecurityKillSwitch({ baseUrl: 'hub.local', token: '', adminToken: '' }))
       .resolves.toEqual({ global: false, any_halted: true, halted_count: 2 });
   });
+
+  it.each([
+    { global: false, any_halted: false, halted_count: 1 },
+    { global: false, any_halted: true, halted_count: 0 },
+    { global: true, any_halted: false, halted_count: 0 },
+  ])('rejects contradictory public halt state %j', async (state) => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(state));
+    await expect(fetchSecurityKillSwitch({ baseUrl: 'hub.local', token: '', adminToken: '' }))
+      .rejects.toThrow(/kill-switch/i);
+  });
 });

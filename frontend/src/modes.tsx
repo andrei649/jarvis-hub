@@ -212,14 +212,17 @@ function TrustMode({ t, localPct = null }) {
   }, []);
   const toggleKill = () => {
     if (busy) return;
-    const next = !killed;
-    setBusy(true); setKilled(next); // optimistic
+    const next = !(killKnown && !killErr && killed); // unknown always offers global engage
+    setBusy(true); setKilled(next); setKillKnown(false);
     setKillSwitch(next)
-      .then(() => getKillSwitch())
-      .then((s) => { setKilled(s.global); setScopedHaltCount(!s.global && s.any_halted ? s.halted_count : 0); setKillKnown(true); setKillErr(false); })
-      .catch(() => { setKilled(!next); setKillErr(true); }) // revert on failure — honest
+      .then(() => getKillSwitch().then(
+        (s) => { setKilled(s.global); setScopedHaltCount(!s.global && s.any_halted ? s.halted_count : 0); setKillKnown(true); setKillErr(false); },
+        () => { setKillKnown(false); setKillErr(true); }, // POST succeeded; verification is unavailable
+      ))
+      .catch(() => { setKillKnown(false); setKillErr(true); }) // POST outcome is unknown
       .finally(() => setBusy(false));
   };
+  const globalHalted = killKnown && !killErr && killed;
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -258,14 +261,14 @@ function TrustMode({ t, localPct = null }) {
           {/* right: kill + locality + caps + payments */}
           <div className="col">
             <div className="killbox panel" style={{borderRadius:'var(--radius)',background:'var(--surface-2)'}}>
-              <button className={'killbtn'+(killed?' engaged':'')} onClick={toggleKill} disabled={busy} title={busy?'updating…':killed?'disengage kill-switch':'halt all agents'}>
+              <button className={'killbtn'+(globalHalted?' engaged':'')} onClick={toggleKill} disabled={busy} title={busy?'updating…':globalHalted?'disengage kill-switch':'halt all agents'}>
                 <Icon d={ICONS.shield} size={26}/>
-                <span className="kt">{killed?'HALTED':'STOP'}</span>
+                <span className="kt">{globalHalted?'HALTED':'STOP'}</span>
                 <span className="ks">{t.killSub}</span>
               </button>
-              <div className={'kill-status '+(killed||scopedHaltCount?'engaged':'armed')}>
+              <div className={'kill-status'+(killErr || !killKnown ? '' : globalHalted || scopedHaltCount ? ' engaged' : ' armed')}>
                 {killErr || !killKnown ? 'kill-switch status unknown'
-                  : killed ? t.engaged
+                  : globalHalted ? t.engaged
                   : scopedHaltCount ? `${scopedHaltCount} scoped halt${scopedHaltCount === 1 ? '' : 's'} active · global switch off`
                   : t.armed}
               </div>

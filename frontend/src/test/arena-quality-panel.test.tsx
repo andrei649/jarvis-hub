@@ -18,6 +18,7 @@ function mockFetch(payload) {
 
 describe('ArenaPanel — the model ELO leaderboard is live', () => {
   it('GETs /api/arena/leaderboard and ranks models with ELO + win-rate', async () => {
+    localStorage.setItem('hud.user_token', 'owner-user');
     const fn = mockFetch({ leaderboard: [
       { model: 'qwen2.5-coder', elo: 1240, wins: 8, losses: 2, games: 10, win_rate: 0.8 },
       { model: 'llama3.1', elo: 1110, wins: 4, losses: 6, games: 10, win_rate: 0.4 },
@@ -25,6 +26,8 @@ describe('ArenaPanel — the model ELO leaderboard is live', () => {
     render(<ArenaPanel />);
     await waitFor(() => expect(screen.getByText('1. qwen2.5-coder')).toBeTruthy());
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/arena/leaderboard'))).toBe(true);
+    const read = fn.mock.calls.find((c) => String(c[0]).includes('/api/arena/leaderboard'));
+    expect(read[1].headers['X-User-Token']).toBe('owner-user');
     expect(screen.getByText('1240 elo')).toBeTruthy();
     expect(screen.getByText('80%')).toBeTruthy();
     expect(screen.getByText('2. llama3.1')).toBeTruthy();
