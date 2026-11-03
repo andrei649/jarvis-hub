@@ -278,6 +278,24 @@ def reports(rows: list[dict], data: dict) -> dict[str, str]:
     return {"HERMES_STATUS.md": "\n".join(out), "docs/HERMES_CAPABILITIES.md": "\n".join(detail)}
 
 
+def show_payload(ledger: dict, data: dict, rows: list[dict], ident: str,
+                 *, recorded: bool = False) -> dict | None:
+    """Return one current row and frozen capability, optionally with its stored review.
+
+    The recorded review is diagnostic history. It does not replace the current
+    assessment, whose evidence drift and remaining-work verdict came from assess().
+    """
+    row = next((item for item in rows if item["id"] == ident.upper()), None)
+    if row is None:
+        return None
+    payload = {"assessment": row, "original": ledger["capabilities"][int(row["id"][1:]) - 1]}
+    if recorded:
+        payload["recorded_review"] = next(
+            (item for item in data["reviews"] if item["id"] == row["id"]), None
+        )
+    return payload
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest="command", required=True)
@@ -289,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     listing.add_argument("--limit", type=int, default=20)
     show = subs.add_parser("show")
     show.add_argument("id")
+    show.add_argument("--recorded", action="store_true",
+                      help="also show the stored historical review; current assessment is unchanged")
     subs.add_parser("write")
     subs.add_parser("check")
     ns = parser.parse_args(argv)
@@ -311,12 +331,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{row['id']} {row['status']:<12} {row['name'][:100]}")
             print(f"{min(ns.limit, len(selected))} of {len(selected)} rows")
         elif ns.command == "show":
-            row = next((r for r in rows if r["id"] == ns.id.upper()), None)
-            if row is None:
+            payload = show_payload(ledger, data, rows, ns.id, recorded=ns.recorded)
+            if payload is None:
                 print(f"not found: {ns.id}", file=sys.stderr)
                 return 1
-            print(json.dumps({"assessment": row, "original": ledger["capabilities"][int(row["id"][1:]) - 1]},
-                             ensure_ascii=False, indent=2))
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             drift = []
             for name, content in reports(rows, data).items():

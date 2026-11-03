@@ -376,3 +376,61 @@ def test_json_summary_and_bounded_listing(sample, capsys):
 def test_cli_unknown_row_is_a_named_failure(capsys):
     assert hs.main(["show", "H999"]) == 1
     assert "not found" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("status,remaining", [
+    ("equivalent", ""),
+    ("partial", "Owner-side delivery remains unimplemented."),
+])
+def test_show_recorded_preserves_stale_historical_review_without_credit(sample, status, remaining):
+    item = copy.deepcopy(add_review(sample, status, remaining))
+    (sample[2] / "agents/core/example.py").write_text("# changed after review\n", encoding="utf-8")
+    rows = hs.assess(*sample)
+
+    shown = hs.show_payload(sample[0], sample[1], rows, "h002", recorded=True)
+
+    assert shown["assessment"]["status"] == "needs_review"
+    assert shown["assessment"]["basis"] == "stale_evidence"
+    assert shown["assessment"]["remaining"] == (
+        "Dovada s-a schimbat sau lipsește; reevaluează înainte de a număra rândul ca terminat."
+    )
+    assert shown["recorded_review"] == item
+    assert shown["recorded_review"]["status"] == status
+    assert shown["recorded_review"]["row_sha256"] == hs.digest(sample[0]["capabilities"][1])
+    assert shown["original"] == sample[0]["capabilities"][1]
+    assert hs.metrics(rows)["reviewed_equivalent"] == 0
+
+
+def test_show_recorded_null_and_default_payload_compatibility(sample):
+    rows = hs.assess(*sample)
+    expected = {"assessment": rows[0], "original": sample[0]["capabilities"][0]}
+    assert hs.show_payload(sample[0], sample[1], rows, "H001") == expected
+    assert hs.show_payload(sample[0], sample[1], rows, "h001", recorded=True) == {
+        **expected, "recorded_review": None,
+    }
+    assert hs.show_payload(sample[0], sample[1], rows, "H999", recorded=True) is None
+
+
+def test_show_recorded_flag_is_reachable_from_cli_and_unknown_id_still_fails(sample, capsys, monkeypatch):
+    ledger, data, root = sample
+    item = add_review(sample, "partial", "Still needs the delivery path.")
+    (root / "tests/test_example.py").write_text("# changed after review\n", encoding="utf-8")
+    real_assess = hs.assess
+    monkeypatch.setattr(hs, "load", lambda: (ledger, data))
+    monkeypatch.setattr(hs, "assess", lambda loaded_ledger, loaded_data: real_assess(
+        loaded_ledger, loaded_data, root
+    ))
+
+    assert hs.main(["show", "H002"]) == 0
+    default = json.loads(capsys.readouterr().out)
+    assert set(default) == {"assessment", "original"}
+    assert default["assessment"]["status"] == "needs_review"
+
+    assert hs.main(["show", "--recorded", "h002"]) == 0
+    diagnostic = json.loads(capsys.readouterr().out)
+    assert diagnostic["recorded_review"] == item
+    assert diagnostic["assessment"] == default["assessment"]
+    assert diagnostic["original"] == default["original"]
+
+    assert hs.main(["show", "h999", "--recorded"]) == 1
+    assert "not found: h999" in capsys.readouterr().err
