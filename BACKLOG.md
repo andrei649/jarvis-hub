@@ -6339,6 +6339,18 @@ owner's machine in 30 seconds, read-only.
   owner reason. See [findings and acceptance gate](docs/security/2026-11-03-open-read-review.md).
   Remaining: fix and test those response boundaries, correct the per-handler evidence, and
   record independent PASS on the final source. The earlier green matrix alone is insufficient.
+  **Local remediation and independent source review (2026-11-03): PASS on the candidate.**
+  Twelve additional owner-content reads now require user credentials, including stored dataset
+  labels, local-document paths, imported manifests, Arena labels and connected-tool descriptions.
+  Public kill-switch status exposes only coherent global/any-halted/count fields; full scopes and
+  reasons require the new admin details read. Client recovery preserves unknown state and scoped
+  halts, and stored browser tokens stay within the intended origin without mutating reused options.
+  The independent reviewer resolved all 59 remaining open reads against handler response bodies
+  at `47d2b4e6`; the 34-case matrix/privacy rerun passed. The final generated API, route, privacy,
+  asset and parity gate passed 187 cases; full React/legacy/mobile suites passed 2,803/246/363 cases.
+  Source fixes and local acceptance supersede the remediation work listed above. This item stays
+  open: publication and the required independent post-merge review on current `main` have not
+  occurred. Local PASS does not satisfy that separate acceptance boundary.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
