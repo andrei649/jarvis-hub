@@ -37,9 +37,14 @@ beside a running turn, before a route with no conversation says so) and again fo
 commands, on the raw typed name. The gate answers before any input or configuration check
 (an oversized ``/goal``, a malformed quick-command store), so such a check never stands in
 for an audited denial. A custom ``sessions.reset_triggers`` text is judged as the owner
-command it is, even one spelled like a user-tier command. A Matrix room is a DM only when
-the Matrix adapter's homeserver lookup proves it; otherwise its commands are judged in
-group scope.
+command it is, even one spelled like a user-tier command — but the floor always wins: a
+floor command (``floor_command``: ``/help`` or ``/whoami`` in any casing, with the bot's
+``@name`` or arguments) is never a reset trigger, so the settings write refuses one and a
+stored one is ignored at dispatch. On a channel, where reset triggers are judged,
+``/whoami``, ``/help`` and a denial's "You can run" list (``listed_names``) leave out a
+user-tier command whose bare ``/name`` is a reset trigger, since the channel refuses that
+text. A Matrix room is a DM only when the Matrix adapter's homeserver lookup proves it;
+otherwise its commands are judged in group scope.
 """
 
 from __future__ import annotations
@@ -170,6 +175,43 @@ def allowed_names(registry, principal) -> list[str] | None:
     return [*FLOOR, *sorted(granted - set(FLOOR))]
 
 
+def floor_command(text: Any) -> str | None:
+    """The floor command *text* asks for — ``help`` or ``whoami``, however the registry
+    reads it (any casing, the bot's ``@name``, arguments) — or None. Such a text is never a
+    reset trigger: the floor answers every sender, so no setting turns it into an owner
+    command."""
+    from .commands import CommandRegistry
+
+    parsed = CommandRegistry.parse(text) if isinstance(text, str) else None
+    return parsed[0] if parsed is not None and parsed[0] in FLOOR else None
+
+
+def listed_names(registry, principal, *, orch: Any = None) -> list[str] | None:
+    """What ``/whoami``, ``/help`` and a denial offer *principal* as runnable here, floor
+    first; None for the owner (all).
+
+    ``allowed_names``, less — on a turn that came through a channel, where the owner's
+    ``sessions.reset_triggers`` are judged — a user-tier command whose bare ``/name`` is
+    one of them: the channel refuses that text as the owner command it is, so it is not
+    offered. Triggers that cannot be read leave the floor alone, since the channel then
+    answers nothing else. The web door judges no reset trigger and lists ``allowed_names``."""
+    allowed = allowed_names(registry, principal)
+    get_setting = getattr(orch, "get_setting", None)
+    if allowed is None or not callable(get_setting):
+        return allowed
+    from .orchestrator import reset_triggers_judged
+
+    if not reset_triggers_judged():
+        return allowed
+    from .channels.session_lifecycle import reset_triggered
+
+    try:
+        return [name for name in allowed if name in FLOOR or reset_triggered(get_setting, f"/{name}") is not True]
+    except Exception:  # noqa: BLE001 — unreadable triggers: the channel answers only the floor
+        logger.debug("reset triggers unreadable; only the floor is listed", exc_info=True)
+        return list(FLOOR)
+
+
 def can_run(registry, principal, name: str, *, quick: bool = False) -> bool:
     """Whether *principal* may run ``/name``. A quick command is the owner's tier."""
     if principal.admin is True:
@@ -240,9 +282,10 @@ async def refusal(registry, name: str, *, orch: Any, principal, quick: bool = Fa
     logger.info("Slash command /%s denied for %s:%s (%s, not the owner, not in %s)",
                 name, _safe(principal.channel, 32), _safe(principal.sender) or "?", principal.scope, SETTING)
     await _audit(orch, principal, name, "owner_tier" if owner_tier else "not_allowed")
-    # Never offer the refused name back: an owner's reset trigger spelled like an allowed
-    # command (``/status``) is refused here as the owner command it is.
-    allowed = [allowed_name for allowed_name in allowed_names(registry, principal) or FLOOR
+    # Never offer the refused name back, nor one this channel refuses as a reset trigger:
+    # an owner's reset trigger spelled like an allowed command (``/status``) is refused here
+    # as the owner command it is.
+    allowed = [allowed_name for allowed_name in listed_names(registry, principal, orch=orch) or FLOOR
                if allowed_name != name]
     return CommandOutcome(name, "refused", denial_reply(
         name, allowed, owner_tier=owner_tier, scope=principal.scope))
@@ -265,8 +308,9 @@ def gated_name(registry, text: str) -> tuple[str, bool] | None:
     return (name, True) if quick else None
 
 
-def whoami(registry, principal) -> str:
-    """Hermes ``/whoami``: platform, scope, sender id, tier and the exact command list."""
+def whoami(registry, principal, *, orch: Any = None) -> str:
+    """Hermes ``/whoami``: platform, scope, sender id, tier and the exact command list —
+    what this door will run for the sender (``listed_names``)."""
     scope = "DM" if principal.scope == "dm" else "group"
     lines = [f"You — {principal.channel or '?'} ({scope})", f"Sender ID: {principal.sender or '?'}"]
     if principal.admin is True:
@@ -280,7 +324,7 @@ def whoami(registry, principal) -> str:
         lines += ["Tier: admin (the owner) — every command answers you here",
                   "Slash commands you can run: " + ", ".join(f"/{name}" for name in names)]
     else:
-        names = allowed_names(registry, principal) or list(FLOOR)
+        names = listed_names(registry, principal, orch=orch) or list(FLOOR)
         lines += [f"Tier: user — owner commands answer only the owner; {SETTING} sets the rest",
                   "Slash commands you can run: " + ", ".join(f"/{name}" for name in names)]
     return "\n".join(lines)

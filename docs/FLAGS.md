@@ -1655,7 +1655,10 @@ channel and per scope:
   this setting, list the user tier (`/status`, `/sessions`, `/recap`, `/btw`, `/jobs`,
   `/voice`) under `"*"` for `dm` and `group`.
 - **Floor:** `/help` and `/whoami` always answer; no list removes them. `[]` leaves exactly
-  the floor.
+  the floor. No `sessions.reset_triggers` text takes them away either: the settings write
+  refuses `/help` or `/whoami` as a reset trigger (in any casing, with the bot's `@name` or
+  arguments) with 422, and a value already stored that names one is ignored for it at
+  dispatch, for the owner and everyone else.
 - **Never the owner tier:** a list naming an owner command (`/pause`, `/new`, `/remind`,
   `/checkpoints`, …) is refused by the Admin write with 422, and a stored value that names
   one anyway is ignored whole (the floor only). Owner quick commands
@@ -1680,7 +1683,10 @@ trigger is not slash-shaped) — also when the owner made a user-tier command's 
 trigger (`/status`), since on a channel that text resets the conversation; the denial then
 does not offer that name back.
 `/whoami` reports the platform, scope, sender id, tier and the exact list of commands the
-sender may run there.
+sender may run there. On a channel (where reset triggers are judged), that list, `/help`
+and a denial's "You can run" leave out a user-tier command whose bare `/name` is a reset
+trigger, since the channel refuses that text; with unreadable reset triggers they list the
+floor only. The web door's `/chat` judges no reset trigger, so it lists and runs it.
 
 **Where it is checked:** on the cold path (`CommandRegistry.dispatch`, inside the turn); on
 the busy path — a command that arrives while a turn holds its session is refused at once,

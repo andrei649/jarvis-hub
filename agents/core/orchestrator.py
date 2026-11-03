@@ -319,6 +319,19 @@ def reset_turn_principal(token) -> None:
 def current_principal() -> Principal:
     """The principal bound to this turn; nobody in particular when none was bound."""
     return _turn_principal.get() or Principal()
+
+
+#: H058: set for a turn ``channel_handler`` admits — the path that judges the owner's
+#: ``sessions.reset_triggers`` — so what ``/whoami`` and ``/help`` list agrees with what
+#: that channel will run. The web door's ``/chat`` judges no reset trigger.
+_reset_trigger_turn: contextvars.ContextVar = contextvars.ContextVar(
+    "nerva_reset_trigger_turn", default=False
+)
+
+
+def reset_triggers_judged() -> bool:
+    """Whether this turn came through a channel, where a reset trigger text resets."""
+    return _reset_trigger_turn.get() is True
 #: The per-turn route/model/latency/usage maps, context-local so two turns sharing one
 #: orchestrator cannot overwrite each other's. See the comment above ``_meter_store``.
 _TURN_METER_MAPS: contextvars.ContextVar = contextvars.ContextVar(
@@ -1656,6 +1669,7 @@ class Orchestrator:
             self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"),
                                     self._principal_chat_type(channel, kwargs))
         )
+        reset_trigger_token = _reset_trigger_turn.set(True)     # H058: see reset_triggers_judged
         # DRA-08: one description of *who is talking to us*, built from the
         # identity metadata the adapters already put on the wire (telegram
         # chat_id/sender, email sender, slack_channel, matrix room_id, teams
@@ -1778,6 +1792,7 @@ class Orchestrator:
             return response
         finally:
             pending_scope.close()
+            _reset_trigger_turn.reset(reset_trigger_token)
             reset_turn_principal(principal_token)
             reset_action_origin(origin_token)
 
@@ -1800,8 +1815,8 @@ class Orchestrator:
 
     def _reset_trigger(self, text: str) -> bool:
         """Whether *text* is one of the owner's ``sessions.reset_triggers`` (H058 judges a
-        custom one as the owner command it is); False when they cannot be read — the
-        session lifecycle then refuses the turn itself."""
+        custom one as the owner command it is; ``/help`` and ``/whoami`` never are); False
+        when they cannot be read — the session lifecycle then refuses the turn itself."""
         from .channels.session_lifecycle import reset_triggered
 
         try:
@@ -2062,7 +2077,8 @@ class Orchestrator:
         command whatever it names: no registry command (``/fresh``), or one the sender may
         otherwise run (``/status`` made a trigger shadows the user-tier ``/status``). It is
         judged in the owner's tier under its own ``/name`` (``/new``, what it does, when it is
-        not slash-shaped).
+        not slash-shaped). A floor command (``/help``, ``/whoami``) is never one, whatever
+        the caller says: it is judged as itself, so it always answers.
 
         Every path that asks here answers the refusal itself, outside the registry, so the
         refusal also goes out as the ``command.completed`` extension event the registry
@@ -2071,9 +2087,9 @@ class Orchestrator:
         if not isinstance(registry, CommandRegistry) or not isinstance(text, str):
             return None
         try:
-            from .slash_access import gated_name, refusal
+            from .slash_access import floor_command, gated_name, refusal
 
-            if reset_trigger:
+            if reset_trigger and floor_command(text) is None:
                 parsed = registry.parse(text)
                 # The owner wrote this trigger, so its name is the owner's text, not the
                 # sender's; it resets the conversation here, so it is the owner's tier even

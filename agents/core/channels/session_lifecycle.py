@@ -351,7 +351,16 @@ class ChannelSessionLifecycle:
 
 
 def reset_triggered(get_setting, text: str) -> bool:
-    """Whether *text* is exactly one of the owner's ``sessions.reset_triggers``."""
+    """Whether *text* is exactly one of the owner's ``sessions.reset_triggers``.
+
+    A floor command (H058: ``/help`` or ``/whoami``, in any casing, with the bot's ``@name``
+    or arguments) never is, whatever is stored and before the store is read: it answers
+    every sender, so no setting turns it into an owner command. The settings write refuses
+    one; this covers a value stored before that, or by hand."""
+    from ..slash_access import floor_command
+
+    if floor_command(text) is not None:
+        return False
     triggers = get_setting("sessions.reset_triggers", ["/new", "/reset"])
     if (not isinstance(triggers, list) or len(triggers) > 32
             or any(not isinstance(t, str) or not t.strip() or len(t) > 120 for t in triggers)):

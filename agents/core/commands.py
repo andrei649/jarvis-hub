@@ -255,9 +255,14 @@ class CommandRegistry:
 
 def _help(ctx: CommandContext) -> str:
     from .quick_commands import help_lines
+    from .slash_access import listed_names
 
     registry = getattr(ctx.orch, "commands", None)
     commands = registry.visible(ctx.principal) if isinstance(registry, CommandRegistry) else []
+    if commands and not ctx.principal.admin:
+        # H058: what this door will run — on a channel, not a command whose text is a reset trigger.
+        listed = listed_names(registry, ctx.principal, orch=ctx.orch)
+        commands = [command for command in commands if listed is None or command.name in listed]
     lines = [command.summary for command in commands]
     if ctx.principal.admin and isinstance(registry, CommandRegistry):
         lines.extend(help_lines(registry))
@@ -274,7 +279,7 @@ def _whoami(ctx: CommandContext) -> str:
     registry = getattr(ctx.orch, "commands", None)
     if not isinstance(registry, CommandRegistry):
         registry = CommandRegistry()
-    return whoami(registry, ctx.principal)
+    return whoami(registry, ctx.principal, orch=ctx.orch)
 
 
 def _status(ctx: CommandContext) -> str:

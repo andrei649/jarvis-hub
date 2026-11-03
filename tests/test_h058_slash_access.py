@@ -608,6 +608,102 @@ async def test_a_reset_trigger_spelled_like_an_allowed_command_is_still_the_owne
     assert len(_denials(hub.orch.audit)) == 2
 
 
+# ── the floor wins over every reset trigger ───────────────────────────────────────
+
+
+#: The floor as a guest may type it: any casing, the bot's ``@name``, arguments.
+FLOOR_SPELLINGS = ("/help", "/HELP", "/Help@NervaBot", "/whoami", "/WhoAmI", "/whoami@NervaBot", "/help me")
+
+
+def test_the_settings_write_refuses_a_floor_command_as_a_reset_trigger(tmp_path, monkeypatch, store):
+    """``/help`` and ``/whoami`` answer every sender, so the Admin settings write refuses
+    either — in any casing, with a ``@bot`` suffix or arguments — as a
+    ``sessions.reset_triggers`` text, with an error that names the floor, and keeps the
+    stored value. A user-tier command's text (``/status``) is still the owner's to use."""
+    from fastapi.testclient import TestClient
+
+    import agents.web as web
+
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "h058-settings-token")
+    client = TestClient(web.app)
+    headers = {"X-Admin-Token": "h058-settings-token"}
+
+    def put(triggers):
+        return client.put("/api/admin/settings/sessions", json={"values": {"reset_triggers": triggers}},
+                          headers=headers)
+
+    assert put(["/new", "/reset", "/status", "start over"]).status_code == 200
+    for floor in FLOOR_SPELLINGS:
+        response = put(["/new", "/reset", floor])
+        assert response.status_code == 422, floor
+        name = "help" if "help" in floor.lower() else "whoami"
+        assert response.json()["details"] == [
+            f"reset_triggers: {floor!r} is /{name} — /help and /whoami answer every sender and no "
+            "setting takes them away, so neither can be a reset trigger"], floor
+    assert settings_db.get_value("sessions", "reset_triggers") == ["/new", "/reset", "/status", "start over"]
+
+
+@pytest.mark.parametrize("pending_inputs", [False, True])
+async def test_a_stored_floor_reset_trigger_never_takes_help_or_whoami_away(hub, store, pending_inputs):
+    """A value stored before the settings write refused it still names the floor. On a
+    channel the floor wins: a guest's /help and /whoami, in every spelling, answer — no
+    ⛔ line, no audit row, no reset — the pre-lane probe and the busy path agree, and the
+    owner's /help is /help too, not a new conversation."""
+    from agents.core.channels.session_lifecycle import RESET_ACK, reset_triggered
+
+    settings_db.put_category("sessions", {"reset_triggers": ["/new", "/reset", *FLOOR_SPELLINGS]})
+    hub.orch._runtime_settings["sessions.reset_triggers"] = settings_db.get_value("sessions", "reset_triggers")
+    hub.orch._runtime_settings["channels.pending_inputs_enabled"] = pending_inputs
+    for text in FLOOR_SPELLINGS:
+        reply = await hub.say(text)
+        if "help" in text.lower():
+            assert "/help — the commands you can use here" in reply, (text, reply)
+        else:
+            assert reply.splitlines()[:2] == ["You — telegram (DM)", f"Sender ID: {GUEST_ID}"], (text, reply)
+        assert hub.orch.command_refused_here(channel="telegram", sender=str(GUEST_ID), chat_id=GUEST_ID,
+                                             text=text) is False, text
+    owner = await hub.say("/HELP", user=OWNER_ID)
+    assert owner != RESET_ACK and "/pause" in owner
+    hub.orch._turn_lease_max_wait = 0.01
+    assert await _while_busy(hub, "/help") == TURN_BUSY_REPLY      # waits its turn, never refused
+    assert _denials(hub.orch.audit) == []
+    # The real triggers in the same stored value still are triggers; without the
+    # conversation-change runtime the owner's /new resets (the channel's rate limit allows
+    # ten messages here, so this is the last one).
+    assert [reset_triggered(hub.orch.get_setting, text) for text in ("/new", "/reset", *FLOOR_SPELLINGS)] \
+        == [True, True] + [False] * len(FLOOR_SPELLINGS)
+    if not pending_inputs:
+        assert await hub.say("/new", user=OWNER_ID) == RESET_ACK
+
+
+async def test_whoami_lists_only_what_the_channel_will_run(hub, web_chat, store):
+    """The owner made the user-tier ``/status`` a reset trigger: on a channel a guest's
+    ``/status`` is refused as the owner command it is, so /whoami, /help and a denial's
+    "You can run" stop offering it there. The web door judges no reset trigger, so it
+    still lists and runs it."""
+    store({"telegram": {"dm": ["status", "sessions"]}, "web": {"dm": ["status", "sessions"]}})
+    hub.orch._runtime_settings["sessions.reset_triggers"] = ["/new", "/reset", "/status"]
+    whoami = await hub.say("/whoami")
+    assert whoami.splitlines()[-1] == "Slash commands you can run: /help, /whoami, /sessions"
+    help_lines = (await hub.say("/help")).splitlines()
+    assert [line.split(" —")[0] for line in help_lines if line.startswith("/")] == ["/help", "/sessions", "/whoami"]
+    assert (await hub.say("/status")).startswith(
+        "⛔ /status is admin-only here. You can run: /help, /whoami, /sessions. ")
+    assert (await hub.say("/recap")).startswith(
+        "⛔ /recap is admin-only here. You can run: /help, /whoami, /sessions. ")
+    # Unreadable triggers: the channel then answers only the floor, and says so.
+    from agents.core.channels.session_lifecycle import UNAVAILABLE
+
+    hub.orch._runtime_settings["sessions.reset_triggers"] = "not a list"
+    assert (await hub.say("/whoami")).splitlines()[-1] == "Slash commands you can run: /help, /whoami"
+    assert await hub.say("/sessions") == UNAVAILABLE
+    web_chat.orch.get_setting = lambda key, default=None: (
+        ["/new", "/reset", "/status"] if key == "sessions.reset_triggers" else default)
+    assert (await web_chat.chat("/whoami")).splitlines()[-1] == \
+        "Slash commands you can run: /help, /whoami, /sessions, /status"
+    assert "backend lm-studio" in await web_chat.chat("/status")
+
+
 # ── quick commands are judged again, on the raw typed name ─────────────────────────
 
 

@@ -1217,6 +1217,14 @@ def _session_setting_problem(key: str, value: Any) -> str | None:
                 not isinstance(item, str) or not item.strip() or len(item) > 120 for item in value
             ):
                 return f"{key}: expected up to 32 non-empty commands of at most 120 characters"
+            from .slash_access import floor_command
+
+            # H058: the floor always wins — /help and /whoami answer every sender.
+            for item in value:
+                floor = floor_command(item)
+                if floor is not None:
+                    return (f"{key}: {item!r} is /{floor} — /help and /whoami answer every sender "
+                            "and no setting takes them away, so neither can be a reset trigger")
         elif key == "stall_seconds":
             if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value <= 86400:
                 return f"{key}: expected a number between 1 and 86400 seconds"
