@@ -27,7 +27,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
-import { SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
+import { BatchReferences, SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
 import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -3881,6 +3881,9 @@ export function TodayPanel() {
   const [editing, setEditing] = useState(null);
   const [text, setText] = useState('');
   const [msg, setMsg] = useState(null);
+  // H330 — what still names a skill this card archived (a bundle, another skill's
+  // related_skills, a job…): shown to the owner who archived it, never dropped.
+  const [refs, setRefs] = useState([]);
   const items = (d && d.items) || [];
   const c = (d && d.counts) || {};
   const fmt = (ts) => {
@@ -3888,7 +3891,7 @@ export function TodayPanel() {
     const t = new Date(String(ts).replace(' ', 'T'));
     return isNaN(t.getTime()) ? String(ts) : t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
-  const refused = (err) => { setMsg(`refused · ${refusalReason(err)}`); return false; };
+  const refused = (err) => { setRefs([]); setMsg(`refused · ${refusalReason(err)}`); return false; };
   const path = (it) => '/api/dashboard/today/entries/' + encodeURIComponent(it.entry_id);
   const save = (it) => {
     const value = text.trim();
@@ -3901,6 +3904,7 @@ export function TodayPanel() {
     .then((r: any) => {
       if (editing === it.entry_id) setEditing(null);
       const done = r && r.discarded ? 'discarded' : it.store === 'skill' ? 'archived' : 'forgot';
+      setRefs(Array.isArray(r && r.references) ? r.references.filter((x: any) => arr(x, 'left').length) : []);
       setMsg(`${done} · ${todayName(it)}`); reload();
     })
     .catch(refused);
@@ -3938,6 +3942,9 @@ export function TodayPanel() {
         );
       })}
       {msg && <div role="status" style={{ fontSize: 10, color: msg.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      {refs.length > 0 && <div data-testid="today-archive-references">
+        <BatchReferences refs={refs} />
+      </div>}
     </Card>
   );
 }

@@ -100,6 +100,26 @@ describe('TodayPanel (H046) — what it learned, edited and forgotten by id', ()
     fireEvent.click(screen.getByText('confirm archive'));
     await waitFor(() => expect(screen.getByText('archived · skill tidy-notes')).toBeTruthy());
     asAdmin(calls(fn, 'DELETE')[0]);
+    expect(screen.queryByTestId('today-archive-references')).toBeNull();     // nothing names it
+  });
+
+  it('tells the owner what still names a skill it archived (H330)', async () => {
+    const references = [{ skill: 'tidy-notes', absorbed_into: null, migrated: [], left: [
+      { holder: 'bundle', name: 'notes', member: 'tidy-notes' },
+      { holder: 'skill', name: 'follow-up', field: 'related_skills' },
+      { holder: 'job', id: 'j1', name: 'morning', field: 'prompt', lines: [1] },
+    ] }];
+    hub({ [`DELETE ${path('skill:tidy-notes')}`]: { status: 200, body: { ok: true, deleted: 'skill:tidy-notes', archived_to: '/x', references } } });
+    render(<TodayPanel />);
+    await waitFor(() => expect(screen.getByText('skill tidy-notes: Use when tidying notes')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText('archive skill tidy-notes'));
+    fireEvent.click(screen.getByText('confirm archive'));
+    await waitFor(() => expect(screen.getByTestId('today-archive-references')).toBeTruthy());
+    const shown = screen.getByTestId('today-archive-references').textContent || '';
+    expect(shown).toContain('tidy-notes deleted · no absorbing skill');
+    expect(shown).toContain('still names it: bundle notes · lists tidy-notes');
+    expect(shown).toContain('still names it: skill follow-up · related_skills');
+    expect(shown).toContain('still names it: job morning (j1) · prompt');
   });
 
   it('discards a learned skill still awaiting review (the hub rejects it, never archives it)', async () => {

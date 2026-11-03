@@ -75,11 +75,14 @@ def identities(skill: Any) -> set[str]:
 
 def _token_re(names: Iterable[str]) -> re.Pattern:
     alternatives = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
-    return re.compile(rf"(?<![A-Za-z0-9_.\-])(?:{alternatives})(?![A-Za-z0-9_\-]|\.[A-Za-z0-9])")
+    # Any case, as bundle members and switch lists are matched: prose and job prompts
+    # write a skill's name the way a sentence does ("Run the Alpha skill"). A reported
+    # line the owner reads and keeps costs less than a reference nobody is told about.
+    return re.compile(rf"(?<![A-Za-z0-9_.\-])(?:{alternatives})(?![A-Za-z0-9_\-]|\.[A-Za-z0-9])", re.IGNORECASE)
 
 
 def mention_lines(text: str, names: Iterable[str]) -> list[int]:
-    """1-based lines of ``text`` that name any of ``names`` as a whole word."""
+    """1-based lines of ``text`` that name any of ``names`` as a whole word, in any case."""
     names = [n for n in names if n]
     if not names or not text:
         return []
@@ -487,7 +490,12 @@ def outside(name: str, skill: Any, new: str | None, holders: Holders, *,
                 continue
             named = rec.get(key)
             named = set(named) if isinstance(named, list) else {named}
-            if ids & named:
+            if holder == "batch":
+                # A pending batch that names the skill as the one absorbing its delete cannot
+                # apply once that skill is gone either (skill_batch_absorbed_unknown).
+                named |= {op.get("absorbed_into") for op in rec.get("operations") or []
+                          if isinstance(op, dict) and op.get("absorbed_into")}
+            if keys & {str(n).casefold() for n in named if n}:
                 left.append({"holder": holder, "id": str(rec.get("id") or ""), "skill": name})
     return left
 

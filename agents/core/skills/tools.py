@@ -617,7 +617,9 @@ def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
     page of a spilled answer is fenced by the spill store's read path whatever the skill is
     (every spill page says ``tainted``, ``FileTools.file_read``), so a page marker takes the
     fence of the answer whose spill it read, never its own: the owner's vetted skill paged
-    with ``file_read`` is still named, and still the instructions the work followed."""
+    with ``file_read`` is still named, and still the instructions the work followed. A later
+    ``skill_view`` that answers ``skill_unknown`` (the skill was deleted, archived or
+    absorbed since) clears it too: no notice keeps asking for a reload that cannot work."""
     from ..tool_result_store import READ_TOOL
 
     calls: dict[str, tuple[str, Any]] = {}
@@ -657,7 +659,26 @@ def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
         reread = _served_copy(envelope) or _bounded_copy(envelope) or _carried_pointer(envelope)
         if reread is not None:
             pending.pop(reread, None)
+            continue
+        gone = _gone_skill(envelope, called[1])
+        if gone is not None:
+            # The skill is no longer there (deleted, archived or absorbed after it was pruned):
+            # a reload can never succeed, so no notice keeps asking for one.
+            for entry in [e for e in pending if e[0].casefold() == gone.casefold()]:
+                pending.pop(entry, None)
     return pending
+
+
+def _gone_skill(envelope: dict, arguments: Any) -> str | None:
+    """The name a ``skill_view`` call asked for when its answer says no such skill exists
+    (``skill_unknown``), or None for any other answer."""
+    result = envelope.get("result") if envelope.get("tool") == TOOL_VIEW else None
+    if (not isinstance(result, dict) or result.get("ok") is not False
+            or "skill_unknown" not in (result.get("reason"), result.get("error"))):
+        return None
+    args = arguments if isinstance(arguments, dict) else _envelope(arguments)
+    name = args.get("name") if isinstance(args, dict) else None
+    return name if isinstance(name, str) and name else None
 
 
 def _carried_pointer(envelope: dict) -> tuple[str, str] | None:

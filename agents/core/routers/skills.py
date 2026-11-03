@@ -1127,7 +1127,10 @@ def _bulk_review(orch, body: BulkReviewBody) -> dict:
         # The card's own status decides (review-H665 #2), now that it is decided.
         out = batches.decide(bid, rec["card"], queue, loader, backup_dir=_batch_archive())
         ok = bool(out.get("ok"))
+        # H330: what the apply itself migrated and left (a bundle saved after the review is
+        # reported here, not rewritten), as the single card's decide answers it.
         results.append({**row, "ok": ok, "status": (batches.get(bid) or {}).get("status"),
+                        **({"references": out["references"]} if out.get("references") else {}),
                         **({} if ok else {"error": str(out.get("reason") or "apply_failed")})})
 
     failed = sum(1 for r in results if not r["ok"])

@@ -3988,6 +3988,53 @@ def cmd_journey(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def _journey_reference_line(e: Mapping[str, Any]) -> str:
+    """One reference a skill delete left where it is (the HUD's ``referenceLine``)."""
+    def get(key: str, limit: int = 120) -> str:
+        return _plain(e.get(key), limit) if e.get(key) not in (None, "") else ""
+
+    holder = get("holder", 40)
+    if e.get("unreadable"):
+        return f"{holder}{' ' + get('file', 200) if get('file', 200) else ''} · could not be read" + (
+            f" · {get('why')}" if get("why") else "")
+    if holder == "skill":
+        if e.get("field") == "related_skills":
+            return f"skill {get('name')} · related_skills" + (f" · {get('why')}" if get("why") else "")
+        lines = e.get("lines") if isinstance(e.get("lines"), list) else []
+        return f"skill {get('name')} · {get('file', 200)} line {', '.join(str(n) for n in lines[:12])}"
+    if holder == "bundle":
+        return f"bundle {get('name')} · lists {get('member')}" + (f" · {get('why')}" if get("why") else "")
+    if holder == "job":
+        return f"job {get('name')} ({get('id', 60)}) · {get('field', 60)}"
+    if holder in ("load_set", "switch"):
+        extra = get("warning", 200) or get("channel", 60)
+        return f"{get('setting', 80)}" + (f" · {extra}" if extra else "")
+    if holder in ("proposal", "batch"):
+        return f"pending {holder} {get('id', 60)}"
+    return holder
+
+
+def _journey_reference_lines(refs: Any) -> list[str]:
+    """H330 — what still names a skill the journey archived, one line each, so a delete
+    never leaves something pointing at a gone skill without the owner being told."""
+    out: list[str] = []
+    for ref in refs if isinstance(refs, list) else []:
+        if not isinstance(ref, Mapping):
+            continue
+        for e in ref.get("left") if isinstance(ref.get("left"), list) else []:
+            if isinstance(e, Mapping):
+                out.append(f"  still names it: {_journey_reference_line(e)}")
+        more = ref.get("more")
+        if isinstance(more, int) and more > 0:
+            out.append(f"  and {more} more")
+        hidden = ref.get("hidden")
+        if isinstance(hidden, int) and hidden > 0:
+            out.append(f"  {hidden} skill(s) not shown here name it too")
+    if out:
+        out.insert(0, "nothing absorbed it, so these still name the archived skill (edit or remove them):")
+    return out
+
+
 def _journey_delete(ns: argparse.Namespace, ctx: Context, client: HubClient, path: str, as_json: bool) -> int:
     entry = _journey_reply(client.get(path))
     skill = entry.get("store") == "skill"
@@ -4025,6 +4072,8 @@ def _journey_delete(ns: argparse.Namespace, ctx: Context, client: HubClient, pat
         ctx.say(f"archived {_plain(reply.get('deleted'), 160)}"
                 + (f" — its folder is kept in {_plain(where, 300)}; move it back into the skills folder to "
                    "restore it" if where else ""))
+        for line in _journey_reference_lines(reply.get("references")):
+            ctx.say(line)
         return EXIT_OK
     ctx.say(f"forgot {_plain(reply.get('deleted'), 160)}")
     if reply.get("undo_ref"):

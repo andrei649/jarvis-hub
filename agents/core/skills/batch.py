@@ -719,6 +719,32 @@ def _note_patched(loader: Any, targets: list[_Target]) -> None:
                 logger.debug("skill batch: usage note skipped for %s", target.name, exc_info=True)
 
 
+def _note_created(loader: Any, targets: list[_Target], actor: str) -> None:
+    """H046 — a skill the agent's batch created is a skill the agent learned.
+
+    ``generate_skill`` records the agent origin when it writes a skill; a ``create`` in a
+    batch the model proposed (applied on the owner's card, ``actor`` the batch's origin)
+    is the same act through Hermes's ``skill_manage create``, so it records the same
+    provenance and the learning journey lists it from the start. A skill the owner's own
+    batch created is not something the agent learned. Best-effort, like the other notes."""
+    if not str(actor or "").startswith("agent"):
+        return
+    usage = getattr(loader, "_usage", None)
+    note = getattr(usage, "note_created", None)
+    if not callable(note):
+        return
+    loaded = getattr(loader, "skills", {}) or {}
+    for target in targets:
+        if target.existing or target.deleted:
+            continue
+        # The sidecar is keyed by the skill's registered name, as generate_skill keys it.
+        name = next((n for n, s in loaded.items() if Path(getattr(s, "path", "")) == target.live), target.name)
+        try:
+            note(name, "agent")
+        except Exception:
+            logger.debug("skill batch: provenance note skipped for %s", target.name, exc_info=True)
+
+
 # ── H330: a delete, what absorbs it, and what still names it ────────────────────────
 
 #: Why a skill that names a deleted one was not rewritten, from the refusal an edit of it gets.
@@ -1229,6 +1255,7 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                         logger.warning("skill batch: the old bundle %s could not be archived", path, exc_info=True)
             _reload(loader, order)
             _note_patched(loader, order)
+            _note_created(loader, order, actor)
             return {"ok": True, "applied": True, "dry_run": False, "batch_id": batch_id, "operations": len(ops),
                     "skills": summary, **report, **({"backup": str(backup)} if backup else {})}
         finally:

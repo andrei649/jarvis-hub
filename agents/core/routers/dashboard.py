@@ -736,7 +736,8 @@ async def dashboard_today_entry_delete(entry_id: str, req: Request = None):
     (an undo ref keeps the ring as it was beside the rings, as for the model's own remove;
     ``POST /api/memory/core/undo`` puts it back, a reset erases it); a learned skill is
     archived, as Hermes archives one (its folder moved to the skills batch archive,
-    recoverable; a pinned skill is refused), and one still awaiting the owner's review is
+    recoverable; a pinned skill is refused; ``references`` says what still names it, as a
+    skill batch's delete reports it, H330), and one still awaiting the owner's review is
     discarded as the review's reject does (its folder kept in the discard archive); a
     fact-store row leaves the store (and its search index and write-ahead log), so it
     leaves the timeline and every brief."""
@@ -830,7 +831,12 @@ async def _delete_skill(orch, entry_id: str, name: str):
             usage.set_state(name, STATE_ARCHIVED)
         except Exception:
             logger.warning("journey: the archived state of %s could not be recorded", name, exc_info=True)
-    return nocache_json({"ok": True, "deleted": entry_id, "store": "skill", "archived_to": result.get("backup")})
+    # H330: what still names the archived skill (another skill's related_skills or prose, a
+    # bundle, a job, the load set, a switch, a pending proposal or batch) is reported to the
+    # owner who deleted it, never dropped: nothing is left pointing at a skill that is gone
+    # without anyone being told.
+    return nocache_json({"ok": True, "deleted": entry_id, "store": "skill", "archived_to": result.get("backup"),
+                         "references": result.get("references") or []})
 
 
 @router.get("/ticker", dependencies=[Depends(user_guard)])
