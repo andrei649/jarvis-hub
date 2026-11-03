@@ -3,8 +3,12 @@
 Local remediation candidate, 2026-11-03. Base `3faa9e2d`, branch
 `security/open-read-projections`. Twelve further content-bearing reads now require
 the existing user guard; public kill-switch status has an aggregate projection
-and full details require admin access. Final independent source acceptance is
-pending. This does not assert a post-merge/current-main PASS.
+and full details require admin access. An independent source-body review of all
+59 remaining intentionally open GETs (57 public, two token-in-path) recorded a
+**local candidate PASS** at `47d2b4e6`. Subsequent commits through `682f1d08`
+changed only client/admin authentication code and tests, not server GET handlers
+or their callees. Post-merge/current-main and live acceptance remain unproven;
+the SEC-B6 ledger item stays open pending that acceptance.
 
 > The route-auth gate (`tests/test_route_auth_matrix.py::test_no_unclassified_open_read`) proves
 > **membership**: every open GET is either in `INTENTIONALLY_OPEN_READS` or carries `user_guard`. It
@@ -16,8 +20,8 @@ pending. This does not assert a post-merge/current-main PASS.
 > source on the remediation candidate), and why that content is non-personal. "Personal content" = a specific
 > user's data: message/turn text, memory/notes/KG facts, task/mission/review contents, per-agent run
 > history, SOUL text, connected-account tokens, local document paths, imported owner manifests,
-> user-authored dataset/case labels and free-form safety reasons/scopes. Aggregate counters, rates, capability catalogs,
-> liveness booleans and config-presence flags are **not** personal content.
+> user-authored dataset/case labels and free-form safety reasons/scopes. Aggregate counters, rates,
+> code-owned catalogs, liveness booleans and config-presence flags are **not** personal content.
 
 ## Load-bearing individual justifications
 
@@ -32,7 +36,8 @@ pending. This does not assert a post-merge/current-main PASS.
 ## Group justifications
 
 - **App shell + static** (`/`, `/v1`, `/v2`, `/v2/{path}`, `/admin`, `/favicon.ico`, `/sw.js`) — serve
-  markup/bytes. `/admin` is the page *shell*; every admin API behind it is `admin`-guarded.
+  markup/bytes. `/admin` serves only the page shell and grants no API authority;
+  each content request uses its own declared guard or public projection.
 - **FastAPI scaffolding** (`/docs`, `/docs/oauth2-redirect`, `/redoc`, `/openapi.json`) — route schema,
   no stored data.
 - **Public protocol surfaces / token-in-path** (`/.well-known/agent-card`,
@@ -81,6 +86,10 @@ Matrix membership alone is not acceptance of these response bodies.
 Disabling live schema overrides does not turn connected-tool metadata into a
 static catalog: registered descriptions and input schemas can still contain
 private local-server context, so both tool catalog reads require the user guard.
+The independent review's 59-route handler/body table and local test scope are
+recorded in [the dated review](2026-11-03-open-read-review.md). A separate focused
+guard gate recorded 108 tests, zero failures/errors/skips; broader candidate
+gates and live acceptance are separate.
 
 ## The original 13 routes moved to `user_guard`
 

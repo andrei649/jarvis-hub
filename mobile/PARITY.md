@@ -20,6 +20,28 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+SEC-B6 local source candidate (2026-11-03): twelve owner-content reads now require
+user credentials: `GET /api/oracle/status`, `GET /agents`, the three
+`GET /api/eval/datasets` list/runs/compare routes, `GET /learning/stats`,
+`GET /api/local-docs`, `GET /skills/imported`, `GET /api/arena/leaderboard`,
+`GET /api/metrics/kernel`, `GET /api/metrics/capabilities`, and
+`GET /sandbox/status`. Existing user clients send `X-User-Token`; an authorized
+admin credential also satisfies a user read. The v1 HUD's stored-token fetch
+helper resolves the actual URL origin and clones request options before adding
+the token, so protocol-relative external URLs and reused options cannot carry
+its injected token. The standalone admin page uses its existing admin-token
+helper for Agents and Oracle status/conflicts GETs.
+
+The successful public `GET /api/security/kill-switch` returns exactly `global`,
+`any_halted`, and `halted_count`; full halted scopes/reasons remain on admin
+`GET /api/security/kill-switch/details`. Browser and mobile read consumers
+distinguish global from scoped halts and leave missing, failed, or contradictory
+aggregates unknown rather than reporting operational. The browser global
+control still changes only global scope and cannot release individual scoped
+halts. Mobile has a read-only Status row, with no native halt control. Focused
+local tests and typechecks cover these clients; physical-device, networked-Hub,
+and served-browser acceptance are not claimed here.
+
 H456 local candidate (2026-10-10): CLI/web Jobs author per-job reasoning effort
 and expanded installed tool groups; scheduled dispatch applies operator and
 platform restrictions. Native mobile authoring for these choices remains open.
@@ -153,7 +175,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Chat/session protocol discovery | `GET /v1/capabilities` | ➖ machine-readable client contract; no HUD control | ➖ available to authenticated clients; current native transport remains fixed to its tested contract, runtime negotiation is not implemented | H477 partial |
 | Owner checkpoint operations (H011, partial) | Existing `POST /chat`, `POST /chat/stream`; no new route | Owner inventory, diff, selected/force restore and index maintenance through typed commands and host CLI; signed human task + kernel execution; successful restore rewinds only the current last-user exchange | ⬜ dedicated checkpoint UI and native acceptance; no native implementation claimed | H011 / H18.26; size/retention controls and complete checkpoint-owned payload cleanup remain open; shared blobs retained |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
-| Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
+| Agent selection | user `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
 | Runtime Inspector (H227) | Existing admin inspector route | ✅ model/route resolution, unresolved/legacy/withheld states and fixed empty-turn limits | ⬜ dedicated native inspector; intentional owner administration gap | H18.26 / H227 |
 | Durable Kanban and approved workers (H075/H581, partial) | Owner `/kanban` and `nerva kanban`, scoped admin `/api/kanban` board/task/file APIs and authenticated board event WebSocket; signed dispatch queue, bounded parallel workers, cancellation and separately approved URL attachments; flags default off | 🟡 ProjectsMode board and task drawer: board/task CRUD, bulk changes, comments, local attachment upload/download, project/profile/orchestration reads, explicit dispatch request, event refresh with reconnect and poll; existing approval queue. Advanced profile/orchestration/log/model/transfer and worker/recovery actions remain open; file-mutation callback prerequisite is not wired | ⬜ native board/worker controls and attachments | H18.34 / H075 / H581; no full Hermes parity or native acceptance claimed |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |
@@ -179,15 +201,15 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Advisory approval model opinions (H277) | Optional `judge` / `judge_pending` on blocked tasks; `GET /api/llm/roles` configuration | ✅ Decision Inbox opinion, bounded polling and model roles viewer | 🟡 local candidate: advisory opinion and read-only roles view; pending says pull to refresh; no automatic polling; #1233 integration and device/live acceptance open | H18.29 / H277 |
 | Opt-in terminal guardian verdicts (H277) | Same blocked-task projection: `judge.advisory=false`, strict `decision`; pending `judge_mode=smart` | ✅ DENY/ESCALATE, guardian identity and one-task owner override; smart approvals leave the inbox | ⬜ distinct guardian verdict/pending labels; existing owner decisions remain usable | H18.29 / H277 |
 | Guardian denial feedback and observers (H485) | Bounded next authenticated owner-turn prompt observation; consented server extension events around native guardian request/committed decision | Server chat flow warns after repeated DENYs; observer subscriptions use extension declarations, no dedicated HUD editor | Native settings/labels, observer management and device acceptance remain open; no new mobile client implementation | H485 |
-| Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
+| Capability registry board | user `GET /api/capabilities`; user `GET /api/metrics/capabilities` has no dedicated client caller | ✅ registry board over `/api/capabilities` | ✅ registry board over `/api/capabilities`; no metrics-route caller | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
 | Slack/Discord inbox replies | Same inbox/reply API; exact room/thread target, existing approval queue | ✅ live inbox composer | ✅ existing Comms screen and client; requires host adapters; Slack automatic ingress uses optional Socket Mode ([setup](../docs/SLACK_SETUP.md)) | HA-4i-comms / 4i-socket |
 | Shell reply command (`nerva send --list/--to`) | Same inbox/reply API above; queued task is not a delivery receipt | ✅ existing inbox | ✅ existing inbox; CLI itself is host-only | HA-4i |
 | Spoken morning brief (🔊 SPEAK) | `GET /autonomy/brief` + `POST /tts` (native: hub TTS via expo-audio) | ✅ | ✅ | H18.23 |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |
-| Arena / review / quality | `GET /api/arena/*`, `/api/review/*`, `GET /api/quality` (open), admin `POST /api/quality/threshold` | ✅ | ➖ | — |
-| Security posture | read legs only: `GET /api/security/{governance,kill-switch,loop-breaker}` (open), `GET /api/security/posture` (admin) | ✅ | ✅ | H18.18 |
+| Arena / review / quality | user `GET /api/arena/leaderboard`; other `/api/arena/*` and `/api/review/*` retain their own guards; `GET /api/quality` (open), admin `POST /api/quality/threshold` | ✅ | ➖ | — |
+| Security posture | public `GET /api/security/kill-switch` exact `{global, any_halted, halted_count}`; admin `GET /api/security/kill-switch/details` full `{global, halted}`; `GET /api/security/{governance,loop-breaker}` (open), `GET /api/security/posture` (admin) | ✅ aggregate warnings in Trust/Console; legacy admin details | ✅ read-only aggregate Status, scoped/global/unknown distinct; no device acceptance claimed | H18.18 |
 | Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
 | First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ✅ | H18.19 |
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
@@ -223,13 +245,13 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Learning journey: list, show, edit, forget a learned entry (H046) | user `GET /api/dashboard/today/entries`, `GET /api/dashboard/today/entries/{entry_id}`; admin `PATCH` and `DELETE /api/dashboard/today/entries/{entry_id}` (cross `kg.write`); timeline entries on `GET /api/dashboard/today` carry ids | ✅ TODAY card edits and forgets a learned entry; `nerva journey` (aliases `learning`, `memory-graph`) | ⬜ the native Today board is not built yet (see the Today board row) | H18.37 / H046 |
 | Skill delete in a batch, with the skill that absorbs it (H330) | admin `POST /api/skills/batch` takes `absorbed_into` on a delete (also with `dry_run`); the answer carries `references` (what moves to that skill, what still names the deleted one); `GET /api/skills/batches` lists them beside each proposed batch's diffs | ✅ Skill Batches panel shows each delete's references beside the diffs | ➖ owner desktop administration of skill batches; no native batch review planned | H330 |
 | Usage and billing estimates (H220, local candidate) | admin `GET /api/admin/apm` adds measured local/cloud/unknown rollups; existing chat outcome carries selected current-turn usage and estimated cost | Usage/Billing panel, Command Center link and shared context/usage strip; pending integration acceptance | ⬜ no native aggregate spend/breakdown or new usage-detail renderer; existing shared backend governance applies | H220 |
-| Optional repository skills and verified upstream catalog (H696, local candidate) | user `GET /skills/hermes/catalog`; admin `GET /api/skills/optional/catalog`, `POST /api/skills/optional/install`, `POST /skills/import`; pending approval requires the reviewed fingerprint | Skills Import displays tiers and exact catalog selection; installed copies remain quarantined for separate snapshot-bound owner review | ➖ owner desktop skill installation; native read-only skill browser remains, no native install control or device acceptance claimed | H696 |
+| Optional repository skills and verified upstream catalog (H696, local candidate) | user `GET /skills/hermes/catalog`, `GET /skills/imported`; admin `GET /api/skills/optional/catalog`, `POST /api/skills/optional/install`, `POST /skills/import`; pending approval requires the reviewed fingerprint | Skills Import displays tiers and exact catalog selection; installed copies remain quarantined for separate snapshot-bound owner review | ➖ owner desktop skill installation; native read-only skill browser remains, no native install control or device acceptance claimed | H696 |
 | Per-command access tiers and `/whoami` (H058) | admin settings key `commands.user_allowed_commands` (per channel, DM and group; fails closed to `/help` and `/whoami`); `/whoami` in chat; `GET /api/commands` lists only what the caller may run; denials answer `⛔ /<cmd> is admin-only here` and are audited (`slash_command_denied`) | ✅ the Admin settings editor (`PUT /api/admin/settings/commands`) writes the key; the web door and the channel adapters share one gate | ✅ inherited: native chat goes through the shared `/chat` path and the native command list (H18.26) reads the filtered catalog; no native editor for the setting is planned | H058 |
 | Persisted LLM egress ledger (H381) | admin `GET /api/admin/network/calls` now serves rows that survive a restart | ✅ Network Monitor panel reads persisted and live rows | ➖ owner desktop administration; no native network monitor planned | H381 |
 | Write legs on surfaces mobile already reads (notes, KG, memory decay) | `PUT /api/notes`, `POST /api/notes/rewrite`, `DELETE /api/kg/entities/{name}`, `POST /api/memory/decay/forget` | ✅ | ⬜ | |
 | Block-tree note docs (DRA-53 `notes_store`, `NOTE DOCS` HUD panel — owner confirmed keep 2026-09-01) | user `GET/POST /api/notes/docs`, `GET/DELETE /api/notes/docs/{doc_id}`, `POST /api/notes/docs/{doc_id}/blocks` | ✅ | ⬜ | |
 | Block-tree note blocks (edit / delete one block in a doc) | user `PATCH /api/notes/blocks/{block_id}`, `DELETE /api/notes/blocks/{block_id}` | ✅ | ⬜ | |
-| Local docs index | `GET /api/local-docs` (open), `POST /api/local-docs/index` | ✅ | ⬜ | |
+| Local docs index | user `GET /api/local-docs`, `POST /api/local-docs/index` | ✅ | ⬜ | |
 | Nightly reflection (status + manual run) | `GET /api/reflection/status`, `POST /api/reflection/run` | ✅ | ⬜ | |
 | Security skills browser (ATT&CK tactics → curated techniques, read-only) | `GET /api/security-skills/tactics`, `GET /api/security-skills/techniques` | ✅ | ⬜ | |
 | Prompt-injection scan | `POST /api/security/scan-injection` | ✅ | ⬜ | |
@@ -238,18 +260,18 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Channel pairing ceremony | admin `GET /api/channels/pairing`, `POST /api/channels/pairing/code`, `POST /api/channels/pairing/decide` | ✅ | ➖ admin ceremony run from the owner HUD (triage 2026-09-01) | — |
 | Governed social drafts (draft-before-send) | `GET/POST /api/integrations/social` | ✅ | ⬜ | |
 | Mic satellites (pair a device as a mic) | `GET /api/satellites`, `POST /api/satellites/register`, `DELETE /api/satellites/{satellite_id}` | ✅ | ⬜ | |
-| Oracle sync (conflicts read off the status payload) | `GET /api/oracle/status` (open); admin `POST /api/oracle/sync`, `POST /api/oracle/conflicts/resolve` | ✅ | ⬜ | |
+| Oracle sync and conflicts | user `GET /api/oracle/status`, `GET /api/oracle/conflicts`; admin `POST /api/oracle/sync`, `POST /api/oracle/conflicts/resolve` | ✅ standalone admin GETs carry the entered admin credential; existing POST paths are separate | ⬜ | |
 | Packs inventory + verification | `GET /api/packs`, `GET /api/packs/{key}/verify` | ✅ | ⬜ | |
 | World signals routing feed | `GET /api/signals/routed`, `GET /api/signals/agent/{agent_id}` | ✅ | ⬜ | |
 | Market watchlist (owner-saved rows; no quotes, no trading) | `GET/POST /api/market/watchlist/saved`, `DELETE /api/market/watchlist/saved/{symbol}` | ✅ | ⬜ | |
 | Onboarding wizard + funnel steps | `GET /api/onboarding/wizard`, `POST /api/onboarding/funnel` | ✅ | ⬜ | |
 | Model setup — hardware tier → governed Ollama pull | `GET /api/onboarding/model-plan`, `POST /api/onboarding/model-pull` | ✅ | ⬜ | |
 | Feedback · NPS (submit + admin summary) | `POST /api/feedback`; admin `GET /api/feedback/summary` | ✅ | ⬜ | |
-| Kernel + north-star metric boards | `GET /api/metrics/kernel`, `GET /api/metrics/north-star` (both open) | ✅ | ⬜ | |
+| Kernel + north-star metric boards | user `GET /api/metrics/kernel`; `GET /api/metrics/north-star` (open) | ✅ | ⬜ | |
 | Reasoning traces list | `GET /api/traces` | ✅ | ⬜ | |
 | Cognition read + live scoring stream | `GET /api/cognition`, `GET /api/cognition/stream` (SSE) | ✅ | ⬜ | |
 | Workflows (list / run / step-generate) | `GET /api/workflows`, `POST /api/workflows/run`, `POST /api/workflows/step/generate`; admin `DELETE /api/workflows/{pipeline_id}` | ✅ | ⬜ | |
-| Sandboxed code execution | `GET /sandbox/status` (open), `POST /sandbox/execute`, `GET /sandbox/kernels`, `POST /sandbox/kernels/reset` | ✅ | ➖ hub-host capability (runs on the hub box, not a phone surface; triage 2026-09-01, unchanged by K3 controls and H660 detached Docker/session stream spills — a resident interpreter is a property of the hub, and the reset button belongs where the code is written) | — |
+| Sandboxed code execution | user `GET /sandbox/status`, `POST /sandbox/execute`, `GET /sandbox/kernels`, `POST /sandbox/kernels/reset` | ✅ | ➖ hub-host capability (runs on the hub box, not a phone surface; triage 2026-09-01, unchanged by K3 controls and H660 detached Docker/session stream spills — a resident interpreter is a property of the hub, and the reset button belongs where the code is written) | — |
 | Agent templates (instantiate a config) | `GET /api/agent-templates` (open), `POST /api/agent-templates/instantiate` | ✅ | ⬜ | |
 | Publish readiness (creative checklist + package) | `POST /api/creative/publish/checklist`, `POST /api/creative/publish/package` | ✅ | ⬜ | |
 | Missions board (long-horizon governed workspaces) | `GET /api/missions`, `POST /api/missions/{mission_id}/{start,pause,resume,complete,cancel}` | ✅ | ⬜ | |
@@ -257,7 +279,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Day report (redacted, shareable) | `GET /api/report/today`, `POST /api/report/today/export` | ✅ | ⬜ | |
 | Proof-of-Action receipt | `GET /api/report/receipt/{audit_id}` | ✅ | ⬜ | |
 | Natural-language schedule parser | `POST /api/schedule/parse` | ✅ | ⬜ | |
-| Bench-agent learning + promotion | `GET /learning`; admin `POST /learning/promote`, `POST /api/learning/propose` | ✅ | ⬜ | |
+| Bench-agent learning + promotion | user `GET /learning`, `GET /learning/stats`; admin `POST /learning/promote`, `POST /api/learning/propose` | ✅ | ⬜ | |
 | Heartbeats (per-agent run/start/stop) | `GET /heartbeat/status` (open); admin `POST /heartbeat/{agent_id}/{run,start,stop}` | ✅ | ➖ admin ceremony run from the owner HUD (triage 2026-09-01) | — |
 | Transcript → tasks ingest | `POST /api/transcripts/ingest` | ✅ | ⬜ | |
 | Escalation (ask-tier fan-out) | `GET /api/autonomy/escalation/targets` (open); admin `POST /api/autonomy/escalate` | ✅ | ➖ admin ceremony run from the owner HUD; the phone is the escalation *target*, not the fan-out control (triage 2026-09-01) | — |
@@ -266,7 +288,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Local models + cloud auth profiles + VLM status | user `GET /api/vlm/status`; admin `POST /api/llm/{load,unload}`, `GET /api/llm/auth-profiles`, `GET /api/models/info`, `GET /api/models/local`, `POST /api/models/local/switch` | ✅ | ➖ hub-host capability (model lifecycle lives on the hub's GPU box; triage 2026-09-01) | — |
 | System profile (read-only; selected via `JARVIS_SYSTEM_PROFILE`) | `GET /api/system/profiles` | ✅ | ⬜ | |
 | Sentence-streamed TTS | `POST /tts/stream` | ✅ | ⬜ | |
-| Eval datasets (run / compare / history) | `GET /api/eval/datasets`, `GET /api/eval/datasets/{name}/{runs,compare}` (open), `POST /api/eval/datasets/run` | ✅ | ➖ | — |
+| Eval datasets (run / compare / history) | user `GET /api/eval/datasets`, `GET /api/eval/datasets/{name}/{runs,compare}`, `POST /api/eval/datasets/run` | ✅ | ➖ | — |
 | Bench stats | `GET /bench/stats` (open) | ✅ | ➖ | — |
 | Nerva Workspace (B2B pilot app: company accounts, departments, documents, assistant, reports, approvals, admin console) | `GET /workspace`, `GET /workspace/{path:path}` (the app shell); `/api/workspace/*` behind the workspace's own session cookie (tiers `ws_user`/`ws_admin`), all 404 unless `NERVA_WORKSPACE=1` | ✅ separate web app at `/workspace`, not a HUD panel | ➖ Nerva Workspace: web only, no native surface (intentional) — company employees use the responsive web app (usable at 360 px); the owner's native apps never sign in to it | — |
 

@@ -3095,7 +3095,7 @@ export interface paths {
         };
         /**
          * Kill Switch Status
-         * @description Out-of-band kill-switch status.
+         * @description Public content-free out-of-band kill-switch status.
          */
         get: operations["kill_switch_status_api_security_kill_switch_get"];
         put?: never;
@@ -3104,6 +3104,26 @@ export interface paths {
          * @description Engage/disengage the kill-switch (operator action; agent can't reach this).
          */
         post: operations["kill_switch_set_api_security_kill_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/security/kill-switch/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kill Switch Details
+         * @description The existing full halt map for authenticated owner diagnostics.
+         */
+        get: operations["kill_switch_details_api_security_kill_switch_details_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7987,10 +8007,11 @@ export interface paths {
          * @description V2 — capability readiness registry: a SEAM/WIRED/VERIFIED/GA state per capability.
          *
          *     Derived from the plugin/component/skill registries (ORIZONT 24 Track V); makes
-         *     "looks done, isn't wired" a visible state instead of a per-caller guess. Open like
-         *     the sibling north-star meter (non-sensitive aggregate; the app is localhost-only
-         *     until a token is set). 503 until the orchestrator is up. Nothing is VERIFIED until
-         *     the reality harness (V1) lands — `harness_pending` reflects that honestly.
+         *     "looks done, isn't wired" a visible state instead of a per-caller guess.
+         *     Registered tool descriptions may contain connected server content, so this
+         *     full snapshot requires user authentication. 503 until the orchestrator is up.
+         *     Nothing is VERIFIED until the reality harness (V1) lands — `harness_pending`
+         *     reflects that honestly.
          */
         get: operations["metrics_capabilities_api_metrics_capabilities_get"];
         put?: never;
@@ -8086,7 +8107,8 @@ export interface paths {
          *     and the recent denials (with reasons, so a halt / runaway / over-budget is visible).
          *
          *     In-memory observability (resets on restart; the IntentLog audit chain is the durable
-         *     record). Open like the sibling meters. Empty until `JARVIS_ACTION_KERNEL` is on and
+         *     record). Owner-authenticated because denial reasons may contain private scopes.
+         *     Empty until `JARVIS_ACTION_KERNEL` is on and
          *     actions are actually mediated — no orchestrator dependency (a module-level meter).
          */
         get: operations["metrics_kernel_api_metrics_kernel_get"];
@@ -21653,6 +21675,26 @@ export interface operations {
         };
     };
     kill_switch_set_api_security_kill_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    kill_switch_details_api_security_kill_switch_details_get: {
         parameters: {
             query?: never;
             header?: never;

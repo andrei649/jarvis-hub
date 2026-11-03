@@ -9,6 +9,32 @@ H696 adds bundled/optional catalog tiers and explicit installation of optional
 repository skills into quarantine. Native aggregate usage and native skill
 installation controls remain gaps; integration acceptance is still pending.
 
+SEC-B6 local client/security source (2026-11-03): twelve content-bearing GETs
+now require user access: `/api/oracle/status`, `/agents`, the three
+`/api/eval/datasets` list/runs/compare reads, `/learning/stats`,
+`/api/local-docs`, `/skills/imported`, `/api/arena/leaderboard`,
+`/api/metrics/kernel`, `/api/metrics/capabilities`, and `/sandbox/status`.
+Existing v2 `apiGet`/`useApi` callers send the user token; legacy v1 reads use
+the stored-token fetch wrapper. That wrapper now resolves URL origin and copies
+request options/headers per local attempt, preventing its token injection from
+following protocol-relative external URLs or reused options. The standalone
+`/admin` page does not load that wrapper: its Agents and Oracle status/conflicts
+GETs use the existing admin-token `afetch` helper. Admin credentials satisfy
+user-read guards. This is a read-access change; existing mutation contracts
+remain separate.
+
+The successful public `GET /api/security/kill-switch` is an exact three-field aggregate:
+`{global, any_halted, halted_count}`. Scope names and reasons are available on
+admin-only `GET /api/security/kill-switch/details` as `{global, halted}`. Trust
+and Console distinguish a global halt from scoped halts; the global button
+still acts only on global scope. Missing, failed, and contradictory aggregates
+show unknown and preserve the safe engage direction. Trust also remains
+unknown when a successful POST cannot be verified by a subsequent GET. Mobile
+consumes only the aggregate in a read-only Status row, with the same global,
+scoped, and unknown distinctions. Focused source tests and typechecks support
+these claims; a served browser, credentialed network Hub, and native device
+have not been accepted in this documentation slice.
+
 > What's intentionally **left out** of the P0–P6 build (PR #156 / merged to `main`) and queued for
 > the next pass. **Update 2026‑06‑08: the cutover happened — V2 is the default HUD at `/`** (legacy
 > at `/v1`, override `JARVIS_HUD=v1`); §8 below is done, the rest is the depth punch‑list.
