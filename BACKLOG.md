@@ -2694,6 +2694,21 @@
   collateral reviews (390 already recorded on the branch); existing verdicts were preserved and
   stale claims/citations corrected. The five new reviews cite the current code and tests without
   claiming a live hub or real-model acceptance. `needs_review` 0; headline 141 → 146/697.
+  **Batch 4 (2026-11-03, local):** H220 adds the reachable Usage console and Billing settings
+  tab, measured local/cloud/unknown token and estimated-spend splits, model/agent breakdowns,
+  and selected current-turn usage in the shared context meter without an extra RPC. Unknown
+  or unpriced data is not presented as free. H696 uses a v2 exact-release pin with 190 eligible
+  skill documents and 461 reference digests, verified complete staged imports, a smaller
+  five-default/seven-optional Nerva bundle, visible tiers and generated per-skill documentation.
+  Installs cross admin/kernel gates into quarantine; separate approval is bound to the exact
+  reviewed fingerprint. Independent reviews fixed legacy model accounting, zero-price route
+  inference and a racing empty-owner-directory replacement. The H026 long/optional bundle-path
+  regression and browser unload/cache lifetime regressions are separately tested. All 224
+  affected ledger rows were re-read (222 retained verdicts plus the two new equivalents), with
+  source claims, remaining work and citations corrected. `needs_review` 0; headline 146 → 148/697.
+  This is local source equivalence: native device/frozen-package, live provider/owner installation
+  and the complete scheduled browser matrix remain unclaimed. Generic import egress/governance
+  (H334), historical billing (H370), and SEC-B6 acceptance stay open.
 
 ## Darwin feature absorption — 2026-09-09
 
