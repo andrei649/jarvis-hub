@@ -3750,7 +3750,9 @@ export interface paths {
         /**
          * Approve Generated Skill
          * @description CDX-8: owner-approve a quarantined auto-generated skill — sign + activate it. Only an
-         *     admin can promote LLM-authored code from pending to executable.
+         *     admin can promote LLM-authored code from pending to executable, and the promotion
+         *     crosses the ``skill.generation`` action kernel gate (H330): a halt answers 403
+         *     ``kernel_denied`` and the skill stays quarantined.
          */
         post: operations["approve_generated_skill_api_skills__name__approve_post"];
         delete?: never;
@@ -3869,6 +3871,13 @@ export interface paths {
          *     any failure in the swap puts every touched skill back. ``dry_run`` answers the diffs
          *     without changing anything. A refusal is 422 with the failing operation, hints and a
          *     preview of the file as the batch had it.
+         *
+         *     H330: a delete may share the batch with edits to other skills and name the skill that
+         *     absorbs it (``absorbed_into``); the answer's ``references`` say what was migrated to it
+         *     and what still names the deleted skill. Before any folder moves a delete crosses the
+         *     ``skill.install`` kernel gate and every other write (a create, a patch, a file, a
+         *     related_skills migration, a bundle rewrite) the ``skill.generation`` one; a DENY answers
+         *     422 ``skill_batch_kernel_denied`` and nothing changes.
          */
         post: operations["skills_batch_api_skills_batch_post"];
         delete?: never;
@@ -9136,8 +9145,10 @@ export interface paths {
          *     H046 review: the learned half is what the assistant really keeps — the facts of the
          *     two curated rings every prompt carries (the agent's notes and the user profile, which
          *     the model's ``memory`` tool, the post-turn review and the daily reflection write;
-         *     dated by their ring's last save, as Hermes dates its memory cards), the skills it
-         *     learned (dated by their last use) and the fact store's rows. ``drift`` says a ring
+         *     each dated by when it entered its ring, so a new fact never brings the older ones
+         *     into the window, and one no save dated yet by its ring's last save), the skills it
+         *     learned (dated by when each was learned or changed: created, approved, patched; never
+         *     by a use, a view or a switch-on) and the fact store's rows. ``drift`` says a ring
          *     file could not be read back.
          */
         get: operations["dashboard_today_api_dashboard_today_get"];
@@ -9184,7 +9195,8 @@ export interface paths {
         /**
          * Dashboard Today Entry
          * @description One learned entry, whatever its age: a ring fact, a learned skill (with its whole
-         *     SKILL.md as ``content``) or a fact-store row.
+         *     SKILL.md as ``content``; for one still awaiting the owner's review, none: only the admin
+         *     review reads a quarantined skill, and ``content_withheld`` says so) or a fact-store row.
          */
         get: operations["dashboard_today_entry_api_dashboard_today_entries__entry_id__get"];
         put?: never;
@@ -9195,8 +9207,10 @@ export interface paths {
          *     (an undo ref keeps the ring as it was beside the rings, as for the model's own remove;
          *     ``POST /api/memory/core/undo`` puts it back, a reset erases it); a learned skill is
          *     archived, as Hermes archives one (its folder moved to the skills batch archive,
-         *     recoverable; a pinned skill is refused); a fact-store row leaves the store (and its
-         *     search index and write-ahead log), so it leaves the timeline and every brief.
+         *     recoverable; a pinned skill is refused), and one still awaiting the owner's review is
+         *     discarded as the review's reject does (its folder kept in the discard archive); a
+         *     fact-store row leaves the store (and its search index and write-ahead log), so it
+         *     leaves the timeline and every brief.
          */
         delete: operations["dashboard_today_entry_delete_api_dashboard_today_entries__entry_id__delete"];
         options?: never;
@@ -9208,7 +9222,8 @@ export interface paths {
          *     A ring fact is replaced in place, by the memory tool's own write (one clean line of at
          *     most 300 characters, scanned; the ring's budget; an undo ref; the intent log): its id
          *     follows its text, so the reply carries the new one. A skill's ``value`` is its whole
-         *     SKILL.md, applied by the owner's skill batch (checked first; the old folder archived).
+         *     SKILL.md, applied by the owner's skill batch (checked first; the old folder archived);
+         *     one still awaiting the owner's review is refused (409 ``skill_pending_review``).
          *     A fact-store row (at most 2000 characters) keeps its id, category and key and moves to
          *     now on the timeline. An unchanged value writes nothing (``changed: false``).
          */
