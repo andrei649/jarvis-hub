@@ -17,13 +17,18 @@ A legacy ``manifest.json``/``manifest.yaml`` layout is still accepted as a
 fallback for older repos.
 """
 
+import ctypes
 import difflib
+import errno
 import hashlib
 import hmac
 import json
 import logging
 import os
 import re
+import shutil
+import sys
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -45,17 +50,65 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _RELEASE_TAG_RE = re.compile(r"^v[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]+)?$")
 _SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_REFERENCE_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 HERMES_REPO = "NousResearch/hermes-agent"
-HERMES_PIN_RELEASE_TAG = "v2026.8.27"
-HERMES_PIN_COMMIT = "5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
-HERMES_PIN_TREE = "222ec43b5237deb643277bc2f64fa4b873dd7f28"
-HERMES_PIN_PATH = Path(__file__).with_name("hermes_pin_v1.json")
+HERMES_PIN_RELEASE_TAG = "v2026.8.31"
+HERMES_PIN_COMMIT = "29112bef099274229cadff79cdff7bf7b99c4b77"
+HERMES_PIN_TREE = "daaffc303ae437041b7f76be17c5f61b14f2ce99"
+HERMES_PIN_PATH = Path(__file__).with_name("hermes_pin_v2.json")
 OPENCLAW_REPO = "openclaw/skills"
 OPENCLAW_SKILLS_PATH = "main/skills"
 
 GITHUB_RAW = "https://raw.githubusercontent.com"
 GITHUB_API = "https://api.github.com"
+
+
+def _publish_stage_no_replace(stage: Path, target: Path) -> None:
+    """Atomically publish a staged directory only if its final name is absent.
+
+    A plain POSIX rename can replace an empty owner directory created after
+    the caller's absence check. Use the platform's exclusive rename instead;
+    an unsupported OS, libc, or filesystem fails closed. Stages are created in
+    the destination's parent, so a successful rename keeps whole-directory
+    visibility. No copy or nonexclusive rename fallback is safe here.
+    """
+    if os.name == "nt":
+        # Python documents that os.rename on Windows always raises
+        # FileExistsError when the destination exists.
+        os.rename(stage, target)
+        return
+    if sys.platform != "darwin" and not sys.platform.startswith("linux"):
+        raise OSError(errno.ENOSYS, "exclusive directory rename unavailable")
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(stage)
+    target_bytes = os.fsencode(target)
+    if sys.platform == "darwin":
+        # macOS SDK sys/stdio.h: RENAME_EXCL = 0x00000004; rename(2) says
+        # an existing destination returns EEXIST. No AT_FDCWD is needed.
+        try:
+            rename_exclusive = libc.renamex_np
+        except AttributeError as exc:
+            raise OSError(errno.ENOSYS, "exclusive directory rename unavailable") from exc
+        rename_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(source_bytes, target_bytes, 0x00000004)
+    else:  # Linux was selected before loading libc.
+        # Linux UAPI linux/fs.h: RENAME_NOREPLACE = (1 << 0);
+        # linux/fcntl.h: AT_FDCWD = -100. Unsupported filesystems return
+        # an error rather than falling back to a replacing rename.
+        try:
+            rename_exclusive = libc.renameat2
+        except AttributeError as exc:
+            raise OSError(errno.ENOSYS, "exclusive directory rename unavailable") from exc
+        rename_exclusive.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                                     ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(-100, source_bytes, -100, target_bytes, 1 << 0)
+    if result != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), os.fspath(target))
 
 
 def _safe_slug(skill_name: str) -> Optional[str]:
@@ -78,6 +131,8 @@ class _HermesPinEntry:
     slug: str
     path: str
     content_sha256: str
+    tier: str
+    files: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -110,11 +165,24 @@ def _safe_pin_path(path: str, slug: str) -> bool:
     if pure.as_posix() != path:
         return False
     parts = pure.parts
-    if len(parts) < 3 or parts[0] != "skills" or parts[-1] != "SKILL.md":
+    if len(parts) < 3 or parts[0] not in ("skills", "optional-skills") or parts[-1] != "SKILL.md":
         return False
     if parts[-2] != slug or any(part in ("", ".", "..") for part in parts):
         return False
     return all(_SLUG_RE.fullmatch(part) for part in parts[1:-1])
+
+
+def _safe_reference_path(path: str, skill_path: str) -> bool:
+    if not isinstance(path, str) or not path or "\\" in path or len(path) > 512:
+        return False
+    pure = PurePosixPath(path)
+    if pure.as_posix() != path or any(part in ("", ".", "..") for part in pure.parts):
+        return False
+    prefix = skill_path.removesuffix("SKILL.md") + "references/"
+    if not path.startswith(prefix) or path == skill_path:
+        return False
+    relative = path[len(prefix):]
+    return bool(relative) and all(_REFERENCE_PART_RE.fullmatch(part) for part in PurePosixPath(relative).parts)
 
 
 def _safe_hermes_category(category: str) -> bool:
@@ -143,7 +211,7 @@ def _load_hermes_pin() -> _HermesPin:
         "skills",
     }
     _require_exact_keys(data, top_keys, "record")
-    if type(data["schema_version"]) is not int or data["schema_version"] != 1:
+    if type(data["schema_version"]) is not int or data["schema_version"] != 2:
         raise SkillImportError("Hermes pin schema version is unsupported")
     if data["repository"] != HERMES_REPO:
         raise SkillImportError("Hermes pin repository is not the accepted upstream")
@@ -168,7 +236,11 @@ def _load_hermes_pin() -> _HermesPin:
     slugs: set[str] = set()
     paths: set[str] = set()
     for item in data["skills"]:
-        _require_exact_keys(item, {"slug", "path", "content_sha256"}, "skill entry")
+        if type(item) is not dict or set(item) not in (
+            {"slug", "path", "content_sha256", "tier"},
+            {"slug", "path", "content_sha256", "tier", "files"},
+        ):
+            raise SkillImportError("Hermes pin skill entry has an invalid schema")
         slug = item["slug"]
         path = item["path"]
         digest = item["content_sha256"]
@@ -178,11 +250,32 @@ def _load_hermes_pin() -> _HermesPin:
             raise SkillImportError("Hermes pin contains an unsafe or mismatched path")
         if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
             raise SkillImportError("Hermes pin contains an invalid content digest")
+        tier = item["tier"]
+        if tier not in ("bundled", "optional") or path.startswith("optional-skills/") != (tier == "optional"):
+            raise SkillImportError("Hermes pin skill tier does not match its root")
+        file_items = item.get("files", [])
+        if type(file_items) is not list:
+            raise SkillImportError("Hermes pin files must be a list")
+        files = []
+        for file_item in file_items:
+            _require_exact_keys(file_item, {"path", "content_sha256"}, "reference file")
+            file_path, file_digest = file_item["path"], file_item["content_sha256"]
+            if not _safe_reference_path(file_path, path):
+                raise SkillImportError("Hermes pin contains an unsafe reference path")
+            if not isinstance(file_digest, str) or not _SHA256_RE.fullmatch(file_digest):
+                raise SkillImportError("Hermes pin contains an invalid reference digest")
+            if file_path in paths or file_path in (p for p, _ in files):
+                raise SkillImportError("Hermes pin contains duplicate file paths")
+            files.append((file_path, file_digest))
+        if [p for p, _ in files] != sorted(p for p, _ in files):
+            raise SkillImportError("Hermes pin reference files are not deterministic")
         if slug in slugs or path in paths:
             raise SkillImportError("Hermes pin contains duplicate skill identities")
         slugs.add(slug)
         paths.add(path)
-        entries.append(_HermesPinEntry(slug=slug, path=path, content_sha256=digest))
+        paths.update(p for p, _ in files)
+        entries.append(_HermesPinEntry(slug=slug, path=path, content_sha256=digest,
+                                       tier=tier, files=tuple(files)))
 
     if [entry.path for entry in entries] != sorted(entry.path for entry in entries):
         raise SkillImportError("Hermes pin skill entries are not deterministic")
@@ -197,22 +290,31 @@ def _load_hermes_pin() -> _HermesPin:
 
 
 class SkillImporter:
-    def __init__(self, skills_dir: str = "skills"):
+    def __init__(self, skills_dir: str | None = None):
+        if skills_dir is None:
+            from .loader import _writable_skills_dir
+
+            skills_dir = str(_writable_skills_dir())
         self.skills_dir = Path(skills_dir)
         self.skills_dir.mkdir(parents=True, exist_ok=True)
         # H350 — why the last _save_skill refused its document (empty when it did not).
         self.last_refusal: list = []
 
-    async def import_from_hermes(self, skill_name: str) -> bool:
+    async def import_from_hermes(
+        self, skill_name: str, *, pin: _HermesPin | None = None,
+        entry: _HermesPinEntry | None = None,
+    ) -> bool:
         self.last_refusal = []
         skill_slug = _safe_slug(skill_name)
         if skill_slug is None:
             logger.warning("Rejected Hermes skill import: unsafe name %r", skill_name)
             return False
 
-        pin = _load_hermes_pin()
-        entry = next((item for item in pin.skills if item.slug == skill_slug), None)
+        if pin is None:
+            pin = _load_hermes_pin()
         if entry is None:
+            entry = next((item for item in pin.skills if item.slug == skill_slug), None)
+        if entry is None or entry.slug != skill_slug or entry not in pin.skills:
             logger.warning("Skill '%s' is not in the Hermes pin allowlist", skill_slug)
             return False
 
@@ -225,14 +327,79 @@ class SkillImporter:
             verified = await self._fetch_verified_hermes_skill(client, pin, entry)
         if verified is None:
             return False
-        raw, text = verified
+        raw, text, references = verified
         return await self._save_skill(
             skill_name,
             "hermes",
             skill_md_text=text,
             skill_md_bytes=raw,
             provenance=self._hermes_provenance(pin, entry),
+            reference_files=references,
         )
+
+    async def import_repo_optional(
+        self, source_dir: Path, skill_name: str, expected_fingerprint: str
+    ) -> bool:
+        """Install a shipped optional skill only after an owner route has gated its snapshot.
+
+        This method does no authorization itself. The caller must constrain the
+        source to the product's optional allowlist and pass the fingerprint seen
+        before its owner/kernel decision. New copies remain pending review even
+        when the kernel grants the directory write.
+        """
+        from .signing import SkillSourceSnapshotError, source_snapshot
+        from .validate import validate_skill_md
+
+        slug = _safe_slug(skill_name)
+        if slug is None or slug != skill_name or Path(source_dir).name != slug:
+            return False
+        target = self.skills_dir / slug
+        if target.exists() or target.is_symlink():
+            return False  # Never replace an owner copy or its approval state.
+        try:
+            target.resolve().relative_to(self.skills_dir.resolve())
+            snapshot = source_snapshot(Path(source_dir))
+        except (ValueError, OSError, SkillSourceSnapshotError):
+            return False
+        if snapshot.fingerprint != expected_fingerprint:
+            return False
+        raw = snapshot.read_bytes("SKILL.md")
+        if raw is None or validate_skill_md(raw):
+            return False
+        stage = Path(tempfile.mkdtemp(prefix=".optional-stage-", dir=self.skills_dir))
+        try:
+            for item in snapshot.files:
+                if item.kind != "file":
+                    return False
+                if "__pycache__" in Path(item.relative_path).parts:
+                    continue  # Dev/test bytecode is never product skill content.
+                dest = stage / item.relative_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(item.content)
+            (stage / "manifest.json").write_text(json.dumps({
+                "name": slug,
+                "source": "nerva-optional",
+                "imported": True,
+                "content_sha256": hashlib.sha256(raw).hexdigest(),
+                "source_fingerprint": snapshot.fingerprint,
+                "source_path": f"optional-skills/{slug}/SKILL.md",
+                "source_tier": "optional",
+                "quarantined": True,
+            }, indent=2), encoding="utf-8")
+            (stage / "PENDING_REVIEW").write_text(
+                f"source=nerva-optional\nsha256={hashlib.sha256(raw).hexdigest()}\n",
+                encoding="utf-8",
+            )
+            if target.exists() or target.is_symlink():
+                return False
+            _publish_stage_no_replace(stage, target)
+            return True
+        except OSError:
+            logger.warning("Could not stage optional skill '%s'", slug, exc_info=True)
+            return False
+        finally:
+            if stage.exists():
+                shutil.rmtree(stage)
 
     async def import_from_openclaw(self, skill_name: str) -> bool:
         return await self._import_from_github(
@@ -246,30 +413,36 @@ class SkillImporter:
 
     @staticmethod
     async def _fetch_verified_hermes_skill(client, pin: _HermesPin, entry: _HermesPinEntry):
-        url = f"{GITHUB_RAW}/{pin.repository}/{pin.commit}/{entry.path}"
+        paths = ((entry.path, entry.content_sha256), *entry.files)
+        contents = {}
         try:
-            response = await client.get(url)
-            if response.status_code != 200:
-                logger.warning(
-                    "Hermes pinned content is unavailable for '%s': %s",
-                    entry.slug,
-                    response.status_code,
-                )
-                return None
-            if str(getattr(response, "url", "")) != url:
-                logger.warning("Hermes response URL mismatch for '%s'", entry.slug)
-                return None
-            raw = response.content
-            if not isinstance(raw, bytes):
-                logger.warning("Hermes response body is not raw bytes for '%s'", entry.slug)
-                return None
-            digest = hashlib.sha256(raw).hexdigest()
-            if not hmac.compare_digest(digest, entry.content_sha256):
-                logger.warning("Hermes content digest mismatch for '%s'", entry.slug)
-                return None
+            for path, expected_digest in paths:
+                url = f"{GITHUB_RAW}/{pin.repository}/{pin.commit}/{path}"
+                response = await client.get(url)
+                if response.status_code != 200:
+                    logger.warning("Hermes pinned file unavailable for '%s': %s", entry.slug,
+                                   response.status_code)
+                    return None
+                if str(getattr(response, "url", "")) != url:
+                    logger.warning("Hermes response URL mismatch for '%s'", entry.slug)
+                    return None
+                raw_file = response.content
+                if not isinstance(raw_file, bytes):
+                    logger.warning("Hermes response body is not raw bytes for '%s'", entry.slug)
+                    return None
+                if not hmac.compare_digest(hashlib.sha256(raw_file).hexdigest(), expected_digest):
+                    logger.warning("Hermes content digest mismatch for '%s': %s", entry.slug, path)
+                    return None
+                contents[path] = raw_file
+            raw = contents[entry.path]
             text = raw.decode("utf-8")
             if SkillImporter._extract_frontmatter(text, strict=True).get("name") != entry.slug:
                 logger.warning("Hermes content identity mismatch for '%s'", entry.slug)
+                return None
+            from .validate import validate_skill_md
+
+            if validate_skill_md(raw):
+                logger.warning("Hermes pinned SKILL.md fails local validation for '%s'", entry.slug)
                 return None
         except UnicodeDecodeError:
             logger.warning("Hermes pinned content is not UTF-8 for '%s'", entry.slug)
@@ -277,7 +450,8 @@ class SkillImporter:
         except Exception as exc:
             logger.debug("Failed to fetch pinned Hermes skill '%s': %s", entry.slug, exc)
             return None
-        return raw, text
+        return raw, text, {path.removeprefix(entry.path.removesuffix("SKILL.md")): contents[path]
+                           for path, _ in entry.files}
 
     @staticmethod
     def _hermes_provenance(pin: _HermesPin, entry: _HermesPinEntry) -> dict[str, str]:
@@ -288,6 +462,9 @@ class SkillImporter:
             "source_tree": pin.tree,
             "source_path": entry.path,
             "content_sha256": entry.content_sha256,
+            "source_tier": entry.tier,
+            "source_files": [{"path": path, "content_sha256": digest}
+                             for path, digest in entry.files],
         }
 
     async def _import_from_github(
@@ -320,12 +497,14 @@ class SkillImporter:
                     skill_md = await self._fetch_raw(client, repo, branch, found)
 
             if skill_md is not None:
-                return await self._save_skill(skill_name, source, skill_md_text=skill_md)
+                return await self._save_skill(skill_name, source, skill_md_text=skill_md,
+                                              reference_files={})
 
             # 3. Legacy fallback: manifest.json / manifest.yaml
             manifest = await self._fetch_manifest(client, repo, branch, subdir, skill_slug)
             if manifest:
-                return await self._save_skill(skill_name, source, manifest=manifest)
+                return await self._save_skill(skill_name, source, manifest=manifest,
+                                              reference_files={})
 
         logger.warning(f"Skill '{skill_name}' not found in {source}")
         return False
@@ -411,7 +590,8 @@ class SkillImporter:
         skill_md_text: Optional[str] = None,
         manifest: Optional[dict] = None,
         skill_md_bytes: Optional[bytes] = None,
-        provenance: Optional[dict[str, str]] = None,
+        provenance: Optional[dict] = None,
+        reference_files: Optional[dict[str, bytes]] = None,
     ) -> bool:
         self.last_refusal = []
         slug = _safe_slug(skill_name)
@@ -451,15 +631,6 @@ class SkillImporter:
             logger.warning("Rejected skill import: its SKILL.md is not valid (%s)",
                            "; ".join(str(p) for p in self.last_refusal))
             return False
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        # Preserve verified upstream bytes exactly. Generic imports write the text
-        # checked above as UTF-8 bytes: text mode would turn '\n' into '\r\n' on Windows.
-        if skill_md_bytes is None:
-            (target_dir / "SKILL.md").write_bytes(skill_md_text.encode("utf-8"))
-        else:
-            (target_dir / "SKILL.md").write_bytes(skill_md_bytes)
-
         # Sidecar manifest.json records import provenance for list_imported().
         fm = self._extract_frontmatter(skill_md_text)
         meta = manifest or {}
@@ -474,9 +645,44 @@ class SkillImporter:
         }
         if provenance:
             sidecar.update(provenance)
-        (target_dir / "manifest.json").write_text(
-            json.dumps(sidecar, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        manifest_bytes = json.dumps(sidecar, indent=2, ensure_ascii=False).encode("utf-8")
+        body = skill_md_bytes if skill_md_bytes is not None else skill_md_text.encode("utf-8")
+        if reference_files is None:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / "SKILL.md").write_bytes(body)
+            (target_dir / "manifest.json").write_bytes(manifest_bytes)
+        else:
+            # The complete verified directory is prepared away from the live name.
+            # An existing owner copy (and its approval) is never replaced here.
+            if target_dir.exists() or target_dir.is_symlink():
+                return False
+            stage = Path(tempfile.mkdtemp(prefix=".hermes-stage-", dir=self.skills_dir))
+            try:
+                (stage / "SKILL.md").write_bytes(body)
+                for relative, content in reference_files.items():
+                    if not relative.startswith("references/") or not _safe_reference_path(
+                        (provenance or {}).get("source_path", "").removesuffix("SKILL.md") + relative,
+                        (provenance or {}).get("source_path", ""),
+                    ):
+                        return False
+                    dest = stage / relative
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(content)
+                (stage / "manifest.json").write_bytes(manifest_bytes)
+                (stage / "PENDING_REVIEW").write_text(
+                    f"source={source}\nsha256={hashlib.sha256(body).hexdigest()}\n",
+                    encoding="utf-8",
+                )
+                if target_dir.exists() or target_dir.is_symlink():
+                    return False
+                _publish_stage_no_replace(stage, target_dir)
+            except OSError:
+                logger.warning("Could not atomically save verified Hermes skill '%s'", slug,
+                               exc_info=True)
+                return False
+            finally:
+                if stage.exists():
+                    shutil.rmtree(stage)
 
         logger.info(f"Imported skill '{skill_name}' from {source} -> {target_dir}")
         return True
@@ -523,11 +729,16 @@ class SkillImporter:
             if not _safe_hermes_category(category):
                 logger.warning("Rejected unsafe Hermes category filter")
                 return []
-            scope = f"skills/{category}/"
-            selected = [entry for entry in pin.skills if entry.path.startswith(scope)]
+            scopes = (f"skills/{category}/", f"optional-skills/{category}/")
+            selected = [entry for entry in pin.skills if entry.path.startswith(scopes)]
         else:
             selected = list(pin.skills)
         if not selected:
+            return []
+        # A bulk sync must not install some entries and then encounter an
+        # existing owner copy that this importer refuses to replace.
+        if any((self.skills_dir / entry.slug).exists() or
+               (self.skills_dir / entry.slug).is_symlink() for entry in selected):
             return []
 
         try:
@@ -544,13 +755,14 @@ class SkillImporter:
                 verified.append((entry, *content))
 
         imported = []
-        for entry, raw, text in verified:
+        for entry, raw, text, references in verified:
             if await self._save_skill(
                 entry.slug,
                 "hermes",
                 skill_md_text=text,
                 skill_md_bytes=raw,
                 provenance=self._hermes_provenance(pin, entry),
+                reference_files=references,
             ):
                 imported.append(entry.slug)
         return imported

@@ -1,6 +1,6 @@
 """Tests for the Content skill (H2.10) — Veronica drafts.
 
-Converted from the HTTP-router TDD stub to the loader pattern (skills/content/),
+Converted from the HTTP-router TDD stub to the loader pattern (optional-skills/content/),
 which is the architecture the orchestrator actually runs.
 """
 
@@ -16,7 +16,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 
 def _load(tmp_dir):
-    path = repo_root / "skills" / "content" / "main.py"
+    path = repo_root / "optional-skills" / "content" / "main.py"
     spec = importlib.util.spec_from_file_location("content_skill_test", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -64,7 +64,7 @@ async def test_handle_dispatch(skill):
 def test_manifest_parses_via_loader():
     from agents.core.skills.loader import SkillLoader
     sl = SkillLoader()
-    manifest = sl._parse_manifest(repo_root / "skills" / "content" / "SKILL.md")
+    manifest = sl._parse_manifest(repo_root / "optional-skills" / "content" / "SKILL.md")
     assert manifest["name"] == "Content"
     assert "veronica" in manifest["agents"]
     cmds = {c["command"] for c in manifest["commands"]}

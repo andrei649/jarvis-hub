@@ -20,6 +20,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+import agents.core.routers.skills as skills_router
 import agents.web as web
 
 _NO_ORCH = TestClient(web.app)
@@ -47,67 +48,190 @@ def _mock_orch() -> MagicMock:
 # POST /skills/import
 # ---------------------------------------------------------------------------
 
-def test_skills_import_no_orch_returns_503():
-    resp = _NO_ORCH.post("/skills/import", json={"skill": "test", "source": "hermes"})
+def test_skills_import_no_orch_returns_503(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    resp = _NO_ORCH.post("/skills/import", json={"skill": "test", "source": "hermes"}, headers=_HDR)
     assert resp.status_code == 503
 
 
 def test_skills_import_blocked_without_dev_mode(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", False)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"skill": "test"})
+    resp = client.post("/skills/import", json={"skill": "test"}, headers=_HDR)
     assert resp.status_code == 403
     assert "DEV_MODE" in resp.json()["error"]
 
 
 def test_skills_import_missing_skill_name_returns_400(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", True)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"source": "hermes"})
+    resp = client.post("/skills/import", json={"source": "hermes"}, headers=_HDR)
     assert resp.status_code == 400
     assert "skill" in resp.json()["error"].lower()
 
 
 def test_skills_import_hermes_success(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", True)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"skill": "weather", "source": "hermes"})
+    resp = client.post("/skills/import", json={"skill": "github", "source": "hermes"}, headers=_HDR)
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is True
-    assert data["skill"] == "weather"
+    assert data["skill"] == "github"
     assert data["source"] == "hermes"
 
 
 def test_skills_import_hermes_not_found_returns_404(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     mock = _mock_orch()
     mock.skill_importer.import_from_hermes = AsyncMock(return_value=False)
     monkeypatch.setattr(web, "orch", mock)
     monkeypatch.setattr(web, "DEV_MODE", True)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"skill": "unknown-skill", "source": "hermes"})
+    resp = client.post("/skills/import", json={"skill": "unknown-skill", "source": "hermes"}, headers=_HDR)
     assert resp.status_code == 404
     assert resp.json()["ok"] is False
 
 
 def test_skills_import_openclaw_source(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", True)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"skill": "calc", "source": "openclaw"})
+    resp = client.post("/skills/import", json={"skill": "calc", "source": "openclaw"}, headers=_HDR)
     assert resp.status_code == 200
     assert resp.json()["source"] == "openclaw"
 
 
 def test_skills_import_github_source(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", True)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"skill": "notes", "source": "github.com/user/repo"})
+    resp = client.post("/skills/import", json={"skill": "notes", "source": "github.com/user/repo"}, headers=_HDR)
     assert resp.status_code == 200
+
+
+def test_pinned_hermes_catalog_lists_tiers_and_reference_counts_without_fetch(monkeypatch):
+    monkeypatch.setattr(web, "orch", _mock_orch())
+    client = TestClient(web.app)
+    response = client.get("/skills/hermes/catalog")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["release_tag"] == "v2026.8.31"
+    github = next(row for row in data["skills"] if row["slug"] == "github")
+    grill = next(row for row in data["skills"] if row["slug"] == "grill-me")
+    assert github["tier"] == "bundled" and github["reference_count"] == 10
+    assert grill["tier"] == "optional"
+
+
+def test_remote_skill_import_requires_admin_even_with_user_access(monkeypatch):
+    mock = _mock_orch()
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", mock)
+    monkeypatch.setattr(web, "DEV_MODE", True)
+    response = TestClient(web.app).post("/skills/import", json={"skill": "github"})
+    assert response.status_code == 401
+    mock.skill_importer.import_from_hermes.assert_not_awaited()
+
+
+def test_remote_hermes_kernel_denial_prevents_fetch_and_install(monkeypatch):
+    mock = _mock_orch()
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", mock)
+    monkeypatch.setattr(web, "DEV_MODE", True)
+    monkeypatch.setattr(skills_router, "_remote_import_gate", lambda payload: "deny")
+    response = TestClient(web.app).post(
+        "/skills/import", json={"skill": "github", "source": "hermes"}, headers=_HDR
+    )
+    assert response.status_code == 403
+    assert response.json()["reason"] == "kernel_denied"
+    mock.skill_importer.import_from_hermes.assert_not_awaited()
+
+
+def test_remote_hermes_gate_binds_pin_and_files(monkeypatch):
+    mock = _mock_orch()
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", mock)
+    monkeypatch.setattr(web, "DEV_MODE", True)
+    seen = []
+    monkeypatch.setattr(skills_router, "_remote_import_gate", lambda payload: seen.append(payload) or "grant")
+    response = TestClient(web.app).post(
+        "/skills/import", json={"skill": "github", "source": "hermes"}, headers=_HDR
+    )
+    assert response.status_code == 200
+    assert seen[0]["pinned"] is True
+    assert seen[0]["commit"] == "29112bef099274229cadff79cdff7bf7b99c4b77"
+    assert len(seen[0]["files"]) == 10
+
+
+def _optional_route_fixture(monkeypatch, tmp_path, verdict="queue"):
+    source = tmp_path / "optional" / "calendar"
+    source.mkdir(parents=True)
+    (source / "SKILL.md").write_text("# Calendar\n\n> Schedule tasks.\n", encoding="utf-8")
+    (source / "main.py").write_text("VALUE = 1\n", encoding="utf-8")
+    dest = tmp_path / "owner-skills"
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(skills_router, "_optional_skills_root", lambda: source.parent)
+    monkeypatch.setattr(skills_router, "_writable_skills_dir", lambda: dest)
+    monkeypatch.setattr(skills_router, "_optional_install_gate", lambda payload: verdict)
+    return source, dest
+
+
+def test_optional_catalog_and_install_requires_admin(monkeypatch, tmp_path):
+    source, dest = _optional_route_fixture(monkeypatch, tmp_path)
+    client = TestClient(web.app)
+    assert client.get("/api/skills/optional/catalog").status_code == 401
+    assert client.post("/api/skills/optional/install", json={"name": "calendar"}).status_code == 401
+    assert not dest.exists()
+    response = client.get("/api/skills/optional/catalog", headers=_HDR)
+    assert response.status_code == 200
+    assert any(row["name"] == "calendar" and row["tier"] == "optional"
+               for row in response.json()["skills"])
+
+
+def test_optional_install_kernel_denial_writes_nothing(monkeypatch, tmp_path):
+    _, dest = _optional_route_fixture(monkeypatch, tmp_path, verdict="deny")
+    response = TestClient(web.app).post(
+        "/api/skills/optional/install", json={"name": "calendar"}, headers=_HDR
+    )
+    assert response.status_code == 403
+    assert response.json()["status"] == "refused"
+    assert not dest.exists()
+
+
+@pytest.mark.parametrize("verdict", ["grant", "queue"])
+def test_optional_install_stays_pending_review_after_kernel_allow(monkeypatch, tmp_path, verdict):
+    _, dest = _optional_route_fixture(monkeypatch, tmp_path, verdict=verdict)
+    response = TestClient(web.app).post(
+        "/api/skills/optional/install", json={"name": "calendar"}, headers=_HDR
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "installed_review_required"
+    assert response.json()["kernel"] == verdict
+    assert (dest / "calendar/PENDING_REVIEW").exists()
+    assert (dest / "calendar/main.py").read_bytes() == b"VALUE = 1\n"
+
+
+def test_optional_install_refuses_unknown_and_symlinked_source_before_gate(monkeypatch, tmp_path):
+    source, dest = _optional_route_fixture(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(skills_router, "_optional_install_gate", lambda payload: calls.append(payload))
+    client = TestClient(web.app)
+    unknown = client.post("/api/skills/optional/install", json={"name": "../calendar"}, headers=_HDR)
+    assert unknown.status_code == 404
+    (source / "link.py").symlink_to(source / "SKILL.md")
+    linked = client.post("/api/skills/optional/install", json={"name": "calendar"}, headers=_HDR)
+    assert linked.status_code == 422
+    assert calls == []
+    assert not dest.exists()
 
 
 # ---------------------------------------------------------------------------

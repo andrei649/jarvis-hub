@@ -24,6 +24,14 @@ It does not assert that any Hermes interface has been tested against Nerva.
 > blockers": *"The existing agents/core/skills/hermes_pin_v1.json is a prior non-executable
 > exact-fetch evidence inventory and is intentionally not classified as dependency or updater
 > enrolment."* Nothing here changes this discovery or its classification.
+>
+> **Catalog refresh (2026-11-03):** the separate, non-executable skill inventory is now
+> `agents/core/skills/hermes_pin_v2.json`, fixed to `v2026.8.31` / commit
+> `29112bef099274229cadff79cdff7bf7b99c4b77` / tree
+> `daaffc303ae437041b7f76be17c5f61b14f2ce99`. It records 190 eligible skill
+> documents and 461 reference files after the accepted exclusions, with a SHA-256 for
+> every imported file. This later catalog update does not alter the E8.1a execution
+> provider pin, its dated evidence, or the historical #834 table below.
 
 ## Scope and method
 

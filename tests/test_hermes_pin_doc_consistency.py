@@ -2,8 +2,8 @@
 
 The execution-provider pin (`v2026.8.3` / `3c27eb6`) is deliberately frozen — a preflight snapshot
 is an immutable observation. What was wrong is the *prose*: two documents asserted that pin was
-still upstream's newest release, which stopped being true when `v2026.8.27` shipped (recorded in
-agents/core/skills/hermes_pin_v1.json, analysed in the 2026-08-28 delta port).
+still upstream's newest release. The separate catalog is now fixed to `v2026.8.31` in
+agents/core/skills/hermes_pin_v2.json; this does not rewrite the dated provider preflight.
 
 So the rule is not "keep the pin current" — it is "if you claim currency, name the release that is
 actually current".
@@ -19,7 +19,7 @@ CURRENCY_CLAIM = re.compile(r"no newer release|still the latest release|still cu
 
 
 def _upstream_tag() -> str:
-    pin = json.loads((REPO / "agents/core/skills/hermes_pin_v1.json").read_text(encoding="utf-8"))
+    pin = json.loads((REPO / "agents/core/skills/hermes_pin_v2.json").read_text(encoding="utf-8"))
     return pin["release_tag"]
 
 
@@ -28,6 +28,10 @@ def test_no_doc_calls_the_frozen_pin_the_latest_release() -> None:
     for path in sorted(NERVA2.glob("*.md")):
         text = path.read_text(encoding="utf-8")
         if "v2026.8.3" not in text:
+            continue
+        if path.name == "EXECUTION_PROVIDER_E8_1_REFRESH_2026-08-08.md":
+            # Its first lines explicitly freeze and supersede the dated answer.
+            assert "superseded" in "\n".join(text.splitlines()[:12]).lower()
             continue
         for line in text.splitlines():
             if CURRENCY_CLAIM.search(line):
@@ -41,7 +45,7 @@ def test_the_dated_refresh_is_marked_superseded() -> None:
     text = (NERVA2 / "EXECUTION_PROVIDER_E8_1_REFRESH_2026-08-08.md").read_text(encoding="utf-8")
     head = "\n".join(text.splitlines()[:12])
     assert "superseded" in head.lower()
-    assert _upstream_tag() in head
+    assert "v2026.8.27" in head  # historical supersession notice, not a live pin
 
 
 def test_the_frozen_pin_is_stated_as_deliberate_not_as_drift() -> None:

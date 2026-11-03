@@ -40,6 +40,9 @@ datas = [
     (os.path.join(ROOT, "agents", "_system"), os.path.join("agents", "_system")),
     # Bundled skill packs (read-only shipped content; user skills live in Documents/Nerva).
     (os.path.join(ROOT, "skills"), "skills"),
+    # Exact-commit, per-file upstream allowlist used by the Hermes importer.
+    (os.path.join(ROOT, "agents", "core", "skills", "hermes_pin_v2.json"),
+     os.path.join("agents", "core", "skills")),
     # First-run template copied to Documents/Nerva/.env by ensure_user_home().
     (os.path.join(ROOT, ".env.example"), "."),
     # Hermes donor pin/license/catalog and standalone bridge entrypoints. The
@@ -54,6 +57,16 @@ datas = [
     (os.path.join(ROOT, "agents", "core", "env_config.py"),
      os.path.join("agents", "core")),
 ]
+
+# H696: ship only the seven curated optional skill sources. A directory-wide
+# PyInstaller data entry would also package local __pycache__ and other generated
+# files from a development checkout.
+for skill_name in (
+    "calendar", "content", "email_triage", "family_store", "health", "spotify", "web_research",
+):
+    for source_name in ("SKILL.md", "main.py"):
+        datas.append((os.path.join(ROOT, "optional-skills", skill_name, source_name),
+                      os.path.join("optional-skills", skill_name)))
 
 # Agent SOUL/HEARTBEAT templates: agents/<id>/*.md (generic templates only —
 # *.local.md overlays are gitignored personal files and are deliberately NOT

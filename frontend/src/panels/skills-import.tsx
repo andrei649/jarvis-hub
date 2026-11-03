@@ -34,7 +34,7 @@
       read defensively and the per-row `raw` toggle is the honest fallback for anything the
       typed line does not cover.
 
-   5. POST /skills/import is DEV_MODE-gated (skills.py:138-139) and answers 403
+   5. POST /skills/import is admin-guarded and DEV_MODE-gated and answers 403
       {"error":"skill import disabled — set DEV_MODE=1 to enable"}. Nothing else in the API
       discloses DEV_MODE — /sandbox/status exposes docker, /status and
       /api/health/components carry no such flag — so the panel would have to either ship a
@@ -47,9 +47,9 @@
       is why it is operator-initiated (a CHECK button) and never fires on mount, and why the
       panel says so in plain words.
 
-   6. THE 403 IS AMBIGUOUS BY STATUS AND MUST BE CLASSIFIED BY BODY KEY. _user_guard
-      (web.py:205-221) answers 401 {"detail":"user token required"} and 403
-      {"detail":"user routes disabled from network — set JARVIS_USER_TOKEN to enable remote
+   6. THE 403 IS AMBIGUOUS BY STATUS AND MUST BE CLASSIFIED BY BODY KEY. _admin_guard
+      (web.py) answers 401 {"detail":"admin token required"} and 403
+      {"detail":"admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote
       access"} — HTTPException bodies keyed `detail`. The route's own refusals are keyed
       `error`. A guard 403 means DEV_MODE was NEVER EVALUATED, so reading it as "DEV_MODE=0"
       would invent a fact. body.error => a server-formatted refusal; body.detail => a raised
@@ -69,11 +69,9 @@
       line prints only what the backend echoed and then RELOADS the list; it never presents
       the echo as the on-disk directory name.
 
-   9. Hermes is allowlist-pinned to 84 slugs in agents/core/skills/hermes_pin_v1.json
-      (NousResearch/hermes-agent @ v2026.8.27, sha256 per file). NO ROUTE EXPOSES THAT
-      ALLOWLIST, so an import is guess-and-check for the operator. The slugs are backend
-      data and are NOT hardcoded into this client as if they had been fetched — the gap is
-      stated instead.
+   9. Hermes is allowlist-pinned to 190 slugs in agents/core/skills/hermes_pin_v2.json.
+      GET /skills/hermes/catalog exposes the local pin (no network fetch), including
+      tier and reference count, so the operator can choose an exact slug.
 
   10. There is NO route that sets DEV_MODE, so this panel offers no enable/disable control
       for it. It states the condition and the server-side remedy the backend itself named,
@@ -82,12 +80,16 @@
   11. Import performs OUTBOUND calls to raw.githubusercontent.com and api.github.com
       (importer.py:217, 302, 552) — stated once, plainly, in a privacy-conscious HUD.
 
-   The read is unguarded; the write is USER tier (act → never actA). */
+   The remote-import read is unguarded; its write is ADMIN tier. The separate
+   product optional catalog/install is admin tier and installs pending review. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, act, inpS, Json } from '../panel-kit';
+import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
 
 const IMPORTED_PATH = '/skills/imported';
 const IMPORT_PATH = '/skills/import';
+const HERMES_CATALOG_PATH = '/skills/hermes/catalog';
+const OPTIONAL_CATALOG_PATH = '/api/skills/optional/catalog';
+const OPTIONAL_INSTALL_PATH = '/api/skills/optional/install';
 
 /* _safe_slug, mirrored (importer.py:57-65). A LOCAL HINT ONLY: it never blocks the POST
    and never pre-empts the backend, which reports a bad slug as the same 404 as a missing
@@ -105,7 +107,7 @@ const statusOf = (msg: any): number => {
 
 /* The refusal, straight off the wire. apiPost attaches the parsed body to err.body
    (client.ts:98-104). `kind` is the load-bearing part: `error` = the route answered,
-   `detail` = _user_guard answered and the route never ran. */
+   `detail` = _admin_guard answered and the route never ran. */
 const refusal = (err: any): { status: number; kind: 'route' | 'guard' | 'none'; text: string } => {
   const b: any = err && err.body;
   const isObj = !!b && typeof b === 'object';
@@ -142,6 +144,31 @@ export function SkillsImportPanel() {
   const rows: any[] = loaded ? arr(d, 'imported') : [];
   const readStatus = e ? statusOf(e) : 0;
   const [open, setOpen] = useState(-1);
+  const { d: hermesData, e: hermesError } = useApi(HERMES_CATALOG_PATH);
+  const hermesRows: any[] = hermesData && !hermesError ? arr(hermesData, 'skills') : [];
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const visibleHermes = hermesRows.filter((row: any) =>
+    String(row.slug || '').includes(catalogQuery.trim().toLowerCase())).slice(0, 24);
+  const { d: optionalData, e: optionalError, reload: reloadOptional } =
+    useApi(OPTIONAL_CATALOG_PATH, true, true);
+  const optionalRows: any[] = optionalData && !optionalError ? arr(optionalData, 'skills') : [];
+  const [optionalBusy, setOptionalBusy] = useState('');
+  const [optionalResult, setOptionalResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const installOptional = (name: string) => {
+    if (optionalBusy) return;
+    setOptionalBusy(name); setOptionalResult(null);
+    actA(OPTIONAL_INSTALL_PATH, { name }, (answer: any) => {
+      setOptionalBusy('');
+      setOptionalResult({ ok: true, text: `${name}: ${String(answer.status)} · kernel ${String(answer.kernel)} · pending owner review before use` });
+      reloadOptional();
+      reload();
+    }, (err: any) => {
+      const body = err && err.body;
+      setOptionalBusy('');
+      setOptionalResult({ ok: false, text: `${name}: refused · HTTP ${err?.status || '?'} · ${String(body?.reason || body?.detail || err?.message || 'request failed')}` });
+    });
+  };
 
   /* Availability of the WRITE half — only ever set from the backend's own answer. */
   const [avail, setAvail] = useState('unknown');   // unknown | checking | enabled | disabled | blocked
@@ -164,7 +191,7 @@ export function SkillsImportPanel() {
   const check = () => {
     if (avail === 'checking') return;
     setAvail('checking'); setAvailMsg(''); setAvailFrom(null); setNote(null);
-    act(IMPORT_PATH, { skill: '' }, undefined, (err) => {
+    actA(IMPORT_PATH, { skill: '' }, undefined, (err) => {
       const r = refusal(err);
       if (r.status === 400 && r.kind === 'route') {
         setAvail('enabled');
@@ -194,7 +221,7 @@ export function SkillsImportPanel() {
   const submit = () => {
     if (!canSubmit) return;
     setBusy(true); setNote(null);
-    act(IMPORT_PATH, { skill, source: sourceValue },
+    actA(IMPORT_PATH, { skill, source: sourceValue },
       (r: any) => {
         setBusy(false);
         setNote({ ok: true, text: `imported · skill=${r && r.skill != null ? r.skill : '—'} · source=${r && r.source != null ? r.source : '—'}` });
@@ -258,6 +285,7 @@ export function SkillsImportPanel() {
                     {r.version != null && <Tag>v{String(r.version)}</Tag>}
                     {r.source != null && <Tag>{String(r.source)}</Tag>}
                     {r.source_release_tag != null && <Tag>pin {String(r.source_release_tag)}</Tag>}
+                    {r.source_tier != null && <Tag>tier {String(r.source_tier)}</Tag>}
                     {commit && <Tag><span title={commit}>{commit.slice(0, 8)}</span></Tag>}
                     {digest && <Tag><span title={digest}>sha256 {digest.slice(0, 12)}…</span></Tag>}
                   </div>
@@ -300,7 +328,7 @@ export function SkillsImportPanel() {
         <Note>
           {availFrom && availFrom.kind === 'guard' && (availFrom.status === 401 || availFrom.status === 403)
             ? <>that answer is keyed <code>detail</code>, the shape of a raised HTTPException: on this route the
-                user-tier guard is what raises one, and it runs before the handler — so the DEV_MODE check was
+                admin-tier guard is what raises one, and it runs before the handler — so the DEV_MODE check was
                 never evaluated. </>
             : availFrom && availFrom.kind === 'route' && availFrom.status === 503
               ? <>that answer is keyed <code>error</code> at HTTP 503, which matches the handler’s own
@@ -372,11 +400,46 @@ export function SkillsImportPanel() {
       {source === 'hermes' && (
         <Note>
           hermes imports are restricted to a pinned, sha256-verified allowlist (NousResearch/hermes-agent @
-          v2026.8.27). A name outside it comes back as the backend’s generic 404. <b>No route exposes that
-          allowlist</b>, so the slug has to be known in advance — that is a backend gap, not something this panel
-          can fill.
+          v2026.8.31; bundled and optional tiers, with reference-file digests). Choose a slug below, then check
+          import availability. The remote import route requires admin access and DEV_MODE; the kernel may refuse
+          the request, and an allowed import remains pending owner review before use.
         </Note>
       )}
+
+      <H>PINNED HERMES CATALOG · GET {HERMES_CATALOG_PATH}</H>
+      {hermesError ? <Amber>pinned catalog unavailable · HTTP {statusOf(hermesError) || '?'}</Amber>
+        : <>
+            <Note>{hermesRows.length} pinned skills · {String((hermesData as any)?.release_tag || 'release unknown')} · listing the local pin does not fetch upstream bytes</Note>
+            <input aria-label="filter pinned skills" placeholder="filter pinned skills" value={catalogQuery}
+              onChange={(ev) => setCatalogQuery(ev.target.value)} style={{ ...inpS, width: '100%', marginTop: 6 }} />
+            {visibleHermes.map((row: any) => (
+              <Row key={String(row.slug)}>
+                <span style={{ flex: 1 }}>{String(row.slug)}</span>
+                <Tag>{String(row.tier)}</Tag>
+                <Tag>{Number(row.reference_count) || 0} references</Tag>
+                <button className="tool-btn" aria-label={`choose ${String(row.slug)}`}
+                  onClick={() => { setSource('hermes'); setSkill(String(row.slug)); setNote(null); }}>choose</button>
+              </Row>
+            ))}
+            {hermesRows.length > visibleHermes.length && <Note>Showing up to 24 matches; filter by name to find another skill.</Note>}
+          </>}
+
+      <H>SHIPPED OPTIONAL SKILLS · GET {OPTIONAL_CATALOG_PATH}</H>
+      <Note>These Nerva skills stay outside the default prompt index. An admin install copies the selected
+        product skill to your writable skills root under pending review. A kernel grant or queue permits only
+        that quarantined copy; owner approval is still required before executable use.</Note>
+      {optionalError ? <Amber>optional catalog unavailable · HTTP {statusOf(optionalError) || '?'}</Amber>
+        : optionalRows.map((row: any) => (
+          <Row key={String(row.name)}>
+            <span style={{ flex: 1 }}>{String(row.name)} <Tag>optional</Tag>{row.installed && <Tag>installed</Tag>}</span>
+            <button className="tool-btn" disabled={!!optionalBusy || !row.available || !!row.installed}
+              onClick={() => installOptional(String(row.name))}>
+              {optionalBusy === row.name ? 'installing…' : row.installed ? 'installed' : 'install for review'}
+            </button>
+          </Row>
+        ))}
+      {optionalResult && (optionalResult.ok
+        ? <Good>{optionalResult.text}</Good> : <Fail>{optionalResult.text}</Fail>)}
       {note && ((note as any).ok
         ? <Good>{(note as any).text}</Good>
         : <Fail>{(note as any).text}</Fail>)}
@@ -397,7 +460,7 @@ export function SkillsImportPanel() {
 
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         GET {IMPORTED_PATH} is <b>unguarded</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·
-        POST {IMPORT_PATH} is <b>user tier</b> (X-User-Token, not admin) and DEV_MODE-gated · a real import makes
+        POST {IMPORT_PATH} is <b>admin tier</b> (X-Admin-Token) and DEV_MODE-gated; it crosses skill.install and lands pending review · optional install is <b>admin tier</b> · a real remote import makes
         outbound requests to raw.githubusercontent.com and api.github.com. Marketplace registry rows, review status
         and rollback are a different store and live in the SKILLS MARKETPLACE panels.
       </div>
