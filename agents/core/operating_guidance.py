@@ -93,12 +93,21 @@ _SKILLS_LIST = (
     "Use skills_list to discover skills relevant to the task. Its catalog gives names and brief "
     "descriptions; it is a starting point for choosing a specialized workflow, not the full instructions."
 )
+# Hermes ``SKILLS_GUIDANCE`` "Skill Safety Rule" (pinned v2026.8.31). H389: the tool loop's
+# compaction prunes a served skill body to a ``[SKILL_PRUNED: ...]`` marker
+# (``skills.tools.pruned_skill_content``) and puts this same rule in the system prompt with
+# the reload notice (``skills.tools.with_pruned_skill_notice``), whether or not this optional
+# guidance is on: a destructive context operation always carries its recovery contract.
+SKILL_SAFETY_RULE = (
+    "A skill placeholder containing [SKILL_PRUNED] lost its content in context compaction and is "
+    "inaccessible: never act on a pruned skill's instructions from memory. Reload it with "
+    "skill_view(name='...') before acting on anything that depends on it. After reloading, ignore any "
+    "remaining [SKILL_PRUNED] markers for that same skill; they are historical artifacts of earlier compactions."
+)
 _SKILL_VIEW = (
     "Use skill_view(name=...) to load a relevant skill's full instructions before following its workflow. "
     "Skills can carry tool-specific commands, proven procedures, and the user's preferred conventions. "
-    "A skill placeholder containing [SKILL_PRUNED] lost its content in context compression: reload it "
-    "with skill_view before acting on anything that depends on it. After reloading, remaining markers "
-    "for that skill are historical artifacts."
+    + SKILL_SAFETY_RULE
 )
 
 _NERVA_HELP = (
