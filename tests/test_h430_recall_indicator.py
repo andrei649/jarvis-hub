@@ -792,7 +792,7 @@ def _telegram_hub(channel, *, streaming, admin=True, prefetches=(2,)):
     orch.session_id = orch._session_id_default = "owner"
     orch.channel_manager = ChannelManager()
     orch.channel_manager.register(channel)
-    orch._channel_principal = lambda name, sender, chat_id: Principal(
+    orch._channel_principal = lambda name, sender, chat_id, chat_type=None: Principal(
         channel=name, sender=sender, admin=admin)
     frames = []
 

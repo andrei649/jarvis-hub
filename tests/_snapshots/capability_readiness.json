@@ -33,6 +33,7 @@
   "action:report.export": "wired",
   "action:research": "wired",
   "action:settings.voice_command": "wired",
+  "action:skill.generation": "wired",
   "action:skill.install": "wired",
   "action:social.*": "wired",
   "action:terminal.exec": "wired",

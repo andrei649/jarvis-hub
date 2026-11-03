@@ -201,6 +201,27 @@ def _known(orch: Any, agent_id: Any) -> str:
     return ident
 
 
+#: Words a message commonly starts with (English and Romanian, as the router reads both):
+#: an agent with one of these ids would be addressed by every such message.
+COMMON_LEADING_WORDS = frozenset({
+    "what", "how", "why", "who", "when", "where", "which", "can", "could", "would", "should",
+    "is", "are", "do", "does", "did", "please", "help", "tell", "show", "set", "turn", "remind",
+    "make", "give", "find", "start", "stop", "status", "list", "open", "send", "check", "run",
+    "i", "my", "the", "a", "an", "and", "or", "yes", "no", "thanks", "hello", "hi",
+    "ce", "cum", "cine", "cand", "unde", "care", "de", "da", "nu", "te", "rog", "imi", "eu",
+    "spune", "arata", "fa", "pune", "porneste", "opreste", "buna", "multumesc",
+})
+
+
+def routing_words() -> frozenset[str]:
+    """The ids a created agent may not take: the router's wake particles, every one-word
+    surface of its intent rules, and :data:`COMMON_LEADING_WORDS` (H202)."""
+    from .router import INTENT_RULES, IntentRouter
+
+    surfaces = {word for _agents, words, _weight in INTENT_RULES.values() for word in words if " " not in word}
+    return frozenset(surfaces | set(IntentRouter._WAKE_PARTICLES) | COMMON_LEADING_WORDS)
+
+
 def _check_new_id(orch: Any, ident: str) -> None:
     from . import soul_edit
 
@@ -209,6 +230,13 @@ def _check_new_id(orch: Any, ident: str) -> None:
                                                   "starting with a letter or digit")
     if ident in RESERVED:
         raise SoulEditError("reserved_id", 409, agent=ident)
+    if ident in routing_words():
+        # An agent's id is its wake word (register_live_agent): an id that is a word people
+        # start a message with, or one the router already reads as an intent, would take
+        # every such message from keyword routing and give it to the new agent.
+        raise SoulEditError("routing_word", 409, agent=ident,
+                            detail=f"{ident!r} is a word messages start with or the router reads as an "
+                                   "intent, so it would capture them; pick another id (--id)")
     config = getattr(orch, "config", None)
     taken = set(getattr(orch, "agents", None) or {}) | set(_registry(orch)) | set(getattr(config, "bench", None) or {})
     if ident in taken:
@@ -555,7 +583,7 @@ def restore(orch: Any, agent_id: Any) -> dict:
 
 
 __all__ = [
-    "FILENAME", "MAX_CREATED", "MAX_REVISIONS", "NAME_CHARS", "PROTECTED", "RESERVED", "TIERS",
-    "clean_name", "create", "describe", "merge_rows", "new_agent_id", "read", "rename", "restore",
-    "retire", "roster", "roster_path",
+    "COMMON_LEADING_WORDS", "FILENAME", "MAX_CREATED", "MAX_REVISIONS", "NAME_CHARS", "PROTECTED", "RESERVED",
+    "TIERS", "clean_name", "create", "describe", "merge_rows", "new_agent_id", "read", "rename", "restore",
+    "retire", "roster", "roster_path", "routing_words",
 ]

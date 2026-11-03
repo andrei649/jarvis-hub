@@ -29,6 +29,7 @@ export function rosterRefusal(err: any): string {
   switch (body.error) {
     case 'agent_exists': return `refused: ${body.agent || 'that id'} is already an agent${body.detail ? ` (${body.detail})` : ''}`;
     case 'reserved_id': return `refused: ${body.agent || 'that id'} is a reserved name — pick another id`;
+    case 'routing_word': return `refused: ${body.agent || 'that id'} is a word messages start with or an intent word, so it would capture them — pick another id`;
     case 'bad_id': return 'refused: an id is lowercase letters, digits, _ or -, starting with a letter or digit';
     case 'bad_name': return 'refused: a name is 1-64 printable characters';
     case 'bad_tier': return 'refused: unknown tier';

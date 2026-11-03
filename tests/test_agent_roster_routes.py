@@ -552,3 +552,46 @@ def test_the_nerva_agents_verbs_create_rename_retire_and_restore(http, hub, env)
     code, out, _ = _nerva(["agents", "restore", "vega", "--json"], http)
     assert code == EXIT_OK and json.loads(out)["agent"]["status"] == "active"
     assert _boot(env).agents["vega"].name == "Vee"
+
+
+# ── batch 3 integration review ────────────────────────────────────────────────
+
+
+def test_create_refuses_an_id_that_would_capture_routing(http, hub, env):
+    """An agent's id is its wake word: an id people start a message with, or one the router
+    reads as an intent, would take those messages from keyword routing. It is refused, and
+    nothing is written."""
+    before = asyncio.run(hub.router.classify("what is the weather in bucharest", hub.agents))
+    for body in ({"name": "What"}, {"name": "Status"}, {"name": "Research"}, {"name": "Ok"},
+                 {"name": "Anything", "agent_id": "weather"}, {"name": "Ce"}):
+        got = http.post("/api/admin/agents", json=body, headers=HDR)
+        assert got.status_code == 409 and got.json()["error"] == "routing_word", (body, got.text)
+    assert not (env / "data" / "agent_roster.json").exists()
+    after = asyncio.run(hub.router.classify("what is the weather in bucharest", hub.agents))
+    assert after.target_agents == before.target_agents == ["friday"]
+    # The same name is fine under an id nobody types first.
+    named = http.post("/api/admin/agents", json={"name": "What", "agent_id": "what_bot"}, headers=HDR)
+    assert named.status_code == 201, named.text
+    assert asyncio.run(hub.router.classify("what is the weather in bucharest", hub.agents)).target_agents == ["friday"]
+
+
+def test_a_room_never_labels_a_reply_as_a_retired_agents(http, hub, env, monkeypatch):
+    """A room whose default agent (or @mention) the owner retired is answered by the hub's
+    routing, and neither the reply nor the room history names the retired agent."""
+    from agents.core.agent import Agent
+
+    async def answer(self, text, context, *, prepared=None):
+        return f"{self.id} answered"
+
+    monkeypatch.setattr(Agent, "process", answer)
+    room = http.post("/api/rooms", json={"name": "ops", "agents": ["friday", "stark"],
+                                         "default_agent": "friday"}, headers=HDR).json()
+    room_id = room.get("id") or room["room"]["id"]
+    live = http.post(f"/api/rooms/{room_id}/message", json={"message": "hi"}, headers=HDR).json()
+    assert live == {"reply": "friday answered", "agent": "friday", "mentioned": []}
+    assert http.post("/api/admin/agents/friday/retire", json={"confirm": "friday"}, headers=HDR).status_code == 200
+    for text in ("hi again", "@friday are you there"):
+        got = http.post(f"/api/rooms/{room_id}/message", json={"message": text}, headers=HDR).json()
+        assert got["agent"] == "jarvis" and not got["reply"].startswith("friday"), got
+    history = [m for m in hub.rooms.history(room_id) if m.get("role") == "assistant"]
+    assert [m.get("agent") for m in history] == ["friday", "jarvis", "jarvis"]

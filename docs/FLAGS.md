@@ -1647,7 +1647,12 @@ channel and per scope:
   sender and this bot, both joined. Anything it cannot prove — no `homeserver` or `token`
   configured, an error or non-200 reply, a timeout, a malformed reply, a third member
   joined, invited, knocking or banned — is judged as a group, the less trusted scope. Plain
-  chat is never looked up.
+  chat is never looked up. **Doors that bind no sender are the channel `unknown`:** the MCP
+  server's agent tools, room messages, the notes rewrite, the workflow step builder, an
+  agent webhook delivery and the local `python -m agents.run` REPL pass text to the hub
+  without establishing who sent it, so their commands are judged as a non-owner's in channel
+  `unknown`, DM scope — an `"mcp"` or `"room"` key never applies to them; `"*"` (or an
+  explicit `"unknown"` key) does.
 - **Resolution:** the channel's own entry, then `"*"`; a `dm` list that is not set uses the
   same entry's `group` list (Hermes' rule — a DM never gets a wider list by accident); a
   channel and scope nobody configured gets the floor only. Restricting a DM therefore never

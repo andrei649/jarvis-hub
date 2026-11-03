@@ -368,6 +368,25 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.acquisition.promotion:PromotionBroker.propose",
         contract_ref="agents.core.skills.marketplace:SKILL_INSTALL_CONTRACT",
     ),
+    # H330 — every write of a skill's bytes (a batch's create/patch/file write, a migrated
+    # related_skills entry, a bundle rewrite, an approved SKILL.md proposal, a generated
+    # skill, the owner's promotion of one) crosses the kernel before anything moves.
+    "skill.generation": _action(
+        "skill.generation",
+        "Write a skill's files: a batch operation, an approved proposal, a generated skill or "
+        "its promotion to executable.",
+        required=("action",),
+        supports=("write", "patch", "generate", "approve"),
+        rollback=RollbackContract(
+            mode="restore",
+            description="Put back the skill's previous folder from the batch archive the write "
+                        "left beside it.",
+            limitations="A created skill has no previous folder: it is archived instead. A "
+                        "generated skill stays quarantined until the owner approves it.",
+        ),
+        implementation="agents.core.acquisition.promotion:make_skill_generation_kernel_gate",
+        contract_ref="agents.core.skills.loader:SKILL_GENERATION_CONTRACT",
+    ),
     "plugin.load": _action(
         "plugin.load",
         "Admit a signed model-provider package after permanent owner approval.",
