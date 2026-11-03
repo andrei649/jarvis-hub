@@ -2709,6 +2709,14 @@
   This is local source equivalence: native device/frozen-package, live provider/owner installation
   and the complete scheduled browser matrix remain unclaimed. Generic import egress/governance
   (H334), historical billing (H370), and SEC-B6 acceptance stay open.
+  **Batch 4 integration follow-up:** the first full run exposed moved-source imports,
+  obsolete boot-registry expectations and an omitted usage schema. Their regressions retain
+  exact default/optional membership, all nine research cases and closed usage provenance.
+  Usage/Billing now sends stored admin credentials. Bulk fingerprint preflight and approval
+  use one loader/orchestrator, proved with two real loaders. All 115 combined affected cases
+  pass; 52 affected ledger rows were re-read again, with verdicts retained and `needs_review` 0.
+  A fresh complete backend milestone is pending; earlier runtime readiness/probe failures
+  passed unchanged focused runs without proving their full-load cause.
 
 ## Darwin feature absorption — 2026-09-09
 
