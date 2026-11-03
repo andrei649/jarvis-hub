@@ -2681,6 +2681,19 @@
   omissions, fenced examples), recorded as the rows' remaining work. Registry planning now keeps the
   risk context on a long tool description. 397 rows re-read (344 held, 53 corrected); headline
   138 → 141/697.
+  **Batch 3 (2026-11-03):** H330 (mixed skill-delete/edit batches, `absorbed_into`, migration of
+  `related_skills` and bundle members, remaining-reference reports, and `skill.generation`
+  mediation for skill writes), H389 (`[SKILL_PRUNED]`, fence-aware reload notices and coding-posture
+  index demotion), H058 (fail-closed per-command access by channel and DM/group, `/whoami`, audited
+  denials), H202 (persistent agent create/rename/retire/restore beside the SOUL editor) and H046
+  (learning-journey ids, list/show/edit/forget across notes, profile facts, skills and stored facts,
+  CLI aliases and TODAY controls) are `equivalent`. The merged-branch integration fixes preserve
+  skill-archive reference reports, register the `skill.generation` capability manifest, refuse
+  routing-word agent ids and label retired-agent room fallbacks as `jarvis`, with regression
+  coverage. The last 29 drifted rows were re-read and restamped, completing the batch's 419
+  collateral reviews (390 already recorded on the branch); existing verdicts were preserved and
+  stale claims/citations corrected. The five new reviews cite the current code and tests without
+  claiming a live hub or real-model acceptance. `needs_review` 0; headline 141 → 146/697.
 
 ## Darwin feature absorption — 2026-09-09
 
