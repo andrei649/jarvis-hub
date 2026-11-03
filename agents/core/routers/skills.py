@@ -928,7 +928,9 @@ async def list_pending_skills():
 @router.post("/api/skills/{name}/approve", dependencies=[Depends(admin_guard)])
 async def approve_generated_skill(name: str):
     """CDX-8: owner-approve a quarantined auto-generated skill — sign + activate it. Only an
-    admin can promote LLM-authored code from pending to executable."""
+    admin can promote LLM-authored code from pending to executable, and the promotion
+    crosses the ``skill.generation`` action kernel gate (H330): a halt answers 403
+    ``kernel_denied`` and the skill stays quarantined."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -940,6 +942,10 @@ async def approve_generated_skill(name: str):
             return {"approved": True, "skill": name, "loaded": False,
                     "message": "approved; it loads on the next normal boot (safe mode)"}
         return {"approved": True, "skill": name}
+    refused = str(getattr(orch.skills, "last_approval_refusal", "") or "")
+    if refused:
+        return JSONResponse({"error": f"the action kernel refused to approve '{name}'", "reason": refused,
+                             "skill": name}, status_code=403 if refused == "kernel_denied" else 503)
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
 
 
@@ -1044,7 +1050,9 @@ def _bulk_review(orch, body: BulkReviewBody) -> dict:
             logger.warning("bulk review: skill %s could not be decided", name, exc_info=True)
             results.append({"kind": "skill", "id": name, "ok": False, "error": "error"})
             continue
-        results.append({"kind": "skill", "id": name, "ok": ok, **(done if ok else {"error": "not_pending"})})
+        refused = "" if ok or not body.approved else str(getattr(loader, "last_approval_refusal", "") or "")
+        results.append({"kind": "skill", "id": name, "ok": ok,
+                        **(done if ok else {"error": refused or "not_pending"})})
 
     proposals = getattr(orch, "skill_proposals", None)
     decided_proposals: list[dict] = []
@@ -1119,7 +1127,10 @@ def _bulk_review(orch, body: BulkReviewBody) -> dict:
         # The card's own status decides (review-H665 #2), now that it is decided.
         out = batches.decide(bid, rec["card"], queue, loader, backup_dir=_batch_archive())
         ok = bool(out.get("ok"))
+        # H330: what the apply itself migrated and left (a bundle saved after the review is
+        # reported here, not rewritten), as the single card's decide answers it.
         results.append({**row, "ok": ok, "status": (batches.get(bid) or {}).get("status"),
+                        **({"references": out["references"]} if out.get("references") else {}),
                         **({} if ok else {"error": str(out.get("reason") or "apply_failed")})})
 
     failed = sum(1 for r in results if not r["ok"])
@@ -1212,7 +1223,14 @@ async def skills_batch(body: SkillBatchBody):
     folders are swapped only when every operation and every resulting SKILL.md passed, and
     any failure in the swap puts every touched skill back. ``dry_run`` answers the diffs
     without changing anything. A refusal is 422 with the failing operation, hints and a
-    preview of the file as the batch had it."""
+    preview of the file as the batch had it.
+
+    H330: a delete may share the batch with edits to other skills and name the skill that
+    absorbs it (``absorbed_into``); the answer's ``references`` say what was migrated to it
+    and what still names the deleted skill. Before any folder moves a delete crosses the
+    ``skill.install`` kernel gate and every other write (a create, a patch, a file, a
+    related_skills migration, a bundle rewrite) the ``skill.generation`` one; a DENY answers
+    422 ``skill_batch_kernel_denied`` and nothing changes."""
     import asyncio
 
     from agents.core.skills.batch import run_batch
@@ -1248,6 +1266,7 @@ async def skill_batches():
                 rec = store.get(rec["id"]) or rec
             except Exception:
                 logger.warning("skill batch %s: its card could not be queued", rec.get("id"), exc_info=True)
+        # H330: what the batch's deletes migrate and leave, reviewed with the diffs.
         out.append({k: rec.get(k) for k in ("id", "origin", "status", "ts", "card", "skills", "operations",
-                                            "preview")})
+                                            "preview", "references")})
     return JSONResponse({"batches": out, "count": len(out)}, headers={"Cache-Control": "no-store"})

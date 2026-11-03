@@ -168,10 +168,17 @@ def skills_index_component(skills: Iterable[Mapping[str, Any]] | str) -> Compone
     category-grouped index (``SkillLoader.prompt_index``, H326) when given as text, the flat
     command rows otherwise."""
     if isinstance(skills, str):
+        from .skills.loader import INDEX_NAMES_ONLY
+
         text = skills.strip()
         if not text:
             return Component(name="skills-index", chars=0, tokens=0, detail="no skills registered")
-        count = sum(1 for line in text.split("\n") if line.startswith("    - "))
+        count = 0
+        for line in text.split("\n"):
+            if line.startswith("    - "):
+                count += 1
+            elif line.startswith("  ") and INDEX_NAMES_ONLY in line:      # H389: a names-only category
+                count += len(line.split(INDEX_NAMES_ONLY, 1)[1].split(", "))
         return Component.of("skills-index", f"{text}\n\n", detail=f"{count} skill(s)")
     rows = list(skills or [])
     if not rows:

@@ -27,6 +27,7 @@ from agents.core.commands import (
     build_default_registry,
 )
 from agents.core.orchestrator import Orchestrator, current_principal
+from tests.h058_access_fixture import allow_user_tier, private_store, user_tier_allowed  # noqa: F401 — a fixture
 
 OWNER = Principal(channel="telegram", sender="42", admin=True)
 GUEST = Principal(channel="telegram", sender="7", admin=False)
@@ -87,7 +88,8 @@ async def test_not_a_command_is_none():
 
 
 @pytest.mark.asyncio
-async def test_help_lists_what_the_principal_may_use():
+async def test_help_lists_what_the_principal_may_use(user_tier_allowed):
+    # H058: the guest runs the user tier because the owner allowed it (unset: /help, /whoami).
     registry = build_default_registry()
     guest = await registry.dispatch("/help", orch=_orch(), principal=GUEST)
     owner = await registry.dispatch("/help", orch=_orch(), principal=OWNER)
@@ -105,7 +107,7 @@ async def test_owner_commands_refuse_a_guest_and_say_why(estop_state):
 
 
 @pytest.mark.asyncio
-async def test_pause_and_resume_drive_the_real_estop_module(estop_state):
+async def test_pause_and_resume_drive_the_real_estop_module(estop_state, user_tier_allowed):
     registry = build_default_registry()
     paused = await registry.dispatch("/pause the plumber is here", orch=_orch(), principal=OWNER)
     assert paused.status == "answered" and "Emergency stop engaged" in paused.reply
@@ -127,7 +129,7 @@ async def test_stop_is_honest_about_in_flight_work(estop_state):
 
 
 @pytest.mark.asyncio
-async def test_status_and_sessions_read_the_orchestrator(estop_state):
+async def test_status_and_sessions_read_the_orchestrator(estop_state, user_tier_allowed):
     registry = build_default_registry()
     status = await registry.dispatch("/status", orch=_orch(), principal=GUEST)
     assert "backend lm-studio, 2 agents loaded" in status.reply
@@ -137,7 +139,8 @@ async def test_status_and_sessions_read_the_orchestrator(estop_state):
 
 
 @pytest.mark.asyncio
-async def test_a_failing_handler_is_reported_not_raised():
+async def test_a_failing_handler_is_reported_not_raised(monkeypatch, tmp_path):
+    allow_user_tier(monkeypatch, tmp_path, ["boom"])          # H058: the owner allowed it
     registry = CommandRegistry()
 
     def boom(ctx: CommandContext) -> str:
@@ -278,20 +281,26 @@ async def test_open_group_configured_owner_is_admin_while_guests_keep_chat_acces
 
 
 @pytest.mark.asyncio
-async def test_a_command_never_reaches_the_model_and_a_message_still_does():
+async def test_a_command_never_reaches_the_model_and_a_message_still_does(user_tier_allowed):
     orch, _seen = _bare_orchestrator()
     assert "/status" in await orch.channel_handler("/help", channel="web")
     assert await orch.channel_handler("hello", channel="web") == "model reply"
 
 
-def test_the_default_registry_names_the_first_wave():
+def test_the_default_registry_names_the_first_wave(monkeypatch, tmp_path):
     assert {c.name for c in build_default_registry().visible(OWNER)} == {
         "help", "status", "sessions", "new", "reset", "undo", "recap", "btw", "pause", "stop", "resume", "jobs", "remind", "voice", "refine", "usage", "personality",
         "checkpoints", "rollback", "kanban", "project", "goal", "subgoal",
         "bundles", "bundle",   # H026: owner commands; a guest's set below is unchanged
+        "whoami",              # H058: a user command, so in both sets
     }
+    # H058: a guest sees /help and /whoami until the owner allows more; allowed everything
+    # a non-owner may be allowed, it sees the user tier, never an owner command.
+    private_store(monkeypatch, tmp_path)
+    assert {c.name for c in build_default_registry().visible(GUEST)} == {"help", "whoami"}
+    allow_user_tier(monkeypatch, tmp_path)
     assert {c.name for c in build_default_registry().visible(GUEST)} == {
-        "help", "status", "sessions", "recap", "btw", "jobs", "voice",
+        "help", "status", "sessions", "recap", "btw", "jobs", "voice", "whoami",
     }
     assert commands_module.USER == "user"
 
@@ -357,7 +366,7 @@ class _Runner:
 
 
 @pytest.mark.asyncio
-async def test_jobs_lists_the_owners_jobs_and_the_scheduler_state():
+async def test_jobs_lists_the_owners_jobs_and_the_scheduler_state(user_tier_allowed):
     job = SimpleNamespace(id="j1", paused_reason=None, enabled=True, schedule_text="every day at 9", name="water", last_status="ok", last_run_at="t")
     orch = _orch()
     orch.jobs = _Runner([job], alive=False)

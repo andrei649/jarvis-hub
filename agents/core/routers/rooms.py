@@ -85,6 +85,10 @@ async def rooms_message(room_id: str, req: Request):
     if not text:
         return JSONResponse({"error": "message required"}, status_code=400)
     target = store.route(room_id, text)
+    if target != "jarvis" and target not in (getattr(orch, "agents", None) or {}):
+        # H202: a retired (or unknown) agent does not answer: the hub routes the message as
+        # it routes one for Jarvis, so the reply is never stored or shown as that agent's.
+        target = "jarvis"
     store.add_message(room_id, "user", text)
     prompt = store.context_for(room_id) + text
     try:

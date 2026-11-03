@@ -3,8 +3,12 @@
 Hermes's ``skill_manage`` takes one ``operations`` array — ``create``, ``patch``,
 ``write_file``, ``remove_file``, ``delete`` — across any number of skills and applies it
 atomically: "any failure rolls every touched skill back". A ``create`` must come before
-that skill's other operations and a ``delete`` must be the call's only operation. Nerva
-offers the same batch two ways, both through :func:`run_batch`:
+that skill's other operations. A ``delete`` is its skill's only operation, and it shares
+the batch with the edits to other skills (H330): ``absorbed_into`` names the skill that
+takes the deleted one's place, and the references to the deleted one are migrated or
+reported (:mod:`skills.references`) — another skill's ``related_skills`` is rewritten on
+its staging copy, a bundle's member when the batch lands, the rest are listed under
+``references``. Nerva offers the same batch two ways, both through :func:`run_batch`:
 
 * the owner, directly: ``POST /api/skills/batch`` (admin), with ``dry_run`` to see the
   diffs first;
@@ -20,7 +24,20 @@ H350 check and keeps its skill's name. Then the live folders are swapped for the
 copies one rename at a time; any failure in the swap — or in renewing a signature or an
 owner approval the old bytes had — renames every already-swapped folder back, so a partial
 batch is never observable. The replaced folders go to an archive (reversible), the loader
-reloads what changed and forgets what was deleted.
+reloads what changed and forgets what was deleted. A bundle rewritten for an absorbed
+skill is part of the same apply: if its write fails, the bundles already rewritten get
+their old bytes back and every swapped folder is renamed back.
+
+Governance (H330). Before any folder moves the batch crosses the action kernel: a delete
+crosses ``skill.install`` (the gate an install crosses,
+:func:`acquisition.promotion.make_skill_install_kernel_gate`), and every other write — a
+create, a patch, a supporting file, a related_skills migration, a bundle rewrite — crosses
+``skill.generation`` (:func:`acquisition.promotion.make_skill_generation_kernel_gate`). A
+DENY, or a gate that fails, refuses the whole batch. A ``create`` also passes the
+``skill.generation`` contract ``generate_skill`` passes. A skill awaiting the owner's review
+(CDX-8 quarantine) is never edited, migrated or made the absorbing skill. On the governed
+path a skill or bundle the review showed rewritten must still be as it was (else
+``skill_batch_drifted``), and a bundle member the agent may not see is counted, never named.
 
 The failing operation's answer teaches: ``failed_op`` (its index, action, skill and file),
 ``hints`` (what to change), and ``file_preview`` (the file as the batch had left it at that
@@ -55,13 +72,13 @@ ALLOWED_SUBDIRS = ("references", "templates", "scripts", "assets")
 MAX_NAME = 64
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 OP_FIELDS = ("name", "action", "content", "old_string", "new_string", "replace_all", "file_path",
-             "file_content")
+             "file_content", "absorbed_into")
 _FIELDS_BY_ACTION = {
     "create": {"content"},
     "patch": {"content", "old_string", "new_string", "replace_all", "file_path"},
     "write_file": {"file_path", "file_content"},
     "remove_file": {"file_path"},
-    "delete": set(),
+    "delete": {"absorbed_into"},
 }
 _SKILL_FILE = "SKILL.md"
 PREVIEW_LINES = 40
@@ -175,6 +192,7 @@ def normalize(operations: Any) -> list[dict]:
                          hints=["split the work into several batches"])
     out: list[dict] = []
     seen: dict[str, int] = {}
+    deleted_at: dict[str, int] = {}
     for index, raw in enumerate(operations):
         if not isinstance(raw, dict):
             raise BatchError("skill_batch_bad_op", f"operation {index} is not an object", index=index, op={})
@@ -211,13 +229,28 @@ def normalize(operations: Any) -> list[dict]:
                                  "names: a create must come before that skill's other operations",
                                  index=index, op=op,
                                  hints=[f"move the create of {name!r} to before operation {seen[name]}"])
-        if action == "delete" and len(operations) > 1:
+        if name in deleted_at:
             raise BatchError("skill_batch_delete_not_alone",
-                             f"operation {index} deletes {name!r}: a delete must be the batch's only operation",
-                             index=index, op=op,
-                             hints=["send the delete in a call of its own, before or after this batch"])
+                             f"operation {index} names {name!r}, which operation {deleted_at[name]} deletes: "
+                             "a deleted skill takes no other operation", index=index, op=op,
+                             hints=[f"drop operation {index}, or the delete of {name!r}"])
+        if action == "delete":
+            if name in seen:
+                raise BatchError("skill_batch_delete_not_alone",
+                                 f"operation {index} deletes {name!r}, which operation {seen[name]} already "
+                                 "changes: a delete must be its skill's only operation", index=index, op=op,
+                                 hints=[f"drop the other operations on {name!r}, or the delete"])
+            deleted_at[name] = index
         seen.setdefault(name, index)
         out.append(op)
+    for index, op in enumerate(out):
+        new = op.get("absorbed_into")
+        if op["action"] == "delete" and new in deleted_at:
+            raise BatchError("skill_batch_absorbed_deleted",
+                             f"operation {index}: {new!r} is deleted by operation {deleted_at[new]}, so it "
+                             f"cannot absorb {op['name']!r}", index=index, op=op,
+                             hints=["absorbed_into names a skill that stays: one that exists, or one this batch "
+                                    "creates"])
     return out
 
 
@@ -256,6 +289,14 @@ def _check_fields(index: int, op: dict) -> None:
         if "file_path" in op and clean_rel(op["file_path"], allow_skill_md=True) is None:
             raise BatchError("skill_batch_bad_path", f"operation {index}: {op['file_path']!r} is not a file "
                              "a patch may change", index=index, op=op, hints=[_path_hint("patch")])
+    elif action == "delete" and "absorbed_into" in op:
+        new = op["absorbed_into"]
+        if not isinstance(new, str) or not new or len(new) > MAX_NAME or not new.isprintable():
+            raise BatchError("skill_batch_bad_field", f"operation {index}: absorbed_into is the name of the skill "
+                             f"that takes {op['name']!r}'s place, 1 to {MAX_NAME} characters", index=index, op=op)
+        if new == op["name"]:
+            raise BatchError("skill_batch_bad_field", f"operation {index}: a skill cannot absorb itself",
+                             index=index, op=op, hints=["leave absorbed_into out to delete it with no successor"])
     elif action in ("write_file", "remove_file"):
         if clean_rel(op.get("file_path"), allow_skill_md=False) is None:
             raise BatchError("skill_batch_bad_path", f"operation {index}: {op.get('file_path')!r} is not a "
@@ -280,6 +321,9 @@ class _Target:
         self.before_files: dict[str, bytes] = {}
         self.touched_md_at: int | None = None
         self.renewed = False
+        #: H330 — the deleted skills whose related_skills entry this batch moved here,
+        #: when the skill is in the batch only for that.
+        self.migrated_for: list[str] = []
 
 
 def _has_link(root: Path) -> bool:
@@ -485,8 +529,9 @@ def _final_check(target: _Target, loader: Any, ops: list[dict], last_index: dict
 
     if target.deleted:
         return
-    index = target.touched_md_at if target.touched_md_at is not None else last_index[target.name]
-    op = ops[index]
+    index = target.touched_md_at if target.touched_md_at is not None else last_index.get(target.name)
+    # A skill in the batch only for a migrated reference has no operation of its own.
+    op = ops[index] if index is not None else {"name": target.name, "action": "patch", "file_path": _SKILL_FILE}
     md = target.staged / _SKILL_FILE
     try:
         text = md.read_bytes().decode("utf-8")
@@ -674,6 +719,331 @@ def _note_patched(loader: Any, targets: list[_Target]) -> None:
                 logger.debug("skill batch: usage note skipped for %s", target.name, exc_info=True)
 
 
+def _note_created(loader: Any, targets: list[_Target], actor: str) -> None:
+    """H046 — a skill the agent's batch created is a skill the agent learned.
+
+    ``generate_skill`` records the agent origin when it writes a skill; a ``create`` in a
+    batch the model proposed (applied on the owner's card, ``actor`` the batch's origin)
+    is the same act through Hermes's ``skill_manage create``, so it records the same
+    provenance and the learning journey lists it from the start. A skill the owner's own
+    batch created is not something the agent learned. Best-effort, like the other notes."""
+    if not str(actor or "").startswith("agent"):
+        return
+    usage = getattr(loader, "_usage", None)
+    note = getattr(usage, "note_created", None)
+    if not callable(note):
+        return
+    loaded = getattr(loader, "skills", {}) or {}
+    for target in targets:
+        if target.existing or target.deleted:
+            continue
+        # The sidecar is keyed by the skill's registered name, as generate_skill keys it.
+        name = next((n for n, s in loaded.items() if Path(getattr(s, "path", "")) == target.live), target.name)
+        try:
+            note(name, "agent")
+        except Exception:
+            logger.debug("skill batch: provenance note skipped for %s", target.name, exc_info=True)
+
+
+# ── H330: a delete, what absorbs it, and what still names it ────────────────────────
+
+#: Why a skill that names a deleted one was not rewritten, from the refusal an edit of it gets.
+_NOT_EDITABLE = {
+    "skill_batch_pending_review": "awaits the owner's review (quarantine)",
+    "skill_batch_bundled": "ships with Nerva",
+    "skill_batch_unreadable": "could not be read just now",
+    "skill_batch_signing_key_missing": "is signed with a key this hub does not have",
+    "skill_batch_linked": "contains a link",
+}
+
+
+def _generation_allowed(index: int, op: dict, actor: str) -> None:
+    """A create crosses the ``skill.generation`` contract ``generate_skill`` crosses."""
+    from .loader import _skill_generation_allowed
+
+    if not _skill_generation_allowed({"action": "generate", "agent": actor or "owner", "name": op["name"]}):
+        raise BatchError("skill_batch_generation_refused", f"operation {index}: the skill-generation contract "
+                         f"refused a new skill named {op['name']!r}", index=index, op=op)
+
+
+def _absorbers(ops: list[dict], targets: dict[str, _Target], loader: Any,
+               may_see: Callable[[str], bool] | None) -> dict[str, str | None]:
+    """``{deleted skill: absorbing skill or None}``. The absorbing skill must be one the
+    batch creates or a loaded skill the caller may see, and not one awaiting review."""
+    skills = getattr(loader, "skills", {}) or {}
+    created = {t.name for t in targets.values() if not t.existing}
+    out: dict[str, str | None] = {}
+    for index, op in enumerate(ops):
+        if op["action"] != "delete":
+            continue
+        new = op.get("absorbed_into")
+        out[op["name"]] = new
+        if not new or new in created:
+            continue
+        skill = skills.get(new)
+        if skill is None or (may_see is not None and not may_see(new)):
+            raise BatchError("skill_batch_absorbed_unknown", f"operation {index}: no skill named {new!r} exists to "
+                             f"absorb {op['name']!r}", index=index, op=op,
+                             hints=["call skills_list for the names", "or create the absorbing skill in this batch"])
+        if (Path(skill.path) / "PENDING_REVIEW").exists():
+            raise BatchError("skill_batch_absorbed_pending_review", f"operation {index}: {new!r} awaits the owner's "
+                             "review (quarantine), so it cannot take another skill's place yet", index=index, op=op,
+                             hints=["ask the owner to approve it first, or name another skill"])
+    return out
+
+
+def _read_md(folder: Path | None) -> str | None:
+    try:
+        return (Path(folder) / _SKILL_FILE).read_bytes().decode("utf-8")
+    except (OSError, UnicodeError, TypeError):
+        return None
+
+
+def _referrers(targets: dict[str, _Target], loader: Any) -> list[tuple[str, Path, _Target | None]]:
+    """Every skill the batch leaves standing, with the folder that holds its bytes after
+    the batch (the staging copy for a skill the batch touches)."""
+    skills = getattr(loader, "skills", {}) or {}
+    pool = [(name, t.staged, t) for name, t in targets.items() if not t.deleted]
+    pool += [(name, Path(s.path), None) for name, s in sorted(skills.items()) if name not in targets]
+    return pool
+
+
+def _migrate_related(deletes: dict[str, str | None], targets: dict[str, _Target], loader: Any, batch_id: str, *,
+                     may_see: Callable[[str], bool] | None, expect: dict | None, blocked: dict[str, str]) -> None:
+    """Move each ``related_skills`` entry that names a deleted skill to its absorbing
+    skill, on the referring skill's staging copy: the skill joins the batch, so its diff
+    is shown and the swap (and its rollback) covers it. A skill the batch may not edit is
+    left for the report, with why in ``blocked``."""
+    from . import references
+    from .validate import validate_skill_md
+
+    moves: dict[str, set[str]] = {}
+    for name, new in deletes.items():
+        if new:
+            moves.setdefault(new, set()).update(references.identities(targets[name].skill))
+    if not moves:
+        return
+    old = set().union(*moves.values())
+    skills = getattr(loader, "skills", {}) or {}
+    for name, folder, target in _referrers(targets, loader):
+        text = _read_md(folder)
+        named = set(references.related_names(text)) & old if text is not None else set()
+        if not named:
+            continue
+        new_text = text
+        for new, names in moves.items():
+            # The absorbing skill's own related_skills drops the entry: a skill is never its own relation.
+            new_text = references.rewrite_related(new_text, names, None if new == name else new) or new_text
+        if target is None:
+            if may_see is not None and not may_see(name):
+                continue                       # counted in the report, never named
+            if expect is not None and name not in expect:
+                blocked[name] = "not in the batch the owner approved"
+                continue
+        if new_text == text:
+            blocked[name] = "its related_skills could not be rewritten exactly"
+            continue
+        if target is None:
+            if validate_skill_md(new_text):
+                blocked[name] = "its SKILL.md does not pass the check"
+                continue
+            candidate = _Target(name, Path(folder), existing=True, skill=skills[name])
+            try:
+                _check_standing(candidate, loader, None, {"name": name, "action": "patch"})
+                if _has_link(candidate.live):
+                    raise BatchError("skill_batch_linked", f"{name!r} contains a link")
+            except BatchError as exc:
+                blocked[name] = _NOT_EDITABLE.get(exc.reason, exc.detail)
+                continue
+            targets[name] = candidate
+            _stage(candidate, batch_id)
+            if expect is not None and expect.get(name) != candidate.before_fp:
+                raise BatchError("skill_batch_drifted", f"{name!r} changed after this batch was checked; nothing "
+                                 "was applied", hints=["propose the batch again against the skill as it is now"])
+            if _read_md(candidate.staged) != text:
+                raise BatchError("skill_batch_drifted", f"{name!r} changed while the batch was staged; nothing was "
+                                 "applied", hints=["try again"])
+            target = candidate
+        _write(target, _SKILL_FILE, new_text)
+        target.migrated_for = sorted(d for d, new in deletes.items()
+                                     if new and references.identities(targets[d].skill) & named)
+
+
+def _shown_members(members: list[str], may_see: Callable[[str], bool] | None, named: set[str],
+                   loader: Any) -> tuple[list[str], int]:
+    """``(members the caller may see, how many it may not)``. A bundle can list a skill the
+    caller may not see; on the governed path that member is counted, never named, as every
+    other skill the agent may not see is. A member is judged by the skill it names as the
+    bundle resolves it (:func:`bundles.find_member`: a path, or a name in any case), so a
+    member naming a skill the batch deletes or absorbs into is shown, however it is
+    written, as the one the apply rewrites (review-H330 r2). A member that names no loaded
+    skill is shown only when it is a name the batch itself gives (a skill it creates)."""
+    if may_see is None:
+        return list(members), 0
+    from . import bundles
+
+    skills = getattr(loader, "skills", {}) or {}
+    pool = list(skills.values())
+    key_of = {id(skill): key for key, skill in skills.items()}
+    shown = []
+    for member in members:
+        skill, _why = bundles.find_member(pool, member)
+        key = key_of.get(id(skill)) if skill is not None else None
+        if (member in named) if key is None else (key in named or may_see(key)):
+            shown.append(member)
+    return shown, len(members) - len(shown)
+
+
+def _report(deletes: dict[str, str | None], targets: dict[str, _Target], loader: Any, holders: Any, *,
+            may_see: Callable[[str], bool] | None, blocked: dict[str, str], bundle_moves: list[dict],
+            bundle_left: list[dict], exclude_batch: str | None) -> list[dict]:
+    """For each deleted skill: what the batch migrates to its absorbing skill, and every
+    reference it leaves where it is (``left``) — other skills' related_skills and text,
+    bundles, scheduled jobs, the load set, the switches, pending proposals and batches.
+    A skill the caller may not see is counted (``hidden``), never named."""
+    from . import references
+
+    texts = [(name, references.text_files(folder)) for name, folder, _t in _referrers(targets, loader)]
+    named = set(deletes) | {new for new in deletes.values() if new}
+    out = []
+    for name, new in deletes.items():
+        skill = targets[name].skill
+        ids = references.identities(skill)
+        # The absorbing skill's own entry is dropped, not moved (a skill is never its own relation).
+        migrated: list[dict] = [{"holder": "skill", "name": t.name, "field": "related_skills",
+                                 **({"dropped": True} if t.name == new else {})}
+                                for t in targets.values() if name in t.migrated_for]
+        for move in bundle_moves:
+            if name in move["skills"]:
+                before, hidden_members = _shown_members(move["before"], may_see, named, loader)
+                after, _n = _shown_members(move["after"], may_see, named, loader)
+                migrated.append({"holder": "bundle", "name": move["name"], "slug": move["slug"], "before": before,
+                                 "after": after, **({"hidden_members": hidden_members} if hidden_members else {})})
+        left: list[dict] = []
+        hidden = 0
+        for other, files in texts:
+            md = next((text for rel, text in files if rel == _SKILL_FILE), None)
+            related = ids & set(references.related_names(md)) if md is not None else set()
+            mentions = [(rel, lines) for rel, lines in
+                        ((rel, references.mention_lines(text, ids)) for rel, text in files) if lines]
+            if not related and not mentions:
+                continue
+            if may_see is not None and not may_see(other):
+                hidden += 1
+                continue
+            if related:
+                left.append({"holder": "skill", "name": other, "field": "related_skills",
+                             "why": blocked.get(other) or ("no absorbing skill named" if not new
+                                                           else "not rewritten")})
+            for rel, lines in mentions:
+                left.append({"holder": "skill", "name": other, "field": "text", "file": rel,
+                             "lines": lines[:references.MAX_LINES]})
+        # On the governed path a skipped bundle file is reported without its file name, which
+        # the owner chose and the agent may not otherwise see.
+        left += [{k: v for k, v in entry.items() if not (may_see is not None and k == "file")}
+                 for entry in bundle_left if entry["skill"] == name]
+        left += references.outside(name, skill, new, holders, exclude_batch=exclude_batch)
+        entry = {"skill": name, "absorbed_into": new, "migrated": migrated, "left": left[:references.MAX_LEFT]}
+        if len(left) > references.MAX_LEFT:
+            entry["more"] = len(left) - references.MAX_LEFT
+        if hidden:
+            entry["hidden"] = hidden
+        out.append(entry)
+    return out
+
+
+def _bundle_drift(moves: list[dict], left: list[dict], allowed: Any) -> str | None:
+    """The first bundle the owner approved a rewrite of that is no longer the one they saw:
+    its members changed (``pin``), it now names a deleted skill it would not rewrite, or
+    the apply would not rewrite it at all (its file no longer parses, it is gone, it no
+    longer names the skill): every rewrite the review showed is part of the batch."""
+    pins = allowed if isinstance(allowed, dict) else {}
+    planned = {move["slug"]: move for move in moves}
+    for slug in sorted(str(s) for s in allowed):
+        move = planned.get(slug)
+        if move is None:
+            return slug
+        pin = pins.get(slug)
+        if pin is not None and pin != move["pin"]:
+            return str(move["name"])
+    for entry in left:
+        if entry.get("slug") in allowed:
+            return str(entry.get("name") or entry.get("slug"))
+    return None
+
+
+def _cross_kernel(order: list[_Target], deletes: dict[str, str | None], bundle_moves: list[dict], actor: str, *,
+                  delete_gate: Callable[[dict], str] | None, write_gate: Callable[[dict], str] | None) -> None:
+    """Every effect of the batch crosses the action kernel before any folder moves.
+
+    A delete takes a skill away from what the hub can run: ``skill.install``, the gate an
+    acquired install crosses. Every other write of a skill's bytes (a create, a patch, a
+    supporting file, a related_skills migration, a bundle rewrite) is ``skill.generation``.
+    A DENY, or a gate that fails, refuses the whole batch; a QUEUE is the owner's decision
+    this batch already carries (their route, their card). The hub's gate binds the kill
+    switch, the autonomy policy and the audit (:func:`kernel.binding.make_action_kernel`
+    without a loop breaker or a budget ledger, as every route caller binds it)."""
+    from agents.core.acquisition.promotion import cross_skill_gate, hub_skill_kernel_gate
+
+    requested_by = actor or "owner"
+    asks: list[tuple[str, Callable[[dict], str], dict]] = []
+    deleted = [t for t in order if t.deleted]
+    if deleted:
+        asks.append(("skill.install", delete_gate or hub_skill_kernel_gate("skill.install", title="Delete a skill"),
+                     {"kind": "skill.install", "operation": "delete", "names": [t.name for t in deleted],
+                      "absorbed_into": {t.name: deletes.get(t.name) for t in deleted},
+                      "requested_by": requested_by, "risk_tier": 3, "reversible": True, "approval_mode": "owner"}))
+    created = [t.name for t in order if not t.existing]
+    changed = [t.name for t in order if t.existing and not t.deleted]
+    if created or changed or bundle_moves:
+        asks.append(("skill.generation",
+                     write_gate or hub_skill_kernel_gate("skill.generation", title="Write skills in a batch"),
+                     {"kind": "skill.generation", "action": "write", "operation": "batch", "agent": requested_by,
+                      "created": created, "changed": changed,
+                      "migrated": [t.name for t in order if t.migrated_for],
+                      "bundles": [m["slug"] for m in bundle_moves], "requested_by": requested_by,
+                      "risk_tier": 3, "reversible": True, "approval_mode": "owner"}))
+    for kind, gate, payload in asks:
+        refused = cross_skill_gate(gate, payload)
+        if refused == "kernel_denied":
+            raise BatchError("skill_batch_kernel_denied", f"the action kernel refused the batch ({kind}), so "
+                             "nothing was applied", hints=["a halt (the kill switch) or the autonomy policy refused it: "
+                                                           "nothing changed; once it lifts, send the batch again "
+                                                           "(a batch decided on its card is proposed again)"],
+                             extra={"kernel_kind": kind})
+        if refused:
+            raise BatchError("skill_batch_kernel_error", f"the {kind} gate could not decide the batch, so nothing "
+                             "was applied", hints=["try again"], extra={"kernel_kind": kind})
+
+
+def _rewrite_bundles(moves: list[dict], written: list[tuple[Path, bytes]]) -> None:
+    """Rewrite each planned bundle's members; ``written`` collects ``(file, old bytes)``
+    as it goes so a failure can put every one back."""
+    from . import bundles
+
+    for move in moves:
+        current = bundles.get(move["slug"])
+        if current is None or list(current.skills) != move["before"]:
+            raise RuntimeError(f"bundle {move['slug']!r} changed while the batch was applied")
+        old = current.path.read_bytes()
+        written.append((current.path, old))
+        bundles.save(current.name, move["after"], description=current.description, overwrite=True)
+
+
+def _restore_bundles(written: list[tuple[Path, bytes]]) -> list[str]:
+    """Put back each rewritten bundle file; the files that could not be are returned."""
+    from . import bundles
+
+    stuck = []
+    for path, data in reversed(written):
+        try:
+            bundles.restore_file(path, data)
+        except Exception:
+            logger.error("skill batch: bundle %s could not be put back", path, exc_info=True)
+            stuck.append(str(path))
+    return stuck
+
+
 def fingerprints(operations: list[dict], loader: Any) -> dict[str, str | None]:
     """Each touched existing skill's tree fingerprint now (None for one a batch creates)."""
     out: dict[str, str | None] = {}
@@ -692,14 +1062,28 @@ def fingerprints(operations: list[dict], loader: Any) -> dict[str, str | None]:
 
 def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, backup_dir: Path | None = None,
               dry_run: bool = False, expect: dict[str, str | None] | None = None,
-              flagger: Callable[[str], bool] | None = None, may_see: Callable[[str], bool] | None = None) -> dict:
+              flagger: Callable[[str], bool] | None = None, may_see: Callable[[str], bool] | None = None,
+              actor: str = "owner", holders: Any = None, delete_gate: Callable[[dict], str] | None = None,
+              write_gate: Callable[[dict], str] | None = None, allow_bundles: dict[str, str | None] | None = None,
+              exclude_batch: str | None = None) -> dict:
     """Check, stage and (unless ``dry_run``) atomically apply ``operations``. Never raises.
 
     ``expect`` pins each touched skill to the tree fingerprint a reviewer saw (a governed
     batch): a skill that changed since makes the batch ``skill_batch_drifted``. ``flagger``
     refuses text that reads like an instruction to the model (the governed path).
     ``may_see`` (the governed path) says which loaded skills the caller may read: a create
-    colliding with any other name is refused without a preview of what is there."""
+    colliding with any other name is refused without a preview of what is there.
+
+    H330 — a batch with a delete answers ``references``: per deleted skill, what it
+    migrated to the ``absorbed_into`` skill and what it left (:func:`_report`).
+    ``holders`` are where references live outside the skills tree (default: the live
+    hub's, :func:`references.hub_holders`). Before anything moves the batch crosses the
+    action kernel (:func:`_cross_kernel`): ``delete_gate`` is the ``skill.install`` gate a
+    delete crosses and ``write_gate`` the ``skill.generation`` gate every other write
+    crosses (default: the live hub's kernel). ``allow_bundles`` (a governed apply) maps
+    the bundles the owner saw rewritten to their pins: only those are rewritten, and only
+    while they are as the review showed them. ``exclude_batch`` is the batch being
+    applied, never reported as a reference to itself."""
     try:
         ops = normalize(operations)
     except BatchError as exc:
@@ -716,11 +1100,15 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
     root = _skills_root(create_root)
     targets: dict[str, _Target] = {}
     keep = False
+    deletes: dict[str, str | None] = {}
+    blocked: dict[str, str] = {}
     with _BATCH_LOCK:
         try:
             try:
                 last_index: dict[str, int] = {}
                 for index, op in enumerate(ops):
+                    if op["action"] == "create":
+                        _generation_allowed(index, op, actor)
                     target = _resolve(op["name"], index, op, loader, targets, root, may_see)
                     if target.stage_root is None:
                         _stage(target, batch_id)
@@ -733,6 +1121,20 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                                              index=index, op=op)
                     _apply_op(target, index, op)
                     last_index[op["name"]] = index
+                deletes = _absorbers(ops, targets, loader, may_see)
+                if deletes:
+                    _migrate_related(deletes, targets, loader, batch_id, may_see=may_see, expect=expect,
+                                     blocked=blocked)
+                if expect is not None:
+                    # A skill the review showed rewritten for a moved related_skills entry that this
+                    # apply would not rewrite (it changed, was quarantined, gained a link) is drift,
+                    # as it is for every skill an operation names: never dropped from the batch.
+                    gone = sorted(name for name in expect if name not in targets)
+                    if gone:
+                        raise BatchError("skill_batch_drifted", f"{gone[0]!r} changed after this batch was checked "
+                                         f"({blocked.get(gone[0]) or 'it no longer names the deleted skill'}); "
+                                         "nothing was applied",
+                                         hints=["propose the batch again against the skills as they are now"])
                 for target in targets.values():
                     _final_check(target, loader, ops, last_index)
             except BatchError as exc:
@@ -742,16 +1144,58 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                 return BatchError("skill_batch_io", f"the batch could not be staged: {exc.strerror or exc}").payload()
             order = list(targets.values())
             summary = [{"name": t.name, "change": "deleted" if t.deleted else "changed" if t.existing else "created",
-                        "files": _diffs(t), "lint": _lint(t)} for t in order]
+                        "files": _diffs(t), "lint": _lint(t),
+                        **({"migrated_for": list(t.migrated_for)} if t.migrated_for else {})} for t in order]
+            report: dict[str, Any] = {}
+            bundle_moves: list[dict] = []
+            if deletes:
+                from . import references
+
+                found = holders if holders is not None else references.hub_holders()
+                deleted_skills = {name: (targets[name].skill, new) for name, new in deletes.items()}
+                try:
+                    bundle_moves, bundle_left = references.bundle_plan(
+                        deleted_skills, (getattr(loader, "skills", {}) or {}).values(), found,
+                        allowed=allow_bundles)
+                except Exception:
+                    logger.warning("skill batch: the skill bundles could not be read", exc_info=True)
+                    if allow_bundles:
+                        # The owner approved these bundle rewrites with the deletes: an apply that
+                        # cannot make them is not the batch they approved, so it lands nothing.
+                        return BatchError("skill_batch_bundles_unreadable", "the skill bundles this batch "
+                                          "rewrites could not be read, so nothing was applied",
+                                          hints=["try again; nothing changed"]).payload()
+                    bundle_moves, bundle_left = [], [{"holder": "bundle", "skill": name, "unreadable": True}
+                                                     for name in deletes]
+                if allow_bundles:
+                    drifted = _bundle_drift(bundle_moves, bundle_left, allow_bundles)
+                    if drifted:
+                        return BatchError("skill_batch_drifted", f"the bundle {drifted!r} changed after this batch "
+                                          "was checked; nothing was applied",
+                                          hints=["propose the batch again against the bundles as they are now"]
+                                          ).payload()
+                report["references"] = _report(deletes, targets, loader, found, may_see=may_see, blocked=blocked,
+                                               bundle_moves=bundle_moves, bundle_left=bundle_left,
+                                               exclude_batch=exclude_batch)
             if dry_run:
-                return {"ok": True, "applied": False, "dry_run": True, "operations": len(ops), "skills": summary}
+                pins = {t.name: (t.before_fp if t.existing else None) for t in order}
+                # bundle_pins is for the ledger, never the model: a digest of a member list could
+                # be matched against guesses at a member the caller may not see.
+                return {"ok": True, "applied": False, "dry_run": True, "operations": len(ops), "skills": summary,
+                        "fingerprints": pins, "bundle_pins": {m["slug"]: m["pin"] for m in bundle_moves},
+                        **report}
             # Nothing live has changed yet: re-check no skill moved under the staging copy.
             for target in order:
                 if target.existing and _fingerprint(target.live) != target.before_fp:
                     return BatchError("skill_batch_drifted", f"{target.name!r} changed while the batch was "
                                       "staged; nothing was applied", hints=["try again"]).payload()
+            try:
+                _cross_kernel(order, deletes, bundle_moves, actor, delete_gate=delete_gate, write_gate=write_gate)
+            except BatchError as exc:
+                return {**exc.payload(), **report}
             staged_fp = {t.name: _fingerprint(t.staged) for t in order if not t.deleted}
             swapped: list[_Target] = []
+            rewritten: list[tuple[Path, bytes]] = []
             failure = ""
             try:
                 for target in order:
@@ -759,10 +1203,12 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                     swapped.append(target)
                 for target in order:
                     _renew(target, loader, staged_fp.get(target.name, ""))
+                _rewrite_bundles(bundle_moves, rewritten)
             except Exception as exc:
                 failure = f"{type(exc).__name__}: {exc}"
                 logger.warning("skill batch %s: swap failed; rolling back %d skill(s)", batch_id, len(swapped),
                                exc_info=True)
+                bundles_stuck = _restore_bundles(rewritten)
                 undone, stuck = [], []
                 for target in reversed(swapped):
                     try:
@@ -776,6 +1222,12 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                                      f"touched skill was put back as it was ({failure})",
                                      hints=["nothing changed; the batch can be sent again"]).payload(
                                          rolled_back=list(reversed(undone)))
+                if rewritten:
+                    payload["bundles_rolled_back"] = [str(p) for p, _d in rewritten if str(p) not in bundles_stuck]
+                if bundles_stuck:
+                    payload["bundles_not_rolled_back"] = bundles_stuck
+                    payload["detail"] = (f"the batch failed and the bundle file(s) {', '.join(bundles_stuck)} could "
+                                         f"not be put back ({failure})")
                 if stuck:
                     keep = True
                     payload["not_rolled_back"] = stuck
@@ -793,10 +1245,19 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                         except OSError:
                             logger.warning("skill batch: the old %s could not be archived", target.name,
                                            exc_info=True)
+                # H330: a rewritten bundle's old bytes go beside the old folders, so the whole
+                # batch can be undone from the archive.
+                for path, data in rewritten:
+                    try:
+                        (backup / "bundles").mkdir(parents=True, exist_ok=True)
+                        (backup / "bundles" / Path(path).name).write_bytes(data)
+                    except OSError:
+                        logger.warning("skill batch: the old bundle %s could not be archived", path, exc_info=True)
             _reload(loader, order)
             _note_patched(loader, order)
+            _note_created(loader, order, actor)
             return {"ok": True, "applied": True, "dry_run": False, "batch_id": batch_id, "operations": len(ops),
-                    "skills": summary, **({"backup": str(backup)} if backup else {})}
+                    "skills": summary, **report, **({"backup": str(backup)} if backup else {})}
         finally:
             if not keep:
                 _cleanup(list(targets.values()))
@@ -823,7 +1284,12 @@ class SkillBatchStore(JsonStore):
         items = raw.get("batches", {}) if isinstance(raw, dict) else {}
         self._items = items if isinstance(items, dict) else {}
 
-    def propose(self, operations: list[dict], *, expect: dict, preview: list[dict], origin: str) -> dict:
+    def propose(self, operations: list[dict], *, expect: dict, preview: list[dict], origin: str,
+                references: list[dict] | None = None, bundle_pins: dict[str, str] | None = None) -> dict:
+        """Record a checked batch. ``references`` (H330) is what its deletes migrate and
+        leave, as the dry run found them: the owner reviews it with the diffs. The bundles
+        it migrates (``bundle_pins``: slug to the members' digest the dry run saw) are the
+        only ones the applied batch may rewrite, and only while they are unchanged."""
         with self._lock:
             for rec in self._items.values():
                 if (rec.get("status") == STATUS_PENDING and rec.get("operations") == operations
@@ -832,6 +1298,10 @@ class SkillBatchStore(JsonStore):
             bid = f"sb-{uuid.uuid4().hex[:10]}"
             rec = {"id": bid, "origin": origin, "operations": operations, "expect": expect,
                    "skills": list(expect), "preview": preview, "status": STATUS_PENDING, "ts": time.time()}
+            if references:
+                rec["references"] = references
+            if bundle_pins:
+                rec["bundle_pins"] = dict(bundle_pins)
             self._items[bid] = rec
             self._save()
             return dict(rec)
@@ -887,7 +1357,9 @@ class SkillBatchStore(JsonStore):
                         logger.debug("superseded batch card %s not withdrawn", older["card"], exc_info=True)
 
     def decide(self, batch_id: str, card: str, queue: Any, loader: Any, *, create_root: Path | None = None,
-               backup_dir: Path | None = None) -> dict:
+               backup_dir: Path | None = None, holders: Any = None,
+               delete_gate: Callable[[dict], str] | None = None,
+               write_gate: Callable[[dict], str] | None = None) -> dict:
         """The owner's decision on ``card``, read from the approval ``queue`` itself (never
         from a caller's claim — review-H665 #2): an approved card applies the batch now,
         against the trees it was checked on; a rejected or expired card closes it. Only the
@@ -908,8 +1380,17 @@ class SkillBatchStore(JsonStore):
             if status != "approved":
                 self.mark(batch_id, STATUS_REJECTED)
                 return {"ok": True, "applied": False, "status": STATUS_REJECTED}
+            # H330: the bundles a governed batch may rewrite are the ones its review showed,
+            # pinned to the members it showed them with.
+            shown: dict[str, str | None] = {str(m.get("slug")): None for ref in rec.get("references") or []
+                                            for m in ref.get("migrated") or [] if m.get("holder") == "bundle"}
+            pins = rec.get("bundle_pins")
+            if isinstance(pins, dict):
+                shown.update({str(k): str(v) for k, v in pins.items()})
             out = run_batch(rec["operations"], loader, create_root=create_root, backup_dir=backup_dir,
-                            expect=rec.get("expect") or {})
+                            expect=rec.get("expect") or {}, actor=str(rec.get("origin") or "agent"),
+                            allow_bundles=shown, exclude_batch=batch_id, holders=holders, delete_gate=delete_gate,
+                            write_gate=write_gate)
             if out.get("ok"):
                 self.mark(batch_id, STATUS_APPLIED, backup=out.get("backup"))
             else:

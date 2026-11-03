@@ -71,6 +71,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # mediated — it must always be able to release a halt.)
     "admin.kill_switch": Mediation.KERNEL,
     "admin.capability_issue": Mediation.KERNEL,
+    # H202 — the owner's roster: creating, renaming, retiring or restoring an agent changes
+    # who answers, so each crosses the kernel (in addition to admin_guard) through the same
+    # admin helper: a halt or a refused token denies it before the roster is touched.
+    "admin.agent_roster": Mediation.KERNEL,
     # Wave 3/4b — externally-driven KG writes (the /api/kg/* mutating HTTP handlers) are
     # mediated with a MANDATORY capability token (kernel.TOKEN_MANDATORY_KINDS); the
     # high-frequency *internal* ingestion path (incremental.ingest from
@@ -110,6 +114,13 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # PromotionProposal exists (make_skill_install_kernel_gate); even a kernel
     # GRANT cannot bypass the permanent owner-approval floor (GAP-3).
     "skill.install": Mediation.KERNEL,
+    # H330 — every write of a skill's bytes crosses the kernel before they move: a skill
+    # batch's create/patch/file write/related_skills migration/bundle rewrite, an approved
+    # SKILL.md proposal, a generated (quarantined) skill, and the owner's promotion of one
+    # to executable (approve_generated_skill), which until now was admin_guard'd only.
+    # The skill.generation contract, the CDX-8 quarantine and the owner's approval stay
+    # around it (make_skill_generation_kernel_gate).
+    "skill.generation": Mediation.KERNEL,
     "plugin.load": Mediation.KERNEL,
     "provider.credential": Mediation.KERNEL,
     "provider.selection": Mediation.KERNEL,
@@ -173,6 +184,8 @@ def known_broker_action_kinds() -> set[str]:
     kinds.add(CHANNEL_REPLY_TASK_KIND)
     from ..skills.marketplace import SKILL_INSTALL_CONTRACT_KIND
     kinds.add(SKILL_INSTALL_CONTRACT_KIND)
+    from ..skills.loader import SKILL_GENERATION_CONTRACT_KIND
+    kinds.add(SKILL_GENERATION_CONTRACT_KIND)
     from ..llm.providers.packages import KIND as PROVIDER_LOAD_KIND
     kinds.add(PROVIDER_LOAD_KIND)
     from ..voice.command_settings import APPROVAL_KIND as VOICE_COMMAND_KIND

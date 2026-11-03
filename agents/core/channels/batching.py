@@ -150,8 +150,12 @@ class AsyncBatcher:
     def __init__(self, deliver: Callable[[Hashable, str, dict], Awaitable[Any]],
                  window: float = WINDOW_SECONDS, hard_cap: float = HARD_CAP_SECONDS, *,
                  max_pending: int = MAX_PENDING,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 beside: Callable[[Hashable, str, dict], bool] | None = None) -> None:
         self._deliver = deliver
+        # H058: a command for which ``beside(key, text, meta)`` is True (one its sender may
+        # not run here) is delivered at once, like a /btw, never behind the key's turn.
+        self._beside = beside
         self._batch = Coalescer(window, hard_cap, clock=clock)
         self._max_pending = max(1, int(max_pending))
         self._meta: dict[Hashable, dict] = {}
@@ -176,9 +180,10 @@ class AsyncBatcher:
         if not self._batch.enabled:
             return await self._deliver(key, text, dict(meta))
         generation = self._generation
-        if side_question_command_name(text) is not None:
+        if side_question_command_name(text) is not None or self._refused_beside(key, text, meta):
             # H414: a /btw is asked beside the running work, so it does not wait for the
-            # key's running turn; pieces still held go out on their own timer.
+            # key's running turn; pieces still held go out on their own timer. H058: nor does
+            # a command its sender may not run here — it changes nothing; its refusal is now.
             return await self._deliver(key, text, dict(meta))
         if is_command(text):
             await self.flush(key)
@@ -195,6 +200,17 @@ class AsyncBatcher:
             task = self._timers[key] = asyncio.create_task(self._timer(key))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
+
+    def _refused_beside(self, key: Hashable, text: str, meta: dict) -> bool:
+        # Plain text is asked too: a custom ``sessions.reset_triggers`` text ("start over")
+        # is an owner command no ``/`` marks, and only the hub knows the triggers.
+        if self._beside is None:
+            return False
+        try:
+            return self._beside(key, text, dict(meta)) is True
+        except Exception:
+            logger.warning("command access probe unavailable; the command keeps its place", exc_info=True)
+            return False
 
     async def _timer(self, key: Hashable) -> None:
         while True:

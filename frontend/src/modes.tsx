@@ -4,14 +4,19 @@ import { Icon, ICONS, Glyph, statusClass } from './ui';
 import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch, decidePayment, getAuditVerify } from './api/actions';
 import { MemoryNeighborhood } from './panels/memory-neighborhood';
 import { SoulEditor } from './soul-edit';
+import { AgentProfileControls, NewAgentDialog, RetiredAgents } from './agent-roster';
 /* HUD v2 · MODES — Agents, Trust, Memory */
 
 // Bolt Optimization: Precompute O(1) agent map for Dossier lookups
 const V2_AGENTS_MAP = new Map(V2.AGENTS.map((a: any) => [a.id, a]));
 
 /* ============ AGENTS ============ */
-function AgentsMode({ agents, onOpen, t }) {
+function AgentsMode({ agents, onOpen, t, onChanged = undefined }) {
   const TIERS = V2.TIERS;
+  // H202: the owner's roster — a new agent (kept across restarts) and the retired ones.
+  const [creating, setCreating] = useState(false);
+  const [rosterTick, setRosterTick] = useState(0);
+  const [createdNote, setCreatedNote] = useState('');
 
   // Bolt Optimization: Pre-group agents by tier and count live agents in a single pass to eliminate O(N) filtering per tier
   const { agentsByTier, liveCount } = useMemo(() => {
@@ -33,7 +38,12 @@ function AgentsMode({ agents, onOpen, t }) {
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} agents · {liveCount} live</span></div>
+      <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} agents · {liveCount} live</span>
+        {!creating && <button className="tool-btn" onClick={()=>{ setCreating(true); setCreatedNote(''); }}>+ New agent</button>}</div>
+      {creating && <div style={{padding:'0 14px'}}><NewAgentDialog
+        onCreated={(a)=>{ setCreating(false); setCreatedNote(`created ${a.name || a.id} · kept across restarts`); setRosterTick((n)=>n+1); onChanged?.(); }}
+        onCancel={()=>setCreating(false)}/></div>}
+      {createdNote && <div role="status" style={{padding:'4px 14px',fontSize:10,color:'var(--green)'}}>{createdNote}</div>}
       {/* `overflow-y:auto` with no focusable child is WCAG 2.1.1: the agent cards are
           `<div className="acard" onClick=…>`, so there is nothing to tab to and the roster
           scrolls past the fold unreachable by keyboard (measured 774px of content in a
@@ -72,27 +82,34 @@ function AgentsMode({ agents, onOpen, t }) {
             </div>
           );
         })}
+        <RetiredAgents refresh={rosterTick} onRestored={()=>{ setRosterTick((n)=>n+1); onChanged?.(); }}/>
       </div>
     </div>
   );
 }
 
-function Dossier({ id, onClose, onOpen }) {
+function Dossier({ id, onClose, onOpen, agents = undefined, onChanged = undefined }) {
   // Soul + run-history are LIVE (as v1 does): GET /api/agents/{id}/soul reads the
   // on-disk SOUL.md, /api/agents/{id}/history rolls up recent runs. The seed dossier
   // (archetype/personality/runtime) is the static fallback for fields with no single
   // backend source; the real SOUL.md overrides the seeded soul blurb when it loads.
   const d = V2.DOSSIER[id] || {};
   // Bolt Optimization: O(1) Map lookup for agent details instead of O(N) array search
-  const a = V2_AGENTS_MAP.get(id);
+  // H202: the live roster row wins (a renamed agent's name), and an agent the owner
+  // created — which the seed corpus never knew — still has a dossier.
+  const live = Array.isArray(agents) ? agents.find((x) => x && x.id === id) : undefined;
+  const seed = V2_AGENTS_MAP.get(id);
+  const a = live ? { ...(seed || {}), ...live } : seed;
   const [soul,setSoul]=useState(null);   // real SOUL.md text (null = not loaded → seed)
   const [description,setDescription]=useState('');   // H156: the front-matter description
   const [editing,setEditing]=useState(false);        // H156: the persona editor is open
   const [runs,setRuns]=useState(null);   // real run history ([] = none, null = unloaded)
+  const [renamed,setRenamed]=useState('');           // H202: the name a rename just saved
   useEffect(() => {
     if(!id) return;
     let alive = true;
     setEditing(false);
+    setRenamed('');
     getAgentSoul(id).then((r) => { if(alive && r && r.soul) { setSoul(r.soul); setDescription(r.description || ''); } }).catch(() => {});
     getAgentHistory(id).then((r) => { if(alive && r && Array.isArray(r.runs)) setRuns(r.runs); }).catch(() => {});
     return () => { alive = false; };
@@ -107,10 +124,16 @@ function Dossier({ id, onClose, onOpen }) {
       <div className="dossier">
         <div className="dossier-head">
           <span className="big-glyph"><Glyph id={id} size={46}/></span>
-          <div><div className="nm">{a.name}</div><div className="ar">{d.archetype || a.role} · {a.tier}</div></div>
+          <div><div className="nm">{renamed || a.name}</div><div className="ar">{d.archetype || a.role} · {a.tier}</div></div>
           <button className="close" onClick={onClose} aria-label="Close dossier">✕</button>
         </div>
         <div className="dossier-body">
+          {/* H202: rename for good, or retire (nothing deleted), beside the persona editor. */}
+          <div className="dsec"><div className="dl">Profile · {id}</div>
+            <AgentProfileControls id={id} name={renamed || a.name}
+              onRenamed={(n)=>{ setRenamed(n); onChanged?.(); }}
+              onRetired={()=>{ onChanged?.(); onClose(); }}/>
+          </div>
           {description && <div className="dsec"><div className="dl">Description</div><div className="dtx">{description}</div></div>}
           <div className="dsec"><div className="dl">Soul{soul!=null?' · SOUL.md':''}
             {soul!=null && !editing && <button className="tool-btn" style={{marginLeft:8}} onClick={()=>setEditing(true)}>Edit persona</button>}</div>

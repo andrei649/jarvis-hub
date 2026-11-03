@@ -29,6 +29,7 @@ from agents.core.channels.voice_mode import (
     wants_voice,
 )
 from agents.core.commands import Principal, build_default_registry
+from tests.h058_access_fixture import user_tier_allowed  # noqa: F401 — a fixture (H058: the owner allowed /voice)
 
 # ── the decision ────────────────────────────────────────────────────────────
 
@@ -147,7 +148,7 @@ async def _voice(args="", principal=CHAT):
 
 
 @pytest.mark.asyncio
-async def test_voice_shows_the_mode_and_names_the_engine_that_would_speak(modes, cloud_tts):
+async def test_voice_shows_the_mode_and_names_the_engine_that_would_speak(modes, cloud_tts, user_tier_allowed):
     outcome = await _voice()
     assert outcome.status == "answered"
     assert "off" in outcome.reply and "text only" in outcome.reply
@@ -155,7 +156,7 @@ async def test_voice_shows_the_mode_and_names_the_engine_that_would_speak(modes,
 
 
 @pytest.mark.asyncio
-async def test_voice_sets_the_mode_for_this_chat_only(modes, cloud_tts):
+async def test_voice_sets_the_mode_for_this_chat_only(modes, cloud_tts, user_tier_allowed):
     outcome = await _voice("voice")
     assert outcome.status == "answered" and "now voice" in outcome.reply
     assert modes.get("telegram", "42") == VOICE
@@ -167,7 +168,7 @@ async def test_voice_sets_the_mode_for_this_chat_only(modes, cloud_tts):
 
 
 @pytest.mark.asyncio
-async def test_voice_refuses_an_unknown_mode_and_changes_nothing(modes, cloud_tts):
+async def test_voice_refuses_an_unknown_mode_and_changes_nothing(modes, cloud_tts, user_tier_allowed):
     outcome = await _voice("loud")
     assert outcome.status == "answered" and "Unknown voice mode" in outcome.reply
     assert "Usage: /voice off | voice | always." in outcome.reply
@@ -183,7 +184,7 @@ async def test_voice_says_so_when_there_is_no_chat_to_set_it_for(modes, cloud_tt
 
 
 @pytest.mark.asyncio
-async def test_voice_is_honest_about_a_host_with_no_speech_engine(modes, monkeypatch):
+async def test_voice_is_honest_about_a_host_with_no_speech_engine(modes, monkeypatch, user_tier_allowed):
     monkeypatch.setattr(SpokenReply, "_engines", staticmethod(lambda: (False, False)))
     outcome = await _voice("voice")
     assert modes.get("telegram", "42") == VOICE, "the wish is recorded"

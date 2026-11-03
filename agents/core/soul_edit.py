@@ -98,18 +98,26 @@ def description_in(content: str) -> str:
 
 
 def agent_folder(agent_id: str) -> str | None:
-    """*agent_id* when it names a folder under the app's ``agents/`` — the enumerated name,
-    so no request value reaches a path."""
-    from .paths import app_root
+    """*agent_id* when it names a folder under the app's ``agents/`` — or, for an agent the
+    owner created (H202, ``agent_roster``), its persona folder under the data home's
+    ``souls/`` — as the enumerated name, so no request value reaches a path."""
+    from .paths import app_root, user_souls_dir
 
     ident = str(agent_id or "").strip().lower()
     if not AGENT_ID_RE.match(ident):
         return None
-    base = app_root() / "agents"
-    try:
-        return next((d.name for d in base.iterdir() if d.is_dir() and d.name == ident), None)
-    except OSError:
-        return None
+    bases = [app_root() / "agents"]
+    souls = user_souls_dir()
+    if souls is not None:
+        bases.append(souls)
+    for base in bases:
+        try:
+            found = next((d.name for d in base.iterdir() if d.is_dir() and d.name == ident), None)
+        except OSError:
+            continue
+        if found is not None:
+            return found
+    return None
 
 
 def overlay_path(agent_id: str) -> tuple[Path, str]:
@@ -203,22 +211,32 @@ def apply_soul(orch: Any, agent_id: str, content: Any, *, message: str = "", aut
 def _audit(orch: Any, agent_id: str, entry: dict | None, content: str, action: str) -> None:
     import hashlib
 
-    audit = getattr(orch, "audit", None)
-    if audit is None:
-        return
-    from .security.types import SecurityEvent, SecurityEventType
-
     digest = entry["hash"] if entry else hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
     version = f"v{entry['version']}" if entry else "unversioned"
+    audit_change(orch, f"persona {agent_id} {action}: {version} sha256:{digest} ({len(content)} chars)",
+                 f"soul_{action}")
+
+
+def audit_change(orch: Any, preview: str, action_taken: str) -> bool:
+    """One SETTINGS_CHANGE row in the hub's security audit (the persona's apply and the
+    roster's create, rename, retire and restore, H202): *preview* names what changed, never
+    persona text. False when there is no audit log or the row could not be written."""
+    audit = getattr(orch, "audit", None)
+    if audit is None:
+        return False
+    from .security.types import SecurityEvent, SecurityEventType
+
     try:
         audit.log(SecurityEvent(
             event_type=SecurityEventType.SETTINGS_CHANGE,
             timestamp=time.time(),
-            content_preview=f"persona {agent_id} {action}: {version} sha256:{digest} ({len(content)} chars)",
-            action_taken=f"soul_{action}",
+            content_preview=preview,
+            action_taken=action_taken,
         ))
     except Exception:
-        logger.warning("the persona change for %s could not be audited", agent_id, exc_info=True)
+        logger.warning("the change %r could not be audited", action_taken, exc_info=True)
+        return False
+    return True
 
 
 def record_version(orch: Any, agent_id: str, entry: dict | None, action: str) -> None:
@@ -276,6 +294,6 @@ async def draft_description(orch: Any, agent_id: str) -> str:
 
 __all__ = [
     "DESCRIPTION_CHARS", "MAX_SOUL_BYTES", "SoulEditError", "agent_folder", "apply_soul",
-    "description_in", "description_of", "draft_description", "guard_verdict", "overlay_path",
-    "record_version",
+    "audit_change", "description_in", "description_of", "draft_description", "guard_verdict",
+    "overlay_path", "record_version",
 ]

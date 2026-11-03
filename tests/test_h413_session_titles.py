@@ -22,6 +22,7 @@ from agents.core import session_titles as st
 from agents.core import settings_db
 from agents.core.checkpoint import CheckpointManager
 from agents.core.llm.providers import get_profile
+from tests.h058_access_fixture import user_tier_allowed  # noqa: F401 — a fixture (H058: the owner allowed /sessions)
 from tests.h441_native_fixture import bind_native
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # golden_harness lives beside the tests
@@ -847,7 +848,7 @@ async def test_the_sessions_command_shows_the_owner_each_title():
 
 @pytest.mark.parametrize("principal", [{"channel": "widget"}, {"channel": "telegram", "sender": "guest"},
                                        {"channel": "web"}])
-async def test_the_sessions_command_shows_no_title_to_anyone_else(principal):
+async def test_the_sessions_command_shows_no_title_to_anyone_else(principal, user_tier_allowed):
     """A title is the opening words of the owner's conversation: a widget visitor or a
     paired guest sees the ids and times /sessions always showed, never the words."""
     from agents.core.commands import Principal, build_default_registry

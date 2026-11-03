@@ -205,6 +205,9 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [sources, setSources] = useState({ tasks: false, trust: false });
   const [locality, setLocality] = useState(null); // {local_pct} from real runs, or null
   const baseAgents = useRef(demo ? V2.AGENTS : []);
+  // H202: a roster change (create, rename, retire, restore) refreshes the live data now,
+  // not at the next 30 s poll.
+  const refreshNow = useRef<() => void>(() => {});
 
   const clock = useClock();
   const t = V2.I18N[lang];
@@ -629,8 +632,9 @@ function App({ floating = false, shortcuts, onWorld }: {
       commitLocality: (nextLocality) => setLocality(nextLocality),
     });
     void runner.refresh();
+    refreshNow.current = () => { void runner.refresh(); };
     const iv = setInterval(() => { void runner.refresh(); }, 30000);
-    return () => { runner.stop(); clearInterval(iv); };
+    return () => { refreshNow.current = () => {}; runner.stop(); clearInterval(iv); };
   }, [demo]);
   const dismissDecision = (id) => setDecisions((ds) => ds.filter((d) => d._id !== id));
 
@@ -720,7 +724,7 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             ) : mode === 'agents' ? (
               <div className="workzone wide" style={{ flex: 1, minHeight: 0 }}>
-                <AgentsMode agents={agents} onOpen={selectAgent} t={t} />
+                <AgentsMode agents={agents} onOpen={selectAgent} t={t} onChanged={() => refreshNow.current()} />
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
               </div>
             ) : mode === 'chat' ? (
@@ -741,7 +745,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       </div>
 
       {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
-      {dossier && <RouteBoundary overlay><Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} /></RouteBoundary>}
+      {dossier && <RouteBoundary overlay><Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} agents={agents} onChanged={() => refreshNow.current()} /></RouteBoundary>}
       {consoleOpen && <RouteBoundary overlay routeKey={`${route.path}:${demo}`}><ConsoleOverlay panelId={route.panel} onClose={() => setConsoleOpen(false)} /></RouteBoundary>}
       {firstRun && <RouteBoundary overlay><FirstRunGate onClose={() => setFirstRun(false)} /></RouteBoundary>}
       {!floating && <PointerOverlay enabled={!demo} />}

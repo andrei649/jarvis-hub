@@ -691,8 +691,12 @@ def preview_envelope(
     spill: SpilledResult,
     preview_chars: int = PREVIEW_CHARS,
     page_bytes: int = DEFAULT_PAGE_BYTES,
+    extra: Mapping[str, object] | None = None,
 ) -> str:
     """The bounded thing the model sees, with the footer that names the full copy.
+
+    ``extra`` adds the caller's own top-level keys (never the result's): the tool loop
+    keeps whose skill text a spilled ``skill_view`` answer held this way (H389).
 
     The footer is an instruction the model can follow verbatim (H661): the exact
     ``file_read`` call, path filled in, as text in ``notice`` and as arguments in
@@ -736,6 +740,7 @@ def preview_envelope(
         payload["read_with"] = {"tool": recipe["tool"], "arguments": recipe["arguments"]}
     if not ok and isinstance(reason, str):
         payload["reason"] = reason[:120]
+    payload.update(extra or {})
     return json.dumps(payload, ensure_ascii=False, allow_nan=False)
 
 

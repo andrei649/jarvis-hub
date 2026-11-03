@@ -19,6 +19,7 @@ import pytest
 from agents.core.memory import turn_tools
 from agents.core.memory.conversation import ConversationMemory, Turn
 from agents.core.memory.recap import DEFAULT_EXCHANGES, MAX_EXCHANGES, render_recap, tool_line
+from tests.h058_access_fixture import user_tier_allowed  # noqa: F401 — a fixture (H058: the owner allowed /recap)
 
 
 @pytest.fixture(autouse=True)
@@ -269,7 +270,7 @@ def _cmd_orch(turns, session="s-1", shared=False):
 
 
 @pytest.mark.asyncio
-async def test_slash_recap_answers_in_any_channel_without_a_model():
+async def test_slash_recap_answers_in_any_channel_without_a_model(user_tier_allowed):
     from agents.core.commands import Principal, build_default_registry
 
     guest = Principal(channel="telegram", sender="7", admin=False)
@@ -387,7 +388,7 @@ def test_a_widget_visitor_a_webhook_and_mcp_cannot_recap_the_owners_conversation
 
 
 @pytest.mark.asyncio
-async def test_a_guest_on_the_shared_session_is_refused_before_anything_is_read():
+async def test_a_guest_on_the_shared_session_is_refused_before_anything_is_read(user_tier_allowed):
     from agents.core.commands import Principal, build_default_registry
 
     class _Unread:

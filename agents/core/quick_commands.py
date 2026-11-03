@@ -59,19 +59,33 @@ def configured() -> dict:
     return {name.lower(): spec for name, spec in value.items()} if configuration_problem(value) is None else {}
 
 
+def _names(raw, name: str) -> bool:
+    return type(raw) is dict and any(type(key) is str and key.lower() == name for key in raw)
+
+
+def named(name: str) -> bool:
+    """Whether the owner's stored quick commands name ``/name`` — a stored value that
+    fails validation included: dispatch refuses such a name, and H058 judges it first."""
+    return _names(settings_db.get_value("commands", "quick_commands", {}), name)
+
+
 async def dispatch_quick(registry, name, args, *, text, orch, principal, seen):
     from .commands import CommandOutcome
+    from .slash_access import refusal
 
     raw = settings_db.get_value("commands", "quick_commands", {})
+    if not _names(raw, name):
+        return None
+    # H058: quick commands are never in the registry, so the access gate is asked again
+    # here on the raw typed name (Hermes #44727) — before any configuration or input
+    # check, so a non-owner gets the audited denial, never a reply about the owner's
+    # store; an alias target is judged once more when it re-enters the registry below.
+    denied = await refusal(registry, name, orch=orch, principal=principal, quick=True)
+    if denied is not None:
+        return denied
     if configuration_problem(raw) is not None:
-        if type(raw) is dict and any(type(key) is str and key.lower() == name for key in raw):
-            return CommandOutcome(name, "refused", "Invalid quick-command configuration; nothing changed.")
-        return None
+        return CommandOutcome(name, "refused", "Invalid quick-command configuration; nothing changed.")
     mapping = {key.lower(): spec for key, spec in raw.items()}
-    if name not in mapping:
-        return None
-    if not principal.admin:
-        return CommandOutcome(name, "refused", f"/{name} is an owner command.")
     if name in seen or len(seen) >= 8 or len(text.strip()) > _MAX_TEXT:
         return CommandOutcome(name, "refused", "Quick-command alias cycle or oversized input; nothing changed.")
     spec = mapping[name]

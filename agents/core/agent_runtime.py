@@ -58,6 +58,8 @@ from .llm.tool_protocol import (
 )
 from .native_human_wait import current_human_wait_scope, runtime_human_wait_scope
 from .security.quarantine import (
+    fence_flags,
+    fence_text,
     fence_tool_result,
     injection_flag_names,
     split_fenced_tool_result,
@@ -783,8 +785,8 @@ class AgentToolRuntime:
         # this loop, or carried in the prompt from an earlier turn) answers with a pointer.
         # The loop runs in its own copy of the turn's context (_run_turn), so this binding
         # ends with it.
-        from .skills.tools import bind_transcript
-        bind_transcript(messages[0]["content"], prompt)
+        from .skills.tools import bind_transcript, with_pruned_skill_notice
+        bind_transcript(messages[0]["content"], prompt, messages=messages)
         from . import trajectory  # H652: what the model saw, step by step (opt-in, never raises)
         trajectory.note_system(messages[0]["content"])
         trajectory.note_tools(tools)  # the definitions sent as the provider's ``tools=``
@@ -841,6 +843,7 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 event_sink=event_sink,
                 output_risks=output_risks,
+                seen_results=seen_results,
             ):
                 return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
             if len(compacted) > folds_before:
@@ -892,8 +895,11 @@ class AgentToolRuntime:
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
                         if known_window else 0
                     )
-                rebuilt = self._guided_system(system, model=model, agent_id=agent_id,
-                                              metadata=metadata, backend=backend)
+                # H389: the rebuilt prompt keeps the pruned-skill notice the fold put there.
+                rebuilt = with_pruned_skill_notice(
+                    self._guided_system(system, model=model, agent_id=agent_id,
+                                        metadata=metadata, backend=backend),
+                    messages)
                 if rebuilt != messages[0]["content"]:
                     messages[0] = {**messages[0], "content": rebuilt}
                     trajectory.note_system(rebuilt)
@@ -901,9 +907,11 @@ class AgentToolRuntime:
                         messages, compacted, model=model, max_tokens=max_tokens,
                         effective_window=known_window, schema_tokens=schema_tokens,
                         agent_id=agent_id, event_sink=event_sink,
-                        output_risks=output_risks,
+                        output_risks=output_risks, seen_results=seen_results,
                     ):
                         return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
+                else:
+                    trajectory.note_system(messages[0]["content"])   # the fold's own notice
             # H513: every round rechecks revocation after tool/profile awaits.
             # Errors propagate before provider I/O; an unreadable gate never widens.
             if before_model_call is not None:
@@ -1180,6 +1188,7 @@ class AgentToolRuntime:
         effective_window: int | None = None,
         schema_tokens: int = 0,
         output_risks: dict[int, ToolOutputRisk] | None = None,
+        seen_results: dict[str, str] | None = None,
     ) -> bool:
         """Fold older tool results into bounded envelopes until the transcript fits.
 
@@ -1187,6 +1196,21 @@ class AgentToolRuntime:
         assistant call that made it, which is what every provider validates — only their
         content shrinks. The most recent ``compaction_keep_recent`` iterations are folded last.
         Returns False when the transcript still exceeds the budget with everything folded.
+
+        H389: a ``skill_view`` result that served a skill's text folds to a
+        ``[SKILL_PRUNED: <name> ...]`` marker (``skills.tools.pruned_skill_content``), never
+        to a preview of the body — whether it was inserted whole or bounded/spilled
+        (``_prepare_result`` keeps ``skill_copy`` on that envelope), and so do the
+        ``file_read`` pages of such a spill (``skills.tools.skill_text_pages``). The system
+        prompt then carries the reload notice and the rule against acting on a pruned body
+        (``skills.tools.with_pruned_skill_notice``), counted in what must fit.
+
+        ``seen_results`` is the loop's dedup map (``_dedupe_result``: fingerprint → the
+        call whose row holds those bytes). A committed fold drops every fingerprint whose
+        row it replaced: a "same as call N" stub must point at a row that still holds the
+        bytes, and a folded row (a preview or a ``[SKILL_PRUNED]`` marker) no longer does,
+        so a repeat of it is served whole again — the reload a pruned skill's notice asks
+        for included, however many times the same skill is pruned in one loop.
         """
         from .conversation_clock import active_clock
         binding = active_clock()
@@ -1229,44 +1253,90 @@ class AgentToolRuntime:
         used = before
         folded = 0
         replacement_risks: dict[int, ToolOutputRisk] = {}
-        for positions in (
-            [index for index in candidates if index < protected_from],
-            [index for index in candidates if index >= protected_from],
-        ):
-            for index in positions:
-                if used <= budget:
-                    break
-                compacted.add(index)
-                message = messages[index]
-                content = message.get("content")
-                encoded = content if isinstance(content, str) else json.dumps(content, default=str)
-                if len(encoded.encode("utf-8")) <= self._compacted_result_bytes:
+        from .skills.tools import (
+            MAX_PRUNED_SKILLS,
+            TOOL_VIEW,
+            pruned_skill_content,
+            skill_text_pages,
+            with_pruned_skill_notice,
+            without_pruned_skill_notice,
+        )
+        # H389: the calls whose results are skill_view answers, and the file_read calls that
+        # paged a skill_view answer spilled at insertion. A skill's text this fold reaches
+        # (served whole, bounded or spilled at insertion, or one of the spill's pages)
+        # becomes a [SKILL_PRUNED] marker, never a preview of that text.
+        skill_views = {
+            call.get("id")
+            for message in messages if message.get("role") == "assistant"
+            for call in (message.get("tool_calls") or ())
+            if isinstance(call, dict) and isinstance(call.get("function"), dict)
+            and call["function"].get("name") == TOOL_VIEW
+        }
+        skill_pages = skill_text_pages(messages)
+
+        def fold_pass() -> None:
+            nonlocal used, folded
+            for positions in (
+                [index for index in candidates if index < protected_from],
+                [index for index in candidates if index >= protected_from],
+            ):
+                for index in positions:
+                    if used <= budget:
+                        return
+                    if index in compacted:
+                        continue
+                    compacted.add(index)
+                    message = messages[index]
+                    content = message.get("content")
+                    encoded = content if isinstance(content, str) else json.dumps(content, default=str)
+                    if len(encoded.encode("utf-8")) <= self._compacted_result_bytes:
+                        if message.get("images"):
+                            # H297: a small text can carry megabytes of images; folding
+                            # it still detaches them (the descriptors stay).
+                            replacement = _image_trimmed(message, [], "compacted")
+                            messages[index] = replacement
+                            risk = output_risks.get(id(message)) if output_risks is not None else None
+                            if risk is not None:
+                                replacement_risks[id(replacement)] = risk
+                            folded += 1
+                            used = _window_estimate(messages)
+                        continue
+                    risk = output_risks.get(id(message)) if output_risks is not None else None
+                    if risk is not None and risk.upstream_elided and encoded.startswith(COMPLETENESS_NOTICE):
+                        encoded = encoded[len(COMPLETENESS_NOTICE):]
+                    call_id = message.get("tool_call_id")
+                    pruned = (pruned_skill_content(encoded) if call_id in skill_views
+                              else pruned_skill_content(encoded, page_of=skill_pages[call_id])
+                              if call_id in skill_pages else None)
+                    folded_content = pruned if pruned is not None else self._compacted_content(encoded)
+                    if risk is not None and risk.upstream_elided:
+                        folded_content = COMPLETENESS_NOTICE + folded_content
+                    # A folded result drops its images with its bytes (H297).
+                    replacement = {**message, "content": folded_content}
                     if message.get("images"):
-                        # H297: a small text can carry megabytes of images; folding
-                        # it still detaches them (the descriptors stay).
-                        replacement = _image_trimmed(message, [], "compacted")
-                        messages[index] = replacement
-                        risk = output_risks.get(id(message)) if output_risks is not None else None
-                        if risk is not None:
-                            replacement_risks[id(replacement)] = risk
-                        folded += 1
-                        used = _window_estimate(messages)
-                    continue
-                risk = output_risks.get(id(message)) if output_risks is not None else None
-                if risk is not None and risk.upstream_elided and encoded.startswith(COMPLETENESS_NOTICE):
-                    encoded = encoded[len(COMPLETENESS_NOTICE):]
-                folded_content = self._compacted_content(encoded)
-                if risk is not None and risk.upstream_elided:
-                    folded_content = COMPLETENESS_NOTICE + folded_content
-                # A folded result drops its images with its bytes (H297).
-                replacement = {**message, "content": folded_content}
-                if message.get("images"):
-                    replacement = _image_trimmed(replacement, [], "compacted")
-                messages[index] = replacement
-                if risk is not None:
-                    replacement_risks[id(replacement)] = risk.with_context_elided()
-                folded += 1
-                used = _window_estimate(messages)
+                        replacement = _image_trimmed(replacement, [], "compacted")
+                    messages[index] = replacement
+                    if risk is not None:
+                        replacement_risks[id(replacement)] = risk.with_context_elided()
+                    folded += 1
+                    used = _window_estimate(messages)
+
+        fold_pass()
+        # H389: a fold that pruned a skill's served text puts the reload notice and the rule
+        # against acting on a pruned body in the system prompt — part of what must fit, so a
+        # notice that does not fit folds further (each round can only name more skills).
+        for _round in range(MAX_PRUNED_SKILLS + 1):
+            if not folded:
+                break
+            noticed = with_pruned_skill_notice(messages[0]["content"], messages)
+            if noticed is messages[0]["content"]:
+                break
+            messages[0] = {**messages[0], "content": noticed}
+            used = _window_estimate(messages)
+            folds_so_far = folded
+            fold_pass()
+            if folded == folds_so_far:
+                break
         exhausted = used > budget
         if not exhausted and folded:
             from .conversation_clock import _active_clock, render_snapshot
@@ -1277,7 +1347,10 @@ class AgentToolRuntime:
                 manager, snapshot = binding.manager, binding.snapshot
                 now = max(datetime.now(UTC), snapshot.rebuilt_at.astimezone())
                 proposed = replace(snapshot, rebuilt_at=now, revision=snapshot.revision + 1)
-                messages[0] = {**messages[0], "content": render_snapshot(messages[0]["content"], proposed)}
+                # The clock is the prompt's trailing block: the H389 notice is set aside
+                # while it is rendered and put back after it.
+                clocked = render_snapshot(without_pruned_skill_notice(messages[0]["content"]), proposed)
+                messages[0] = {**messages[0], "content": with_pruned_skill_notice(clocked, messages)}
                 if _window_estimate(messages) > budget:
                     return False
                 committed = manager.commit_clock(snapshot, json.dumps(messages, sort_keys=True, default=str), now=now)
@@ -1286,6 +1359,14 @@ class AgentToolRuntime:
                 _active_clock.set(replace(binding, snapshot=committed))
                 from .turn_outcome import record_accepted_compression
                 record_accepted_compression(committed.session_id, committed.instance_id)
+            if seen_results:
+                replaced = {
+                    message.get("tool_call_id")
+                    for message, prior in zip(messages, original_messages, strict=True)
+                    if message is not prior and message.get("role") == "tool"
+                }
+                for fingerprint in [key for key, call_id in seen_results.items() if call_id in replaced]:
+                    del seen_results[fingerprint]
             original_messages[:] = messages
             original_compacted.update(compacted)
             from .skills.tools import note_compacted
@@ -1412,17 +1493,9 @@ class AgentToolRuntime:
         ``tainted`` (a tool that computed a per-hit verdict in its child task, which cannot
         reach the turn's ContextVar from there). With no reason the content is returned
         byte-identical. The event carries reasons and flag names, never the content.
+        The decision is :func:`fence_reasons`, which ``skill_view`` also asks (H389).
         """
-        reasons: list[str] = []
-        # A handler's missing-ok error is still external text: classify it as a
-        # failed call for stall/stub policy without downgrading ingress trust.
-        if untrusted and not is_local_refusal(result, call.name):
-            reasons.append("untrusted_tool")
-        fenced, flags = fence_tool_result(content, source=call.name)
-        if flags:
-            reasons.append("injection_flags")
-        if _declares_taint(result):
-            reasons.append("declared_taint")
+        reasons, flags = fence_reasons(call.name, result, content, untrusted=untrusted)
         if not reasons:
             return content
         mark_turn_recall_tainted()
@@ -1436,7 +1509,7 @@ class AgentToolRuntime:
                 "suspicious": bool(flags),
             },
         )
-        return fenced
+        return fence_text(content, source=call.name)
 
     async def _dedupe_result(
         self,
@@ -1895,12 +1968,7 @@ class AgentToolRuntime:
     def _prepare_result(
         self, raw_result: Any, tool_name: str, spent: dict[str, int] | None = None,
     ) -> tuple[dict[str, Any], str]:
-        result = raw_result if _is_strict_json(raw_result) else _non_json(tool_name)
-        try:
-            encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
-        except (TypeError, ValueError):
-            result = _non_json(tool_name)
-            encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
+        result, encoded = encode_result(raw_result, tool_name)
         size = len(encoded.encode("utf-8"))
         # `spent` carries the running turn's window alongside its running total: the
         # runtime is shared between concurrent runs, so the model's window cannot be
@@ -1921,6 +1989,12 @@ class AgentToolRuntime:
 
         ok = isinstance(result, dict) and not _is_failed_result(result)
         reason = _failure_reason(result) if isinstance(result, dict) and not ok else None
+        # H389: a skill_view answer that served a skill's text keeps whose text it was on
+        # the envelope that replaces it, so a later compaction prunes the preview to a
+        # [SKILL_PRUNED] marker instead of folding fragments of the instructions.
+        from .skills.tools import SKILL_COPY_KEY, TOOL_VIEW, skill_copy_tag
+        tag = skill_copy_tag(encoded) if tool_name == TOOL_VIEW else None
+        extra = {SKILL_COPY_KEY: tag} if tag is not None else None
         spill = None
         if self._result_store is not None:
             try:
@@ -1931,7 +2005,7 @@ class AgentToolRuntime:
                 spill = None
         if spill is not None:
             content = preview_envelope(
-                encoded, tool=tool_name, ok=ok, reason=reason, spill=spill)
+                encoded, tool=tool_name, ok=ok, reason=reason, spill=spill, extra=extra)
         else:
             # No store, or the write failed. The old behaviour is still correct — the
             # model gets a bounded, honest answer — it is only lossy.
@@ -1941,6 +2015,7 @@ class AgentToolRuntime:
                 ok=ok,
                 reason=reason,
                 max_bytes=int(min(threshold, self._max_result_bytes)),
+                extra=extra,
             )
         if spent is not None:
             spent["bytes"] = int(spent.get("bytes", 0)) + len(content.encode("utf-8"))
@@ -2085,6 +2160,50 @@ def _declares_taint(result: Any) -> bool:
     """A handler's own dict, wrapped under ``result``, says its content is tainted."""
     inner = result.get("result") if isinstance(result, Mapping) else None
     return isinstance(inner, Mapping) and inner.get("tainted") is True
+
+
+def encode_result(raw_result: Any, tool_name: str) -> tuple[dict[str, Any], str]:
+    """``(result, encoded)``: a ToolRPC answer as the loop encodes it for the transcript
+    (strict JSON only; anything else becomes the ``non_json_result`` refusal)."""
+    result = raw_result if _is_strict_json(raw_result) else _non_json(tool_name)
+    try:
+        return result, json.dumps(result, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError):
+        result = _non_json(tool_name)
+        return result, json.dumps(result, ensure_ascii=False, allow_nan=False)
+
+
+def fence_reasons(
+    tool_name: str, result: Mapping[str, Any], content: str, *, untrusted: bool,
+) -> tuple[list[str], list[str]]:
+    """``(reasons, flags)``: why the loop fences ``content`` — ``result``'s text as it goes
+    into the transcript — as DATA (no reason: it does not), and the injection flags found.
+    ``AgentToolRuntime._fence_result`` fences on exactly this, and ``skill_view`` asks it
+    which reload notice its answer gets (H389), so the two never disagree.
+
+    A ``skill_view`` answer that served a skill's text but was too large for the turn goes
+    in as the loop's bounded or spilled envelope (``_prepare_result``); that copy is scanned
+    on the answer it stands for, not on the cut its preview shows. Its trust is the skill's,
+    whether the turn shows it whole or bounded: a cut can hide a phrase the answer carries,
+    or end a word where it looks like one, and the envelope's other keys are the loop's own
+    words. ``skill_view`` computes the same decision on that same answer."""
+    reasons: list[str] = []
+    # A handler's missing-ok error is still external text: classify it as a
+    # failed call for stall/stub policy without downgrading ingress trust.
+    if untrusted and not is_local_refusal(result, tool_name):
+        reasons.append("untrusted_tool")
+    scanned = content
+    from .skills.tools import TOOL_VIEW, skill_copy_tag
+    if tool_name == TOOL_VIEW and isinstance(result, Mapping):
+        whole = encode_result(dict(result), tool_name)[1]
+        if whole != content and skill_copy_tag(whole) is not None:
+            scanned = whole
+    flags = fence_flags(scanned)
+    if flags:
+        reasons.append("injection_flags")
+    if _declares_taint(result):
+        reasons.append("declared_taint")
+    return reasons, flags
 
 
 def _approval_reply(results: Iterable[Mapping[str, Any]]) -> str:
@@ -2315,8 +2434,10 @@ def _bounded_result_envelope(
     reason: Any,
     max_bytes: int,
     notice: str = _TRUNCATED_NOTICE,
+    extra: Mapping[str, Any] | None = None,
 ) -> str:
-    """Return a complete JSON truncation envelope within ``max_bytes``."""
+    """Return a complete JSON truncation envelope within ``max_bytes``. ``extra`` adds the
+    caller's own top-level keys (never the result's), counted in the bound."""
     raw = encoded.encode("utf-8")
     envelope: dict[str, Any] = {
         "ok": ok,
@@ -2327,6 +2448,7 @@ def _bounded_result_envelope(
     }
     if not ok and isinstance(reason, str):
         envelope["reason"] = _bounded_identity(reason)
+    envelope.update(extra or {})
 
     def render(kept_bytes: int | None = None) -> str:
         payload = dict(envelope)

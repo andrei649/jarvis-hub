@@ -9,6 +9,7 @@ import pytest
 from agents.core import settings_db
 from agents.core.commands import ADMIN, CommandRegistry, Principal, SlashCommand
 from agents.core.tool_rpc import ToolRPCServer
+from tests.h058_access_fixture import allow_user_tier
 from tests.test_session_command_kernel import governed  # noqa: F401
 
 
@@ -39,7 +40,8 @@ async def test_alias_keeps_fixed_and_callsite_arguments_and_skips_the_model(monk
 
 
 @pytest.mark.asyncio
-async def test_builtin_precedence_and_owner_floor(monkeypatch):
+async def test_builtin_precedence_and_owner_floor(monkeypatch, tmp_path):
+    allow_user_tier(monkeypatch, tmp_path, ["echo"])      # H058: the owner lets a guest run /echo
     registry, orch = host({"echo": {"type": "alias", "target": "/owner"},
                            "custom": {"type": "alias", "target": "/owner"}}, monkeypatch)
     assert (await registry.dispatch("/echo safe", orch=orch, principal=GUEST)).reply == "safe"

@@ -16,6 +16,7 @@ from agents.core.commands import (
 )
 from agents.core.routers._deps import user_guard
 from agents.core.routers.commands import router
+from tests.h058_access_fixture import allow_user_tier
 
 
 @pytest.fixture
@@ -98,8 +99,9 @@ def test_empty_live_registry_is_distinct_from_unavailable(catalog, monkeypatch):
     assert response.json() == {"ok": True, "commands": []}
 
 
-def test_catalog_tracks_the_live_registry_after_startup(catalog, monkeypatch):
+def test_catalog_tracks_the_live_registry_after_startup(catalog, monkeypatch, tmp_path):
     client, _ = catalog
+    allow_user_tier(monkeypatch, tmp_path, ["fresh"])      # H058: the owner lets guests run it
     replacement = CommandRegistry()
     replacement.register(SlashCommand("fresh", "Only on this hub", lambda _: "unused"))
     monkeypatch.setattr(web, "orch", SimpleNamespace(commands=replacement))

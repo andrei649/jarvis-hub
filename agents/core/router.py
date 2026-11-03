@@ -22,7 +22,10 @@ The public contract is unchanged so this is a drop-in replacement:
 `await router.classify(text, agents) -> Intent` with `.target_agents` (primary
 first), `.is_general`, `.context["source"|"keywords_found"|...]`, and the
 mutable instance-level `ROUTING_TABLE` that the orchestrator extends when a
-bench agent is promoted.
+bench agent is promoted or the owner creates one, and shrinks when the owner
+retires one (H202). Every stage routes only to agents in that table: a keyword
+rule whose agents are all gone matches nothing, so the turn falls through to
+Jarvis instead of to an agent that is not there.
 """
 
 from __future__ import annotations
@@ -306,6 +309,18 @@ class IntentRouter:
         scores: dict[str, float] = {}
         tags: set[str] = set()
         matched_surfaces: set[str] = set()
+        # H202: only agents still in the wake table can be scored. A rule whose agents
+        # were all retired adds neither a score nor its tag (so no plugin is fetched for
+        # it), and an input that only such rules match is general chat for Jarvis.
+        live = self.ROUTING_TABLE
+
+        def credit(tag: str, agents: list[str], weight: float) -> None:
+            present = [agent for agent in agents if agent in live]
+            if not present:
+                return
+            tags.add(tag)
+            for agent in present:
+                scores[agent] = scores.get(agent, 0.0) + weight
 
         # 1. Exact token matches via O(1) hash map lookup for each input token.
         for tok in token_set:
@@ -313,9 +328,7 @@ class IntentRouter:
             if matches:
                 matched_surfaces.add(tok)
                 for tag, agents, weight in matches:
-                    tags.add(tag)
-                    for agent in agents:
-                        scores[agent] = scores.get(agent, 0.0) + weight
+                    credit(tag, agents, weight)
 
         # 2. Stem prefix matches: check stems against input tokens with length >= _STEM_MIN.
         candidate_tokens = [tok for tok in token_set if len(tok) >= _STEM_MIN]
@@ -325,17 +338,13 @@ class IntentRouter:
                     continue
                 for tok in candidate_tokens:
                     if tok.startswith(stem):
-                        tags.add(tag)
-                        for agent in agents:
-                            scores[agent] = scores.get(agent, 0.0) + weight
+                        credit(tag, agents, weight)
                         break
 
         # 3. Multi-word phrase rules.
         for tag, pattern, agents, weight in self._phrase_rules:
             if pattern.search(normalized):
-                tags.add(tag)
-                for agent in agents:
-                    scores[agent] = scores.get(agent, 0.0) + weight
+                credit(tag, agents, weight)
 
         return scores, tags
 

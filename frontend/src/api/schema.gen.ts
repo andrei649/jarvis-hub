@@ -3750,7 +3750,9 @@ export interface paths {
         /**
          * Approve Generated Skill
          * @description CDX-8: owner-approve a quarantined auto-generated skill — sign + activate it. Only an
-         *     admin can promote LLM-authored code from pending to executable.
+         *     admin can promote LLM-authored code from pending to executable, and the promotion
+         *     crosses the ``skill.generation`` action kernel gate (H330): a halt answers 403
+         *     ``kernel_denied`` and the skill stays quarantined.
          */
         post: operations["approve_generated_skill_api_skills__name__approve_post"];
         delete?: never;
@@ -3869,6 +3871,13 @@ export interface paths {
          *     any failure in the swap puts every touched skill back. ``dry_run`` answers the diffs
          *     without changing anything. A refusal is 422 with the failing operation, hints and a
          *     preview of the file as the batch had it.
+         *
+         *     H330: a delete may share the batch with edits to other skills and name the skill that
+         *     absorbs it (``absorbed_into``); the answer's ``references`` say what was migrated to it
+         *     and what still names the deleted skill. Before any folder moves a delete crosses the
+         *     ``skill.install`` kernel gate and every other write (a create, a patch, a file, a
+         *     related_skills migration, a bundle rewrite) the ``skill.generation`` one; a DENY answers
+         *     422 ``skill_batch_kernel_denied`` and nothing changes.
          */
         post: operations["skills_batch_api_skills_batch_post"];
         delete?: never;
@@ -9125,6 +9134,22 @@ export interface paths {
          *     gap where the task recap (`autonomy/digest.py`) and learnings (`memory/digest.py`)
          *     lived in separate places. Pure read over existing rows; `user_guard`'d because
          *     it surfaces personal facts. `days` defaults to 1 ("today"), clamped 1–30.
+         *
+         *     H046 (the learning timeline `nerva journey` prints): every item carries a stable
+         *     ``entry_id``; ``kind`` keeps one kind of item and ``limit`` (default 50, at most
+         *     500) bounds the newest items returned; ``counts`` always covers the whole window.
+         *     A learned entry is read, edited and deleted by that id under
+         *     ``/api/dashboard/today/entries/{entry_id}``, and ``/api/dashboard/today/entries``
+         *     lists every learned entry whatever its age.
+         *
+         *     H046 review: the learned half is what the assistant really keeps — the facts of the
+         *     two curated rings every prompt carries (the agent's notes and the user profile, which
+         *     the model's ``memory`` tool, the post-turn review and the daily reflection write;
+         *     each dated by when it entered its ring, so a new fact never brings the older ones
+         *     into the window, and one no save dated yet by its ring's last save), the skills it
+         *     learned (dated by when each was learned or changed: created, approved, patched; never
+         *     by a use, a view or a switch-on) and the fact store's rows. ``drift`` says a ring
+         *     file could not be read back.
          */
         get: operations["dashboard_today_api_dashboard_today_get"];
         put?: never;
@@ -9133,6 +9158,77 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/today/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Today Entries
+         * @description Every learned entry, whatever its age, oldest first, each with its id (Hermes's
+         *     ``journey list``: the lookup table ``journey show|edit|delete`` take an id from): the
+         *     facts of both curated rings (``memory``: the agent's notes, ``user``: the user
+         *     profile), the skills it learned (``skill``) and the fact store's rows (``facts``).
+         *     ``store`` keeps one store; past ``limit`` the newest are kept. ``total`` and
+         *     ``counts`` cover every entry; ``drift`` says a ring could not be read back.
+         */
+        get: operations["dashboard_today_entries_api_dashboard_today_entries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/today/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Today Entry
+         * @description One learned entry, whatever its age: a ring fact, a learned skill (with its whole
+         *     SKILL.md as ``content``; for one still awaiting the owner's review, none: only the admin
+         *     review reads a quarantined skill, and ``content_withheld`` says so) or a fact-store row.
+         */
+        get: operations["dashboard_today_entry_api_dashboard_today_entries__entry_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Dashboard Today Entry Delete
+         * @description Forget a learned entry. A ring fact leaves its ring by the memory tool's own write
+         *     (an undo ref keeps the ring as it was beside the rings, as for the model's own remove;
+         *     ``POST /api/memory/core/undo`` puts it back, a reset erases it); a learned skill is
+         *     archived, as Hermes archives one (its folder moved to the skills batch archive,
+         *     recoverable; a pinned skill is refused; ``references`` says what still names it, as a
+         *     skill batch's delete reports it, H330), and one still awaiting the owner's review is
+         *     discarded as the review's reject does (its folder kept in the discard archive); a
+         *     fact-store row leaves the store (and its search index and write-ahead log), so it
+         *     leaves the timeline and every brief.
+         */
+        delete: operations["dashboard_today_entry_delete_api_dashboard_today_entries__entry_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Dashboard Today Entry Edit
+         * @description Change what a learned entry says. Body: ``{value}``.
+         *
+         *     A ring fact is replaced in place, by the memory tool's own write (one clean line of at
+         *     most 300 characters, scanned; the ring's budget; an undo ref; the intent log): its id
+         *     follows its text, so the reply carries the new one. A skill's ``value`` is its whole
+         *     SKILL.md, applied by the owner's skill batch (checked first; the old folder archived);
+         *     one still awaiting the owner's review is refused (409 ``skill_pending_review``).
+         *     A fact-store row (at most 2000 characters) keeps its id, category and key and moves to
+         *     now on the timeline. An unchanged value writes nothing (``changed: false``).
+         */
+        patch: operations["dashboard_today_entry_edit_api_dashboard_today_entries__entry_id__patch"];
         trace?: never;
     };
     "/ticker": {
@@ -9492,6 +9588,120 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/agents/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Roster View
+         * @description H202 — every agent the registry knows, active and retired: whether it is live, made
+         *     by the owner (and from which template), protected, and its last roster revisions; with
+         *     the templates and tiers a new agent can take.
+         */
+        get: operations["agent_roster_view_api_admin_agents_roster_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Create
+         * @description H202 — create an agent from a template (``GET /api/agent-templates``) or blank, and
+         *     keep it: written to the owner's roster (``agent_roster.json``), loaded now and at every
+         *     boot, its persona made live through the SOUL editor's own path (guard-scanned, version
+         *     1, audited). No plugins, heartbeat or model pin are granted. 201; 409 a taken or
+         *     reserved id, too many created agents or safe mode; 404 an unknown template; 413/422 a
+         *     persona the guard refuses or a bad name, id or tier; 503 an unreadable roster.
+         */
+        post: operations["agent_create_api_admin_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents/{agent_id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Rename
+         * @description H202 — rename an agent for good (its id, the key of its persona and history,
+         *     stays): saved in the roster, applied to the running agent, versioned and audited. The
+         *     in-memory display override of ``PUT /api/admin/agents/{id}`` no longer hides it. 409 a
+         *     name another agent has.
+         */
+        post: operations["agent_rename_api_admin_agents__agent_id__rename_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents/{agent_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Retire
+         * @description H202 — retire an agent: out of the running hub and every later boot, nothing deleted
+         *     (its persona, persona versions, run history and memory stay; ``/restore`` brings it
+         *     back as it was). ``{"confirm": "<agent id>"}`` is required: without it nothing changes
+         *     and the 400 says what would stop and what is kept. Jarvis cannot be retired (409).
+         */
+        post: operations["agent_retire_api_admin_agents__agent_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents/{agent_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Restore
+         * @description H202 — bring a retired agent back, live now and at every boot, with the persona and
+         *     history it had. 409 for an agent that is not retired.
+         */
+        post: operations["agent_restore_api_admin_agents__agent_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/agents/{agent_id}/description/draft": {
         parameters: {
             query?: never;
@@ -9604,8 +9814,8 @@ export interface paths {
          * @description H10.29 — render a ready-to-save agent config from a template.
          *
          *     Body: {"template": "researcher", "name": "Vega", "overrides": {...}}.
-         *     Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); the
-         *     caller persists it via the normal agent-creation flow.
+         *     Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); nothing is
+         *     saved. ``POST /api/admin/agents`` (H202) is the agent-creation flow that keeps one.
          */
         post: operations["agent_templates_instantiate_api_agent_templates_instantiate_post"];
         delete?: never;
@@ -13586,6 +13796,46 @@ export interface components {
              */
             acknowledge_training: boolean;
         };
+        /** AgentCreateBody */
+        AgentCreateBody: {
+            /** Name */
+            name: string;
+            /**
+             * Template
+             * @default
+             */
+            template: string;
+            /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /**
+             * Tier
+             * @default
+             */
+            tier: string;
+            /** Soul */
+            soul?: string | null;
+        };
+        /** AgentRenameBody */
+        AgentRenameBody: {
+            /** Name */
+            name: string;
+        };
+        /** AgentRetireBody */
+        AgentRetireBody: {
+            /**
+             * Confirm
+             * @default
+             */
+            confirm: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
         /** AgentUpdateRequest */
         AgentUpdateRequest: {
             /** Updates */
@@ -15803,6 +16053,15 @@ export interface components {
              * Format: date-time
              */
             as_of: string;
+        };
+        /**
+         * TimelineEntryEdit
+         * @description The new text of a learned entry: a fact's value (at most 2000 characters; a ring
+         *     fact, 300), or a learned skill's whole SKILL.md. A fact keeps its category and key.
+         */
+        TimelineEntryEdit: {
+            /** Value */
+            value: string;
         };
         /** ToolRPCCallBody */
         ToolRPCCallBody: {
@@ -30533,12 +30792,143 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
+                limit?: number;
+                kind?: ("action" | "learning" | "followup") | null;
             };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entries_api_dashboard_today_entries_get: {
+        parameters: {
+            query?: {
+                store?: ("facts" | "memory" | "user" | "skill") | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entry_api_dashboard_today_entries__entry_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entry_delete_api_dashboard_today_entries__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entry_edit_api_dashboard_today_entries__entry_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimelineEntryEdit"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -31096,6 +31486,160 @@ export interface operations {
                 "application/json": components["schemas"]["SoulEditBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_roster_view_api_admin_agents_roster_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    agent_create_api_admin_agents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentCreateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_rename_api_admin_agents__agent_id__rename_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRenameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_retire_api_admin_agents__agent_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRetireBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_restore_api_admin_agents__agent_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

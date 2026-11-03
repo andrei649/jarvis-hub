@@ -5,7 +5,9 @@ A small library of pre-configured agent archetypes (researcher, coder, analyst,
 assistant, ops) that a user can instantiate quickly instead of hand-writing a
 SOUL.md + registry entry. `build_agent_config()` renders a ready-to-save agent
 definition (agents.yaml-shaped fields + a SOUL.md skeleton) from a template,
-with optional per-field overrides.
+with optional per-field overrides. H202: ``blank_agent_config()`` renders the same
+shape for an agent started from nothing, and ``POST /api/admin/agents``
+(``agent_roster.create``) is the agent-creation flow that persists either one.
 """
 
 from __future__ import annotations
@@ -106,6 +108,49 @@ def _render_soul(agent_id: str, name: str, tmpl: dict) -> str:
         f"- Defer to the orchestrator's guardrails and permission gate.\n"
         f"- Be honest about uncertainty; cite sources where relevant.\n"
     )
+
+
+#: H202 — the roster tier (agents.yaml's command / business / tech / foundation, which the
+#: HUD reads from the persona's front-matter) an agent created from each template sits in.
+ROSTER_TIERS: dict[str, str] = {
+    "researcher": "business",
+    "coder": "tech",
+    "analyst": "business",
+    "assistant": "command",
+    "ops": "tech",
+}
+#: H202 — the "template" an agent started from nothing is created from.
+BLANK = "blank"
+
+
+def _render_blank_soul(agent_id: str, name: str) -> str:
+    return (
+        f"# {name} — SOUL\n\n"
+        f"**id:** `{agent_id}`\n\n"
+        f"## Mission\nDescribe what {name} is for.\n\n"
+        f"## Voice\nclear and helpful\n\n"
+        f"## Rules\n"
+        f"- Defer to the orchestrator's guardrails and permission gate.\n"
+        f"- Be honest about uncertainty.\n"
+    )
+
+
+def blank_agent_config(name: Optional[str] = None, agent_id: Optional[str] = None) -> dict:
+    """H202 — the :func:`build_agent_config` shape for an agent started from nothing: a
+    minimal persona skeleton the owner fills in, no plugins, no heartbeat."""
+    display_name = name or "Agent"
+    ident = _slugify(agent_id or display_name)
+    return {
+        "id": ident,
+        "name": display_name,
+        "status": "active",
+        "model": "",
+        "tier": "foundation",
+        "plugins": [],
+        "has_heartbeat": False,
+        "template": BLANK,
+        "soul": _render_blank_soul(ident, display_name),
+    }
 
 
 def build_agent_config(

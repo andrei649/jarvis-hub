@@ -2681,6 +2681,19 @@
   omissions, fenced examples), recorded as the rows' remaining work. Registry planning now keeps the
   risk context on a long tool description. 397 rows re-read (344 held, 53 corrected); headline
   138 → 141/697.
+  **Batch 3 (2026-11-03):** H330 (mixed skill-delete/edit batches, `absorbed_into`, migration of
+  `related_skills` and bundle members, remaining-reference reports, and `skill.generation`
+  mediation for skill writes), H389 (`[SKILL_PRUNED]`, fence-aware reload notices and coding-posture
+  index demotion), H058 (fail-closed per-command access by channel and DM/group, `/whoami`, audited
+  denials), H202 (persistent agent create/rename/retire/restore beside the SOUL editor) and H046
+  (learning-journey ids, list/show/edit/forget across notes, profile facts, skills and stored facts,
+  CLI aliases and TODAY controls) are `equivalent`. The merged-branch integration fixes preserve
+  skill-archive reference reports, register the `skill.generation` capability manifest, refuse
+  routing-word agent ids and label retired-agent room fallbacks as `jarvis`, with regression
+  coverage. The last 29 drifted rows were re-read and restamped, completing the batch's 419
+  collateral reviews (390 already recorded on the branch); existing verdicts were preserved and
+  stale claims/citations corrected. The five new reviews cite the current code and tests without
+  claiming a live hub or real-model acceptance. `needs_review` 0; headline 141 → 146/697.
 
 ## Darwin feature absorption — 2026-09-09
 
@@ -9249,6 +9262,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.34 | **Native Kanban board and worker controls** — expose durable H075/H581 board metadata and admin-governed `POST /api/autonomy/kanban/dispatch`, with exact-prompt approvals on the existing queue. Distinguish pending approval, claimed run, review, failed and completed; preserve separate default-off flags and unavailable states. Dedicated browser and native board controls remain open; synthetic backend acceptance does not prove device or provider operation. | 3 | P3 | H18.11, H075, H581 | PARITY.md |
 | H18.35 | **Native batch-1 owner controls (H422, H026, H462)** — the shared server already applies the core memory budgets and owner switch to native chat turns, and owner `/<bundle>`, `/goal` and `/subgoal` work through the shared `/chat` path. Missing natively: ring sizes against budgets with a typed reset and the memory switch (`GET /api/memory`, admin `POST /api/memory/reset` and `/api/memory/switch`), a bundle list/editor/switch (`/api/skills/bundles*`, `POST /api/skills/switch` with `bundle`) and a goal form (`POST /api/company/goals`). | 2 | P3 | H18.1, H18.15, H18.16 | PARITY.md |
 | H18.36 | **Native per-turn recall line (H430)** — the shared `/chat` outcome and SSE end event already carry each provider's recall state (recalled N memories / recalled relevant memory, last prefetch only); the native chat should render it under the reply as the HUD does, never as spoken text. | 1 | P3 | H18.1, H430 | PARITY.md |
+| H18.37 | **Native batch-3 owner controls (H202, H046)** — the shared server already drops a retired agent from the agent list and routing for every client, and dates and serves the learning journey the same way. Missing natively: an agent roster editor (admin `GET /api/admin/agents/roster`, `POST /api/admin/agents`, `/{agent_id}/rename`, `/retire`, `/restore`) and, once the native Today board exists, the learned-entry list, edit and forget controls (`GET /api/dashboard/today/entries[/{entry_id}]`, admin `PATCH`/`DELETE`). | 2 | P3 | H18.1, H202, H046 | PARITY.md |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 

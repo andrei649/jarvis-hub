@@ -340,17 +340,30 @@ def fence_tool_result(encoded: str, *, source: str) -> tuple[str, list[str]]:
     fence marker spelled out *inside* the payload stays there as data — the structure holds
     because a JSON string line carries no raw newline — and is reported as its own flag.
     """
+    return fence_text(encoded, source=source), fence_flags(encoded)
+
+
+def fence_text(encoded: str, *, source: str) -> str:
+    """The four-line fence :func:`fence_tool_result` wraps *encoded* in, without the scan."""
     text = encoded if isinstance(encoded, str) else ""
-    fenced = "\n".join((
+    return "\n".join((
         FENCE_OPEN.format(source=fence_source(source)),
         FENCE_NOTICE,
         text,
         FENCE_CLOSE,
     ))
+
+
+def fence_flags(encoded: str) -> list[str]:
+    """The flags :func:`fence_tool_result` reports for *encoded*: the literal injection
+    scan (:func:`detect_injection`) and :data:`FENCE_MARKER_FLAG` when the payload spells
+    out a fence delimiter. Any flag is a reason the tool loop fences a result as DATA
+    (``agent_runtime.fence_reasons``), so this is the one place that decides it."""
+    text = encoded if isinstance(encoded, str) else ""
     flags = detect_injection(text)
     if any(token in text for token in _FENCE_MARKER_TOKENS):
         flags.append(FENCE_MARKER_FLAG)
-    return fenced, flags
+    return flags
 
 
 def split_fenced_tool_result(text: str) -> tuple[str, str] | None:

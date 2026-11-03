@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -19,6 +20,8 @@ from .models import RequestStatus
 from .package_store import PackageStoreError
 from .quarantine import QuarantineError, QuarantinePackageRejected
 from .receipt import VerificationReceipt, receipt_is_current, receipt_matches_package
+
+logger = logging.getLogger("jarvis.acquisition.promotion")
 
 
 class PromotionError(RuntimeError):
@@ -39,15 +42,22 @@ class PromotionInstallFailed(PromotionError):
     the tool registry (review round 3, item 1; round 4, item 2)."""
 
 
-def make_skill_install_kernel_gate(action_kernel):
-    """Bind the ``skill.install`` kernel gate used by :meth:`PromotionBroker.propose`.
+#: The two kernel kinds a skill's bytes cross: ``skill.install`` (a capability installed or
+#: taken away) and ``skill.generation`` (a skill written, or promoted to executable).
+SKILL_KERNEL_KINDS = ("skill.install", "skill.generation")
 
-    One factory serves both the production wiring (``autonomy_coordinator``) and the
-    action-auth matrix, so the gate the matrix proves is the gate that ships. The
-    kernel hook is skipped entirely unless ``JARVIS_ACTION_KERNEL`` is set (the same
-    call-time ``kernel_enabled()`` discipline every other broker follows) — and even
-    a kernel GRANT cannot bypass the permanent owner-approval floor in ``propose``.
+
+def make_skill_kernel_gate(action_kernel, *, kind: str, title: str):
+    """Bind a skill kernel gate: ``gate(payload) -> "grant" | "queue" | "deny"``.
+
+    One factory serves the production wiring and the action-auth matrix, so the gate
+    the matrix proves is the gate that ships. The kernel hook is skipped entirely
+    unless ``JARVIS_ACTION_KERNEL`` is set (the same call-time ``kernel_enabled()``
+    discipline every other broker follows); a skipped gate answers ``"queue"``, which
+    leaves the caller's own owner floor in force.
     """
+    if kind not in SKILL_KERNEL_KINDS:
+        raise ValueError(f"not a skill kernel kind: {kind!r}")
 
     def _gate(payload):
         from agents.core.kernel import Action, kernel_enabled
@@ -56,9 +66,9 @@ def make_skill_install_kernel_gate(action_kernel):
             return "queue"
         decision = action_kernel(
             Action(
-                kind="skill.install",
+                kind=kind,
                 agent="jarvis",
-                title="Install acquired capability",
+                title=title,
                 payload=dict(payload),
                 origin="generated",
             )
@@ -66,6 +76,63 @@ def make_skill_install_kernel_gate(action_kernel):
         return decision.verdict.value
 
     return _gate
+
+
+def make_skill_install_kernel_gate(action_kernel, *, title: str = "Install acquired capability"):
+    """Bind the ``skill.install`` kernel gate used by :meth:`PromotionBroker.propose`.
+
+    Even a kernel GRANT cannot bypass the permanent owner-approval floor in
+    ``propose``. A skill batch's delete (H330, :mod:`agents.core.skills.batch`) crosses
+    the same gate, titled as what it is.
+    """
+    return make_skill_kernel_gate(action_kernel, kind="skill.install", title=title)
+
+
+def make_skill_generation_kernel_gate(action_kernel, *, title: str = "Write a skill"):
+    """Bind the ``skill.generation`` kernel gate (H330). Every write of a skill's bytes
+    crosses it before they move: a skill batch's create, patch, file write, related_skills
+    migration and bundle rewrite (:mod:`agents.core.skills.batch`), an approved SKILL.md
+    proposal (:mod:`agents.core.skills.proposals`), a generated skill and the owner's
+    promotion of one to executable (:class:`agents.core.skills.loader.SkillLoader`). The
+    ``skill.generation`` contract, the CDX-8 quarantine and the owner's approval stay in
+    force around it; the kernel adds the kill switch, the autonomy policy and the audit
+    (:func:`hub_skill_kernel_gate` binds no loop breaker or budget ledger, as route callers
+    of :func:`agents.core.kernel.binding.make_action_kernel` do not)."""
+    return make_skill_kernel_gate(action_kernel, kind="skill.generation", title=title)
+
+
+def hub_skill_kernel_gate(kind: str, *, title: str):
+    """The skill gate bound to the live hub's kernel, resolved at call time (a hub that
+    rewires its kernel is read afresh). With the kernel off it answers ``"queue"``
+    without reaching for the hub."""
+    if kind not in SKILL_KERNEL_KINDS:
+        raise ValueError(f"not a skill kernel kind: {kind!r}")
+
+    def _gate(payload):
+        from agents.core.kernel import kernel_enabled
+
+        if not kernel_enabled():
+            return "queue"
+        from agents.core.app_state import get_orch
+        from agents.core.kernel.binding import make_action_kernel
+
+        return make_skill_kernel_gate(make_action_kernel(get_orch()), kind=kind, title=title)(payload)
+
+    return _gate
+
+
+def cross_skill_gate(gate, payload) -> str:
+    """Ask ``gate`` about ``payload``: ``""`` to proceed (a GRANT, or a QUEUE: the owner's
+    decision the caller already carries), ``"kernel_denied"`` for a DENY, ``"kernel_error"``
+    for a gate that fails or answers anything else (fail closed)."""
+    try:
+        verdict = str(gate(payload)).lower()
+    except Exception:
+        logger.warning("skill kernel gate failed closed", exc_info=True)
+        return "kernel_error"
+    if verdict == "deny":
+        return "kernel_denied"
+    return "" if verdict in ("grant", "queue") else "kernel_error"
 
 
 @dataclass(frozen=True, slots=True)

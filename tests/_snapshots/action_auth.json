@@ -1,4 +1,5 @@
 {
+ "admin.agent_roster": "kernel",
  "admin.capability_issue": "kernel",
  "admin.kill_switch": "kernel",
  "browser.step": "kernel",
@@ -32,6 +33,7 @@
  "report.export": "kernel",
  "research": "kernel",
  "settings.voice_command": "kernel",
+ "skill.generation": "kernel",
  "skill.install": "kernel",
  "social.*": "kernel",
  "terminal.exec": "kernel",

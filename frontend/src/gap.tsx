@@ -27,7 +27,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
-import { SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
+import { BatchReferences, SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
 import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -2211,7 +2211,7 @@ function TemplatesPanel() {
     {tpls.slice(0, 8).map((tp, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{tp.id || tp.name || tp}</span><span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(tp.description || tp.role || '').slice(0, 36)}</span><Btn onClick={() => inst(tp)}>instantiate</Btn></Row>)}
     <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new agent name (optional)" style={{ ...inpS, width: '100%', marginTop: 8 }} />
     {out && <Json v={out} />}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>renders an agents.yaml config + SOUL skeleton — save via the normal agent flow (H10.29)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>a preview of an agents.yaml config + SOUL skeleton — create the agent from the Agents roster (+ New agent), which keeps it (H10.29, H202)</div>
   </Card>;
 }
 
@@ -3845,9 +3845,45 @@ export function BackupPanel() {
   );
 }
 
+const TODAY_TAGS = { action: ['did', 'var(--green)'], learning: ['learned', 'var(--accent-light)'], followup: ['follow-up', 'var(--amber)'] };
+
+/* H046 review — a learned entry is kept in one of three stores, and what forgetting it
+   costs differs: a note or profile fact keeps an undo (the Long-Term Memory panel), a skill
+   is archived (recoverable), a stored fact is gone for good (a typed confirmation). */
+const TODAY_FORGET = {
+  memory: { tier: RISK_TIER.REVERSIBLE, label: 'forget', prompt: (n) => `forget ${n}? (an undo is kept in Long-Term Memory)` },
+  user: { tier: RISK_TIER.REVERSIBLE, label: 'forget', prompt: (n) => `forget ${n}? (an undo is kept in Long-Term Memory)` },
+  skill: { tier: RISK_TIER.REVERSIBLE, label: 'archive', prompt: (n) => `archive ${n}? (its folder is kept; it can be restored)` },
+  // A skill still awaiting the owner's review is discarded, as the review's reject does.
+  pending: { tier: RISK_TIER.REVERSIBLE, label: 'discard', prompt: (n) => `discard ${n}? (it awaits review; it is never loaded, its folder is kept)` },
+  facts: { tier: RISK_TIER.IRREVERSIBLE_OR_MONEY, label: 'forget', prompt: (n) => `forget ${n} for good? type FORGET` },
+};
+
+function todayName(it) {
+  if (it.store === 'skill') return `skill ${it.label || it.key}`;
+  return String(it.label || it.key || it.entry_id || 'entry');
+}
+
+function todayText(it) {
+  if (it.kind === 'action') return it.title || `#${it.id}`;
+  if (it.kind === 'followup') return it.detail ? `${it.title}: ${it.detail}` : String(it.title || '');
+  return it.value ? `${todayName(it)}: ${it.value}` : todayName(it);
+}
+
 export function TodayPanel() {
   // P1 G1 — "Today in Jarvis": what Jarvis *did* (autonomy) + *learned* (memory) in one feed.
+  // H046 — each entry carries a stable id; a learned one is edited or forgotten by it (the
+  // hub crosses kg.write: a halted kernel refuses, and the refusal is shown, not swallowed).
+  // What it learned is its notes and the user profile (the curated rings), the skills it
+  // learned and stored facts; changing one is an admin write. A skill's text is its whole
+  // SKILL.md, edited with `nerva journey edit`, so here a skill is only archived.
   const { d, e, loading, reload } = useApi('/api/dashboard/today');
+  const [editing, setEditing] = useState(null);
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState(null);
+  // H330 — what still names a skill this card archived (a bundle, another skill's
+  // related_skills, a job…): shown to the owner who archived it, never dropped.
+  const [refs, setRefs] = useState([]);
   const items = (d && d.items) || [];
   const c = (d && d.counts) || {};
   const fmt = (ts) => {
@@ -3855,18 +3891,60 @@ export function TodayPanel() {
     const t = new Date(String(ts).replace(' ', 'T'));
     return isNaN(t.getTime()) ? String(ts) : t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+  const refused = (err) => { setRefs([]); setMsg(`refused · ${refusalReason(err)}`); return false; };
+  const path = (it) => '/api/dashboard/today/entries/' + encodeURIComponent(it.entry_id);
+  const save = (it) => {
+    const value = text.trim();
+    if (!value) { setMsg('refused · the new text is empty (forget removes an entry)'); return; }
+    apiPatch(path(it), { value }, { admin: true })
+      .then((r: any) => { setEditing(null); setMsg(r && r.changed === false ? `unchanged · ${todayName(it)}` : `saved · ${todayName(it)}`); reload(); })
+      .catch(refused);
+  };
+  const forget = (it) => apiDelete(path(it), { admin: true })
+    .then((r: any) => {
+      if (editing === it.entry_id) setEditing(null);
+      const done = r && r.discarded ? 'discarded' : it.store === 'skill' ? 'archived' : 'forgot';
+      setRefs(Array.isArray(r && r.references) ? r.references.filter((x: any) => arr(x, 'left').length) : []);
+      setMsg(`${done} · ${todayName(it)}`); reload();
+    })
+    .catch(refused);
   return (
     <Card title="TODAY" live={asLive(d)} sub={d ? `${c.actions || 0} did · ${c.learnings || 0} learned` : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
-      {items.slice(0, 12).map((it, i) => (
-        <Row key={i}>
-          <Tag c={it.kind === 'action' ? 'var(--green)' : 'var(--accent-light)'}>{it.kind === 'action' ? 'did' : 'learned'}</Tag>
-          <span style={{ fontSize: 11, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {it.kind === 'action' ? (it.title || `#${it.id}`) : `${it.key}: ${it.value}`}
-          </span>
-          <span style={{ marginLeft: 'auto', ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>{fmt(it.ts)}</span>
-        </Row>
-      ))}
+      {items.slice(0, 12).map((it, i) => {
+        const [tag, colour] = TODAY_TAGS[it.kind] || [String(it.kind || '?'), 'var(--ink-2)'];
+        const changeable = it.kind === 'learning' && !!it.entry_id;
+        const editable = changeable && it.store !== 'skill';
+        const how = (it.store === 'skill' && it.pending_review ? TODAY_FORGET.pending : TODAY_FORGET[it.store]) || TODAY_FORGET.facts;
+        const name = todayName(it);
+        return (
+          <React.Fragment key={it.entry_id || i}>
+            <Row>
+              <Tag c={colour}>{tag}</Tag>
+              <span title={it.entry_id || undefined} style={{ fontSize: 11, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {todayText(it)}
+              </span>
+              <span style={{ marginLeft: 'auto', ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>{fmt(it.ts)}</span>
+              {changeable && <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                {editable && <button className="tool-btn" aria-label={`edit ${name}`} title="change what was learned"
+                  onClick={() => { setEditing(it.entry_id); setText(String(it.value ?? '')); setMsg(null); }}>edit</button>}
+                <ConfirmAction tier={how.tier} label={how.label} armedLabel={`confirm ${how.label}`} ariaLabel={`${how.label} ${name}`}
+                  phrase="FORGET" prompt={how.prompt(name)} onConfirm={() => forget(it)} />
+              </span>}
+            </Row>
+            {editable && editing === it.entry_id && <div style={{ display: 'flex', gap: 6, margin: '4px 0' }}>
+              <input aria-label={`new text for ${name}`} value={text} maxLength={it.store === 'facts' ? 2000 : 300}
+                onChange={(ev) => setText(ev.target.value)} style={{ ...inpS, flex: 1 }} />
+              <button className="tool-btn" onClick={() => save(it)}>save</button>
+              <button className="tool-btn" onClick={() => setEditing(null)}>cancel</button>
+            </div>}
+          </React.Fragment>
+        );
+      })}
+      {msg && <div role="status" style={{ fontSize: 10, color: msg.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      {refs.length > 0 && <div data-testid="today-archive-references">
+        <BatchReferences refs={refs} />
+      </div>}
     </Card>
   );
 }
