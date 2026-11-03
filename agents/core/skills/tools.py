@@ -45,7 +45,10 @@ Three ToolRPC tools, all ungated:
     (:func:`with_pruned_skill_notice`), and the next view of that skill is served whole with
     :data:`PRUNED_RELOAD_NOTICE`. A copy the loop fences as DATA stays data through all of it
     (H351): its reload carries :data:`PRUNED_RELOAD_DATA_NOTICE`, never "follow this copy",
-    and a notice whose every pending prune is fenced never calls them instructions.
+    and a notice whose every pending prune is fenced never calls them instructions. Which
+    copy is DATA is the loop's own fence decision (``agent_runtime.fence_reasons``), never a
+    scan of this module's: the reload notice asks it of the answer as the loop will read it,
+    and the system notice reads the fence the loop put on each ``skill_view`` answer.
 
 ``skill_propose``
     Authoring, governed: ``{name, content}`` proposes a new SKILL.md for an existing skill
@@ -301,9 +304,14 @@ def guest_on_shared_session(shared: bool, origin: str, identity: Any) -> bool:
 # (:func:`skill_text_pages`); the system prompt then carries the reload notice and the rule
 # (:func:`with_pruned_skill_notice`); and ``skill_view`` serves a pruned skill whole again
 # with :data:`PRUNED_RELOAD_NOTICE` (``_once``, reading :func:`pruned_skills` off the live
-# transcript; :data:`PRUNED_RELOAD_DATA_NOTICE` when the loop reads the answer as DATA, H351,
+# transcript; :data:`PRUNED_RELOAD_DATA_NOTICE` when the loop fences the answer as DATA, H351,
 # so a quarantined skill is never told to be followed, and a notice whose every pending
-# prune is fenced says they were data). Only a new copy or the prompt's carried copy ends a
+# prune is fenced says they were data). "Fenced" is the loop's decision and nothing else:
+# the reload asks ``agent_runtime.fence_reasons`` of its own answer (:func:`_fenced_as_data`;
+# the loop fences a bounded or spilled skill copy on that same whole answer), and the system
+# notice reads the fence on each ``skill_view`` row — a ``file_read`` page of a spill takes
+# its answer's, since every spill page is fenced by the store's read path whatever the skill
+# is (:func:`_pending_pruned`). Only a new copy or the prompt's carried copy ends a
 # prune; a ``this_turn`` pointer names the very copy the fold may have pruned. The loop's
 # byte dedup forgets every row a fold replaced (``AgentToolRuntime._compact_context``
 # ``seen_results``), so a reload is served however often the same skill is pruned in one
@@ -512,21 +520,33 @@ def skill_text_pages(messages: Any) -> dict[str, tuple[str, str]]:
         if called is None or called[0] != TOOL_VIEW or not isinstance(content, str):
             continue
         envelope = _envelope(_row_payload(content)[1])
-        if envelope is None:
-            continue
-        identity = _bounded_copy(envelope) if envelope.get("spilled") is True else _pruned_entry(envelope)
-        reference = envelope.get("result_reference")
-        if identity is not None and isinstance(reference, str) and reference:
-            spills[reference] = identity
+        spill = _skill_spill(envelope) if envelope is not None else None
+        if spill is not None:
+            spills[spill[0]] = spill[1]
     pages: dict[str, tuple[str, str]] = {}
     for call_id, (tool, arguments) in calls.items() if spills else ():
-        if tool != READ_TOOL:
-            continue
-        args = arguments if isinstance(arguments, dict) else _envelope(arguments)
-        path = args.get("path") if isinstance(args, dict) else None
-        if isinstance(path, str) and posixpath.basename(path.replace("\\", "/")) in spills:
-            pages[call_id] = spills[posixpath.basename(path.replace("\\", "/"))]
+        reference = _read_reference(arguments) if tool == READ_TOOL else None
+        if reference in spills:
+            pages[call_id] = spills[reference]
     return pages
+
+
+def _skill_spill(envelope: dict) -> tuple[str, tuple[str, str]] | None:
+    """``(result_reference, (name, file))`` of a ``skill_view`` row that names a spill of a
+    served copy: the loop's spilled envelope, or the marker a compaction folded it to."""
+    identity = _bounded_copy(envelope) if envelope.get("spilled") is True else _pruned_entry(envelope)
+    reference = envelope.get("result_reference")
+    if identity is None or not isinstance(reference, str) or not reference:
+        return None
+    return reference, identity
+
+
+def _read_reference(arguments: Any) -> str | None:
+    """The spill file a ``file_read`` call's ``path`` names (its base name, as a spill's
+    ``read_with`` gives it), or None."""
+    args = arguments if isinstance(arguments, dict) else _envelope(arguments)
+    path = args.get("path") if isinstance(args, dict) else None
+    return posixpath.basename(path.replace("\\", "/")) if isinstance(path, str) else None
 
 
 def pruned_skills(messages: Any, *, vetted: bool = False) -> list[tuple[str, str]]:
@@ -548,17 +568,26 @@ def pruned_skills(messages: Any, *, vetted: bool = False) -> list[tuple[str, str
 
 
 def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
-    """``(name, file) → whether its marker is unfenced``, for :func:`pruned_skills`, read in
-    transcript order. Only a ``tool`` row answering an assistant's ``skill_view`` call (or a
-    ``file_read`` page marker) is read. A marker makes its skill pending; a later answer
-    that served the text again (whole, or bounded at insertion with its full copy spilled)
-    or pointed at the copy the prompt carries (``already_loaded: this_session``) clears it.
-    A ``this_turn`` pointer does not: it points at a copy served earlier in this loop, which
-    is the very copy a compaction may have pruned since."""
+    """``(name, file) → whether the loop left its pruned copy unfenced``, for
+    :func:`pruned_skills`, read in transcript order. Only a ``tool`` row answering an
+    assistant's ``skill_view`` call (or a ``file_read`` page marker) is read. A marker makes
+    its skill pending; a later answer that served the text again (whole, or bounded at
+    insertion with its full copy spilled) or pointed at the copy the prompt carries
+    (``already_loaded: this_session``) clears it. A ``this_turn`` pointer does not: it
+    points at a copy served earlier in this loop, which is the very copy a compaction may
+    have pruned since.
+
+    Whether a copy was fenced is the ``skill_view`` answer's own fence, which the loop
+    decides on the skill's whole answer (``agent_runtime.fence_reasons``). A ``file_read``
+    page of a spilled answer is fenced by the spill store's read path whatever the skill is
+    (every spill page says ``tainted``, ``FileTools.file_read``), so a page marker takes the
+    fence of the answer whose spill it read, never its own: the owner's vetted skill paged
+    with ``file_read`` is still named, and still the instructions the work followed."""
     from ..tool_result_store import READ_TOOL
 
-    calls: dict[str, str] = {}
+    calls: dict[str, tuple[str, Any]] = {}
     pending: dict[tuple[str, str], bool] = {}
+    spills: dict[str, bool] = {}            # spill reference → its skill_view row was unfenced
     for message in messages if isinstance(messages, list) else ():
         if not isinstance(message, dict):
             continue
@@ -567,19 +596,26 @@ def _pending_pruned(messages: Any) -> dict[tuple[str, str], bool]:
                 function = call.get("function") if isinstance(call, dict) else None
                 if (isinstance(function, dict) and function.get("name") in (TOOL_VIEW, READ_TOOL)
                         and isinstance(call.get("id"), str)):
-                    calls[call["id"]] = function["name"]
+                    calls[call["id"]] = (function["name"], function.get("arguments"))
             continue
         content = message.get("content")
-        tool = calls.get(message.get("tool_call_id")) if message.get("role") == "tool" else None
-        if tool is None or not isinstance(content, str):
+        called = calls.get(message.get("tool_call_id")) if message.get("role") == "tool" else None
+        if called is None or not isinstance(content, str):
             continue
+        tool = called[0]
         source, payload = _row_payload(content)
         envelope = _envelope(payload)
         if envelope is None:
             continue
+        if tool == TOOL_VIEW:
+            spill = _skill_spill(envelope)
+            if spill is not None:
+                spills[spill[0]] = source is None
         entry = _pruned_entry(envelope, tool)
         if entry is not None:
-            pending[entry] = pending.get(entry, True) and source is None
+            unfenced = (spills.get(_read_reference(called[1]) or "", False) if tool == READ_TOOL
+                        else source is None)
+            pending[entry] = pending.get(entry, True) and unfenced
             continue
         if tool != TOOL_VIEW:
             continue
@@ -902,11 +938,24 @@ def _flags(text: str) -> list[str]:
     return list(quarantine.detect_injection_normalized(text))
 
 
-def _reads_as_data(reply: dict) -> bool:
-    """Whether the tool loop reads this ``skill_view`` answer as DATA (H351): it says
-    ``tainted``, or its encoded text (the file list and name included) trips the injection
-    scan the loop fences a result on (``AgentToolRuntime._fence_result``)."""
-    return reply.get("tainted") is True or bool(_flags(json.dumps(reply, ensure_ascii=False)))
+def _fenced_as_data(server: Any, reply: dict) -> bool:
+    """Whether the tool loop fences this ``skill_view`` answer as DATA (H351), decided the
+    way the loop decides it: ``agent_runtime.fence_reasons`` (a declared-untrusted tool,
+    the loop's injection and fence-marker scan, a ``tainted`` answer) on the answer as
+    ``server`` hands it to the loop (``ToolRPCServer.result_envelope``: invisible
+    characters stripped, secrets masked) and encoded as the loop encodes it. A copy the
+    loop shows bounded or spilled is fenced on this same whole answer, so the decision
+    holds for it too."""
+    from ..agent_runtime import encode_result, fence_reasons
+    from ..security.quarantine import strip_invisible_deep
+
+    envelope_for = getattr(server, "result_envelope", None)
+    envelope = (envelope_for(TOOL_VIEW, reply) if callable(envelope_for)
+                else {"ok": True, "tool": TOOL_VIEW, "result": strip_invisible_deep(reply)})
+    declares = getattr(server, "declares_untrusted_output", None)
+    untrusted = bool(declares(TOOL_VIEW)) if callable(declares) else False
+    result, encoded = encode_result(envelope, TOOL_VIEW)
+    return bool(fence_reasons(TOOL_VIEW, result, encoded, untrusted=untrusted)[0])
 
 
 def _one_line(value: Any, chars: int) -> str:
@@ -1274,8 +1323,9 @@ def register_skill_tools(
         ``[SKILL_PRUNED]`` marker is no copy at all: the compaction already made the loop
         forget it, so it is served whole again, carrying :data:`PRUNED_RELOAD_NOTICE` (the
         marker left in the transcript is historical from here on) — or, for an answer the
-        loop reads as DATA (H351, :func:`_reads_as_data`), :data:`PRUNED_RELOAD_DATA_NOTICE`:
-        its text again, still data, never a copy to follow."""
+        loop fences as DATA (H351, :func:`_fenced_as_data`: the loop's own decision),
+        :data:`PRUNED_RELOAD_DATA_NOTICE`: its text again, still data, never a copy to
+        follow."""
         digest = _reply_digest(reply)
         transcript = _TRANSCRIPT.get()
         key = (skill.name, rel)
@@ -1304,9 +1354,12 @@ def register_skill_tools(
         if not rel and not reply.get("tainted") and actor and session and not guest:
             LEDGER.record(session, actor, skill, digest, reply, rendered=rendered)
         if transcript is not None and key in transcript.pruned():
-            # H351: an answer the loop fences as DATA gets its text again, never "follow this copy".
-            notice = PRUNED_RELOAD_DATA_NOTICE if _reads_as_data(reply) else PRUNED_RELOAD_NOTICE
-            reply = {**reply, "reloaded_after": "compaction", "notice": notice}
+            # H351: an answer the loop fences as DATA gets its text again, never "follow this
+            # copy"; one it does not fence is never told it is data. Asked of the answer as it
+            # will reach the loop, notice included (neither notice trips the scan).
+            reply = {**reply, "reloaded_after": "compaction", "notice": PRUNED_RELOAD_NOTICE}
+            if _fenced_as_data(server, reply):
+                reply["notice"] = PRUNED_RELOAD_DATA_NOTICE
         return reply
 
     async def _propose(args: dict) -> dict:

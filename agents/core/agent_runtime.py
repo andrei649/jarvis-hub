@@ -58,6 +58,8 @@ from .llm.tool_protocol import (
 )
 from .native_human_wait import current_human_wait_scope, runtime_human_wait_scope
 from .security.quarantine import (
+    fence_flags,
+    fence_text,
     fence_tool_result,
     injection_flag_names,
     split_fenced_tool_result,
@@ -1491,17 +1493,9 @@ class AgentToolRuntime:
         ``tainted`` (a tool that computed a per-hit verdict in its child task, which cannot
         reach the turn's ContextVar from there). With no reason the content is returned
         byte-identical. The event carries reasons and flag names, never the content.
+        The decision is :func:`fence_reasons`, which ``skill_view`` also asks (H389).
         """
-        reasons: list[str] = []
-        # A handler's missing-ok error is still external text: classify it as a
-        # failed call for stall/stub policy without downgrading ingress trust.
-        if untrusted and not is_local_refusal(result, call.name):
-            reasons.append("untrusted_tool")
-        fenced, flags = fence_tool_result(content, source=call.name)
-        if flags:
-            reasons.append("injection_flags")
-        if _declares_taint(result):
-            reasons.append("declared_taint")
+        reasons, flags = fence_reasons(call.name, result, content, untrusted=untrusted)
         if not reasons:
             return content
         mark_turn_recall_tainted()
@@ -1515,7 +1509,7 @@ class AgentToolRuntime:
                 "suspicious": bool(flags),
             },
         )
-        return fenced
+        return fence_text(content, source=call.name)
 
     async def _dedupe_result(
         self,
@@ -1972,12 +1966,7 @@ class AgentToolRuntime:
     def _prepare_result(
         self, raw_result: Any, tool_name: str, spent: dict[str, int] | None = None,
     ) -> tuple[dict[str, Any], str]:
-        result = raw_result if _is_strict_json(raw_result) else _non_json(tool_name)
-        try:
-            encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
-        except (TypeError, ValueError):
-            result = _non_json(tool_name)
-            encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
+        result, encoded = encode_result(raw_result, tool_name)
         size = len(encoded.encode("utf-8"))
         # `spent` carries the running turn's window alongside its running total: the
         # runtime is shared between concurrent runs, so the model's window cannot be
@@ -2169,6 +2158,50 @@ def _declares_taint(result: Any) -> bool:
     """A handler's own dict, wrapped under ``result``, says its content is tainted."""
     inner = result.get("result") if isinstance(result, Mapping) else None
     return isinstance(inner, Mapping) and inner.get("tainted") is True
+
+
+def encode_result(raw_result: Any, tool_name: str) -> tuple[dict[str, Any], str]:
+    """``(result, encoded)``: a ToolRPC answer as the loop encodes it for the transcript
+    (strict JSON only; anything else becomes the ``non_json_result`` refusal)."""
+    result = raw_result if _is_strict_json(raw_result) else _non_json(tool_name)
+    try:
+        return result, json.dumps(result, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError):
+        result = _non_json(tool_name)
+        return result, json.dumps(result, ensure_ascii=False, allow_nan=False)
+
+
+def fence_reasons(
+    tool_name: str, result: Mapping[str, Any], content: str, *, untrusted: bool,
+) -> tuple[list[str], list[str]]:
+    """``(reasons, flags)``: why the loop fences ``content`` — ``result``'s text as it goes
+    into the transcript — as DATA (no reason: it does not), and the injection flags found.
+    ``AgentToolRuntime._fence_result`` fences on exactly this, and ``skill_view`` asks it
+    which reload notice its answer gets (H389), so the two never disagree.
+
+    A ``skill_view`` answer that served a skill's text but was too large for the turn goes
+    in as the loop's bounded or spilled envelope (``_prepare_result``); that copy is scanned
+    on the answer it stands for, not on the cut its preview shows. Its trust is the skill's,
+    whether the turn shows it whole or bounded: a cut can hide a phrase the answer carries,
+    or end a word where it looks like one, and the envelope's other keys are the loop's own
+    words. ``skill_view`` computes the same decision on that same answer."""
+    reasons: list[str] = []
+    # A handler's missing-ok error is still external text: classify it as a
+    # failed call for stall/stub policy without downgrading ingress trust.
+    if untrusted and not is_local_refusal(result, tool_name):
+        reasons.append("untrusted_tool")
+    scanned = content
+    from .skills.tools import TOOL_VIEW, skill_copy_tag
+    if tool_name == TOOL_VIEW and isinstance(result, Mapping):
+        whole = encode_result(dict(result), tool_name)[1]
+        if whole != content and skill_copy_tag(whole) is not None:
+            scanned = whole
+    flags = fence_flags(scanned)
+    if flags:
+        reasons.append("injection_flags")
+    if _declares_taint(result):
+        reasons.append("declared_taint")
+    return reasons, flags
 
 
 def _approval_reply(results: Iterable[Mapping[str, Any]]) -> str:

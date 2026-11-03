@@ -929,9 +929,16 @@ class ToolRPCServer:
         self._record("toolrpc.call", name, agent=effective_actor)
         if isinstance(result, ToolContent):
             return self._content_envelope(result, name, ok_key="ok", ok_value=True)
-        # Invisible Unicode TAG characters never cross to the model or the sandbox: a
-        # tool result (an MCP bridge, a fetched page, a file) can carry instructions the
-        # owner cannot see on screen (Hermes absorption 4a).
+        return self.result_envelope(name, result)
+
+    def result_envelope(self, name: str, result: object) -> dict:
+        """The answer :meth:`handle` gives for a handler's (non-content) ``result``.
+
+        Invisible Unicode TAG characters never cross to the model or the sandbox: a tool
+        result (an MCP bridge, a fetched page, a file) can carry instructions the owner
+        cannot see on screen (Hermes absorption 4a); known secret values are masked. A
+        handler that must know what the loop will read of its answer asks here (H389:
+        ``skill_view`` picks its reload notice on it)."""
         return {"ok": True, "tool": name, "result": self._scrub(strip_invisible_deep(result))}
 
     async def run_pipeline(self, requests: "list[dict]") -> "list[dict]":
