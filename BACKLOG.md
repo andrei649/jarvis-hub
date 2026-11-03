@@ -6307,7 +6307,13 @@ owner's machine in 30 seconds, read-only.
   recorded, not on the decision alone. *Follow-up delivered:* the export/purge-drift gap is closed — #900
   (`2f81029`, Max «copper-nectar») added `tests/test_forget_export_purge_parity.py` asserting
   nothing an export names may sit on the forget KEEP list.
-  Remaining (recounted 2026-10-26): the independent post-merge PASS/HOLD review of #896 against `docs/security/SEC-B6-open-reads-evidence.md` is not recorded; tick only with that recorded verdict.
+  **Independent local review 2026-11-03: HOLD.** All 71 intentionally open GETs were resolved
+  against current handlers; the prescribed route-auth matrix passed 21 tests. Response-level
+  gaps remain: Oracle status carries session/task/conflict content, `/agents` includes
+  owner-authored SOUL descriptions, and the public kill-switch response includes a free-form
+  owner reason. See [findings and acceptance gate](docs/security/2026-11-03-open-read-review.md).
+  Remaining: fix and test those response boundaries, correct the per-handler evidence, and
+  record independent PASS on the final source. The earlier green matrix alone is insufficient.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
