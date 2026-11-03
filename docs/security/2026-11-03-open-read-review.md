@@ -136,7 +136,7 @@ does not mean post-merge/current-main or live-provider acceptance.
 | 58 | `/api/widget/{token}` | `secrets.widget_snippet` → JS only after exact widget-token lookup; path token is the credential | PASS (self-auth) |
 | 59 | `/api/widget/{token}/config` | `secrets.widget_config` → widget config only after exact widget-token lookup | PASS (self-auth) |
 
-The local PASS applies to the frozen, unpublished remediation branch through
+The local PASS applies to the frozen remediation source checkpoint through
 `682f1d08`. It does not replace a post-merge/current-main source review or live
 acceptance, and it does not close the SEC-B6 ledger item. Broader candidate gates
 were still running when this record was written; no full-suite result is claimed.

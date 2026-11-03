@@ -6349,8 +6349,8 @@ owner's machine in 30 seconds, read-only.
   at `47d2b4e6`; the 34-case matrix/privacy rerun passed. The final generated API, route, privacy,
   asset and parity gate passed 187 cases; full React/legacy/mobile suites passed 2,803/246/363 cases.
   Source fixes and local acceptance supersede the remediation work listed above. This item stays
-  open: publication and the required independent post-merge review on current `main` have not
-  occurred. Local PASS does not satisfy that separate acceptance boundary.
+  open: the required independent post-merge review on current `main` is pending.
+  Local PASS does not satisfy that separate acceptance boundary.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
