@@ -3332,6 +3332,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/optional/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Optional Skills Catalog */
+        get: operations["optional_skills_catalog_api_skills_optional_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/hermes/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pinned Hermes Catalog
+         * @description Read-only local pin inventory; listing it never fetches upstream bytes.
+         */
+        get: operations["pinned_hermes_catalog_skills_hermes_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/optional/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Optional Skills Install
+         * @description Owner-selected install; kernel can refuse the write, but cannot approve execution.
+         */
+        post: operations["optional_skills_install_api_skills_optional_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills": {
         parameters: {
             query?: never;
@@ -14034,6 +14091,10 @@ export interface components {
             approved: boolean;
             /** Skills */
             skills?: string[];
+            /** Skill Fingerprints */
+            skill_fingerprints?: {
+                [key: string]: string;
+            };
             /** Proposals */
             proposals?: string[];
             /** Batches */
@@ -15288,6 +15349,11 @@ export interface components {
              */
             allow_visual_fallback: boolean;
         };
+        /** OptionalSkillInstallBody */
+        OptionalSkillInstallBody: {
+            /** Name */
+            name: string;
+        };
         /** OrchestrationBody */
         OrchestrationBody: {
             /** Orchestrator Profile */
@@ -15649,6 +15715,11 @@ export interface components {
             name: string;
             /** Status */
             status: string;
+        };
+        /** ReviewedSkillBody */
+        ReviewedSkillBody: {
+            /** Expected Fingerprint */
+            expected_fingerprint: string;
         };
         /** RotateTokensBody */
         RotateTokensBody: {
@@ -16144,6 +16215,7 @@ export interface components {
             compressions?: number;
             /** Total Tokens */
             total_tokens?: number;
+            usage_detail?: components["schemas"]["TurnUsageDetail"];
             /** Title */
             title?: string;
             /** Battery */
@@ -16212,6 +16284,25 @@ export interface components {
              * @enum {string}
              */
             basis: "observed" | "unknown";
+        };
+        /** TurnUsageDetail */
+        TurnUsageDetail: {
+            /** Input Tokens */
+            input_tokens: number | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Estimated Cost Usd */
+            estimated_cost_usd: number | null;
+            /**
+             * Usage Basis
+             * @enum {string}
+             */
+            usage_basis: "provider_complete" | "measured_zero" | "unknown";
+            /**
+             * Cost Basis
+             * @enum {string}
+             */
+            cost_basis: "price_table" | "local_zero" | "measured_zero" | "unknown";
         };
         /** UninstallSkillBody */
         UninstallSkillBody: {
@@ -21803,6 +21894,79 @@ export interface operations {
             };
         };
     };
+    optional_skills_catalog_api_skills_optional_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pinned_hermes_catalog_skills_hermes_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    optional_skills_install_api_skills_optional_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OptionalSkillInstallBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_skills_skills_get: {
         parameters: {
             query?: never;
@@ -22400,7 +22564,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewedSkillBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

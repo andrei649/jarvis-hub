@@ -1,5 +1,14 @@
 # HUD v2 — Remaining work (next PR)
 
+Local candidates, 2026-11-03: H220 adds Usage/Billing estimates, measured
+local/cloud/unknown aggregates, a Command Center link, and current-turn usage
+in the existing shared context strip. Explicit owner field selections remain
+unchanged; fresh defaults expose the context meter. Historical usage without
+route evidence remains unknown, and unpriced cost is not presented as free.
+H696 adds bundled/optional catalog tiers and explicit installation of optional
+repository skills into quarantine. Native aggregate usage and native skill
+installation controls remain gaps; integration acceptance is still pending.
+
 > What's intentionally **left out** of the P0–P6 build (PR #156 / merged to `main`) and queued for
 > the next pass. **Update 2026‑06‑08: the cutover happened — V2 is the default HUD at `/`** (legacy
 > at `/v1`, override `JARVIS_HUD=v1`); §8 below is done, the rest is the depth punch‑list.
