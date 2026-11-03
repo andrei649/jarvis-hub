@@ -46,7 +46,18 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
     # Six default-off image-provider manifests now have separate policy cases.
-    assert len(cases) == len(records) == 84
+    default_skills = {"skill:Brief", "skill:PM", "skill:Security Monitor",
+                      "skill:System Monitor", "skill:Weather Intel"}
+    optional_sources = {"skill:Calendar", "skill:Content", "skill:Email Triage",
+                        "skill:Family Store", "skill:Health", "skill:Spotify",
+                        "skill:Web Research"}
+    assert {capability_id for capability_id, record in records.items()
+            if record.kind == "skill"} == default_skills
+    assert default_skills.isdisjoint(optional_sources)
+    assert len(default_skills | optional_sources) == 12
+    assert sum(record.kind == "plugin" for record in records.values()) == 48
+    assert sum(record.kind == "component" for record in records.values()) == 24
+    assert len(cases) == len(records) == 84 - len(optional_sources) == 77
     assert results["plugin:ntfy"] is True
     # The six disabled cloud-image plugins still have real manifest egress rails;
     # proving that policy does not change their default-off readiness state.

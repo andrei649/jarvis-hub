@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard, admin_guard
-from agents.core.routers._component import component_unavailable
+from agents.core.routers._component import component_unavailable, require_component
 
 from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
@@ -1302,9 +1302,9 @@ async def bulk_review(body: BulkReviewBody):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     if body.approved and body.skills:
-        loader = getattr(orch, "skills", None)
-        if loader is None:
-            return JSONResponse({"error": "skills are not available"}, status_code=503)
+        orch, loader, unavailable = require_component("skills", "skills are not available")
+        if unavailable is not None:
+            return unavailable
         for name in dict.fromkeys(body.skills):
             expected = body.skill_fingerprints.get(name)
             if not isinstance(expected, str) or not expected.startswith("sha256:"):

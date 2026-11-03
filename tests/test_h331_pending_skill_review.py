@@ -328,6 +328,48 @@ def test_bulk_stale_fingerprint_refuses_all_skills(hub, client):
     assert (Path(hub.loader.skills[a].path) / "PENDING_REVIEW").exists()
 
 
+def test_bulk_preflight_and_approval_use_the_same_orchestrator_when_binding_changes(
+    hub, client, monkeypatch
+):
+    from agents.core.routers import _component
+    from agents.core.routers import skills as skills_router
+
+    first_folder, name = _gen(hub)
+    first_fingerprint = hub.loader.pending_skill_fingerprint(name)
+
+    other_root = hub.tmp / "other-skills"
+    other_root.mkdir()
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", other_root)
+    other_loader = SkillLoader(approval_store=SkillApprovalStore(hub.tmp / "other-approvals.json"))
+    other_loader.discover()
+    other_folder = other_loader.generate_skill(
+        agent_id="pepper", task_description="organize the morning inbox",
+        solution_steps=["read messages", "sort by project"], command_name="tidy_inbox",
+    )
+    assert other_folder is not None
+    other_name = next(n for n, skill in other_loader.skills.items()
+                      if Path(skill.path) == other_root / other_folder)
+    assert other_name == name
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", hub.root)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: other_root)
+    second_fingerprint = other_loader.pending_skill_fingerprint(name)
+    assert second_fingerprint is not None and second_fingerprint != first_fingerprint
+
+    first_orch = SimpleNamespace(skills=hub.loader)
+    second_orch = SimpleNamespace(skills=other_loader)
+    monkeypatch.setattr(skills_router, "get_orch", lambda: first_orch)
+    monkeypatch.setattr(_component, "get_orch", lambda: second_orch)
+    reply = client.post("/api/skills/review/bulk", headers=ADMIN, json={
+        "approved": True, "skills": [name],
+        "skill_fingerprints": {name: second_fingerprint},
+    })
+
+    assert reply.status_code == 200 and reply.json()["ok"] is True, reply.text
+    assert not (other_root / other_folder / "PENDING_REVIEW").exists()
+    assert (hub.root / first_folder / "PENDING_REVIEW").exists()
+    assert hub.loader.pending_skill_fingerprint(name) == first_fingerprint
+
+
 def test_bulk_is_admin_only_and_validates_its_body(client):
     assert client.post("/api/skills/review/bulk", json={"approved": True, "skills": ["x"]}).status_code == 401
     assert client.post("/api/skills/review/bulk", headers=ADMIN, json={"skills": ["x"]}).status_code == 422
