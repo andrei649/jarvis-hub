@@ -62,6 +62,7 @@ import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
 import { DataHandling } from './panels/data-handling';
+import { UsagePanel } from './panels/usage';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
 
@@ -2125,15 +2126,7 @@ export function ReviewPanel() {
   </Card>;
 }
 function APMPanel() {
-  const { d, e, loading, reload } = useApi('/api/admin/apm');
-  return <Card title="APM" live={asLive(d)} onReload={reload}>
-    <State e={e} loading={loading} n={d ? 1 : 0} />
-    {d && <div style={{ ...mono, fontSize: 11 }}>
-      <Row><span>runs</span><span style={{ marginLeft: 'auto' }}>{d.runs ?? d.total_runs ?? '—'}</span></Row>
-      <Row><span>tokens</span><span style={{ marginLeft: 'auto' }}>{d.tokens ?? d.total_tokens ?? '—'}</span></Row>
-      <Row><span>cost $</span><span style={{ marginLeft: 'auto' }}>{d.cost ?? d.total_cost ?? '—'}</span></Row>
-    </div>}
-  </Card>;
+  return <UsagePanel />;
 }
 
 /* ── Autonomy ──────────────────────────────────────────── */
@@ -2894,6 +2887,7 @@ function settingsField(it, val, on, suggest?: string[]) {
 }
 export function SettingsPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/settings');
+  const [billingView, setBillingView] = useState(false);
   // H165 — a setting FLAGS.md documents links to its section: its cost, at the toggle.
   const costs = sectionIndex(useApi('/api/help/docs').d, 'flags');
   // H613 — the voices this hub can speak with (Piper models, the command provider).
@@ -2967,7 +2961,12 @@ export function SettingsPanel() {
     }
     setSaved(n); setRefused(why); setSent(queued); setDirty(kept); setRetentionTick((t) => t + 1); reload();
   };
-  return <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
+  return <>
+    <div role="tablist" aria-label="Settings sections" style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+      <button type="button" role="tab" aria-selected={!billingView} className="tool-btn" onClick={() => setBillingView(false)}>Settings</button>
+      <button type="button" role="tab" aria-selected={billingView} className="tool-btn" onClick={() => setBillingView(true)}>Billing</button>
+    </div>
+    {billingView ? <UsagePanel /> : <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
     <SettingsSearch value={query} onChange={setQuery} matches={nMatches} />
     {query.trim() && nMatches === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>no setting matches “{query.trim()}”</div>}
@@ -3020,7 +3019,8 @@ export function SettingsPanel() {
     <SettingsTransfer onDone={(cats) => { dropDirty(cats); reload(); }} />
     <ResetAll onDone={() => afterReset(Object.keys(cats))} />
     <UndoReset refresh={resetTick} onDone={(cats) => { dropDirty(cats); reload(); }} />
-  </Card>;
+  </Card>}
+  </>;
 }
 function PromptsPanel() {
   const [agent, setAgent] = useState('jarvis');
@@ -5436,6 +5436,7 @@ export function CommandCenterPanel() {
       sub={d ? `${install.ready ? 'ready' : 'starting'} · ${modelSource}${wizard.complete ? ' · onboarded ✓' : ''}` : null}
       onReload={reload}>
       <State e={e} loading={loading} n={actions.length} />
+      <Row><span>Usage</span><a className="console-link" style={{ marginLeft: 'auto' }} href={routeHref('/v2/console/usage')}>view usage and estimated cost →</a></Row>
       <Row>
         <span style={mono}>install</span>
         <span style={{ marginLeft: 'auto', color: install.ready ? 'var(--green)' : 'var(--amber)' }}>
@@ -5536,6 +5537,7 @@ export function FirstRunGate({ onClose }) {
 
 const PANEL_COMPONENTS = {
   CommandCenterPanel,
+  UsagePanel,
   TodayReceiptPanel,
   ModelSetupPanel,
   DocsPanel,

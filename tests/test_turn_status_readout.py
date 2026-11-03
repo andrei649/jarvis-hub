@@ -124,7 +124,7 @@ def test_busy_lease_has_no_duration_from_a_previous_turn(monkeypatch, stream):
 
 def test_setting_is_declared_and_rejects_noncanonical_lists():
     row = next(r for r in settings_db.DEFAULTS if (r["category"], r["key"]) == ("display", "status_bar_fields"))
-    assert row["value"] == ["latency"]
+    assert row["value"] == ["latency", "context_detail", "context_pct"]
     assert row["kind"] == "tags"
     allowed = {"model", "context_detail", "context_pct", "cache_hit", "latency", "tps",
                "compressions", "bg_tasks", "bg_processes", "bg_subagents", "goal", "duration",
@@ -141,9 +141,11 @@ def test_selected_setting_persists_and_invalid_stored_row_is_ignored(tmp_path, m
     monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
     monkeypatch.setattr(settings_db, "_initialized", False)
     settings_db.init_db(force=True)
-    assert settings_db.get_value("display", "status_bar_fields") == ["latency"]
+    assert settings_db.get_value("display", "status_bar_fields") == ["latency", "context_detail", "context_pct"]
     assert settings_db.validate_category("display", {"status_bar_fields": []}) == []
     assert settings_db.put_category("display", {"status_bar_fields": []}) == (1, [])
+    assert settings_db.get_value("display", "status_bar_fields") == []
+    settings_db.init_db()
     assert settings_db.get_value("display", "status_bar_fields") == []
     assert settings_db.selected_status_fields(["latency", "forged"]) is None
 

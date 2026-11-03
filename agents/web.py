@@ -1213,6 +1213,14 @@ class TurnRecall(TypedDict):
     untrusted: int
 
 
+class TurnUsageDetail(TypedDict):
+    input_tokens: int | None
+    output_tokens: int | None
+    estimated_cost_usd: float | None
+    usage_basis: Literal['provider_complete', 'measured_zero', 'unknown']
+    cost_basis: Literal['price_table', 'local_zero', 'measured_zero', 'unknown']
+
+
 class TurnOutcome(TypedDict):
     # The completion is source-assigned; latency remains an optional display choice.
     latency_ms: NotRequired[int]
@@ -1225,6 +1233,7 @@ class TurnOutcome(TypedDict):
     tps: NotRequired[float]
     compressions: NotRequired[int]
     total_tokens: NotRequired[int]
+    usage_detail: NotRequired[TurnUsageDetail]
     title: NotRequired[str]
     battery: NotRequired[bool]
     completion: NotRequired[TurnCompletion]
@@ -1402,6 +1411,25 @@ def _selected_turn_outcome(orchestrator, measured: dict | None, *, usage: dict |
                             for key in ('input_tokens', 'output_tokens'))
                     and usage['input_tokens'] + usage['output_tokens'] <= 1_000_000_000_000):
                 result['total_tokens'] = usage['input_tokens'] + usage['output_tokens']
+            if (('context_detail' in fields or 'context_pct' in fields)
+                    and type(usage) is dict
+                    and usage.get('usage_basis') in ('provider_complete', 'measured_zero', 'unknown')
+                    and usage.get('cost_basis') in ('price_table', 'local_zero', 'measured_zero', 'unknown')):
+                complete = usage['usage_basis'] in ('provider_complete', 'measured_zero')
+                counts = [usage.get(key) for key in ('input_tokens', 'output_tokens')]
+                counts_ok = complete and all(type(value) is int and 0 <= value <= 1_000_000_000_000
+                                             for value in counts)
+                cost = usage.get('estimated_cost_usd')
+                cost_ok = (counts_ok and usage['cost_basis'] != 'unknown'
+                           and type(cost) in (int, float) and 0 <= cost <= 1_000_000_000
+                           and (usage['cost_basis'] == 'price_table' or cost == 0))
+                result['usage_detail'] = {
+                    'input_tokens': counts[0] if counts_ok else None,
+                    'output_tokens': counts[1] if counts_ok else None,
+                    'estimated_cost_usd': cost if cost_ok else None,
+                    'usage_basis': usage['usage_basis'] if counts_ok else 'unknown',
+                    'cost_basis': usage['cost_basis'] if cost_ok else 'unknown',
+                }
             if 'title' in fields and session_id and type(session_id) is str:
                 checkpoints = getattr(orchestrator, 'checkpoints', None)
                 read_title = getattr(checkpoints, 'session_title', None)

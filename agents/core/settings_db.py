@@ -232,7 +232,7 @@ _STATUS_FIELDS = (
 DEFAULTS: list[dict[str, Any]] = [
     # H135: only explicit owner choices; empty preserves device motion defaults.
     dict(category="appearance", key="preferences", value={}, label="Appearance preferences", kind="json"),
-    dict(category="display", key="status_bar_fields", value=["latency"],
+    dict(category="display", key="status_bar_fields", value=["latency", "context_detail", "context_pct"],
          label="Visible chat status fields", kind="tags",
          opts=list(_STATUS_FIELDS)),
     # general
