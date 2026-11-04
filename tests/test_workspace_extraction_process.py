@@ -219,3 +219,45 @@ async def test_child_sets_an_actual_address_space_ceiling(monkeypatch):
 
     monkeypatch.setattr(extract_process.asyncio, "create_subprocess_exec", spawn)
     assert (await extract.extract_document(samples.build_docx(), "docx")).char_count > 0
+
+
+async def test_reap_reports_a_survivor_without_waiting_out_the_job(monkeypatch):
+    """A descendant that ignores termination must not pin the worker. The
+    extraction deadline shields ``_reap``, so an unbounded ``process.wait``
+    becomes a multi-hour CI hang."""
+    import time
+
+    from agents.core.workspace import extract_process
+
+    class Survivor:
+        pid = 4242
+        returncode = None
+
+        def kill(self):
+            return None
+
+        async def communicate(self):
+            await asyncio.sleep(60)
+            return b"", b""
+
+        async def wait(self):
+            await asyncio.sleep(60)
+
+        class Transport:
+            def get_pipe_transport(self, fd):
+                return None
+
+        _transport = Transport()
+
+    class Killer:
+        async def wait(self):
+            return 0
+
+    async def fake_exec(*args, **kwargs):
+        return Killer()
+
+    monkeypatch.setattr(extract_process.asyncio, "create_subprocess_exec", fake_exec)
+    started = time.monotonic()
+    with pytest.raises(OSError, match="descendant kept a pipe open"):
+        await extract_process._reap(Survivor())
+    assert time.monotonic() - started < 12

@@ -38,6 +38,10 @@ _MAX_FRAME_BYTES = 128 * 1024 * 1024
 # Native Windows acceptance (Job atomicity, IOCP pipes and real OCR) has not
 # run. This is an internal source gate, deliberately not an environment flag.
 _WINDOWS_OCR_NATIVE_ACCEPTED = False
+# After the pipes are closed, a live descendant gets one short chance to exit.
+# Waiting without a bound pins the pytest worker: the caller shields this reap,
+# so neither the extraction deadline nor pytest-timeout can finish the test.
+_REAP_WAIT_SECONDS = 5.0
 
 
 def _bounded_ocr_page_deadline(raw: object, *, now: float, document_deadline: float) -> float:
@@ -285,7 +289,7 @@ async def _reap(process: asyncio.subprocess.Process) -> None:
                 killer = await asyncio.create_subprocess_exec(
                     "taskkill", "/F", "/T", "/PID", str(process.pid),
                     stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                await killer.wait()
+                await asyncio.wait_for(killer.wait(), timeout=_REAP_WAIT_SECONDS)
         else:
             _kill_session_groups(process.pid)
     except OSError as exc:
@@ -299,11 +303,14 @@ async def _reap(process: asyncio.subprocess.Process) -> None:
         except TimeoutError:
             # A still-running descendant may hold an inherited pipe open when
             # enumeration itself failed. Close our pipe ends before reaping.
+            # The wait is bounded: a child that ignores termination must not
+            # pin the caller (the extraction deadline shields this function).
             for fd in (0, 1, 2):
                 pipe = process._transport.get_pipe_transport(fd)
                 if pipe is not None:
                     pipe.close()
-            await process.wait()
+            with suppress(TimeoutError):
+                await asyncio.wait_for(process.wait(), timeout=_REAP_WAIT_SECONDS)
             if cleanup_error is None:
                 cleanup_error = OSError("extraction descendant kept a pipe open")
     if cleanup_error is not None:

@@ -451,11 +451,121 @@ def claim_output(path: Path, workdir: Path, temp_dir: Path, kind: str) -> tuple[
 
 # ── programs ─────────────────────────────────────────────────────────────────────────
 
+# FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_DELETE_CHILD | DELETE | WRITE_DAC
+# | WRITE_OWNER | GENERIC_WRITE | GENERIC_ALL. An Everyone ACE with any of these
+# can replace the program or a directory entry.
+_WIN_WRITE_MASK = 0x2 | 0x4 | 0x40 | 0x10000 | 0x40000 | 0x80000 | 0x40000000 | 0x10000000
+
+
+def _windows_everyone_write(path: Path) -> bool:
+    """Whether Everyone (S-1-1-0) can write *path*.
+
+    CPython reports ``S_IWOTH`` for every non-readonly Windows file, so ``st_mode``
+    cannot answer this. A DACL that cannot be read is treated as writable (fail
+    closed). A NULL DACL grants everyone full control.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    adv = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    adv.GetNamedSecurityInfoW.argtypes = (
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p))
+    adv.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    adv.GetAclInformation.argtypes = (
+        ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD)
+    adv.GetAclInformation.restype = wintypes.BOOL
+    adv.GetAce.argtypes = (ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p))
+    adv.GetAce.restype = wintypes.BOOL
+    adv.ConvertStringSidToSidW.argtypes = (wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p))
+    adv.ConvertStringSidToSidW.restype = wintypes.BOOL
+    adv.EqualSid.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
+    adv.EqualSid.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = (ctypes.c_void_p,)
+    kernel.LocalFree.restype = ctypes.c_void_p
+
+    class AclSize(ctypes.Structure):
+        _fields_ = [("AceCount", wintypes.DWORD), ("AclBytesInUse", wintypes.DWORD),
+                    ("AclBytesFree", wintypes.DWORD)]
+
+    class AceHead(ctypes.Structure):
+        _fields_ = [("AceType", ctypes.c_ubyte), ("AceFlags", ctypes.c_ubyte),
+                    ("AceSize", wintypes.WORD)]
+
+    owner = ctypes.c_void_p()
+    group = ctypes.c_void_p()
+    dacl = ctypes.c_void_p()
+    sacl = ctypes.c_void_p()
+    descriptor = ctypes.c_void_p()
+    everyone = ctypes.c_void_p()
+    try:
+        code = adv.GetNamedSecurityInfoW(
+            os.fspath(path), 1, 0x4, ctypes.byref(owner), ctypes.byref(group),
+            ctypes.byref(dacl), ctypes.byref(sacl), ctypes.byref(descriptor))
+        if code != 0 or not descriptor.value:
+            return True
+        if not dacl.value:
+            return True  # NULL DACL: everyone has full access
+        if not adv.ConvertStringSidToSidW("S-1-1-0", ctypes.byref(everyone)):
+            return True
+        info = AclSize()
+        if not adv.GetAclInformation(dacl, ctypes.byref(info), ctypes.sizeof(info), 2):
+            return True
+        allowed = denied = False
+        for index in range(info.AceCount):
+            ace = ctypes.c_void_p()
+            if not adv.GetAce(dacl, index, ctypes.byref(ace)) or not ace.value:
+                return True
+            head = ctypes.cast(ace, ctypes.POINTER(AceHead)).contents
+            if head.AceType not in (0, 1) or head.AceSize < 16:
+                continue
+            mask = ctypes.cast(ace.value + 4, ctypes.POINTER(wintypes.DWORD)).contents.value
+            if not mask & _WIN_WRITE_MASK:
+                continue
+            if not adv.EqualSid(everyone, ace.value + 8):
+                continue
+            if head.AceType == 1:
+                denied = True
+            else:
+                allowed = True
+        return allowed and not denied
+    except (OSError, ctypes.ArgumentError, ValueError):
+        return True
+    finally:
+        if everyone.value:
+            kernel.LocalFree(everyone)
+        if descriptor.value:
+            kernel.LocalFree(descriptor)
+
+
+def _posix_permission_bits() -> bool:
+    """``st_mode`` write bits are real on POSIX. On Windows they are the readonly flag."""
+    return os.name != "nt"
+
+
+def _world_writable(path: Path) -> bool:
+    """Whether every user can write *path*. POSIX uses ``S_IWOTH``; Windows uses the DACL."""
+    if not _posix_permission_bits():
+        return _windows_everyone_write(path)
+    try:
+        return bool(os.stat(path).st_mode & stat.S_IWOTH)
+    except OSError:
+        return True
+
+
 def _loose_ancestor(path: Path) -> Path | None:
     """The first directory above *path* that another user could change an entry of: one
     writable by the group or by everyone without the sticky bit (or one that cannot be
-    read). None when there is none."""
+    read). On Windows, POSIX mode bits are not ACLs (every directory looks like
+    ``0o777``), so only an Everyone write ACE counts. None when there is none."""
     for folder in path.parents:
+        if not _posix_permission_bits():
+            if _windows_everyone_write(folder):
+                return folder
+            continue
         try:
             mode = os.stat(folder).st_mode
         except OSError:
@@ -488,7 +598,11 @@ def trusted_program(path: str | os.PathLike, *, executable: bool = True,
         return None, f"{what} is not a regular file"
     if executable and not os.access(exe, os.X_OK):
         return None, f"{what} is not executable"
-    if info.st_mode & stat.S_IWOTH or parent.st_mode & stat.S_IWOTH:
+    if not stat.S_ISDIR(parent.st_mode):
+        return None, f"{what} does not exist"
+    # World-writability is not ``st_mode & S_IWOTH``: on Windows that bit is set
+    # for every non-readonly file, so every program looked world-writable.
+    if _world_writable(exe) or _world_writable(exe.parent):
         return None, f"{what} or its directory is writable by every user"
     loose = _loose_ancestor(exe)
     if loose is not None:
